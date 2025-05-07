@@ -263,13 +263,11 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
             let initial_calldata_buffer =
                 initial_calldata_buffer.as_tx_buffer(next_tx_data_len_bytes);
-            let initial_calldata_buffer_ref_mut: &'static mut [u8] =
-                unsafe { core::mem::transmute(initial_calldata_buffer) };
 
             // We will give the full buffer here, and internally we will use parts of it to give forward to EEs
             cycle_marker::start!("process_transaction");
             let tx_result = Self::process_transaction::<_, Config>(
-                initial_calldata_buffer_ref_mut,
+                initial_calldata_buffer,
                 &mut system,
                 &mut system_functions,
                 &mut callstack,

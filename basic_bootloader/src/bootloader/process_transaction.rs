@@ -41,14 +41,14 @@ where
         CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
         Config: BasicBootloaderExecutionConfig,
     >(
-        initial_calldata_buffer: &'static mut [u8],
+        initial_calldata_buffer: &mut [u8],
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut CS,
         // TODO: we can get it from the system
         is_first_tx: bool,
     ) -> Result<TxProcessingResult<S>, TxError> {
-        let transaction = ZkSyncTransaction::<'static>::try_from_slice(initial_calldata_buffer)
+        let transaction = ZkSyncTransaction::try_from_slice(initial_calldata_buffer)
             .map_err(|_| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
 
         // Safe to unwrap here, as this should have been validated in the
@@ -89,7 +89,7 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut CS,
-        transaction: ZkSyncTransaction<'static>,
+        transaction: ZkSyncTransaction,
         is_priority_op: bool,
     ) -> Result<TxProcessingResult<S>, TxError> {
         // The work done by the bootloader (outside of EE or EOA specific
@@ -287,7 +287,7 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut CS,
-        transaction: &ZkSyncTransaction<'static>,
+        transaction: &ZkSyncTransaction,
         from: B160,
         to: B160,
         value: U256,
@@ -395,7 +395,7 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut CS,
-        mut transaction: ZkSyncTransaction<'static>,
+        mut transaction: ZkSyncTransaction,
     ) -> Result<TxProcessingResult<S>, TxError> {
         let from = transaction.from.read();
         let gas_limit = transaction.gas_limit.read();
@@ -604,7 +604,7 @@ where
         callstack: &mut CS,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         account_model: &AA<S>,
         from: B160,
         gas_price: U256,
@@ -695,7 +695,7 @@ where
         callstack: &mut CS,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         account_model: &AA<S>,
         native_per_pubdata: U256,
         validation_pubdata: u64,
@@ -749,7 +749,7 @@ where
         callstack: &mut CS,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         account_model: &AA<S>,
         from: B160,
         gas_price: U256,
@@ -901,7 +901,7 @@ where
         _callstack: &mut CS,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         execution_result: &ExecutionResult<S>,
         gas_price: U256,
