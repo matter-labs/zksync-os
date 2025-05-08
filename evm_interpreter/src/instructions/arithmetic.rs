@@ -95,7 +95,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 }
 
 pub fn exp_cost(power: &U256) -> Option<(u64, u64)> {
-    if power == &U256::ZERO {
+    if power.is_zero() {
         Some((gas_constants::EXP, EXP_BASE_NATIVE_COST))
     } else {
         let gas_byte: u64 = 50;

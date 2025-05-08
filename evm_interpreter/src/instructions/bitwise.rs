@@ -3,13 +3,8 @@ use native_resource_constants::*;
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn lt(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, LT_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
->>>>>>> try for perf run
         *op2 = if op1.lt(op2) {
             U256::from(1)
         } else {
@@ -19,13 +14,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn gt(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, GT_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
->>>>>>> try for perf run
         *op2 = if op1.gt(op2) {
             U256::from(1)
         } else {
@@ -35,15 +25,9 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn slt(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, SLT_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-        *op2 = if i256_cmp(op1, *op2) == core::cmp::Ordering::Less {
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         *op2 = if i256_cmp(*op1, *op2) == core::cmp::Ordering::Less {
->>>>>>> try for perf run
             U256::from(1)
         } else {
             U256::ZERO
@@ -52,15 +36,9 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn sgt(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, SGT_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-        *op2 = if i256_cmp(op1, *op2) == core::cmp::Ordering::Greater {
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         *op2 = if i256_cmp(*op1, *op2) == core::cmp::Ordering::Greater {
->>>>>>> try for perf run
             U256::from(1)
         } else {
             U256::ZERO
@@ -69,13 +47,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn eq(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, EQ_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
->>>>>>> try for perf run
         *op2 = if op1.eq(op2) {
             U256::from(1)
         } else {
@@ -85,13 +58,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn iszero(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, ISZERO_NATIVE_COST)?;
-        let ([], op1) = self.pop_values_and_peek::<0>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let op1 = self.stack.peek_mut()?;
->>>>>>> try for perf run
         *op1 = if *op1 == U256::ZERO {
             U256::from(1)
         } else {
@@ -100,59 +68,34 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         Ok(())
     }
     pub fn bitand(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, AND_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
->>>>>>> try for perf run
         *op2 = op1.bitand(*op2);
         Ok(())
     }
     pub fn bitor(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, OR_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
->>>>>>> try for perf run
         *op2 = op1.bitor(*op2);
         Ok(())
     }
     pub fn bitxor(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, XOR_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
->>>>>>> try for perf run
         *op2 = op1.bitxor(*op2);
         Ok(())
     }
 
     pub fn not(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, NOT_NATIVE_COST)?;
-        let ([], op1) = self.pop_values_and_peek::<0>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let op1 = self.stack.peek_mut()?;
->>>>>>> try for perf run
         *op1 = !*op1;
         Ok(())
     }
 
     pub fn byte(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, BYTE_NATIVE_COST)?;
-        let ([offset], src) = self.pop_values_and_peek::<1>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (offset, src) = self.stack.pop_1_and_peek_mut()?;
->>>>>>> try for perf run
 
         let ret = if offset < &U256::from(32) {
             src.byte(31 - u256_to_usize_saturated(&offset))
@@ -165,37 +108,22 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn shl(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, SHL_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
->>>>>>> try for perf run
         *op2 <<= u256_to_usize_saturated(&op1);
         Ok(())
     }
 
     pub fn shr(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, SHR_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
->>>>>>> try for perf run
         *op2 >>= u256_to_usize_saturated(&op1);
         Ok(())
     }
 
     pub fn sar(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, SAR_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-=======
-        self.spend_gas(gas_constants::VERYLOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
->>>>>>> try for perf run
 
         let value_sign = i256_sign::<true>(op2);
 

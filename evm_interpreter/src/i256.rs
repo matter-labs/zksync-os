@@ -25,7 +25,7 @@ pub struct I256(pub Sign, pub U256);
 #[inline(always)]
 pub fn i256_sign<const DO_TWO_COMPL: bool>(val: &mut U256) -> Sign {
     if !val.bit(U256::BITS - 1) {
-        if *val == U256::ZERO {
+        if val.is_zero() {
             Sign::Zero
         } else {
             Sign::Plus
@@ -34,6 +34,19 @@ pub fn i256_sign<const DO_TWO_COMPL: bool>(val: &mut U256) -> Sign {
         if DO_TWO_COMPL {
             two_compl_mut(val);
         }
+        Sign::Minus
+    }
+}
+
+#[inline(always)]
+pub fn i256_sign_by_ref(val: &U256) -> Sign {
+    if !val.bit(U256::BITS - 1) {
+        if val.is_zero() {
+            Sign::Zero
+        } else {
+            Sign::Plus
+        }
+    } else {
         Sign::Minus
     }
 }
@@ -55,9 +68,9 @@ pub fn two_compl(op: U256) -> U256 {
 }
 
 #[inline(always)]
-pub fn i256_cmp(mut first: U256, mut second: U256) -> Ordering {
-    let first_sign = i256_sign::<false>(&mut first);
-    let second_sign = i256_sign::<false>(&mut second);
+pub fn i256_cmp(first: &U256, second: &U256) -> Ordering {
+    let first_sign = i256_sign_by_ref(first);
+    let second_sign = i256_sign_by_ref(second);
     match (first_sign, second_sign) {
         (Sign::Zero, Sign::Zero) => Ordering::Equal,
         (Sign::Zero, Sign::Plus) => Ordering::Less,
@@ -78,7 +91,7 @@ pub fn i256_div(mut first: U256, mut second: U256) -> U256 {
         return U256::ZERO;
     }
     let first_sign = i256_sign::<true>(&mut first);
-    if first_sign == Sign::Minus && first == MIN_NEGATIVE_VALUE && second == U256::from(1) {
+    if first_sign == Sign::Minus && first == MIN_NEGATIVE_VALUE && second == U256::ONE {
         return two_compl(MIN_NEGATIVE_VALUE);
     }
 
@@ -88,8 +101,8 @@ pub fn i256_div(mut first: U256, mut second: U256) -> U256 {
     u256_remove_sign(&mut d);
     //set sign bit to zero
 
-    if d == U256::ZERO {
-        return U256::ZERO;
+    if d.is_zero() {
+        return d;
     }
 
     match (first_sign, second_sign) {
@@ -115,8 +128,8 @@ pub fn i256_mod(mut first: U256, mut second: U256) -> U256 {
     let _ = i256_sign::<true>(&mut second);
     let mut r = first % second;
     u256_remove_sign(&mut r);
-    if r == U256::ZERO {
-        return U256::ZERO;
+    if r.is_zero() {
+        return r;
     }
     if first_sign == Sign::Minus {
         two_compl(r)

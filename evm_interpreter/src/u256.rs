@@ -2,8 +2,8 @@ use ruint::aliases::U256;
 
 // Based on https://github.com/recmo/uint/blob/9bc4c717fbe126dabaa722489a284021f404652f/src/modular.rs#L55
 pub fn mul_mod(this: &U256, other: &U256, mut modulus: U256) -> U256 {
-    if modulus == U256::ZERO {
-        return U256::ZERO;
+    if modulus.is_zero() {
+        return modulus;
     }
     // Compute full product.
     // The challenge here is that Rust doesn't allow us to create a
