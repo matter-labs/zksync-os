@@ -4,9 +4,15 @@ use zk_ee::system::System;
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mload(&mut self, system: &mut System<S>) -> InstructionResult {
+<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
         let [index] = self.pop_values::<1>()?;
         let index = self.cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
+=======
+        self.spend_gas(gas_constants::VERYLOW)?;
+        let index = self.stack.pop_1()?;
+        let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
+>>>>>>> try for perf run
         self.resize_heap(index, 32, system)?;
         let mut value = U256::ZERO;
         unsafe {
@@ -24,13 +30,21 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             ));
         }
 
-        self.stack_push_one(value)
+        self.stack.push_unchecked(&value);
+
+        Ok(())
     }
 
     pub fn mstore(&mut self, system: &mut System<S>) -> InstructionResult {
+<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
         let [index, value] = self.pop_values::<2>()?;
         let index = self.cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
+=======
+        self.spend_gas(gas_constants::VERYLOW)?;
+        let (index, &value) = self.stack.pop_2()?;
+        let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
+>>>>>>> try for perf run
         self.resize_heap(index, 32, system)?;
 
         unsafe {
@@ -53,9 +67,15 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn mstore8(&mut self, system: &mut System<S>) -> InstructionResult {
+<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::VERYLOW, MSTORE8_NATIVE_COST)?;
         let [index, value] = self.pop_values::<2>()?;
         let index = self.cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
+=======
+        self.spend_gas(gas_constants::VERYLOW)?;
+        let (index, &value) = self.stack.pop_2()?;
+        let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
+>>>>>>> try for perf run
         self.resize_heap(index, 1, system)?;
         let value = value.byte(0);
         self.heap()[index] = value;
@@ -75,22 +95,28 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::BASE, MSIZE_NATIVE_COST)?;
         let len = self.memory_len();
         debug_assert!(len.next_multiple_of(32) == len);
-        self.stack_push_one(U256::from(len))
+        self.stack.push_1(&U256::from(len))
     }
 
     pub fn mcopy(&mut self, system: &mut System<S>) -> InstructionResult {
-        let [dst_offset, src_offset, len] = self.pop_values::<3>()?;
+        let (&dst_offset, &src_offset, len) = self.stack.pop_3()?;
 
+<<<<<<< HEAD
         let len = self.cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
         let (gas_cost, native_cost) = self.very_low_copy_cost(len as u64)?;
         self.spend_gas_and_native(gas_cost, native_cost)?;
+=======
+        let len = Self::cast_to_usize(len, ExitCode::InvalidOperandOOG)?;
+        let copy_cost = self.very_low_copy_cost(len as u64)?;
+        self.spend_gas(copy_cost)?;
+>>>>>>> try for perf run
 
         if len == 0 {
             return Ok(());
         }
 
-        let dst_offset = self.cast_to_usize(&dst_offset, ExitCode::InvalidOperandOOG)?;
-        let src_offset = self.cast_to_usize(&src_offset, ExitCode::InvalidOperandOOG)?;
+        let dst_offset = Self::cast_to_usize(&dst_offset, ExitCode::InvalidOperandOOG)?;
+        let src_offset = Self::cast_to_usize(&src_offset, ExitCode::InvalidOperandOOG)?;
         self.resize_heap(core::cmp::max(dst_offset, src_offset), len, system)?;
         unsafe {
             let src_ptr = self.heap().as_ptr().add(src_offset);

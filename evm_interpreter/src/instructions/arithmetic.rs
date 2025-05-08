@@ -49,7 +49,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::LOW, SMOD_NATIVE_COST)?;
         let ([op1], op2) = self.pop_values_and_peek::<1>()?;
         if *op2 != U256::ZERO {
-            *op2 = i256_mod(op1, *op2)
+            *op2 = i256_mod(*op1, *op2)
         };
         Ok(())
     }
@@ -75,8 +75,9 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         } else {
             return Err(ExitCode::OutOfGas);
         }
-        op2 = op1.pow(op2);
-        self.stack_push_one(op2)
+        self.stack.push_unchecked(&op1.pow(op2));
+
+        Ok(())
     }
 
     pub fn sign_extend(&mut self) -> InstructionResult {

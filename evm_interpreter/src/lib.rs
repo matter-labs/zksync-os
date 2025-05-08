@@ -5,6 +5,7 @@
 #![feature(generic_const_exprs)]
 #![feature(vec_push_within_capacity)]
 #![feature(slice_swap_unchecked)]
+#![feature(ptr_as_ref_unchecked)]
 #![allow(clippy::new_without_default)]
 #![allow(clippy::needless_lifetimes)]
 #![allow(clippy::needless_borrow)]
@@ -38,6 +39,7 @@ pub mod instructions;
 pub mod interpreter;
 pub mod native_resource_constants;
 pub mod opcodes;
+pub(crate) mod stack;
 pub mod u256;
 pub mod utils;
 
@@ -51,7 +53,8 @@ pub struct Interpreter<'a, S: EthereumLikeTypes> {
     /// Generic resources
     pub resources: S::Resources,
     /// Stack.
-    pub stack: Vec<U256, <S::Memory as MemorySubsystem>::Allocator>,
+    // pub stack: Vec<U256, <S::Memory as MemorySubsystem>::Allocator>,
+    pub stack: self::stack::EVMStack<<S::Memory as MemorySubsystem>::Allocator>,
     /// Caller address
     pub caller: <S::IOTypes as SystemIOTypesConfig>::Address,
     /// Contract information and invoking data

@@ -5,7 +5,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn chainid(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, CHAINID_NATIVE_COST)?;
         let result = U256::from(system.get_chain_id());
-        self.push_values(&[result])?;
+        self.stack.push_1(&result)?;
         Ok(())
     }
 
@@ -18,14 +18,14 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn timestamp(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, TIMESTAMP_NATIVE_COST)?;
         let result = U256::from(system.get_timestamp());
-        self.push_values(&[result])?;
+        self.stack.push_1(&result)?;
         Ok(())
     }
 
     pub fn number(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, NUMBER_NATIVE_COST)?;
         let result = U256::from(system.get_block_number());
-        self.push_values(&[result])?;
+        self.stack.push_1(&result)?;
         Ok(())
     }
 
@@ -38,7 +38,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn gaslimit(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, GAS_NATIVE_COST)?;
         let result = U256::from(system.get_gas_limit());
-        self.push_values(&[result])?;
+        self.stack.push_1(&result)?;
         Ok(())
     }
 
@@ -73,7 +73,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::BLOCKHASH, BLOCKHASH_NATIVE_COST)?;
         let [block_number] = self.pop_values::<1>()?;
         let block_number = u256_to_u64_saturated(&block_number);
-        self.push_values(&[system.get_blockhash(block_number)])?;
+        self.stack
+            .push_unchecked(&system.get_blockhash(block_number));
         Ok(())
     }
 

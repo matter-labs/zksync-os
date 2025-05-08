@@ -235,15 +235,11 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
                 // follow some not-true resource policy, it can make adjustments here before
                 // continuing the execution
                 self.copy_returndata_to_heap(return_values.returndata);
-                self.stack
-                    .push_within_capacity(U256::ZERO)
-                    .expect("must have enough space");
+                self.stack.push_unchecked(&U256::ZERO);
             }
             CallResult::Successful { return_values } => {
                 self.copy_returndata_to_heap(return_values.returndata);
-                self.stack
-                    .push_within_capacity(U256::from(1u64))
-                    .expect("must have enough space");
+                self.stack.push_unchecked(&U256::ONE);
             }
         }
 
@@ -271,8 +267,7 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
                 }
                 self.returndata = return_values.returndata;
                 // we need to push 0 to stack
-                self.push_values(&[U256::ZERO])
-                    .expect("must have enough space");
+                self.stack.push_unchecked(&U256::ZERO);
             }
             DeploymentResult::Successful {
                 return_values,
@@ -284,8 +279,7 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
                 assert!(return_values.returndata.len() == 0);
                 self.returndata = return_values.returndata;
                 // we need to push address to stack
-                self.push_values(&[b160_to_u256(deployed_at)])
-                    .expect("must have enough space");
+                self.stack.push_unchecked(&b160_to_u256(deployed_at));
             }
         }
 
