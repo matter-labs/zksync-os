@@ -82,8 +82,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     // Mocked for tests
     pub fn blobhash(&mut self, _system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, 40)?;
-        let [_] = self.pop_values::<1>()?;
-        self.push_values(&[U256::ZERO])
+        self.stack.stack_reduce_one()?;
+        self.stack.push_unchecked(&U256::ZERO);
+
+        Ok(())
     }
 
     #[cfg(feature = "mock-eip-4844")]
