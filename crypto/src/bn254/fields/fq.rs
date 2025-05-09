@@ -6,6 +6,13 @@ pub fn init() {
     unsafe {
         MODULUS.as_mut_ptr().write(MODULUS_CONSTANT);
         REDUCTION_CONST.as_mut_ptr().write(MONT_REDUCTION_CONSTANT);
+        ZERO_REPR_0.as_mut_ptr().write(ZERO_REPR_CONST.0);
+        ZERO_REPR_1.as_mut_ptr().write(ZERO_REPR_CONST.0);
+        ONE_REPR.as_mut_ptr().write(ONE_REPR_CONST.0);
+        MODULUS_REPR.as_mut_ptr().write(MODULUS_CONSTANT);
+        REDUCTION_CONST_REPR
+            .as_mut_ptr()
+            .write(MONT_REDUCTION_CONSTANT);
     }
 }
 

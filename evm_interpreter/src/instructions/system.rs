@@ -63,7 +63,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn address(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::BASE, ADDRESS_NATIVE_COST)?;
         self.stack_push_one(b160_to_u256(self.address))
     }
@@ -76,36 +75,15 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn codesize(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, CODESIZE_NATIVE_COST)?;
         self.stack_push_one(U256::from(
-=======
-        self.spend_gas(gas_constants::BASE)?;
-        self.stack.push_1(&b160_to_u256(self.address))
-    }
-
-    pub fn caller(&mut self) -> InstructionResult {
-        self.spend_gas(gas_constants::BASE)?;
-        self.stack.push_1(&b160_to_u256(self.caller))
-    }
-
-    pub fn codesize(&mut self) -> InstructionResult {
-        self.spend_gas(gas_constants::BASE)?;
-        self.stack.push_1(&U256::from(
->>>>>>> try for perf run
             self.bytecode_preprocessing.original_bytecode_len as u64,
         ))
     }
 
     pub fn codecopy(&mut self, system: &mut System<S>) -> InstructionResult {
-<<<<<<< HEAD
         let [memory_offset, source_offset, len] = self.pop_values::<3>()?;
         let len = self.cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
         let (gas_cost, native_cost) = self.very_low_copy_cost(len as u64)?;
         self.spend_gas_and_native(gas_cost, native_cost + CODECOPY_NATIVE_COST)?;
-=======
-        let (&memory_offset, &source_offset, len) = self.stack.pop_3()?;
-        let len = Self::cast_to_usize(len, ExitCode::InvalidOperandOOG)?;
-        let copy_cost = self.very_low_copy_cost(len as u64)?;
-        self.spend_gas(copy_cost)?;
->>>>>>> try for perf run
         if len == 0 {
             return Ok(());
         }
@@ -130,21 +108,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         Ok(())
     }
 
-<<<<<<< HEAD
     pub fn calldataload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, CALLDATALOAD_NATIVE_COST)?;
         let [index] = self.pop_values::<1>()?;
         let value = match u256_try_to_usize(&index) {
-=======
-    pub fn calldataload(&mut self, _system: &mut System<S>) -> InstructionResult {
-        self.spend_gas(gas_constants::VERYLOW)?;
-        let t = {
-            let index = self.stack.pop_1()?;
-            u256_try_to_usize(index)
-        };
-
-        let value = match t {
->>>>>>> try for perf run
             Some(index) => {
                 if index < self.calldata.len() {
                     let have_bytes = 32.min(self.calldata.len() - index);
@@ -188,7 +155,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn callvalue(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::BASE, CALLVALUE_NATIVE_COST)?;
         self.stack_push_one(self.call_value)
     }
@@ -198,17 +164,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let len = self.cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
         let (gas_cost, native_cost) = self.very_low_copy_cost(len as u64)?;
         self.spend_gas_and_native(gas_cost, CALLDATACOPY_NATIVE_COST + native_cost)?;
-=======
-        self.spend_gas(gas_constants::BASE)?;
-        self.stack.push_1(&self.call_value)
-    }
-
-    pub fn calldatacopy(&mut self, system: &mut System<S>) -> InstructionResult {
-        let (&memory_offset, &source_offset, len) = self.stack.pop_3()?;
-        let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
-        let copy_cost = self.very_low_copy_cost(len as u64)?;
-        self.spend_gas(copy_cost)?;
->>>>>>> try for perf run
         if len == 0 {
             return Ok(());
         }
@@ -239,19 +194,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn returndatacopy(&mut self, system: &mut System<S>) -> InstructionResult {
-<<<<<<< HEAD
         let [memory_offset, source_offset, len] = self.pop_values::<3>()?;
         let len = self.cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
         let (gas_cost, native_cost) = self.very_low_copy_cost(len as u64)?;
         self.spend_gas_and_native(gas_cost, RETURNDATACOPY_NATIVE_COST + native_cost)?;
         let source_offset = self.cast_to_usize(&source_offset, ExitCode::InvalidOperandOOG)?;
-=======
-        let (&memory_offset, &source_offset, len) = self.stack.pop_3()?;
-        let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
-        let copy_cost = self.very_low_copy_cost(len as u64)?;
-        self.spend_gas(copy_cost)?;
-        let source_offset = Self::cast_to_usize(&source_offset, ExitCode::InvalidOperandOOG)?;
->>>>>>> try for perf run
         let (end, of) = source_offset.overflowing_add(len);
         let returndata_len = self.returndata().len();
         if of || end > returndata_len {
@@ -274,12 +221,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn gas(&mut self) -> InstructionResult {
-<<<<<<< HEAD
         self.spend_gas_and_native(gas_constants::BASE, GAS_NATIVE_COST)?;
         self.stack_push_one(U256::from(self.gas_left()))
-=======
-        self.spend_gas(gas_constants::BASE)?;
-        self.stack.push_1(&U256::from(self.gas_left()))
->>>>>>> try for perf run
     }
 }
