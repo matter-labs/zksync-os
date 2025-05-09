@@ -22,7 +22,7 @@ pub const MEMCOPY_BIT_IDX: usize = 7;
 #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
 const ROM_BOUND: usize = 1 << 21;
 
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
+#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
 static mut SCRATCH: core::mem::MaybeUninit<AlignedPrecompileSpace> = core::mem::MaybeUninit::uninit();
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 static mut ZERO_REPR: core::mem::MaybeUninit<AlignedPrecompileSpace> = core::mem::MaybeUninit::uninit();
@@ -39,16 +39,29 @@ pub fn init() {
 
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 pub unsafe fn is_zero(operand: *const AlignedPrecompileSpace) -> bool {
+    // it'll copy into scratch if it's not in the mutable region
     let src = aligned_copy_if_needed(operand);
-    bigint_op_delegation::<MEMCOPY_BIT_IDX>(SCRATCH.as_mut_ptr().cast(), src.cast());
-    let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(SCRATCH.as_mut_ptr().cast(), ZERO_REPR.as_ptr().cast());
+    // so we can just cast constness, as equality is non-overwriting
+    let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(src.cast_mut().cast(), ZERO_REPR.as_ptr().cast());
 
     eq != 0
 }
 
 #[cfg(not(any(all(target_arch = "riscv32", feature = "bigint_ops"), test)))]
-pub unsafe fn is_zero(operand: *const AlignedPrecompileSpace) -> bool {
-    operand.as_ref_unchecked().0 == ZERO_REPR_CONST.0
+pub unsafe fn is_zero(_operand: *const AlignedPrecompileSpace) -> bool {
+    unimplemented!()
+}
+
+#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
+pub unsafe fn is_zero_mut(operand: *mut AlignedPrecompileSpace) -> bool {
+    let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(operand.cast(), ZERO_REPR.as_ptr().cast());
+
+    eq != 0
+}
+
+#[cfg(not(any(all(target_arch = "riscv32", feature = "bigint_ops"), test)))]
+pub unsafe fn is_zero_mut(_operand: *mut AlignedPrecompileSpace) -> bool {
+    unimplemented!()
 }
 
 #[inline(always)]

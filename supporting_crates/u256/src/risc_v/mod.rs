@@ -123,13 +123,15 @@ impl U256 {
 
     #[inline(always)]
     /// Panics if divisor is 0
-    pub fn div_assign_with_remainder(&mut self, rem: &mut Self, rhs: &Self) {
-        unsafe {
-            let src_ptr = aligned_copy_if_needed(rhs.0.as_ptr().cast());
-            let is_zero = crypto::bigint_riscv::is_zero(src_ptr.cast());
-            assert!(is_zero == false);
+    pub fn div_assign_with_remainder(&mut self, rem: &mut Self, divisor: &Self) {
+        // Eventually it'll be solved via non-determinism and comparison that a = q * divisor + r,
+        // but for now it's just a naive one
 
+        unsafe {
+            let src_ptr = aligned_copy_if_needed(divisor.0.as_ptr().cast());
             bigint_op_delegation::<MEMCOPY_BIT_IDX>(rem.0.as_mut_ptr().cast(), src_ptr.cast());
+            let is_zero = crypto::bigint_riscv::is_zero_mut(rem.0.as_mut_ptr().cast());
+            assert!(is_zero == false);
             ruint::algorithms::div(&mut self.0, &mut rem.0);
         }
     }
