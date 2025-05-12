@@ -157,7 +157,7 @@ impl<S: SystemTypes> System<S> {
     pub fn set_tx_context(
         &mut self,
         tx_origin: <S::IOTypes as SystemIOTypesConfig>::Address,
-        tx_gas_price: U256,
+        tx_gas_price: &U256,
     ) {
         self.metadata.tx_origin = tx_origin;
         self.metadata.tx_gas_price = tx_gas_price.clone();

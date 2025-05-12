@@ -23,7 +23,7 @@ u256 = { path = "../supporting_crates/u256", default-features = false }
 
 
 [features]
-testing = ["serde", "ruint/serde"]
+testing = ["serde", "ruint/serde", "u256/serde"]
 default = ["testing"]
 cycle_marker = []
 

@@ -80,7 +80,7 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
             returndata_location: 0..0,
             bytecode: &[],
             bytecode_preprocessing: empty_preprocessing,
-            call_value: U256::ZERO,
+            call_value: U256::zero(),
             is_constructor: false,
             gas_paid_for_heap_growth: 0u64,
         })
@@ -235,11 +235,15 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
                 // follow some not-true resource policy, it can make adjustments here before
                 // continuing the execution
                 self.copy_returndata_to_heap(return_values.returndata);
-                self.stack.push_unchecked(&U256::ZERO);
+                unsafe {
+                    self.stack.push_zero().unwrap_unchecked();
+                }
             }
             CallResult::Successful { return_values } => {
                 self.copy_returndata_to_heap(return_values.returndata);
-                self.stack.push_unchecked(&U256::ONE);
+                unsafe {
+                    self.stack.push_one().unwrap_unchecked();
+                }
             }
         }
 
@@ -267,7 +271,9 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
                 }
                 self.returndata = return_values.returndata;
                 // we need to push 0 to stack
-                self.stack.push_unchecked(&U256::ZERO);
+                unsafe {
+                    self.stack.push_zero().unwrap_unchecked();
+                }
             }
             DeploymentResult::Successful {
                 return_values,
@@ -452,8 +458,7 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
                 let mut create2_buffer = [0xffu8; 1 + 20 + 32 + 32];
                 create2_buffer[1..(1 + 20)]
                     .copy_from_slice(&address_of_deployer.to_be_bytes::<{ B160::BYTES }>());
-                create2_buffer[(1 + 20)..(1 + 20 + 32)]
-                    .copy_from_slice(&salt.to_be_bytes::<{ U256::BYTES }>());
+                create2_buffer[(1 + 20)..(1 + 20 + 32)].copy_from_slice(&salt.to_be_bytes());
                 create2_buffer[(1 + 20 + 32)..(1 + 20 + 32 + 32)]
                     .copy_from_slice(initcode_hash.as_u8_array_ref());
 

@@ -1,5 +1,4 @@
-use ruint::aliases::B160;
-use u256::U256;
+use ::u256::U256;
 use zk_ee::utils::*;
 
 use crate::i256::*;

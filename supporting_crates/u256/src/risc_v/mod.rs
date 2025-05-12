@@ -1,4 +1,5 @@
-#[derive(Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(align(32))]
 pub struct U256([u64; 4]);
 
@@ -93,6 +94,13 @@ impl core::fmt::Debug for U256 {
     }
 }
 
+impl core::fmt::LowerHex for U256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // TODO
+        core::fmt::Result::Ok(())
+    }
+}
+
 impl core::default::Default for U256 {
     #[inline(always)]
     fn default() -> Self {
@@ -101,14 +109,16 @@ impl core::default::Default for U256 {
 }
 
 impl U256 {
-    // pub const ZERO: Self = Self([0u64; 4]);
-    // pub const ONE: Self = Self([1u64, 0u64, 0u64, 0u64]);
+    pub const ZERO: Self = Self([0u64; 4]);
+    // const ONE: Self = Self([1u64, 0u64, 0u64, 0u64]);
+
+    pub const BYTES: usize = 32;
 
     pub const fn from_limbs(limbs: [u64; 4]) -> Self {
         Self(limbs)
     }
 
-    pub unsafe fn write_into(dst: *mut Self, source: &Self) {
+    pub unsafe fn write_into_ptr(dst: *mut Self, source: &Self) {
         unsafe {
             let src_ptr = aligned_copy_if_needed(source.0.as_ptr().cast());
             let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(dst.cast(), src_ptr.cast());
@@ -137,7 +147,7 @@ impl U256 {
         }
     }
 
-    pub fn bytereverse_u256(&mut self) {
+    pub fn bytereverse(&mut self) {
         unsafe {
             let limbs = self.as_limbs_mut();
             core::ptr::swap(&mut limbs[0] as *mut u64, &mut limbs[3] as *mut u64);
@@ -156,6 +166,16 @@ impl U256 {
     #[inline(always)]
     pub fn write_one(into: &mut Self) {
         crypto::bigint_riscv::write_one_into(into.0.as_mut_ptr().cast());
+    }
+
+    #[inline(always)]
+    pub unsafe fn write_zero_into_ptr(into: *mut Self) {
+        crypto::bigint_riscv::write_zero_into(into.cast());
+    }
+
+    #[inline(always)]
+    pub unsafe fn write_one_into_ptr(into: *mut Self) {
+        crypto::bigint_riscv::write_one_into(into.cast());
     }
 
     #[inline(always)]
@@ -217,6 +237,18 @@ impl U256 {
     }
 
     #[inline(always)]
+    pub fn overflowing_sub_assign_reversed(&mut self, rhs: &Self) -> bool {
+        unsafe {
+            let src_ptr = aligned_copy_if_needed(rhs.0.as_ptr().cast());
+            let borrow = bigint_op_delegation::<SUB_AND_NEGATE_OP_BIT_IDX>(
+                self.0.as_mut_ptr().cast(),
+                src_ptr.cast(),
+            );
+            borrow != 0
+        }
+    }
+
+    #[inline(always)]
     pub fn wrapping_mul_assign(&mut self, rhs: &Self) {
         unsafe {
             let src_ptr = aligned_copy_if_needed(rhs.0.as_ptr().cast());
@@ -265,16 +297,15 @@ impl U256 {
 
     #[inline(always)]
     /// Panics if divisor is 0
-    pub fn div_assign_with_remainder(&mut self, rem: &mut Self, divisor: &Self) {
+    pub fn div_rem(dividend_or_quotient: &mut Self, divisor_or_remainder: &mut Self) {
         // Eventually it'll be solved via non-determinism and comparison that a = q * divisor + r,
         // but for now it's just a naive one
 
         unsafe {
-            let src_ptr = aligned_copy_if_needed(divisor.0.as_ptr().cast());
-            bigint_op_delegation::<MEMCOPY_BIT_IDX>(rem.0.as_mut_ptr().cast(), src_ptr.cast());
-            let is_zero = crypto::bigint_riscv::is_zero_mut(rem.0.as_mut_ptr().cast());
+            let is_zero =
+                crypto::bigint_riscv::is_zero_mut(divisor_or_remainder.0.as_mut_ptr().cast());
             assert!(is_zero == false);
-            ruint::algorithms::div(&mut self.0, &mut rem.0);
+            ruint::algorithms::div(&mut dividend_or_quotient.0, &mut divisor_or_remainder.0);
         }
     }
 
@@ -370,6 +401,80 @@ impl U256 {
 
         len
     }
+
+    pub fn byte(&self, byte_idx: usize) -> u8 {
+        if byte_idx >= 32 {
+            0
+        } else {
+            let (word, byte_idx) = (byte_idx / 8, byte_idx % 8);
+            self.0[3 - word].to_be_bytes()[byte_idx]
+        }
+    }
+
+    pub fn bit(&self, bit_idx: usize) -> bool {
+        if bit_idx >= 256 {
+            false
+        } else {
+            let (word, bit_idx) = (bit_idx / 64, bit_idx % 64);
+            self.0[word] & 1 << bit_idx != 0
+        }
+    }
+
+    pub fn as_le_bytes_ref(&self) -> &[u8; 32] {
+        unsafe { core::mem::transmute(&self.0) }
+    }
+
+    pub fn reduce_mod(&mut self, modulus: &Self) {
+        if modulus.is_zero() {
+            Self::write_zero(self);
+            return;
+        }
+        if (&*self).le(modulus) {
+            let mut modulus = modulus.clone();
+            Self::div_rem(self, &mut modulus);
+            Clone::clone_from(self, &modulus);
+        }
+    }
+
+    pub fn add_mod(a: &mut Self, b: &mut Self, modulus_or_result: &mut Self) {
+        a.reduce_mod(&*modulus_or_result);
+        b.reduce_mod(&*modulus_or_result);
+        let of =
+            bigint_op_delegation::<ADD_OP_BIT_IDX>(a.0.as_mut_ptr().cast(), b.0.as_ptr().cast());
+        if of != 0 || (&*a).gt(&*modulus_or_result) {
+            let _ = Self::overflowing_sub_assign_reversed(modulus_or_result, &*a);
+        }
+    }
+
+    pub fn mul_mod(a: &mut Self, b: &mut Self, modulus_or_result: &mut Self) {
+        if modulus_or_result.is_zero() {
+            return;
+        }
+
+        let mut product = [a.clone(), a.clone()];
+        let (low, high) = product.split_at_mut(1);
+        Self::widening_mul_assign_into(&mut low[0], &mut high[0], &*b);
+        let product: &mut [u64; 8] = unsafe { core::mem::transmute(&mut product[0]) };
+        ruint::algorithms::div(product, modulus_or_result.as_limbs_mut());
+    }
+
+    pub fn pow(base: &Self, exp: &Self, dst: &mut Self) {
+        // Exponentiation by squaring
+        Self::write_one(dst);
+        let bits = crate::BitIteratorBE::new_without_leading_zeros(exp.as_limbs());
+        for i in bits {
+            let tmp = dst.clone();
+            Self::wrapping_mul_assign(dst, &tmp);
+
+            if i {
+                Self::wrapping_mul_assign(dst, &base);
+            }
+        }
+    }
+
+    pub fn byte_len(&self) -> usize {
+        (self.bit_len() + 7) / 8
+    }
 }
 
 impl From<ruint::aliases::U256> for U256 {
@@ -394,6 +499,14 @@ impl Into<ruint::aliases::U256> for U256 {
     #[inline(always)]
     fn into(self) -> ruint::aliases::U256 {
         ruint::aliases::U256::from_limbs(self.0)
+    }
+}
+
+impl TryInto<usize> for U256 {
+    type Error = ruint::FromUintError<usize>;
+
+    fn try_into(self) -> Result<usize, Self::Error> {
+        todo!()   
     }
 }
 

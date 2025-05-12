@@ -1,6 +1,7 @@
 use core::ops::*;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct U256(ruint::aliases::U256);
 
@@ -32,15 +33,24 @@ impl core::fmt::Debug for U256 {
     }
 }
 
+impl core::fmt::LowerHex for U256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // TODO
+        core::fmt::Result::Ok(())
+    }
+}
+
 impl U256 {
-    const ZERO: Self = Self(ruint::aliases::U256::ZERO);
+    pub const ZERO: Self = Self(ruint::aliases::U256::ZERO);
     const ONE: Self = Self(ruint::aliases::U256::ONE);
+
+    pub const BYTES: usize = 32;
 
     pub const fn from_limbs(limbs: [u64; 4]) -> Self {
         Self(ruint::aliases::U256::from_limbs(limbs))
     }
 
-    pub unsafe fn write_into(dst: *mut Self, source: &Self) {
+    pub unsafe fn write_into_ptr(dst: *mut Self, source: &Self) {
         unsafe {
             dst.write(Self(source.0));
         }
@@ -56,7 +66,7 @@ impl U256 {
         Self::ONE
     }
 
-    pub fn bytereverse_u256(&mut self) {
+    pub fn bytereverse(&mut self) {
         unsafe {
             let limbs = self.as_limbs_mut();
             core::ptr::swap(&mut limbs[0] as *mut u64, &mut limbs[3] as *mut u64);
@@ -114,6 +124,14 @@ impl U256 {
     }
 
     #[inline(always)]
+    pub fn overflowing_sub_assign_reversed(&mut self, rhs: &Self) -> bool {
+        let (t, of) = rhs.0.overflowing_sub(self.0);
+        self.0 = t;
+
+        of
+    }
+
+    #[inline(always)]
     pub fn wrapping_mul_assign(&mut self, rhs: &Self) {
         self.0 = self.0.wrapping_mul(rhs.0);
     }
@@ -126,9 +144,15 @@ impl U256 {
 
     #[inline(always)]
     /// Panics if divisor is 0
-    pub fn div_assign_with_remainder(&mut self, rem: &mut Self, divisor: &Self) {
+    pub fn div_rem(dividend_or_quotient: &mut Self, divisor_or_remainder: &mut Self) {
         todo!();
     }
+
+    // #[inline(always)]
+    // /// Panics if divisor is 0
+    // pub fn div_assign_with_remainder(&mut self, rem: &mut Self, divisor: &Self) {
+    //     todo!();
+    // }
 
     #[inline(always)]
     pub fn not_mut(&mut self) {
@@ -154,6 +178,55 @@ impl U256 {
     pub fn bit_len(&self) -> usize {
         self.0.bit_len()
     }
+
+    #[inline(always)]
+    pub unsafe fn write_zero_into_ptr(into: *mut Self) {
+        unsafe {
+            into.write(Self::ZERO);
+        }
+    }
+
+    #[inline(always)]
+    pub unsafe fn write_one_into_ptr(into: *mut Self) {
+        unsafe {
+            into.write(Self::ONE);
+        }
+    }
+
+    pub fn byte(&self, byte_idx: usize) -> u8 {
+        self.0.byte(byte_idx)
+    }
+
+    pub fn bit(&self, bit_idx: usize) -> bool {
+        self.0.bit(bit_idx)
+    }
+
+    pub fn as_le_bytes_ref(&self) -> &[u8; 32] {
+        unsafe { core::mem::transmute(self.0.as_limbs()) }
+    }
+
+    pub fn add_mod(a_or_result: &mut Self, b: &mut Self, modulus: &Self) {
+        a_or_result.0 = ruint::aliases::U256::add_mod(a_or_result.0, b.0, modulus.0);
+    }
+
+    pub fn mul_mod(a: &mut Self, b: &mut Self, modulus_or_result: &mut Self) {
+        if modulus_or_result.is_zero() {
+            return;
+        }
+
+        let mut product = [0u64; 8];
+        let _ = ruint::algorithms::addmul(&mut product, a.as_limbs(), b.as_limbs());
+
+        ruint::algorithms::div(&mut product, modulus_or_result.as_limbs_mut());
+    }
+
+    pub fn pow(base: &Self, exp: &Self, dst: &mut Self) {
+        dst.0 = base.0.pow(exp.0);
+    }
+
+    pub fn byte_len(&self) -> usize {
+        self.0.byte_len()
+    }
 }
 
 impl From<ruint::aliases::U256> for U256 {
@@ -177,6 +250,14 @@ impl Into<ruint::aliases::U256> for U256 {
     #[inline(always)]
     fn into(self) -> ruint::aliases::U256 {
         self.0
+    }
+}
+
+impl TryInto<usize> for U256 {
+    type Error = ruint::FromUintError<usize>;
+
+    fn try_into(self) -> Result<usize, Self::Error> {
+        self.0.try_into() 
     }
 }
 

@@ -20,7 +20,7 @@ extern crate alloc;
 
 use core::ops::Range;
 
-use u256::U256;
+use ::u256::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};
 use zk_ee::system::{

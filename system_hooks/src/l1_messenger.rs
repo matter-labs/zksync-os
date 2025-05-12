@@ -6,6 +6,7 @@ use super::*;
 use core::fmt::Write;
 use errors::FatalError;
 use ruint::aliases::{B160, U256};
+use ::u256::U256;
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     system::{
@@ -38,7 +39,7 @@ where
 
     let mut error = false;
     // There is no "payable" methods
-    error |= nominal_token_value != U256::ZERO;
+    error |= nominal_token_value.is_zero() == false;
     let mut is_static = false;
     match modifier {
         CallModifier::Constructor => {
@@ -142,7 +143,7 @@ where
                     "L1 messenger failure: sendToL1 called with invalid calldata",
                 ));
             }
-            let message_offset: usize = match U256::from_be_slice(&calldata[4..36]).try_into() {
+            let message_offset: usize = match U256::from_be_bytes(&calldata[4..36].try_into().unwrap()).try_into() {
                 Ok(offset) => offset,
                 Err(_) => {
                     return Ok(Err(
@@ -166,7 +167,7 @@ where
                 ));
             }
             let length =
-                match U256::from_be_slice(&calldata[length_encoding_end - 32..length_encoding_end])
+                match U256::from_be_bytes(&calldata[length_encoding_end - 32..length_encoding_end].try_into().unwrap())
                     .try_into()
                 {
                     Ok(length) => length,

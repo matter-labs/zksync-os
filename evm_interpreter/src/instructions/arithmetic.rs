@@ -7,8 +7,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::VERYLOW, ADD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         core::ops::AddAssign::add_assign(op2, op1);
-        // op2 += op1;
-        // *op2 = op1.wrapping_add(*op2);
         Ok(())
     }
 
@@ -21,46 +19,47 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn wrapping_sub(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, SUB_NATIVE_COST)?;
-        let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-        *op2 = op1.wrapping_sub(*op2);
+        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
+        let _ = op2.overflowing_sub_assign_reversed(op1);
         Ok(())
     }
 
     pub fn div(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::LOW, DIV_NATIVE_COST)?;
         self.spend_gas(gas_constants::LOW)?;
-        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
+        let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if op2.is_zero() {
             U256::write_zero(op2);
         } else {
-            let mut tmp = U256::zero();
-            U256::div_assign_with_remainder(op2, &mut tmp, op1);
+            // we will mangle op1, but we do not care
+            U256::div_rem(op1, op2);
+            Clone::clone_from(op2, &*op1);
         }
         Ok(())
     }
 
     pub fn sdiv(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::LOW, SDIV_NATIVE_COST)?;
-        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
+        let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         i256_div(op1, op2);
         Ok(())
     }
 
     pub fn rem(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::LOW, MOD_NATIVE_COST)?;
-        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
+        let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if op2.is_zero() {
             U256::write_zero(op2);
         } else {
-            let mut tmp = U256::zero();
-            U256::div_assign_with_remainder(&mut tmp, op2, op1);
+            // we will mangle op1, but we do not care
+            U256::div_rem(op1, op2);
         }
         Ok(())
     }
 
     pub fn smod(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::LOW, SMOD_NATIVE_COST)?;
-        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
+        let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
         if op2.is_zero() == false {
             i256_mod(op1, op2)
         };
@@ -69,29 +68,29 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn addmod(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::MID, ADDMOD_NATIVE_COST)?;
-        let ((op1, op2), op3) = self.stack.pop_2_and_peek_mut()?;
-        todo!();
-        // *op3 = op1.add_mod(*op2, *op3);
+        let ((op1, op2), op3) = self.stack.pop_2_mut_and_peek()?;
+        U256::add_mod(op1, op2, op3);
         Ok(())
     }
 
     pub fn mulmod(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::MID, MULMOD_NATIVE_COST)?;
-        let ((op1, op2), op3) = self.stack.pop_2_and_peek_mut()?;
-        todo!();
-        // *op3 = mul_mod(op1, op2, *op3);
+        let ((op1, op2), op3) = self.stack.pop_2_mut_and_peek()?;
+        U256::mul_mod(op1, op2, op3);
         Ok(())
     }
 
     pub fn eval_exp(&mut self) -> InstructionResult {
-        todo!();
-        let (&op1, &op2) = self.stack.pop_2()?;
+        let t = self as *mut Self;
+        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         if let Some(cost) = exp_cost(&op2) {
             self.spend_gas_and_native(gas_cost, native_cost)?;
         } else {
             return Err(ExitCode::OutOfGas);
         }
-        // self.stack.push_unchecked(&op1.pow(op2));
+
+        let exp: U256 = op2.clone();
+        U256::pow(op1, &exp, op2);
 
         Ok(())
     }
@@ -100,14 +99,21 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::LOW, SIGNEXTEND_NATIVE_COST)?;
         self.spend_gas(gas_constants::LOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        todo!();
-        // if op1 < &U256::from(32) {
-        //     // `low_u32` works since op1 < 32
-        //     let bit_index = (8 * op1.as_limbs()[0] + 7) as usize;
-        //     let bit = op2.bit(bit_index);
-        //     let mask = (U256::from(1) << bit_index) - U256::from(1);
-        //     *op2 = if bit { *op2 | !mask } else { *op2 & mask };
-        // }
+        if let Some(shift) = u256_try_to_usize_capped::<32>(op1) {
+            // `low_u32` works since op1 < 32
+            let bit_index = (8 * op1.as_limbs()[0] + 7) as usize;
+            let bit = op2.bit(bit_index);
+            let mut mask = U256::one();
+            core::ops::ShlAssign::shl_assign(&mut mask, shift as u32);
+            core::ops::SubAssign::sub_assign(&mut mask, &U256::one());
+            if bit {
+                mask.not_mut();
+                core::ops::BitOrAssign::bitor_assign(op2, &mask);
+            } else {
+                core::ops::BitAndAssign::bitand_assign(op2, &mask);
+            }
+        }
+
         Ok(())
     }
 }

@@ -34,6 +34,7 @@ use zk_ee::{
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::UsizeAlignedByteBox,
 };
+use ::u256::U256;
 
 pub struct FullIO<
     A: Allocator + Clone + Default,
@@ -298,7 +299,7 @@ where
                     Bytes32::ZERO
                 } else {
                     // EOA case:
-                    Bytes32::from_u256_be(U256::from_limbs([
+                    Bytes32::from_u256_be(&U256::from_limbs([
                         0x7bfad8045d85a470,
                         0xe500b653ca82273b,
                         0x927e7db2dcc703c0,
@@ -924,14 +925,21 @@ where
         ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-        diff: &ruint::aliases::U256,
+        diff: &U256,
         should_subtract: bool,
-    ) -> Result<ruint::aliases::U256, UpdateQueryError> {
-        let update_fn = move |old_value: &ruint::aliases::U256| {
-            let new_value = if should_subtract {
-                old_value.checked_sub(*diff)
+    //) -> Result<ruint::aliases::U256, UpdateQueryError> {
+    //    let update_fn = move |old_value: &ruint::aliases::U256| {
+    //        let new_value = if should_subtract {
+    //            old_value.checked_sub(*diff)
+    //        } else {
+    //            old_value.checked_add(*diff)
+    ) -> Result<U256, UpdateQueryError> {
+        let update_fn = move |old_value: &U256| {
+            let mut new_value = old_value.clone();
+            let of = if should_subtract {
+                new_value.overflowing_sub_assign(diff)
             } else {
-                old_value.checked_add(*diff)
+                new_value.overflowing_add_assign(diff)
             };
             new_value.ok_or(UpdateQueryError::NumericBoundsError)
         };

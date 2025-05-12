@@ -94,7 +94,7 @@ pub enum CallScheme {
 
 /// Create scheme.
 #[repr(usize)]
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum CreateScheme {
     /// Legacy create scheme of `CREATE`.
     Create = 1,

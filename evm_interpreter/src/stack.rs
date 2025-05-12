@@ -81,7 +81,7 @@ impl<A: Allocator> EVMStack<A> {
                 .as_ref_unchecked()
                 .assume_init_ref();
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            U256::write_into(dst_ref_mut.as_mut_ptr(), src_ref);
+            U256::write_into_ptr(dst_ref_mut.as_mut_ptr(), src_ref);
         }
         self.len += 1;
 
@@ -246,12 +246,106 @@ impl<A: Allocator> EVMStack<A> {
     }
 
     #[inline(always)]
+    pub fn pop_1_mut_and_peek(&'_ mut self) -> Result<(&'_ mut U256, &'_ mut U256), ExitCode> {
+        unsafe {
+            if self.len < 2 {
+                return Err(ExitCode::StackUnderflow);
+            }
+            let mut offset = self.len - 1;
+            let p0 = self
+                .buffer
+                .as_mut_ptr()
+                .add(offset)
+                .as_mut_unchecked()
+                .assume_init_mut();
+            self.len = offset;
+
+            offset -= 1;
+            let peeked = self
+                .buffer
+                .as_mut_ptr()
+                .add(offset)
+                .as_mut_unchecked()
+                .assume_init_mut();
+
+            Ok((p0, peeked))
+        }
+    }
+
+    #[inline(always)]
+    pub fn pop_2_mut_and_peek(
+        &'_ mut self,
+    ) -> Result<((&'_ mut U256, &'_ mut U256), &'_ mut U256), ExitCode> {
+        unsafe {
+            if self.len < 2 {
+                return Err(ExitCode::StackUnderflow);
+            }
+            let mut offset = self.len - 1;
+            let p0 = self
+                .buffer
+                .as_mut_ptr()
+                .add(offset)
+                .as_mut_unchecked()
+                .assume_init_mut();
+
+            offset -= 1;
+            let p1 = self
+                .buffer
+                .as_mut_ptr()
+                .add(offset)
+                .as_mut_unchecked()
+                .assume_init_mut();
+            self.len = offset;
+
+            offset -= 1;
+            let peeked = self
+                .buffer
+                .as_mut_ptr()
+                .add(offset)
+                .as_mut_unchecked()
+                .assume_init_mut();
+
+            Ok(((p0, p1), peeked))
+        }
+    }
+
+    #[inline(always)]
     pub fn push_unchecked(&mut self, value: &U256) {
         unsafe {
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            U256::write_into(dst_ref_mut.as_mut_ptr(), value);
+            U256::write_into_ptr(dst_ref_mut.as_mut_ptr(), value);
         }
         self.len += 1;
+    }
+
+    #[inline(always)]
+    pub fn push_zero(&mut self) -> Result<(), ExitCode> {
+        let new_len = self.len + 1;
+        if new_len >= STACK_SIZE {
+            return Err(ExitCode::StackOverflow);
+        }
+        unsafe {
+            let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
+            U256::write_zero_into_ptr(dst_ref_mut.as_mut_ptr());
+            self.len += 1;
+        }
+
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn push_one(&mut self) -> Result<(), ExitCode> {
+        let new_len = self.len + 1;
+        if new_len >= STACK_SIZE {
+            return Err(ExitCode::StackOverflow);
+        }
+        unsafe {
+            let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
+            U256::write_one_into_ptr(dst_ref_mut.as_mut_ptr());
+            self.len += 1;
+        }
+
+        Ok(())
     }
 
     #[inline(always)]
@@ -262,7 +356,7 @@ impl<A: Allocator> EVMStack<A> {
         }
         unsafe {
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            U256::write_into(dst_ref_mut.as_mut_ptr(), value);
+            U256::write_into_ptr(dst_ref_mut.as_mut_ptr(), value);
             self.len += 1;
         }
 
@@ -277,11 +371,11 @@ impl<A: Allocator> EVMStack<A> {
         }
         unsafe {
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            U256::write_into(dst_ref_mut.as_mut_ptr(), val0);
+            U256::write_into_ptr(dst_ref_mut.as_mut_ptr(), val0);
             self.len += 1;
 
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            U256::write_into(dst_ref_mut.as_mut_ptr(), val1);
+            U256::write_into_ptr(dst_ref_mut.as_mut_ptr(), val1);
             self.len += 1;
         }
 

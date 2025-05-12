@@ -121,6 +121,7 @@ where
             gas_limit,
             native_per_pubdata,
             native_per_gas,
+            //&U256::from(gas_per_pubdata),
             transaction.calldata(),
             L1_TX_INTRINSIC_L2_GAS,
             L1_TX_INTRINSIC_PUBDATA,
@@ -222,7 +223,10 @@ where
 
         // Mint fee to bootloader
         // We already checked that total_gas_refund <= gas_limit
-        let pay_to_operator = U256::from(gas_used)
+        //let pay_to_operator = U256::from(gas_used)
+        let mut gas_consumed = gas_limit;
+        gas_consumed -= &total_gas_refund;
+        let pay_to_operator = gas_consumed
             .checked_mul(U256::from(gas_price))
             .ok_or(InternalError("gu*gp"))?;
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
@@ -308,23 +312,33 @@ where
         transaction: &ZkSyncTransaction,
         from: B160,
         to: B160,
-        value: U256,
-        native_per_pubdata: U256,
+        value: &U256,
+        native_per_pubdata: &U256,
         resources: &mut S::Resources,
         withheld_resources: S::Resources,
     ) -> Result<ExecutionResult<S>, FatalError> {
+    where
+        [(); { Config::SPECIAL_ADDRESS_SPACE_BOUND } as usize]:,
+    {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Executing L1 transaction\n"));
 
-        let gas_price = U256::from(transaction.max_fee_per_gas.read());
-        system.set_tx_context(from, gas_price);
+        //let gas_price = U256::from(transaction.max_fee_per_gas.read());
+        //system.set_tx_context(from, gas_price);
+        let gas_price = Self::get_gas_price(
+            system,
+            transaction.max_fee_per_gas.read(),
+            transaction.max_priority_fee_per_gas.read(),
+        )
+        .expect("gas price checks failed");
+        system.set_tx_context(from, &gas_price);
 
         // Start a frame, to revert minting of value if execution fails
         let rollback_handle = system.start_global_frame()?;
 
         // First we mint value
-        if value > U256::ZERO {
+        if value.is_zero == false {
             resources
                 .with_infinite_ergs(|inf_resources| {
                     BasicBootloader::mint_token(system, &value, &from, inf_resources)
@@ -448,8 +462,8 @@ where
 
         let (mut resources, withheld_resources) = get_resources_for_tx::<S>(
             gas_limit,
-            native_per_pubdata,
-            native_per_gas,
+            &native_per_pubdata,
+            &native_per_gas,
             calldata,
             L2_TX_INTRINSIC_GAS,
             L2_TX_INTRINSIC_PUBDATA,
@@ -486,7 +500,7 @@ where
 
         account_model.charge_additional_intrinsic_gas(&mut resources, &transaction)?;
 
-        system.set_tx_context(from, gas_price);
+        system.set_tx_context(from, &gas_price);
 
         let chain_id = system.get_chain_id();
 
@@ -510,14 +524,14 @@ where
                 system,
                 system_functions,
                 callstack,
-                tx_hash,
-                suggested_signed_hash,
+                &tx_hash,
+                &suggested_signed_hash,
                 &mut transaction,
                 &account_model,
                 from,
-                gas_price,
-                gas_per_pubdata,
-                native_per_pubdata,
+                &gas_price,
+                &gas_per_pubdata,
+                &native_per_pubdata,
                 caller_ee_type,
                 caller_is_code,
                 caller_nonce,
@@ -578,14 +592,14 @@ where
                 system,
                 system_functions,
                 callstack,
-                tx_hash,
-                suggested_signed_hash,
+                &tx_hash,
+                &suggested_signed_hash,
                 &mut transaction,
                 from,
                 &execution_result,
-                gas_price,
-                native_per_gas,
-                native_per_pubdata,
+                &gas_price,
+                &native_per_gas,
+                &native_per_pubdata,
                 validation_pubdata,
                 caller_ee_type,
                 &mut resources,
@@ -626,14 +640,14 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut SliceVec<SupportedEEVMState<S>>,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
+        tx_hash: &Bytes32,
+        suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         account_model: &AA<S>,
         from: B160,
-        gas_price: U256,
-        gas_per_pubdata: U256,
-        native_per_pubdata: U256,
+        gas_price: &U256,
+        gas_per_pubdata: &U256,
+        native_per_pubdata: &U256,
         caller_ee_type: ExecutionEnvironmentType,
         caller_is_code: bool,
         caller_nonce: u64,
@@ -646,7 +660,7 @@ where
         let user_gas_per_pubdata_limit = transaction.get_user_gas_per_pubdata_limit();
         // Validate the user provided gas per pubdata
         require!(
-            user_gas_per_pubdata_limit >= gas_per_pubdata,
+            &user_gas_per_pubdata_limit >= gas_per_pubdata,
             InvalidTransaction::GasPerPubdataTooHigh,
             system
         )?;
@@ -768,12 +782,12 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut SliceVec<SupportedEEVMState<S>>,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
+        tx_hash: &Bytes32,
+        suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         account_model: &AA<S>,
         from: B160,
-        gas_price: U256,
+        gas_price: &U256,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
     ) -> Result<(), TxError> {
@@ -916,14 +930,14 @@ where
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _callstack: &mut SliceVec<SupportedEEVMState<S>>,
-        _tx_hash: Bytes32,
-        _suggested_signed_hash: Bytes32,
+        _tx_hash: &Bytes32,
+        _suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         from: B160,
         execution_result: &ExecutionResult<S>,
-        gas_price: U256,
-        native_per_gas: U256,
-        native_per_pubdata: U256,
+        gas_price: &U256,
+        native_per_gas: &U256,
+        native_per_pubdata: &U256,
         validation_pubdata: u64,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,

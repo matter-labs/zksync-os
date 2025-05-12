@@ -11,11 +11,12 @@ use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::run_till_completion;
 use crate::bootloader::supported_ees::{SupportedEEVMState, SystemBoundEVMInterpreter};
 use crate::bootloader::transaction::ZkSyncTransaction;
-use crate::bootloader::{BasicBootloader, Bytes32};
+use crate::bootloader::{BasicBootloader, Bytes32, StackFrame};
+use ::u256::U256;
 use core::fmt::Write;
 use errors::FatalError;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
-use ruint::aliases::{B160, U256};
+use ruint::aliases::B160;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -64,8 +65,8 @@ where
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _callstack: &mut SliceVec<SupportedEEVMState<S>>,
-        _tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
+        _tx_hash: &Bytes32,
+        suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         caller_ee_type: ExecutionEnvironmentType,
         caller_is_code: bool,
@@ -114,7 +115,7 @@ where
         let r = &signature[..32];
         let s = &signature[32..64];
         let v = &signature[64];
-        if U256::from_be_slice(s) > SECP256K1N_HALF {
+        if U256::from_be_bytes(s.try_into().unwrap()) > SECP256K1N_HALF {
             return Err(InvalidTransaction::MalleableSignature.into());
         }
 
@@ -173,8 +174,8 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut SliceVec<SupportedEEVMState<S>>,
-        _tx_hash: Bytes32,
-        _suggested_signed_hash: Bytes32,
+        _tx_hash: &Bytes32,
+        _suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         // This data is read before bumping nonce
         current_tx_nonce: u64,
@@ -320,8 +321,8 @@ where
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _callstack: &mut SliceVec<SupportedEEVMState<S>>,
-        _tx_hash: Bytes32,
-        _suggested_signed_hash: Bytes32,
+        _tx_hash: &Bytes32,
+        _suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         from: B160,
         caller_ee_type: ExecutionEnvironmentType,
@@ -372,8 +373,8 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut SliceVec<SupportedEEVMState<S>>,
-        _tx_hash: Bytes32,
-        _suggested_signed_hash: Bytes32,
+        _tx_hash: &Bytes32,
+        _suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         from: B160,
         paymaster: B160,
@@ -395,28 +396,14 @@ where
                 system
             )?;
             let token_end = 4 + U256::BYTES;
-            let token = U256::try_from_be_slice(&paymaster_input[4..token_end]);
-            require_or_revert!(
-                token.is_some(),
-                AAMethod::AccountPrePaymaster,
-                "invalid paymaster input",
-                system
-            )?;
-            // Safe to unrwrap thanks to the previous check.
-            let token = token.unwrap();
+            let token = U256::from_be_bytes(&paymaster_input[4..token_end].try_into().unwrap());
             let token = u256_to_b160_checked(token);
             let min_allowance_end = token_end + U256::BYTES;
-            let min_allowance =
-                U256::try_from_be_slice(&paymaster_input[token_end..min_allowance_end]);
-            require_or_revert!(
-                min_allowance.is_some(),
-                AAMethod::AccountPrePaymaster,
-                "invalid paymaster input",
-                system
-            )?;
-            // Safe to unrwrap thanks to the previous check.
-            let min_allowance = min_allowance.unwrap();
-
+            let min_allowance = U256::from_be_bytes(
+                &paymaster_input[token_end..min_allowance_end]
+                    .try_into()
+                    .unwrap(),
+            );
             let pre_tx_buffer = transaction.pre_tx_buffer();
             let current_allowance = erc20_allowance(
                 system,
@@ -669,11 +656,11 @@ where
     // Write owner
     let owner_start = calldata_start + 4;
     pre_tx_buffer[owner_start..(owner_start + U256::BYTES)]
-        .copy_from_slice(&b160_to_u256(from).to_be_bytes::<{ U256::BYTES }>());
+        .copy_from_slice(&b160_to_u256(from).to_be_bytes());
     // Write spender
     let spender_start = owner_start + U256::BYTES;
     pre_tx_buffer[spender_start..(spender_start + U256::BYTES)]
-        .copy_from_slice(&b160_to_u256(paymaster).to_be_bytes::<{ U256::BYTES }>());
+        .copy_from_slice(&b160_to_u256(paymaster).to_be_bytes());
 
     // we are static relative to everything that happens later
     let calldata = &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)];
@@ -715,7 +702,9 @@ where
             InvalidAA::InvalidReturndataLength,
         )))
     } else {
-        Ok(U256::from_be_slice(returndata_slice))
+        Ok(U256::from_be_bytes(
+            &returndata_slice[..].try_into().unwrap(),
+        ))
     };
 
     res
@@ -751,11 +740,11 @@ where
     // Write spender
     let spender_start = calldata_start + 4;
     pre_tx_buffer[spender_start..(spender_start + U256::BYTES)]
-        .copy_from_slice(&b160_to_u256(paymaster).to_be_bytes::<{ U256::BYTES }>());
+        .copy_from_slice(&b160_to_u256(paymaster).to_be_bytes());
     // Write
     let amount_start = spender_start + U256::BYTES;
     pre_tx_buffer[amount_start..(amount_start + U256::BYTES)]
-        .copy_from_slice(&amount.to_be_bytes::<{ U256::BYTES }>());
+        .copy_from_slice(&amount.to_be_bytes());
 
     // we are static relative to everything that happens later
     let calldata = &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)];
@@ -796,7 +785,9 @@ where
             InvalidAA::InvalidReturndataLength,
         )))
     } else {
-        Ok(U256::from_be_slice(returndata_slice))
+        Ok(U256::from_be_bytes(
+            &returndata_slice[..].try_into().unwrap(),
+        ))
     };
 
     res

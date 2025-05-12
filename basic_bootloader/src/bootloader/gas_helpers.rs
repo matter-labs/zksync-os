@@ -12,8 +12,8 @@ use super::*;
 /// They are reclaimed at the end of the transaction and used to charge the pubdata.
 pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     gas_limit: u64,
-    native_per_pubdata: U256,
-    native_per_gas: U256,
+    native_per_pubdata: &U256,
+    native_per_gas: &U256,
     calldata: &[u8],
     intrinsic_gas: usize,
     intrinsic_pubdata: usize,
@@ -31,7 +31,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     let native_limit = gas_limit.saturating_mul(u256_to_u64_saturated(&native_per_gas));
 
     // Charge pubdata overhead
-    let intrinsic_pubdata_overhead = u256_to_u64_saturated(&native_per_pubdata)
+    let intrinsic_pubdata_overhead = u256_to_u64_saturated(native_per_pubdata)
         .checked_mul(intrinsic_pubdata as u64)
         .ok_or(InternalError("npp*ip"))?;
     let native_limit =
@@ -132,7 +132,7 @@ pub fn cost_for_calldata(calldata: &[u8]) -> Result<(usize, u64), InternalError>
 ///
 pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
     system: &mut System<S>,
-    native_per_pubdata: U256,
+    native_per_pubdata: &U256,
     base_pubdata: Option<u64>,
 ) -> Result<(u64, S::Resources), InternalError> {
     let current_pubdata_spent = system.net_pubdata_used()? - base_pubdata.unwrap_or(0);
@@ -153,7 +153,7 @@ pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
 ///
 pub fn check_enough_resources_for_pubdata<S: EthereumLikeTypes>(
     system: &mut System<S>,
-    native_per_pubdata: U256,
+    native_per_pubdata: &U256,
     resources: &S::Resources,
     base_pubdata: Option<u64>,
 ) -> Result<bool, InternalError> {

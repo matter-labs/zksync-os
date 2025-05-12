@@ -61,9 +61,9 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::VERYLOW, ISZERO_NATIVE_COST)?;
         let op1 = self.stack.peek_mut()?;
         if op1.is_zero() {
-            U256::write_one(op2);
+            U256::write_one(op1);
         } else {
-            U256::write_zero(op2);
+            U256::write_zero(op1);
         }
         Ok(())
     }
@@ -97,18 +97,14 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::VERYLOW, BYTE_NATIVE_COST)?;
         let (offset, src) = self.stack.pop_1_and_peek_mut()?;
 
-        if let Some(offset) = u256_try_to_byte_index(offset) {
+        if let Some(offset) = u256_try_to_usize_capped::<32>(offset) {
+            let ret = src.byte(31 - offset);
+
+            *src = U256::from(ret as u64);
         } else {
             U256::write_zero(src);
         }
 
-        let ret = if offset < &U256::from(32) {
-            src.byte(31 - u256_to_usize_saturated(&offset))
-        } else {
-            0
-        };
-
-        *src = U256::from(ret);
         Ok(())
     }
 
@@ -116,14 +112,13 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::VERYLOW, SHL_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         core::ops::ShlAssign::shl_assign(op2, u256_to_usize_saturated(op1) as u32);
-        *op2 <<= u256_to_usize_saturated(&op1);
         Ok(())
     }
 
     pub fn shr(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, SHR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        *op2 >>= u256_to_usize_saturated(&op1);
+        core::ops::ShrAssign::shr_assign(op2, u256_to_usize_saturated(op1) as u32);
         Ok(())
     }
 
@@ -131,30 +126,36 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::VERYLOW, SAR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
 
-        todo!();
+        let value_sign = i256_sign::<true>(op2);
+        if let Some(shift) = u256_try_to_usize_capped::<256>(op1) {
+            match value_sign {
+                Sign::Plus | Sign::Zero => {
+                    core::ops::ShrAssign::shr_assign(op2, shift as u32);
+                }
+                Sign::Minus => {
+                    // perform unsigned shift, then XOR with mask
+                    core::ops::ShrAssign::shr_assign(op2, shift as u32);
+                    let (words, bits) = (shift / 64, shift % 64);
+                    for i in 0..words {
+                        op2.as_limbs_mut()[3 - i] = u64::MAX;
+                    }
+                    op2.as_limbs_mut()[words] |= u64::MAX << (64 - bits);
+                }
+            }
+        } else {
+            // shift overflowed
+            match value_sign {
+                // value is 0 or >=1, pushing 0
+                Sign::Plus | Sign::Zero => {
+                    U256::write_zero(op2);
+                }
+                // value is <0, pushing -1
+                Sign::Minus => {
+                    op2.as_limbs_mut().iter_mut().for_each(|el| *el = u64::MAX);
+                }
+            }
+        }
 
-        // let value_sign = i256_sign::<true>(op2);
-
-        // *op2 = if op2.is_zero() || op1 >= &U256::from(256) {
-        //     match value_sign {
-        //         // value is 0 or >=1, pushing 0
-        //         Sign::Plus | Sign::Zero => U256::ZERO,
-        //         // value is <0, pushing -1
-        //         Sign::Minus => U256::MAX,
-        //     }
-        // } else {
-        //     let shift = usize::try_from(op1).unwrap();
-
-        //     match value_sign {
-        //         Sign::Plus | Sign::Zero => *op2 >> shift,
-        //         Sign::Minus => {
-        //             let shifted = ((op2.overflowing_sub(U256::ONE).0) >> shift)
-        //                 .overflowing_add(U256::ONE)
-        //                 .0;
-        //             two_compl(shifted)
-        //         }
-        //     }
-        // };
-        // Ok(())
+        Ok(())
     }
 }
