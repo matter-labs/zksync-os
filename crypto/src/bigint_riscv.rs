@@ -149,8 +149,11 @@ pub(crate) fn copy_if_needed(operand: *const [u32; 8]) -> *const [u32; 8] {
     #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
     unsafe {
         if operand.addr() < ROM_BOUND {
-            SCRATCH_FOR_REF.as_mut_ptr().write(operand.read());
-            SCRATCH_FOR_REF.as_ptr()
+            SCRATCH_FOR_REF
+                .as_mut_ptr()
+                .cast::<[u32; 8]>()
+                .write(operand.read());
+            SCRATCH_FOR_REF.as_ptr().cast()
         } else {
             operand
         }

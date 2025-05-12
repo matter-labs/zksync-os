@@ -94,7 +94,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
 
     pub fn sload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, SLOAD_NATIVE_COST)?;
-        // TODO: extend U256 to produce bytes32 immediatelly
+        // TODO: extend U256 to produce bytes32 immediately
         let index = Bytes32::from_u256_be(self.stack.pop_1()?);
         let Ok(value) = system.io.storage_read::<false>(
             THIS_EE_TYPE,
