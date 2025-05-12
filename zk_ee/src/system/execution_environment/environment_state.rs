@@ -23,6 +23,11 @@ pub enum ExecutionEnvironmentPreemptionPoint<S: SystemTypes> {
     CompletedExecution(CompletedExecution<S>),
 }
 
+pub enum TransactionEndPoint<S: SystemTypes> {
+    CompletedExecution(CompletedExecution<S>),
+    CompletedDeployment(CompletedDeployment<S>),
+}
+
 pub struct ExternalCallRequest<S: SystemTypes> {
     pub available_resources: S::Resources,
     pub ergs_to_pass: Ergs,

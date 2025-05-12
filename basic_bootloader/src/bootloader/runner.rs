@@ -36,7 +36,7 @@ use super::StackFrame;
 ///
 enum ControlFlow<S: EthereumLikeTypes> {
     /// Break out of the loop with the passed exit state.
-    Break(ExecutionEnvironmentPreemptionPoint<S>),
+    Break(TransactionEndPoint<S>),
     /// Just assign the new [preemption_reason].
     Normal(ExecutionEnvironmentPreemptionPoint<S>),
 }
@@ -62,13 +62,13 @@ where
 {
     resources_returned.exhaust_ergs();
     match callstack.top() {
-        None => Ok(ControlFlow::Break(
-            ExecutionEnvironmentPreemptionPoint::CompletedExecution(CompletedExecution {
+        None => Ok(ControlFlow::Break(TransactionEndPoint::CompletedExecution(
+            CompletedExecution {
                 return_values: ReturnValues::empty(system),
                 resources_returned,
                 reverted: true,
-            }),
-        )),
+            },
+        ))),
         Some(frame) => {
             if finish_callee_frame {
                 system.finish_global_frame(callee_handle)?
@@ -107,13 +107,13 @@ where
                 CallResult::Successful { return_values } => (return_values, false),
                 _ => unreachable!(),
             };
-            Ok(ControlFlow::Break(
-                ExecutionEnvironmentPreemptionPoint::CompletedExecution(CompletedExecution {
+            Ok(ControlFlow::Break(TransactionEndPoint::CompletedExecution(
+                CompletedExecution {
                     return_values,
                     reverted,
                     resources_returned: returned_resources,
-                }),
-            ))
+                },
+            )))
         }
         Some(frame) => Ok(ControlFlow::Normal(frame.vm.continue_after_external_call(
             system,
@@ -145,7 +145,7 @@ where
         None => {
             // the final frame isn't finished because the caller will want to look at it
             Ok(ControlFlow::Break(
-                ExecutionEnvironmentPreemptionPoint::CompletedDeployment(CompletedDeployment {
+                TransactionEndPoint::CompletedDeployment(CompletedDeployment {
                     deployment_result,
                     resources_returned,
                 }),
@@ -172,7 +172,7 @@ pub fn run_till_completion<
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
     initial_request: ExecutionEnvironmentPreemptionPoint<S>,
-) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError>
+) -> Result<TransactionEndPoint<S>, FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
@@ -1179,13 +1179,13 @@ where
         ))
     } else {
         // the final frame isn't finished because the caller will want to look at it
-        Ok(ControlFlow::Break(
-            ExecutionEnvironmentPreemptionPoint::CompletedExecution(CompletedExecution {
+        Ok(ControlFlow::Break(TransactionEndPoint::CompletedExecution(
+            CompletedExecution {
                 return_values,
                 resources_returned,
                 reverted,
-            }),
-        ))
+            },
+        )))
     }
 }
 
@@ -1322,7 +1322,7 @@ where
     } else {
         // the final frame isn't finished because the caller will want to look at it
         Ok(ControlFlow::Break(
-            ExecutionEnvironmentPreemptionPoint::CompletedDeployment(CompletedDeployment {
+            TransactionEndPoint::CompletedDeployment(CompletedDeployment {
                 deployment_result,
                 resources_returned,
             }),

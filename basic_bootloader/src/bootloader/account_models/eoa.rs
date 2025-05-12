@@ -609,7 +609,7 @@ where
         to_ee_type,
         ExecutionEnvironmentPreemptionPoint::RequestedDeployment(deployment_parameters),
     )?;
-    let ExecutionEnvironmentPreemptionPoint::CompletedDeployment(CompletedDeployment {
+    let TransactionEndPoint::CompletedDeployment(CompletedDeployment {
         resources_returned,
         deployment_result,
     }) = final_state

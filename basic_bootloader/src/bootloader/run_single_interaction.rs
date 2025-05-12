@@ -126,7 +126,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             initial_request,
         )?;
 
-        let ExecutionEnvironmentPreemptionPoint::CompletedExecution(CompletedExecution {
+        let TransactionEndPoint::CompletedExecution(CompletedExecution {
             mut return_values,
             resources_returned,
             reverted,
