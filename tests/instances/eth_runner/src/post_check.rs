@@ -190,7 +190,7 @@ fn zksync_os_output_into_account_state(output: BatchOutput) -> HashMap<B160, Acc
                     AccountProperties::decode(&encoded.try_into().unwrap())
                 };
                 let entry = updates.entry(address).or_default();
-                entry.balance = Some(props.balance);
+                entry.balance = Some(props.balance.into());
                 entry.nonce = Some(props.nonce);
                 if let Some(bytecode) = preimages.get(&props.bytecode_hash.as_u8_array()) {
                     let owned = bytecode.clone();

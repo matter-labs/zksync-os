@@ -486,7 +486,7 @@ where
 
         let mut blocks_hasher = Blake2s256::new();
         for block_hash in block_metadata.block_hashes.0.iter() {
-            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+            blocks_hasher.update(&block_hash.to_be_bytes());
         }
 
         // chain state before
@@ -525,7 +525,7 @@ where
 
         blocks_hasher = Blake2s256::new();
         for block_hash in block_metadata.block_hashes.0.iter().skip(1) {
-            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+            blocks_hasher.update(&block_hash.to_be_bytes());
         }
         blocks_hasher.update(current_block_hash.as_u8_ref());
 
