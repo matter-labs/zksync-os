@@ -1,6 +1,6 @@
 use core::ops::*;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize)]
 #[repr(transparent)]
 pub struct U256(ruint::aliases::U256);
 
@@ -18,9 +18,33 @@ impl Clone for U256 {
     }
 }
 
+impl core::fmt::Display for U256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // TODO
+        core::fmt::Result::Ok(())
+    }
+}
+
+impl core::fmt::Debug for U256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // TODO
+        core::fmt::Result::Ok(())
+    }
+}
+
 impl U256 {
     const ZERO: Self = Self(ruint::aliases::U256::ZERO);
     const ONE: Self = Self(ruint::aliases::U256::ONE);
+
+    pub const fn from_limbs(limbs: [u64; 4]) -> Self {
+        Self(ruint::aliases::U256::from_limbs(limbs))
+    }
+
+    pub unsafe fn write_into(dst: *mut Self, source: &Self) {
+        unsafe {
+            dst.write(Self(source.0));
+        }
+    }
 
     #[inline(always)]
     pub fn zero() -> Self {
@@ -30,6 +54,17 @@ impl U256 {
     #[inline(always)]
     pub fn one() -> Self {
         Self::ONE
+    }
+
+    pub fn bytereverse_u256(&mut self) {
+        unsafe {
+            let limbs = self.as_limbs_mut();
+            core::ptr::swap(&mut limbs[0] as *mut u64, &mut limbs[3] as *mut u64);
+            core::ptr::swap(&mut limbs[1] as *mut u64, &mut limbs[2] as *mut u64);
+            for limb in limbs.iter_mut() {
+                *limb = limb.swap_bytes();
+            }
+        }
     }
 
     #[inline(always)]
@@ -88,12 +123,33 @@ impl U256 {
         let t: ruint::aliases::U512 = self.0.widening_mul(rhs.0);
         self.as_limbs_mut().copy_from_slice(&t.as_limbs()[4..8]);
     }
+
+    #[inline(always)]
+    /// Panics if divisor is 0
+    pub fn div_assign_with_remainder(&mut self, rem: &mut Self, divisor: &Self) {
+        todo!();
+    }
+
+    #[inline(always)]
+    pub fn not_mut(&mut self) {
+        self.0 = !self.0;
+    }
 }
 
 impl From<ruint::aliases::U256> for U256 {
     #[inline(always)]
     fn from(value: ruint::aliases::U256) -> Self {
         Self(value)
+    }
+}
+
+impl From<u64> for U256 {
+    #[inline(always)]
+    fn from(value: u64) -> Self {
+        let mut result = Self::zero();
+        result.as_limbs_mut()[0] = value;
+
+        result
     }
 }
 

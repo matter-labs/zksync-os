@@ -37,6 +37,7 @@ impl Clone for U256 {
 }
 
 impl core::cmp::PartialEq for U256 {
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         unsafe {
             // aligned copy will make copy into scratch, and comparison is non-destructive, so we copy and recast
@@ -78,9 +79,41 @@ impl core::cmp::PartialOrd for U256 {
     }
 }
 
+impl core::fmt::Display for U256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // TODO
+        core::fmt::Result::Ok(())
+    }
+}
+
+impl core::fmt::Debug for U256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // TODO
+        core::fmt::Result::Ok(())
+    }
+}
+
+impl core::default::Default for U256 {
+    #[inline(always)]
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
 impl U256 {
     // pub const ZERO: Self = Self([0u64; 4]);
     // pub const ONE: Self = Self([1u64, 0u64, 0u64, 0u64]);
+
+    pub const fn from_limbs(limbs: [u64; 4]) -> Self {
+        Self(limbs)
+    }
+
+    pub unsafe fn write_into(dst: *mut Self, source: &Self) {
+        unsafe {
+            let src_ptr = aligned_copy_if_needed(source.0.as_ptr().cast());
+            let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(dst.cast(), src_ptr.cast());
+        }
+    }
 
     #[inline(always)]
     pub fn zero() -> Self {
@@ -101,6 +134,17 @@ impl U256 {
             crypto::bigint_riscv::write_one_into(result.0.as_mut_ptr().cast());
 
             result
+        }
+    }
+
+    pub fn bytereverse_u256(&mut self) {
+        unsafe {
+            let limbs = self.as_limbs_mut();
+            core::ptr::swap(&mut limbs[0] as *mut u64, &mut limbs[3] as *mut u64);
+            core::ptr::swap(&mut limbs[1] as *mut u64, &mut limbs[2] as *mut u64);
+            for limb in limbs.iter_mut() {
+                *limb = limb.swap_bytes();
+            }
         }
     }
 
@@ -233,6 +277,14 @@ impl U256 {
             ruint::algorithms::div(&mut self.0, &mut rem.0);
         }
     }
+
+    #[inline(always)]
+    pub fn not_mut(&mut self) {
+        self.0[0] = !self.0[0];
+        self.0[1] = !self.0[1];
+        self.0[2] = !self.0[2];
+        self.0[3] = !self.0[3];
+    }
 }
 
 impl From<ruint::aliases::U256> for U256 {
@@ -240,6 +292,16 @@ impl From<ruint::aliases::U256> for U256 {
     fn from(value: ruint::aliases::U256) -> Self {
         // NOTE: we can not use precompile call due to alignment requirements
         Self(*value.as_limbs())
+    }
+}
+
+impl From<u64> for U256 {
+    #[inline(always)]
+    fn from(value: u64) -> Self {
+        let mut result = Self::zero();
+        result.as_limbs_mut()[0] = value;
+
+        result
     }
 }
 

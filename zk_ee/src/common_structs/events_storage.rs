@@ -7,7 +7,7 @@ use crate::{
 use alloc::alloc::Global;
 use arrayvec::ArrayVec;
 use core::alloc::Allocator;
-use ruint::aliases::*;
+use ruint::aliases::B160;
 
 use super::history_list::HistoryList;
 

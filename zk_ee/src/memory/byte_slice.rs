@@ -1,4 +1,4 @@
-use ruint::aliases::U256;
+use u256::U256;
 
 pub trait MinimalByteAddressableSlice {
     fn len(&self) -> usize;

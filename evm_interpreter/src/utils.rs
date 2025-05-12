@@ -8,18 +8,6 @@ use zk_ee::system::Ergs;
 use zk_ee::system::Resources;
 use zk_ee::system::{EthereumLikeTypes, System};
 
-pub fn bytereverse_u256(value: &mut U256) {
-    // assuming LE
-    unsafe {
-        let limbs = value.as_limbs_mut();
-        core::ptr::swap(&mut limbs[0] as *mut u64, &mut limbs[3] as *mut u64);
-        core::ptr::swap(&mut limbs[1] as *mut u64, &mut limbs[2] as *mut u64);
-        for limb in limbs.iter_mut() {
-            *limb = limb.to_be();
-        }
-    }
-}
-
 pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
     use crypto::sha3::{Digest, Keccak256};
     let hash = Keccak256::digest(bytecode);
@@ -34,7 +22,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub(crate) fn pop_address(&mut self) -> Result<B160, ExitCode> {
         let popped = self.stack.pop_1()?;
 
-        Ok(u256_to_b160(*popped))
+        Ok(u256_limbs_to_b160(popped.as_limbs()))
     }
 
     // #[inline(always)]

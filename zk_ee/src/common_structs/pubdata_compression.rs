@@ -76,11 +76,10 @@ impl ValueDiffCompressionStrategy {
                 Ok(())
             }
             Self::Add => {
-                let (result, of) = final_value.overflowing_sub(initial_value);
-                let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
-
-                if of || length == 32 {
-                    Err(())
+                let mut result = initial_value.into_u256_be();
+                let of = result.overflowing_add_assign(&final_value.into_u256_be());
+                if of {
+                    32
                 } else {
                     let metadata_byte = (length << 3) | 1;
                     hasher.update([metadata_byte]);

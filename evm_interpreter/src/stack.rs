@@ -5,7 +5,7 @@ use crate::ExitCode;
 use crate::STACK_SIZE;
 use alloc::boxed::Box;
 use core::{alloc::Allocator, mem::MaybeUninit};
-use ruint::aliases::U256;
+use u256::U256;
 
 pub struct EVMStack<A: Allocator> {
     buffer: Box<[MaybeUninit<U256>; STACK_SIZE], A>,
@@ -81,7 +81,7 @@ impl<A: Allocator> EVMStack<A> {
                 .as_ref_unchecked()
                 .assume_init_ref();
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            dst_ref_mut.write(*src_ref);
+            U256::write_into(dst_ref_mut.as_mut_ptr(), src_ref);
         }
         self.len += 1;
 
@@ -249,7 +249,7 @@ impl<A: Allocator> EVMStack<A> {
     pub fn push_unchecked(&mut self, value: &U256) {
         unsafe {
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            dst_ref_mut.write(*value);
+            U256::write_into(dst_ref_mut.as_mut_ptr(), value);
         }
         self.len += 1;
     }
@@ -262,7 +262,7 @@ impl<A: Allocator> EVMStack<A> {
         }
         unsafe {
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            dst_ref_mut.write(*value);
+            U256::write_into(dst_ref_mut.as_mut_ptr(), value);
             self.len += 1;
         }
 
@@ -277,11 +277,11 @@ impl<A: Allocator> EVMStack<A> {
         }
         unsafe {
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            dst_ref_mut.write(*val0);
+            U256::write_into(dst_ref_mut.as_mut_ptr(), val0);
             self.len += 1;
 
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            dst_ref_mut.write(*val1);
+            U256::write_into(dst_ref_mut.as_mut_ptr(), val1);
             self.len += 1;
         }
 
