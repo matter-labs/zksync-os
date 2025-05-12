@@ -134,6 +134,26 @@ impl U256 {
     pub fn not_mut(&mut self) {
         self.0 = !self.0;
     }
+
+    pub fn from_be_bytes(input: &[u8; 32]) -> Self {
+        Self(ruint::aliases::U256::from_be_bytes::<32>(*input))
+    }
+
+    pub fn from_le_bytes(input: &[u8; 32]) -> Self {
+        Self(ruint::aliases::U256::from_le_bytes::<32>(*input))
+    }
+
+    pub fn to_le_bytes(&self) -> [u8; 32] {
+        self.0.to_le_bytes()
+    }
+
+    pub fn to_be_bytes(&self) -> [u8; 32] {
+        self.0.to_be_bytes()
+    }
+
+    pub fn bit_len(&self) -> usize {
+        self.0.bit_len()
+    }
 }
 
 impl From<ruint::aliases::U256> for U256 {

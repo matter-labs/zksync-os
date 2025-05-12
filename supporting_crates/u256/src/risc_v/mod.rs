@@ -285,6 +285,91 @@ impl U256 {
         self.0[2] = !self.0[2];
         self.0[3] = !self.0[3];
     }
+
+    pub fn from_be_bytes(input: &[u8; 32]) -> Self {
+        unsafe {
+            #[allow(invalid_value)]
+            let mut result = MaybeUninit::<Self>::uninit().assume_init();
+            let src = input.as_ptr_range().end.cast::<[u8; 8]>();
+            result
+                .0
+                .as_mut_ptr()
+                .write(u64::from_be_bytes(src.sub(1).read()));
+            result
+                .0
+                .as_mut_ptr()
+                .add(1)
+                .write(u64::from_be_bytes(src.sub(2).read()));
+            result
+                .0
+                .as_mut_ptr()
+                .add(2)
+                .write(u64::from_be_bytes(src.sub(3).read()));
+            result
+                .0
+                .as_mut_ptr()
+                .add(3)
+                .write(u64::from_be_bytes(src.sub(4).read()));
+
+            result
+        }
+    }
+
+    pub fn from_le_bytes(input: &[u8; 32]) -> Self {
+        unsafe {
+            #[allow(invalid_value)]
+            let mut result = MaybeUninit::<Self>::uninit().assume_init();
+            let src = input.as_ptr().cast::<[u8; 8]>();
+            result.0.as_mut_ptr().write(u64::from_le_bytes(src.read()));
+            result
+                .0
+                .as_mut_ptr()
+                .add(1)
+                .write(u64::from_le_bytes(src.add(1).read()));
+            result
+                .0
+                .as_mut_ptr()
+                .add(2)
+                .write(u64::from_le_bytes(src.add(2).read()));
+            result
+                .0
+                .as_mut_ptr()
+                .add(3)
+                .write(u64::from_le_bytes(src.add(3).read()));
+
+            result
+        }
+    }
+
+    pub fn to_le_bytes(&self) -> [u8; 32] {
+        unsafe { core::mem::transmute_copy(&self.0) }
+    }
+
+    pub fn to_be_bytes(&self) -> [u8; 32] {
+        unsafe {
+            let mut limbs = self.0;
+            core::ptr::swap(&mut limbs[0] as *mut u64, &mut limbs[3] as *mut u64);
+            core::ptr::swap(&mut limbs[1] as *mut u64, &mut limbs[2] as *mut u64);
+            for limb in limbs.iter_mut() {
+                *limb = limb.swap_bytes();
+            }
+            core::mem::transmute(limbs)
+        }
+    }
+
+    pub fn bit_len(&self) -> usize {
+        let mut len = 256usize;
+        for el in self.0.iter().rev() {
+            if *el == 0 {
+                len -= 64;
+            } else {
+                len -= el.leading_zeros() as usize;
+                return len;
+            }
+        }
+
+        len
+    }
 }
 
 impl From<ruint::aliases::U256> for U256 {

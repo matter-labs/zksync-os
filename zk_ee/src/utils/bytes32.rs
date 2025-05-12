@@ -186,7 +186,7 @@ impl Bytes32 {
     }
 
     pub fn into_u256_be(self) -> U256 {
-        U256::from_be_bytes(self.as_u8_array())
+        U256::from_be_bytes(&self.as_u8_array())
     }
 
     pub fn from_u256_le(value: U256) -> Self {

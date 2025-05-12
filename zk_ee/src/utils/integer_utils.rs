@@ -49,8 +49,7 @@ pub fn u256_to_u8_checked(src: U256) -> u8 {
 
 #[inline(always)]
 pub fn b256_to_u256(src: B256) -> U256 {
-    todo!();
-    // U256::from_be_bytes(src.to_be_bytes::<{ B256::BYTES }>())
+    U256::from_be_bytes(&src.to_be_bytes::<32>())
 }
 
 #[inline(always)]
@@ -75,11 +74,16 @@ pub fn u256_try_to_u64(src: &U256) -> Option<u64> {
 
 #[inline(always)]
 pub fn u256_try_to_byte_index(src: &U256) -> Option<usize> {
+    u256_try_to_usize_capped::<32>(src)
+}
+
+#[inline(always)]
+pub fn u256_try_to_usize_capped<const CAP: usize>(src: &U256) -> Option<usize> {
     let limbs = src.as_limbs();
     if limbs[3] != 0 || limbs[2] != 0 || limbs[1] != 0 {
         None
     } else {
-        if limbs[0] >= 32 {
+        if limbs[0] >= CAP as u64 {
             None
         } else {
             Some(limbs[0] as usize)
