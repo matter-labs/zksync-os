@@ -19,11 +19,13 @@ pub const EQ_OP_BIT_IDX: usize = 5;
 pub const CARRY_BIT_IDX: usize = 6;
 pub const MEMCOPY_BIT_IDX: usize = 7;
 
-#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
+#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 const ROM_BOUND: usize = 1 << 21;
 
-#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
-static mut SCRATCH: core::mem::MaybeUninit<AlignedPrecompileSpace> = core::mem::MaybeUninit::uninit();
+#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
+static mut SCRATCH_FOR_MUT: core::mem::MaybeUninit<AlignedPrecompileSpace> = core::mem::MaybeUninit::uninit();
+#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
+static mut SCRATCH_FOR_REF: core::mem::MaybeUninit<AlignedPrecompileSpace> = core::mem::MaybeUninit::uninit();
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 static mut ZERO_REPR: core::mem::MaybeUninit<AlignedPrecompileSpace> = core::mem::MaybeUninit::uninit();
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
@@ -37,6 +39,7 @@ pub fn init() {
     }
 }
 
+#[inline(always)]
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 pub unsafe fn is_zero(operand: *const AlignedPrecompileSpace) -> bool {
     // it'll copy into scratch if it's not in the mutable region
@@ -47,11 +50,13 @@ pub unsafe fn is_zero(operand: *const AlignedPrecompileSpace) -> bool {
     eq != 0
 }
 
+#[inline(always)]
 #[cfg(not(any(all(target_arch = "riscv32", feature = "bigint_ops"), test)))]
 pub unsafe fn is_zero(_operand: *const AlignedPrecompileSpace) -> bool {
     unimplemented!()
 }
 
+#[inline(always)]
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 pub unsafe fn is_zero_mut(operand: *mut AlignedPrecompileSpace) -> bool {
     let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(operand.cast(), ZERO_REPR.as_ptr().cast());
@@ -59,9 +64,54 @@ pub unsafe fn is_zero_mut(operand: *mut AlignedPrecompileSpace) -> bool {
     eq != 0
 }
 
+#[inline(always)]
 #[cfg(not(any(all(target_arch = "riscv32", feature = "bigint_ops"), test)))]
 pub unsafe fn is_zero_mut(_operand: *mut AlignedPrecompileSpace) -> bool {
     unimplemented!()
+}
+
+#[inline(always)]
+#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
+pub unsafe fn is_one(operand: *const AlignedPrecompileSpace) -> bool {
+    // it'll copy into scratch if it's not in the mutable region
+    let src = aligned_copy_if_needed(operand);
+    // so we can just cast constness, as equality is non-overwriting
+    let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(src.cast_mut().cast(), ONE_REPR.as_ptr().cast());
+
+    eq != 0
+}
+
+#[inline(always)]
+#[cfg(not(any(all(target_arch = "riscv32", feature = "bigint_ops"), test)))]
+pub unsafe fn is_one(_operand: *const AlignedPrecompileSpace) -> bool {
+    unimplemented!()
+}
+
+#[inline(always)]
+#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
+pub unsafe fn is_one_mut(operand: *mut AlignedPrecompileSpace) -> bool {
+    let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(operand.cast(), ONE_REPR.as_ptr().cast());
+
+    eq != 0
+}
+
+#[inline(always)]
+#[cfg(not(any(all(target_arch = "riscv32", feature = "bigint_ops"), test)))]
+pub unsafe fn is_one_mut(_operand: *mut AlignedPrecompileSpace) -> bool {
+    unimplemented!()
+}
+
+#[inline(always)]
+#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
+pub unsafe fn copy_to_scratch(operand: *const AlignedPrecompileSpace) -> *mut AlignedPrecompileSpace {
+    if operand.addr() < ROM_BOUND {
+        SCRATCH_FOR_MUT.as_mut_ptr().write(operand.read());
+        SCRATCH_FOR_MUT.as_mut_ptr()
+    } else {
+        // otherwise we can just use precompile
+        let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(SCRATCH_FOR_MUT.as_mut_ptr().cast(), operand.cast());
+        SCRATCH_FOR_MUT.as_mut_ptr()
+    }
 }
 
 #[inline(always)]
@@ -69,8 +119,8 @@ pub unsafe fn aligned_copy_if_needed(operand: *const AlignedPrecompileSpace) -> 
     #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
     unsafe {
         if operand.addr() < ROM_BOUND {
-            SCRATCH.as_mut_ptr().write(operand.read());
-            SCRATCH.as_ptr()
+            SCRATCH_FOR_REF.as_mut_ptr().write(operand.read());
+            SCRATCH_FOR_REF.as_ptr()
         } else {
             operand
         }
@@ -87,8 +137,8 @@ pub(crate) fn copy_if_needed(operand: *const [u32; 8]) -> *const [u32; 8] {
     #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
     unsafe {
         if operand.addr() < ROM_BOUND {
-            SCRATCH.as_mut_ptr().write(operand.read());
-            SCRATCH.as_ptr()
+            SCRATCH_FOR_REF.as_mut_ptr().write(operand.read());
+            SCRATCH_FOR_REF.as_ptr()
         } else {
             operand
         }
@@ -97,6 +147,32 @@ pub(crate) fn copy_if_needed(operand: *const [u32; 8]) -> *const [u32; 8] {
     #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
     {
         operand
+    }
+}
+
+#[inline(always)]
+pub fn write_zero_into(operand: *mut AlignedPrecompileSpace) {
+    #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
+    unsafe {
+        let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand.cast(), ZERO_REPR.as_ptr().cast());
+    }
+
+    #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
+    unsafe {
+        operand.write(ZERO_REPR_CONST);
+    }
+}
+
+#[inline(always)]
+pub fn write_one_into(operand: *mut AlignedPrecompileSpace) {
+    #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
+    unsafe {
+        let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand.cast(), ONE_REPR.as_ptr().cast());
+    }
+
+    #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
+    unsafe {
+        operand.write(ONE_REPR_CONST);
     }
 }
 

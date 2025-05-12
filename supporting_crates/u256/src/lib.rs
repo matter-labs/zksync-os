@@ -12,6 +12,7 @@ pub use self::naive::U256;
 const _: () = { compile_error!("`delegation` feature can only be used on RISC-V arch") };
 
 // #[cfg(all(target_arch = "riscv32", feature = "delegation"))]
+#[cfg(any(all(target_arch = "riscv32", feature = "delegation"), test))]
 mod risc_v;
 
 #[cfg(all(target_arch = "riscv32", feature = "delegation"))]

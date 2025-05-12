@@ -19,8 +19,28 @@ impl Clone for U256 {
 }
 
 impl U256 {
-    pub const ZERO: Self = Self(ruint::aliases::U256::ZERO);
-    pub const ONE: Self = Self(ruint::aliases::U256::ONE);
+    const ZERO: Self = Self(ruint::aliases::U256::ZERO);
+    const ONE: Self = Self(ruint::aliases::U256::ONE);
+
+    #[inline(always)]
+    pub fn zero() -> Self {
+        Self::ZERO
+    }
+
+    #[inline(always)]
+    pub fn one() -> Self {
+        Self::ONE
+    }
+
+    #[inline(always)]
+    pub fn write_zero(into: &mut Self) {
+        *into = Self::ZERO;
+    }
+
+    #[inline(always)]
+    pub fn write_one(into: &mut Self) {
+        *into = Self::ONE;
+    }
 
     #[inline(always)]
     pub const fn as_limbs(&self) -> &[u64; 4] {
@@ -30,6 +50,16 @@ impl U256 {
     #[inline(always)]
     pub fn as_limbs_mut(&mut self) -> &mut [u64; 4] {
         unsafe { self.0.as_limbs_mut() }
+    }
+
+    #[inline(always)]
+    pub fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+
+    #[inline(always)]
+    pub fn is_one(&self) -> bool {
+        self.0 == ruint::aliases::U256::ONE
     }
 
     #[inline(always)]
@@ -74,16 +104,62 @@ impl Into<ruint::aliases::U256> for U256 {
     }
 }
 
-// we only provide a small set of operations
+// we only provide a small set of operations in the mutable form to avoid excessive copies
 
 impl<'a> AddAssign<&'a U256> for U256 {
+    #[inline(always)]
     fn add_assign(&mut self, rhs: &'a U256) {
         self.0.add_assign(&rhs.0);
     }
 }
 
 impl<'a> SubAssign<&'a U256> for U256 {
+    #[inline(always)]
     fn sub_assign(&mut self, rhs: &'a U256) {
         self.0.sub_assign(&rhs.0);
+    }
+}
+
+impl<'a> BitXorAssign<&'a U256> for U256 {
+    #[inline(always)]
+    fn bitxor_assign(&mut self, rhs: &'a U256) {
+        self.0.bitxor_assign(&rhs.0);
+    }
+}
+
+impl<'a> BitAndAssign<&'a U256> for U256 {
+    #[inline(always)]
+    fn bitand_assign(&mut self, rhs: &'a U256) {
+        self.0.bitand_assign(&rhs.0);
+    }
+}
+
+impl<'a> BitOrAssign<&'a U256> for U256 {
+    #[inline(always)]
+    fn bitor_assign(&mut self, rhs: &'a U256) {
+        self.0.bitor_assign(&rhs.0);
+    }
+}
+
+impl Not for U256 {
+    type Output = Self;
+
+    #[inline(always)]
+    fn not(self) -> Self::Output {
+        Self(self.0.not())
+    }
+}
+
+impl ShrAssign<u32> for U256 {
+    #[inline(always)]
+    fn shr_assign(&mut self, rhs: u32) {
+        self.0.shr_assign(rhs);
+    }
+}
+
+impl ShlAssign<u32> for U256 {
+    #[inline(always)]
+    fn shl_assign(&mut self, rhs: u32) {
+        self.0.shl_assign(rhs);
     }
 }
