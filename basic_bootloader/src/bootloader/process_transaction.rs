@@ -130,7 +130,7 @@ where
 
         let tx_internal_cost = gas_price
             .checked_mul(gas_limit as u128)
-            .ok_or(InternalError("gp*gl"))?;
+            .ok_or(InternalError("gp*gl l1"))?;
         let value = transaction.value.read();
         let total_deposited = transaction.reserved[0].read();
         let needed_amount = value
@@ -878,7 +878,7 @@ where
         let excessive_funds = bootloader_received_funds
             .checked_sub(&required_funds)
             .ok_or(InternalError("brf-rf"))?;
-        if excessive_funds > U256::ZERO {
+        if excessive_funds.is_zero() == false {
             resources
                 .with_infinite_ergs(|inf_resources| {
                     system.io.transfer_nominal_token_value(
@@ -925,7 +925,7 @@ where
             U256::ZERO
         };
         let mut t = base_fee;
-        let _ = t.overflowing_sub_assign(&priority_fee_per_gas);
+        let _ = t.overflowing_add_assign(&priority_fee_per_gas);
 
         Ok(t)
     }
