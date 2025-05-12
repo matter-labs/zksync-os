@@ -1000,7 +1000,7 @@ impl<'a> ZkSyncTransaction<'a> {
         charge_keccak(32 + self.underlying_buffer[TX_OFFSET..].len(), resources)?;
         let mut hasher = Keccak256::new();
         // Note, that the correct ABI encoding of the Transaction structure starts with 0x20
-        hasher.update(&U256::from(0x20).to_be_bytes());
+        hasher.update(&U256::from(0x20u64).to_be_bytes());
         hasher.update(&self.underlying_buffer[TX_OFFSET..]);
         Ok(hasher.finalize())
     }
@@ -1022,7 +1022,7 @@ impl<'a> ZkSyncTransaction<'a> {
                 .ok_or(InternalError("mfpg*gl"))?;
             self.value
                 .read()
-                .checked_add(U256::from(fee_amount))
+                .checked_add(&U256::from(fee_amount))
                 .ok_or(InternalError("fa+v"))
         }
     }

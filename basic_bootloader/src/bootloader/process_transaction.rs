@@ -134,7 +134,7 @@ where
         let value = transaction.value.read();
         let total_deposited = transaction.reserved[0].read();
         let needed_amount = value
-            .checked_add(U256::from(tx_internal_cost))
+            .checked_add(&U256::from(tx_internal_cost))
             .ok_or(InternalError("v+tic"))?;
         require_internal!(
             total_deposited >= needed_amount,
@@ -227,7 +227,7 @@ where
         let mut gas_consumed = gas_limit;
         gas_consumed -= &total_gas_refund;
         let pay_to_operator = gas_consumed
-            .checked_mul(U256::from(gas_price))
+            .checked_mul(&U256::from(gas_price))
             .ok_or(InternalError("gu*gp"))?;
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
 
@@ -254,7 +254,7 @@ where
                 // user has been reverted as well, so we can simply mint everything
                 // that the user has deposited to the refund recipient
                 total_deposited
-                    .checked_sub(pay_to_operator)
+                    .checked_sub(&pay_to_operator)
                     .ok_or(InternalError("td-pto"))
             }
             ExecutionResult::Success { .. } => {
@@ -263,10 +263,10 @@ where
                 // However, the remaining value deposited will be given to
                 // the refund recipient.
                 let value_plus_fee = value
-                    .checked_add(pay_to_operator)
+                    .checked_add(&pay_to_operator)
                     .ok_or(InternalError("v+pto"))?;
                 total_deposited
-                    .checked_sub(value_plus_fee)
+                    .checked_sub(&value_plus_fee)
                     .ok_or(InternalError("td-vpf"))
             }
         }?;
@@ -548,11 +548,11 @@ where
             system,
             system_functions,
             callstack,
-            tx_hash,
-            suggested_signed_hash,
+            &tx_hash,
+            &suggested_signed_hash,
             &mut transaction,
             &account_model,
-            native_per_pubdata,
+            &native_per_pubdata,
             validation_pubdata,
             caller_nonce,
             &mut resources,
@@ -731,11 +731,11 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut SliceVec<SupportedEEVMState<S>>,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
+        tx_hash: &Bytes32,
+        suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         account_model: &AA<S>,
-        native_per_pubdata: U256,
+        native_per_pubdata: &U256,
         validation_pubdata: u64,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
@@ -802,7 +802,7 @@ where
             )
         })?;
         let required_funds = gas_price
-            .checked_mul(U256::from(transaction.gas_limit.read()))
+            .checked_mul(&U256::from(transaction.gas_limit.read()))
             .ok_or(InternalError("gp*gl"))?;
         // First we charge the fees, then we verify the bootloader got
         // the funds.
@@ -863,20 +863,20 @@ where
             )
         })?;
         let bootloader_received_funds = bootloader_balance_after
-            .checked_sub(bootloader_balance_before)
+            .checked_sub(&bootloader_balance_before)
             .ok_or(InternalError("bba-bbb"))?;
         // If the amount of funds provided to the bootloader is less than the minimum required one
         // then this transaction should be rejected.
         require!(
-            bootloader_received_funds >= required_funds,
+            bootloader_received_funds.ge(&required_funds),
             InvalidTransaction::AAValidationError(InvalidAA::ReceivedInsufficientFees {
-                received: bootloader_received_funds,
-                required: required_funds
+                received: bootloader_received_funds.clone(),
+                required: required_funds.clone()
             }),
             system
         )?;
         let excessive_funds = bootloader_received_funds
-            .checked_sub(required_funds)
+            .checked_sub(&required_funds)
             .ok_or(InternalError("brf-rf"))?;
         if excessive_funds > U256::ZERO {
             resources
@@ -918,11 +918,16 @@ where
             system
         )?;
         let priority_fee_per_gas = if cfg!(feature = "charge_priority_fee") {
-            core::cmp::min(max_priority_fee_per_gas, max_fee_per_gas - base_fee)
+            let mut t = max_fee_per_gas;
+            let _ = t.overflowing_sub_assign(&base_fee);
+            core::cmp::min(max_priority_fee_per_gas, t)
         } else {
             U256::ZERO
         };
-        Ok(base_fee + priority_fee_per_gas)
+        let mut t = base_fee;
+        let _ = t.overflowing_sub_assign(&priority_fee_per_gas);
+
+        Ok(t)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -982,9 +987,9 @@ where
         )?;
         let (total_gas_refund, gas_used) = Self::compute_gas_refund(
             system,
-            to_charge_for_pubdata,
-            transaction.gas_limit.read(),
-            native_per_gas,
+            &to_charge_for_pubdata,
+            &U256::from(transaction.gas_limit.read()),
+            &native_per_gas,
             resources,
         )?;
         let token_to_refund = total_gas_refund
@@ -1020,7 +1025,7 @@ where
         system: &mut System<S>,
         to_charge_for_pubdata: S::Resources,
         gas_limit: u64,
-        native_per_gas: U256,
+        native_per_gas: &U256,
         resources: &mut S::Resources,
     ) -> Result<(U256, u64), InternalError> {
         // Already checked
@@ -1046,7 +1051,7 @@ where
             .get_logger()
             .write_fmt(format_args!("Gas refund: {}\n", total_gas_refund));
         require_internal!(
-            total_gas_refund <= gas_limit,
+            total_gas_refund.le(&gas_limit),
             "Gas refund greater than gas limit",
             system
         )?;

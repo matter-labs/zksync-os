@@ -3,6 +3,7 @@
 //! It implements a `sendToL1` method, works same way as in Era.
 //!
 use super::*;
+use ::u256::U256;
 use core::fmt::Write;
 use errors::FatalError;
 use ruint::aliases::{B160, U256};
@@ -143,14 +144,15 @@ where
                     "L1 messenger failure: sendToL1 called with invalid calldata",
                 ));
             }
-            let message_offset: usize = match U256::from_be_bytes(&calldata[4..36].try_into().unwrap()).try_into() {
-                Ok(offset) => offset,
-                Err(_) => {
-                    return Ok(Err(
-                        "L1 messenger failure: sendToL1 called with invalid calldata",
-                    ))
-                }
-            };
+            let message_offset: usize =
+                match U256::from_be_bytes(&calldata[4..36].try_into().unwrap()).try_into() {
+                    Ok(offset) => offset,
+                    Err(_) => {
+                        return Ok(Err(
+                            "L1 messenger failure: sendToL1 called with invalid calldata",
+                        ))
+                    }
+                };
             // length located at 4+message_offset..4+message_offset+32
             // we want to check that 4+message_offset+32 will not overflow usize
             let length_encoding_end = match message_offset.checked_add(36) {
@@ -166,17 +168,20 @@ where
                     "L1 messenger failure: sendToL1 called with invalid calldata",
                 ));
             }
-            let length =
-                match U256::from_be_bytes(&calldata[length_encoding_end - 32..length_encoding_end].try_into().unwrap())
+            let length = match U256::from_be_bytes(
+                &calldata[length_encoding_end - 32..length_encoding_end]
                     .try_into()
-                {
-                    Ok(length) => length,
-                    Err(_) => {
-                        return Ok(Err(
-                            "L1 messenger failure: sendToL1 called with invalid calldata",
-                        ))
-                    }
-                };
+                    .unwrap(),
+            )
+            .try_into()
+            {
+                Ok(length) => length,
+                Err(_) => {
+                    return Ok(Err(
+                        "L1 messenger failure: sendToL1 called with invalid calldata",
+                    ))
+                }
+            };
             // to check that it will not overflow
             let message_end = match length_encoding_end.checked_add(length) {
                 Some(message_end) => message_end,

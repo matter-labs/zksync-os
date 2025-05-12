@@ -145,14 +145,10 @@ impl U256 {
     #[inline(always)]
     /// Panics if divisor is 0
     pub fn div_rem(dividend_or_quotient: &mut Self, divisor_or_remainder: &mut Self) {
-        todo!();
+        let (q, r) = dividend_or_quotient.0.div_rem(divisor_or_remainder.0);
+        dividend_or_quotient.0 = q;
+        divisor_or_remainder.0 = r;
     }
-
-    // #[inline(always)]
-    // /// Panics if divisor is 0
-    // pub fn div_assign_with_remainder(&mut self, rem: &mut Self, divisor: &Self) {
-    //     todo!();
-    // }
 
     #[inline(always)]
     pub fn not_mut(&mut self) {
@@ -227,6 +223,18 @@ impl U256 {
     pub fn byte_len(&self) -> usize {
         self.0.byte_len()
     }
+
+    pub fn checked_add(&self, rhs: &Self) -> Option<Self> {
+        self.0.checked_add(rhs.0).map(|el| Self(el))
+    }
+
+    pub fn checked_sub(&self, rhs: &Self) -> Option<Self> {
+        self.0.checked_sub(rhs.0).map(|el| Self(el))
+    }
+
+    pub fn checked_mul(&self, rhs: &Self) -> Option<Self> {
+        self.0.checked_mul(rhs.0).map(|el| Self(el))
+    }
 }
 
 impl From<ruint::aliases::U256> for U256 {
@@ -246,6 +254,27 @@ impl From<u64> for U256 {
     }
 }
 
+impl From<u32> for U256 {
+    #[inline(always)]
+    fn from(value: u32) -> Self {
+        let mut result = Self::zero();
+        result.as_limbs_mut()[0] = value as u64;
+
+        result
+    }
+}
+
+impl From<u128> for U256 {
+    #[inline(always)]
+    fn from(value: u128) -> Self {
+        let mut result = Self::zero();
+        result.as_limbs_mut()[0] = value as u64;
+        result.as_limbs_mut()[1] = (value >> 64) as u64;
+
+        result
+    }
+}
+
 impl Into<ruint::aliases::U256> for U256 {
     #[inline(always)]
     fn into(self) -> ruint::aliases::U256 {
@@ -254,10 +283,30 @@ impl Into<ruint::aliases::U256> for U256 {
 }
 
 impl TryInto<usize> for U256 {
-    type Error = ruint::FromUintError<usize>;
+    type Error = ruint::FromUintError<()>;
 
     fn try_into(self) -> Result<usize, Self::Error> {
-        self.0.try_into() 
+        if self.as_limbs()[3] != 0 || self.as_limbs()[2] != 0 || self.as_limbs()[1] != 0 {
+            Err(ruint::FromUintError::Overflow(usize::BITS as usize, (), ()))
+        } else {
+            if self.as_limbs()[0] > usize::MAX as u64 {
+                Err(ruint::FromUintError::Overflow(usize::BITS as usize, (), ()))
+            } else {
+                Ok(self.as_limbs()[0] as usize)
+            }
+        }
+    }
+}
+
+impl TryInto<u64> for U256 {
+    type Error = ruint::FromUintError<()>;
+
+    fn try_into(self) -> Result<u64, Self::Error> {
+        if self.as_limbs()[3] != 0 || self.as_limbs()[2] != 0 || self.as_limbs()[1] != 0 {
+            Err(ruint::FromUintError::Overflow(usize::BITS as usize, (), ()))
+        } else {
+            Ok(self.as_limbs()[0])
+        }
     }
 }
 

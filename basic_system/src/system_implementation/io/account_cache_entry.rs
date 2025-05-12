@@ -1,5 +1,5 @@
-use core::mem::MaybeUninit;
 use ::u256::U256;
+use core::mem::MaybeUninit;
 use zk_ee::common_structs::history_map::{Appearance, CacheSnapshot};
 use zk_ee::common_structs::CompressionStrategy;
 use zk_ee::system::errors::InternalError;

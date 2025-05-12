@@ -475,6 +475,33 @@ impl U256 {
     pub fn byte_len(&self) -> usize {
         (self.bit_len() + 7) / 8
     }
+
+    pub fn checked_add(&self, rhs: &Self) -> Option<Self> {
+        let mut result = self.clone();
+        let of = result.overflowing_add_assign(rhs);
+        if of { None } else { Some(result) }
+    }
+
+    pub fn checked_sub(&self, rhs: &Self) -> Option<Self> {
+        let mut result = self.clone();
+        let of = result.overflowing_sub_assign(rhs);
+        if of { None } else { Some(result) }
+    }
+
+    pub fn checked_mul(&self, rhs: &Self) -> Option<Self> {
+        let mut result = self.clone();
+        let of = unsafe {
+            let src_ptr = aligned_copy_if_needed(rhs.0.as_ptr().cast());
+            let of = bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(
+                result.0.as_mut_ptr().cast(),
+                src_ptr.cast(),
+            );
+
+            of != 0
+        };
+
+        if of { None } else { Some(result) }
+    }
 }
 
 impl From<ruint::aliases::U256> for U256 {
@@ -495,6 +522,27 @@ impl From<u64> for U256 {
     }
 }
 
+impl From<u32> for U256 {
+    #[inline(always)]
+    fn from(value: u32) -> Self {
+        let mut result = Self::zero();
+        result.as_limbs_mut()[0] = value as u64;
+
+        result
+    }
+}
+
+impl From<u128> for U256 {
+    #[inline(always)]
+    fn from(value: u128) -> Self {
+        let mut result = Self::zero();
+        result.as_limbs_mut()[0] = value as u64;
+        result.as_limbs_mut()[1] = (value >> 64) as u64;
+
+        result
+    }
+}
+
 impl Into<ruint::aliases::U256> for U256 {
     #[inline(always)]
     fn into(self) -> ruint::aliases::U256 {
@@ -503,10 +551,30 @@ impl Into<ruint::aliases::U256> for U256 {
 }
 
 impl TryInto<usize> for U256 {
-    type Error = ruint::FromUintError<usize>;
+    type Error = ruint::FromUintError<()>;
 
     fn try_into(self) -> Result<usize, Self::Error> {
-        todo!()   
+        if self.0[3] != 0 || self.0[2] != 0 || self.0[1] != 0 {
+            Err(ruint::FromUintError::Overflow(usize::BITS as usize, (), ()))
+        } else {
+            if self.0[0] > usize::MAX as u64 {
+                Err(ruint::FromUintError::Overflow(usize::BITS as usize, (), ()))
+            } else {
+                Ok(self.0[0] as usize)
+            }
+        }
+    }
+}
+
+impl TryInto<u64> for U256 {
+    type Error = ruint::FromUintError<()>;
+
+    fn try_into(self) -> Result<u64, Self::Error> {
+        if self.0[3] != 0 || self.0[2] != 0 || self.0[1] != 0 {
+            Err(ruint::FromUintError::Overflow(usize::BITS as usize, (), ()))
+        } else {
+            Ok(self.0[0])
+        }
     }
 }
 
