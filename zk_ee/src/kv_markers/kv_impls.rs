@@ -240,7 +240,7 @@ impl UsizeSerializable for u256::U256 {
                 compile_error!("unsupported architecture: big endian arch is not supported")
             } else if #[cfg(target_pointer_width = "32")] {
                 unsafe {
-                    return core::mem::transmute::<Self, [u32; 8]>(*self).into_iter().map(|el| el as usize);
+                    return core::mem::transmute::<_, [u32; 8]>(*self.as_limbs()).into_iter().map(|el| el as usize);
                 }
             } else if #[cfg(target_pointer_width = "64")] {
                 return self.as_limbs().iter().map(|el| *el as usize);
