@@ -70,11 +70,6 @@ impl<S: SystemTypes> ExternalCallRequest<S> {
     }
 }
 
-pub struct SelfDestructParams<S: SystemTypes> {
-    pub at: <S::IOTypes as SystemIOTypesConfig>::Address,
-    pub beneficiary: <S::IOTypes as SystemIOTypesConfig>::Address,
-}
-
 pub struct CompletedExecution<S: SystemTypes> {
     pub resources_returned: S::Resources,
     pub return_values: ReturnValues<S>,
