@@ -5,7 +5,6 @@ use core::ops::*;
 #[repr(transparent)]
 pub struct U256(ruint::aliases::U256);
 
-#[cfg(not(all(target_arch = "riscv32", feature = "delegation")))]
 impl Clone for U256 {
     #[inline(always)]
     fn clone(&self) -> Self {
@@ -33,9 +32,8 @@ impl core::fmt::Debug for U256 {
 
 impl core::fmt::LowerHex for U256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "0x")?;
-        for word in self.as_limbs() {
-            write!(f, "{:016x}", word.to_be())?;
+        for word in self.as_limbs().iter().rev() {
+            write!(f, "{:016x}", word)?;
         }
 
         core::fmt::Result::Ok(())
@@ -346,15 +344,6 @@ impl<'a> BitOrAssign<&'a U256> for U256 {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: &'a U256) {
         self.0.bitor_assign(&rhs.0);
-    }
-}
-
-impl Not for U256 {
-    type Output = Self;
-
-    #[inline(always)]
-    fn not(self) -> Self::Output {
-        Self(self.0.not())
     }
 }
 

@@ -23,6 +23,20 @@ impl<A: Allocator> EVMStack<A> {
         }
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn print_stack_top(&self, logger: &mut impl Logger) {
+        unsafe {
+            if let Some(el) =
+                core::slice::from_raw_parts(self.buffer.as_ptr().cast::<U256>(), self.len).last()
+            {
+                let _ = logger.write_fmt(format_args!("Stack top = 0x{:x}\n", el));
+            } else {
+                let _ = logger.write_str("Stack top = empty\n");
+            }
+        }
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn print_stack_content(&self, logger: &mut impl Logger) {
         unsafe {
             let _ = logger.write_fmt(format_args!("DEPTH MAX\n"));
@@ -60,18 +74,37 @@ impl<A: Allocator> EVMStack<A> {
             src_offset - n
         };
         unsafe {
-            core::mem::swap(
-                self.buffer
-                    .as_mut_ptr()
-                    .add(src_offset)
-                    .as_mut_unchecked()
-                    .assume_init_mut(),
-                self.buffer
-                    .as_mut_ptr()
-                    .add(dst_offset)
-                    .as_mut_unchecked()
-                    .assume_init_mut(),
-            );
+            // TODO: make it a method on U256
+
+            // memory swap would NOT twigger precompile, so we manually unroll
+            let src = self
+                .buffer
+                .as_mut_ptr()
+                .add(src_offset)
+                .as_mut_unchecked()
+                .assume_init_mut();
+            let dst = self
+                .buffer
+                .as_mut_ptr()
+                .add(dst_offset)
+                .as_mut_unchecked()
+                .assume_init_mut();
+            let t = src.clone();
+            Clone::clone_from(src, &*dst);
+            Clone::clone_from(dst, &t);
+
+            // core::mem::swap(
+            //     self.buffer
+            //         .as_mut_ptr()
+            //         .add(src_offset)
+            //         .as_mut_unchecked()
+            //         .assume_init_mut(),
+            //     self.buffer
+            //         .as_mut_ptr()
+            //         .add(dst_offset)
+            //         .as_mut_unchecked()
+            //         .assume_init_mut(),
+            // );
         }
 
         Ok(())
@@ -88,6 +121,8 @@ impl<A: Allocator> EVMStack<A> {
             self.len - n
         };
         unsafe {
+            // TODO: make it a method on U256
+
             let src_ref = self
                 .buffer
                 .as_ptr()
@@ -291,7 +326,7 @@ impl<A: Allocator> EVMStack<A> {
         &'_ mut self,
     ) -> Result<((&'_ mut U256, &'_ mut U256), &'_ mut U256), ExitCode> {
         unsafe {
-            if self.len < 2 {
+            if self.len < 3 {
                 return Err(ExitCode::StackUnderflow);
             }
             let mut offset = self.len - 1;

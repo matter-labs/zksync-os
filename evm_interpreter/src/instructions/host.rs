@@ -200,6 +200,15 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
             data,
         )?;
 
+        if Self::PRINT_OPCODES {
+            use core::fmt::Write;
+            let _ = system.get_logger().write_fmt(format_args!(
+                " topics: {:?}, data length: {}",
+                &topics,
+                &data.len(),
+            ));
+        }
+
         Ok(())
     }
 

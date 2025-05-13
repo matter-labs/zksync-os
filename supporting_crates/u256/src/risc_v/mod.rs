@@ -43,9 +43,10 @@ impl core::cmp::PartialEq for U256 {
         unsafe {
             // aligned copy will make copy into scratch, and comparison is non-destructive, so we copy and recast
             let scratch = crypto::bigint_riscv::aligned_copy_if_needed(self.0.as_ptr().cast());
-            let other = crypto::bigint_riscv::aligned_copy_if_needed(other.0.as_ptr().cast());
+            let scratch_2 = crypto::bigint_riscv::aligned_copy_if_needed_2(other.0.as_ptr().cast());
             // equality is non-destructing
-            let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(scratch.cast_mut().cast(), other.cast());
+            let eq =
+                bigint_op_delegation::<EQ_OP_BIT_IDX>(scratch.cast_mut().cast(), scratch_2.cast());
             eq != 0
         }
     }
@@ -94,9 +95,8 @@ impl core::fmt::Debug for U256 {
 
 impl core::fmt::LowerHex for U256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "0x")?;
-        for word in self.as_limbs() {
-            write!(f, "{:016x}", word.to_be())?;
+        for word in self.as_limbs().iter().rev() {
+            write!(f, "{:016x}", word)?;
         }
 
         core::fmt::Result::Ok(())
@@ -408,8 +408,7 @@ impl U256 {
         if byte_idx >= 32 {
             0
         } else {
-            let (word, byte_idx) = (byte_idx / 8, byte_idx % 8);
-            self.0[word].to_be_bytes()[byte_idx]
+            self.as_le_bytes_ref()[byte_idx]
         }
     }
 
@@ -624,15 +623,6 @@ impl<'a> BitOrAssign<&'a U256> for U256 {
     }
 }
 
-impl Not for U256 {
-    type Output = Self;
-
-    #[inline(always)]
-    fn not(self) -> Self::Output {
-        Self([!self.0[0], !self.0[1], !self.0[2], !self.0[3]])
-    }
-}
-
 impl ShrAssign<u32> for U256 {
     #[inline(always)]
     fn shr_assign(&mut self, rhs: u32) {
@@ -643,15 +633,17 @@ impl ShrAssign<u32> for U256 {
 
         match limbs {
             0 => {
-                let mut carry = self.0[3] << (64 - bits);
-                self.0[3] >>= bits;
-                let t = self.0[2] << (64 - bits);
-                self.0[2] = self.0[2] >> bits | carry;
-                carry = t;
-                let t = self.0[1] << (64 - bits);
-                self.0[1] = self.0[1] >> bits | carry;
-                carry = t;
-                self.0[0] = self.0[0] >> bits | carry;
+                if bits != 0 {
+                    let mut carry = self.0[3] << (64 - bits);
+                    self.0[3] >>= bits;
+                    let t = self.0[2] << (64 - bits);
+                    self.0[2] = self.0[2] >> bits | carry;
+                    carry = t;
+                    let t = self.0[1] << (64 - bits);
+                    self.0[1] = self.0[1] >> bits | carry;
+                    carry = t;
+                    self.0[0] = self.0[0] >> bits | carry;
+                }
             }
             1 => {
                 // let compiler optimize
@@ -660,12 +652,14 @@ impl ShrAssign<u32> for U256 {
                 self.0[2] = self.0[3];
                 self.0[3] = 0;
 
-                let mut carry = self.0[2] << (64 - bits);
-                self.0[2] >>= bits;
-                let t = self.0[1] << (64 - bits);
-                self.0[1] = self.0[1] >> bits | carry;
-                carry = t;
-                self.0[0] = self.0[0] >> bits | carry;
+                if bits != 0 {
+                    let mut carry = self.0[2] << (64 - bits);
+                    self.0[2] >>= bits;
+                    let t = self.0[1] << (64 - bits);
+                    self.0[1] = self.0[1] >> bits | carry;
+                    carry = t;
+                    self.0[0] = self.0[0] >> bits | carry;
+                }
             }
             2 => {
                 self.0[0] = self.0[2];
@@ -673,9 +667,11 @@ impl ShrAssign<u32> for U256 {
                 self.0[2] = 0;
                 self.0[3] = 0;
 
-                let carry = self.0[1] << (64 - bits);
-                self.0[1] >>= bits;
-                self.0[0] = self.0[0] >> bits | carry;
+                if bits != 0 {
+                    let carry = self.0[1] << (64 - bits);
+                    self.0[1] >>= bits;
+                    self.0[0] = self.0[0] >> bits | carry;
+                }
             }
             3 => {
                 self.0[0] = self.0[3];
@@ -702,39 +698,45 @@ impl ShlAssign<u32> for U256 {
 
         match limbs {
             0 => {
-                let mut carry = self.0[0] >> (64 - bits);
-                self.0[0] <<= bits;
-                let t = self.0[1] >> (64 - bits);
-                self.0[1] = self.0[1] << bits | carry;
-                carry = t;
-                let t = self.0[2] >> (64 - bits);
-                self.0[2] = self.0[2] << bits | carry;
-                carry = t;
-                self.0[3] = self.0[3] << bits | carry;
+                if bits != 0 {
+                    let mut carry = self.0[0] >> (64 - bits);
+                    self.0[0] <<= bits;
+                    let t = self.0[1] >> (64 - bits);
+                    self.0[1] = self.0[1] << bits | carry;
+                    carry = t;
+                    let t = self.0[2] >> (64 - bits);
+                    self.0[2] = self.0[2] << bits | carry;
+                    carry = t;
+                    self.0[3] = self.0[3] << bits | carry;
+                }
             }
             1 => {
                 // let compiler optimize
-                self.0[1] = self.0[0];
-                self.0[2] = self.0[1];
                 self.0[3] = self.0[2];
+                self.0[2] = self.0[1];
+                self.0[1] = self.0[0];
                 self.0[0] = 0;
 
-                let mut carry = self.0[1] >> (64 - bits);
-                self.0[1] <<= bits;
-                let t = self.0[2] >> (64 - bits);
-                self.0[2] = self.0[2] << bits | carry;
-                carry = t;
-                self.0[3] = self.0[3] << bits | carry;
+                if bits != 0 {
+                    let mut carry = self.0[1] >> (64 - bits);
+                    self.0[1] <<= bits;
+                    let t = self.0[2] >> (64 - bits);
+                    self.0[2] = self.0[2] << bits | carry;
+                    carry = t;
+                    self.0[3] = self.0[3] << bits | carry;
+                }
             }
             2 => {
-                self.0[2] = self.0[0];
                 self.0[3] = self.0[1];
-                self.0[0] = 0;
+                self.0[2] = self.0[0];
                 self.0[1] = 0;
+                self.0[0] = 0;
 
-                let carry = self.0[2] >> (64 - bits);
-                self.0[2] <<= bits;
-                self.0[3] = self.0[3] << bits | carry;
+                if bits != 0 {
+                    let carry = self.0[2] >> (64 - bits);
+                    self.0[2] <<= bits;
+                    self.0[3] = self.0[3] << bits | carry;
+                }
             }
             3 => {
                 self.0[3] = self.0[0];

@@ -417,12 +417,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 }
 
 // bunch of internal utility methods
-fn get_zksync_os_img_path() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap()).join("zksync_os/app.bin")
+fn get_zksyncos_img_path() -> PathBuf {
+    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap_or("../../../".to_string()))
+        .join("zksync_os/app.bin")
 }
 
 fn get_zksync_os_sym_path() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap()).join("zksync_os/app.elf")
+    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap_or("../../../".to_string()))
+        .join("zksync_os/app.elf")
 }
 
 pub fn is_account_properties_address(address: &B160) -> bool {

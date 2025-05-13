@@ -125,34 +125,29 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn sar(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, SAR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-
-        let value_sign = i256_sign::<true>(op2);
+        let sign_bit = op2.bit(255);
         if let Some(shift) = u256_try_to_usize_capped::<256>(op1) {
-            match value_sign {
-                Sign::Plus | Sign::Zero => {
-                    core::ops::ShrAssign::shr_assign(op2, shift as u32);
+            if sign_bit == false {
+                core::ops::ShrAssign::shr_assign(op2, shift as u32);
+            } else {
+                // perform unsigned shift, then XOR with mask
+                core::ops::ShrAssign::shr_assign(op2, shift as u32);
+                let (words, bits) = (shift / 64, shift % 64);
+                for i in 0..words {
+                    op2.as_limbs_mut()[3 - i] = u64::MAX;
                 }
-                Sign::Minus => {
-                    // perform unsigned shift, then XOR with mask
-                    core::ops::ShrAssign::shr_assign(op2, shift as u32);
-                    let (words, bits) = (shift / 64, shift % 64);
-                    for i in 0..words {
-                        op2.as_limbs_mut()[3 - i] = u64::MAX;
-                    }
+                if bits != 0 {
                     op2.as_limbs_mut()[words] |= u64::MAX << (64 - bits);
                 }
             }
         } else {
             // shift overflowed
-            match value_sign {
+            if sign_bit == false {
                 // value is 0 or >=1, pushing 0
-                Sign::Plus | Sign::Zero => {
-                    U256::write_zero(op2);
-                }
+                U256::write_zero(op2);
+            } else {
                 // value is <0, pushing -1
-                Sign::Minus => {
-                    op2.as_limbs_mut().iter_mut().for_each(|el| *el = u64::MAX);
-                }
+                op2.as_limbs_mut().iter_mut().for_each(|el| *el = u64::MAX);
             }
         }
 

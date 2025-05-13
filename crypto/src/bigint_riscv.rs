@@ -30,6 +30,9 @@ static mut SCRATCH_FOR_MUT: core::mem::MaybeUninit<AlignedPrecompileSpace> =
 #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
 static mut SCRATCH_FOR_REF: core::mem::MaybeUninit<AlignedPrecompileSpace> =
     core::mem::MaybeUninit::uninit();
+#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
+static mut SCRATCH_FOR_REF_2: core::mem::MaybeUninit<AlignedPrecompileSpace> =
+    core::mem::MaybeUninit::uninit();
 // #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 static mut ZERO_REPR: core::mem::MaybeUninit<AlignedPrecompileSpace> =
     core::mem::MaybeUninit::uninit();
@@ -129,10 +132,7 @@ pub unsafe fn copy_to_scratch(
 
     #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
     {
-        let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(
-            SCRATCH_FOR_MUT.as_mut_ptr().cast(),
-            operand.cast(),
-        );
+        SCRATCH_FOR_MUT.as_mut_ptr().write(operand.read());
         SCRATCH_FOR_MUT.as_mut_ptr()
     }
 }
@@ -146,6 +146,26 @@ pub unsafe fn aligned_copy_if_needed(
         if operand.addr() < ROM_BOUND {
             SCRATCH_FOR_REF.as_mut_ptr().write(operand.read());
             SCRATCH_FOR_REF.as_ptr()
+        } else {
+            operand
+        }
+    }
+
+    #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
+    {
+        operand
+    }
+}
+
+#[inline(always)]
+pub unsafe fn aligned_copy_if_needed_2(
+    operand: *const AlignedPrecompileSpace,
+) -> *const AlignedPrecompileSpace {
+    #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
+    unsafe {
+        if operand.addr() < ROM_BOUND {
+            SCRATCH_FOR_REF_2.as_mut_ptr().write(operand.read());
+            SCRATCH_FOR_REF_2.as_ptr()
         } else {
             operand
         }

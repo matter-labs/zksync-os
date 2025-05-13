@@ -17,11 +17,9 @@ const MIN_NEGATIVE_VALUE_REPR: [u64; 4] = [
     0x8000000000000000,
 ];
 
-const FLIPH_BITMASK_U64: u64 = 0x7FFFFFFFFFFFFFFF;
-
 #[inline(always)]
 pub fn i256_sign<const DO_TWO_COMPL: bool>(val: &mut U256) -> Sign {
-    if (val.as_limbs()[3] >> 63) != 0 {
+    if val.as_limbs()[3] >> 63 == 0 {
         if val.is_zero() {
             Sign::Zero
         } else {
@@ -37,7 +35,7 @@ pub fn i256_sign<const DO_TWO_COMPL: bool>(val: &mut U256) -> Sign {
 
 #[inline(always)]
 pub fn i256_sign_by_ref(val: &U256) -> Sign {
-    if (val.as_limbs()[3] >> 63) != 0 {
+    if val.as_limbs()[3] >> 63 == 0 {
         if val.is_zero() {
             Sign::Zero
         } else {
@@ -48,30 +46,41 @@ pub fn i256_sign_by_ref(val: &U256) -> Sign {
     }
 }
 
-#[inline(always)]
-fn u256_remove_sign(val: &mut U256) {
-    val.as_limbs_mut()[3] &= FLIPH_BITMASK_U64;
-}
+// #[inline(always)]
+// fn u256_remove_sign(val: &mut U256) {
+//     const FLIPH_BITMASK_U64: u64 = 0x7FFFFFFFFFFFFFFF;
+
+//     val.as_limbs_mut()[3] &= FLIPH_BITMASK_U64;
+// }
 
 #[inline(always)]
 pub fn two_compl_mut(op: &mut U256) {
-    op.not_mut();
+    // we can just subtract it from 0
+    op.overflowing_sub_assign_reversed(&U256::zero());
 }
 
 #[inline(always)]
 pub fn i256_cmp(first: &U256, second: &U256) -> Ordering {
-    let first_sign = i256_sign_by_ref(first);
-    let second_sign = i256_sign_by_ref(second);
+    let first_sign = first.bit(255);
+    let second_sign = second.bit(255);
     match (first_sign, second_sign) {
-        (Sign::Zero, Sign::Zero) => Ordering::Equal,
-        (Sign::Zero, Sign::Plus) => Ordering::Less,
-        (Sign::Zero, Sign::Minus) => Ordering::Greater,
-        (Sign::Minus, Sign::Zero) => Ordering::Less,
-        (Sign::Minus, Sign::Plus) => Ordering::Less,
-        (Sign::Minus, Sign::Minus) => first.cmp(&second),
-        (Sign::Plus, Sign::Minus) => Ordering::Greater,
-        (Sign::Plus, Sign::Zero) => Ordering::Greater,
-        (Sign::Plus, Sign::Plus) => first.cmp(&second),
+        (true, false) => Ordering::Less,    // negative < positive,
+        (false, true) => Ordering::Greater, // positive > negative,
+        _ => {
+            // same sign, trivial for both positives
+            // in two complements min negative value is < -1 if viewed as unsigned bit patterns, so we can perform same ops
+            let mut tmp = first.clone();
+            let uf = tmp.overflowing_sub_assign(&second);
+            if uf {
+                Ordering::Less
+            } else {
+                if tmp.is_zero() {
+                    Ordering::Equal
+                } else {
+                    Ordering::Greater
+                }
+            }
+        }
     }
 }
 
@@ -95,15 +104,16 @@ pub fn i256_div(dividend: &mut U256, divisor_or_quotient: &mut U256) {
         return;
     }
 
+    // this is unsigned division of moduluses
     U256::div_rem(dividend, divisor_or_quotient);
 
-    u256_remove_sign(dividend);
-    //set sign bit to zero
+    // u256_remove_sign(dividend);
+    // set sign bit to zero
+
     if dividend.is_zero() {
         U256::write_zero(divisor_or_quotient);
         return;
     } else {
-        Clone::clone_from(divisor_or_quotient, &dividend);
         match (dividend_sign, divisor_sign) {
             (Sign::Zero, Sign::Plus)
             | (Sign::Plus, Sign::Zero)
@@ -111,11 +121,15 @@ pub fn i256_div(dividend: &mut U256, divisor_or_quotient: &mut U256) {
             | (Sign::Plus, Sign::Plus)
             | (Sign::Minus, Sign::Minus) => {
                 // no extra manipulation required
+                Clone::clone_from(divisor_or_quotient, &dividend);
             }
             (Sign::Zero, Sign::Minus)
             | (Sign::Plus, Sign::Minus)
             | (Sign::Minus, Sign::Zero)
-            | (Sign::Minus, Sign::Plus) => two_compl_mut(divisor_or_quotient),
+            | (Sign::Minus, Sign::Plus) => {
+                U256::write_zero(divisor_or_quotient);
+                divisor_or_quotient.overflowing_sub_assign(&dividend);
+            }
         }
     }
 }
@@ -129,8 +143,12 @@ pub fn i256_mod(dividend: &mut U256, divisor_or_remainder: &mut U256) {
     }
 
     let _ = i256_sign::<true>(divisor_or_remainder);
+
+    // this is unsigned division of moduluses
     U256::div_rem(dividend, divisor_or_remainder);
-    u256_remove_sign(divisor_or_remainder);
+
+    // u256_remove_sign(divisor_or_remainder);
+
     if divisor_or_remainder.is_zero() {
         return;
     }

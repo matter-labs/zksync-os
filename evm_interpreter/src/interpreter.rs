@@ -315,15 +315,14 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
 
             cycles += 1;
 
-            // if cycles == 459 {
-            //     self.stack.print_stack_content(&mut system.get_logger());
-            //     panic!();
+            // {
+            //     let _ = system
+            //         .get_logger()
+            //         .write_fmt(format_args!("End of cycle {}\n", cycles));
+            //     self.stack.print_stack_top(&mut system.get_logger());
             // }
 
             if let Err(r) = result {
-                // let _ = system.get_logger().write_fmt(format_args!("Executed {} cycles\n", cycles));
-                // self.stack.print_stack_content(&mut system.get_logger());
-                // panic!();
                 break r;
             }
         };

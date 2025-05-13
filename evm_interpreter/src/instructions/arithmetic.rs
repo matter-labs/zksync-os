@@ -100,11 +100,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas(gas_constants::LOW)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         if let Some(shift) = u256_try_to_usize_capped::<32>(op1) {
-            // `low_u32` works since op1 < 32
-            let bit_index = (8 * op1.as_limbs()[0] + 7) as usize;
+            let bit_index = 8 * shift + 7;
             let bit = op2.bit(bit_index);
             let mut mask = U256::one();
-            core::ops::ShlAssign::shl_assign(&mut mask, shift as u32);
+            core::ops::ShlAssign::shl_assign(&mut mask, bit_index as u32);
             core::ops::SubAssign::sub_assign(&mut mask, &U256::one());
             if bit {
                 mask.not_mut();

@@ -116,20 +116,35 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn calldataload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, CALLDATALOAD_NATIVE_COST)?;
-        let [index] = self.pop_values::<1>()?;
-        let value = match u256_try_to_usize(&index) {
+        self.spend_gas(gas_constants::VERYLOW)?;
+        let t = {
+            let index = self.stack.pop_1()?;
+            u256_try_to_usize(index)
+        };
+
+        let value = match t {
             Some(index) => {
                 if index < self.calldata.len() {
                     let have_bytes = 32.min(self.calldata.len() - index);
-                    let mut bytes = Bytes32::ZERO;
+                    let mut value = U256::zero();
                     unsafe {
                         core::ptr::copy_nonoverlapping(
                             self.calldata().as_ptr().add(index),
-                            bytes.as_u8_array_mut().as_mut_ptr(),
+                            value.as_limbs_mut().as_mut_ptr().cast::<u8>(),
                             have_bytes,
                         )
                     }
-                    bytes.into_u256_be()
+                    value.bytereverse();
+
+                    if Self::PRINT_OPCODES {
+                        use core::fmt::Write;
+                        let _ = system.get_logger().write_fmt(format_args!(
+                            " offset: {}, read value: 0x{:0x}",
+                            index, &value
+                        ));
+                    }
+
+                    value
                 } else {
                     // virtual zero-pad
                     U256::zero()
@@ -140,14 +155,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
                 U256::zero()
             }
         };
-
-        // if Self::PRINT_OPCODES {
-        //     use core::fmt::Write;
-        //     let _ = system.get_logger().write_fmt(format_args!(
-        //         " offset: {}, read value: 0x{:0x}",
-        //         index, value
-        //     ));
-        // }
 
         self.stack.push_unchecked(&value);
 
