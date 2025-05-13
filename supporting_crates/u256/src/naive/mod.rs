@@ -21,21 +21,23 @@ impl Clone for U256 {
 
 impl core::fmt::Display for U256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        // TODO
-        core::fmt::Result::Ok(())
+        core::fmt::LowerHex::fmt(self, f)
     }
 }
 
 impl core::fmt::Debug for U256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        // TODO
-        core::fmt::Result::Ok(())
+        core::fmt::LowerHex::fmt(self, f)
     }
 }
 
 impl core::fmt::LowerHex for U256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        // TODO
+        write!(f, "0x")?;
+        for word in self.as_limbs() {
+            write!(f, "{:016x}", word.to_be())?;
+        }
+
         core::fmt::Result::Ok(())
     }
 }

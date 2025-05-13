@@ -29,7 +29,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
 
     pub fn extcodesize(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, EXTCODESIZE_NATIVE_COST)?;
-        let [address] = self.pop_addresses::<1>()?;
+        let address = self.pop_address()?;
         let value =
             system
                 .io

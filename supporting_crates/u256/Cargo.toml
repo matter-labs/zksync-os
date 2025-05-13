@@ -9,5 +9,6 @@ crypto = { path = "../../crypto", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 
 [features]
+# default = ["delegation"]
 serde = ["ruint/serde"]
 delegation = ["crypto/bigint_ops"]

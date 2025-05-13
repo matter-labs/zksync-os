@@ -15,7 +15,7 @@ ruint = { version = "1.14", default-features = false, features = ["alloc"] }
 crypto = { path = "../crypto", default-features = false }
 evm_interpreter = { path = "../evm_interpreter", default-features = false }
 cycle_marker = { path = "../cycle_marker" }
-u256 = { path = "../supporting_crates/u256", default-features = false }
+u256 = { path = "../supporting_crates/u256" }
 arrayvec = { version = "0.7.4", default-features = false }
 
 [features]

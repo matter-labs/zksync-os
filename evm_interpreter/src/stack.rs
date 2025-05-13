@@ -6,6 +6,7 @@ use crate::STACK_SIZE;
 use alloc::boxed::Box;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use u256::U256;
+use zk_ee::system::logger::Logger;
 
 pub struct EVMStack<A: Allocator> {
     buffer: Box<[MaybeUninit<U256>; STACK_SIZE], A>,
@@ -19,6 +20,19 @@ impl<A: Allocator> EVMStack<A> {
         Self {
             buffer: Box::new_in([const { MaybeUninit::uninit() }; STACK_SIZE], allocator),
             len: 0,
+        }
+    }
+
+    pub(crate) fn print_stack_content(&self, logger: &mut impl Logger) {
+        unsafe {
+            let _ = logger.write_fmt(format_args!("DEPTH MAX\n"));
+            for el in core::slice::from_raw_parts(self.buffer.as_ptr().cast::<U256>(), self.len)
+                .iter()
+                .rev()
+            {
+                let _ = logger.write_fmt(format_args!("{:x}\n", el));
+            }
+            let _ = logger.write_fmt(format_args!("DEPTH 0\n"));
         }
     }
 

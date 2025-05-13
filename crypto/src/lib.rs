@@ -43,6 +43,12 @@ pub fn init_lib() {
         bls12_381::fields::init();
         bigint_delegation::init();
     }
+    #[cfg(feature = "bigint_ops")]
+    {
+        // #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
+        bigint_riscv::init();
+        secp256k1::init();
+    }
 }
 
 pub trait MiniDigest: Sized {

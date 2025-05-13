@@ -82,21 +82,23 @@ impl core::cmp::PartialOrd for U256 {
 
 impl core::fmt::Display for U256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        // TODO
-        core::fmt::Result::Ok(())
+        core::fmt::LowerHex::fmt(self, f)
     }
 }
 
 impl core::fmt::Debug for U256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        // TODO
-        core::fmt::Result::Ok(())
+        core::fmt::LowerHex::fmt(self, f)
     }
 }
 
 impl core::fmt::LowerHex for U256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        // TODO
+        write!(f, "0x")?;
+        for word in self.as_limbs() {
+            write!(f, "{:016x}", word.to_be())?;
+        }
+
         core::fmt::Result::Ok(())
     }
 }
@@ -407,7 +409,7 @@ impl U256 {
             0
         } else {
             let (word, byte_idx) = (byte_idx / 8, byte_idx % 8);
-            self.0[3 - word].to_be_bytes()[byte_idx]
+            self.0[word].to_be_bytes()[byte_idx]
         }
     }
 
@@ -634,6 +636,9 @@ impl Not for U256 {
 impl ShrAssign<u32> for U256 {
     #[inline(always)]
     fn shr_assign(&mut self, rhs: u32) {
+        if rhs == 0 {
+            return;
+        }
         let (limbs, bits) = (rhs / 64, rhs % 64);
 
         match limbs {
@@ -650,9 +655,9 @@ impl ShrAssign<u32> for U256 {
             }
             1 => {
                 // let compiler optimize
-                self.0[2] = self.0[3];
-                self.0[1] = self.0[2];
                 self.0[0] = self.0[1];
+                self.0[1] = self.0[2];
+                self.0[2] = self.0[3];
                 self.0[3] = 0;
 
                 let mut carry = self.0[2] << (64 - bits);
@@ -663,8 +668,8 @@ impl ShrAssign<u32> for U256 {
                 self.0[0] = self.0[0] >> bits | carry;
             }
             2 => {
-                self.0[1] = self.0[3];
                 self.0[0] = self.0[2];
+                self.0[1] = self.0[3];
                 self.0[2] = 0;
                 self.0[3] = 0;
 
@@ -689,6 +694,10 @@ impl ShrAssign<u32> for U256 {
 
 impl ShlAssign<u32> for U256 {
     fn shl_assign(&mut self, rhs: u32) {
+        if rhs == 0 {
+            return;
+        }
+
         let (limbs, bits) = (rhs / 64, rhs % 64);
 
         match limbs {
