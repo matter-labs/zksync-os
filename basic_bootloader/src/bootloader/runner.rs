@@ -1238,18 +1238,20 @@ where
                         "Successfully deployed contract at {:?} \n",
                         deployed_at
                     ));
-                    Ok((true, false, deployment_result))
+                    (true, false, deployment_result)
                 }
                 Err(SystemError::OutOfErgs) => {
                     let deployment_result = DeploymentResult::Failed {
                         return_values,
                         execution_reverted: false,
                     };
-                    Ok((false, false, deployment_result))
+                    (false, false, deployment_result)
                 }
-                Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
-                Err(SystemError::Internal(e)) => Err(e.into()),
-            }?
+                Err(SystemError::OutOfNativeResources) => {
+                    return Err(FatalError::OutOfNativeResources)
+                }
+                Err(SystemError::Internal(e)) => return Err(e.into()),
+            }
         }
         a @ DeploymentResult::Failed { .. } => (false, false, a),
         a @ DeploymentResult::DeploymentCallFailedToExecute => (false, true, a),
