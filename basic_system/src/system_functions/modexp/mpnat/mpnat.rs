@@ -199,24 +199,13 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         Self { digits }
     }
 
-    pub fn div<O: IOOracle, L: Logger>(&mut self, rhs: &Self, oracle: &mut O, logger: &mut L, allocator: A) {
-        // let mut arg = Bytes32::zero();
+    pub fn div<O: IOOracle, L: Logger>(&mut self, rhs: &Self, oracle: &mut O, logger: &mut L, allocator: A) -> Self {
 
         let lhs_len = self.digits.len();
         let lhs_ptr = self.digits.as_mut_ptr();
 
         let rhs_len = rhs.digits.len();
         let rhs_ptr = rhs.digits.as_ptr();
-
-        // let dst = arg.as_mut();
-        //
-        // dst[0] = lhs_ptr.addr();
-        // dst[1] = lhs_len;
-        //
-        // dst[2] = rhs_ptr.addr();
-        // dst[3] = rhs_len;
-
-        logger.write_str("going into oracle.");
 
         let mut arg = ArithmeticsParam {
             op: 0,
@@ -228,22 +217,10 @@ impl<A: Allocator + Clone> MPNatU256<A> {
             c_len: 0,
         };
 
-        logger.write_fmt(format_args!("{}", arg.op));
-        logger.write_fmt(format_args!("{}", arg.a_ptr));
-        logger.write_fmt(format_args!("{}", arg.a_len));
-        logger.write_fmt(format_args!("{}", arg.b_ptr));
-        logger.write_fmt(format_args!("{}", arg.b_len));
-        logger.write_fmt(format_args!("{}", arg.c_ptr));
-        logger.write_fmt(format_args!("{}", arg.c_len));
-
         let ptr = &mut arg as *mut _ as usize as u32;
 
-        logger.write_fmt(format_args!("{}", ptr));
 
         let mut it = oracle.create_oracle_access_iterator::<Arithmetics>(ptr).unwrap();
-
-
-        let mut r = [0; 6];
 
         let q_len = it.next().expect("Quotient length.");
         let r_len = it.next().expect("Remainder length.");
@@ -266,21 +243,63 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         let q = MPNatU256::from_little_endian(&q, allocator.clone());
         let r = MPNatU256::from_little_endian(&r, allocator.clone());
 
-        let mut out = Vec::with_capacity_in(q.digits.len() + rhs.digits.len(), allocator.clone());
-        out.resize_with(out.capacity(), || U256::ZERO);
+        let mut check = Vec::with_capacity_in(q.digits.len() + rhs.digits.len(), allocator.clone());
+        check.resize_with(check.capacity(), || U256::ZERO);
 
+        big_wrapping_mul(&q, &rhs, &mut check);
+        in_place_add(&mut check, &r.digits);
 
-         big_wrapping_mul(&q, &rhs, &mut out);
-        in_place_add(&mut out, &r.digits);
+        let mut check = Self { digits: check };
+        check.trim();
 
+        assert!(check.digits == self.digits);
 
-            logger.write_fmt(format_args!("{:?}", q.digits));
-            logger.write_fmt(format_args!("{:?}", r.digits));
-            logger.write_fmt(format_args!("{:?}", out));
+        *self = q;
+        r
     }
 
-    pub fn modpow_naive(&mut self, exp: &[u8], modulus: &Self, allocator: A) -> Self {
-        todo!();
+    pub fn trim(&mut self) {
+        let cnt = self.digits.iter().rev().take_while(|x| **x == U256::ZERO).count();
+
+        let cnt = match cnt == self.digits.len() {
+            false => cnt,
+            true => cnt - 1,
+        };
+
+        self.digits.resize_with(self.digits.len() - cnt, || { unreachable!() });
+    }
+
+    pub fn modpow_naive<O: IOOracle, L: Logger>(&mut self, exp: &[u8], modulus: &Self, oracle: &mut O, logger: &mut L, allocator: A) -> Self {
+        let mut base = self.div(modulus, oracle, logger, allocator.clone());
+
+        let mut scratch_space = Vec::with_capacity_in(modulus.digits.len(), allocator.clone());
+        scratch_space.resize(scratch_space.capacity(), U256::ZERO);
+
+        let mut result = Vec::with_capacity_in(modulus.digits.len(), allocator.clone());
+        result.resize(result.capacity(), U256::ZERO);
+        let mut result = MPNatU256 { digits: result };
+
+        result.digits[0] = U256::ONE;
+        for &b in exp {
+            let mut mask: u8 = 1 << 7;
+            while mask > 0 {
+
+                big_wrapping_mul(&result, &result, &mut scratch_space);
+
+                
+                result.digits.clone_from_slice(&scratch_space);
+                result = result.div(modulus, oracle, logger, allocator.clone());
+                scratch_space.fill(U256::ZERO); // zero-out the scratch space
+                if b & mask != 0 {
+                    big_wrapping_mul(&result, &base, &mut scratch_space);
+                    result.digits.clone_from_slice(&scratch_space);
+                    result = result.div(modulus, oracle, logger, allocator.clone());
+                    scratch_space.fill(U256::ZERO); // zero-out the scratch space
+                }
+                mask >>= 1;
+            }
+        }
+        result
     }
     //
     // pub fn is_power_of_two(&self) -> bool {

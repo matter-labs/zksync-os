@@ -175,7 +175,9 @@ fn modexp_as_system_function_inner<O: IOOracle, L: Logger, D: ?Sized + Extend<u8
         Vec::new_in(allocator)
     } else {
         // let result = x.modpow(exp, &m, allocator.clone());
-        x.div(&m, oracle, logger, allocator.clone());
+        // x.div(&m, oracle, logger, allocator.clone());
+        let mut x = x.modpow_naive(&exponent, &m, oracle, logger, allocator.clone());
+        x.trim();
         let r = x.to_big_endian(allocator);
         r
     };
