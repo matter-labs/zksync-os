@@ -59,6 +59,7 @@ pub trait SystemTypes {
 
     /// Common system functions implementation(ecrecover, keccak256, ecadd, etc).
     type SystemFunctions: SystemFunctions<Self::Resources>;
+    type SystemFunctionsExt: SystemFunctionsExt<Self::Resources>;
 
     type Logger: Logger + Default;
 

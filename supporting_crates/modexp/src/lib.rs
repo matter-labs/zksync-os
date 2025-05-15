@@ -79,3 +79,18 @@ pub fn modexp<A: Allocator + Clone>(
     let result = x.modpow(exp, &m, allocator.clone());
     result.to_big_endian(allocator)
 }
+
+pub fn modexp_u256<A: Allocator + Clone>(
+    base: &[u8],
+    exp: &[u8],
+    modulus: &[u8],
+    allocator: A,
+) -> Vec<u8, A> {
+    let mut x = mpnat::MPNat::from_big_endian(base, allocator.clone());
+    let m = mpnat::MPNat::from_big_endian(modulus, allocator.clone());
+    if m.digits.len() == 1 && m.digits[0] == 0 {
+        return Vec::new_in(allocator);
+    }
+    let result = x.modpow(exp, &m, allocator.clone());
+    result.to_big_endian(allocator)
+}

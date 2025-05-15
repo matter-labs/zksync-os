@@ -4,18 +4,25 @@ use crate::cost_constants::{MODEXP_MINIMAL_COST_ERGS, MODEXP_WORST_CASE_NATIVE_P
 use alloc::vec::Vec;
 use crypto::modexp::modexp;
 use evm_interpreter::ERGS_PER_GAS;
+use mpnat::MPNatU256;
 use ruint::aliases::U256;
+use zk_ee::reference_implementations::BaseComputationalResources;
+use zk_ee::system::logger::Logger;
+use zk_ee::system::{logger, SystemFunctionExt};
 use zk_ee::system::{
     errors::{InternalError, SystemError, SystemFunctionError},
     Computational, Ergs, SystemFunction,
 };
+use zk_ee::system_io_oracle::IOOracle;
+
+mod mpnat;
 
 ///
 /// modexp system function implementation.
 ///
 pub struct ModExpImpl;
 
-impl<R: Resources> SystemFunction<R> for ModExpImpl {
+impl SystemFunctionExt<BaseResources> for ModExpImpl {
     /// If the input size is less than expected - it will be padded with zeroes.
     /// If the input size is greater - redundant bytes will be ignored.
     ///
@@ -25,14 +32,16 @@ impl<R: Resources> SystemFunction<R> for ModExpImpl {
     /// or `mod_len` > usize max value
     /// or (`exp_len` > usize max value and `base_len` != 0 and `mod_len` != 0).
     /// In practice, it shouldn't be possible as requires large resources amounts, at least ~1e10 EVM gas.
-    fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<O: IOOracle, L: Logger, D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
         allocator: A,
     ) -> Result<(), SystemFunctionError> {
         cycle_marker::wrap_with_resources!("modexp", resources, {
-            modexp_as_system_function_inner(input, output, resources, allocator)
+            modexp_as_system_function_inner(input, output, resources, oracle, logger, allocator)
         })
     }
 }
@@ -45,10 +54,12 @@ fn resources_from_ergs<R: Resources>(ergs: Ergs) -> R {
 }
 
 // Based on https://github.com/bluealloy/revm/blob/main/crates/precompile/src/modexp.rs
-fn modexp_as_system_function_inner<D: ?Sized + Extend<u8>, A: Allocator + Clone, R: Resources>(
+fn modexp_as_system_function_inner<O: IOOracle, L: Logger, D: ?Sized + Extend<u8>, A: Allocator + Clone, R: Resources>(
     input: &[u8],
     dst: &mut D,
     resources: &mut R,
+    oracle: &mut O,
+    logger: &mut L,
     allocator: A,
 ) -> Result<(), SystemFunctionError> {
     // Check at least we have min gas
@@ -151,12 +162,25 @@ fn modexp_as_system_function_inner<D: ?Sized + Extend<u8>, A: Allocator + Clone,
     }
 
     // Call the modexp.
-    let output = modexp(
-        base.as_slice(),
-        exponent.as_slice(),
-        modulus.as_slice(),
-        allocator,
-    );
+    // let output = modexp(
+    //     base.as_slice(),
+    //     exponent.as_slice(),
+    //     modulus.as_slice(),
+    //     allocator,
+    // );
+
+    let mut x = MPNatU256::from_big_endian(&base, allocator.clone());
+    let m = MPNatU256::from_big_endian(&modulus, allocator.clone());
+    let output = if m.digits.len() == 1 && m.digits[0] == u256::U256::ZERO {
+        Vec::new_in(allocator)
+    } else {
+        // let result = x.modpow(exp, &m, allocator.clone());
+        x.div(&m, oracle, logger, allocator.clone());
+        let r = x.to_big_endian(allocator);
+        r
+    };
+
+    let _ = logger.write_fmt(format_args!("{:?}", output));
 
     dst.extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output));
 

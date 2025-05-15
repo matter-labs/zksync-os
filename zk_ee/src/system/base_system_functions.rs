@@ -1,5 +1,5 @@
-use super::{errors::InternalError, Resources};
-use crate::system::errors::SystemFunctionError;
+use super::{errors::InternalError, logger::Logger, Resources};
+use crate::{system::errors::SystemFunctionError, system_io_oracle::IOOracle};
 
 ///
 /// System function implementation.
@@ -12,6 +12,23 @@ pub trait SystemFunction<R: Resources> {
         input: &[u8],
         output: &mut D,
         resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SystemFunctionError>;
+}
+
+///
+/// System function implementation.
+///
+pub trait SystemFunctionExt<R: Resources> {
+    /// Writes result to the `output` and returns actual output slice length that was used.
+    /// Should return error on invalid inputs and if resources do not even cover basic parsing cost.
+    /// in practice only pairing can have invalid input(size) on charging stage.
+    fn execute<O: IOOracle, L: Logger, D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
         allocator: A,
     ) -> Result<(), SystemFunctionError>;
 }
@@ -41,7 +58,6 @@ pub trait SystemFunctions<R: Resources> {
     type Bn254Mul: SystemFunction<R>;
     type Bn254PairingCheck: SystemFunction<R>;
     type RipeMd160: SystemFunction<R>;
-    type ModExp: SystemFunction<R>;
 
     fn keccak256<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
@@ -150,13 +166,19 @@ pub trait SystemFunctions<R: Resources> {
     ) -> Result<(), SystemFunctionError> {
         Self::RipeMd160::execute(input, output, resources, allocator)
     }
+}
 
-    fn mod_exp<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+pub trait SystemFunctionsExt<R: Resources> {
+    type ModExp: SystemFunctionExt<R>;
+
+    fn mod_exp<O: IOOracle, L: Logger, D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
         allocator: A,
     ) -> Result<(), SystemFunctionError> {
-        Self::ModExp::execute(input, output, resources, allocator)
+        Self::ModExp::execute(input, output, resources, oracle, logger, allocator)
     }
 }

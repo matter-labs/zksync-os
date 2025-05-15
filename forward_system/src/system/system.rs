@@ -41,6 +41,7 @@ impl<O: IOOracle> SystemTypes for ForwardSystemTypes<O> {
     >;
     type Memory = MemoryImpl<Self::Allocator>;
     type SystemFunctions = NoStdSystemFunctions;
+    type SystemFunctionsExt = NoStdSystemFunctions;
     type Allocator = Global;
     type Logger = Logger;
 }

@@ -112,7 +112,7 @@ impl core::default::Default for U256 {
 
 impl U256 {
     pub const ZERO: Self = Self([0u64; 4]);
-    // const ONE: Self = Self([1u64, 0u64, 0u64, 0u64]);
+    pub const ONE: Self = Self([1u64, 0u64, 0u64, 0u64]);
 
     pub const BYTES: usize = 32;
 
@@ -402,6 +402,21 @@ impl U256 {
         }
 
         len
+    }
+
+    pub fn leading_zeros(&self) -> usize {
+        let mut cnt = 0;
+
+        for el in self.0.iter().rev() {
+            if *el == 0 {
+                cnt += 64
+            } else {
+                cnt += el.leading_zeros() as usize;
+                return cnt;
+            }
+        }
+
+        cnt
     }
 
     pub fn byte(&self, byte_idx: usize) -> u8 {

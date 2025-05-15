@@ -168,18 +168,18 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         // forward run
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
-        run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
-            oracle.clone(),
-            &mut result_keeper,
-        );
+        // run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
+        //     oracle.clone(),
+        //     &mut result_keeper,
+        // );
 
-        let block_output: BatchOutput = result_keeper.into();
-        info!(
-            "{}Block output:{} \n{:#?}",
-            colors::MAGENTA,
-            colors::RESET,
-            block_output.tx_results
-        );
+        // let block_output: BatchOutput = result_keeper.into();
+        // info!(
+        //     "{}Block output:{} \n{:#?}",
+        //     colors::MAGENTA,
+        //     colors::RESET,
+        //     block_output.tx_results
+        // );
 
         // proof run
         let oracle_wrapper = BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle);
@@ -194,6 +194,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let mut non_determinism_source = ZkEENonDeterminismSource::default();
         non_determinism_source.add_external_processor(oracle_wrapper);
+        non_determinism_source.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery{
+            marker: std::marker::PhantomData
+        });
 
         // We'll wrap the source, to collect all the reads.
         let copy_source = ReadWitnessSource::new(non_determinism_source);
@@ -256,7 +259,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         run_prover(items.borrow().as_slice());
         // TODO: we also need to update state if we want to execute next block on top
 
-        block_output
+        // block_output
+        todo!();
     }
 
     fn get_account_properties(&mut self, address: &B160) -> AccountProperties {
@@ -417,13 +421,21 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 }
 
 // bunch of internal utility methods
-fn get_zksyncos_img_path() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap_or("../../../".to_string()))
+fn get_workspace_path() -> PathBuf {
+    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap_or_else(|_| {
+        match std::env::current_dir().unwrap().join("zk_os/app.bin").exists() {
+            true => "./".to_string(),
+            false => "../../../".to_string(),
+        }
+    }))
+}
+fn get_zksync_os_img_path() -> PathBuf {
+    get_workspace_path()
         .join("zksync_os/app.bin")
 }
 
 fn get_zksync_os_sym_path() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap_or("../../../".to_string()))
+    get_workspace_path()
         .join("zksync_os/app.elf")
 }
 
