@@ -156,7 +156,7 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         Self { digits }
     }
 
-    pub fn from_little_endian(bytes: &[u8], allocator: A) -> Self {
+    pub fn from_little_endian<L: Logger>(bytes: &[u8], logger: &mut L, allocator: A) -> Self {
         if bytes.is_empty() {
             let vec = Vec::with_capacity_in(0, allocator.clone());
             return Self {
@@ -166,11 +166,13 @@ impl<A: Allocator + Clone> MPNatU256<A> {
 
         // Remainder on division by WORD_BYTES
         let r = bytes.len() & (U256::BYTES - 1);
-        let n_digits = if r == 0 {
-            bytes.len() / U256::BYTES
+        let (n_digits, full_digits) = if r == 0 {
+            let ws = bytes.len() / U256::BYTES;
+            (ws, ws)
         } else {
             // Need an extra digit for the remainder
-            (bytes.len() / U256::BYTES) + 1
+            let ws = bytes.len() / U256::BYTES;
+            (ws + 1, ws)
         };
 
         let mut digits = Vec::with_capacity_in(n_digits, allocator.clone());
@@ -182,25 +184,38 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         let mut i_w = 0;
 
         loop {
-            if i_w == n_digits - 1 { break; }
+            if i_w == full_digits { break; }
             let next = i_b + U256::BYTES;
             buf.copy_from_slice(&bytes[i_b..next]);
+
             digits.push(U256::from_le_bytes(&buf));
 
             i_w += 1;
             i_b = next;
         }
 
-        buf[..r].copy_from_slice(&bytes[i_w..]);
-        buf[i_w + r..].iter_mut().for_each(|x| *x = 0);
+        if r != 0 {
+            buf[..r].copy_from_slice(&bytes[i_b..]);
+            buf[i_w + r..].iter_mut().for_each(|x| *x = 0);
 
-        digits.push(U256::from_le_bytes(&buf));
+            digits.push(U256::from_le_bytes(&buf));
+        }
 
         Self { digits }
     }
 
-    pub fn div<O: IOOracle, L: Logger>(&mut self, rhs: &Self, oracle: &mut O, logger: &mut L, allocator: A) -> Self {
+    pub fn eq(&self, rhs: &Self) -> bool {
+        let (a, b) = match self.digits.len() >= rhs.digits.len() {
+            true => (self, rhs),
+            false => (rhs, self),
+        };
 
+        a.digits.iter().chain(core::iter::repeat(&U256::ZERO))
+            .zip(b.digits.iter()).all(|(x, y)| x == y)
+    }
+
+    pub fn div<O: IOOracle, L: Logger>(&mut self, rhs: &Self, oracle: &mut O, logger: &mut L, allocator: A) -> Self {
+        
         let lhs_len = self.digits.len();
         let lhs_ptr = self.digits.as_mut_ptr();
 
@@ -219,29 +234,32 @@ impl<A: Allocator + Clone> MPNatU256<A> {
 
         let ptr = &mut arg as *mut _ as usize as u32;
 
-
         let mut it = oracle.create_oracle_access_iterator::<Arithmetics>(ptr).unwrap();
 
         let q_len = it.next().expect("Quotient length.");
         let r_len = it.next().expect("Remainder length.");
 
-        let mut q = Vec::with_capacity_in(q_len * 4, allocator.clone());
-        let mut r = Vec::with_capacity_in(r_len * 4, allocator.clone());
+        let mut q = Vec::with_capacity_in(self.digits.len() * 32, allocator.clone());
+        let mut r = Vec::with_capacity_in(self.digits.len() * 32, allocator.clone());
 
-        for i in 0..q_len {
+        for _ in 0..q_len {
             let word = it.next().expect("Quotient word.");
 
             q.extend_from_slice(&word.to_ne_bytes());
         }
 
-        for i in 0..r_len {
+        for _ in 0..r_len {
             let word = it.next().expect("Remainder word.");
 
             r.extend_from_slice(&word.to_ne_bytes());
         }
 
-        let q = MPNatU256::from_little_endian(&q, allocator.clone());
-        let r = MPNatU256::from_little_endian(&r, allocator.clone());
+        // Force same width as input
+        q.resize(q.capacity(), 0);
+        r.resize(r.capacity(), 0);
+
+        let q = MPNatU256::from_little_endian(&q, logger, allocator.clone());
+        let r = MPNatU256::from_little_endian(&r, logger, allocator.clone());
 
         let mut check = Vec::with_capacity_in(q.digits.len() + rhs.digits.len(), allocator.clone());
         check.resize_with(check.capacity(), || U256::ZERO);
@@ -249,10 +267,9 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         big_wrapping_mul(&q, &rhs, &mut check);
         in_place_add(&mut check, &r.digits);
 
-        let mut check = Self { digits: check };
-        check.trim();
+        let check = Self { digits: check };
 
-        assert!(check.digits == self.digits);
+        assert!(check.eq(self));
 
         *self = q;
         r
@@ -270,12 +287,13 @@ impl<A: Allocator + Clone> MPNatU256<A> {
     }
 
     pub fn modpow_naive<O: IOOracle, L: Logger>(&mut self, exp: &[u8], modulus: &Self, oracle: &mut O, logger: &mut L, allocator: A) -> Self {
+        // Initial reduction
         let mut base = self.div(modulus, oracle, logger, allocator.clone());
 
-        let mut scratch_space = Vec::with_capacity_in(modulus.digits.len(), allocator.clone());
+        let mut scratch_space = Vec::with_capacity_in(modulus.digits.len() * 2, allocator.clone());
         scratch_space.resize(scratch_space.capacity(), U256::ZERO);
 
-        let mut result = Vec::with_capacity_in(modulus.digits.len(), allocator.clone());
+        let mut result = Vec::with_capacity_in(modulus.digits.len() * 2, allocator.clone());
         result.resize(result.capacity(), U256::ZERO);
         let mut result = MPNatU256 { digits: result };
 
@@ -286,16 +304,18 @@ impl<A: Allocator + Clone> MPNatU256<A> {
 
                 big_wrapping_mul(&result, &result, &mut scratch_space);
 
-                
                 result.digits.clone_from_slice(&scratch_space);
                 result = result.div(modulus, oracle, logger, allocator.clone());
                 scratch_space.fill(U256::ZERO); // zero-out the scratch space
+
                 if b & mask != 0 {
                     big_wrapping_mul(&result, &base, &mut scratch_space);
                     result.digits.clone_from_slice(&scratch_space);
                     result = result.div(modulus, oracle, logger, allocator.clone());
                     scratch_space.fill(U256::ZERO); // zero-out the scratch space
+
                 }
+
                 mask >>= 1;
             }
         }
