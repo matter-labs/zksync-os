@@ -185,31 +185,18 @@ where
         .get_logger()
         .write_fmt(format_args!("Begin execution\n"));
 
-    let special_address_bound = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUND, 0, 0]);
-
-    // Start running the VM.
-    let mut preemption_reason = initial_request;
-
     // This the main loop -- if we will keep running the EEs, until they complete execution or yield.
     // if they yield requesting external call or deployment, this loop will put the current entry on the callstack
     // and execute that external call.
     // When external call is finished, it would pop the latest entry from the callstack, and continue the execution.
     // It will break the loop, when the callstack is empty.
-    let final_end_state = loop {
-        match dispatch_preemption_reason::<S, CS>(
-            callstack,
-            system,
-            hooks,
-            special_address_bound,
-            preemption_reason,
-            initial_ee_version,
-        )? {
-            ControlFlow::Normal(exit_state) => preemption_reason = exit_state,
-            ControlFlow::Break(exit_state) => break exit_state,
-        }
-    };
-
-    Ok(final_end_state)
+    dispatch_preemption_reason::<S, CS>(
+        callstack,
+        system,
+        hooks,
+        initial_request,
+        initial_ee_version,
+    )
 }
 
 ///
@@ -224,15 +211,16 @@ fn dispatch_preemption_reason<
     callstack: &mut CS,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
-    special_address_bound: B160,
     preemption_reason: ExecutionEnvironmentPreemptionPoint<S>,
     initial_ee_version: ExecutionEnvironmentType,
-) -> Result<ControlFlow<S>, FatalError>
+) -> Result<TransactionEndPoint<S>, FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
-    match preemption_reason {
+    const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUND, 0, 0]);
+
+    match match preemption_reason {
         // Contract requested a call to another contract (that potentially uses a different Execution Environment).
         ExecutionEnvironmentPreemptionPoint::RequestedExternalCall(call_request) => {
             handle_requested_external_call::<S, CS>(
@@ -240,7 +228,7 @@ where
                 system,
                 hooks,
                 initial_ee_version,
-                special_address_bound,
+                SPECIAL_ADDRESS_BOUND,
                 call_request,
             )
         }
@@ -272,6 +260,11 @@ where
             deployment_result,
             resources_returned,
         ),
+    }? {
+        ControlFlow::Normal(exit_state) => {
+            dispatch_preemption_reason(callstack, system, hooks, exit_state, initial_ee_version)
+        }
+        ControlFlow::Break(exit_state) => Ok(exit_state),
     }
 }
 
