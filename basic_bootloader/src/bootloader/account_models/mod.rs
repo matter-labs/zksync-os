@@ -15,7 +15,7 @@ use errors::FatalError;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system::System;
 use zk_ee::system::SystemFrameSnapshot;
@@ -123,10 +123,10 @@ where
     /// `callstack` expected to be empty at the beginning and at the end of this function execution.
     /// It's passed to reuse memory between transactions.
     ///
-    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn validate(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -142,10 +142,10 @@ where
     /// `callstack` expected to be empty at the beginning and at the end of this function execution.
     /// It's passed to reuse memory between transactions.
     ///
-    fn execute<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn execute(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -180,10 +180,10 @@ where
     ///
     /// Pay for the transaction's fees
     ///
-    fn pay_for_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pay_for_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -195,10 +195,10 @@ where
     ///
     /// Prepare for paymaster
     ///
-    fn pre_paymaster<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,

@@ -10,7 +10,7 @@ use crate::bootloader::StackFrame;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::FatalError;
 use zk_ee::system::{
     EthereumLikeTypes, IOSubsystemExt, MemorySubsystemExt, System, SystemFrameSnapshot,
@@ -71,11 +71,11 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn validate(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -85,7 +85,7 @@ where
         resources: &mut S::Resources,
     ) -> Result<(), TxError> {
         match self {
-            AA::EOA(_) => EOA::validate::<CS>(
+            AA::EOA(_) => EOA::validate(
                 system,
                 system_functions,
                 callstack,
@@ -97,7 +97,7 @@ where
                 caller_nonce,
                 resources,
             ),
-            AA::Contract(_) => Contract::validate::<CS>(
+            AA::Contract(_) => Contract::validate(
                 system,
                 system_functions,
                 callstack,
@@ -114,11 +114,11 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn execute<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn execute(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -126,7 +126,7 @@ where
         resources: &mut S::Resources,
     ) -> Result<ExecutionResult<S>, FatalError> {
         match self {
-            AA::EOA(_) => EOA::execute::<CS>(
+            AA::EOA(_) => EOA::execute(
                 system,
                 system_functions,
                 callstack,
@@ -136,7 +136,7 @@ where
                 current_tx_nonce,
                 resources,
             ),
-            AA::Contract(_) => Contract::execute::<CS>(
+            AA::Contract(_) => Contract::execute(
                 system,
                 system_functions,
                 callstack,
@@ -177,11 +177,11 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn pay_for_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn pay_for_transaction(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -190,7 +190,7 @@ where
         resources: &mut S::Resources,
     ) -> Result<(), TxError> {
         match self {
-            AA::EOA(_) => EOA::pay_for_transaction::<CS>(
+            AA::EOA(_) => EOA::pay_for_transaction(
                 system,
                 system_functions,
                 callstack,
@@ -201,7 +201,7 @@ where
                 caller_ee_type,
                 resources,
             ),
-            AA::Contract(_) => Contract::pay_for_transaction::<CS>(
+            AA::Contract(_) => Contract::pay_for_transaction(
                 system,
                 system_functions,
                 callstack,
@@ -216,11 +216,11 @@ where
     }
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn pre_paymaster<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn pre_paymaster(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -230,7 +230,7 @@ where
         resources: &mut S::Resources,
     ) -> Result<(), TxError> {
         match self {
-            AA::EOA(_) => EOA::pre_paymaster::<CS>(
+            AA::EOA(_) => EOA::pre_paymaster(
                 system,
                 system_functions,
                 callstack,
@@ -242,7 +242,7 @@ where
                 caller_ee_type,
                 resources,
             ),
-            AA::Contract(_) => Contract::pre_paymaster::<CS>(
+            AA::Contract(_) => Contract::pre_paymaster(
                 system,
                 system_functions,
                 callstack,

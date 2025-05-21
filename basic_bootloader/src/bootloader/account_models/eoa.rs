@@ -19,7 +19,7 @@ use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::{
     errors::{InternalError, SystemError, UpdateQueryError},
@@ -60,10 +60,10 @@ where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
-    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn validate(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut CS,
+        _callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         _tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -169,10 +169,10 @@ where
         Ok(())
     }
 
-    fn execute<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn execute(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -194,8 +194,7 @@ where
                 ))
         };
 
-        use zk_ee::memory::stack_trait::Stack;
-        assert!(Stack::len(callstack) == 0);
+        assert!(callstack.len() == 0);
 
         // panic is not reachable, to is validated
         let to = transaction.to.read();
@@ -216,7 +215,7 @@ where
             reverted,
             deployed_address,
         } = match to_ee_type {
-            Some(to_ee_type) => process_deployment::<_, _>(
+            Some(to_ee_type) => process_deployment(
                 system,
                 system_functions,
                 callstack,
@@ -228,7 +227,7 @@ where
                 current_tx_nonce,
             )?,
             None => {
-                let final_state = BasicBootloader::run_single_interaction::<_>(
+                let final_state = BasicBootloader::run_single_interaction(
                     system,
                     system_functions,
                     callstack,
@@ -326,10 +325,10 @@ where
         Ok(())
     }
 
-    fn pay_for_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pay_for_transaction(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut CS,
+        _callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -378,10 +377,10 @@ where
         Ok(())
     }
 
-    fn pre_paymaster<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -428,7 +427,7 @@ where
             let min_allowance = min_allowance.unwrap();
 
             let pre_tx_buffer = transaction.pre_tx_buffer();
-            let current_allowance = erc20_allowance::<_, CS>(
+            let current_allowance = erc20_allowance(
                 system,
                 system_functions,
                 callstack,
@@ -441,7 +440,7 @@ where
             if current_allowance < min_allowance {
                 // Some tokens, e.g. USDT require that the allowance is
                 // firstly set to zero and only then updated to the new value.
-                let success = erc20_approve::<_, _>(
+                let success = erc20_approve(
                     system,
                     system_functions,
                     callstack,
@@ -458,7 +457,7 @@ where
                     "ERC20 0 approve failed",
                     system
                 )?;
-                let success = erc20_approve::<_, _>(
+                let success = erc20_approve(
                     system,
                     system_functions,
                     callstack,
@@ -539,13 +538,10 @@ struct TxExecutionResult<S: SystemTypes> {
 
 /// Run the deployment part of a contract creation tx
 /// The boolean in the return
-fn process_deployment<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
+fn process_deployment<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut CS,
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     resources: &mut S::Resources,
     to_ee_type: ExecutionEnvironmentType,
     main_calldata: OSImmutableSlice<S>,
@@ -602,7 +598,7 @@ where
     };
     let rollback_handle = system.start_global_frame()?;
 
-    let final_state = run_till_completion::<S, CS>(
+    let final_state = run_till_completion(
         callstack,
         system,
         system_functions,
@@ -659,13 +655,10 @@ where
 /// Call the ERC20 [allowance] method for [token]
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
-fn erc20_allowance<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
+fn erc20_allowance<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut CS,
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,
@@ -712,7 +705,7 @@ where
         return_values,
         reverted,
         ..
-    } = BasicBootloader::run_single_interaction::<CS>(
+    } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
         callstack,
@@ -749,13 +742,10 @@ where
 /// Call the ERC20 [approve] method for [token]
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
-fn erc20_approve<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
+fn erc20_approve<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut CS,
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,
@@ -802,7 +792,7 @@ where
         return_values,
         reverted,
         ..
-    } = BasicBootloader::run_single_interaction::<CS>(
+    } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
         callstack,

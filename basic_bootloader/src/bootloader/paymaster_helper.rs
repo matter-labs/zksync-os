@@ -14,12 +14,10 @@ use zk_ee::system::{EthereumLikeTypes, System, SystemFrameSnapshot};
 impl<S: EthereumLikeTypes> BasicBootloader<S> {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)]
-    pub(crate) fn validate_and_pay_for_paymaster_transaction<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-    >(
+    pub(crate) fn validate_and_pay_for_paymaster_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
@@ -40,7 +38,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             reverted,
             return_values,
             ..
-        } = BasicBootloader::call_account_method::<CS>(
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
             callstack,
@@ -328,10 +326,10 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     /// )
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)]
-    pub fn call_account_method<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn call_account_method(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
@@ -370,9 +368,9 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         let resources_for_tx = resources.clone();
 
-        assert!(Stack::len(callstack) == 0);
+        assert!(callstack.len() == 0);
 
-        BasicBootloader::run_single_interaction::<_>(
+        BasicBootloader::run_single_interaction(
             system,
             system_functions,
             callstack,

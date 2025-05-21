@@ -17,7 +17,7 @@ use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::*;
 use zk_ee::common_structs::CalleeParameters;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::{
     errors::{InternalError, SystemError, UpdateQueryError},
     logger::Logger,
@@ -46,11 +46,8 @@ enum ControlFlow<S: EthereumLikeTypes> {
 /// while preparing to execute an external call.
 /// If [callstack] is empty, then we're in the entry frame.
 ///
-fn fail_external_call<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
+fn fail_external_call<S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     finish_callee_frame: bool,
     mut resources_returned: S::Resources,
@@ -88,11 +85,8 @@ where
 /// If [callstack] is empty, then we're in the entry frame, so we break
 /// out of the main loop with an immediate result.
 ///
-fn halt_or_continue_after_external_call<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
+fn halt_or_continue_after_external_call<S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     returned_resources: S::Resources,
     call_result: CallResult<S>,
@@ -129,11 +123,8 @@ where
 /// If [callstack] is empty, then we're in the entry frame, so we break
 /// out of the main loop with an immediate result.
 ///
-fn halt_or_continue_after_deployment<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
+fn halt_or_continue_after_deployment<S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     resources_returned: S::Resources,
     deployment_result: DeploymentResult<S>,
@@ -163,11 +154,8 @@ where
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
 ///
-pub fn run_till_completion<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
+pub fn run_till_completion<S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
@@ -190,7 +178,7 @@ where
     // and execute that external call.
     // When external call is finished, it would pop the latest entry from the callstack, and continue the execution.
     // It will break the loop, when the callstack is empty.
-    dispatch_preemption_reason::<S, CS>(
+    dispatch_preemption_reason(
         callstack,
         system,
         hooks,
@@ -204,11 +192,8 @@ where
 /// returns the next control flow for the main loop.
 ///
 #[inline(always)]
-fn dispatch_preemption_reason<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
+fn dispatch_preemption_reason<S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     preemption_reason: ExecutionEnvironmentPreemptionPoint<S>,
@@ -223,7 +208,7 @@ where
     match match preemption_reason {
         // Contract requested a call to another contract (that potentially uses a different Execution Environment).
         ExecutionEnvironmentPreemptionPoint::RequestedExternalCall(call_request) => {
-            handle_requested_external_call::<S, CS>(
+            handle_requested_external_call(
                 callstack,
                 system,
                 hooks,
@@ -233,7 +218,7 @@ where
             )
         }
         ExecutionEnvironmentPreemptionPoint::RequestedDeployment(deployment_parameters) => {
-            handle_requested_deployment::<S, CS>(
+            handle_requested_deployment(
                 callstack,
                 system,
                 deployment_parameters,
@@ -244,7 +229,7 @@ where
             return_values,
             resources_returned,
             reverted,
-        }) => handle_completed_execution::<S, CS>(
+        }) => handle_completed_execution(
             callstack,
             system,
             return_values,
@@ -254,12 +239,7 @@ where
         ExecutionEnvironmentPreemptionPoint::CompletedDeployment(CompletedDeployment {
             deployment_result,
             resources_returned,
-        }) => handle_completed_deployment::<S, CS>(
-            callstack,
-            system,
-            deployment_result,
-            resources_returned,
-        ),
+        }) => handle_completed_deployment(callstack, system, deployment_result, resources_returned),
     }? {
         ControlFlow::Normal(exit_state) => {
             dispatch_preemption_reason(callstack, system, hooks, exit_state, initial_ee_version)
@@ -269,11 +249,8 @@ where
 }
 
 #[inline(always)]
-fn handle_requested_external_call<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
+fn handle_requested_external_call<S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
@@ -319,7 +296,7 @@ where
 
     // The call is targeting the "system contract" space.
     if is_call_to_special_address {
-        return handle_requested_external_call_to_special_address_space::<S, CS>(
+        return handle_requested_external_call_to_special_address_space(
             callstack,
             system,
             hooks,
@@ -452,11 +429,8 @@ where
 }
 
 #[inline(always)]
-fn handle_requested_external_call_to_special_address_space<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
+fn handle_requested_external_call_to_special_address_space<S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
@@ -615,11 +589,8 @@ pub struct CallPreparationResult<S: SystemTypes> {
 /// The return value is Left(preparation_result) if preparation succeeds,
 /// and Right(next_control_flow) if some check fails.
 ///
-fn run_call_preparation<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
+fn run_call_preparation<S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     ee_version: ExecutionEnvironmentType,
     call_request: &ExternalCallRequest<S>,
@@ -944,11 +915,8 @@ where
 }
 
 #[inline(always)]
-fn handle_requested_deployment<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
+fn handle_requested_deployment<S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     deployment_parameters: DeploymentPreparationParameters<S>,
     initial_ee_version: ExecutionEnvironmentType,
@@ -1106,11 +1074,8 @@ where
 }
 
 #[inline(always)]
-fn handle_completed_execution<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
+fn handle_completed_execution<S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     return_values: ReturnValues<S>,
     resources_returned: S::Resources,
@@ -1183,11 +1148,8 @@ where
 }
 
 #[inline(always)]
-fn handle_completed_deployment<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
+fn handle_completed_deployment<S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     deployment_result: DeploymentResult<S>,
     mut resources_returned: S::Resources,

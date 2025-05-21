@@ -29,6 +29,33 @@ impl<'a, T> SliceVec<'a, T> {
         }
         self.length = 0;
     }
+
+    pub fn try_push(&mut self, x: T) -> Result<(), ()> {
+        self.memory
+            .get_mut(self.length)
+            .map(|m| {
+                m.write(x);
+                self.length += 1;
+            })
+            .ok_or(())
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        if self.length == 0 {
+            None
+        } else {
+            self.length -= 1;
+            Some(unsafe { self.memory[self.length].assume_init_read() })
+        }
+    }
+
+    pub fn top(&mut self) -> Option<&mut T> {
+        if self.length == 0 {
+            None
+        } else {
+            Some(unsafe { self.memory[self.length - 1].assume_init_mut() })
+        }
+    }
 }
 
 impl<T: Clone> SliceVec<'_, T> {

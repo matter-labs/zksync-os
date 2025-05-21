@@ -14,7 +14,7 @@ use errors::FatalError;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::{logger::Logger, EthereumLikeTypes, System, SystemFrameSnapshot, *};
 
 pub struct Contract;
@@ -24,10 +24,10 @@ where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
-    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn validate(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -47,7 +47,7 @@ where
             reverted,
             return_values,
             ..
-        } = BasicBootloader::call_account_method::<CS>(
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
             callstack,
@@ -87,10 +87,10 @@ where
         res
     }
 
-    fn execute<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn execute(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -108,7 +108,7 @@ where
             reverted,
             return_values,
             ..
-        } = BasicBootloader::call_account_method::<CS>(
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
             callstack,
@@ -184,10 +184,10 @@ where
         )
     }
 
-    fn pay_for_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pay_for_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -203,7 +203,7 @@ where
             resources_returned,
             reverted,
             ..
-        } = BasicBootloader::call_account_method::<CS>(
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
             callstack,
@@ -232,10 +232,10 @@ where
         res
     }
 
-    fn pre_paymaster<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -252,7 +252,7 @@ where
             resources_returned,
             reverted,
             ..
-        } = BasicBootloader::call_account_method::<CS>(
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
             callstack,

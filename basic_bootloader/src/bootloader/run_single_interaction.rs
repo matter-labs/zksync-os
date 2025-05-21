@@ -1,6 +1,6 @@
 use crate::bootloader::runner::run_till_completion;
 use system_hooks::HooksStorage;
-use zk_ee::memory::stack_trait::Stack;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::CallModifier;
 use zk_ee::system::{EthereumLikeTypes, System, SystemFrameSnapshot};
@@ -51,10 +51,10 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     /// assumes the caller's balance has been validated. It returns an
     /// internal error in case of balance underflow.
     ///
-    pub fn run_single_interaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn run_single_interaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         calldata: OSImmutableSlice<S>,
         caller: &B160,
         callee: &B160,
@@ -118,7 +118,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 nominal_token_value: *nominal_token_value,
             });
 
-        let final_state = run_till_completion::<_, _>(
+        let final_state = run_till_completion(
             callstack,
             system,
             system_functions,

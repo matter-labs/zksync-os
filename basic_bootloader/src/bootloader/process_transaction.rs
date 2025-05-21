@@ -16,7 +16,7 @@ use gas_helpers::check_enough_resources_for_pubdata;
 use gas_helpers::get_resources_to_charge_for_pubdata;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
-use zk_ee::memory::stack_trait::Stack;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::{EthereumLikeTypes, Resources, SystemFrameSnapshot};
 
@@ -37,14 +37,11 @@ where
     /// We are passing callstack from outside to reuse its memory space between different transactions.
     /// It's expected to be empty.
     ///
-    pub fn process_transaction<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-        Config: BasicBootloaderExecutionConfig,
-    >(
+    pub fn process_transaction<Config: BasicBootloaderExecutionConfig>(
         initial_calldata_buffer: &mut [u8],
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         // TODO: we can get it from the system
         is_first_tx: bool,
     ) -> Result<TxProcessingResult<S>, TxError> {
@@ -60,7 +57,7 @@ where
                 if !is_first_tx {
                     Err(Validation(InvalidTransaction::UpgradeTxNotFirst))
                 } else {
-                    Self::process_l1_transaction::<_>(
+                    Self::process_l1_transaction(
                         system,
                         system_functions,
                         callstack,
@@ -69,14 +66,10 @@ where
                     )
                 }
             }
-            ZkSyncTransaction::L1_L2_TX_TYPE => Self::process_l1_transaction::<_>(
-                system,
-                system_functions,
-                callstack,
-                transaction,
-                true,
-            ),
-            _ => Self::process_l2_transaction::<_, Config>(
+            ZkSyncTransaction::L1_L2_TX_TYPE => {
+                Self::process_l1_transaction(system, system_functions, callstack, transaction, true)
+            }
+            _ => Self::process_l2_transaction::<Config>(
                 system,
                 system_functions,
                 callstack,
@@ -85,10 +78,10 @@ where
         }
     }
 
-    fn process_l1_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn process_l1_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         transaction: ZkSyncTransaction,
         is_priority_op: bool,
     ) -> Result<TxProcessingResult<S>, TxError> {
@@ -149,7 +142,7 @@ where
         // Tx execution
         let from = transaction.from.read();
         let to = transaction.to.read();
-        let result = match Self::execute_l1_transaction_and_notify_result::<_>(
+        let result = match Self::execute_l1_transaction_and_notify_result(
             system,
             system_functions,
             callstack,
@@ -281,12 +274,10 @@ where
         })
     }
 
-    fn execute_l1_transaction_and_notify_result<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-    >(
+    fn execute_l1_transaction_and_notify_result(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         transaction: &ZkSyncTransaction,
         from: B160,
         to: B160,
@@ -343,7 +334,7 @@ where
             reverted,
             return_values,
             ..
-        } = BasicBootloader::run_single_interaction::<_>(
+        } = BasicBootloader::run_single_interaction(
             system,
             system_functions,
             callstack,
@@ -388,13 +379,10 @@ where
         Ok(execution_result)
     }
 
-    fn process_l2_transaction<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-        Config: BasicBootloaderExecutionConfig,
-    >(
+    fn process_l2_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         mut transaction: ZkSyncTransaction,
     ) -> Result<TxProcessingResult<S>, TxError> {
         let from = transaction.from.read();
@@ -483,7 +471,7 @@ where
         let suggested_signed_hash: Bytes32 = transaction.calculate_signed_hash(chain_id)?.into();
 
         let ValidationResult { validation_pubdata } = if !Config::ONLY_SIMULATE {
-            Self::transaction_validation::<_, Config>(
+            Self::transaction_validation::<Config>(
                 system,
                 system_functions,
                 callstack,
@@ -541,7 +529,7 @@ where
         };
 
         let gas_used = if !Config::ONLY_SIMULATE {
-            Self::refund_transaction::<_, Config>(
+            Self::refund_transaction::<Config>(
                 system,
                 system_functions,
                 callstack,
@@ -595,13 +583,10 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn transaction_validation<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-        Config: BasicBootloaderExecutionConfig,
-    >(
+    fn transaction_validation<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -635,7 +620,7 @@ where
         account_model.check_nonce_is_not_used(caller_nonce, tx_nonce)?;
 
         // AA validation
-        account_model.validate::<_>(
+        account_model.validate(
             system,
             system_functions,
             callstack,
@@ -662,7 +647,7 @@ where
         ));
 
         // Charge fees
-        Self::ensure_payment::<_, Config>(
+        Self::ensure_payment::<Config>(
             system,
             system_functions,
             callstack,
@@ -689,10 +674,10 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn transaction_execution<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn transaction_execution(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -709,7 +694,7 @@ where
         // TODO: factory deps? Probably fine to ignore for now
 
         // AA execution
-        let execution_result = account_model.execute::<_>(
+        let execution_result = account_model.execute(
             system,
             system_functions,
             callstack,
@@ -740,13 +725,10 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn ensure_payment<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-        Config: BasicBootloaderExecutionConfig,
-    >(
+    fn ensure_payment<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -775,7 +757,7 @@ where
         let payer = if Config::AA_ENABLED && paymaster != B160::ZERO {
             // Paymaster flow
             // First, the `prepareForPaymaster` method of the user's account is called.
-            account_model.pre_paymaster::<_>(
+            account_model.pre_paymaster(
                 system,
                 system_functions,
                 callstack,
@@ -788,7 +770,7 @@ where
                 resources,
             )?;
 
-            let return_values = Self::validate_and_pay_for_paymaster_transaction::<CS>(
+            let return_values = Self::validate_and_pay_for_paymaster_transaction(
                 system,
                 system_functions,
                 callstack,
@@ -805,7 +787,7 @@ where
             paymaster
         } else {
             // No paymaster
-            account_model.pay_for_transaction::<_>(
+            account_model.pay_for_transaction(
                 system,
                 system_functions,
                 callstack,
@@ -891,14 +873,10 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    // Returns gas_used
-    fn refund_transaction<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-        Config: BasicBootloaderExecutionConfig,
-    >(
+    fn refund_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut CS,
+        _callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
