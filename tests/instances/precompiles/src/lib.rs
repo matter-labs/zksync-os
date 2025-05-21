@@ -4,11 +4,13 @@
 use bytes::Bytes;
 use rig::forward_system::run::BatchOutput;
 use rig::forward_system::run::ExecutionResult::Revert;
+use rig::ProfilerConfig;
 use rig::{
     ethers::{abi::Address, signers::Signer, types::TransactionRequest},
     ruint::aliases::{B160, U256},
 };
 use std::assert_matches::assert_matches;
+use std::path::PathBuf;
 
 fn run_precompile(
     precompile_id: &str,
@@ -39,7 +41,11 @@ fn run_precompile(
         &wallet,
     );
 
-    let batch_output = chain.run_block(vec![tx], None, None);
+    // let batch_output = chain.run_block(vec![tx], None, None);
+    let batch_output = chain.run_block(vec![tx], None, Some(ProfilerConfig::new(PathBuf::from(format!(
+    "{}/flamegraph.svg",
+        env!("CARGO_MANIFEST_DIR")
+)))));
 
     batch_output
 }
@@ -600,23 +606,37 @@ fn run_manually() {
     //         name: "nagydani_4_square",
     //         precompile_id: "0000000000000000000000000000000000000005",
     //     };
+    let test = Test {
+        input: "\
+        0000000000000000000000000000000000000000000000000000000000000040\
+        0000000000000000000000000000000000000000000000000000000000000001\
+        0000000000000000000000000000000000000000000000000000000000000040\
+        e09ad9675465c53a109fac66a445c91b292d2bb2c5268addb30cd82f80fcb003\
+        3ff97c80a5fc6f39193ae969c6ede6710a6b7ac27078a06d90ef1c72e5c85fb5\
+        02fc9e1f6beb81516545975218075ec2af118cd8798df6e08a147c60fd6095ac\
+        2bb02c2908cf4dd7c81f11c289e4bce98f3553768f392a80ce22bf5c4f4a248c\
+        6b",
+        expected: "60008f1614cc01dcfb6bfb09c625cf90b47d4468db81b5f8b7a39d42f332eab9b2da8f2d95311648a8f243f4bb13cfb3d8f7f2a3c014122ebb3ed41b02783adc",
+        name: "nagydani_1_square",
+        precompile_id: "0000000000000000000000000000000000000005",
+    };
 
-    let test =
-        Test {
-    // <length_of_BASE> <length_of_EXPONENT> <length_of_MODULUS> <BASE> <EXPONENT> <MODULUS>
-            input:
-                "\
-                0000000000000000000000000000000000000000000000000000000000000004\
-                0000000000000000000000000000000000000000000000000000000000000002\
-                0000000000000000000000000000000000000000000000000000000000000003\
-                00000009\
-                0005\
-                000004\
-                ",
-            expected: "",
-            name: "manual",
-            precompile_id: "0000000000000000000000000000000000000005",
-        };
+    // let test =
+    //     Test {
+    //         // <length_of_BASE> <length_of_EXPONENT> <length_of_MODULUS> <BASE> <EXPONENT> <MODULUS>
+    //         input:
+    //             "\
+    //             0000000000000000000000000000000000000000000000000000000000000004\
+    //             0000000000000000000000000000000000000000000000000000000000000002\
+    //             0000000000000000000000000000000000000000000000000000000000000003\
+    //             00000008\
+    //             0004\
+    //             000006\
+    //             ",
+    //         expected: "",
+    //         name: "manual",
+    //         precompile_id: "0000000000000000000000000000000000000005",
+    //     };
     let input = hex::decode(test.input).unwrap();
     let expected = hex::decode(test.expected).unwrap();
     dbg!(test.name);

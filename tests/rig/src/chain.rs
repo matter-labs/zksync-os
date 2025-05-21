@@ -168,18 +168,18 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         // forward run
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
-        // run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
-        //     oracle.clone(),
-        //     &mut result_keeper,
-        // );
+        run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
+            oracle.clone(),
+            &mut result_keeper,
+        );
 
-        // let block_output: BatchOutput = result_keeper.into();
-        // info!(
-        //     "{}Block output:{} \n{:#?}",
-        //     colors::MAGENTA,
-        //     colors::RESET,
-        //     block_output.tx_results
-        // );
+        let block_output: BatchOutput = result_keeper.into();
+        info!(
+            "{}Block output:{} \n{:#?}",
+            colors::MAGENTA,
+            colors::RESET,
+            block_output.tx_results
+        );
 
         // proof run
         let oracle_wrapper = BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle);
@@ -259,8 +259,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         run_prover(items.borrow().as_slice());
         // TODO: we also need to update state if we want to execute next block on top
 
-        // block_output
-        todo!();
+        block_output
     }
 
     fn get_account_properties(&mut self, address: &B160) -> AccountProperties {

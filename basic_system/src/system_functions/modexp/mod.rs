@@ -162,27 +162,27 @@ fn modexp_as_system_function_inner<O: IOOracle, L: Logger, D: ?Sized + Extend<u8
     }
 
     // Call the modexp.
-    // let output = modexp(
-    //     base.as_slice(),
-    //     exponent.as_slice(),
-    //     modulus.as_slice(),
-    //     allocator,
-    // );
 
-    let mut x = MPNatU256::from_big_endian(&base, allocator.clone());
-    let m = MPNatU256::from_big_endian(&modulus, allocator.clone());
-    let output = if m.digits.len() == 1 && m.digits[0] == u256::U256::ZERO {
-        Vec::new_in(allocator)
-    } else {
-        // let result = x.modpow(exp, &m, allocator.clone());
-        // x.div(&m, oracle, logger, allocator.clone());
-        let mut x = x.modpow_naive(&exponent, &m, oracle, logger, allocator.clone());
-        x.trim();
-        let r = x.to_big_endian(allocator);
-        r
-    };
 
-    let _ = logger.write_fmt(format_args!("{:?}", output));
+    #[cfg(not(target_arch = "riscv32"))]
+    let output = 
+         modexp(
+            base.as_slice(),
+            exponent.as_slice(),
+            modulus.as_slice(),
+            allocator,
+        );
+
+    #[cfg(target_arch = "riscv32")]
+    let output =
+        mpnat::modexp(
+            base.as_slice(),
+            exponent.as_slice(),
+            modulus.as_slice(),
+            oracle,
+            logger,
+            allocator,
+        );
 
     dst.extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output));
 

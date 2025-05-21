@@ -1,13 +1,11 @@
-use core::mem::MaybeUninit;
-
-use ark_ff::BigInt;
-use num_bigint::BigUint;
 use oracle_provider::OracleQueryProcessor;
-use risc_v_simulator::{abstractions::memory::{AccessType, MemorySource}, cycle::status_registers::TrapReason};
-use ruint::aliases::U256;
-use zk_ee::{kv_markers::UsizeDeserializable, system::{}, utils::Bytes32};
+use risc_v_simulator::abstractions::memory::MemorySource;
 
-use crate::{utils::{evaluate::{read_memory_as_u8, write_memory_as_u8}, usize_slice_iterator::UsizeSliceIteratorOwned}, MemoryRegionDescriptionParams};
+use crate::utils::{evaluate::{
+    read_memory_as_u64,
+    read_struct},
+    usize_slice_iterator::UsizeSliceIteratorOwned
+};
 
 pub struct ArithmeticQuery<M: MemorySource> {
     pub marker: std::marker::PhantomData<M>,
@@ -36,48 +34,25 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
             query: Vec<usize>,
             memory: &M,
         ) -> Option<Box<dyn ExactSizeIterator<Item = usize> + 'static>> {
-        
-        debug_assert!(self.supports_query_id(query_id));
 
+        debug_assert!(self.supports_query_id(query_id));
 
         let mut it = query.into_iter();
 
         let arg_ptr = it.next().expect("A u32 should've been passed in.");
 
+        assert!(it.next().is_none(), "A single RISC-V ptr should've been passed.");
+
         assert!(arg_ptr % 4 == 0);
         const { assert!(core::mem::align_of::<ArithmeticsParam>() == 4) }
         const { assert!(core::mem::size_of::<ArithmeticsParam>() % 4 == 0) }
 
-        let mut arg = MaybeUninit::<ArithmeticsParam>::uninit();
-
-        let ptr = arg.as_mut_ptr();
-
-        for i in (0 .. core::mem::size_of::<ArithmeticsParam>()).step_by(4) {
-            let v = memory.get(arg_ptr as u64 + i as u64, AccessType::MemLoad, &mut TrapReason::NoTrap);
-            println!("v{} {}", i, v);
-            unsafe { ptr.cast::<u32>().add(i / 4).write(v) };
-        }
-
-        let arg = unsafe { arg.assume_init() };
-
-        let n = read_memory_as_u8(
-            memory,
-            arg.a_ptr,
-            arg.a_len * 32).unwrap();
-
-        let d = read_memory_as_u8(
-            memory,
-            arg.b_ptr as u32,
-            arg.b_len as u32 * 32).unwrap();
-
-        let n = BigUint::from_bytes_le(&n);
-        let d = BigUint::from_bytes_le(&d);
-
-        let mut n = n.to_u64_digits();
-        let mut d = d.to_u64_digits();
-        let mut r = vec![((n.len() as u64 * 2) << 32) | d.len() as u64 * 2];
+        let arg = unsafe { read_struct::<ArithmeticsParam, _>(memory, arg_ptr as u32) }.unwrap();
 
         const { assert!(8 == core::mem::size_of::<usize>()) };
+        let mut n = read_memory_as_u64(memory, arg.a_ptr, arg.a_len * 4).unwrap();
+        let mut d = read_memory_as_u64(memory, arg.b_ptr, arg.b_len * 4).unwrap();
+        let mut r = vec![((d.len() as u64 * 2) << 32) | n.len() as u64 * 2];
 
         ruint::algorithms::div(&mut n, &mut d);
 
@@ -88,23 +63,6 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
 
         let n = UsizeSliceIteratorOwned::new(r);
 
-        println!("{:?}", n);
-
         Some(Box::new(n))
     }
 }
-
-pub fn wide_mod(
-    n: U256,
-    d: U256,
-) -> (U256,U256) {
-    let r = n.div_rem(d);
-    r
-}
-
-#[repr(packed(8))]
-pub struct ModExpCallInputs {
-    n: U256,
-    d: U256,
-}
-
