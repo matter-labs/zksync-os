@@ -59,8 +59,8 @@ struct TxDataBuffer<A: Allocator> {
     buffer: Vec<u32, A>,
 }
 
-pub struct StackFrame<S: EthereumLikeTypes, R> {
-    pub vm: SupportedEEVMState<S>,
+pub struct StackFrame<'a, S: EthereumLikeTypes, R> {
+    pub vm: SupportedEEVMState<'a, S>,
     pub rollback_handle: Option<FrameRollbackHandle<R>>,
 }
 
@@ -92,8 +92,11 @@ pub struct DeploymentHandle<R> {
     ctor: R,
 }
 
-impl<S: EthereumLikeTypes, R> StackFrame<S, R> {
-    pub fn new(vm: SupportedEEVMState<S>, rollback_handle: Option<FrameRollbackHandle<R>>) -> Self {
+impl<'a, S: EthereumLikeTypes, R> StackFrame<'a, S, R> {
+    pub fn new(
+        vm: SupportedEEVMState<'a, S>,
+        rollback_handle: Option<FrameRollbackHandle<R>>,
+    ) -> Self {
         Self {
             vm,
             rollback_handle,

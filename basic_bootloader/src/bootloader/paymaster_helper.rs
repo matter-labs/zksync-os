@@ -5,7 +5,6 @@ use crate::bootloader::errors::{InvalidAA, TxError};
 use constants::{PAYMASTER_VALIDATE_AND_PAY_SELECTOR, TX_CALLDATA_OFFSET};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
-use zk_ee::memory::stack_trait::Stack;
 use zk_ee::system::errors::{FatalError, InternalError};
 use zk_ee::system::{EthereumLikeTypes, System, SystemFrameSnapshot};
 
@@ -160,12 +159,10 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)]
     #[allow(dead_code)]
-    pub(crate) fn paymaster_post_op<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-    >(
+    pub(crate) fn paymaster_post_op(
         _system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut CS,
+        _callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
         _transaction: &mut ZkSyncTransaction,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
@@ -357,14 +354,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         );
 
         // we can now take and cast as transaction is static relative to EEs
-        let calldata = unsafe {
-            let buffer = transaction.underlying_buffer();
-            system
-                .memory
-                .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                    &buffer[calldata_start..calldata_end],
-                ))
-        };
+        let calldata = &transaction.underlying_buffer()[calldata_start..calldata_end];
 
         let resources_for_tx = resources.clone();
 

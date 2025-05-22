@@ -34,11 +34,11 @@ use super::StackFrame;
 /// the looping and control flow from the actual logic to handle
 /// the preemption point.
 ///
-enum ControlFlow<S: EthereumLikeTypes> {
+enum ControlFlow<'a, S: EthereumLikeTypes> {
     /// Break out of the loop with the passed exit state.
     Break(TransactionEndPoint<S>),
     /// Just assign the new [preemption_reason].
-    Normal(ExecutionEnvironmentPreemptionPoint<S>),
+    Normal(ExecutionEnvironmentPreemptionPoint<'a, S>),
 }
 
 ///
@@ -46,13 +46,13 @@ enum ControlFlow<S: EthereumLikeTypes> {
 /// while preparing to execute an external call.
 /// If [callstack] is empty, then we're in the entry frame.
 ///
-fn fail_external_call<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+fn fail_external_call<'a, S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     finish_callee_frame: bool,
     mut resources_returned: S::Resources,
     callee_handle: Option<&SystemFrameSnapshot<S>>,
-) -> Result<ControlFlow<S>, FatalError>
+) -> Result<ControlFlow<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
@@ -85,12 +85,12 @@ where
 /// If [callstack] is empty, then we're in the entry frame, so we break
 /// out of the main loop with an immediate result.
 ///
-fn halt_or_continue_after_external_call<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+fn halt_or_continue_after_external_call<'a, S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     returned_resources: S::Resources,
     call_result: CallResult<S>,
-) -> Result<ControlFlow<S>, FatalError>
+) -> Result<ControlFlow<'a, S>, FatalError>
 where
     S::Memory: MemorySubsystemExt,
 {
@@ -123,12 +123,12 @@ where
 /// If [callstack] is empty, then we're in the entry frame, so we break
 /// out of the main loop with an immediate result.
 ///
-fn halt_or_continue_after_deployment<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+fn halt_or_continue_after_deployment<'a, S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     resources_returned: S::Resources,
     deployment_result: DeploymentResult<S>,
-) -> Result<ControlFlow<S>, FatalError>
+) -> Result<ControlFlow<'a, S>, FatalError>
 where
     S::Memory: MemorySubsystemExt,
 {
@@ -154,12 +154,12 @@ where
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
 ///
-pub fn run_till_completion<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+pub fn run_till_completion<'a, S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
-    initial_request: ExecutionEnvironmentPreemptionPoint<S>,
+    initial_request: ExecutionEnvironmentPreemptionPoint<'a, S>,
 ) -> Result<TransactionEndPoint<S>, FatalError>
 where
     S::IO: IOSubsystemExt,
@@ -249,14 +249,14 @@ where
 }
 
 #[inline(always)]
-fn handle_requested_external_call<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+fn handle_requested_external_call<'a, S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
     special_address_bound: B160,
-    call_request: ExternalCallRequest<S>,
-) -> Result<ControlFlow<S>, FatalError>
+    call_request: ExternalCallRequest<'a, S>,
+) -> Result<ControlFlow<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
@@ -429,13 +429,13 @@ where
 }
 
 #[inline(always)]
-fn handle_requested_external_call_to_special_address_space<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+fn handle_requested_external_call_to_special_address_space<'a, S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
     mut call_request: ExternalCallRequest<S>,
-) -> Result<ControlFlow<S>, FatalError>
+) -> Result<ControlFlow<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
@@ -574,10 +574,9 @@ where
     }
 }
 
-pub struct CallPreparationResult<S: SystemTypes> {
+pub struct CallPreparationResult<'a, S: SystemTypes> {
     pub next_ee_version: u8,
-    pub bytecode:
-        <<S::Memory as MemorySubsystem>::ManagedRegion as OSManagedRegion>::OSManagedImmutableSlice,
+    pub bytecode: &'a [u8],
     pub bytecode_len: u32,
     pub artifacts_len: u32,
     pub actual_resources_to_pass: S::Resources,
@@ -589,14 +588,14 @@ pub struct CallPreparationResult<S: SystemTypes> {
 /// The return value is Left(preparation_result) if preparation succeeds,
 /// and Right(next_control_flow) if some check fails.
 ///
-fn run_call_preparation<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+fn run_call_preparation<'a, S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     ee_version: ExecutionEnvironmentType,
     call_request: &ExternalCallRequest<S>,
     should_finish_callee_frame_on_error: bool,
     callee_rollback_handle: Option<&SystemFrameSnapshot<S>>,
-) -> Result<Either<CallPreparationResult<S>, ControlFlow<S>>, FatalError>
+) -> Result<Either<CallPreparationResult<'a, S>, ControlFlow<'a, S>>, FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
@@ -773,13 +772,13 @@ where
 // It should be split into EVM and generic part.
 /// Run call preparation, which includes reading the callee parameters,
 /// performing a token transfer and charging for resources.
-fn prepare_for_call<S: EthereumLikeTypes>(
+fn prepare_for_call<'a, S: EthereumLikeTypes>(
     system: &mut System<S>,
     ee_version: ExecutionEnvironmentType,
     resources: &mut S::Resources,
     call_request: &ExternalCallRequest<S>,
     is_entry_frame: bool,
-) -> Result<CalleeParameters<S>, CallPreparationError>
+) -> Result<CalleeParameters<'a>, CallPreparationError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
@@ -897,11 +896,6 @@ where
         let bytecode_len = account_properties.bytecode_len.0;
         let artifacts_len = account_properties.artifacts_len.0;
         let bytecode = account_properties.bytecode.0;
-        let bytecode = unsafe {
-            system
-                .memory
-                .construct_immutable_slice_from_static_slice(bytecode)
-        };
 
         (ee_version, bytecode, bytecode_len, artifacts_len)
     };
@@ -915,12 +909,12 @@ where
 }
 
 #[inline(always)]
-fn handle_requested_deployment<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+fn handle_requested_deployment<'a, S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
-    deployment_parameters: DeploymentPreparationParameters<S>,
+    deployment_parameters: DeploymentPreparationParameters<'a, S>,
     initial_ee_version: ExecutionEnvironmentType,
-) -> Result<ControlFlow<S>, FatalError>
+) -> Result<ControlFlow<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
@@ -1074,13 +1068,13 @@ where
 }
 
 #[inline(always)]
-fn handle_completed_execution<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+fn handle_completed_execution<'a, S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     return_values: ReturnValues<S>,
     resources_returned: S::Resources,
     reverted: bool,
-) -> Result<ControlFlow<S>, FatalError>
+) -> Result<ControlFlow<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
@@ -1148,12 +1142,12 @@ where
 }
 
 #[inline(always)]
-fn handle_completed_deployment<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+fn handle_completed_deployment<'a, S: EthereumLikeTypes>(
+    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
     system: &mut System<S>,
     deployment_result: DeploymentResult<S>,
     mut resources_returned: S::Resources,
-) -> Result<ControlFlow<S>, FatalError>
+) -> Result<ControlFlow<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,

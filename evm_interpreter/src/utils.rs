@@ -36,7 +36,7 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
     result
 }
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     #[inline(always)]
     pub(crate) fn pop_addresses<const N: usize>(&mut self) -> Result<[B160; N], ExitCode> {
         let len = self.stack.len();

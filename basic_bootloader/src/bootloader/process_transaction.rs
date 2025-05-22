@@ -318,13 +318,7 @@ where
         let resources_for_tx = resources.clone();
 
         // transaction is in managed region, so we can recast it back
-        let calldata = unsafe {
-            system
-                .memory
-                .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                    transaction.calldata(),
-                ))
-        };
+        let calldata = transaction.calldata();
 
         // TODO: add support for deployment transactions,
         // probably unify with execution logic for EOA

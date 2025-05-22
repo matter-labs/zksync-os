@@ -55,7 +55,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
-        calldata: OSImmutableSlice<S>,
+        calldata: &[u8],
         caller: &B160,
         callee: &B160,
         mut resources: S::Resources,

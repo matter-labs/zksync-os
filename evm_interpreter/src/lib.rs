@@ -23,8 +23,7 @@ use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};
 use zk_ee::system::{
-    BytecodeSource, EthereumLikeTypes, MemorySubsystem, OSImmutableSlice, OSResizableSlice, System,
-    SystemTypes,
+    EthereumLikeTypes, MemorySubsystem, OSImmutableSlice, OSResizableSlice, System, SystemTypes,
 };
 
 use alloc::vec::Vec;
@@ -45,7 +44,7 @@ pub(crate) const THIS_EE_TYPE: ExecutionEnvironmentType = ExecutionEnvironmentTy
 
 // this is the interpreter that can be found in Reth itself, modified for purposes of having abstract view
 // on memory and resources
-pub struct Interpreter<S: EthereumLikeTypes> {
+pub struct Interpreter<'a, S: EthereumLikeTypes> {
     /// Instruction pointer.
     pub instruction_pointer: usize,
     /// Generic resources
@@ -57,7 +56,7 @@ pub struct Interpreter<S: EthereumLikeTypes> {
     /// Contract information and invoking data
     pub address: <S::IOTypes as SystemIOTypesConfig>::Address,
     /// calldata
-    pub calldata: OSImmutableSlice<S>,
+    pub calldata: &'a [u8],
     /// returndata is available from here if it exists
     pub returndata: OSImmutableSlice<S>,
     /// Heap that belongs to this interpreter, can be resided
@@ -65,7 +64,7 @@ pub struct Interpreter<S: EthereumLikeTypes> {
     /// returndata location serves to save range information at various points
     pub returndata_location: Range<usize>,
     /// Bytecode
-    pub bytecode: BytecodeSource<S>,
+    pub bytecode: &'a [u8],
     /// Preprocessing result
     pub bytecode_preprocessing: BytecodePreprocessingData<S>,
     /// Call value

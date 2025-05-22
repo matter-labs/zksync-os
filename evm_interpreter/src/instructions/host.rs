@@ -8,7 +8,7 @@ use zk_ee::system::*;
 
 use super::*;
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn balance(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, BALANCE_NATIVE_COST)?;
         let [address] = self.pop_addresses::<1>()?;
@@ -247,8 +247,6 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         self.spend_gas(initcode_cost)?;
         let end = code_offset + len; // can not overflow as we resized heap above using same values
 
-        let code_region = OSManagedRegion::take_slice(&self.heap, code_offset..end);
-
         // we will charge for everything in the "should_continue..." function
         let scheme = if IS_CREATE2 {
             let [salt] = self.pop_values::<1>()?;
@@ -257,14 +255,15 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
             CreateScheme::Create
         };
 
+        let deployment_code = &self.heap[code_offset..end];
+
         let ee_specific_data = alloc::boxed::Box::try_new_in(scheme, system.get_allocator())
             .expect("system allocator must be capable to allocate for EE deployment parameters");
-        let deployment_code = code_region;
         let constructor_parameters = system.memory.empty_immutable_slice();
         // at this preemption point we give all resources for preparation
         let all_resources = self.resources.take();
 
-        let deployment_parameters = DeploymentPreparationParameters {
+        /*let deployment_parameters = DeploymentPreparationParameters {
             call_scratch_space: None,
             deployment_code,
             constructor_parameters,
@@ -277,7 +276,8 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
             deployer_nonce: None,
         };
 
-        *external_call_dest = Some(ExternalCall::Create(deployment_parameters));
+        *external_call_dest = Some(ExternalCall::Create(deployment_parameters));*/
+        todo!();
 
         Err(ExitCode::ExternalCall)
     }
@@ -366,7 +366,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         self.resize_heap(in_offset, in_len, system)?;
         self.resize_heap(out_offset, out_len, system)?;
 
-        let calldata = OSManagedRegion::take_slice(&self.heap, in_offset..(in_offset + in_len));
+        let calldata = &self.heap[in_offset..(in_offset + in_len)];
 
         // NOTE: we give to the system both what we have NOW, and what we WANT to pass,
         // and depending on warm/cold behavior it may charge more from the current frame,
@@ -393,7 +393,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         // we also set "last returndata" as a placeholder place for "to where to copy"
         self.returndata_location = out_offset..(out_offset + out_len);
 
-        let call_request = EVMCallRequest {
+        /*let call_request = EVMCallRequest {
             destination_address: to,
             calldata,
             modifier: call_modifier,
@@ -401,7 +401,8 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
             call_value: value,
         };
 
-        *external_call_dest = Some(ExternalCall::Call(call_request));
+        *external_call_dest = Some(ExternalCall::Call(call_request));*/
+        todo!("may have to restructure interpreter loop");
         Err(ExitCode::ExternalCall)
     }
 }

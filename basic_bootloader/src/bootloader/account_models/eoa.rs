@@ -186,13 +186,6 @@ where
         // TODO: setup metadata for next tx based on out convention and TX fields
 
         let main_calldata = transaction.calldata();
-        let main_calldata = unsafe {
-            system
-                .memory
-                .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                    main_calldata,
-                ))
-        };
 
         assert!(callstack.len() == 0);
 
@@ -544,7 +537,7 @@ fn process_deployment<S: EthereumLikeTypes>(
     callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
     resources: &mut S::Resources,
     to_ee_type: ExecutionEnvironmentType,
-    main_calldata: OSImmutableSlice<S>,
+    main_calldata: &[u8],
     from: B160,
     nominal_token_value: U256,
     existing_nonce: u64,
@@ -688,13 +681,7 @@ where
         .copy_from_slice(&b160_to_u256(paymaster).to_be_bytes::<{ U256::BYTES }>());
 
     // we are static relative to everything that happens later
-    let calldata = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)],
-            ))
-    };
+    let calldata = &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)];
 
     let _ = system
         .get_logger()
@@ -776,13 +763,7 @@ where
         .copy_from_slice(&amount.to_be_bytes::<{ U256::BYTES }>());
 
     // we are static relative to everything that happens later
-    let calldata = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)],
-            ))
-    };
+    let calldata = &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)];
     let _ = system
         .get_logger()
         .write_fmt(format_args!("Calling ERC20 approve\n"));

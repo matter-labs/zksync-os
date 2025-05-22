@@ -10,14 +10,14 @@ use zk_ee::system::{
 use zk_ee::system::{Ergs, Resources};
 use zk_ee::types_config::SystemIOTypesConfig;
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
     /// Keeps executing instructions (steps) from the system, until it hits a yield point -
     /// either due to some error, or return, or when trying to call a different contract
     /// or create one.
     pub fn execute_till_yield_point(
         &mut self,
         system: &mut System<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         let mut external_call = None;
         let exit_code = self.run(system, &mut external_call)?;
 
@@ -73,16 +73,16 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
     }
 }
 
-pub enum ExternalCall<S: EthereumLikeTypes> {
-    Call(EVMCallRequest<S>),
-    Create(DeploymentPreparationParameters<S>),
+pub enum ExternalCall<'a, S: EthereumLikeTypes> {
+    Call(EVMCallRequest<'a, S>),
+    Create(DeploymentPreparationParameters<'a, S>),
 }
 
-pub struct EVMCallRequest<S: EthereumLikeTypes> {
+pub struct EVMCallRequest<'a, S: EthereumLikeTypes> {
     pub(crate) ergs_to_pass: Ergs,
     pub(crate) call_value: U256,
     pub(crate) destination_address: <S::IOTypes as SystemIOTypesConfig>::Address,
-    pub(crate) calldata: OSImmutableSlice<S>,
+    pub(crate) calldata: &'a [u8],
     pub(crate) modifier: CallModifier,
 }
 
@@ -111,7 +111,7 @@ pub enum CreateScheme {
     },
 }
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
     pub(crate) const PRINT_OPCODES: bool = false;
 
     #[allow(dead_code)]
@@ -340,7 +340,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         empty_returndata: bool,
         reverted: bool,
         is_error: bool,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         if is_error {
             // Spend all remaining resources on error
             self.resources.exhaust_ergs();
@@ -373,7 +373,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         mut return_values: ReturnValues<S>,
         execution_reverted: bool,
         mut resources: S::Resources,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         let deployment_result = if execution_reverted == false {
             let deployed_code_len = return_values.returndata.len() as u64;
             // EIP-3541: reject code starting with 0xEF.

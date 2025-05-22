@@ -15,7 +15,9 @@ use zk_ee::types_config::SystemIOTypesConfig;
 
 impl<S: SystemTypes> EEDeploymentExtraParameters<S> for CreateScheme {}
 
-impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
+impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
+    for Interpreter<'calldata, S>
+{
     const NEEDS_SCRATCH_SPACE: bool = false;
 
     const EE_VERSION_BYTE: u8 = ExecutionEnvironmentType::EVM_EE_BYTE;
@@ -64,7 +66,6 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
         let stack_space = Vec::with_capacity_in(STACK_SIZE, system.get_allocator());
         let empty_address = <S::IOTypes as SystemIOTypesConfig>::Address::default();
         let empty_preprocessing = BytecodePreprocessingData::<S>::empty(system);
-        let empty_bytecode = system.memory.empty_immutable_slice();
 
         Ok(Self {
             instruction_pointer: 0,
@@ -74,10 +75,10 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
             is_static: false,
             caller: empty_address,
             address: empty_address,
-            calldata: system.memory.empty_immutable_slice(),
+            calldata: &[],
             heap: system.memory.empty_managed_region(),
             returndata_location: 0..0,
-            bytecode: empty_bytecode,
+            bytecode: &[],
             bytecode_preprocessing: empty_preprocessing,
             call_value: U256::ZERO,
             is_constructor: false,
@@ -88,8 +89,8 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
     fn start_executing_frame(
         &mut self,
         system: &mut System<S>,
-        frame_state: ExecutionEnvironmentLaunchParams<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+        frame_state: ExecutionEnvironmentLaunchParams<'calldata, S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         let ExecutionEnvironmentLaunchParams {
             external_call:
                 ExternalCallRequest {
@@ -214,7 +215,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
         system: &mut System<S>,
         returned_resources: S::Resources,
         call_result: CallResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         assert!(!call_result.has_scratch_space());
         assert!(self.resources.native().as_u64() == 0);
         self.resources.reclaim(returned_resources);
@@ -252,7 +253,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
         system: &mut System<S>,
         returned_resources: S::Resources,
         deployment_result: DeploymentResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         assert!(!deployment_result.has_scratch_space());
         assert!(self.resources.native().as_u64() == 0);
         self.resources.reclaim(returned_resources);
@@ -328,10 +329,16 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
     }
 
     // derive address and check other preconditions to deploy the bytecode
-    fn prepare_for_deployment(
+    fn prepare_for_deployment<'a>(
         system: &mut System<S>,
-        deployment_parameters: DeploymentPreparationParameters<S>,
-    ) -> Result<(S::Resources, Option<ExecutionEnvironmentLaunchParams<S>>), FatalError>
+        deployment_parameters: DeploymentPreparationParameters<'a, S>,
+    ) -> Result<
+        (
+            S::Resources,
+            Option<ExecutionEnvironmentLaunchParams<'a, S>>,
+        ),
+        FatalError,
+    >
     where
         S::IO: IOSubsystemExt,
     {
@@ -520,7 +527,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
                 callee: deployed_address,
                 callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(), // Fine to use placeholder
                 modifier: CallModifier::Constructor,
-                calldata: system.memory.empty_immutable_slice(),
+                calldata: &[],
                 call_scratch_space: None,
                 nominal_token_value,
             },

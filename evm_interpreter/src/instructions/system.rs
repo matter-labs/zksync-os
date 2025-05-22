@@ -6,7 +6,7 @@ use zk_ee::memory::U256Builder;
 use zk_ee::system::errors::SystemFunctionError;
 use zk_ee::system::{EthereumLikeTypes, SystemFunctions};
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     const EMPTY_SLICE_SHA3: U256 = U256::from_limbs([
         0x7bfad8045d85a470,
         0xe500b653ca82273b,

@@ -1,4 +1,4 @@
-use core::{fmt::Debug, ops::Deref};
+use core::fmt::Debug;
 
 use crate::{
     system::{system::SystemTypes, CallModifier, Ergs, MAX_SCRATCH_SPACE_USIZE_WORDS},
@@ -7,18 +7,18 @@ use crate::{
 
 use super::{
     DeploymentPreparationParameters, DeploymentResult, EnvironmentParameters, OSAllocator,
-    OSImmutableSlice, ReturnValues,
+    ReturnValues,
 };
 
 /// Everything an execution environment needs to know to start execution
-pub struct ExecutionEnvironmentLaunchParams<S: SystemTypes> {
-    pub external_call: ExternalCallRequest<S>,
-    pub environment_parameters: EnvironmentParameters<S>,
+pub struct ExecutionEnvironmentLaunchParams<'a, S: SystemTypes> {
+    pub external_call: ExternalCallRequest<'a, S>,
+    pub environment_parameters: EnvironmentParameters<'a>,
 }
 
-pub enum ExecutionEnvironmentPreemptionPoint<S: SystemTypes> {
-    RequestedExternalCall(ExternalCallRequest<S>),
-    RequestedDeployment(DeploymentPreparationParameters<S>),
+pub enum ExecutionEnvironmentPreemptionPoint<'a, S: SystemTypes> {
+    RequestedExternalCall(ExternalCallRequest<'a, S>),
+    RequestedDeployment(DeploymentPreparationParameters<'a, S>),
     CompletedDeployment(CompletedDeployment<S>),
     CompletedExecution(CompletedExecution<S>),
 }
@@ -28,21 +28,21 @@ pub enum TransactionEndPoint<S: SystemTypes> {
     CompletedDeployment(CompletedDeployment<S>),
 }
 
-pub struct ExternalCallRequest<S: SystemTypes> {
+pub struct ExternalCallRequest<'a, S: SystemTypes> {
     pub available_resources: S::Resources,
     pub ergs_to_pass: Ergs,
     pub caller: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub callee: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub modifier: CallModifier,
-    pub calldata: OSImmutableSlice<S>,
+    pub calldata: &'a [u8],
     /// Base tokens attached to this call.
     pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
     pub call_scratch_space:
         Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], OSAllocator<S>>>,
 }
 
-impl<S: SystemTypes> ExternalCallRequest<S> {
+impl<S: SystemTypes> ExternalCallRequest<'_, S> {
     #[inline]
     pub fn is_transfer_allowed(&self) -> bool {
         self.modifier == CallModifier::NoModifier
@@ -81,7 +81,7 @@ pub struct CompletedDeployment<S: SystemTypes> {
     pub deployment_result: DeploymentResult<S>,
 }
 
-impl<S: SystemTypes> Debug for ExternalCallRequest<S> {
+impl<S: SystemTypes> Debug for ExternalCallRequest<'_, S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ExternalCallRequest")
             .field("available_resources", &self.available_resources)
@@ -90,7 +90,7 @@ impl<S: SystemTypes> Debug for ExternalCallRequest<S> {
             .field("callee", &self.callee)
             .field("callers_caller", &self.callers_caller)
             .field("modifier", &self.modifier)
-            .field("calldata", &self.calldata.deref())
+            .field("calldata", &self.calldata)
             .field("nominal_token_value", &self.nominal_token_value)
             .field("call_scratch_space", &self.call_scratch_space)
             .finish()
