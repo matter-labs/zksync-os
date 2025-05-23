@@ -7,7 +7,67 @@ use alloc::vec::Vec;
 use zk_ee::system::logger::Logger;
 use zk_ee::system_io_oracle::{ArithmeticsParam, IOOracle};
 use core::alloc::Allocator;
+use core::marker::PhantomData;
 use zk_ee::system_io_oracle::Arithmetics;
+
+use alloc::boxed::Box;
+
+static mut Q_U8_SCRATCH: *mut () = core::ptr::null_mut();
+static mut R_U8_SCRATCH: *mut () = core::ptr::null_mut();
+static mut R_U256_SCRATCH: *mut () = core::ptr::null_mut();
+static mut D_U256_SCRATCH: *mut () = core::ptr::null_mut();
+static mut Q_U256_SCRATCH: *mut () = core::ptr::null_mut();
+
+struct OpaqueRef<'a, T, A: Allocator + Clone> {
+    alloc: A,
+    ptr: &'a mut *mut (),
+    phantom: PhantomData<&'a mut T>,
+}
+
+impl<'a, T, A: Allocator + Clone> OpaqueRef<'a, T, A> {
+    fn access(r: &'a mut *mut (), alloc: A) -> Self {
+        Self { ptr: r, alloc, phantom: PhantomData }
+    }
+
+    fn as_mut(&mut self) -> Option<&mut T> {
+        unsafe { self.ptr.cast::<T>().as_mut() }
+    }
+
+    fn set<L: Logger>(&mut self, value: T, logger: &mut L) {
+        self.drop_if_needed(logger);
+
+        let boxed = Box::new_in(value, self.alloc.clone());
+
+        let (ptr, _) = Box::into_raw_with_allocator(boxed);
+
+        *self.ptr = ptr as *mut ();
+    }
+
+    fn drop_if_needed<L: Logger>(&mut self, logger: &mut L) {
+        if self.ptr.is_null() == false {
+            unsafe { Box::from_raw_in(self.ptr.cast::<T>(), self.alloc.clone()) };
+            *self.ptr = core::ptr::null_mut();
+        }
+    }
+}
+
+impl<'a, T, A: Allocator + Clone> OpaqueRef<'a, Vec<T, A>, A> {
+    fn prepared<L: Logger>(&mut self, required_cap: usize, logger: &mut L) -> &mut Vec<T, A> {
+        let alloc = self.alloc.clone();
+
+        match self.as_mut() {
+            Some(x) if x.capacity() < required_cap => {
+                *x = Vec::<T, A>::with_capacity_in(required_cap * 2, alloc);
+            },
+            None => {
+                self.set(Vec::<T, A>::with_capacity_in(required_cap * 2, self.alloc.clone()), logger);
+            },
+            _ => {}
+        };
+
+        self.as_mut().unwrap()
+    }
+}
 
 /// Multi-precision natural number, represented in base `Word::MAX + 1 = 2^WORD_BITS`.
 /// The digits are stored in little-endian order, i.e. digits[0] is the least
@@ -69,6 +129,62 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         Self { digits }
     }
 
+    pub fn from_little_endian_into<L: Logger>(bytes: &[u8], out: &mut Vec<U256, A>, logger: &mut L, allocator: A) {
+        if bytes.is_empty() {
+            out.clear();
+            return;
+        }
+
+        // Remainder on division by WORD_BYTES
+        let r = bytes.len() & (U256::BYTES - 1);
+        let (n_digits, full_digits) = if r == 0 {
+            let ws = bytes.len() / U256::BYTES;
+            (ws, ws)
+        } else {
+            // Need an extra digit for the remainder
+            let ws = bytes.len() / U256::BYTES;
+            (ws + 1, ws)
+        };
+
+        if out.capacity() < n_digits {
+            *out = Vec::with_capacity_in(n_digits, allocator.clone());
+        }
+
+        logger.write_fmt(format_args!("le cap {}", out.capacity()));
+        logger.write_fmt(format_args!("in len {}", bytes.len()));
+
+        let mut digits = out;
+
+        // buffer to hold Word-sized slices of the input bytes
+        let mut buf = [0u8; U256::BYTES];
+
+        let mut i_b = 0;
+        let mut i_w = 0;
+
+        logger.write_str("le 0");
+
+        loop {
+            if i_w == full_digits { break; }
+            let next = i_b + U256::BYTES;
+            buf.copy_from_slice(&bytes[i_b..next]);
+
+            digits.push(U256::from_le_bytes(&buf));
+
+            i_w += 1;
+            i_b = next;
+        }
+
+        logger.write_str("le 1");
+
+        if r != 0 {
+            buf[..r].copy_from_slice(&bytes[i_b..]);
+            buf[i_w + r..].iter_mut().for_each(|x| *x = 0);
+
+            digits.push(U256::from_le_bytes(&buf));
+        }
+        logger.write_str("le 2");
+    }
+
     pub fn from_little_endian<L: Logger>(bytes: &[u8], logger: &mut L, allocator: A) -> Self {
         if bytes.is_empty() {
             let vec = Vec::with_capacity_in(0, allocator.clone());
@@ -128,6 +244,18 @@ impl<A: Allocator + Clone> MPNatU256<A> {
             .zip(b.digits.iter())
             .all(|(x, y)| x == y)
     }
+    
+    pub fn eq_digits(lhs: &[U256], rhs: &[U256]) -> bool {
+        let (a, b) = match lhs.len() < rhs.len() {
+            true => (lhs, rhs),
+            false => (rhs, lhs),
+        };
+
+        a.iter()
+            .chain(core::iter::repeat(&U256::ZERO))
+            .zip(b.iter())
+            .all(|(x, y)| x == y)
+    }
 
     pub fn sub(&self, rhs: &Self, out: &mut Self) -> bool {
         let mut carry = false;
@@ -158,7 +286,8 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         carry
     }
 
-    pub fn div<O: IOOracle, L: Logger>(&mut self, rhs: &Self, oracle: &mut O, logger: &mut L, allocator: A) -> Self {
+
+    pub fn div<O: IOOracle, L: Logger>(&mut self, rhs: &Self, out: &mut Vec<U256, A>, oracle: &mut O, logger: &mut L, allocator: A) -> Self {
         let lhs_len = self.digits.len();
         let lhs_ptr = self.digits.as_mut_ptr();
 
@@ -177,14 +306,28 @@ impl<A: Allocator + Clone> MPNatU256<A> {
 
         let ptr = &mut arg as *mut _ as usize as u32;
 
+        #[allow(static_mut_refs)]
+        let q = unsafe { &mut Q_U8_SCRATCH };
+        #[allow(static_mut_refs)]
+        let r = unsafe { &mut R_U8_SCRATCH };
+
+        let mut q_r = OpaqueRef::<Vec<u8, A>, A>::access(q, allocator.clone());
+        let mut r_r = OpaqueRef::<Vec<u8, A>, A>::access(r, allocator.clone());
+
+        // The results need to be of the same size as the input.
+        let cap_need = self.digits.len() * 32;
+        let q = q_r.prepared(cap_need, logger);
+        let r = r_r.prepared(cap_need, logger);
+        q.clear(); r.clear();
+
         let mut it = oracle.create_oracle_access_iterator::<Arithmetics>(ptr).unwrap();
 
         let q_len = it.next().expect("Quotient length.");
         let r_len = it.next().expect("Remainder length.");
 
-        // The results need to be of the same size as the input.
-        let mut q = Vec::with_capacity_in(self.digits.len() * 32, allocator.clone());
-        let mut r = Vec::with_capacity_in(self.digits.len() * 32, allocator.clone());
+
+        assert_eq!(0, q_len % 8);
+        assert_eq!(0, r_len % 8);
 
         for _ in 0..q_len {
             let word = it.next().expect("Quotient word.");
@@ -202,28 +345,50 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         q.resize(q.capacity(), 0);
         r.resize(r.capacity(), 0);
 
-        let q = MPNatU256::from_little_endian(&q, logger, allocator.clone());
+        let cap_need = self.digits.len();
+
+        let mut q2_r = OpaqueRef::<Vec<U256, A>, A>::access(
+            unsafe { &mut Q_U256_SCRATCH },
+            allocator.clone());
+
+        let mut q2 = q2_r.prepared(cap_need, logger);
+        q2.clear();
+
+        MPNatU256::from_little_endian_into(&q, &mut q2, logger, allocator.clone());
         let r = MPNatU256::from_little_endian(&r, logger, allocator.clone());
 
-        let mut check = Vec::with_capacity_in(q.digits.len() + rhs.digits.len(), allocator.clone());
-        // check.extend_from_slice(&r.digits);
-        check.resize_with(check.capacity(), || U256::ZERO);
+        {
+            let cap_need = q2.len() + rhs.digits.len();
 
-        let mut t = Vec::with_capacity_in(check.len(), allocator.clone());
-        t.extend_from_slice(&rhs.digits);
-        t.resize_with(t.capacity(), || U256::ZERO);
-        let t = MPNatU256 { digits: t };
+            let mut check_r = OpaqueRef::<Vec<U256, A>, A>::access(unsafe { &mut R_U256_SCRATCH }, allocator.clone());
 
-        // r += q * d
-        big_wrapping_mul(logger, &q, &t, &mut check);
-        in_place_add(&mut check, &r.digits);
+            let mut check = check_r.prepared(cap_need, logger);
 
+            let mut d_r = OpaqueRef::<Vec<U256, A>, A>::access(unsafe { &mut D_U256_SCRATCH }, allocator.clone());
+            let cap_need = check.len();
 
-        let check = Self { digits: check };
+            let mut d = d_r.prepared(cap_need, logger);
 
-        assert!(check.eq(self));
+            // unsafe { check.set_len(0) };
+            check.clear();
+            d.clear();
 
-        *self = q;
+            for i in 0..r.digits.len() {
+                check.push(r.digits[i].clone());
+            }
+
+            for i in 0..rhs.digits.len() {
+                d.push(rhs.digits[i].clone());
+            }
+            d.resize_with(d.capacity(), || U256::ZERO);
+
+            // r += q * d
+            big_wrapping_mul(logger, &q2, &d, &mut check);
+
+            assert!(Self::eq_digits(&check, self.digits.as_slice()));
+        }
+
+        core::mem::swap(&mut self.digits, q2);
         r
     }
 
@@ -247,10 +412,13 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         allocator: A
     ) -> Self {
         // Initial reduction
-        let base = self.div(modulus, oracle, logger, allocator.clone());
 
         let mut scratch_space = Vec::with_capacity_in(modulus.digits.len() * 2, allocator.clone());
         scratch_space.resize(scratch_space.capacity(), U256::ZERO);
+
+        let base = self.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
+
+        scratch_space.fill(U256::ZERO); // zero-out the scratch space
 
         let mut result = Vec::with_capacity_in(modulus.digits.len() * 2, allocator.clone());
         result.resize(result.capacity(), U256::ZERO);
@@ -260,17 +428,17 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         for &b in exp {
             let mut mask: u8 = 1 << 7;
             while mask > 0 {
-                big_wrapping_mul(logger, &result, &result, &mut scratch_space);
+                big_wrapping_mul(logger, &result.digits, &result.digits, &mut scratch_space);
                 result.digits.clone_from_slice(&scratch_space);
 
-                result = result.div(modulus, oracle, logger, allocator.clone());
+                result = result.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
                 scratch_space.fill(U256::ZERO); // zero-out the scratch space
 
                 if b & mask != 0 {
-                    big_wrapping_mul(logger, &result, &base, &mut scratch_space);
+                    big_wrapping_mul(logger, &result.digits, &base.digits, &mut scratch_space);
                     result.digits.clone_from_slice(&scratch_space);
 
-                    result = result.div(modulus, oracle, logger, allocator.clone());
+                    result = result.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
                     scratch_space.fill(U256::ZERO); // zero-out the scratch space
                 }
 
