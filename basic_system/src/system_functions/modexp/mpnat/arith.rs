@@ -63,8 +63,13 @@ pub fn in_place_add(a: &mut [U256], b: &[U256]) -> bool {
 /// equal to `Word::MAX` the output is smaller than `DoubleWord::MAX`.
 fn shifted_carrying_mul<L: Logger>(logger: &mut L, a: &U256, x: &U256, y: &U256, c: &U256, out: &mut U512) {
 
-    U512::from_narrow_mul_into(logger, x, y, out);
-    // widening_mul(logger, x, y, out);
+    {
+        let out = &mut out.0;
+        let out = unsafe { core::mem::transmute(out) };
+
+        U512::from_narrow_mul_into(logger, x, y, out);
+    }
+
     out.add_assign_narrow(a);
     out.add_assign_narrow(c);
 }

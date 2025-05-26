@@ -1,10 +1,12 @@
+use core::mem::MaybeUninit;
+
 use zk_ee::system::logger::Logger;
 
 use super::U256;
 
 #[repr(transparent)]
 #[derive(Debug)]
-pub(crate) struct U512([U256; 2]);
+pub(crate) struct U512(pub(crate) [U256; 2]);
 
 impl From<&U256> for U512 {
 
@@ -59,14 +61,15 @@ impl U512 {
         }
     }
  
-    pub(crate) fn from_narrow_mul_into<L: Logger>(logger: &mut L, lhs: &U256, rhs: &U256, out: &mut Self) {
-        // let mut r = Self([lhs.clone(), lhs.clone()]);
-        out.0[0] = lhs.clone();
-        out.0[1] = lhs.clone();
+    pub(crate) fn from_narrow_mul_into<L: Logger>(logger: &mut L, lhs: &U256, rhs: &U256, out: &mut [MaybeUninit<U256>; 2]) {
+        lhs.clone_into_unchecked(&mut out[0]);
+        lhs.clone_into_unchecked(&mut out[1]);
+
+        let out = unsafe { core::mem::transmute::<&mut [MaybeUninit<U256>; 2], &mut [U256; 2]>(out) };
 
         let r = out;
 
-        let (r1, r2) = r.0.split_at_mut(1);
+        let (r1, r2) = r.split_at_mut(1);
 
         r1[0].widening_mul_assign_into(&mut r2[0], rhs);
     }

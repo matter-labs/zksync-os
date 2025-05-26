@@ -7,14 +7,18 @@ use alloc::vec::Vec;
 use zk_ee::system::logger::Logger;
 use zk_ee::system_io_oracle::{ArithmeticsParam, IOOracle};
 use core::alloc::Allocator;
+use core::cell::LazyCell;
 use core::marker::PhantomData;
 use zk_ee::system_io_oracle::Arithmetics;
 
 use alloc::boxed::Box;
 
+static U256_ZERO: U256 = U256::ZERO;
+
 static mut Q_U8_SCRATCH: *mut () = core::ptr::null_mut();
 static mut R_U8_SCRATCH: *mut () = core::ptr::null_mut();
 static mut R_U256_SCRATCH: *mut () = core::ptr::null_mut();
+static mut RCHECK_U256_SCRATCH: *mut () = core::ptr::null_mut();
 static mut D_U256_SCRATCH: *mut () = core::ptr::null_mut();
 static mut Q_U256_SCRATCH: *mut () = core::ptr::null_mut();
 
@@ -287,7 +291,7 @@ impl<A: Allocator + Clone> MPNatU256<A> {
     }
 
 
-    pub fn div<O: IOOracle, L: Logger>(&mut self, rhs: &Self, out: &mut Vec<U256, A>, oracle: &mut O, logger: &mut L, allocator: A) -> Self {
+    pub fn div<O: IOOracle, L: Logger>(&mut self, rhs: &Self, out: &mut Vec<U256, A>, oracle: &mut O, logger: &mut L, allocator: A) {
         let lhs_len = self.digits.len();
         let lhs_ptr = self.digits.as_mut_ptr();
 
@@ -306,19 +310,22 @@ impl<A: Allocator + Clone> MPNatU256<A> {
 
         let ptr = &mut arg as *mut _ as usize as u32;
 
+        logger.write_str("div 1");
+
         #[allow(static_mut_refs)]
         let q = unsafe { &mut Q_U8_SCRATCH };
         #[allow(static_mut_refs)]
         let r = unsafe { &mut R_U8_SCRATCH };
 
-        let mut q_r = OpaqueRef::<Vec<u8, A>, A>::access(q, allocator.clone());
+        // let mut q_r = OpaqueRef::<Vec<u8, A>, A>::access(q, allocator.clone());
         let mut r_r = OpaqueRef::<Vec<u8, A>, A>::access(r, allocator.clone());
 
         // The results need to be of the same size as the input.
         let cap_need = self.digits.len() * 32;
-        let q = q_r.prepared(cap_need, logger);
+        // let q = q_r.prepared(cap_need, logger);
         let r = r_r.prepared(cap_need, logger);
-        q.clear(); r.clear();
+        // q.clear();
+        r.clear();
 
         let mut it = oracle.create_oracle_access_iterator::<Arithmetics>(ptr).unwrap();
 
@@ -329,38 +336,75 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         assert_eq!(0, q_len % 8);
         assert_eq!(0, r_len % 8);
 
-        for _ in 0..q_len {
+        let mut q_r = OpaqueRef::<Vec<U256, A>, A>::access(
+            unsafe { &mut Q_U256_SCRATCH },
+            allocator.clone());
+
+        let q = q_r.prepared(self.digits.len(), logger);
+
+        let q_p = q.as_mut_ptr().cast::<usize>();
+
+        for i in 0..q_len {
             let word = it.next().expect("Quotient word.");
-            q.extend_from_slice(&word.to_le_bytes());
+            unsafe { q_p.add(i).write(word) };
+            // q.extend_from_slice(&word.to_le_bytes());
         }
 
-        for _ in 0..r_len {
+        let mut r_r = OpaqueRef::<Vec<U256, A>, A>::access(
+            unsafe { &mut R_U256_SCRATCH },
+            allocator.clone());
+
+        let r = r_r.prepared(self.digits.len(), logger);
+
+        let r_p = r.as_mut_ptr().cast::<usize>();
+
+        for i in 0..r_len {
             let word = it.next().expect("Remainder word.");
-            r.extend_from_slice(&word.to_le_bytes());
+            unsafe { r_p.add(i).write(word) };
+            // r.extend_from_slice(&word.to_le_bytes());
         }
 
         assert!(it.next().is_none(), "Oracle iterator not exhausted.");
 
         // Force same width as input.
-        q.resize(q.capacity(), 0);
-        r.resize(r.capacity(), 0);
+        // q.resize(q.capacity(), 0);
+        unsafe { q.set_len(q_len / 8) };
+        unsafe { r.set_len(r_len / 8); }
+        // r.resize(r.capacity(), 0);
+        
+        r.resize_with(self.digits.len(), || U256_ZERO.clone() );
 
-        let cap_need = self.digits.len();
+        logger.write_fmt(format_args!("r: {:?}", r));
+        logger.write_fmt(format_args!("rlen: {}", r.len()));
+        logger.write_fmt(format_args!("selflen: {}", self.digits.len()));
 
-        let mut q2_r = OpaqueRef::<Vec<U256, A>, A>::access(
-            unsafe { &mut Q_U256_SCRATCH },
-            allocator.clone());
 
-        let mut q2 = q2_r.prepared(cap_need, logger);
-        q2.clear();
+        // let cap_need = self.digits.len();
+        //
+        //
+        // let mut q2_r = OpaqueRef::<Vec<U256, A>, A>::access(
+        //     unsafe { &mut Q_U256_SCRATCH },
+        //     allocator.clone());
+        //
+        // let mut q2 = q2_r.prepared(cap_need, logger);
+        // q2.clear();
 
-        MPNatU256::from_little_endian_into(&q, &mut q2, logger, allocator.clone());
-        let r = MPNatU256::from_little_endian(&r, logger, allocator.clone());
+        // let mut r_r = OpaqueRef::<Vec<U256, A>, A>::access(unsafe { &mut R_U256_SCRATCH }, allocator.clone());
+        // let mut r2 = r_r.prepared(rhs.digits.len(), logger);
+        // r2.clear();
+        //
+        let mut q2 = q;
+
+        // MPNatU256::from_little_endian_into(&q, &mut q2, logger, allocator.clone());
+        // MPNatU256::from_little_endian_into(&r, &mut r2, logger, allocator.clone());
+        // let r = r2;
+        // let r = MPNatU256::from_little_endian(&r, logger, allocator.clone());
+
 
         {
             let cap_need = q2.len() + rhs.digits.len();
 
-            let mut check_r = OpaqueRef::<Vec<U256, A>, A>::access(unsafe { &mut R_U256_SCRATCH }, allocator.clone());
+            let mut check_r = OpaqueRef::<Vec<U256, A>, A>::access(unsafe { &mut RCHECK_U256_SCRATCH }, allocator.clone());
 
             let mut check = check_r.prepared(cap_need, logger);
 
@@ -373,8 +417,8 @@ impl<A: Allocator + Clone> MPNatU256<A> {
             check.clear();
             d.clear();
 
-            for i in 0..r.digits.len() {
-                check.push(r.digits[i].clone());
+            for i in 0..r.len() {
+                check.push(r[i].clone());
             }
 
             for i in 0..rhs.digits.len() {
@@ -388,8 +432,9 @@ impl<A: Allocator + Clone> MPNatU256<A> {
             assert!(Self::eq_digits(&check, self.digits.as_slice()));
         }
 
+        logger.write_str("div 4");
         core::mem::swap(&mut self.digits, q2);
-        r
+        core::mem::swap(out, r);
     }
 
     pub fn trim(&mut self) {
@@ -416,30 +461,55 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         let mut scratch_space = Vec::with_capacity_in(modulus.digits.len() * 2, allocator.clone());
         scratch_space.resize(scratch_space.capacity(), U256::ZERO);
 
-        let base = self.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
+        self.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
+
+        let base = scratch_space.clone();
 
         scratch_space.fill(U256::ZERO); // zero-out the scratch space
+        scratch_space.resize_with(modulus.digits.len() * 2, || U256::ZERO.clone());
 
         let mut result = Vec::with_capacity_in(modulus.digits.len() * 2, allocator.clone());
-        result.resize(result.capacity(), U256::ZERO);
+        result.resize_with(result.capacity(), || U256_ZERO.clone());
         let mut result = MPNatU256 { digits: result };
 
         result.digits[0] = U256::ONE;
         for &b in exp {
             let mut mask: u8 = 1 << 7;
             while mask > 0 {
+                logger.write_str("modpow iter 1");
                 big_wrapping_mul(logger, &result.digits, &result.digits, &mut scratch_space);
+                logger.write_str("modpow iter 2");
+                logger.write_fmt(format_args!("result len {}", result.digits.len()));
+                logger.write_fmt(format_args!("scratch len {}", scratch_space.len()));
                 result.digits.clone_from_slice(&scratch_space);
 
-                result = result.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
+                let scratch_space_len = scratch_space.len();
+                let result_len = result.digits.len();
+
+                // `scratch_space` isn't used inside `div`, an is only used as the result
+                // dst, so not need to zero it out.
+                result.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
+
+                logger.write_str("modpow iter 3");
+                let scratch_space_len2 = scratch_space.len();
+
+                assert_eq!(scratch_space_len, result_len);
+                assert_eq!(scratch_space_len, scratch_space_len2);
+
+                core::mem::swap(&mut result.digits, &mut scratch_space);
+
                 scratch_space.fill(U256::ZERO); // zero-out the scratch space
 
                 if b & mask != 0 {
-                    big_wrapping_mul(logger, &result.digits, &base.digits, &mut scratch_space);
+                logger.write_str("modpow iter 4");
+                    big_wrapping_mul(logger, &result.digits, &base, &mut scratch_space);
+                logger.write_str("modpow iter 5");
                     result.digits.clone_from_slice(&scratch_space);
 
-                    result = result.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
+                    result.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
+                    core::mem::swap(&mut result.digits, &mut scratch_space);
                     scratch_space.fill(U256::ZERO); // zero-out the scratch space
+                logger.write_str("modpow iter 6");
                 }
 
                 mask >>= 1;
