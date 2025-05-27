@@ -22,8 +22,6 @@ jobs:
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
-          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
-          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
       - name: Compile for RISC-V
         working-directory: ./zksync_os
         run: ./dump_bin.sh
@@ -71,8 +69,6 @@ jobs:
           rustup toolchain install
           rustup set profile minimal
           cargo install cargo-binutils
-          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
-          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
       - name: Get submodules
         working-directory: ./era-evm-tester
         run: |
@@ -101,8 +97,6 @@ jobs:
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
-          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
-          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
       - name: Compile for RISC-V
         working-directory: ./zksync_os
         run: ./dump_bin.sh
@@ -126,8 +120,6 @@ jobs:
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
-          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
-          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
       - name: Compile for RISC-V
         working-directory: ./crypto/src/blake2s/test_program
         run: ./dump_bin.sh
@@ -158,8 +150,6 @@ jobs:
           components: clippy
       - name: Run Clippy
         run: | 
-          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
-          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
           cargo clippy --all -- -D warnings
 
   typos:
