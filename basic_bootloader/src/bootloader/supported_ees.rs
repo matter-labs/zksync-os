@@ -60,11 +60,14 @@ impl<'calldata, S: EthereumLikeTypes> SupportedEEVMState<'calldata, S> {
 
     /// Starts executing a new frame within the current EE.
     /// initial_state contains all the necessary information - calldata, environment settings and resources passed.
-    pub fn start_executing_frame(
+    pub fn start_executing_frame<'a>(
         &mut self,
         system: &mut System<S>,
-        initial_state: ExecutionEnvironmentLaunchParams<'calldata, S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
+        initial_state: ExecutionEnvironmentLaunchParams<'a, S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>
+    where
+        'a: 'calldata,
+    {
         match self {
             Self::EVM(evm_frame) => evm_frame.start_executing_frame(system, initial_state),
         }

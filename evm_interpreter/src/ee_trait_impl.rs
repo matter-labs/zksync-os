@@ -86,11 +86,14 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
         })
     }
 
-    fn start_executing_frame(
+    fn start_executing_frame<'a>(
         &mut self,
         system: &mut System<S>,
-        frame_state: ExecutionEnvironmentLaunchParams<'calldata, S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
+        frame_state: ExecutionEnvironmentLaunchParams<'a, S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>
+    where
+        'a: 'calldata,
+    {
         let ExecutionEnvironmentLaunchParams {
             external_call:
                 ExternalCallRequest {

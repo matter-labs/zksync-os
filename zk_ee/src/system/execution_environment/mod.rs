@@ -88,11 +88,13 @@ pub trait ExecutionEnvironment<'calldata, S: SystemTypes>: Sized {
     /// Start the execution of an EE frame in a given initial state.
     /// Returns a preemption point for the bootloader to handle.
     ///
-    fn start_executing_frame(
+    fn start_executing_frame<'a>(
         &mut self,
         system: &mut System<S>,
-        frame_start_state: ExecutionEnvironmentLaunchParams<'calldata, S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>;
+        frame_state: ExecutionEnvironmentLaunchParams<'a, S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>
+    where
+        'a: 'calldata;
 
     ///
     /// Continues after the bootloader handled a completed external call.
