@@ -62,10 +62,13 @@ impl U512 {
     }
  
     pub(crate) fn from_narrow_mul_into<L: Logger>(logger: &mut L, lhs: &U256, rhs: &U256, out: &mut [MaybeUninit<U256>; 2]) {
-        lhs.clone_into_unchecked(&mut out[0]);
-        lhs.clone_into_unchecked(&mut out[1]);
+        // lhs.clone_into(&mut out[0]);
+        // lhs.clone_into(&mut out[1]);
 
         let out = unsafe { core::mem::transmute::<&mut [MaybeUninit<U256>; 2], &mut [U256; 2]>(out) };
+
+        out[0].clone_from(lhs);
+        out[1].clone_from(lhs);
 
         let r = out;
 

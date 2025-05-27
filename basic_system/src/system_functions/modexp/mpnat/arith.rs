@@ -3,10 +3,11 @@
 
 use zk_ee::system::logger::Logger;
 
-use super::{double::U512, mpnat::MPNatU256, U256};
-use core::alloc::Allocator;
+use super::{double::U512, mpnat::{MPNatU256, U256_ZERO}, U256};
+use core::{alloc::Allocator, mem::MaybeUninit};
 
 static mut U512_SCRATCH: U512 = U512::zero_const();
+static mut ZERO: Option<U256> = None;
 
 /// Computes `(x * y) mod 2^(WORD_BITS*out.len())`.
 pub fn big_wrapping_mul<L: Logger>(
@@ -15,18 +16,24 @@ pub fn big_wrapping_mul<L: Logger>(
     y: &[U256],
     out: &mut [U256]
 ) {
+    let zero = match unsafe { &mut ZERO } {
+        Some(x) => x,
+        x @ None => {
+            *x = Some(U256::zero());
+            x.as_ref().unwrap()
+        },
+    };
     let s = out.len();
     let mut double = unsafe { &mut U512_SCRATCH };
-    let mut zero_x;
+    let mut c = MaybeUninit::uninit();
     for i in 0..s {
-        let mut c: U256 = U256::ZERO;
+        zero.clone_into_unchecked(c.as_mut_ptr() as *mut _);
+        let c = unsafe { c.assume_init_mut() };
+        // let mut c = U256::ZERO;
         for j in 0..(s - i) {
             let x = match x.get(j) {
                 Some(x) => x,
-                None => {
-                    zero_x = U256::zero();
-                    &zero_x
-                },
+                None => &zero,
             };
             shifted_carrying_mul(
                 l, 
@@ -36,8 +43,8 @@ pub fn big_wrapping_mul<L: Logger>(
                 &c,
                 double,
             );
-            c = double.high().clone();
-            out[i + j] = double.low().clone();
+            c.clone_from(double.high());
+            out[i + j].clone_from(double.low());
         }
     }
 }

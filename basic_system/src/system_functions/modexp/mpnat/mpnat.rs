@@ -13,7 +13,7 @@ use zk_ee::system_io_oracle::Arithmetics;
 
 use alloc::boxed::Box;
 
-static U256_ZERO: U256 = U256::ZERO;
+pub(crate) static U256_ZERO: U256 = U256::ZERO;
 
 static mut Q_U8_SCRATCH: *mut () = core::ptr::null_mut();
 static mut R_U8_SCRATCH: *mut () = core::ptr::null_mut();
@@ -310,14 +310,10 @@ impl<A: Allocator + Clone> MPNatU256<A> {
 
         let ptr = &mut arg as *mut _ as usize as u32;
 
-        logger.write_str("div 1");
 
-        #[allow(static_mut_refs)]
-        let q = unsafe { &mut Q_U8_SCRATCH };
         #[allow(static_mut_refs)]
         let r = unsafe { &mut R_U8_SCRATCH };
 
-        // let mut q_r = OpaqueRef::<Vec<u8, A>, A>::access(q, allocator.clone());
         let mut r_r = OpaqueRef::<Vec<u8, A>, A>::access(r, allocator.clone());
 
         // The results need to be of the same size as the input.
@@ -371,8 +367,14 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         unsafe { q.set_len(q_len / 8) };
         unsafe { r.set_len(r_len / 8); }
         // r.resize(r.capacity(), 0);
+
+        // let ptr = r.spare_capacity_mut();
+        //
+        // for i in r.len() .. self.digits.len() {
+        //
+        // }
         
-        r.resize_with(self.digits.len(), || U256_ZERO.clone() );
+        r.resize_with(self.digits.len(), || U256::zero() );
 
         logger.write_fmt(format_args!("r: {:?}", r));
         logger.write_fmt(format_args!("rlen: {}", r.len()));
@@ -409,22 +411,35 @@ impl<A: Allocator + Clone> MPNatU256<A> {
             let mut check = check_r.prepared(cap_need, logger);
 
             let mut d_r = OpaqueRef::<Vec<U256, A>, A>::access(unsafe { &mut D_U256_SCRATCH }, allocator.clone());
-            let cap_need = check.len();
 
-            let mut d = d_r.prepared(cap_need, logger);
 
-            // unsafe { check.set_len(0) };
             check.clear();
-            d.clear();
+
+            let spare = check.spare_capacity_mut();
 
             for i in 0..r.len() {
-                check.push(r[i].clone());
+                // check.push(r[i].clone());
+                r[i].clone_into(&mut spare[i]);
             }
 
+            unsafe { check.set_len(r.len()) };
+
+            let cap_need = check.len();
+            let d = d_r.prepared(cap_need, logger);
+            d.clear();
+            let cap = d.capacity();
+            let spare = d.spare_capacity_mut();
+            logger.write_fmt(format_args!("d spare len {}", spare.len()));
+            logger.write_fmt(format_args!("d cap {}", cap));
             for i in 0..rhs.digits.len() {
-                d.push(rhs.digits[i].clone());
+                // d.push(rhs.digits[i].clone());
+                rhs.digits[i]
+                    .clone_into(&mut spare[i]);
             }
-            d.resize_with(d.capacity(), || U256::ZERO);
+            for i in rhs.digits.len() .. cap {
+                U256_ZERO.clone_into(&mut spare[i]);
+            }
+            unsafe { d.set_len(d.capacity()); }
 
             // r += q * d
             big_wrapping_mul(logger, &q2, &d, &mut check);
