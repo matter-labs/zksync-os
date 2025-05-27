@@ -10,6 +10,7 @@ name: Check dependencies for security issues
 on:
   schedule:
     - cron: "0 0 * * *" # run at midnight
+permissions: read-all
 jobs:
   audit:
     runs-on: [matterlabs-ci-runner]

@@ -3,6 +3,8 @@ name: "Compare performance to base branch"
 on:
   pull_request:
 
+permissions: read-all
+
 jobs:
   vm-benchmarks:
     name: Run benchmarks
