@@ -1,0 +1,172 @@
+name: "Rust CI"
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  tests:
+    name: tests
+    runs-on: [matterlabs-ci-runner]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: Setup
+        run: |
+          rustup set profile minimal
+          rustup target add riscv32i-unknown-none-elf
+          rustup target add wasm32-unknown-unknown
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          rustup component add rust-src
+          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
+          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
+      - name: Compile for RISC-V
+        working-directory: ./zksync_os
+        run: ./dump_bin.sh
+      - name: Build wasm contracts
+        run: |
+          for dir in ./tests/contracts_wasm/*; do
+            if [ -d "$dir" ]; then
+              echo "Building contract in $dir"
+              (cd "$dir" && ./build.sh)
+            fi
+          done
+      - name: Compile for forward running
+        run: cargo build --release
+      - name: Run rust tests
+        run: cargo test --release -j 3
+
+  evm_state_tests:
+    name: EF EVM state tests
+    runs-on: [matterlabs-ci-runner-high-performance]
+    concurrency:
+      group: ${{ github.ref }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: zk_ee
+      - uses: actions/checkout@v4
+        with:
+          repository: matter-labs/era-evm-tester 
+          ref: zk-ee
+          path: era-evm-tester
+      - name: Use local zk-ee version
+        working-directory: ./era-evm-tester/evm_tester
+        run: |
+          sudo sed -i 's/^zksync_os/##zksync_os/g' Cargo.toml
+          sudo sed -i 's/^#zksync_os/zksync_os/g' Cargo.toml
+          sudo sed -i 's/^zk_ee/##zk_ee/g' Cargo.toml
+          sudo sed -i 's/^#zk_ee/zk_ee/g' Cargo.toml
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: Setup
+        working-directory: ./era-evm-tester
+        run: |
+          rustup toolchain install
+          rustup set profile minimal
+          cargo install cargo-binutils
+          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
+          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
+      - name: Get submodules
+        working-directory: ./era-evm-tester
+        run: |
+          git submodule update --init --recursive
+      - name: Download ethereum execution spec tests fixtures
+        working-directory: ./era-evm-tester
+        run: |
+          ./download_ethereum_fixtures.sh
+      - name: Run EVM state tests
+        working-directory: ./era-evm-tester
+        run: cargo run --bin evm-tester --features zksync_os_forward_system/no_print -- --environment=ZKsyncOS --spec_tests
+
+  e2e_prove:
+    name: e2e_prove
+    runs-on: [matterlabs-ci-runner-highmem]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: Setup
+        run: |
+          rustup set profile minimal
+          rustup target add riscv32i-unknown-none-elf
+          rustup target add wasm32-unknown-unknown
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          rustup component add rust-src
+          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
+          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
+      - name: Compile for RISC-V
+        working-directory: ./zksync_os
+        run: ./dump_bin.sh
+      - name: Run proving test
+        # Runs with e2e_proving feature
+        run: cargo test --release -p transactions --features e2e_proving run_base_system -- --nocapture
+
+  blake_tests:
+    name: blake_tests
+    runs-on: [matterlabs-ci-runner-highmem]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: Setup
+        run: |
+          rustup set profile minimal
+          rustup target add riscv32i-unknown-none-elf
+          rustup target add wasm32-unknown-unknown
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          rustup component add rust-src
+          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
+          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
+      - name: Compile for RISC-V
+        working-directory: ./crypto/src/blake2s/test_program
+        run: ./dump_bin.sh
+      - name: Run proving test
+        working-directory: ./crypto/src/blake2s
+        run: |
+          cargo test --release run_naive_test
+          cargo test --release run_extended_delegation_test
+
+  formatting:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt
+      - name: Rustfmt Check
+        uses: actions-rust-lang/rustfmt@v1
+
+  clippy:
+    name: Clippy Lint Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+      - name: Run Clippy
+        run: | 
+          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
+          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
+          cargo clippy --all -- -D warnings
+
+  typos:
+    name: typos check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crate-ci/typos@master
+        with:
+          config: ./.github/typos.toml

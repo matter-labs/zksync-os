@@ -1,0 +1,2 @@
+# ark_ff_delegation
+This directory contains a modified copy of selected components from [ark_ff](https://github.com/arkworks-rs/algebra/tree/master/ff). Specifically, we require `BigInt<N>` to be annotated with `#[repr(align(32))]` to support our delegation call requirements. To be able to use this copy of `BigInt` within the arkworks ecosystem, we also copied `MontConfig`. Any parts of the original code that were not relevant to our use case have been omitted.

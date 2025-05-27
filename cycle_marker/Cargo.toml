@@ -1,0 +1,15 @@
+[package]
+name = "cycle_marker"
+edition = "2024"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", features = ["opcode_stats", "delegation", "cycle_marker"], optional = true }
+
+[features]
+use_risc_v_simulator = ["risc_v_simulator"]

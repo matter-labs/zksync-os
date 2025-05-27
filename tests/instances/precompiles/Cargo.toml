@@ -1,0 +1,20 @@
+[package]
+name = "precompiles"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+rig = { path = "../../rig" }
+hex = "*"
+bytes = "1.9.0"
+cycle_marker = { path = "../../../cycle_marker" }
+
+[features]
+cycle_marker = ["rig/cycle_marker"]
+default = ["rig/resources_for_tester"]

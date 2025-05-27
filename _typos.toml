@@ -1,0 +1,2 @@
+[files]
+extend-exclude = ["crypto/*", "tests/fuzzer/fuzz/seeds"]

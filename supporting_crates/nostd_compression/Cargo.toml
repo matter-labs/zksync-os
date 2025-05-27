@@ -1,0 +1,17 @@
+[package]
+name = "miniz_nostd_compression"
+version = "0.1.0"
+edition = "2021"
+authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
+homepage = "https://zksync.io/"
+repository = "https://github.com/matter-labs/zksync-os/"
+license = "MIT OR Apache-2.0"
+keywords = ["zksync", "zk", "risc-v", "deflate"]
+categories = ["compression"]
+description = "DEFLATE compression library based on miniz_oxide"
+
+[dependencies]
+adler = { version = "1.0", default-features = false }
+
+[dev-dependencies]
+miniz_oxide = "*"

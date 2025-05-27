@@ -1,0 +1,104 @@
+name: "Compare performance to base branch"
+
+on:
+  pull_request:
+
+jobs:
+  vm-benchmarks:
+    name: Run benchmarks
+    runs-on: [matterlabs-ci-runner]
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: Setup and fetch PR branch
+        run: |
+          rustup set profile minimal
+          rustup target add riscv32i-unknown-none-elf
+          rustup target add wasm32-unknown-unknown
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          rustup component add rust-src
+          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
+          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
+          git remote add pr_repo ${{ github.event.pull_request.head.repo.clone_url }}
+          git fetch pr_repo ${{ github.event.pull_request.head.ref }}
+
+      - name: Fetch base and head
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          git fetch origin ${{ github.event.pull_request.head.ref }}
+
+      - name: Compute merge-base
+        id: merge_base
+        run: |
+          base_ref=origin/${{ github.event.pull_request.base.ref }}
+          head_ref=origin/${{ github.event.pull_request.head.ref }}
+          sha=$(git merge-base $base_ref $head_ref)
+          echo "sha=$sha"
+          echo "sha=$sha" >> $GITHUB_OUTPUT
+
+      - name: checkout divergence point
+        run: git checkout ${{ steps.merge_base.outputs.sha }} --recurse-submodules
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip3 install matplotlib
+
+      - name: Compile for RISC-V
+        working-directory: ./zksync_os
+        run: bash dump_bin_with_markers.sh
+
+      - name: run benchmarks on base branch
+        shell: bash
+        run: |
+          MARKER_PATH=$(pwd)/base_block.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker -- --block tests/instances/eth_runner/block.json --calltrace tests/instances/eth_runner/calltrace.json --prestatetrace tests/instances/eth_runner/prestatetrace.json --difftrace tests/instances/eth_runner/difftrace.json --receipts tests/instances/eth_runner/receipts.json > base_block.out
+          MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker -p precompiles -- test_precompiles
+
+      - name: checkout PR
+        run: |
+          git checkout --force FETCH_HEAD
+
+      - name: Recompile for RISC-V
+        working-directory: ./zksync_os
+        run: bash dump_bin_with_markers.sh
+
+      - name: run benchmarks on PR
+        shell: bash
+        id: comparison
+        run: |
+          MARKER_PATH=$(pwd)/head_block.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker -- --block tests/instances/eth_runner/block.json --calltrace tests/instances/eth_runner/calltrace.json --prestatetrace tests/instances/eth_runner/prestatetrace.json --difftrace tests/instances/eth_runner/difftrace.json --receipts tests/instances/eth_runner/receipts.json > head_block.out
+          MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker -p precompiles -- test_precompiles
+          # Output all lines from the benchmark result starting from the "## ..." comparison header.
+          # Since the output spans multiple lines, we use a heredoc declaration.
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "result<<$EOF" >> $GITHUB_OUTPUT
+          python3 bench_scripts/compare_bench.py '[("block", "base_block.bench", "head_block.bench", "run_prepared"),("precompiles", "base_precompiles.bench", "head_precompiles.bench")]' >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+          mkdir bench_results
+          python3 bench_scripts/parse_opcodes.py base_block.out bench_results/base_block.csv bench_results/base_block.png
+          python3 bench_scripts/parse_opcodes.py head_block.out bench_results/head_block.csv bench_results/head_block.png
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench_results
+          path: bench_results/
+
+      - name: Comment on PR
+        uses: thollander/actions-comment-pull-request@fabd468d3a1a0b97feee5f6b9e499eab0dd903f6 # v2.5.0
+        with:
+          message: |
+            ${{ steps.comparison.outputs.result }}
+          comment_tag: vm-performance-changes
+          mode: recreate
+          create_if_not_exists: true

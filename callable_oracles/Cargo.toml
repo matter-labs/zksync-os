@@ -1,0 +1,28 @@
+[package]
+name = "callable_oracles"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+zk_ee = { path = "../zk_ee", default-features = false }
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+crypto = { path = "../crypto", default-features = false }
+ark-ff = { version = "0.5", default-features = false }
+oracle_provider = { path = "../oracle_provider" }
+
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", optional = true }
+num-bigint = { version = "*", optional = true }
+num-traits = { version = "*", optional = true }
+
+[dev-dependencies]
+hex = "*"
+
+[features]
+default = ["evaluate"]
+evaluate = ["risc_v_simulator", "num-bigint", "num-traits"]

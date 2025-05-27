@@ -1,0 +1,44 @@
+# Workflow to check the security of dependencies.
+# Here are the main guidelines:
+#   1. We do a manual triaging of findings; workflow is scheduled to run once a day.
+#   2. Cargo audit and cargo deny both utilize the same advisory database for security issues (https://rustsec.org). Therefore, we perform an advisories check using cargo audit exclusively.
+#   3. There should be an intersection with the Dependabot findings.
+#   4. The deny.toml file contains configuration for the cargo deny.
+
+name: Check dependencies for security issues
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # run at midnight
+jobs:
+  audit:
+    runs-on: [matterlabs-ci-runner]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: Setup dependencies
+        run: |
+          rustup set profile minimal
+          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
+          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
+      - name: Generate Cargo.lock
+        run: cargo generate-lockfile
+      - name: Cargo audit check
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}
+  deny:
+    runs-on: [matterlabs-ci-runner]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Cargo deny check
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          log-level: error
+          command: check bans licenses sources
+          credentials: https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/

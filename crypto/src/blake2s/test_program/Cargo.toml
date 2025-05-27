@@ -1,0 +1,23 @@
+[package]
+name = "test_program"
+version = "0.1.0"
+edition = "2021"
+authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
+homepage = "https://zksync.io/"
+repository = "https://github.com/matter-labs/zksync-os/"
+license = "MIT OR Apache-2.0"
+keywords = ["blockchain", "zksync", "zk", "risc-v"]
+categories = ["cryptography"]
+
+[dependencies]
+riscv_common = {git = "https://github.com/matter-labs/zksync-airbender"}
+crypto = { path = "../../../", features = ["blake2s_tests"]}
+
+[workspace]
+
+[features]
+single_round_with_control = ["crypto/single_round_with_control"]
+
+# [patch."https://github.com/matter-labs/zksync-airbender"]
+# blake2s_u32 = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile" }
+# riscv_common = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile" }

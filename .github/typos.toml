@@ -1,0 +1,9 @@
+[files]
+extend-exclude = ["**/target/**", "**/serde-yaml/tests/**"]
+ignore-files = true
+
+
+[default.extend-words]
+datas = "datas"
+Storeable = "Storeable"
+lits = "lits"

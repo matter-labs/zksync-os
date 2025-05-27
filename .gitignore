@@ -1,0 +1,21 @@
+/target
+/Cargo.lock
+
+instances_examples/test_contracts/node_modules
+instances_examples/test_contracts/cache
+instances_examples/test_contracts/artifacts
+
+tests/contracts_wasm/*/target
+tests/contracts_wasm/*/out.wat
+
+# Assuming solidity is managed by hardhat
+tests/contracts_sol/*/.env
+tests/contracts_sol/*/artifacts
+tests/contracts_sol/*/cache
+tests/contracts_sol/*/ignition
+tests/contracts_sol/*/node_modules
+
+tests/instances/*/*.svg
+
+.DS_Store
+.idea

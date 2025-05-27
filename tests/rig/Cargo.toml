@@ -1,0 +1,47 @@
+[package]
+name = "rig"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+basic_bootloader = { path = "../../basic_bootloader", features = ["evm-compatibility"] }
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", features = ["delegation"] }
+basic_system = { path = "../../basic_system", features = ["evm-compatibility"] }
+evm_interpreter = { path = "../../evm_interpreter", features = ["evm-compatibility"] }
+forward_system = { path = "../../forward_system" }
+oracle_provider = { path = "../../oracle_provider" }
+zk_ee = { path = "../../zk_ee" }
+zksync_os_runner = { path = "../../zksync_os_runner"}
+system_hooks = { path = "../../system_hooks" }
+crypto = { path = "../../crypto" }
+cycle_marker = { path = "../../cycle_marker", optional = true }
+
+prover_examples = {git = "https://github.com/matter-labs/zksync-airbender", optional=true}
+
+ethers = "2.0.0" # ethers 2.0.0 is required due to dependency conflict
+futures = "0.3.30"
+hex = "*"
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+tokio = { version = "1.40.0", features = ["rt-multi-thread"] }
+env_logger = "0.11.6"
+log = "0.4.22" # tokio with `rt-multi-thread` feature needed to build ethers 2.0.0
+alloy = { version = "=0.4.0", features = ["full", "eip712"]}
+zksync-web3-rs = { git = "https://github.com/lambdaclass/zksync-web3-rs.git" }
+bincode = "1.3"
+
+[features]
+opcode_stats = ["risc_v_simulator/opcode_stats"]
+testing = ["risc_v_simulator/delegation"]
+e2e_proving = ["prover_examples", "risc_v_simulator/delegation"]
+default = ["testing"]
+no_print = ["forward_system/no_print"]
+cycle_marker = ["dep:cycle_marker", "zksync_os_runner/cycle_marker", "zk_ee/cycle_marker", "evm_interpreter/cycle_marker", "basic_system/cycle_marker", "basic_bootloader/cycle_marker"]
+simulate_witness_gen = []
+unlimited_native = ["forward_system/unlimited_native"]
+resources_for_tester = ["basic_bootloader/resources_for_tester"]

@@ -1,0 +1,19 @@
+[package]
+name = "modexp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dev-dependencies]
+hex = {version = "*"}
+num-bigint = "0.4"
+num-integer = "*"
+
+[features]
+
+

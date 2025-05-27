@@ -1,0 +1,30 @@
+[package]
+name = "evm_interpreter"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+zk_ee = { path = "../zk_ee", default-features = false }
+crypto = { path = "../crypto", default-features = false }
+arrayvec = { version = "0.7.4", default-features = false }
+either = { version = "*", default-features = false }
+cycle_marker = { path = "../cycle_marker" }
+
+[features]
+eip-7645 = []
+callcode = []
+mock-eip-4844 = []
+selfdestruct = []
+evm-compatibility = ["callcode", "mock-eip-4844", "selfdestruct"]
+default = ["evm-compatibility"]
+testing = ["zk_ee/testing"]
+cycle_marker = []

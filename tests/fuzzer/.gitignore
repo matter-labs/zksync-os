@@ -1,0 +1,3 @@
+target
+fuzz_logs
+fuzz/coverage-reports
