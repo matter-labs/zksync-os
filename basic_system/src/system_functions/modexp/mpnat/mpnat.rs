@@ -56,15 +56,15 @@ impl<'a, T, A: Allocator + Clone> OpaqueRef<'a, T, A> {
 }
 
 impl<'a, T, A: Allocator + Clone> OpaqueRef<'a, Vec<T, A>, A> {
-    fn prepared<L: Logger>(&mut self, required_cap: usize, logger: &mut L) -> &mut Vec<T, A> {
+    fn prepared<L: Logger>(&mut self, required_cap: usize, cap_factor: usize, logger: &mut L) -> &mut Vec<T, A> {
         let alloc = self.alloc.clone();
 
         match self.as_mut() {
             Some(x) if x.capacity() < required_cap => {
-                *x = Vec::<T, A>::with_capacity_in(required_cap * 2, alloc);
+                *x = Vec::<T, A>::with_capacity_in(required_cap * cap_factor, alloc);
             },
             None => {
-                self.set(Vec::<T, A>::with_capacity_in(required_cap * 2, self.alloc.clone()), logger);
+                self.set(Vec::<T, A>::with_capacity_in(required_cap * cap_factor, self.alloc.clone()), logger);
             },
             _ => {}
         };
@@ -290,165 +290,137 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         carry
     }
 
-
+    /// Buffer swaps:
+    /// `R_U256_SCRATCH` <-> `out`
+    /// `Q_U256_SCRATCH` <-> `self`
     pub fn div<O: IOOracle, L: Logger>(&mut self, rhs: &Self, out: &mut Vec<U256, A>, oracle: &mut O, logger: &mut L, allocator: A) {
-        let lhs_len = self.digits.len();
-        let lhs_ptr = self.digits.as_mut_ptr();
+        let mut arg = {
+            let lhs_len = self.digits.len();
+            let lhs_ptr = self.digits.as_mut_ptr();
 
-        let rhs_len = rhs.digits.len();
-        let rhs_ptr = rhs.digits.as_ptr();
+            let rhs_len = rhs.digits.len();
+            let rhs_ptr = rhs.digits.as_ptr();
 
-        let mut arg = ArithmeticsParam {
-            op: 0,
-            a_ptr: lhs_ptr as usize as u32,
-            a_len: lhs_len as usize as u32,
-            b_ptr: rhs_ptr as usize as u32,
-            b_len: rhs_len as usize as u32,
-            c_ptr: 0,
-            c_len: 0,
+            let arg = ArithmeticsParam {
+                op: 0,
+                a_ptr: lhs_ptr as usize as u32,
+                a_len: lhs_len as usize as u32,
+                b_ptr: rhs_ptr as usize as u32,
+                b_len: rhs_len as usize as u32,
+                c_ptr: 0,
+                c_len: 0,
+            };
+
+            arg
         };
 
-        let ptr = &mut arg as *mut _ as usize as u32;
-
-
-        #[allow(static_mut_refs)]
-        let r = unsafe { &mut R_U8_SCRATCH };
-
-        let mut r_r = OpaqueRef::<Vec<u8, A>, A>::access(r, allocator.clone());
-
-        // The results need to be of the same size as the input.
-        let cap_need = self.digits.len() * 32;
-        // let q = q_r.prepared(cap_need, logger);
-        let r = r_r.prepared(cap_need, logger);
-        // q.clear();
-        r.clear();
-
-        let mut it = oracle.create_oracle_access_iterator::<Arithmetics>(ptr).unwrap();
+        let mut it = 
+            oracle
+            .create_oracle_access_iterator::<Arithmetics>(&raw mut arg as usize as u32)
+            .unwrap();
 
         let q_len = it.next().expect("Quotient length.");
         let r_len = it.next().expect("Remainder length.");
 
 
-        assert_eq!(0, q_len % 8);
-        assert_eq!(0, r_len % 8);
-
-        let mut q_r = OpaqueRef::<Vec<U256, A>, A>::access(
+        #[allow(static_mut_refs)]
+        let mut q_ref = OpaqueRef::<Vec<U256, A>, A>::access(
             unsafe { &mut Q_U256_SCRATCH },
             allocator.clone());
 
-        let q = q_r.prepared(self.digits.len(), logger);
-
-        let q_p = q.as_mut_ptr().cast::<usize>();
-
-        for i in 0..q_len {
-            let word = it.next().expect("Quotient word.");
-            unsafe { q_p.add(i).write(word) };
-            // q.extend_from_slice(&word.to_le_bytes());
-        }
-
-        let mut r_r = OpaqueRef::<Vec<U256, A>, A>::access(
+        #[allow(static_mut_refs)]
+        let mut r_ref = OpaqueRef::<Vec<U256, A>, A>::access(
             unsafe { &mut R_U256_SCRATCH },
             allocator.clone());
 
-        let r = r_r.prepared(self.digits.len(), logger);
+        let q = q_ref.prepared(self.digits.len(), 1, logger);
+        let r = r_ref.prepared(rhs.digits.len(), 2, logger);
 
-        let r_p = r.as_mut_ptr().cast::<usize>();
+        { // Write q
+            assert_eq!(0, q_len % 8);
+            assert!(q_len < isize::MAX as usize / core::mem::size_of::<U256>());
 
-        for i in 0..r_len {
-            let word = it.next().expect("Remainder word.");
-            unsafe { r_p.add(i).write(word) };
-            // r.extend_from_slice(&word.to_le_bytes());
+            let q_ptr = q.as_mut_ptr().cast::<usize>();
+
+            for i in 0..q_len {
+                let word = it.next().expect("Quotient word.");
+                // Safety: 
+                // `q_len` is asserted to be small enough not to cause wrapping.
+                // `q` capacity the numerator length at least, thus is large enought to hold the
+                // result.
+                unsafe { q_ptr.add(i).write(word) };
+            }
+
+            unsafe { q.set_len(q_len / 8) };
+        }
+
+        { // Write r
+            assert_eq!(0, r_len % 8);
+            assert!(r_len < isize::MAX as usize / core::mem::size_of::<U256>());
+
+            let r_ptr = r.as_mut_ptr().cast::<usize>();
+
+            for i in 0..r_len {
+                let word = it.next().expect("Remainder word.");
+                // Safety: 
+                // `r_len` is asserted to be small enough not to cause wrapping.
+                // `r` capacity the divisor length at least, thus is large enought to hold the
+                // result.
+                unsafe { r_ptr.add(i).write(word) };
+            }
+
+            // Safety:
+            // `r_len` is asserted to be small enough not to cause wrapping.
+            let r_ptr = unsafe { r_ptr.add(r_len).cast::<U256>() };
+
+            for i in 0 .. rhs.digits.len() - r_len / 8 {
+                // Safety:
+                // `r_len` is 8 aligned:
+                // - The base ptr is for `Vec<U256>`
+                // - Added `r_len`, which is asserted to be a multiple of 8.
+                // `i` is limited by `rhs.digits.len()`, which is the capacity for `r`.
+                // Addition will not overflow, since the resulting pointer lies within `rhs`.
+                U256_ZERO.clone_into_unchecked(unsafe { r_ptr.add(i) });
+            }
+
+            // Safety:
+            // Elements within 0..r_len, r_len .. rhs.digits.len() are init due to two previous
+            // `for` loops.
+            unsafe { r.set_len(self.digits.len()); }
         }
 
         assert!(it.next().is_none(), "Oracle iterator not exhausted.");
 
-        // Force same width as input.
-        // q.resize(q.capacity(), 0);
-        unsafe { q.set_len(q_len / 8) };
-        unsafe { r.set_len(r_len / 8); }
-        // r.resize(r.capacity(), 0);
+        { // Check oracle results.
+            let mut check_ref = OpaqueRef::<Vec<U256, A>, A>::access(
+                #[allow(static_mut_refs)]
+                unsafe { &mut RCHECK_U256_SCRATCH },
+                allocator.clone());
 
-        // let ptr = r.spare_capacity_mut();
-        //
-        // for i in r.len() .. self.digits.len() {
-        //
-        // }
-        
-        r.resize_with(self.digits.len(), || U256::zero() );
+            let mut check = check_ref.prepared(q.len() + rhs.digits.len(), 2, logger);
 
-        logger.write_fmt(format_args!("r: {:?}", r));
-        logger.write_fmt(format_args!("rlen: {}", r.len()));
-        logger.write_fmt(format_args!("selflen: {}", self.digits.len()));
+            { // Write check
+                check.clear();
 
+                let spare = check.spare_capacity_mut();
 
-        // let cap_need = self.digits.len();
-        //
-        //
-        // let mut q2_r = OpaqueRef::<Vec<U256, A>, A>::access(
-        //     unsafe { &mut Q_U256_SCRATCH },
-        //     allocator.clone());
-        //
-        // let mut q2 = q2_r.prepared(cap_need, logger);
-        // q2.clear();
+                for i in 0..r.len() {
+                    r[i].clone_into(&mut spare[i]);
+                }
 
-        // let mut r_r = OpaqueRef::<Vec<U256, A>, A>::access(unsafe { &mut R_U256_SCRATCH }, allocator.clone());
-        // let mut r2 = r_r.prepared(rhs.digits.len(), logger);
-        // r2.clear();
-        //
-        let mut q2 = q;
-
-        // MPNatU256::from_little_endian_into(&q, &mut q2, logger, allocator.clone());
-        // MPNatU256::from_little_endian_into(&r, &mut r2, logger, allocator.clone());
-        // let r = r2;
-        // let r = MPNatU256::from_little_endian(&r, logger, allocator.clone());
-
-
-        {
-            let cap_need = q2.len() + rhs.digits.len();
-
-            let mut check_r = OpaqueRef::<Vec<U256, A>, A>::access(unsafe { &mut RCHECK_U256_SCRATCH }, allocator.clone());
-
-            let mut check = check_r.prepared(cap_need, logger);
-
-            let mut d_r = OpaqueRef::<Vec<U256, A>, A>::access(unsafe { &mut D_U256_SCRATCH }, allocator.clone());
-
-
-            check.clear();
-
-            let spare = check.spare_capacity_mut();
-
-            for i in 0..r.len() {
-                // check.push(r[i].clone());
-                r[i].clone_into(&mut spare[i]);
+                // Safety: elems 0..r.len() were just written.
+                unsafe { check.set_len(r.len()) };
             }
-
-            unsafe { check.set_len(r.len()) };
-
-            let cap_need = check.len();
-            let d = d_r.prepared(cap_need, logger);
-            d.clear();
-            let cap = d.capacity();
-            let spare = d.spare_capacity_mut();
-            logger.write_fmt(format_args!("d spare len {}", spare.len()));
-            logger.write_fmt(format_args!("d cap {}", cap));
-            for i in 0..rhs.digits.len() {
-                // d.push(rhs.digits[i].clone());
-                rhs.digits[i]
-                    .clone_into(&mut spare[i]);
-            }
-            for i in rhs.digits.len() .. cap {
-                U256_ZERO.clone_into(&mut spare[i]);
-            }
-            unsafe { d.set_len(d.capacity()); }
 
             // r += q * d
-            big_wrapping_mul(logger, &q2, &d, &mut check);
+            // TODO: Instead of cloning `r` into `check`, send `r` inside and use it as carry for
+            // initial iteration.
+            big_wrapping_mul(logger, &q, &rhs.digits, &mut check);
 
             assert!(Self::eq_digits(&check, self.digits.as_slice()));
         }
 
-        logger.write_str("div 4");
-        core::mem::swap(&mut self.digits, q2);
+        core::mem::swap(&mut self.digits, q);
         core::mem::swap(out, r);
     }
 
@@ -473,9 +445,14 @@ impl<A: Allocator + Clone> MPNatU256<A> {
     ) -> Self {
         // Initial reduction
 
+        // Work width is double of modulus.
         let mut scratch_space = Vec::with_capacity_in(modulus.digits.len() * 2, allocator.clone());
         scratch_space.resize(scratch_space.capacity(), U256::ZERO);
 
+        // Div swaps self and scratch buffers.
+        // Widths after:
+        // self: same.
+        // scratch: len m, cap 2m.
         self.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
 
         let base = scratch_space.clone();
@@ -491,40 +468,33 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         for &b in exp {
             let mut mask: u8 = 1 << 7;
             while mask > 0 {
-                logger.write_str("modpow iter 1");
+
+                // result width: 2m
+                // scratch width: 2m
                 big_wrapping_mul(logger, &result.digits, &result.digits, &mut scratch_space);
-                logger.write_str("modpow iter 2");
-                logger.write_fmt(format_args!("result len {}", result.digits.len()));
-                logger.write_fmt(format_args!("scratch len {}", scratch_space.len()));
                 result.digits.clone_from_slice(&scratch_space);
 
-                let scratch_space_len = scratch_space.len();
-                let result_len = result.digits.len();
-
                 // `scratch_space` isn't used inside `div`, an is only used as the result
-                // dst, so not need to zero it out.
+                // dst, so not need to zero it out. For the next call `div` will write over the
+                // contents of the buffer.
+                // At this point result and scratch are both 2m wide. Both are swapped by buffers of
+                // the same size.
                 result.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
 
-                logger.write_str("modpow iter 3");
-                let scratch_space_len2 = scratch_space.len();
-
-                assert_eq!(scratch_space_len, result_len);
-                assert_eq!(scratch_space_len, scratch_space_len2);
-
+                // Here, result and scratch buffers are swapped.
                 core::mem::swap(&mut result.digits, &mut scratch_space);
+                // This makes it so the result, scrach, and `div` internal buffers, q and r, are
+                // rotated around.
 
                 scratch_space.fill(U256::ZERO); // zero-out the scratch space
 
                 if b & mask != 0 {
-                logger.write_str("modpow iter 4");
                     big_wrapping_mul(logger, &result.digits, &base, &mut scratch_space);
-                logger.write_str("modpow iter 5");
                     result.digits.clone_from_slice(&scratch_space);
 
                     result.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
                     core::mem::swap(&mut result.digits, &mut scratch_space);
                     scratch_space.fill(U256::ZERO); // zero-out the scratch space
-                logger.write_str("modpow iter 6");
                 }
 
                 mask >>= 1;
