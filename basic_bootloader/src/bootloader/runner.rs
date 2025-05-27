@@ -1055,15 +1055,21 @@ where
                 return_values: ReturnValues::empty(system),
                 execution_reverted: false,
             };
-            Ok(halt_or_continue_after_deployment(
+            halt_or_continue_after_deployment(
                 callstack,
                 system,
                 resources_for_deployer,
                 deployment_result,
-            )?)
+            )
         }
+<<<<<<< HEAD
         Err(FatalError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
         Err(FatalError::Internal(e)) => Err(e.into()),
+=======
+        Err(SystemError::OutOfErgs) => fail_deployment(callstack, system, resources_before),
+        Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
+        Err(SystemError::Internal(e)) => Err(e.into()),
+>>>>>>> c0c250fd (small simplification)
     }
 }
 
