@@ -23,8 +23,8 @@ use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};
 use zk_ee::system::{
-    BytecodeSource, EthereumLikeTypes, MemorySubsystem, OSImmutableSlice, OSResizableSlice, System,
-    SystemTypes,
+    BytecodeSource, EthereumLikeTypes, MemorySubsystem, OSImmutableSlice, OSResizableSlice,
+    Resource, System, SystemTypes,
 };
 
 use alloc::vec::Vec;
@@ -115,7 +115,22 @@ impl<S: SystemTypes> BytecodePreprocessingData<S> {
         padded_bytecode: &[u8],
         original_len: u32,
         system: &mut System<S>,
-    ) -> Result<Self, InternalError> {
+        resources: &mut S::Resources,
+    ) -> Result<Self, FatalError> {
+        use crate::native_resource_constants::BYTECODE_PREPROCESSING_BYTE_NATIVE_COST;
+        use zk_ee::system::{Computational, Resources};
+        let native_cost = <S::Resources as Resources>::Native::from_computational(
+            BYTECODE_PREPROCESSING_BYTE_NATIVE_COST.saturating_mul(padded_bytecode.len() as u64),
+        );
+        resources
+            .charge(&S::Resources::from_native(native_cost))
+            .map_err(|e| match e {
+                SystemError::Internal(e) => FatalError::Internal(e),
+                SystemError::OutOfErgs => {
+                    FatalError::Internal(InternalError("OOE when charging only native"))
+                }
+                SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+            })?;
         let jump_map = analyze::<S>(padded_bytecode, system)
             .map_err(|_| InternalError("Could not preprocess bytecode"))?;
         let new = Self {
