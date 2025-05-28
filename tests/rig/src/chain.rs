@@ -3,8 +3,8 @@ use crate::{colors, init_logger};
 use alloy::signers::local::PrivateKeySigner;
 use basic_bootloader::bootloader::config::BasicBootloaderForwardSimulationConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
-use basic_system::system_implementation::io::FlatStorageCommitment;
-use basic_system::system_implementation::io::{
+use basic_system::system_implementation::flat_storage_model::FlatStorageCommitment;
+use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
     TREE_HEIGHT,
 };
@@ -301,7 +301,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 .insert(account_properties.bytecode_hash, bytecode);
         }
         if let Some(nominal_token_balance) = balance {
-            account_properties.nominal_token_balance = nominal_token_balance;
+            account_properties.balance = nominal_token_balance;
         }
         if let Some(nonce) = nonce {
             account_properties.nonce = nonce;
@@ -345,7 +345,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ///
     pub fn set_balance(&mut self, address: B160, balance: U256) -> &mut Self {
         let mut account_properties = AccountProperties::TRIVIAL_VALUE;
-        account_properties.nominal_token_balance = balance;
+        account_properties.balance = balance;
         let encoding = account_properties.encoding();
         let properties_hash = account_properties.compute_hash();
 

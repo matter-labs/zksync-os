@@ -4,11 +4,11 @@
 use super::AccountPropertiesMetadata;
 use super::BytecodeAndAccountDataPreimagesStorage;
 use super::NewStorageWithAccountPropertiesUnderHash;
-use crate::system_implementation::io::account_cache_entry::AccountProperties;
-use crate::system_implementation::io::cost_constants::*;
-use crate::system_implementation::io::PreimageRequest;
-use crate::system_implementation::io::StorageAccessPolicy;
-use crate::system_implementation::io::DEFAULT_CODE_VERSION_BYTE;
+use crate::system_implementation::flat_storage_model::account_cache_entry::AccountProperties;
+use crate::system_implementation::flat_storage_model::cost_constants::*;
+use crate::system_implementation::flat_storage_model::PreimageRequest;
+use crate::system_implementation::flat_storage_model::StorageAccessPolicy;
+use crate::system_implementation::flat_storage_model::DEFAULT_CODE_VERSION_BYTE;
 use crate::system_implementation::system::ExtraCheck;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
@@ -57,7 +57,7 @@ pub struct NewModelAccountCache<
 > where
     ExtraCheck<SCC, A>:,
 {
-    cache: HistoryMap<BitsOrd160, AccountProperties, AccountPropertiesMetadata, A>,
+    pub(crate) cache: HistoryMap<BitsOrd160, AccountProperties, AccountPropertiesMetadata, A>,
     pub(crate) current_tx_number: u32,
     phantom: PhantomData<(R, P, SC, SCC)>,
 }
@@ -161,7 +161,7 @@ where
                         let props =
                             AccountProperties::decode(preimage.try_into().map_err(|_| {
                                 InternalError("Unexpected preimage length for AccountProperties")
-                            })?)?;
+                            })?);
 
                         (props, Appearance::Retrieved)
                     }
@@ -220,10 +220,10 @@ where
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
 
-        let cur = account_data.current().value.nominal_token_balance;
+        let cur = account_data.current().value.balance;
         let new = update_fn(&cur)?;
         account_data.update(|x, _| {
-            x.nominal_token_balance = new;
+            x.balance = new;
             Ok(())
         })?;
 
@@ -271,7 +271,7 @@ where
 
     // special method, not part of the trait as it's not overly generic
     pub fn persist_changes(
-        self,
+        &self,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
@@ -311,15 +311,17 @@ where
         })
     }
 
-    pub fn net_pubdata_used(&self) -> u64 {
-        let mut pubdata_size = 0;
+    pub fn net_pubdata_used(&self) -> u32 {
+        // TODO: should be constant complexity
+        let mut pubdata_used = 0u32;
         self.cache
             .for_total_diff_operands::<_, ()>(|l, r, _| {
-                pubdata_size += super::account_cache_entry::diff(l, r).get_encoded_size();
+                pubdata_used +=
+                    AccountProperties::diff_compression_length(&l.value, &r.value).unwrap();
                 Ok(())
             })
             .expect("We're returning Ok(()).");
-        pubdata_size as u64
+        pubdata_used
     }
 
     pub fn begin_new_tx(&mut self) {
@@ -339,19 +341,6 @@ where
         }
     }
 
-    pub fn tx_stats(&self) -> u32 {
-        let mut size = 0;
-        self.cache
-            .get_tx_diff_operands(|l, r, _| {
-                let diff = super::account_cache_entry::diff(l, r);
-                size += diff.get_encoded_size() as u32;
-                Ok(())
-            })
-            .unwrap_or(());
-
-        size
-    }
-
     pub fn read_account_balance_assuming_warm(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -369,7 +358,7 @@ where
         }
 
         match self.cache.get_current(address.into()) {
-            Some(cache_item) => Ok(cache_item.current().value.nominal_token_balance),
+            Some(cache_item) => Ok(cache_item.current().value.balance),
             None => Err(InternalError("Balance assumed warm but not in cache").into()),
         }
     }
@@ -445,7 +434,7 @@ where
             bytecode_hash: Maybe::construct(|| full_data.bytecode_hash),
             bytecode_len: Maybe::construct(|| full_data.bytecode_len),
             artifacts_len: Maybe::construct(|| full_data.artifacts_len),
-            nominal_token_balance: Maybe::construct(|| full_data.nominal_token_balance),
+            nominal_token_balance: Maybe::construct(|| full_data.balance),
             bytecode: Maybe::try_construct(|| {
                 // we charged for "cold" behavior already, so we just ask for preimage
 
@@ -689,7 +678,7 @@ where
         )))?;
 
         let same_address = at_address == nominal_token_beneficiary;
-        let transfer_amount = account_data.current().value.nominal_token_balance;
+        let transfer_amount = account_data.current().value.balance;
 
         if account_data.current().metadata.deployed_in_tx == cur_tx {
             account_data.deconstruct()?;
@@ -717,7 +706,7 @@ where
             })?
         } else if account_data.current().metadata.deployed_in_tx == cur_tx {
             account_data.update(|k, _| {
-                k.nominal_token_balance = U256::ZERO;
+                k.balance = U256::ZERO;
                 Ok(())
             })?;
         }
@@ -737,7 +726,7 @@ where
                         && beneficiary_properties.bytecode_len == 0
                         // We need to check with the transferred amount,
                         // this means it was 0 before the transfer.
-                        && beneficiary_properties.nominal_token_balance == transfer_amount;
+                        && beneficiary_properties.balance == transfer_amount;
                     if beneficiary_is_empty {
                         use evm_interpreter::gas_constants::NEWACCOUNT;
                         let ergs_to_spend = Ergs(NEWACCOUNT * ERGS_PER_GAS);

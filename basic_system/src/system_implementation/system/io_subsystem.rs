@@ -325,8 +325,7 @@ where
     }
 
     fn net_pubdata_used(&self) -> u64 {
-        // TODO: messages?
-        self.storage.net_pubdata_used()
+        self.storage.pubdata_used() as u64 + self.logs_storage.pubdata_used() as u64
     }
 
     fn start_io_frame(&mut self) -> Result<FullIOStateSnapshot, InternalError> {
@@ -401,8 +400,8 @@ where
                 None,
                 // we don't need to append pubdata to the hash
                 &mut NopHasher,
-                &mut logger,
                 result_keeper,
+                &mut logger,
             )
             .expect("Failed to finish storage");
 
@@ -468,8 +467,8 @@ where
                 &mut self.oracle,
                 Some(&mut state_commitment),
                 &mut pubdata_hasher,
-                &mut logger,
                 result_keeper,
+                &mut logger,
             )
             .expect("Failed to finish storage");
         self.logs_storage

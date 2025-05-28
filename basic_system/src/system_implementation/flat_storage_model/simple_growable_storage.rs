@@ -183,6 +183,9 @@ impl LeafUpdateRecord {
 }
 
 impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitment<N> {
+    ///
+    /// Vefifies all the state reads and applies writes.
+    ///
     fn verify_and_apply_batch<'a, O: IOOracle, A: Allocator + Clone + Default>(
         &mut self,
         oracle: &mut O,

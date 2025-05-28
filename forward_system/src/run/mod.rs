@@ -42,7 +42,7 @@ pub use self::output::TxOutput;
 use crate::run::output::TxResult;
 use crate::run::test_impl::{NoopTxCallback, TxListSource};
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;
-use basic_system::system_implementation::io::*;
+use basic_system::system_implementation::flat_storage_model::*;
 use zk_ee::system::errors::InternalError;
 pub use zk_ee::system::metadata::BlockMetadataFromOracle as BatchContext;
 

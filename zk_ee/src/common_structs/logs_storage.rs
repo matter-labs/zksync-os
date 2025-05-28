@@ -150,7 +150,7 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
 pub type LogContent<A: Allocator = Global> = GenericLogContent<EthereumIOTypesConfig, A>;
 
 pub type LogsStorageStackCheck<SCC: const StackCtorConst, A: Allocator> =
-    [(); SCC::extra_const_param::<(LogContent<A>, u32), A>()];
+[(); SCC::extra_const_param::<(LogContent<A>, u32), A>()];
 
 pub struct LogsStorage<SC: StackCtor<SCC>, SCC: const StackCtorConst, A: Allocator + Clone = Global>
 where
@@ -257,6 +257,18 @@ where
         }
     }
 
+    pub fn pubdata_used(&self) -> u32 {
+        // TODO: should be constant complexity
+        let mut pubdata_used = 0u32;
+        self.list.iter().for_each(|el| {
+            if let GenericLogContentData::UserMsg(msg) = &el.data {
+                pubdata_used += msg.data.len() as u32;
+            }
+            pubdata_used += L2_TO_L1_LOG_SERIALIZE_SIZE as u32;
+        });
+        pubdata_used
+    }
+
     pub fn apply_pubdata(
         &self,
         hasher: &mut impl MiniDigest,
@@ -345,8 +357,8 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
     fn from(m: &LogContent<A>) -> Self {
         let (sender, key, value) = match m.data {
             GenericLogContentData::UserMsg(UserMsgData {
-                address, data_hash, ..
-            }) => (
+                                               address, data_hash, ..
+                                           }) => (
                 // TODO: move into const
                 B160::from_limbs([0x8008, 0, 0]),
                 address.into(),

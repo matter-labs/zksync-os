@@ -1,8 +1,8 @@
 use basic_bootloader::bootloader::constants::TX_OFFSET;
 use basic_bootloader::bootloader::transaction::ZkSyncTransaction;
-use basic_system::system_implementation::io::AccountProperties;
-use basic_system::system_implementation::io::ACCOUNT_PROPERTIES_STORAGE_ADDRESS;
-use basic_system::system_implementation::io::{
+use basic_system::system_implementation::flat_storage_model::AccountProperties;
+use basic_system::system_implementation::flat_storage_model::ACCOUNT_PROPERTIES_STORAGE_ADDRESS;
+use basic_system::system_implementation::flat_storage_model::{
     FlatStorageCommitment, TestingTree, TESTING_TREE_HEIGHT,
 };
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource};
@@ -238,7 +238,7 @@ pub fn mock_oracle_balance(
     };
 
     let mut account_properties = AccountProperties::TRIVIAL_VALUE;
-    account_properties.nominal_token_balance = balance;
+    account_properties.balance = balance;
     let encoding = account_properties.encoding();
     let properties_hash = account_properties.compute_hash();
 
