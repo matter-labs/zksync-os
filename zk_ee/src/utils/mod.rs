@@ -6,6 +6,8 @@ pub mod integer_utils;
 pub mod stack_linked_list;
 pub mod type_assert;
 
+use crypto::MiniDigest;
+
 pub use self::aligned_buffer::*;
 pub use self::aligned_vector::*;
 pub use self::bytes32::*;
@@ -27,4 +29,17 @@ pub fn with_global_allocator<T>(closure: impl FnOnce() -> T) -> T {
     }
 
     result
+}
+
+pub struct NopHasher;
+
+impl MiniDigest for NopHasher {
+    type HashOutput = ();
+
+    fn new() -> Self {
+        Self
+    }
+    fn digest(_input: impl AsRef<[u8]>) -> Self::HashOutput {}
+    fn update(&mut self, _input: impl AsRef<[u8]>) {}
+    fn finalize(self) -> Self::HashOutput {}
 }

@@ -278,10 +278,10 @@ impl AccountProperties {
     ///
     /// For account data we have following encoding formats(index encoded in the 5 most significant bits of the metadata byte, 3 less significant == 4):
     /// 0(full data): `versioning_data(8 BE bytes) & nonce_diff(using storage value strategy) & balance_diff & bytecode_len(4 BE bytes)
-    /// & bytecode & observable_len (4 BE bytes) & artifacts_len (4 BE bytes)`
+    /// & bytecode & artifacts_len (4 BE bytes) & observable_len (4 BE bytes)`
     /// 1: `nonce_diff (using storage value strategy)`
-    /// 2: `balabce_diff (using storage value strategy)`
-    /// 3: `nonce_diff (using storage value strategy) & balabce_diff (using storage value strategy)`
+    /// 2: `balance_diff (using storage value strategy)`
+    /// 3: `nonce_diff (using storage value strategy) & balance_diff (using storage value strategy)`
     ///
     pub fn diff_compression<const PROOF_ENV: bool, R: Resources, A: Allocator + Clone>(
         initial: &Self,
@@ -301,6 +301,9 @@ impl AccountProperties {
             (false, true) => {
                 let metadata_byte = 4u8;
                 hasher.update([metadata_byte]);
+                result_keeper.pubdata(&[metadata_byte]);
+                hasher.update(r#final.versioning_data.into_u64().to_be_bytes());
+                result_keeper.pubdata(&r#final.versioning_data.into_u64().to_be_bytes());
                 ValueDiffCompressionStrategy::optimal_compression_u256(
                     initial
                         .nonce
@@ -320,6 +323,7 @@ impl AccountProperties {
                     result_keeper,
                 );
                 hasher.update(r#final.bytecode_len.to_be_bytes());
+                result_keeper.pubdata(&r#final.bytecode_len.to_be_bytes());
                 let preimage_type = PreimageRequest {
                     hash: r#final.bytecode_hash,
                     expected_preimage_len_in_bytes: r#final.bytecode_len,
@@ -341,8 +345,11 @@ impl AccountProperties {
                         SystemError::Internal(i) => i,
                     })?;
                 hasher.update(bytecode);
+                result_keeper.pubdata(bytecode);
                 hasher.update(r#final.artifacts_len.to_be_bytes());
+                result_keeper.pubdata(&r#final.artifacts_len.to_be_bytes());
                 hasher.update(r#final.observable_bytecode_len.to_be_bytes());
+                result_keeper.pubdata(&r#final.observable_bytecode_len.to_be_bytes());
                 Ok(())
             }
             (_, _) => {
@@ -371,6 +378,7 @@ impl AccountProperties {
                     metadata_byte |= 2 << 3;
                 }
                 hasher.update([metadata_byte]);
+                result_keeper.pubdata(&[metadata_byte]);
                 if initial.nonce != r#final.nonce {
                     ValueDiffCompressionStrategy::optimal_compression_u256(
                         initial
@@ -396,5 +404,140 @@ impl AccountProperties {
                 Ok(())
             }
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use std::alloc::Global;
+    use ruint::aliases::U256;
+    use crypto::blake2s::Blake2s256;
+    use crypto::sha3::Keccak256;
+    use storage_models::common_structs::PreimageCacheModel;
+    use zk_ee::common_structs::PreimageType;
+    use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+    use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
+    use zk_ee::system::errors::InternalError;
+    use zk_ee::system::IOResultKeeper;
+    use zk_ee::system_io_oracle::{IOOracle, OracleIteratorTypeMarker};
+    use zk_ee::system::Resource;
+    use crate::system_implementation::flat_storage_model::{BytecodeAndAccountDataPreimagesStorage, PreimageRequest, VersioningData};
+    use super::AccountProperties;
+    use zk_ee::utils::*;
+    use crypto::MiniDigest;
+    use zk_ee::types_config::EthereumIOTypesConfig;
+
+    struct TestResultKeeper {
+        pub pubdata: Vec<u8>
+    }
+
+    struct TestOracle;
+
+    impl IOOracle for TestOracle {
+        type MarkerTiedIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+
+        fn create_oracle_access_iterator<'a, M: OracleIteratorTypeMarker>(&'a mut self, _init_value: M::Params) -> Result<Self::MarkerTiedIterator<'a>, InternalError> {
+            unimplemented!()
+        }
+    }
+
+    impl IOResultKeeper<EthereumIOTypesConfig> for TestResultKeeper {
+        fn pubdata<'a>(&mut self, value: &'a [u8]) {
+            self.pubdata.extend_from_slice(value)
+        }
+    }
+
+    #[test]
+    fn basic_nonce_change_compression_test() {
+        let mut initial = AccountProperties::TRIVIAL_VALUE;
+        initial.nonce = 12;
+
+        let mut r#final = AccountProperties::TRIVIAL_VALUE;
+        r#final.nonce = 22;
+
+
+        let optimal_length = AccountProperties::diff_compression_length(&initial, &r#final).unwrap();
+
+        let mut nop_hasher = NopHasher::new();
+        let mut result_keeper = TestResultKeeper {
+            pubdata: vec![],
+        };
+        let mut preimages_cache: BytecodeAndAccountDataPreimagesStorage<BaseResources<DecreasingNative>> = BytecodeAndAccountDataPreimagesStorage::new_from_parts(Global);
+        let mut test_oracle = TestOracle;
+
+        AccountProperties::diff_compression::<false, _, _>(&initial, &r#final, &mut nop_hasher, &mut result_keeper, &mut preimages_cache, &mut test_oracle).unwrap();
+        let compression = result_keeper.pubdata;
+
+        assert_eq!(optimal_length, compression.len() as u32);
+        // only nonce changed
+        // "Addition" strategy for nonce is optimal in this case
+        assert_eq!(compression.len(), 3);
+        assert_eq!(compression[0], 0b00001100);
+        assert_eq!(compression[1], 0b00001001);
+        assert_eq!(compression[2], 22 - 12);
+    }
+
+    #[test]
+    fn basic_deployment_compression_test() {
+        let mut initial = AccountProperties::TRIVIAL_VALUE;
+        initial.balance = U256::try_from(0xFF00000000FFu64).unwrap();
+
+        let bytecode = vec![1u8, 2, 3, 4, 5];
+        let blake = Blake2s256::digest(&bytecode);
+        let keccak = Keccak256::digest(&bytecode);
+        let mut r#final = AccountProperties::TRIVIAL_VALUE;
+        r#final.versioning_data = VersioningData::empty_deployed();
+        r#final.balance = U256::try_from(0xFF0000000000u64).unwrap();
+        r#final.bytecode_len = bytecode.len() as u32;
+        r#final.observable_bytecode_len = bytecode.len() as u32;
+        r#final.bytecode_hash = blake.into();
+        r#final.observable_bytecode_hash = keccak.into();
+
+        let optimal_length = AccountProperties::diff_compression_length(&initial, &r#final).unwrap();
+
+        let mut nop_hasher = NopHasher::new();
+        let mut result_keeper = TestResultKeeper {
+            pubdata: vec![],
+        };
+        let mut preimages_cache: BytecodeAndAccountDataPreimagesStorage<BaseResources<DecreasingNative>> = BytecodeAndAccountDataPreimagesStorage::new_from_parts(Global);
+        let mut resources: BaseResources<DecreasingNative> = BaseResources::FORMAL_INFINITE;
+        preimages_cache.record_preimage::<false>(
+            ExecutionEnvironmentType::EVM,
+            &(PreimageRequest {
+                hash: r#final.bytecode_hash,
+                expected_preimage_len_in_bytes: r#final.bytecode_len,
+                preimage_type: PreimageType::Bytecode,
+            }),
+            &mut resources,
+            &bytecode
+        ).unwrap();
+        let mut test_oracle = TestOracle;
+
+        AccountProperties::diff_compression::<false, _, _>(&initial, &r#final, &mut nop_hasher, &mut result_keeper, &mut preimages_cache, &mut test_oracle).unwrap();
+        let compression = result_keeper.pubdata;
+
+        assert_eq!(optimal_length, compression.len() as u32);
+        // full_data preimage:
+        // 0b00000100 - metadata byte
+        // 8 bytes versioning data
+        // 1 byte nonce diff
+        // 2 bytes balance diff
+        // 4 bytes bytecode len
+        // bytecode
+        // 4 bytes observable bytecode len
+        // 4 bytes artifacts len
+        assert_eq!(compression.len() as u32, 1 + 8 + 1 + 2 + 4 + bytecode.len() as u32 + 4 + 4);
+        let mut expected = vec![0b00000100];
+        expected.extend(r#final.versioning_data.0.to_be_bytes());
+        expected.push(0b00000001); // nonce: add,initial == final == 0
+        expected.push(0b00001010); // balance: sub 0xff
+        expected.push(0xff); // balance: sub 0xff
+        expected.extend((bytecode.len() as u32).to_be_bytes());
+        expected.extend_from_slice(&bytecode);
+        expected.extend([0, 0, 0, 0]); // arifacts len
+        expected.extend((bytecode.len() as u32).to_be_bytes()); // observable
+
+        assert_eq!(compression, expected);
     }
 }

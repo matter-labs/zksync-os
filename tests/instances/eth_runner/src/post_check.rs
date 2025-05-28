@@ -177,8 +177,7 @@ fn zksync_os_output_into_account_state(output: BatchOutput) -> HashMap<B160, Acc
                             panic!("Must contain preimage for account {:#?}", address)
                         })
                         .clone();
-                    AccountProperties::decode(encoded.try_into().unwrap())
-                        .expect("Must decode account properties")
+                    AccountProperties::decode(&encoded.try_into().unwrap())
                 };
                 let entry = updates.entry(address).or_default();
                 entry.balance = Some(props.balance);

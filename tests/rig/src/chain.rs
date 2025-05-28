@@ -275,8 +275,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                         .preimage_source
                         .get_preimage(*account_hash)
                         .unwrap_or_default();
-                    AccountProperties::decode(encoded.try_into().unwrap())
-                        .expect("Failed to decode account properties")
+                    AccountProperties::decode(&encoded.try_into().unwrap())
                 }
             }
         }

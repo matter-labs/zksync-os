@@ -4,7 +4,7 @@ use crate::system_implementation::flat_storage_model::*;
 use crate::system_implementation::system::public_input::{
     BlocksOutput, BlocksPublicInput, ChainStateCommitment,
 };
-use crate::system_implementation::NopHasher;
+use zk_ee::utils::NopHasher;
 use core::alloc::Allocator;
 use errors::SystemError;
 use evm_interpreter::gas_constants::COLD_SLOAD_COST;

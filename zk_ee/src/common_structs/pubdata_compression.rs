@@ -82,7 +82,7 @@ impl ValueDiffCompressionStrategy {
                 if of || length == 32 {
                     Err(())
                 } else {
-                    let metadata_byte = (length << 3) & 1;
+                    let metadata_byte = (length << 3) | 1;
                     hasher.update([metadata_byte]);
                     hasher.update(&result.to_be_bytes::<32>()[32usize - length as usize..]);
                     result_keeper.pubdata(&[metadata_byte]);
@@ -98,7 +98,7 @@ impl ValueDiffCompressionStrategy {
                 if of || length == 32 {
                     Err(())
                 } else {
-                    let metadata_byte = (length << 3) & 2;
+                    let metadata_byte = (length << 3) | 2;
                     hasher.update([metadata_byte]);
                     hasher.update(&result.to_be_bytes::<32>()[32usize - length as usize..]);
                     result_keeper.pubdata(&[metadata_byte]);
@@ -112,7 +112,7 @@ impl ValueDiffCompressionStrategy {
                 if length == 32 {
                     Err(())
                 } else {
-                    let metadata_byte = (length << 3) & 3;
+                    let metadata_byte = (length << 3) | 3;
                     hasher.update([metadata_byte]);
                     hasher.update(&final_value.to_be_bytes::<32>()[32usize - length as usize..]);
                     result_keeper.pubdata(&[metadata_byte]);
@@ -183,5 +183,48 @@ impl ValueDiffCompressionStrategy {
         let initial_value = initial_value.into_u256_be();
         let final_value = final_value.into_u256_be();
         Self::optimal_compression_u256(initial_value, final_value, hasher, result_keeper);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::system::IOResultKeeper;
+    use crate::types_config::EthereumIOTypesConfig;
+    use super::ValueDiffCompressionStrategy;
+    use crate::utils::*;
+    use crypto::MiniDigest;
+
+    struct TestResultKeeper {
+        pub pubdata: Vec<u8>
+    }
+
+    impl IOResultKeeper<EthereumIOTypesConfig> for TestResultKeeper {
+        fn pubdata<'a>(&mut self, value: &'a [u8]) {
+            self.pubdata.extend_from_slice(value)
+        }
+    }
+
+    #[test]
+    fn basic_compression_test() {
+        let initial = Bytes32::from_array([0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let r#final = Bytes32::from_array([0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3]);
+
+
+        let optimal_length = ValueDiffCompressionStrategy::optimal_compression_length(&initial, &r#final);
+
+        let mut nop_hasher = NopHasher::new();
+        let mut result_keeper = TestResultKeeper {
+            pubdata: vec![],
+        };
+
+        ValueDiffCompressionStrategy::optimal_compression(&initial, &r#final, &mut nop_hasher, &mut result_keeper);
+        let compression = result_keeper.pubdata;
+
+        assert_eq!(optimal_length as usize, compression.len());
+        // "Addition" strategy is optimal in this case
+        assert_eq!(compression.len(), 2);
+        println!("{:?}", compression);
+        assert_eq!(compression[0], 0b00001001);
+        assert_eq!(compression[1], 3);
     }
 }

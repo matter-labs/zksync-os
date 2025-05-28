@@ -45,6 +45,7 @@ impl Display for Secp256k1Err {
     }
 }
 
+#[cfg(feature = "secp256k1-static-context")]
 pub fn ecrecover_test() {
     #[cfg(feature = "bigint_ops")]
     init();
