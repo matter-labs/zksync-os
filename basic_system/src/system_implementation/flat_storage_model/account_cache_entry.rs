@@ -201,6 +201,10 @@ impl AccountProperties {
         hasher.finalize().into()
     }
 
+    ///
+    /// Estimate account properties diff compression length.
+    /// For more details about compression, see the `diff_compression` method(below).
+    ///
     pub fn diff_compression_length(initial: &Self, r#final: &Self) -> Result<u32, InternalError> {
         match (
             initial.versioning_data.is_deployed(),
@@ -263,6 +267,22 @@ impl AccountProperties {
         }
     }
 
+
+    ///
+    /// Compress account properties diff.
+    /// The diffs for accounts will be encoded together with state diffs under corresponding storage keys.
+    /// So, in fact, this compression is an "extension" for storage value compression.
+    /// For storage value we have one metadata byte and use 3 less significant bits to describe compression type.
+    /// 4(0-3) types are used for values, so we'll use 4 as the account diff compression type.
+    /// 5 most significant bits of metadata byte can be used to save additional info for encoding type.
+    ///
+    /// For account data we have following encoding formats(index encoded in the 5 most significant bits of the metadata byte, 3 less significant == 4):
+    /// 0(full data): `versioning_data(8 BE bytes) & nonce_diff(using storage value strategy) & balance_diff & bytecode_len(4 BE bytes)
+    /// & bytecode & observable_len (4 BE bytes) & artifacts_len (4 BE bytes)`
+    /// 1: `nonce_diff (using storage value strategy)`
+    /// 2: `balabce_diff (using storage value strategy)`
+    /// 3: `nonce_diff (using storage value strategy) & balabce_diff (using storage value strategy)`
+    ///
     pub fn diff_compression<const PROOF_ENV: bool, R: Resources, A: Allocator + Clone>(
         initial: &Self,
         r#final: &Self,
