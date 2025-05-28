@@ -40,6 +40,16 @@ impl From<InternalError> for FatalError {
     }
 }
 
+impl SystemError {
+    pub fn into_fatal(self) -> FatalError {
+        match self {
+            SystemError::Internal(e) => FatalError::Internal(e),
+            SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+            SystemError::OutOfErgs => unreachable!(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum UpdateQueryError {
     /// Attempted an update that over/underflows the numerical bound.
