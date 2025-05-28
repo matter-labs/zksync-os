@@ -1,5 +1,5 @@
 //!
-//! This module contains flat(aka new Boojum OS) storage model implementation.
+//! This module contains flat(aka new ZKsyncOS) storage model implementation.
 //!
 //! It's fixed height merkle tree with linked list in the leaves sorted by storage keys.
 //! Account data hashes stored in this tree and published separately.
