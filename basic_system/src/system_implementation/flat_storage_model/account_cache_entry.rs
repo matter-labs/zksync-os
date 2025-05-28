@@ -217,7 +217,7 @@ impl AccountProperties {
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
                     + 4 // bytecode len
                     + r#final.bytecode_len // bytecode
-                    + 4 // artifats len
+                    + 4 // artifacts len
                     + 4, // observable bytecode len
                 )
             }
