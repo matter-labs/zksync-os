@@ -256,7 +256,13 @@ where
 
         // Emit log
         let chain_id = system.get_chain_id();
-        let tx_hash: Bytes32 = transaction.calculate_hash(chain_id)?.into();
+        let tx_hash: Bytes32 = transaction
+            .calculate_hash(chain_id, &mut inf_resources)
+            .map_err(|e| match e {
+                FatalError::Internal(e) => e,
+                FatalError::OutOfNativeResources => InternalError("Out of native on infinite"),
+            })?
+            .into();
         let success = matches!(result, ExecutionResult::Success { .. });
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
         system.io.emit_l1_l2_tx_log(
@@ -479,8 +485,14 @@ where
 
         let chain_id = system.get_chain_id();
 
-        let tx_hash: Bytes32 = transaction.calculate_hash(chain_id)?.into();
-        let suggested_signed_hash: Bytes32 = transaction.calculate_signed_hash(chain_id)?.into();
+        let tx_hash: Bytes32 = transaction
+            .calculate_hash(chain_id, &mut resources)
+            .map_err(TxError::oon_as_validation)?
+            .into();
+        let suggested_signed_hash: Bytes32 = transaction
+            .calculate_signed_hash(chain_id, &mut resources)
+            .map_err(TxError::oon_as_validation)?
+            .into();
 
         let ValidationResult { validation_pubdata } = if !Config::ONLY_SIMULATE {
             Self::transaction_validation::<_, Config>(
