@@ -188,14 +188,14 @@ impl ValueDiffCompressionStrategy {
 
 #[cfg(test)]
 mod tests {
+    use super::ValueDiffCompressionStrategy;
     use crate::system::IOResultKeeper;
     use crate::types_config::EthereumIOTypesConfig;
-    use super::ValueDiffCompressionStrategy;
     use crate::utils::*;
     use crypto::MiniDigest;
 
     struct TestResultKeeper {
-        pub pubdata: Vec<u8>
+        pub pubdata: Vec<u8>,
     }
 
     impl IOResultKeeper<EthereumIOTypesConfig> for TestResultKeeper {
@@ -206,18 +206,27 @@ mod tests {
 
     #[test]
     fn basic_compression_test() {
-        let initial = Bytes32::from_array([0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        let r#final = Bytes32::from_array([0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3]);
+        let initial = Bytes32::from_array([
+            0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0,
+        ]);
+        let r#final = Bytes32::from_array([
+            0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 3,
+        ]);
 
-
-        let optimal_length = ValueDiffCompressionStrategy::optimal_compression_length(&initial, &r#final);
+        let optimal_length =
+            ValueDiffCompressionStrategy::optimal_compression_length(&initial, &r#final);
 
         let mut nop_hasher = NopHasher::new();
-        let mut result_keeper = TestResultKeeper {
-            pubdata: vec![],
-        };
+        let mut result_keeper = TestResultKeeper { pubdata: vec![] };
 
-        ValueDiffCompressionStrategy::optimal_compression(&initial, &r#final, &mut nop_hasher, &mut result_keeper);
+        ValueDiffCompressionStrategy::optimal_compression(
+            &initial,
+            &r#final,
+            &mut nop_hasher,
+            &mut result_keeper,
+        );
         let compression = result_keeper.pubdata;
 
         assert_eq!(optimal_length as usize, compression.len());

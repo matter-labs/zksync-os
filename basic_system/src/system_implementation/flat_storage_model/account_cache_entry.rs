@@ -267,7 +267,6 @@ impl AccountProperties {
         }
     }
 
-
     ///
     /// Compress account properties diff.
     /// The diffs for accounts will be encoded together with state diffs under corresponding storage keys.
@@ -407,29 +406,30 @@ impl AccountProperties {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::alloc::Global;
-    use ruint::aliases::U256;
+    use super::AccountProperties;
+    use crate::system_implementation::flat_storage_model::{
+        BytecodeAndAccountDataPreimagesStorage, PreimageRequest, VersioningData,
+    };
     use crypto::blake2s::Blake2s256;
     use crypto::sha3::Keccak256;
+    use crypto::MiniDigest;
+    use ruint::aliases::U256;
+    use std::alloc::Global;
     use storage_models::common_structs::PreimageCacheModel;
     use zk_ee::common_structs::PreimageType;
     use zk_ee::execution_environment_type::ExecutionEnvironmentType;
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
     use zk_ee::system::errors::InternalError;
     use zk_ee::system::IOResultKeeper;
-    use zk_ee::system_io_oracle::{IOOracle, OracleIteratorTypeMarker};
     use zk_ee::system::Resource;
-    use crate::system_implementation::flat_storage_model::{BytecodeAndAccountDataPreimagesStorage, PreimageRequest, VersioningData};
-    use super::AccountProperties;
-    use zk_ee::utils::*;
-    use crypto::MiniDigest;
+    use zk_ee::system_io_oracle::{IOOracle, OracleIteratorTypeMarker};
     use zk_ee::types_config::EthereumIOTypesConfig;
+    use zk_ee::utils::*;
 
     struct TestResultKeeper {
-        pub pubdata: Vec<u8>
+        pub pubdata: Vec<u8>,
     }
 
     struct TestOracle;
@@ -437,7 +437,10 @@ mod tests {
     impl IOOracle for TestOracle {
         type MarkerTiedIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 
-        fn create_oracle_access_iterator<'a, M: OracleIteratorTypeMarker>(&'a mut self, _init_value: M::Params) -> Result<Self::MarkerTiedIterator<'a>, InternalError> {
+        fn create_oracle_access_iterator<'a, M: OracleIteratorTypeMarker>(
+            &'a mut self,
+            _init_value: M::Params,
+        ) -> Result<Self::MarkerTiedIterator<'a>, InternalError> {
             unimplemented!()
         }
     }
@@ -456,17 +459,25 @@ mod tests {
         let mut r#final = AccountProperties::TRIVIAL_VALUE;
         r#final.nonce = 22;
 
-
-        let optimal_length = AccountProperties::diff_compression_length(&initial, &r#final).unwrap();
+        let optimal_length =
+            AccountProperties::diff_compression_length(&initial, &r#final).unwrap();
 
         let mut nop_hasher = NopHasher::new();
-        let mut result_keeper = TestResultKeeper {
-            pubdata: vec![],
-        };
-        let mut preimages_cache: BytecodeAndAccountDataPreimagesStorage<BaseResources<DecreasingNative>> = BytecodeAndAccountDataPreimagesStorage::new_from_parts(Global);
+        let mut result_keeper = TestResultKeeper { pubdata: vec![] };
+        let mut preimages_cache: BytecodeAndAccountDataPreimagesStorage<
+            BaseResources<DecreasingNative>,
+        > = BytecodeAndAccountDataPreimagesStorage::new_from_parts(Global);
         let mut test_oracle = TestOracle;
 
-        AccountProperties::diff_compression::<false, _, _>(&initial, &r#final, &mut nop_hasher, &mut result_keeper, &mut preimages_cache, &mut test_oracle).unwrap();
+        AccountProperties::diff_compression::<false, _, _>(
+            &initial,
+            &r#final,
+            &mut nop_hasher,
+            &mut result_keeper,
+            &mut preimages_cache,
+            &mut test_oracle,
+        )
+        .unwrap();
         let compression = result_keeper.pubdata;
 
         assert_eq!(optimal_length, compression.len() as u32);
@@ -494,27 +505,38 @@ mod tests {
         r#final.bytecode_hash = blake.into();
         r#final.observable_bytecode_hash = keccak.into();
 
-        let optimal_length = AccountProperties::diff_compression_length(&initial, &r#final).unwrap();
+        let optimal_length =
+            AccountProperties::diff_compression_length(&initial, &r#final).unwrap();
 
         let mut nop_hasher = NopHasher::new();
-        let mut result_keeper = TestResultKeeper {
-            pubdata: vec![],
-        };
-        let mut preimages_cache: BytecodeAndAccountDataPreimagesStorage<BaseResources<DecreasingNative>> = BytecodeAndAccountDataPreimagesStorage::new_from_parts(Global);
+        let mut result_keeper = TestResultKeeper { pubdata: vec![] };
+        let mut preimages_cache: BytecodeAndAccountDataPreimagesStorage<
+            BaseResources<DecreasingNative>,
+        > = BytecodeAndAccountDataPreimagesStorage::new_from_parts(Global);
         let mut resources: BaseResources<DecreasingNative> = BaseResources::FORMAL_INFINITE;
-        preimages_cache.record_preimage::<false>(
-            ExecutionEnvironmentType::EVM,
-            &(PreimageRequest {
-                hash: r#final.bytecode_hash,
-                expected_preimage_len_in_bytes: r#final.bytecode_len,
-                preimage_type: PreimageType::Bytecode,
-            }),
-            &mut resources,
-            &bytecode
-        ).unwrap();
+        preimages_cache
+            .record_preimage::<false>(
+                ExecutionEnvironmentType::EVM,
+                &(PreimageRequest {
+                    hash: r#final.bytecode_hash,
+                    expected_preimage_len_in_bytes: r#final.bytecode_len,
+                    preimage_type: PreimageType::Bytecode,
+                }),
+                &mut resources,
+                &bytecode,
+            )
+            .unwrap();
         let mut test_oracle = TestOracle;
 
-        AccountProperties::diff_compression::<false, _, _>(&initial, &r#final, &mut nop_hasher, &mut result_keeper, &mut preimages_cache, &mut test_oracle).unwrap();
+        AccountProperties::diff_compression::<false, _, _>(
+            &initial,
+            &r#final,
+            &mut nop_hasher,
+            &mut result_keeper,
+            &mut preimages_cache,
+            &mut test_oracle,
+        )
+        .unwrap();
         let compression = result_keeper.pubdata;
 
         assert_eq!(optimal_length, compression.len() as u32);
@@ -527,7 +549,10 @@ mod tests {
         // bytecode
         // 4 bytes observable bytecode len
         // 4 bytes artifacts len
-        assert_eq!(compression.len() as u32, 1 + 8 + 1 + 2 + 4 + bytecode.len() as u32 + 4 + 4);
+        assert_eq!(
+            compression.len() as u32,
+            1 + 8 + 1 + 2 + 4 + bytecode.len() as u32 + 4 + 4
+        );
         let mut expected = vec![0b00000100];
         expected.extend(r#final.versioning_data.0.to_be_bytes());
         expected.push(0b00000001); // nonce: add,initial == final == 0

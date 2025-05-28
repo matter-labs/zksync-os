@@ -218,9 +218,7 @@ where
                         .cache
                         .get_current(&account_address)
                         .ok_or(())?;
-                    let (l, r) = cache_item
-                        .diff_operands_total()
-                        .ok_or(())?;
+                    let (l, r) = cache_item.diff_operands_total().ok_or(())?;
                     AccountProperties::diff_compression::<PROOF_ENV, _, _>(
                         &l.value,
                         &r.value,

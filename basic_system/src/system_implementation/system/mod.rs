@@ -4,7 +4,6 @@ use crate::system_implementation::flat_storage_model::*;
 use crate::system_implementation::system::public_input::{
     BlocksOutput, BlocksPublicInput, ChainStateCommitment,
 };
-use zk_ee::utils::NopHasher;
 use core::alloc::Allocator;
 use errors::SystemError;
 use evm_interpreter::gas_constants::COLD_SLOAD_COST;
@@ -21,6 +20,7 @@ use zk_ee::common_structs::TransientStorageValue;
 use zk_ee::common_structs::WarmStorageKey;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::utils::Bytes32;
+use zk_ee::utils::NopHasher;
 use zk_ee::{
     kv_markers::MAX_EVENT_TOPICS,
     memory::stack_trait::{StackCtor, StackCtorConst},
