@@ -217,14 +217,10 @@ where
                     let cache_item = account_data_cache
                         .cache
                         .get_current(&account_address)
-                        .ok_or_else(|| InternalError("Expected account details not found in cache"))
-                        .map_err(|_| ())?;
+                        .ok_or(())?;
                     let (l, r) = cache_item
                         .diff_operands_total()
-                        .ok_or_else(|| {
-                            InternalError("Account change didn't modify according to storage slot")
-                        })
-                        .map_err(|_| ())?;
+                        .ok_or(())?;
                     AccountProperties::diff_compression::<PROOF_ENV, _, _>(
                         &l.value,
                         &r.value,
