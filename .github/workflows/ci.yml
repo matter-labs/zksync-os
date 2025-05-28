@@ -48,13 +48,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: zk_ee
+          path: zksync-os
       - uses: actions/checkout@v4
         with:
           repository: matter-labs/era-evm-tester 
           ref: zk-ee
           path: era-evm-tester
-      - name: Use local zk-ee version
+      - name: Use local ZKsync OS version
         working-directory: ./era-evm-tester/evm_tester
         run: |
           sudo sed -i 's/^zksync_os/##zksync_os/g' Cargo.toml
