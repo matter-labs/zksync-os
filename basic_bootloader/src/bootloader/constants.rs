@@ -66,6 +66,9 @@ pub const ERC20_APPROVE_SELECTOR: &[u8] = &[0x09, 0x5e, 0xa7, 0xb3];
 // TODO: make sure this covers cost for L1 log.
 pub const L1_TX_INTRINSIC_L2_GAS: usize = 11000;
 
+// Includes storing the l1 tx log.
+pub const L1_TX_INTRINSIC_NATIVE_COST: usize = 10_000;
+
 // Value taken from system-contracts, to adjust.
 pub const L1_TX_INTRINSIC_PUBDATA: usize = 88;
 
@@ -75,8 +78,11 @@ pub const L2_TX_INTRINSIC_GAS: usize = 18_000;
 /// Extra cost for deployment transactions.
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: usize = 32_000;
 
-// Value taken from system-contracts, to adjust.
+/// Value taken from system-contracts, to adjust.
 pub const L2_TX_INTRINSIC_PUBDATA: usize = 0;
+
+// To be adjusted
+pub const L2_TX_INTRINSIC_NATIVE_COST: usize = 4_000;
 
 /// Cost in gas to store one zero byte of calldata
 pub const CALLDATA_ZERO_BYTE_GAS_COST: usize = 4;
