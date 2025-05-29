@@ -12,22 +12,23 @@ on:
     - cron: "0 0 * * *" # run at midnight
 permissions: read-all
 jobs:
-  audit:
-    runs-on: [matterlabs-ci-runner]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          rustflags: ""
-      - name: Setup dependencies
-        run: |
-          rustup set profile minimal
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile
-      - name: Cargo audit check
-        uses: rustsec/audit-check@v2
+  # TODO: requires token
+  # audit:
+  #   runs-on: [matterlabs-ci-runner]
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #     - name: Install Rust
+  #       uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         rustflags: ""
+  #     - name: Setup dependencies
+  #       run: |
+  #         rustup set profile minimal
+  #     - name: Generate Cargo.lock
+  #       run: cargo generate-lockfile
+  #     - name: Cargo audit check
+  #       uses: rustsec/audit-check@v2
   deny:
     runs-on: [matterlabs-ci-runner]
     steps:

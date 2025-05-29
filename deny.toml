@@ -1,4 +1,8 @@
 [advisories]
+#TODO(EVM-1050): replace unmaintained ethers dependency in rig
+ignore = [
+    { id = "RUSTSEC-2025-0009", reason = "We do not rely on impacted functionality. Affected crate is used only in tests" }
+]
 
 [bans]
 multiple-versions = "warn"
@@ -12,6 +16,7 @@ external-default-features = "allow"
 [sources]
 unknown-registry = "warn"
 unknown-git = "warn"
+allow-git = ["https://github.com/matter-labs/zksync-airbender"]
 
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 
@@ -24,12 +29,17 @@ allow = [
     "MIT",
     "MPL-2.0",
     "BSD-3-Clause",
+    "BSD-2-Clause",
+    "0BSD",
     "ISC",
     "Unicode-3.0",
+    "Zlib",
+    "Unlicense",
+    "CDLA-Permissive-2.0",
 ]
 exceptions = [
-    # Use exceptions for these as they only have a single user
-    { allow = ["Zlib"], crate = "tinyvec" },
+    # CC0 is a bit unclear about source code: https://tldrlegal.com/license/creative-commons-cc0-1.0-universal
+    { allow = ["CC0-1.0"], name = "tiny-keccak" },
     { allow = ["OpenSSL"], crate = "ring" },
 ]
 
