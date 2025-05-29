@@ -103,7 +103,7 @@ impl<S: EthereumLikeTypes> SupportedEEVMState<S> {
         ee_version: ExecutionEnvironmentType,
         system: &mut System<S>,
         deployment_parameters: DeploymentPreparationParameters<S>,
-    ) -> Result<(S::Resources, Option<ExecutionEnvironmentLaunchParams<S>>), SystemError>
+    ) -> Result<(S::Resources, Option<ExecutionEnvironmentLaunchParams<S>>), FatalError>
     where
         S::IO: IOSubsystemExt,
     {
