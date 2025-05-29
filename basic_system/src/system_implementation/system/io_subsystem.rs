@@ -1,6 +1,6 @@
 //! Implementation of the IO subsystem.
-
 use super::*;
+use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_functions::keccak256::Keccak256Impl;
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
@@ -9,6 +9,7 @@ use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use crypto::blake2s::Blake2s256;
 use crypto::MiniDigest;
+use errors::SystemFunctionError;
 use evm_interpreter::gas_constants::LOG;
 use evm_interpreter::gas_constants::LOGDATA;
 use evm_interpreter::gas_constants::LOGTOPIC;
@@ -17,6 +18,7 @@ use evm_interpreter::gas_constants::TSTORE;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::BasicIOImplementerFSM;
+use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::{
     common_structs::{EventsStorage, LogsStorage},
@@ -186,13 +188,40 @@ where
         data: &[u8],
     ) -> Result<Bytes32, SystemError> {
         // TODO: we should charge gas for computation needed to emit: at least to hash log(L2_TO_L1_LOG_SERIALIZE_SIZE) and build tree(~32)
-        // also we may add COMPUTATIONAL_PRICE_FOR_PUBDATA as in Era
+        // TODO: consider adding COMPUTATIONAL_PRICE_FOR_PUBDATA as in Era
+
+        // We need to charge cost of hashing:
+        // - keccak256_native_cost(L2_TO_L1_LOG_SERIALIZE_SIZE) and
+        //   keccak256_native_cost(64) when reconstructing L2ToL1Log
+        // - keccak256_native_cost(64) + keccak256_native_cost(data.len())
+        //   when reconstructing Messages
+        // - at most 1 time keccak256_native_cost(64) when building the
+        //   Merkle tree (as merkle tree can contain ~2*N nodes, where the
+        //   first N nodes are leaves the hash of which is calculated on the
+        //   previous step).
+
+        let hashing_native_cost =
+            keccak256_native_cost::<Self::Resources>(L2_TO_L1_LOG_SERIALIZE_SIZE).as_u64()
+                + 3 * keccak256_native_cost::<Self::Resources>(64).as_u64()
+                + keccak256_native_cost::<Self::Resources>(data.len()).as_u64();
+
+        // We also charge some native resource for storing the log
+        let native = R::Native::from_computational(
+            hashing_native_cost
+                + EVENT_STORAGE_BASE_NATIVE_COST
+                + EVENT_DATA_PER_BYTE_COST * (data.len() as u64),
+        );
+        resources.charge(&R::from_native(native))?;
 
         // TODO: for Era backward compatibility we may need to add events for l2 to l1 log and l1 message
 
         let mut data_hash = ArrayBuilder::default();
-        Keccak256Impl::execute(&data, &mut data_hash, resources, self.allocator.clone())
-            .map_err(|_| InternalError("Keccak in create2 cannot fail"))?;
+        Keccak256Impl::execute(&data, &mut data_hash, resources, self.allocator.clone()).map_err(
+            |e| match e {
+                SystemFunctionError::InvalidInput => unreachable!(),
+                SystemFunctionError::System(e) => e,
+            },
+        )?;
         let data_hash = Bytes32::from_array(data_hash.build());
         let data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
         self.logs_storage
