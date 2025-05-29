@@ -1,8 +1,8 @@
 [advisories]
+#TODO(EVM-1050): replace unmaintained ethers dependency in rig
 ignore = [
-    "./tests/rig" # TODO: replace unmaintained ethers dependency
+    { id = "RUSTSEC-2025-0009", reason = "We do not rely on impacted functionality. Affected crate is used only in tests" }
 ]
-disable-yank-checking = true # Needed to ignore local dependency
 
 [bans]
 multiple-versions = "warn"
@@ -16,6 +16,7 @@ external-default-features = "allow"
 [sources]
 unknown-registry = "warn"
 unknown-git = "warn"
+allow-git = ["https://github.com/matter-labs/zksync-airbender"]
 
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 
