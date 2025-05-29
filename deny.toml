@@ -1,4 +1,8 @@
 [advisories]
+ignore = [
+    "./tests/rig" # TODO: replace unmaintained ethers dependency
+]
+disable-yank-checking = true # Needed to ignore local dependency
 
 [bans]
 multiple-versions = "warn"
