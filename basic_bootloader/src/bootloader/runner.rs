@@ -219,13 +219,13 @@ where
 
     // The call is targeting the "system contract" space.
     if is_call_to_special_address {
-        /*return handle_requested_external_call_to_special_address_space(
-            callstack,
+        return handle_requested_external_call_to_special_address_space(
+            caller_vm,
             system,
             hooks,
             initial_ee_version,
             call_request,
-        );*/
+        );
     }
 
     let ee_type = match &caller_vm {
@@ -340,21 +340,19 @@ where
 }
 
 #[inline(always)]
-fn handle_requested_external_call_to_special_address_space<'a, S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
+fn handle_requested_external_call_to_special_address_space<S: EthereumLikeTypes>(
+    caller_vm: Option<&mut SupportedEEVMState<S>>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
     mut call_request: ExternalCallRequest<S>,
-) -> Result<ControlFlow<'a, S>, FatalError>
+) -> Result<(S::Resources, CallResult<S>), FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
     let callee = call_request.callee;
     let address_low = callee.as_limbs()[0] as u16;
-
-    let is_entry_frame = callstack.top().is_none();
 
     let _ = system.get_logger().write_fmt(format_args!(
         "Call to special address 0x{:04x}\n",
@@ -365,37 +363,23 @@ where
     let _ = system.get_logger().write_fmt(format_args!("Calldata = "));
     let _ = system.get_logger().log_data(calldata_iter);
 
-    // On entry frame we don't need to start a new frame for call
-    let rollback_handle = (!is_entry_frame)
-        .then(|| {
-            system
-                .start_global_frame()
-                .map_err(|_| InternalError("must start a new frame for external call"))
-        })
-        .transpose()?;
-
-    let should_finish_callee_frame_on_error = !is_entry_frame;
-
-    let ee_type = match callstack.top() {
-        Some(frame) => frame.vm.ee_type(),
+    let ee_type = match &caller_vm {
+        Some(vm) => vm.ee_type(),
         None => initial_ee_version,
     };
 
-    let CallPreparationResult {
-        actual_resources_to_pass,
-        ..
-    } = match run_call_preparation(
-        callstack,
-        system,
-        ee_type,
-        &call_request,
-        should_finish_callee_frame_on_error,
-        rollback_handle.as_ref(),
-    ) {
-        Ok(Left(r)) => r,
-        Ok(Right(control_flow)) => return Ok(control_flow),
-        Err(e) => return Err(e),
-    };
+    let actual_resources_to_pass =
+        match run_call_preparation(caller_vm, system, ee_type, &call_request) {
+            Ok(CallPreparationResult::Success {
+                actual_resources_to_pass,
+                ..
+            }) => actual_resources_to_pass,
+            Ok(CallPreparationResult::Failure {
+                resources_returned,
+                call_result,
+            }) => return Ok((resources_returned, call_result)),
+            Err(e) => return Err(e),
+        };
 
     let res = hooks.try_intercept(
         address_low,
@@ -424,49 +408,26 @@ where
         let _ = system.get_logger().write_fmt(format_args!("Returndata = "));
         let _ = system.get_logger().log_data(returndata_iter);
 
-        if !is_entry_frame {
-            system
-                .finish_global_frame(reverted.then_some(&rollback_handle.unwrap()))
-                .map_err(|_| InternalError("must finish execution frame"))?;
-        }
-
-        // return control and no need to create a new frame
-        let call_result = if reverted {
-            CallResult::Failed { return_values }
-        } else {
-            CallResult::Successful { return_values }
-        };
-
-        Ok(halt_or_continue_after_external_call(
-            callstack,
-            system,
+        Ok((
             resources_returned,
-            call_result,
-        )?)
+            if reverted {
+                CallResult::Failed { return_values }
+            } else {
+                CallResult::Successful { return_values }
+            },
+        ))
     } else {
         // it's an empty account for all the purposes, or default AA
         let _ = system.get_logger().write_fmt(format_args!(
             "Call to special address was not intercepted\n",
         ));
 
-        let resources_returned = actual_resources_to_pass;
-
-        if !is_entry_frame {
-            system
-                .finish_global_frame(None)
-                .map_err(|_| InternalError("must finish execution frame"))?;
-        }
-
-        let call_result = CallResult::Successful {
-            return_values: ReturnValues::empty(system),
-        };
-
-        Ok(halt_or_continue_after_external_call(
-            callstack,
-            system,
-            resources_returned,
-            call_result,
-        )?)
+        Ok((
+            actual_resources_to_pass,
+            CallResult::Successful {
+                return_values: ReturnValues::empty(system),
+            },
+        ))
     }
 }
 
