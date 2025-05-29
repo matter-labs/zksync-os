@@ -4,8 +4,8 @@ use alloc::alloc::Global;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
 use ruint::aliases::B160;
-use zk_ee::system::errors::SystemError;
 use zk_ee::common_traits::key_like_with_bounds::KeyLikeWithBounds;
+use zk_ee::system::errors::SystemError;
 use zk_ee::{
     common_structs::history_map::{
         Appearance, CacheItemRefMut, CacheSnapshotId, HistoryMap, TransactionId,

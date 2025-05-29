@@ -21,8 +21,7 @@ use zk_ee::system::errors::InternalError;
 use zk_ee::system::Resources;
 use zk_ee::{
     common_structs::{
-        history_map::CacheSnapshotId, state_root_view::StateRootView,
-        WarmStorageKey,
+        history_map::CacheSnapshotId, state_root_view::StateRootView, WarmStorageKey,
     },
     execution_environment_type::ExecutionEnvironmentType,
     memory::stack_trait::{StackCtor, StackCtorConst},
