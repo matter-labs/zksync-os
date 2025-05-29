@@ -121,9 +121,6 @@ where
             L1_TX_INTRINSIC_PUBDATA,
         )?;
 
-        // TODO: l1 transaction preparation (marking factory deps and
-        // computing hash)
-
         let tx_internal_cost = gas_price
             .checked_mul(gas_limit as u128)
             .ok_or(InternalError("gp*gl"))?;
@@ -138,46 +135,75 @@ where
             system
         )?;
 
-        // Take a snapshot in case we need to revert due to out of native.
-        let rollback_handle = system.start_global_frame()?;
+        // TODO: l1 transaction preparation (marking factory deps)
+        let chain_id = system.get_chain_id();
 
-        // Tx execution
-        let from = transaction.from.read();
-        let to = transaction.to.read();
-        let result = match Self::execute_l1_transaction_and_notify_result(
-            system,
-            system_functions,
-            callstack,
-            &transaction,
-            from,
-            to,
-            value,
-            native_per_pubdata,
-            &mut resources,
-        ) {
-            Ok(r) => {
-                system.finish_global_frame(None)?;
-                r
-            }
-            // TODO: reconsider for L1 txs!
-            // Out of native is converted to a top-level revert and
-            // gas is exhausted.
-            Err(FatalError::OutOfNativeResources) => {
-                resources.exhaust_ergs();
-                system.finish_global_frame(Some(&rollback_handle))?;
-                callstack.clear();
-                ExecutionResult::Revert {
-                    output: system.memory.empty_immutable_slice(),
+        let (tx_hash, preparation_out_of_resources): (Bytes32, bool) =
+            match transaction.calculate_hash(chain_id, &mut resources) {
+                Ok(h) => (h.into(), false),
+                Err(FatalError::Internal(e)) => return Err(e.into()),
+                Err(FatalError::OutOfNativeResources) => {
+                    resources.exhaust_ergs();
+                    // We need to compute the hash anyways, we do with inf resources
+                    let mut inf_resources = S::Resources::FORMAL_INFINITE;
+                    (
+                        transaction
+                            .calculate_hash(chain_id, &mut inf_resources)
+                            .expect("must succeed")
+                            .into(),
+                        true,
+                    )
                 }
+            };
+
+        let result = if !preparation_out_of_resources {
+            // Take a snapshot in case we need to revert due to out of native.
+            let rollback_handle = system.io.start_io_frame()?;
+
+            // Tx execution
+            let from = transaction.from.read();
+            let to = transaction.to.read();
+            match Self::execute_l1_transaction_and_notify_result(
+                system,
+                system_functions,
+                callstack,
+                &transaction,
+                from,
+                to,
+                value,
+                native_per_pubdata,
+                &mut resources,
+            ) {
+                Ok(r) => {
+                    match r {
+                        ExecutionResult::Success { .. } => system.io.finish_io_frame(None)?,
+                        ExecutionResult::Revert { .. } => {
+                            system.io.finish_io_frame(Some(&rollback_handle))?
+                        }
+                    }
+                    r
+                }
+                // TODO: reconsider for L1 txs!
+                // Out of native is converted to a top-level revert and
+                // gas is exhausted.
+                Err(FatalError::OutOfNativeResources) => {
+                    resources.exhaust_ergs();
+                    system.io.finish_io_frame(Some(&rollback_handle))?;
+                    callstack.clear();
+                    ExecutionResult::Revert {
+                        output: system.memory.empty_immutable_slice(),
+                    }
+                }
+                Err(FatalError::Internal(e)) => return Err(e.into()),
             }
-            Err(FatalError::Internal(e)) => return Err(e.into()),
+        } else {
+            ExecutionResult::Revert {
+                output: system.memory.empty_immutable_slice(),
+            }
         };
 
         // Compute gas to refund
         // TODO: consider operator refund
-
-        // Pubdata for validation has been charged already,
-        // we charge for the rest now.
         let (_pubdata_spent, to_charge_for_pubdata) =
             get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
         let (_, gas_used) = Self::compute_gas_refund(
@@ -250,14 +276,6 @@ where
         }
 
         // Emit log
-        let chain_id = system.get_chain_id();
-        let tx_hash: Bytes32 = transaction
-            .calculate_hash(chain_id, &mut inf_resources)
-            .map_err(|e| match e {
-                FatalError::Internal(e) => e,
-                FatalError::OutOfNativeResources => InternalError("Out of native on infinite"),
-            })?
-            .into();
         let success = matches!(result, ExecutionResult::Success { .. });
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
         system.io.emit_l1_l2_tx_log(
@@ -503,7 +521,7 @@ where
         };
 
         // Take a snapshot in case we need to revert due to out of native.
-        let rollback_handle = system.start_global_frame()?;
+        let rollback_handle = system.io.start_io_frame()?;
 
         let execution_result = match Self::transaction_execution(
             system,
@@ -519,7 +537,12 @@ where
             &mut resources,
         ) {
             Ok(r) => {
-                system.finish_global_frame(None)?;
+                match r {
+                    ExecutionResult::Success { .. } => system.io.finish_io_frame(None)?,
+                    ExecutionResult::Revert { .. } => {
+                        system.io.finish_io_frame(Some(&rollback_handle))?
+                    }
+                }
                 r
             }
             // Out of native is converted to a top-level revert and
@@ -529,7 +552,7 @@ where
                     .get_logger()
                     .write_fmt(format_args!("Transaction ran out of native resource\n"));
                 resources.exhaust_ergs();
-                system.finish_global_frame(Some(&rollback_handle))?;
+                system.io.finish_io_frame(Some(&rollback_handle))?;
                 callstack.clear();
                 ExecutionResult::Revert {
                     output: system.memory.empty_immutable_slice(),
