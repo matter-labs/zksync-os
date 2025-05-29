@@ -243,7 +243,7 @@ where
     // CALLER to perform some reads. If we bail, then we will roll back the frame and all
     // potential writes below, otherwise we will pass what's needed to caller
 
-    let result = match run_call_preparation(caller_vm, system, ee_type, &call_request) {
+    match run_call_preparation(caller_vm, system, ee_type, &call_request) {
         Ok(CallPreparationResult::Success {
             next_ee_version,
             bytecode,
@@ -257,12 +257,12 @@ where
 
             // Calls to EOAs succeed with empty return value
             if bytecode.len() == 0 {
-                (
+                Ok((
                     actual_resources_to_pass,
                     CallResult::Successful {
                         return_values: ReturnValues::empty(system),
                     },
-                )
+                ))
             } else {
                 if DEBUG_OUTPUT {
                     let _ = system.get_logger().write_fmt(format_args!(
@@ -311,14 +311,14 @@ where
                                 reverted,
                             }),
                         ) => {
-                            break (
+                            break Ok((
                                 resources_returned,
                                 if reverted {
                                     CallResult::Failed { return_values }
                                 } else {
                                     CallResult::Successful { return_values }
                                 },
-                            )
+                            ))
                         }
                         ExecutionEnvironmentPreemptionPoint::End(
                             TransactionEndPoint::CompletedDeployment(_),
@@ -334,11 +334,9 @@ where
         Ok(CallPreparationResult::Failure {
             resources_returned,
             call_result,
-        }) => (resources_returned, call_result),
-        Err(e) => return Err(e),
-    };
-
-    Ok(result)
+        }) => Ok((resources_returned, call_result)),
+        Err(e) => Err(e),
+    }
 }
 
 #[inline(always)]
