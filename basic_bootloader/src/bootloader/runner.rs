@@ -378,17 +378,6 @@ where
 
     let should_finish_callee_frame_on_error = !is_entry_frame;
 
-    // Transfers are forbidden to kernel space unless for bootloader or
-    // explicitly allowed by a feature
-    let transfer_allowed =
-        callee == BOOTLOADER_FORMAL_ADDRESS || cfg!(feature = "transfers_to_kernel_space");
-
-    let positive_value = !call_request.nominal_token_value.is_zero();
-
-    if !transfer_allowed {
-        call_request.nominal_token_value = U256::ZERO;
-    }
-
     let ee_type = match callstack.top() {
         Some(frame) => frame.vm.ee_type(),
         None => initial_ee_version,
@@ -470,12 +459,8 @@ where
                 .map_err(|_| InternalError("must finish execution frame"))?;
         }
 
-        // return control and no need to create a new frame
-        let return_values = ReturnValues::empty(system);
-        let call_result = if positive_value && !transfer_allowed {
-            CallResult::Failed { return_values }
-        } else {
-            CallResult::Successful { return_values }
+        let call_result = CallResult::Successful {
+            return_values: ReturnValues::empty(system),
         };
 
         Ok(halt_or_continue_after_external_call(
