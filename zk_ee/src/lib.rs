@@ -31,6 +31,7 @@
 extern crate alloc;
 
 pub mod common_structs;
+pub mod common_traits;
 pub mod execution_environment_type;
 pub mod kv_markers;
 pub mod memory;

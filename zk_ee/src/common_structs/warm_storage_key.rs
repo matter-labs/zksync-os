@@ -1,4 +1,4 @@
-use crate::utils::Bytes32;
+use crate::{common_traits::key_like_with_bounds::KeyLikeWithBounds, utils::Bytes32};
 use ruint::aliases::B160;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
@@ -18,6 +18,24 @@ impl Ord for WarmStorageKey {
         match self.address.as_limbs().cmp(&other.address.as_limbs()) {
             core::cmp::Ordering::Equal => self.key.cmp(&other.key),
             a => a,
+        }
+    }
+}
+
+impl KeyLikeWithBounds for WarmStorageKey {
+    type Subspace = B160;
+
+    fn lower_bound(subspace: Self::Subspace) -> Self {
+        Self {
+            address: subspace,
+            key: Bytes32::ZERO,
+        }
+    }
+
+    fn upper_bound(subspace: Self::Subspace) -> Self {
+        Self {
+            address: subspace,
+            key: Bytes32::MAX,
         }
     }
 }

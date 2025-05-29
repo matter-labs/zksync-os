@@ -13,11 +13,9 @@ use evm_interpreter::gas_constants::SSTORE_SET_EXTRA;
 use evm_interpreter::gas_constants::WARM_STORAGE_READ_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
-use storage_models::common_structs::GenericPlainStorageRollbackData;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::EventContent;
 use zk_ee::common_structs::LogContent;
-use zk_ee::common_structs::TransientStorageValue;
 use zk_ee::common_structs::WarmStorageKey;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::utils::Bytes32;
@@ -126,12 +124,9 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
 }
 
 pub type ExtraCheck<SCC: const StackCtorConst, A: Allocator> =
-    [[[[[[[[(); SCC::extra_const_param::<(EventContent<MAX_EVENT_TOPICS, A>, ()), A>()];
+    [[[[[[[(); SCC::extra_const_param::<(EventContent<MAX_EVENT_TOPICS, A>, ()), A>()];
         SCC::extra_const_param::<(LogContent<A>, u32), A>()];
-        SCC::extra_const_param::<
-            GenericPlainStorageRollbackData<WarmStorageKey, TransientStorageValue>,
-            A,
-        >()]; SCC::extra_const_param::<usize, A>()];
+        SCC::extra_const_param::<usize, A>()];
         SCC::extra_const_param::<(usize, i32), A>()];
         SCC::extra_const_param::<CacheSnapshotId, A>()];
         SCC::extra_const_param::<Bytes32, A>()]; SCC::extra_const_param::<BitsOrd160, A>()];
