@@ -289,6 +289,11 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 }
             }
 
+            let tx_stats = system.flush_tx();
+            let _ = system
+                .get_logger()
+                .write_fmt(format_args!("Tx stats = {:?}\n", tx_stats));
+
             first_tx = false;
 
             let mut logger = system.get_logger();

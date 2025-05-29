@@ -287,11 +287,6 @@ where
             success,
         )?;
 
-        let tx_stats = system.flush_tx();
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Tx stats = {:?}\n", tx_stats));
-
         Ok(TxProcessingResult {
             result,
             tx_hash,
@@ -584,12 +579,6 @@ where
         } else {
             0
         };
-
-        let tx_stats = system.flush_tx();
-
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Tx stats = {:?}\n", tx_stats));
 
         #[cfg(not(target_arch = "riscv32"))]
         cycle_marker::log_marker(
