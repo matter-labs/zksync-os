@@ -8,6 +8,8 @@ use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidAA, InvalidTransaction, TxError};
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::{require, require_internal};
+use constants::L1_TX_INTRINSIC_NATIVE_COST;
+use constants::L2_TX_INTRINSIC_NATIVE_COST;
 use constants::SIMULATION_NATIVE_PER_GAS;
 use constants::{
     L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_PUBDATA, L2_TX_INTRINSIC_GAS, L2_TX_INTRINSIC_PUBDATA,
@@ -119,6 +121,7 @@ where
             transaction.calldata(),
             L1_TX_INTRINSIC_L2_GAS,
             L1_TX_INTRINSIC_PUBDATA,
+            L1_TX_INTRINSIC_NATIVE_COST,
         )?;
 
         let tx_internal_cost = gas_price
@@ -453,6 +456,7 @@ where
             calldata,
             L2_TX_INTRINSIC_GAS,
             L2_TX_INTRINSIC_PUBDATA,
+            L2_TX_INTRINSIC_NATIVE_COST,
         )?;
         let initial_resources = resources.clone();
 

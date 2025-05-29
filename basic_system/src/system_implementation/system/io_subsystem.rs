@@ -844,7 +844,7 @@ where
         tx_hash: Bytes32,
         success: bool,
     ) -> Result<(), SystemError> {
-        // TODO: charge for hashing the log (L2_TO_L1_LOG_SERIALIZE_SIZE) and build tree
+        // Resources for it charged as part of intrinsic
         self.logs_storage
             .push_l1_l2_tx_log(self.tx_number, tx_hash, success)
     }
