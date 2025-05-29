@@ -33,6 +33,8 @@ allow = [
     "CDLA-Permissive-2.0",
 ]
 exceptions = [
+    # CC0 is a bit unclear about source code: https://tldrlegal.com/license/creative-commons-cc0-1.0-universal
+    { allow = ["CC0-1.0"], name = "tiny-keccak" },
     { allow = ["OpenSSL"], crate = "ring" },
 ]
 
