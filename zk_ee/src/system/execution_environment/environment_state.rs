@@ -17,10 +17,13 @@ pub struct ExecutionEnvironmentLaunchParams<'a, S: SystemTypes> {
 }
 
 pub enum ExecutionEnvironmentPreemptionPoint<'a, S: SystemTypes> {
+    Spawn(ExecutionEnvironmentSpawnRequest<'a, S>),
+    End(TransactionEndPoint<S>),
+}
+
+pub enum ExecutionEnvironmentSpawnRequest<'a, S: SystemTypes> {
     RequestedExternalCall(ExternalCallRequest<'a, S>),
     RequestedDeployment(DeploymentPreparationParameters<'a, S>),
-    CompletedDeployment(CompletedDeployment<S>),
-    CompletedExecution(CompletedExecution<S>),
 }
 
 pub enum TransactionEndPoint<S: SystemTypes> {

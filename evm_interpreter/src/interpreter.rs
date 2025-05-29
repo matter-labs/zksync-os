@@ -7,7 +7,7 @@ use zk_ee::system::{
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, OSImmutableSlice, OSManagedRegion,
     ReturnValues,
 };
-use zk_ee::system::{Ergs, Resources};
+use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, Resources, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
 
 impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
@@ -27,7 +27,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
 
         if let Some(call) = external_call {
             assert!(exit_code == ExitCode::ExternalCall);
-            match call {
+            return Ok(ExecutionEnvironmentPreemptionPoint::Spawn(match call {
                 ExternalCall::Call(EVMCallRequest {
                     ergs_to_pass,
                     destination_address,
@@ -36,29 +36,23 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
                     call_value,
                 }) => {
                     let available_resources = self.resources.take();
-                    let final_state = ExecutionEnvironmentPreemptionPoint::RequestedExternalCall(
-                        ExternalCallRequest {
-                            calldata,
-                            call_scratch_space: None,
-                            nominal_token_value: call_value,
-                            callers_caller: self.caller,
-                            caller: self.address,
-                            callee: destination_address,
-                            modifier,
-                            ergs_to_pass,
-                            available_resources,
-                        },
-                    );
-
-                    return Ok(final_state);
+                    ExecutionEnvironmentSpawnRequest::RequestedExternalCall(ExternalCallRequest {
+                        calldata,
+                        call_scratch_space: None,
+                        nominal_token_value: call_value,
+                        callers_caller: self.caller,
+                        caller: self.address,
+                        callee: destination_address,
+                        modifier,
+                        ergs_to_pass,
+                        available_resources,
+                    })
                 }
 
                 ExternalCall::Create(request) => {
-                    return Ok(ExecutionEnvironmentPreemptionPoint::RequestedDeployment(
-                        request,
-                    ));
+                    ExecutionEnvironmentSpawnRequest::RequestedDeployment(request)
                 }
-            }
+            }));
         }
 
         let (empty_returndata, reverted) = match exit_code {
@@ -356,12 +350,12 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
         if self.is_constructor {
             self.create_deployment_result(system, return_values, reverted, resources)
         } else {
-            Ok(ExecutionEnvironmentPreemptionPoint::CompletedExecution(
-                CompletedExecution {
+            Ok(ExecutionEnvironmentPreemptionPoint::End(
+                TransactionEndPoint::CompletedExecution(CompletedExecution {
                     return_values,
                     resources_returned: resources,
                     reverted,
-                },
+                }),
             ))
         }
     }
@@ -411,11 +405,11 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
             }
         };
 
-        Ok(ExecutionEnvironmentPreemptionPoint::CompletedDeployment(
-            CompletedDeployment {
+        Ok(ExecutionEnvironmentPreemptionPoint::End(
+            TransactionEndPoint::CompletedDeployment(CompletedDeployment {
                 resources_returned: resources,
                 deployment_result,
-            },
+            }),
         ))
     }
 
