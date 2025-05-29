@@ -67,7 +67,6 @@ pub const ERC20_APPROVE_SELECTOR: &[u8] = &[0x09, 0x5e, 0xa7, 0xb3];
 pub const L1_TX_INTRINSIC_L2_GAS: usize = 11000;
 
 // Value taken from system-contracts, to adjust.
-// TODO: make sure this covers cost for L1 log.
 pub const L1_TX_INTRINSIC_PUBDATA: usize = 88;
 
 /// Does not include signature verification.
