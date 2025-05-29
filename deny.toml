@@ -24,10 +24,13 @@ allow = [
     "MIT",
     "MPL-2.0",
     "BSD-3-Clause",
+    "BSD-2-Clause",
+    "0BSD",
     "ISC",
     "Unicode-3.0",
-    "CC0-1.0",
-    "Zlib"
+    "Zlib",
+    "Unlicense",
+    "CDLA-Permissive-2.0",
 ]
 exceptions = [
     { allow = ["OpenSSL"], crate = "ring" },
