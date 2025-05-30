@@ -21,6 +21,7 @@ impl TalcWrapper {
         Self(UnsafeCell::new(inner))
     }
 
+    #[allow(clippy::mut_from_ref)]
     unsafe fn quasi_lock(&self) -> &mut Talc<ClaimOnOom> {
         // This allocator is only intended to be run on single-threaded system,
         // so we only need to prevent compiler aliasing optimizations
