@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: matter-labs/era-evm-tester 
-          ref: ad-update-storage-model-path
+          ref: 057eb2715e3db5088c934b87b75cfba308483025
           path: era-evm-tester
       - name: Use local zk-ee version
         working-directory: ./era-evm-tester/evm_tester
