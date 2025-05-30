@@ -1072,12 +1072,7 @@ where
             ))
         }
         Ok((resources_for_deployer, None)) => {
-            // preparation failed, and we should finish the frame
-            if callstack.top().is_some() {
-                system
-                    .finish_global_frame(None)
-                    .map_err(|_| InternalError("must finish deployment frame"))?;
-            }
+            // preparation failed
             let deployment_result = DeploymentResult::Failed {
                 return_values: ReturnValues::empty(system),
                 execution_reverted: false,
