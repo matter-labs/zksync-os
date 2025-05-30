@@ -48,7 +48,7 @@ pub trait SystemTypes {
 
     type Memory: MemorySubsystem<Allocator = Self::Allocator>;
 
-    /// Common system function implementation(ecrecover, keccak256, ecadd, etc).
+    /// Common system functions implementation(ecrecover, keccak256, ecadd, etc).
     type SystemFunctions: SystemFunctions<Self::Resources>;
 
     type Logger: Logger + Default;

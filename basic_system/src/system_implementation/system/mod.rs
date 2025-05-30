@@ -1,10 +1,9 @@
 //! Implementation of the system interface.
-use crate::system_implementation::io::FlatTreeWithAccountsUnderHashesStorageModel;
-use crate::system_implementation::io::*;
+use crate::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
+use crate::system_implementation::flat_storage_model::*;
 use crate::system_implementation::system::public_input::{
     BlocksOutput, BlocksPublicInput, ChainStateCommitment,
 };
-use crate::system_implementation::NopHasher;
 use core::alloc::Allocator;
 use errors::SystemError;
 use evm_interpreter::gas_constants::COLD_SLOAD_COST;
@@ -19,6 +18,7 @@ use zk_ee::common_structs::LogContent;
 use zk_ee::common_structs::WarmStorageKey;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::utils::Bytes32;
+use zk_ee::utils::NopHasher;
 use zk_ee::{
     kv_markers::MAX_EVENT_TOPICS,
     memory::stack_trait::{StackCtor, StackCtorConst},
@@ -46,7 +46,7 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
             _ => return Err(InternalError("Unsupported EE").into()),
         };
         let native = R::Native::from_computational(
-            crate::system_implementation::io::cost_constants::WARM_STORAGE_READ_NATIVE_COST,
+            crate::system_implementation::flat_storage_model::cost_constants::WARM_STORAGE_READ_NATIVE_COST,
         );
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }
@@ -66,11 +66,11 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         };
         let native = if is_new_slot {
             R::Native::from_computational(
-                crate::system_implementation::io::cost_constants::COLD_NEW_STORAGE_READ_NATIVE_COST,
+                crate::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_READ_NATIVE_COST,
             )
         } else {
             R::Native::from_computational(
-            crate::system_implementation::io::cost_constants::COLD_EXISTING_STORAGE_READ_NATIVE_COST,)
+            crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_READ_NATIVE_COST,)
         };
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }
@@ -113,11 +113,11 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         };
         let native = if is_new_slot {
             R::Native::from_computational(
-                crate::system_implementation::io::cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST,
+                crate::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST,
             )
         } else {
             R::Native::from_computational(
-          crate::system_implementation::io::cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST,)
+          crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST,)
         };
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }

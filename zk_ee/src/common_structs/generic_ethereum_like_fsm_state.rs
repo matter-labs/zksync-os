@@ -1,4 +1,3 @@
-use crate::common_structs::PubdataDiffLog;
 use crate::kv_markers::*;
 use crate::system::errors::InternalError;
 use crate::types_config::EthereumIOTypesConfig;
@@ -13,19 +12,6 @@ pub struct BasicIOImplementerFSM<SR: StateRootView<EthereumIOTypesConfig>> {
     pub pubdata_diffs_log_hash: Bytes32,
     pub num_pubdata_diffs_logs: u32,
     pub block_functionality_is_completed: bool,
-}
-
-impl<SR: StateRootView<EthereumIOTypesConfig>> BasicIOImplementerFSM<SR> {
-    pub fn add_pubdata_diff_log(dst: &mut Bytes32, counter: &mut u32, log: &PubdataDiffLog) {
-        use crypto::blake2s::Blake2s256;
-        use crypto::MiniDigest;
-        let mut hasher = Blake2s256::new();
-        hasher.update(dst.as_u8_array_ref());
-        hasher.update(log.as_byte_array().as_ref());
-        let digest = hasher.finalize();
-        dst.as_u8_array_mut().copy_from_slice(digest.as_slice());
-        *counter += 1;
-    }
 }
 
 impl<SR: StateRootView<EthereumIOTypesConfig>> UsizeSerializable for BasicIOImplementerFSM<SR> {

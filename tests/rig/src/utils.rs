@@ -8,7 +8,7 @@ use alloy::network::TxSignerSync;
 use alloy::primitives::Signature;
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
-use basic_system::system_implementation::io::DEFAULT_CODE_VERSION_BYTE;
+use basic_system::system_implementation::flat_storage_model::DEFAULT_CODE_VERSION_BYTE;
 use ethers::abi::{AbiEncode, Token, Uint};
 use ethers::types::transaction::eip2718::TypedTransaction;
 use ethers::types::U256;
@@ -22,7 +22,7 @@ use zksync_web3_rs::eip712::{Eip712Transaction, Eip712TransactionRequest};
 use zksync_web3_rs::signers::Signer;
 use zksync_web3_rs::zks_utils::EIP712_TX_TYPE;
 
-pub use basic_system::system_implementation::io::{
+pub use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
 
