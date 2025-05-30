@@ -19,7 +19,7 @@ ZKsyncOS expects transactions with the following fields:
 | `signature`               | `bytes`      | Signature of the transaction.                                                                                                                                                                                                   |
 | `factory_deps`            | `bytes`      | Only for EraVM. Properly formatted hashes of bytecodes to be published on L1 with this transaction. Previously published bytecodes won't incur additional fees.                                                                  |
 | `paymaster_input`         | `bytes`      | Input for the paymaster.                                                                                                                                                                                                        |
-| `reserved_dynamic`        | `bytes`      | Reserved dynamic type for future use. Usage should be avoided unless enabling additional functionality.                                                                                                                          |
+| `reserved_dynamic`        | `bytes`      | Field used for extra functionality. Currently, it's only used for the access list. The field is encoded as the ABI encoding of a bytestring containing the ABI encoding of `tuple(address, bytes32[])[][]`,  i.e. a list of lists of (address, keys) pairs. We use the outer list to be able to extend the use of this field, but for now it should only have 1 element.                                                                                                                   |
 
 ### Transaction Types
 
