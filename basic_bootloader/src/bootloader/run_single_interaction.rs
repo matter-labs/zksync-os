@@ -106,7 +106,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let ee_type = ExecutionEnvironmentType::parse_ee_version_byte(ee_version)?;
 
         let initial_request =
-            ExecutionEnvironmentPreemptionPoint::RequestedExternalCall(ExternalCallRequest {
+            ExecutionEnvironmentSpawnRequest::RequestedExternalCall(ExternalCallRequest {
                 available_resources: resources.clone(),
                 ergs_to_pass: Ergs(0),      // Doesn't matter in this case
                 callers_caller: B160::ZERO, // Fine to use placeholder

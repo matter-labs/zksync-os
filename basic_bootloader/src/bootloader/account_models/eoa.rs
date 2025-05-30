@@ -596,7 +596,7 @@ where
         system,
         system_functions,
         to_ee_type,
-        ExecutionEnvironmentPreemptionPoint::RequestedDeployment(deployment_parameters),
+        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters),
     )?;
     let TransactionEndPoint::CompletedDeployment(CompletedDeployment {
         resources_returned,

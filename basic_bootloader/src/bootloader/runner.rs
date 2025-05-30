@@ -10,7 +10,6 @@ use evm_interpreter::gas_constants::NEWACCOUNT;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
-use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::*;
 use zk_ee::common_structs::CalleeParameters;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -22,39 +21,6 @@ use zk_ee::system::{
 };
 
 use super::StackFrame;
-
-///
-/// Helper to handle a deployment result, which might need to be passed
-/// to the caller's frame.
-/// If [callstack] is empty, then we're in the entry frame, so we break
-/// out of the main loop with an immediate result.
-///
-fn halt_or_continue_after_deployment<'a, S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
-    system: &mut System<S>,
-    resources_returned: S::Resources,
-    deployment_result: DeploymentResult<S>,
-) -> Result<ControlFlow<'a, S>, FatalError>
-where
-    S::Memory: MemorySubsystemExt,
-{
-    match callstack.top() {
-        None => {
-            // the final frame isn't finished because the caller will want to look at it
-            Ok(ControlFlow::Break(
-                TransactionEndPoint::CompletedDeployment(CompletedDeployment {
-                    deployment_result,
-                    resources_returned,
-                }),
-            ))
-        }
-        Some(frame) => Ok(ControlFlow::Normal(frame.vm.continue_after_deployment(
-            system,
-            resources_returned,
-            deployment_result,
-        )?)),
-    }
-}
 
 ///
 /// Main execution loop.
@@ -101,9 +67,17 @@ where
                 },
             ))
         }
-        ExecutionEnvironmentSpawnRequest::RequestedDeployment(
-            deployment_preparation_parameters,
-        ) => todo!(),
+
+        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => {
+            handle_requested_deployment(
+                None,
+                system,
+                deployment_parameters,
+                hooks,
+                initial_ee_version,
+            )
+            .map(TransactionEndPoint::CompletedDeployment)
+        }
     }
 }
 
@@ -123,7 +97,7 @@ where
         ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
             let rollback_handle = system
                 .start_global_frame()
-                .map_err(|_| InternalError("must start a new frame for external call"))?;
+                .map_err(|_| InternalError("must start a new frame"))?;
 
             let (resources, mut call_result) = handle_requested_external_call(
                 Some(previous_vm),
@@ -141,11 +115,7 @@ where
             ));
 
             system
-                .finish_global_frame(if success {
-                    None
-                } else {
-                    Some(&rollback_handle)
-                })
+                .finish_global_frame((!success).then_some(&rollback_handle))
                 .map_err(|_| InternalError("must finish execution frame"))?;
 
             match &mut call_result {
@@ -165,9 +135,37 @@ where
 
             previous_vm.continue_after_external_call(system, resources, call_result)
         }
-        ExecutionEnvironmentSpawnRequest::RequestedDeployment(
-            deployment_preparation_parameters,
-        ) => todo!(),
+        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => {
+            let CompletedDeployment {
+                resources_returned,
+                mut deployment_result,
+            } = handle_requested_deployment(
+                Some(previous_vm),
+                system,
+                deployment_parameters,
+                hooks,
+                initial_ee_version,
+            )?;
+
+            if let Some(returndata_region) = deployment_result.returndata() {
+                let returndata_iter = returndata_region.iter().copied();
+                let _ = system.get_logger().write_fmt(format_args!("Returndata = "));
+                let _ = system.get_logger().log_data(returndata_iter);
+            }
+
+            match &mut deployment_result {
+                DeploymentResult::Successful { return_values, .. }
+                | DeploymentResult::Failed { return_values, .. } => {
+                    let returndata = system
+                        .memory
+                        .copy_into_return_memory(&return_values.returndata)?;
+                    let returndata = returndata.take_slice(0..returndata.len());
+                    return_values.returndata = returndata;
+                }
+            }
+
+            previous_vm.continue_after_deployment(system, resources_returned, deployment_result)
+        }
     }
 }
 
@@ -345,7 +343,7 @@ fn handle_requested_external_call_to_special_address_space<S: EthereumLikeTypes>
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
-    mut call_request: ExternalCallRequest<S>,
+    call_request: ExternalCallRequest<S>,
 ) -> Result<(S::Resources, CallResult<S>), FatalError>
 where
     S::IO: IOSubsystemExt,
@@ -741,11 +739,12 @@ where
 
 #[inline(always)]
 fn handle_requested_deployment<'a, S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
+    caller_vm: Option<&mut SupportedEEVMState<S>>,
     system: &mut System<S>,
     deployment_parameters: DeploymentPreparationParameters<'a, S>,
+    hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
-) -> Result<ControlFlow<'a, S>, FatalError>
+) -> Result<CompletedDeployment<S>, FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
@@ -753,217 +752,121 @@ where
     // Caller gave away all it's resources into deployment parameters, and in preparation function
     // we will charge for deployment, compute address and potentially increment nonce
 
-    let is_entry_frame = callstack.top().is_none();
+    // TODO frame was started here
 
-    let rollback_handle_prep = (!is_entry_frame)
-        .then(|| {
-            system
-                .start_global_frame()
-                .map_err(|_| InternalError("must start a new frame for external call"))
-        })
-        .transpose()?;
-
-    let ee_type = match callstack.top() {
-        Some(frame) => frame.vm.ee_type(),
+    let ee_type = match &caller_vm {
+        Some(vm) => vm.ee_type(),
         None => initial_ee_version,
     };
 
-    match SupportedEEVMState::prepare_for_deployment(ee_type, system, deployment_parameters) {
-        Ok((resources_for_deployer, Some(mut new_frame))) => {
-            // resources returned back to caller
-            match callstack.top() {
-                Some(existing_frame) => existing_frame.vm.give_back_ergs(resources_for_deployer),
-                None => {
-                    // resources returned back to caller do not make sense, so we join them back
-                    new_frame
-                        .external_call
-                        .available_resources
-                        .reclaim(resources_for_deployer);
-                }
+    let (resources_for_deployer, mut launch_params) =
+        match SupportedEEVMState::prepare_for_deployment(ee_type, system, deployment_parameters) {
+            Ok((resources, Some(launch_params))) => (resources, launch_params),
+            Ok((resources_for_deployer, None)) => {
+                return Ok(CompletedDeployment {
+                    resources_returned: resources_for_deployer,
+                    deployment_result: DeploymentResult::Failed {
+                        return_values: ReturnValues::empty(system),
+                        execution_reverted: false,
+                    },
+                })
             }
+            Err(FatalError::OutOfNativeResources) => return Err(FatalError::OutOfNativeResources),
+            Err(FatalError::Internal(e)) => return Err(e.into()),
+        };
 
-            // Now we start a frame for the constructor.
-            let rollback_handle_ctor = system
-                .start_global_frame()
-                .map_err(|_| InternalError("must start a new frame for init code"))?;
-
-            // and proceed further into callgraph
-
-            // EE made all the preparations and we are in callee's frame already
-            let mut constructor =
-                Box::new(SupportedEEVMState::create_initial(ee_type as u8, system)?);
-
-            let nominal_token_value = new_frame.external_call.nominal_token_value;
-
-            // EIP-161: contracts should be initialized with nonce 1
-            // Note: this has to be done before we actually deploy the bytecode,
-            // as constructor execution should see the deployed_address as having
-            // nonce = 1
-            new_frame
+    // resources returned back to caller
+    match caller_vm {
+        Some(vm) => vm.give_back_ergs(resources_for_deployer),
+        None => {
+            // resources returned back to caller do not make sense, so we join them back
+            launch_params
                 .external_call
                 .available_resources
-                .with_infinite_ergs(|inf_resources| {
-                    system.io.increment_nonce(
-                        initial_ee_version,
-                        inf_resources,
-                        &new_frame.external_call.callee,
-                        1,
-                    )
-                })
-                // TODO: make sure we don't capture out of native
-                .map_err(|e| match e {
-                    UpdateQueryError::System(SystemError::OutOfNativeResources) => {
-                        FatalError::OutOfNativeResources
+                .reclaim(resources_for_deployer);
+        }
+    }
+
+    let constructor_rollback_handle = system
+        .start_global_frame()
+        .map_err(|_| InternalError("must start a new frame for init code"))?;
+
+    // EE made all the preparations and we are in callee's frame already
+    let mut constructor = Box::new(SupportedEEVMState::create_initial(ee_type as u8, system)?);
+
+    let nominal_token_value = launch_params.external_call.nominal_token_value;
+
+    // EIP-161: contracts should be initialized with nonce 1
+    // Note: this has to be done before we actually deploy the bytecode,
+    // as constructor execution should see the deployed_address as having
+    // nonce = 1
+    launch_params
+        .external_call
+        .available_resources
+        .with_infinite_ergs(|inf_resources| {
+            system.io.increment_nonce(
+                initial_ee_version,
+                inf_resources,
+                &launch_params.external_call.callee,
+                1,
+            )
+        })
+        // TODO: make sure we don't capture out of native
+        .map_err(|e| match e {
+            UpdateQueryError::System(SystemError::OutOfNativeResources) => {
+                FatalError::OutOfNativeResources
+            }
+            _ => InternalError("Failed to set deployed nonce to 1").into(),
+        })?;
+
+    if nominal_token_value != U256::ZERO {
+        launch_params
+            .external_call
+            .available_resources
+            .with_infinite_ergs(|inf_resources| {
+                system.io.transfer_nominal_token_value(
+                    initial_ee_version,
+                    inf_resources,
+                    &launch_params.external_call.caller,
+                    &launch_params.external_call.callee,
+                    &nominal_token_value,
+                )
+            })
+            // TODO: make sure we don't capture out of native
+            .map_err(|e| match e {
+                UpdateQueryError::System(SystemError::OutOfNativeResources) => {
+                    FatalError::OutOfNativeResources
+                }
+                _ => InternalError("Must transfer value on deployment after check in preparation")
+                    .into(),
+            })?;
+    }
+
+    let mut preemption = constructor.start_executing_frame(system, launch_params)?;
+
+    let CompletedDeployment {
+        mut resources_returned,
+        deployment_result,
+    } = loop {
+        match preemption {
+            ExecutionEnvironmentPreemptionPoint::Spawn(spawn) => {
+                preemption =
+                    handle_spawn(&mut constructor, spawn, system, hooks, initial_ee_version)?
+            }
+            ExecutionEnvironmentPreemptionPoint::End(end) => {
+                break match end {
+                    TransactionEndPoint::CompletedExecution(_) => {
+                        return Err(FatalError::Internal(InternalError(
+                            "returned from deployment as if it was an external call",
+                        )))
                     }
-                    _ => InternalError("Failed to set deployed nonce to 1").into(),
-                })?;
-
-            if nominal_token_value != U256::ZERO {
-                new_frame
-                    .external_call
-                    .available_resources
-                    .with_infinite_ergs(|inf_resources| {
-                        system.io.transfer_nominal_token_value(
-                            initial_ee_version,
-                            inf_resources,
-                            &new_frame.external_call.caller,
-                            &new_frame.external_call.callee,
-                            &nominal_token_value,
-                        )
-                    })
-                    // TODO: make sure we don't capture out of native
-                    .map_err(|e| match e {
-                        UpdateQueryError::System(SystemError::OutOfNativeResources) => {
-                            FatalError::OutOfNativeResources
-                        }
-                        _ => InternalError(
-                            "Must transfer value on deployment after check in preparation",
-                        )
-                        .into(),
-                    })?;
+                    TransactionEndPoint::CompletedDeployment(result) => result,
+                }
             }
-
-            Ok(ControlFlow::Normal(
-                callstack
-                    .top()
-                    .unwrap()
-                    .vm
-                    .start_executing_frame(system, new_frame)?,
-            ))
         }
-        Ok((resources_for_deployer, None)) => {
-            // preparation failed, and we should finish the frame
-            if callstack.top().is_some() {
-                system
-                    .finish_global_frame(None)
-                    .map_err(|_| InternalError("must finish deployment frame"))?;
-            }
-            let deployment_result = DeploymentResult::Failed {
-                return_values: ReturnValues::empty(system),
-                execution_reverted: false,
-            };
-            halt_or_continue_after_deployment(
-                callstack,
-                system,
-                resources_for_deployer,
-                deployment_result,
-            )
-        }
-        Err(FatalError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
-        Err(FatalError::Internal(e)) => Err(e.into()),
-    }
-}
+    };
 
-#[inline(always)]
-fn handle_completed_execution<'a, S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
-    system: &mut System<S>,
-    return_values: ReturnValues<S>,
-    resources_returned: S::Resources,
-    reverted: bool,
-) -> Result<ControlFlow<'a, S>, FatalError>
-where
-    S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
-{
-    let _ = system.get_logger().write_fmt(format_args!(
-        "Return from external call, success = {}\n",
-        !reverted
-    ));
-
-    let prev_stack = callstack
-        .pop()
-        .ok_or(InternalError("Empty callstack on completed execution"))?;
-
-    if let Some(current_stack) = callstack.top() {
-        // Remap and pass execution back to previous frame
-        system
-            .finish_global_frame(
-                reverted
-                    .then(|| {
-                        prev_stack
-                            .rollback_handle
-                            .as_ref()
-                            .map(|x| x.as_call())
-                            .transpose()
-                    })
-                    .transpose()?
-                    .flatten(),
-            )
-            .map_err(|_| InternalError("must finish execution frame"))?;
-
-        let mut return_values = return_values;
-        let returndata = system
-            .memory
-            .copy_into_return_memory(&return_values.returndata)?;
-        let returndata = returndata.take_slice(0..returndata.len());
-        return_values.returndata = returndata;
-
-        let returndata_slice = &return_values.returndata;
-        let returndata_iter = returndata_slice.iter().copied();
-        let _ = system.get_logger().write_fmt(format_args!("Returndata = "));
-        let _ = system.get_logger().log_data(returndata_iter);
-
-        let call_result = if reverted {
-            CallResult::Failed { return_values }
-        } else {
-            CallResult::Successful { return_values }
-        };
-        Ok(ControlFlow::Normal(
-            current_stack.vm.continue_after_external_call(
-                system,
-                resources_returned,
-                call_result,
-            )?,
-        ))
-    } else {
-        // the final frame isn't finished because the caller will want to look at it
-        Ok(ControlFlow::Break(TransactionEndPoint::CompletedExecution(
-            CompletedExecution {
-                return_values,
-                resources_returned,
-                reverted,
-            },
-        )))
-    }
-}
-
-#[inline(always)]
-fn handle_completed_deployment<'a, S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<'a, S, SystemFrameSnapshot<S>>>,
-    system: &mut System<S>,
-    deployment_result: DeploymentResult<S>,
-    mut resources_returned: S::Resources,
-) -> Result<ControlFlow<'a, S>, FatalError>
-where
-    S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
-{
-    let deployment_frame = callstack
-        .top()
-        .ok_or(InternalError("Empty callstack on completed deployment"))?;
-    let deploying_vm = deployment_frame.vm.ee_type();
-    let (deployment_success, reverted, mut deployment_result) = match deployment_result {
+    let (deployment_success, deployment_result) = match deployment_result {
         DeploymentResult::Successful {
             bytecode,
             bytecode_len,
@@ -973,7 +876,7 @@ where
         } => {
             // it's responsibility of the system to finish deployment. We continue to use resources from deployment frame
             match system.deploy_bytecode(
-                deploying_vm,
+                ee_type,
                 &mut resources_returned,
                 &deployed_at,
                 bytecode,
@@ -994,14 +897,14 @@ where
                         "Successfully deployed contract at {:?} \n",
                         deployed_at
                     ));
-                    (true, false, deployment_result)
+                    (true, deployment_result)
                 }
                 Err(SystemError::OutOfErgs) => {
                     let deployment_result = DeploymentResult::Failed {
                         return_values,
                         execution_reverted: false,
                     };
-                    (false, false, deployment_result)
+                    (false, deployment_result)
                 }
                 Err(SystemError::OutOfNativeResources) => {
                     return Err(FatalError::OutOfNativeResources)
@@ -1009,80 +912,19 @@ where
                 Err(SystemError::Internal(e)) => return Err(e.into()),
             }
         }
-        a @ DeploymentResult::Failed { .. } => (false, false, a),
+        a @ DeploymentResult::Failed { .. } => (false, a),
     };
 
-    let deployment_frame = callstack
-        .pop()
-        .ok_or(InternalError("Empty callstack on completed deployment"))?;
-
-    let deployment_rollback = deployment_frame
-        .rollback_handle
-        .as_ref()
-        .map(|x| x.as_deploy())
-        .transpose()?;
-
     // Now finish constructor frame
-    if !reverted {
-        system.finish_global_frame(
-            (!deployment_success)
-                .then_some(deployment_rollback)
-                .flatten()
-                .map(|x| &x.ctor),
-        )?;
-    }
+    system.finish_global_frame((!deployment_success).then_some(&constructor_rollback_handle))?;
 
     let _ = system.get_logger().write_fmt(format_args!(
-        "Return from constructor call, success = {}, reverted = {}\n",
-        deployment_success, reverted
+        "Return from constructor call, success = {}\n",
+        deployment_success
     ));
 
-    if let Some(caller_frame) = callstack.top() {
-        system.finish_global_frame(
-            reverted
-                .then_some(deployment_rollback)
-                .flatten()
-                .map(|x| &x.prep),
-        )?;
-
-        if let Some(returndata_region) = deployment_result.returndata() {
-            let returndata_iter = returndata_region.iter().copied();
-            let _ = system.get_logger().write_fmt(format_args!("Returndata = "));
-            let _ = system.get_logger().log_data(returndata_iter);
-        }
-
-        match &mut deployment_result {
-            DeploymentResult::Successful { return_values, .. } => {
-                let returndata = system
-                    .memory
-                    .copy_into_return_memory(&return_values.returndata)?;
-                let returndata = returndata.take_slice(0..returndata.len());
-                return_values.returndata = returndata;
-            }
-            DeploymentResult::Failed { return_values, .. } => {
-                let returndata = system
-                    .memory
-                    .copy_into_return_memory(&return_values.returndata)?;
-                let returndata = returndata.take_slice(0..returndata.len());
-                return_values.returndata = returndata;
-            }
-            _ => {}
-        }
-
-        Ok(ControlFlow::Normal(
-            caller_frame.vm.continue_after_deployment(
-                system,
-                resources_returned,
-                deployment_result,
-            )?,
-        ))
-    } else {
-        // the final frame isn't finished because the caller will want to look at it
-        Ok(ControlFlow::Break(
-            TransactionEndPoint::CompletedDeployment(CompletedDeployment {
-                deployment_result,
-                resources_returned,
-            }),
-        ))
-    }
+    Ok(CompletedDeployment {
+        resources_returned,
+        deployment_result,
+    })
 }
