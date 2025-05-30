@@ -1010,7 +1010,6 @@ where
             }
         }
         a @ DeploymentResult::Failed { .. } => (false, false, a),
-        a @ DeploymentResult::DeploymentCallFailedToExecute => (false, true, a),
     };
 
     let deployment_frame = callstack

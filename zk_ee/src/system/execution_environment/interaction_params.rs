@@ -36,8 +36,6 @@ pub struct DeploymentPreparationParameters<'a, S: SystemTypes> {
 /// Result of an attempted deployment.
 ///
 pub enum DeploymentResult<S: SystemTypes> {
-    /// Preparation for deployment failed.
-    DeploymentCallFailedToExecute,
     /// Deployment failed after preparation.
     Failed {
         return_values: ReturnValues<S>,
@@ -56,7 +54,6 @@ pub enum DeploymentResult<S: SystemTypes> {
 impl<S: SystemTypes> DeploymentResult<S> {
     pub fn has_scratch_space(&self) -> bool {
         match self {
-            DeploymentResult::DeploymentCallFailedToExecute => false,
             DeploymentResult::Failed { return_values, .. }
             | DeploymentResult::Successful { return_values, .. } => {
                 return_values.return_scratch_space.is_some()
@@ -66,7 +63,6 @@ impl<S: SystemTypes> DeploymentResult<S> {
 
     pub fn returndata(&self) -> Option<&OSImmutableSlice<S>> {
         match self {
-            DeploymentResult::DeploymentCallFailedToExecute => None,
             DeploymentResult::Failed { return_values, .. }
             | DeploymentResult::Successful { return_values, .. } => Some(&return_values.returndata),
         }

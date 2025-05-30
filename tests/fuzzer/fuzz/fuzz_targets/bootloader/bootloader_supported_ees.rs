@@ -201,8 +201,7 @@ fn fuzz(input: FuzzInput) {
             let return_values_successful = ReturnValues::from_immutable_slice(empty);
 
             let deployment_result = match input.call_deployment_result {
-                0 => DeploymentResult::DeploymentCallFailedToExecute,
-                1 => DeploymentResult::Failed {
+                0 => DeploymentResult::Failed {
                     return_values,
                     execution_reverted,
                 },
