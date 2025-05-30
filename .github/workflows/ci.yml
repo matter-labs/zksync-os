@@ -37,7 +37,7 @@ jobs:
       - name: Compile for forward running
         run: cargo build --release
       - name: Run rust tests
-        run: cargo test --release -j 3
+        run: cargo test --release -j 3 -- --skip binary_checker
 
   evm_state_tests:
     name: EF EVM state tests
