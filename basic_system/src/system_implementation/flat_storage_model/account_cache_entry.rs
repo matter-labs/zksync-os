@@ -181,7 +181,7 @@ impl AccountProperties {
             observable_bytecode_hash: Bytes32::from(
                 <&[u8] as TryInto<[u8; 32]>>::try_into(&input[88..120]).unwrap(),
             ),
-            observable_bytecode_len: u32::from_le_bytes(input[120..124].try_into().unwrap()),
+            observable_bytecode_len: u32::from_be_bytes(input[120..124].try_into().unwrap()),
         }
     }
 
