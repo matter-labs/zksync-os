@@ -17,18 +17,3 @@
 extern crate alloc;
 
 pub mod common_structs;
-
-/// Helper trait until type equalities on methods are available
-pub trait TyEq<T> {
-    fn rw(self) -> T;
-    fn rwi(x: T) -> Self;
-}
-
-impl<T> TyEq<T> for T {
-    fn rw(self) -> T {
-        self
-    }
-    fn rwi(x: T) -> Self {
-        x
-    }
-}

@@ -5,8 +5,7 @@ use alloc::fmt::Debug;
 use core::alloc::Allocator;
 use ruint::aliases::B160;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
-use storage_models::TyEq;
-use zk_ee::common_traits::key_like_with_bounds::KeyLikeWithBounds;
+use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::{
     common_structs::{WarmStorageKey, WarmStorageValue},
