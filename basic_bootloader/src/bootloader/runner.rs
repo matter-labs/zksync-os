@@ -1118,7 +1118,7 @@ where
         system
             .finish_global_frame(
                 reverted
-                    .then(|| prev_stack.rollback_handle.as_ref())
+                    .then_some(prev_stack.rollback_handle.as_ref())
                     .flatten(),
             )
             .map_err(|_| InternalError("must finish execution frame"))?;
