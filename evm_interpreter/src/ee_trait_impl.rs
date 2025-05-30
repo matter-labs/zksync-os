@@ -189,13 +189,11 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
             "for a fresh call resources of initial frame must be empty",
         );
 
-        let bytecode = decommitted_bytecode.as_ref();
-
         // we need to set bytecode, address of self and caller, static state
         // and calldata
         let original_bytecode_len = bytecode_len;
         let bytecode_preprocessing = BytecodePreprocessingData::<S>::from_raw_bytecode(
-            bytecode,
+            decommitted_bytecode,
             original_bytecode_len,
             system,
         )?;

@@ -221,7 +221,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub(crate) fn calldata(&'_ self) -> &'_ [u8] {
-        self.calldata.deref()
+        self.calldata
     }
 
     pub(crate) fn heap(&'_ mut self) -> &'_ mut [u8] {
