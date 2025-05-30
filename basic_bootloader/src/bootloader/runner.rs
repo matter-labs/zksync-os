@@ -1252,7 +1252,6 @@ where
             }?
         }
         a @ DeploymentResult::Failed { .. } => (false, false, a),
-        a @ DeploymentResult::DeploymentCallFailedToExecute => (false, true, a),
     };
 
     let deployment_frame = callstack
@@ -1309,7 +1308,6 @@ where
                 let returndata = returndata.take_slice(0..returndata.len());
                 return_values.returndata = returndata;
             }
-            _ => {}
         }
 
         Ok(ControlFlow::Normal(
