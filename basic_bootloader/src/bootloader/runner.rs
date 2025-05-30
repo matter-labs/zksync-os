@@ -1294,14 +1294,8 @@ where
         }
 
         match &mut deployment_result {
-            DeploymentResult::Successful { return_values, .. } => {
-                let returndata = system
-                    .memory
-                    .copy_into_return_memory(&return_values.returndata)?;
-                let returndata = returndata.take_slice(0..returndata.len());
-                return_values.returndata = returndata;
-            }
-            DeploymentResult::Failed { return_values, .. } => {
+            DeploymentResult::Successful { return_values, .. }
+            | DeploymentResult::Failed { return_values, .. } => {
                 let returndata = system
                     .memory
                     .copy_into_return_memory(&return_values.returndata)?;
