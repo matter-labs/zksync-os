@@ -127,7 +127,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
     pub fn run(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> Result<ExitCode, FatalError> {
         let mut cycles = 0;
         let result = loop {

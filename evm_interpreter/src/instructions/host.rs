@@ -8,7 +8,7 @@ use zk_ee::system::*;
 
 use super::*;
 
-impl<S: EthereumLikeTypes> Interpreter<'_, S> {
+impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
     pub fn balance(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, BALANCE_NATIVE_COST)?;
         let [address] = self.pop_addresses::<1>()?;
@@ -209,7 +209,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn create<const IS_CREATE2: bool>(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         self.spend_gas_and_native(
             gas_constants::CREATE,
@@ -255,7 +255,9 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             CreateScheme::Create
         };
 
-        let deployment_code = &self.heap[code_offset..end];
+        // TODO: not necessary once heaps get the same treatment as calldata
+        let deployment_code: &'calldata [u8] =
+            unsafe { std::mem::transmute(&self.heap[code_offset..end]) };
 
         let ee_specific_data = alloc::boxed::Box::try_new_in(scheme, system.get_allocator())
             .expect("system allocator must be capable to allocate for EE deployment parameters");
@@ -263,7 +265,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         // at this preemption point we give all resources for preparation
         let all_resources = self.resources.take();
 
-        /*let deployment_parameters = DeploymentPreparationParameters {
+        let deployment_parameters = DeploymentPreparationParameters {
             call_scratch_space: None,
             deployment_code,
             constructor_parameters,
@@ -276,8 +278,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             deployer_nonce: None,
         };
 
-        *external_call_dest = Some(ExternalCall::Create(deployment_parameters));*/
-        todo!();
+        *external_call_dest = Some(ExternalCall::Create(deployment_parameters));
 
         Err(ExitCode::ExternalCall)
     }
@@ -285,7 +286,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn call(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         self.call_impl(system, CallScheme::Call, external_call_dest)
     }
@@ -293,7 +294,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn call_code(
         &mut self,
         _system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         #[cfg(all(not(feature = "callcode"), not(miri)))]
         {
@@ -312,7 +313,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn delegate_call(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         self.call_impl(system, CallScheme::DelegateCall, external_call_dest)
     }
@@ -320,7 +321,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn static_call(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         self.call_impl(system, CallScheme::StaticCall, external_call_dest)
     }
@@ -329,7 +330,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         &mut self,
         system: &mut System<S>,
         scheme: CallScheme,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         self.spend_gas_and_native(0, native_resource_constants::CALL_NATIVE_COST)?;
         self.clear_last_returndata();
@@ -366,7 +367,9 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.resize_heap(in_offset, in_len, system)?;
         self.resize_heap(out_offset, out_len, system)?;
 
-        let calldata = &self.heap[in_offset..(in_offset + in_len)];
+        // TODO: not necessary once heaps get the calldata treatment
+        let calldata: &'calldata [u8] =
+            unsafe { std::mem::transmute(&self.heap[in_offset..(in_offset + in_len)]) };
 
         // NOTE: we give to the system both what we have NOW, and what we WANT to pass,
         // and depending on warm/cold behavior it may charge more from the current frame,
@@ -393,7 +396,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         // we also set "last returndata" as a placeholder place for "to where to copy"
         self.returndata_location = out_offset..(out_offset + out_len);
 
-        /*let call_request = EVMCallRequest {
+        let call_request = EVMCallRequest {
             destination_address: to,
             calldata,
             modifier: call_modifier,
@@ -401,8 +404,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             call_value: value,
         };
 
-        *external_call_dest = Some(ExternalCall::Call(call_request));*/
-        todo!("may have to restructure interpreter loop");
+        *external_call_dest = Some(ExternalCall::Call(call_request));
         Err(ExitCode::ExternalCall)
     }
 }
