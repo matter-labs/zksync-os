@@ -4,6 +4,7 @@ on:
     branches:
       - main
   pull_request:
+permissions: read-all
 
 jobs:
   tests:
@@ -22,8 +23,6 @@ jobs:
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
-          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
-          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
       - name: Compile for RISC-V
         working-directory: ./zksync_os
         run: ./dump_bin.sh
@@ -49,13 +48,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: zk_ee
+          path: zksync-os
       - uses: actions/checkout@v4
         with:
           repository: matter-labs/era-evm-tester 
           ref: zk-ee
           path: era-evm-tester
-      - name: Use local zk-ee version
+      - name: Use local ZKsync OS version
         working-directory: ./era-evm-tester/evm_tester
         run: |
           sudo sed -i 's/^zksync_os/##zksync_os/g' Cargo.toml
@@ -71,8 +70,6 @@ jobs:
           rustup toolchain install
           rustup set profile minimal
           cargo install cargo-binutils
-          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
-          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
       - name: Get submodules
         working-directory: ./era-evm-tester
         run: |
@@ -101,8 +98,6 @@ jobs:
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
-          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
-          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
       - name: Compile for RISC-V
         working-directory: ./zksync_os
         run: ./dump_bin.sh
@@ -126,8 +121,6 @@ jobs:
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
-          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
-          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
       - name: Compile for RISC-V
         working-directory: ./crypto/src/blake2s/test_program
         run: ./dump_bin.sh
@@ -158,8 +151,6 @@ jobs:
           components: clippy
       - name: Run Clippy
         run: | 
-          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
-          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
           cargo clippy --all -- -D warnings
 
   typos:

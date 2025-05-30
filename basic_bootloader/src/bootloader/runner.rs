@@ -160,55 +160,6 @@ where
 }
 
 ///
-/// Helper to revert the caller's frame in case of a failure
-/// while preparing to execute an external call.
-/// If [callstack] is empty, then we're in the entry frame.
-///
-fn fail_deployment<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
-    callstack: &mut CS,
-    system: &mut System<S>,
-    finish_callee_frame: bool,
-    mut resources_returned: S::Resources,
-) -> Result<ControlFlow<S>, FatalError>
-where
-    S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
-{
-    resources_returned.exhaust_ergs();
-    match callstack.top() {
-        None => Ok(ControlFlow::Break(
-            ExecutionEnvironmentPreemptionPoint::CompletedDeployment(CompletedDeployment {
-                resources_returned,
-                deployment_result: DeploymentResult::DeploymentCallFailedToExecute,
-            }),
-        )),
-        Some(frame) => {
-            // TODO: Before the redesign, both of those cases were used. It isn't now, there's only
-            // the case when rollback_handle is Some().
-            if finish_callee_frame {
-                system
-                    .finish_global_frame(
-                        frame
-                            .rollback_handle
-                            .as_ref()
-                            .map(|x| x.as_call())
-                            .transpose()?,
-                    )
-                    .map_err(|_| InternalError("must finish frame"))?;
-            }
-            Ok(ControlFlow::Normal(frame.vm.continue_after_deployment(
-                system,
-                resources_returned,
-                DeploymentResult::DeploymentCallFailedToExecute,
-            )?))
-        }
-    }
-}
-
-///
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
 ///
@@ -1031,9 +982,6 @@ where
         None => initial_ee_version,
     };
 
-    // Only to be used for native part in case of out of ergs error
-    let resources_before = deployment_parameters.deployer_full_resources.clone();
-
     match SupportedEEVMState::prepare_for_deployment(ee_type, system, deployment_parameters) {
         Ok((resources_for_deployer, Some(mut new_frame))) => {
             // resources returned back to caller
@@ -1159,9 +1107,8 @@ where
                 deployment_result,
             )?)
         }
-        Err(SystemError::OutOfErgs) => fail_deployment(callstack, system, true, resources_before),
-        Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
-        Err(SystemError::Internal(e)) => Err(e.into()),
+        Err(FatalError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
+        Err(FatalError::Internal(e)) => Err(e.into()),
     }
 }
 

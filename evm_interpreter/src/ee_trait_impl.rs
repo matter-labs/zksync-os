@@ -331,7 +331,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
     fn prepare_for_deployment(
         system: &mut System<S>,
         deployment_parameters: DeploymentPreparationParameters<S>,
-    ) -> Result<(S::Resources, Option<ExecutionEnvironmentLaunchParams<S>>), SystemError>
+    ) -> Result<(S::Resources, Option<ExecutionEnvironmentLaunchParams<S>>), FatalError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -350,14 +350,14 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
         assert!(call_scratch_space.is_none());
         let Some(ee_specific_deployment_processing_data) = ee_specific_deployment_processing_data
         else {
-            return Err(SystemError::Internal(InternalError(
+            return Err(FatalError::Internal(InternalError(
                 "We need deployment scheme!",
             )));
         };
         let Ok(scheme) = <CreateScheme as EEDeploymentExtraParameters<S>>::from_box_dyn(
             ee_specific_deployment_processing_data,
         ) else {
-            return Err(SystemError::Internal(InternalError(
+            return Err(FatalError::Internal(InternalError(
                 "Unknown EE specific deployment data",
             )));
         };
@@ -381,7 +381,8 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
                     &address_of_deployer,
                     AccountDataRequest::empty().with_nominal_token_balance(),
                 )
-            })?
+            })
+            .map_err(SystemError::into_fatal)?
             .nominal_token_balance
             .0;
 
@@ -395,7 +396,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
 
         // Nonce overflow check
         let old_deployer_nonce = match deployer_nonce {
-            Some(old_nonce) => Ok::<u64, SystemError>(old_nonce),
+            Some(old_nonce) => Ok::<u64, FatalError>(old_nonce),
             None => {
                 match deployer_full_resources.with_infinite_ergs(|inf_resources| {
                     system.io.increment_nonce(
@@ -406,7 +407,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
                     )
                 }) {
                     Ok(nonce) => Ok(nonce),
-                    Err(UpdateQueryError::System(e)) => return Err(e),
+                    Err(UpdateQueryError::System(e)) => return Err(e.into_fatal()),
                     Err(UpdateQueryError::NumericBoundsError) => {
                         return Ok((deployer_full_resources, None))
                     }
@@ -443,7 +444,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
                     })
                     .map_err(|e| match e {
                         SystemFunctionError::System(SystemError::OutOfNativeResources) => {
-                            SystemError::OutOfNativeResources
+                            FatalError::OutOfNativeResources
                         }
                         _ => InternalError("Keccak in create2 cannot fail").into(),
                     })?;
@@ -475,14 +476,16 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
             nonce: Just(deployee_nonce),
             bytecode_len: Just(deployee_code_len),
             ..
-        } = deployer_remaining_resources.with_infinite_ergs(|inf_resources| {
-            system.io.read_account_properties(
-                THIS_EE_TYPE,
-                inf_resources,
-                &deployed_address,
-                AccountDataRequest::empty().with_nonce().with_bytecode_len(),
-            )
-        })?;
+        } = deployer_remaining_resources
+            .with_infinite_ergs(|inf_resources| {
+                system.io.read_account_properties(
+                    THIS_EE_TYPE,
+                    inf_resources,
+                    &deployed_address,
+                    AccountDataRequest::empty().with_nonce().with_bytecode_len(),
+                )
+            })
+            .map_err(SystemError::into_fatal)?;
 
         // Check there's no contract already deployed at this address.
         // NB: EVM also specifies that the address should have empty storage,
