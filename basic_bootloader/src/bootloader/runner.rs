@@ -1,6 +1,8 @@
+use super::StackFrame;
 use crate::bootloader::constants::SPECIAL_ADDRESS_SPACE_BOUND;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::DEBUG_OUTPUT;
+use alloc::boxed::Box;
 use core::fmt::Write;
 use errors::CallPreparationError;
 use errors::FatalError;
@@ -19,8 +21,6 @@ use zk_ee::system::{
     logger::Logger,
     *,
 };
-
-use super::StackFrame;
 
 ///
 /// Main execution loop.
