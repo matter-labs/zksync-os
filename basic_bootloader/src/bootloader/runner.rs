@@ -405,10 +405,7 @@ where
         {
             // now grow callstack and prepare initial state
             let new_vm = SupportedEEVMState::create_initial(next_ee_version, system)?;
-            match callstack.try_push(StackFrame::new(
-                new_vm,
-                rollback_handle.map(super::FrameRollbackHandle::Call),
-            )) {
+            match callstack.try_push(StackFrame::new(new_vm, rollback_handle)) {
                 Ok(_) => (),
                 Err(_) => {
                     system
@@ -967,16 +964,6 @@ where
     // Caller gave away all it's resources into deployment parameters, and in preparation function
     // we will charge for deployment, compute address and potentially increment nonce
 
-    let is_entry_frame = callstack.top().is_none();
-
-    let rollback_handle_prep = (!is_entry_frame)
-        .then(|| {
-            system
-                .start_global_frame()
-                .map_err(|_| InternalError("must start a new frame for external call"))
-        })
-        .transpose()?;
-
     let ee_type = match callstack.top() {
         Some(frame) => frame.vm.ee_type(),
         None => initial_ee_version,
@@ -1006,12 +993,7 @@ where
             // EE made all the preparations and we are in callee's frame already
             match callstack.try_push(StackFrame::new(
                 SupportedEEVMState::create_initial(ee_type as u8, system)?,
-                rollback_handle_prep.map(|prep| {
-                    super::FrameRollbackHandle::Deploy(super::DeploymentHandle {
-                        prep,
-                        ctor: rollback_handle_ctor,
-                    })
-                }),
+                Some(rollback_handle_ctor),
             )) {
                 Ok(_) => (),
                 Err(_) => {
@@ -1141,14 +1123,7 @@ where
         system
             .finish_global_frame(
                 reverted
-                    .then(|| {
-                        prev_stack
-                            .rollback_handle
-                            .as_ref()
-                            .map(|x| x.as_call())
-                            .transpose()
-                    })
-                    .transpose()?
+                    .then(|| prev_stack.rollback_handle.as_ref())
                     .flatten(),
             )
             .map_err(|_| InternalError("must finish execution frame"))?;
@@ -1258,18 +1233,12 @@ where
         .pop()
         .ok_or(InternalError("Empty callstack on completed deployment"))?;
 
-    let deployment_rollback = deployment_frame
-        .rollback_handle
-        .as_ref()
-        .map(|x| x.as_deploy())
-        .transpose()?;
-
     // Now finish constructor frame
     system.finish_global_frame(
         (!deployment_success)
-            .then_some(deployment_rollback)
+            .then_some(deployment_frame.rollback_handle)
             .flatten()
-            .map(|x| &x.ctor),
+            .as_ref(),
     )?;
 
     let _ = system.get_logger().write_fmt(format_args!(
@@ -1278,8 +1247,6 @@ where
     ));
 
     if let Some(caller_frame) = callstack.top() {
-        system.finish_global_frame(None)?;
-
         if let Some(returndata_region) = deployment_result.returndata() {
             let returndata_iter = returndata_region.iter().copied();
             let _ = system.get_logger().write_fmt(format_args!("Returndata = "));

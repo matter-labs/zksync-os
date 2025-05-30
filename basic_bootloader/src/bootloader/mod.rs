@@ -6,7 +6,6 @@ use ruint::aliases::*;
 use supported_ees::SupportedEEVMState;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::system::errors::InternalError;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
 pub mod run_single_interaction;
@@ -60,39 +59,11 @@ struct TxDataBuffer<A: Allocator> {
 
 pub struct StackFrame<S: EthereumLikeTypes, R> {
     pub vm: SupportedEEVMState<S>,
-    pub rollback_handle: Option<FrameRollbackHandle<R>>,
-}
-
-pub enum FrameRollbackHandle<R> {
-    Call(R),
-    Deploy(DeploymentHandle<R>),
-}
-
-impl<R> FrameRollbackHandle<R> {
-    pub fn as_call(&self) -> Result<&R, InternalError> {
-        match self {
-            FrameRollbackHandle::Call(r) => Ok(r),
-            FrameRollbackHandle::Deploy(_) => Err(InternalError("Expecting call rollback handle.")),
-        }
-    }
-
-    pub fn as_deploy(&self) -> Result<&DeploymentHandle<R>, InternalError> {
-        match self {
-            FrameRollbackHandle::Call(_) => {
-                Err(InternalError("Expecting deployment rollback handle."))
-            }
-            FrameRollbackHandle::Deploy(r) => Ok(r),
-        }
-    }
-}
-
-pub struct DeploymentHandle<R> {
-    prep: R,
-    ctor: R,
+    pub rollback_handle: Option<R>,
 }
 
 impl<S: EthereumLikeTypes, R> StackFrame<S, R> {
-    pub fn new(vm: SupportedEEVMState<S>, rollback_handle: Option<FrameRollbackHandle<R>>) -> Self {
+    pub fn new(vm: SupportedEEVMState<S>, rollback_handle: Option<R>) -> Self {
         Self {
             vm,
             rollback_handle,
