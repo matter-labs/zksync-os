@@ -1,6 +1,7 @@
 use core::alloc::AllocError;
 use core::alloc::GlobalAlloc;
 use core::alloc::Layout;
+use core::cell::UnsafeCell;
 use core::cmp::Ordering;
 use core::ptr::addr_of_mut;
 use core::ptr::null_mut;
@@ -13,14 +14,17 @@ pub fn is_aligned_to(ptr: *mut u8, align: usize) -> bool {
 
 const RELEASE_LOCK_ON_REALLOC_LIMIT: usize = 0x10000;
 
-pub struct TalcWrapper(pub(crate) Talc<ClaimOnOom>);
+pub struct TalcWrapper(pub(crate) UnsafeCell<Talc<ClaimOnOom>>);
 
 impl TalcWrapper {
-    // TODO: check if this is safe to do
-    #[allow(clippy::mut_from_ref)]
+    pub fn new(inner: Talc<ClaimOnOom>) -> Self {
+        Self(UnsafeCell::new(inner))
+    }
+
     unsafe fn quasi_lock(&self) -> &mut Talc<ClaimOnOom> {
-        let mut dst = NonNull::new_unchecked(self as *const Self as *mut Self);
-        &mut dst.as_mut().0
+        // This allocator is only intended to be run on single-threaded system,
+        // so we only need to prevent compiler aliasing optimizations
+        self.0.as_mut_unchecked()
     }
 }
 
@@ -235,9 +239,9 @@ pub const unsafe fn create_uninit_talc_allocator() -> Talc<ClaimOnOom> {
 }
 
 ///
-/// TODO: add doc
-///
 /// # Safety
+/// `upper_bound` > `lower_bound`
+/// `dst` is aligned
 ///
 pub unsafe fn create_talc_allocator(
     dst: *mut Talc<ClaimOnOom>,
@@ -256,14 +260,16 @@ pub unsafe fn create_talc_allocator(
 }
 
 ///
-/// TODO: add doc
-///
 /// # Safety
+/// `upper_bound` > `lower_bound`
+/// `dst` is aligned
 ///
 pub unsafe fn create_talc_allocator_wrapper(
     dst: *mut TalcWrapper,
     lower_bound: *mut usize,
     upper_bound: *mut usize,
 ) {
-    create_talc_allocator(addr_of_mut!((*dst).0), lower_bound, upper_bound);
+    let unsafe_cell_addr = addr_of_mut!((*dst).0);
+    // UnsafeCell is repr(transparent), so we can just cast a pointer
+    create_talc_allocator(unsafe_cell_addr.cast(), lower_bound, upper_bound);
 }
