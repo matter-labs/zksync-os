@@ -1207,7 +1207,7 @@ where
         .top()
         .ok_or(InternalError("Empty callstack on completed deployment"))?;
     let deploying_vm = deployment_frame.vm.ee_type();
-    let (deployment_success, reverted, mut deployment_result) = match deployment_result {
+    let (deployment_success, mut deployment_result) = match deployment_result {
         DeploymentResult::Successful {
             bytecode,
             bytecode_len,
@@ -1238,20 +1238,20 @@ where
                         "Successfully deployed contract at {:?} \n",
                         deployed_at
                     ));
-                    Ok((true, false, deployment_result))
+                    Ok((true, deployment_result))
                 }
                 Err(SystemError::OutOfErgs) => {
                     let deployment_result = DeploymentResult::Failed {
                         return_values,
                         execution_reverted: false,
                     };
-                    Ok((false, false, deployment_result))
+                    Ok((false, deployment_result))
                 }
                 Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
                 Err(SystemError::Internal(e)) => Err(e.into()),
             }?
         }
-        a @ DeploymentResult::Failed { .. } => (false, false, a),
+        a @ DeploymentResult::Failed { .. } => (false, a),
     };
 
     let deployment_frame = callstack
@@ -1265,27 +1265,20 @@ where
         .transpose()?;
 
     // Now finish constructor frame
-    if !reverted {
-        system.finish_global_frame(
-            (!deployment_success)
-                .then_some(deployment_rollback)
-                .flatten()
-                .map(|x| &x.ctor),
-        )?;
-    }
+    system.finish_global_frame(
+        (!deployment_success)
+            .then_some(deployment_rollback)
+            .flatten()
+            .map(|x| &x.ctor),
+    )?;
 
     let _ = system.get_logger().write_fmt(format_args!(
-        "Return from constructor call, success = {}, reverted = {}\n",
-        deployment_success, reverted
+        "Return from constructor call, success = {}\n",
+        deployment_success
     ));
 
     if let Some(caller_frame) = callstack.top() {
-        system.finish_global_frame(
-            reverted
-                .then_some(deployment_rollback)
-                .flatten()
-                .map(|x| &x.prep),
-        )?;
+        system.finish_global_frame(None)?;
 
         if let Some(returndata_region) = deployment_result.returndata() {
             let returndata_iter = returndata_region.iter().copied();
