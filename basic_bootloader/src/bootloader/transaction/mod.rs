@@ -68,9 +68,14 @@ pub struct ZkSyncTransaction<'a> {
     pub factory_deps: ParsedValue<()>,
     /// The input to the paymaster.
     pub paymaster_input: ParsedValue<()>,
-    /// Reserved dynamic type for the future use-case. Using it should be avoided,
-    /// But it is still here, just in case we want to enable some additional functionality.
-    pub reserved_dynamic: ParsedValue<()>,
+    /// Field used for extra functionality.
+    /// Currently, it's only used for the access list.
+    /// The field is encoded as the ABI encoding of a bytestring
+    /// containing the ABI encoding of `tuple(address, bytes32[])[][]`,
+    /// i.e. a list of lists of (address, keys) pairs.
+    /// We use the outer list to be able to extend the use of this field,
+    /// but for now it should only have 1 element.
+    pub reserved_dynamic: AccessListParser,
 }
 
 #[allow(dead_code)]
@@ -167,7 +172,12 @@ impl<'a> ZkSyncTransaction<'a> {
         if reserved_dynamic_offset.read() != (parser.offset - TX_OFFSET) as u32 {
             return Err(());
         }
-        let reserved_dynamic = parser.parse_bytes()?;
+
+        // "Consume bytes"
+        parser.parse_bytes()?;
+        let reserved_dynamic = AccessListParser {
+            offset: reserved_dynamic_offset.value as usize,
+        };
 
         if parser.slice().is_empty() == false {
             return Err(());
@@ -257,9 +267,6 @@ impl<'a> ZkSyncTransaction<'a> {
             && tx_type != Self::L1_L2_TX_TYPE
             && tx_type != Self::UPGRADE_TX_TYPE
         {
-            return Err(());
-        }
-        if self.reserved_dynamic.range.len() != 0 {
             return Err(());
         }
 
@@ -889,6 +896,119 @@ impl<T: 'static + Clone + Copy + core::fmt::Debug> ParsedValue<T> {
 
     fn encoding<'a>(&self, source: &'a [u8]) -> &'a [u8] {
         unsafe { source.get_unchecked(self.range.clone()) }
+    }
+}
+
+pub struct AccessListParser {
+    pub offset: usize,
+}
+
+impl AccessListParser {
+    pub fn into_iter<'a>(&self, slice: &'a [u8]) -> Result<AccessListIter<'a>, ()> {
+        AccessListIter::new(slice, self.offset)
+    }
+}
+
+pub struct AccessListIter<'a> {
+    slice: &'a [u8],
+    count: usize,
+    head_start: usize,
+    index: usize,
+}
+
+impl<'a> AccessListIter<'a> {
+    fn parse_u256(slice: &'a [u8], offset: usize) -> Result<U256, ()> {
+        Ok(U256::from_be_slice(
+            slice.get(offset..(offset + 32)).ok_or(())?,
+        ))
+    }
+    fn new(slice: &'a [u8], offset: usize) -> Result<Self, ()> {
+        // Reserved dynamic is a list, so that we can add fields later on
+        // For now, it only has the access list
+        let outer_offset = Self::parse_u256(slice, offset)?.as_limbs()[0] as usize;
+        let outer_base = offset + outer_offset;
+        let outer_len = Self::parse_u256(slice, outer_base)?.as_limbs()[0] as usize;
+        if outer_len != 1 {
+            return Err(());
+        }
+
+        let access_list_rel_offset =
+            Self::parse_u256(slice, outer_base + 32)?.as_limbs()[0] as usize;
+        let access_list_base = outer_base + 32 + access_list_rel_offset;
+        let count = Self::parse_u256(slice, access_list_base)?.as_limbs()[0] as usize;
+        let head_start = access_list_base + 32;
+
+        Ok(AccessListIter {
+            slice,
+            count,
+            head_start,
+            index: 0,
+        })
+    }
+
+    fn parse_current(&mut self) -> Result<(B160, StorageKeysIter<'a>), ()> {
+        // Assume index < count, checked by iterator impl
+        let offset = self.head_start + self.index.checked_mul(32).ok_or(())?;
+        let item_ptr_offset = Self::parse_u256(self.slice, offset)?.as_limbs()[0] as usize;
+        let item_offset = self.head_start + item_ptr_offset;
+        let address_bytes = &self.slice.get(item_offset..item_offset + 32).ok_or(())?[12..];
+        let address = B160::try_from_be_slice(address_bytes).unwrap();
+        let keys_ptr_offset =
+            Self::parse_u256(self.slice, item_offset + 32)?.as_limbs()[0] as usize;
+        let keys_offset = item_offset + keys_ptr_offset;
+        let keys_len = Self::parse_u256(self.slice, keys_offset)?.as_limbs()[0] as usize;
+        let keys_slice = self.slice.get(keys_offset + 32..).ok_or(())?;
+
+        Ok((
+            address,
+            StorageKeysIter {
+                slice: keys_slice,
+                index: 0,
+                count: keys_len,
+            },
+        ))
+    }
+}
+
+pub struct StorageKeysIter<'a> {
+    slice: &'a [u8],
+    index: usize,
+    count: usize,
+}
+
+impl<'a> StorageKeysIter<'a> {
+    fn parse_current(&mut self) -> Result<Bytes32, ()> {
+        // Assume index < count, checked by iterator impl
+        let offset = self.index.checked_mul(32).ok_or(())?;
+        let bytes = self.slice.get(offset..offset + 32).ok_or(())?;
+        let item = Bytes32::from_array(bytes.try_into().unwrap());
+        Ok(item)
+    }
+}
+
+impl<'a> Iterator for AccessListIter<'a> {
+    type Item = Result<(B160, StorageKeysIter<'a>), ()>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.count {
+            return None;
+        }
+        let current = self.parse_current();
+        self.index += 1;
+        Some(current)
+    }
+}
+
+impl<'a> Iterator for StorageKeysIter<'a> {
+    type Item = Result<Bytes32, ()>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.count {
+            return None;
+        }
+        let current = self.parse_current();
+        self.index += 1;
+        Some(current)
     }
 }
 
