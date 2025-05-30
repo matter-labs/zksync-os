@@ -15,16 +15,20 @@ use zk_ee::{
 pub use self::preimage_cache_model::*;
 pub use self::storage_cache_model::*;
 
+///
+/// Storage model trait needed to allow using different storage models in the system.
+///
+/// It defines methods to read/write contracts storage slots and account data,
+/// but all the details about underlying structure, commitment, pubdata compression are hidden behind this trait.
+///
 pub trait StorageModel: Sized {
     type IOTypes: SystemIOTypesConfig;
     type Resources: Resources;
     type StateSnapshot;
     type StorageCommitment;
 
-    type TxStats;
     fn begin_new_tx(&mut self);
     fn finish_tx(&mut self) -> Result<(), InternalError>;
-    fn tx_stats(&self) -> Self::TxStats;
 
     fn start_frame(&mut self) -> Self::StateSnapshot;
     fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>);
@@ -165,6 +169,11 @@ pub trait StorageModel: Sized {
     fn construct(init_data: Self::InitData, allocator: Self::Allocator) -> Self;
 
     ///
+    /// Get amount of pubdata needed to encode current diff in bytes.
+    ///
+    fn pubdata_used(&self) -> u32;
+
+    ///
     /// Finish work, there are 3 outputs:
     /// - state changes: uncompressed state diffs(including new preimages), writes to `results_keeper`
     /// - pubdata - compressed state diffs(including preimages) that should be posted on the DA layer, writes to `results_keeper` and `pubdata_hasher`.
@@ -177,7 +186,7 @@ pub trait StorageModel: Sized {
         oracle: &mut impl IOOracle, // oracle is needed here to prove tree
         state_commitment: Option<&mut Self::StorageCommitment>,
         pubdata_hasher: &mut impl crypto::MiniDigest,
-        logger: &mut impl Logger,
         result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
+        logger: &mut impl Logger,
     ) -> Result<(), InternalError>;
 }

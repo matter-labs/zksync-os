@@ -153,7 +153,7 @@ impl DiffTrace {
 }
 
 fn zksync_os_output_into_account_state(output: BatchOutput) -> HashMap<B160, AccountState> {
-    use basic_system::system_implementation::io::AccountProperties;
+    use basic_system::system_implementation::flat_storage_model::AccountProperties;
     let mut updates: HashMap<B160, AccountState> = HashMap::new();
     let preimages: HashMap<[u8; 32], Vec<u8>> = HashMap::from_iter(
         output
@@ -177,11 +177,10 @@ fn zksync_os_output_into_account_state(output: BatchOutput) -> HashMap<B160, Acc
                             panic!("Must contain preimage for account {:#?}", address)
                         })
                         .clone();
-                    AccountProperties::decode(encoded.try_into().unwrap())
-                        .expect("Must decode account properties")
+                    AccountProperties::decode(&encoded.try_into().unwrap())
                 };
                 let entry = updates.entry(address).or_default();
-                entry.balance = Some(props.nominal_token_balance);
+                entry.balance = Some(props.balance);
                 entry.nonce = Some(props.nonce);
                 if let Some(bytecode) = preimages.get(&props.bytecode_hash.as_u8_array()) {
                     let owned = bytecode.clone();

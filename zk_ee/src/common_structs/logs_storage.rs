@@ -257,6 +257,18 @@ where
         }
     }
 
+    pub fn pubdata_used(&self) -> u32 {
+        // TODO: should be constant complexity
+        let mut pubdata_used = 0u32;
+        self.list.iter().for_each(|el| {
+            if let GenericLogContentData::UserMsg(msg) = &el.data {
+                pubdata_used += msg.data.len() as u32;
+            }
+            pubdata_used += L2_TO_L1_LOG_SERIALIZE_SIZE as u32;
+        });
+        pubdata_used
+    }
+
     pub fn apply_pubdata(
         &self,
         hasher: &mut impl MiniDigest,
