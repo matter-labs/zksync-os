@@ -102,3 +102,7 @@ pub const TESTER_NATIVE_PER_GAS: usize = 25_000;
 /// the value of basefee / native_price provided by operator.
 /// Needed because simulation is done with basefee = 0.
 pub const SIMULATION_NATIVE_PER_GAS: U256 = U256::from_limbs([100, 0, 0, 0]);
+
+// Default native price for L1->L2 transactions.
+// TODO: find a reasonable value for it.
+pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);

@@ -9,6 +9,7 @@ use crate::bootloader::errors::{InvalidAA, InvalidTransaction, TxError};
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::{require, require_internal};
 use constants::L1_TX_INTRINSIC_NATIVE_COST;
+use constants::L1_TX_NATIVE_PRICE;
 use constants::L2_TX_INTRINSIC_NATIVE_COST;
 use constants::SIMULATION_NATIVE_PER_GAS;
 use constants::{
@@ -105,10 +106,8 @@ where
         // will be refunded to the user.
         let gas_per_pubdata = transaction.gas_per_pubdata_limit.read();
 
-        let native_price = system.get_native_price();
-        if native_price.is_zero() {
-            return Err(InternalError("Native price cannot be 0").into());
-        };
+        // For L1->L2 txs, we use a constant native price to avoid censorship.
+        let native_price = L1_TX_NATIVE_PRICE;
         let native_per_gas = U256::from(gas_price).div_ceil(native_price);
         let native_per_pubdata = U256::from(gas_per_pubdata)
             .checked_mul(native_per_gas)
