@@ -257,7 +257,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
 
         // TODO: not necessary once heaps get the same treatment as calldata
         let deployment_code: &'calldata [u8] =
-            unsafe { std::mem::transmute(&self.heap[code_offset..end]) };
+            unsafe { core::mem::transmute(&self.heap[code_offset..end]) };
 
         let ee_specific_data = alloc::boxed::Box::try_new_in(scheme, system.get_allocator())
             .expect("system allocator must be capable to allocate for EE deployment parameters");
@@ -369,7 +369,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
 
         // TODO: not necessary once heaps get the calldata treatment
         let calldata: &'calldata [u8] =
-            unsafe { std::mem::transmute(&self.heap[in_offset..(in_offset + in_len)]) };
+            unsafe { core::mem::transmute(&self.heap[in_offset..(in_offset + in_len)]) };
 
         // NOTE: we give to the system both what we have NOW, and what we WANT to pass,
         // and depending on warm/cold behavior it may charge more from the current frame,

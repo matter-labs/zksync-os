@@ -278,8 +278,10 @@ where
                 // resources are checked and spent, so we continue with actual transition of control flow
 
                 // now grow callstack and prepare initial state
-                let mut new_vm =
-                    Box::new(SupportedEEVMState::create_initial(next_ee_version, system)?);
+                let mut new_vm = Box::new_in(
+                    SupportedEEVMState::create_initial(next_ee_version, system)?,
+                    system.get_allocator(),
+                );
 
                 let mut preemption = new_vm.start_executing_frame(
                     system,
@@ -792,7 +794,10 @@ where
         .map_err(|_| InternalError("must start a new frame for init code"))?;
 
     // EE made all the preparations and we are in callee's frame already
-    let mut constructor = Box::new(SupportedEEVMState::create_initial(ee_type as u8, system)?);
+    let mut constructor = Box::new_in(
+        SupportedEEVMState::create_initial(ee_type as u8, system)?,
+        system.get_allocator(),
+    );
 
     let nominal_token_value = launch_params.external_call.nominal_token_value;
 
