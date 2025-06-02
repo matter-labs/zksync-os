@@ -6,6 +6,7 @@ use crate::{
     system::errors::{InternalError, SystemError},
     utils::stack_linked_list::StackLinkedList,
 };
+use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
 use core::{alloc::Allocator, fmt::Debug, marker::PhantomData, ops::Bound, ptr::NonNull};
 
@@ -550,53 +551,43 @@ where
         }
     }
 
-    pub fn get_current<'s>(
-        &'s mut self,
-        ix: &'s K,
-    ) -> Option<HistoryMapItemRefMut<'s, K, V, M, A>> {
-        self.btree.get_mut(ix).map(|ec| HistoryMapItemRefMut {
-            key: ix,
+    pub fn get<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRefMut<'s, K, V, M, A>> {
+        self.btree.get_mut(key).map(|ec| HistoryMapItemRefMut {
+            key,
             container: ec,
             cache_state: &mut self.state,
             source: &mut self.reuse,
         })
     }
 
-    pub fn materialize<'s, C, E>(
+    pub fn get_or_insert<'s, C, E>(
         &'s mut self,
         context: &mut C,
-        ix: &'s K,
+        key: &'s K,
         spawn_v: impl FnOnce(&mut C) -> Result<(V, Appearance), E>,
     ) -> Result<HistoryMapItemRefMut<'s, K, V, M, A>, E> {
-        let mut c = self.btree.lower_bound_mut(core::ops::Bound::Included(ix));
+        let entry = self.btree.entry(key.clone());
 
-        let v = match c.peek_next() {
-            Some((k, v)) if k == Into::<&_>::into(ix) => {
+        let v = match entry {
+            Entry::Occupied(mut o) => {
                 // Safety: Extending lifetime to `self`, no operations on the tree are possible
                 // during this item's lifetime.
                 unsafe {
                     core::mem::transmute::<
                         &mut ElementContainer<V, M, A>,
                         &'s mut ElementContainer<V, M, A>,
-                    >(v)
+                    >(o.get_mut())
                 }
             }
-            _ => {
+            Entry::Vacant(vacant_entry) => {
                 let (v, appearance) = spawn_v(context)?;
-                c.insert_after(
-                    ix.clone(),
-                    ElementContainer::new(
-                        v,
-                        M::default(),
-                        appearance,
-                        &mut self.reuse,
-                        self.state.alloc.clone(),
-                    ),
-                )
-                .expect("The key must fit based on cursor use.");
-                let (_, v) = c
-                    .peek_next()
-                    .expect("We've just added the element, so it should exist.");
+                let v = vacant_entry.insert(ElementContainer::new(
+                    v,
+                    M::default(),
+                    appearance,
+                    &mut self.reuse,
+                    self.state.alloc.clone(),
+                ));
 
                 // Safety: Extending lifetime to `self`, no operations on the tree are possible
                 // during this item's lifetime.
@@ -610,7 +601,7 @@ where
         };
 
         Ok(HistoryMapItemRefMut {
-            key: ix,
+            key,
             container: v,
             cache_state: &mut self.state,
             source: &mut self.reuse,
@@ -778,7 +769,7 @@ mod tests {
         let mut map = HistoryMap::<usize, usize, (), Global>::new(Global);
 
         let v = map
-            .materialize::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
+            .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
             .unwrap();
 
         assert_eq!(1, v.current().value);
@@ -791,7 +782,7 @@ mod tests {
         map.snapshot(super::TransactionId(1));
 
         let mut v = map
-            .materialize::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
+            .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
             .unwrap();
 
         v.update(|x, _| {
@@ -813,7 +804,7 @@ mod tests {
         map.snapshot(super::TransactionId(1));
 
         let mut v = map
-            .materialize::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
+            .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
             .unwrap();
 
         v.update(|x, _| {
@@ -838,7 +829,7 @@ mod tests {
 
         map.snapshot(super::TransactionId(1));
 
-        map.materialize::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
+        map.get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
             .unwrap();
 
         map.commit();
@@ -856,7 +847,7 @@ mod tests {
         map.snapshot(super::TransactionId(1));
 
         let mut v = map
-            .materialize::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
+            .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
             .unwrap();
 
         v.update(|x, _| {
@@ -884,7 +875,7 @@ mod tests {
         map.snapshot(super::TransactionId(1));
 
         let mut v = map
-            .materialize::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
+            .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
             .unwrap();
 
         v.update(|x, _| {
@@ -896,7 +887,7 @@ mod tests {
         map.snapshot(super::TransactionId(1));
 
         let mut v = map
-            .materialize::<_, ()>(&mut 0, &1, |_| Ok((4, Appearance::Retrieved)))
+            .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((4, Appearance::Retrieved)))
             .unwrap();
 
         v.update(|x, _| {
@@ -924,7 +915,7 @@ mod tests {
         map.snapshot(super::TransactionId(1));
 
         let mut v = map
-            .materialize::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
+            .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
             .unwrap();
 
         v.update(|x, _| {
@@ -936,7 +927,7 @@ mod tests {
         let ss = map.snapshot(super::TransactionId(1));
 
         let mut v = map
-            .materialize::<_, ()>(&mut 0, &1, |_| Ok((4, Appearance::Retrieved)))
+            .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((4, Appearance::Retrieved)))
             .unwrap();
 
         v.update(|x, _| {
@@ -966,7 +957,7 @@ mod tests {
         map.snapshot(super::TransactionId(1));
 
         let mut v = map
-            .materialize::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
+            .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
             .unwrap();
 
         v.update(|x, _| {
@@ -979,7 +970,7 @@ mod tests {
         let ss = map.snapshot(super::TransactionId(1));
 
         let mut v = map
-            .materialize::<_, ()>(&mut 0, &1, |_| Ok((4, Appearance::Retrieved)))
+            .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((4, Appearance::Retrieved)))
             .unwrap();
 
         // This snapshot will be rollbacked.
@@ -995,7 +986,7 @@ mod tests {
         map.rollback(ss);
 
         let mut v = map
-            .materialize::<_, ()>(&mut 0, &1, |_| Ok((5, Appearance::Retrieved)))
+            .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((5, Appearance::Retrieved)))
             .unwrap();
 
         // This will create a new snapshot and will reuse the one that rollbacked.

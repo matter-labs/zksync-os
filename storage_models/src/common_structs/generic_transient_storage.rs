@@ -64,7 +64,7 @@ where
     where
         V: Default,
     {
-        cache.materialize(&mut (), key, |_| {
+        cache.get_or_insert(&mut (), key, |_| {
             let new_value = V::default();
             Ok((new_value, Appearance::Unset))
         })

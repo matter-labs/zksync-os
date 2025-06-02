@@ -109,7 +109,7 @@ where
         let mut cold_read_charged = false;
 
         self.cache
-            .materialize(&mut (), address.into(), |_| {
+            .get_or_insert(&mut (), address.into(), |_| {
                 // - first get a hash of properties from storage
                 match ee_type {
                     ExecutionEnvironmentType::NoEE => (),
@@ -357,7 +357,7 @@ where
             _ => return Err(InternalError("Unsupported EE").into()),
         }
 
-        match self.cache.get_current(address.into()) {
+        match self.cache.get(address.into()) {
             Some(cache_item) => Ok(cache_item.current().value.balance),
             None => Err(InternalError("Balance assumed warm but not in cache").into()),
         }
@@ -716,7 +716,7 @@ where
             match from_ee {
                 ExecutionEnvironmentType::NoEE => (),
                 ExecutionEnvironmentType::EVM => {
-                    let entry = match self.cache.get_current(nominal_token_beneficiary.into()) {
+                    let entry = match self.cache.get(nominal_token_beneficiary.into()) {
                         Some(entry) => Ok(entry),
                         None => Err(InternalError("Account assumed warm but not in cache")),
                     }?;

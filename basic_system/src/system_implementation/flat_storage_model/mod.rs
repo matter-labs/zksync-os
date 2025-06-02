@@ -178,10 +178,7 @@ where
                     let account_address = B160::try_from_be_slice(&k.key.as_u8_ref()[12..])
                         .unwrap()
                         .into();
-                    let cache_item = account_data_cache
-                        .cache
-                        .get_current(&account_address)
-                        .ok_or(())?;
+                    let cache_item = account_data_cache.cache.get(&account_address).ok_or(())?;
                     let (l, r) = cache_item.diff_operands_total().ok_or(())?;
                     AccountProperties::diff_compression::<PROOF_ENV, _, _>(
                         &l.value,
