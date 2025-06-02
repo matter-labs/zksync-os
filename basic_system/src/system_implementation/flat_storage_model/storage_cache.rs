@@ -447,7 +447,6 @@ impl<
 where
     ExtraCheck<SCC, A>:,
 {
-    type TxStats = i32;
     type StateSnapshot = CacheSnapshotId;
 
     fn begin_new_tx(&mut self) {
@@ -460,10 +459,6 @@ where
 
     fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
         self.0.finish_frame_impl(rollback_handle);
-    }
-
-    fn tx_stats(&self) -> Self::TxStats {
-        todo!()
     }
 }
 

@@ -427,7 +427,6 @@ impl<
 where
     ExtraCheck<SCC, A>:,
 {
-    type TxStats = i32;
     type StateSnapshot = FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot;
 
     fn begin_new_tx(&mut self) {
@@ -455,9 +454,5 @@ where
             .finish_frame(rollback_handle.map(|x| &x.preimages));
         self.account_data_cache
             .finish_frame(rollback_handle.map(|x| &x.account_data));
-    }
-
-    fn tx_stats(&self) -> Self::TxStats {
-        todo!()
     }
 }

@@ -268,7 +268,6 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
 impl<R: Resources, A: Allocator + Clone> SnapshottableIo
     for BytecodeAndAccountDataPreimagesStorage<R, A>
 {
-    type TxStats = i32;
     type StateSnapshot = CacheSnapshotId;
 
     fn begin_new_tx(&mut self) {
@@ -281,9 +280,5 @@ impl<R: Resources, A: Allocator + Clone> SnapshottableIo
 
     fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
         self.publication_storage.finish_frame(rollback_handle);
-    }
-
-    fn tx_stats(&self) -> Self::TxStats {
-        todo!()
     }
 }
