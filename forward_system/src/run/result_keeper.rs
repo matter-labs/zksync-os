@@ -91,7 +91,7 @@ impl<TR: TxResultCallback> IOResultKeeper<EthereumIOTypesConfig>
             .collect();
     }
 
-    fn pubdata<'a>(&mut self, value: &'a [u8]) {
+    fn pubdata(&mut self, value: &[u8]) {
         self.pubdata.extend_from_slice(value);
     }
 }
