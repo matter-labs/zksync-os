@@ -126,6 +126,7 @@ pub struct BatchOutput {
     // TODO: will be returned per tx later
     pub storage_writes: Vec<StorageWrite>,
     pub published_preimages: Vec<(Bytes32, Vec<u8>, PreimageType)>,
+    pub pubdata: Vec<u8>,
 }
 
 impl From<&GenericEventContent<MAX_EVENT_TOPICS, EthereumIOTypesConfig>> for Log {
@@ -159,6 +160,7 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
             storage_writes,
             tx_results,
             new_preimages,
+            pubdata,
             ..
         } = value;
 
@@ -214,6 +216,7 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
             tx_results,
             storage_writes,
             published_preimages: new_preimages,
+            pubdata,
         }
     }
 }
