@@ -654,6 +654,7 @@ where
 
     /// Commits changes up to this point and frees memory taken by snapshots that can't be
     /// rollbacked to.
+    /// TODO rename to reset or smth
     pub fn commit(&mut self) {
         let mut node = self.state.updated_elems.peek();
         loop {
@@ -678,6 +679,7 @@ where
         self.state.updated_elems = StackLinkedList::empty(self.state.alloc.clone());
     }
 
+    // TODO check usage
     pub fn for_total_diff_operands<F, E>(&self, mut do_fn: F) -> Result<(), E>
     where
         F: FnMut(&CacheSnapshot<V, M>, &CacheSnapshot<V, M>, &K) -> Result<(), E>,
@@ -691,41 +693,7 @@ where
         Ok(())
     }
 
-    pub fn get_tx_diff_operands<F>(&self, mut do_fn: F) -> Result<(), InternalError>
-    where
-        F: FnMut(&CacheSnapshot<V, M>, &CacheSnapshot<V, M>, &K) -> Result<(), InternalError>,
-    {
-        let mut node = self.state.updated_elems.peek();
-
-        loop {
-            match node {
-                None => break,
-                Some(ref n) => {
-                    let (key, _, tx_id) = &n.value;
-
-                    if *tx_id < self.state.current_transaction_id {
-                        break;
-                    }
-
-                    let item = self
-                        .btree
-                        .get(key)
-                        .expect("We've updated this, so it must be present");
-
-                    let (l, r) = item
-                        .diff_operands_tx()
-                        .ok_or(InternalError("Updated items have no tx diff operands."))?;
-
-                    do_fn(l, r, key)?;
-
-                    node = &n.next;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
+    // TODO used to cleanup in storage and transient storage
     pub fn for_each_range<F>(
         &mut self,
         range: (Bound<&K>, Bound<&K>),
@@ -746,6 +714,7 @@ where
         Ok(())
     }
 
+    // TODO only for new preimages publication storage
     pub fn iter(&self) -> impl Iterator<Item = CacheItemRef<'_, K, V, M, A>> {
         self.btree.iter().map(|(k, v)| CacheItemRef {
             key: k,
@@ -753,6 +722,7 @@ where
         })
     }
 
+    // TODO use only for account cache
     pub fn iter_altered_since_commit(&self) -> impl Iterator<Item = CacheItemRef<'_, K, V, M, A>> {
         self.state
             .updated_elems
