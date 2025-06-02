@@ -115,6 +115,7 @@ impl BlocksPublicInput {
 /// - l2 to l1 logs tree root: to be able to open them on the settlement layer
 /// - extra inputs to validate on the settlement layer(timestamp and chain id)
 ///
+#[derive(Debug)]
 pub struct BatchOutput {
     /// Chain id used during execution of the blocks.
     pub chain_id: U256,
@@ -159,6 +160,7 @@ impl BatchOutput {
     }
 }
 
+#[derive(Debug)]
 pub struct BatchPublicInput {
     /// State commitment before the batch.
     /// It should commit for everything needed for trustless execution(state, block number, hashes, etc).
