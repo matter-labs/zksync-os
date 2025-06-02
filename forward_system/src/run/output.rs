@@ -58,6 +58,7 @@ pub struct TxOutput {
     /// Deduplicated storage writes happened during tx processing(validation, execution, postOp call)
     /// TODO: now this field empty as we return writes on the blocks level, but eventually should be moved here
     pub storage_writes: Vec<StorageWrite>,
+    pub pubdata: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -159,6 +160,7 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
             storage_writes,
             tx_results,
             new_preimages,
+            pubdata,
             ..
         } = value;
 
@@ -214,6 +216,7 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
             tx_results,
             storage_writes,
             published_preimages: new_preimages,
+            pubdata,
         }
     }
 }

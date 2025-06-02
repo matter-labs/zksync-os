@@ -30,6 +30,7 @@ pub struct ForwardRunningResultKeeper<TR: TxResultCallback> {
         Result<TxProcessingOutputOwned, basic_bootloader::bootloader::errors::InvalidTransaction>,
     >,
     pub new_preimages: Vec<(Bytes32, Vec<u8>, PreimageType)>,
+    pub pubdata: Vec<u8>,
 
     pub tx_result_callback: TR,
 }
@@ -43,6 +44,7 @@ impl<TR: TxResultCallback> ForwardRunningResultKeeper<TR> {
             storage_writes: vec![],
             tx_results: vec![],
             new_preimages: vec![],
+            pubdata: vec![],
             tx_result_callback,
         }
     }
@@ -87,6 +89,10 @@ impl<TR: TxResultCallback> IOResultKeeper<EthereumIOTypesConfig>
         self.new_preimages = iter
             .map(|(hash, preimage, preimage_type)| (*hash, preimage.to_vec(), preimage_type))
             .collect();
+    }
+
+    fn pubdata<'a>(&mut self, value: &'a [u8]) {
+        self.pubdata.extend_from_slice(value);
     }
 }
 
