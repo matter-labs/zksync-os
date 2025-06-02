@@ -58,7 +58,6 @@ pub struct TxOutput {
     /// Deduplicated storage writes happened during tx processing(validation, execution, postOp call)
     /// TODO: now this field empty as we return writes on the blocks level, but eventually should be moved here
     pub storage_writes: Vec<StorageWrite>,
-    pub pubdata: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -127,6 +126,7 @@ pub struct BatchOutput {
     // TODO: will be returned per tx later
     pub storage_writes: Vec<StorageWrite>,
     pub published_preimages: Vec<(Bytes32, Vec<u8>, PreimageType)>,
+    pub pubdata: Vec<u8>,
 }
 
 impl From<&GenericEventContent<MAX_EVENT_TOPICS, EthereumIOTypesConfig>> for Log {

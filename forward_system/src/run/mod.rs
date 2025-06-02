@@ -45,7 +45,6 @@ use crate::run::test_impl::{NoopTxCallback, TxListSource};
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;
 use basic_system::system_implementation::flat_storage_model::*;
 use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
-use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
 use zk_ee::system::errors::InternalError;
 pub use zk_ee::system::metadata::BlockMetadataFromOracle as BatchContext;
 
@@ -86,7 +85,6 @@ pub fn generate_proof_input<
     tree: T,
     preimage_source: PS,
     tx_source: TS,
-    tx_result_callback: TR,
 ) -> Result<Vec<u32>, InternalError> {
     let oracle = ForwardRunningOracle {
         io_implementer_init_data: Some(io_implementer_init_data(Some(storage_commitment))),
@@ -105,7 +103,7 @@ pub fn generate_proof_input<
     let copy_source = ReadWitnessSource::new(non_determinism_source);
     let items = copy_source.get_read_items();
 
-    let proof_output = zksync_os_runner::run(zk_os_program_path, None, 1 << 30, copy_source);
+    let _proof_output = zksync_os_runner::run(zk_os_program_path, None, 1 << 30, copy_source);
 
     Ok(std::rc::Rc::try_unwrap(items).unwrap().into_inner())
 }
