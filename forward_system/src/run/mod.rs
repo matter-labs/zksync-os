@@ -77,7 +77,6 @@ pub fn generate_proof_input<
     T: ReadStorageTree,
     PS: PreimageSource,
     TS: TxSource,
-    TR: TxResultCallback,
 >(
     zk_os_program_path: PathBuf,
     batch_context: BatchContext,
