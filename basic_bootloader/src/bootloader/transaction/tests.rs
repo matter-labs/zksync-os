@@ -43,7 +43,10 @@ fn test_hash() {
     // 0x62f875e2ba595c8bc0ef8b68cf25261c43661db58be3ac69f1a1b380eac6c14f - expected signed hash
     let tx =
         ZkSyncTransaction::try_from_slice(&mut encoded_tx).expect("Tx encoding should be valid");
-    let signed_hash = tx.calculate_signed_hash(37).unwrap();
+    let mut resources = <zk_ee::reference_implementations::BaseResources<
+        zk_ee::reference_implementations::IncreasingNative,
+    > as zk_ee::system::Resource>::FORMAL_INFINITE;
+    let signed_hash = tx.calculate_signed_hash(37, &mut resources).unwrap();
     let expected_hash = U256::from_str_radix(
         "62f875e2ba595c8bc0ef8b68cf25261c43661db58be3ac69f1a1b380eac6c14f",
         16,

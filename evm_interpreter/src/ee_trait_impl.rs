@@ -94,7 +94,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
             external_call:
                 ExternalCallRequest {
                     ergs_to_pass: _,
-                    available_resources,
+                    mut available_resources,
                     caller,
                     callee,
                     callers_caller,
@@ -194,6 +194,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
             bytecode,
             original_bytecode_len,
             system,
+            &mut available_resources,
         )?;
 
         self.resources = available_resources;
