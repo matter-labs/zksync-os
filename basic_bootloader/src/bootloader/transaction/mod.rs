@@ -17,7 +17,10 @@ mod abi_utils;
 mod tests;
 pub mod u256be_ptr;
 
-use super::*;
+use super::{
+    rlp::{apply_list_length_encoding_to_hash, estimate_length_encoding_len, ADDRESS_ENCODING_LEN},
+    *,
+};
 
 ///
 /// The generic transaction format. The structure fields are slices/references in fact.
@@ -173,11 +176,11 @@ impl<'a> ZkSyncTransaction<'a> {
             return Err(());
         }
 
-        // "Consume bytes"
-        parser.parse_bytes()?;
         let reserved_dynamic = AccessListParser {
             offset: reserved_dynamic_offset.value as usize,
         };
+        // "Consume bytes"
+        parser.parse_bytes()?;
 
         if parser.slice().is_empty() == false {
             return Err(());
@@ -487,13 +490,58 @@ impl<'a> ZkSyncTransaction<'a> {
     }
 
     ///
+    /// Estimates the length of the payload of the access list encoding
+    ///
+    fn estimate_access_list_raw_length(&self) -> Result<usize, ()> {
+        let iter = self.reserved_dynamic.into_iter(&self.underlying_buffer)?;
+        let mut sum = 0;
+        for res in iter {
+            let (_, keys) = res?;
+            let (item_length, _, _) = estimate_access_list_item_length(keys.count);
+            sum += item_length
+        }
+        Ok(sum)
+    }
+
+    ///
+    /// Applies hash of the access list
+    ///
+    fn apply_access_list_encoding_to_hash(
+        &self,
+        total_access_list_length: usize,
+        hasher: &mut Keccak256,
+    ) -> Result<(), ()> {
+        let iter = self.reserved_dynamic.into_iter(&self.underlying_buffer)?;
+        // Length of access list
+        apply_list_length_encoding_to_hash(total_access_list_length, hasher);
+        for res in iter {
+            let (address, keys) = res?;
+            let (_, item_raw_length, keys_raw_length) =
+                estimate_access_list_item_length(keys.count);
+            // Length of [address, [keys]]
+            apply_list_length_encoding_to_hash(item_raw_length, hasher);
+            // Address
+            rlp::apply_bytes_encoding_to_hash(&address.to_be_bytes::<{ B160::BYTES }>(), hasher);
+            // Length of [keys]
+            apply_list_length_encoding_to_hash(keys_raw_length, hasher);
+            // Keys
+            for key in keys {
+                let key = key?;
+                rlp::apply_bytes_encoding_to_hash(key.as_u8_ref(), hasher);
+            }
+        }
+        Ok(())
+    }
+
+    ///
     /// If signed == `false` calculate tx hash with signature(to be used in the explorer):
     /// Keccak256(0x01 || RLP(chain_id, nonce, gas_price, gas_limit, destination, amount, data, access_list, r, s, v))
     ///
     /// If signed == `true` calculate signed tx hash(the one that should be signed by the sender):
     /// Keccak256(0x01 || RLP(chain_id, nonce, gas_price, gas_limit, destination, amount, data, access_list))
     ///
-    /// Note, that on zkSync access lists are not supported and should always be empty.
+    /// Note that this function assumes that if the transaction has an access list,
+    /// this field has been validated previously by [process_access_list].
     ///
     pub fn eip2930_tx_calculate_hash<R: Resources>(
         &self,
@@ -515,10 +563,15 @@ impl<'a> ZkSyncTransaction<'a> {
             total_list_len += rlp::estimate_bytes_encoding_len(&[]);
         }
 
+        let access_list_raw_length = self
+            .estimate_access_list_raw_length()
+            .map_err(|()| InternalError("Access list format must have been validated before"))?;
+
         total_list_len +=
             rlp::estimate_number_encoding_len(self.value.encoding(&self.underlying_buffer))
                 + rlp::estimate_bytes_encoding_len(self.data.encoding(&self.underlying_buffer))
-                + rlp::estimate_length_encoding_len(0); // empty access list
+                + rlp::estimate_length_encoding_len(access_list_raw_length)
+                + access_list_raw_length;
 
         // Add signature if not signed hash
         if !signed {
@@ -570,7 +623,8 @@ impl<'a> ZkSyncTransaction<'a> {
             &mut hasher,
         );
         rlp::apply_bytes_encoding_to_hash(self.data.encoding(&self.underlying_buffer), &mut hasher);
-        rlp::apply_list_length_encoding_to_hash(0, &mut hasher);
+        self.apply_access_list_encoding_to_hash(access_list_raw_length, &mut hasher)
+            .map_err(|()| InternalError("Access list format must have been validated before"))?;
 
         // Add signature if not signed hash
         if !signed {
@@ -601,7 +655,8 @@ impl<'a> ZkSyncTransaction<'a> {
     /// If signed == `true` calculate signed tx hash(the one that should be signed by the sender):
     /// Keccak256(0x02 || RLP(chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, destination, amount, data, access_list))
     ///
-    /// Note, that on zkSync access lists are not supported and should always be empty.
+    /// Note that this function assumes that if the transaction has an access list,
+    /// this field has been validated previously by [process_access_list].
     ///
     pub fn eip1559_tx_calculate_hash<R: Resources>(
         &self,
@@ -627,10 +682,15 @@ impl<'a> ZkSyncTransaction<'a> {
             total_list_len += rlp::estimate_bytes_encoding_len(&[]);
         }
 
+        let access_list_raw_length = self
+            .estimate_access_list_raw_length()
+            .map_err(|()| InternalError("Access list format must have been validated before"))?;
+
         total_list_len +=
             rlp::estimate_number_encoding_len(self.value.encoding(&self.underlying_buffer))
                 + rlp::estimate_bytes_encoding_len(self.data.encoding(&self.underlying_buffer))
-                + rlp::estimate_length_encoding_len(0); // empty access list
+                + rlp::estimate_length_encoding_len(access_list_raw_length)
+                + access_list_raw_length;
 
         // Add signature if not signed hash
         if !signed {
@@ -687,8 +747,8 @@ impl<'a> ZkSyncTransaction<'a> {
             &mut hasher,
         );
         rlp::apply_bytes_encoding_to_hash(self.data.encoding(&self.underlying_buffer), &mut hasher);
-        rlp::apply_list_length_encoding_to_hash(0, &mut hasher);
-
+        self.apply_access_list_encoding_to_hash(access_list_raw_length, &mut hasher)
+            .map_err(|()| InternalError("Access list format must have been validated before"))?;
         // Add signature if not signed hash
         if !signed {
             // r
@@ -922,8 +982,14 @@ impl<'a> AccessListIter<'a> {
             slice.get(offset..(offset + 32)).ok_or(())?,
         ))
     }
+
     fn new(slice: &'a [u8], offset: usize) -> Result<Self, ()> {
-        // Reserved dynamic is a list, so that we can add fields later on
+        // Ignore pre tx buffer:
+        let slice = &slice[TX_OFFSET..];
+        // Reserved dynamic is a bytestring of a list,
+        // so that we can add fields later on.
+        // We ignore the length
+        let offset = offset + 32;
         // For now, it only has the access list
         let outer_offset = Self::parse_u256(slice, offset)?.as_limbs()[0] as usize;
         let outer_base = offset + outer_offset;
@@ -1168,4 +1234,18 @@ fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), Fata
             SystemError::Internal(e) => FatalError::Internal(e),
             SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
         })
+}
+
+/// Returns (full_item_length, item_raw_length, keys_raw_length)
+fn estimate_access_list_item_length(nb_keys: usize) -> (usize, usize, usize) {
+    let single_key_length = 33;
+    let keys_raw_length = single_key_length * nb_keys;
+    let keys_length = estimate_length_encoding_len(keys_raw_length) + keys_raw_length;
+    let address_length = ADDRESS_ENCODING_LEN;
+    let item_raw_length = keys_length + address_length;
+    (
+        estimate_length_encoding_len(item_raw_length) + item_raw_length,
+        item_raw_length,
+        keys_raw_length,
+    )
 }
