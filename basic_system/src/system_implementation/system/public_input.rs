@@ -8,7 +8,6 @@ use zk_ee::utils::Bytes32;
 /// - block number
 /// - last 256 block hashes, previous can be "unrolled" from the last, but we commit to 256 for optimization.
 /// - last block timestamp, to ensure that block timestamps are not decreasing.
-/// Chain state commitment contains state tree commitment and another chain state info: block number and block hashes.
 ///
 pub struct ChainStateCommitment {
     pub state_root: Bytes32,

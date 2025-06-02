@@ -408,18 +408,19 @@ where
             elements.push(log.hash())
         });
         let mut curr_non_default = self.list.len();
+        #[allow(clippy::needless_range_loop)]
         for level in 0..TREE_HEIGHT {
-            for i in 0..(curr_non_default + 1) / 2 {
+            for i in 0..curr_non_default.div_ceil(2) {
                 let mut hasher = crypto::sha3::Keccak256::new();
                 hasher.update(elements[i * 2].as_u8_ref());
                 if i * 2 + 1 < curr_non_default {
                     hasher.update(elements[i * 2 + 1].as_u8_ref());
                 } else {
-                    hasher.update(&EMPTY_HASHES[level]);
+                    hasher.update(EMPTY_HASHES[level]);
                 }
                 elements[i] = hasher.finalize().into();
             }
-            curr_non_default = (curr_non_default + 1) / 2;
+            curr_non_default = curr_non_default.div_ceil(2);
         }
         if curr_non_default != 0 {
             elements[0]
