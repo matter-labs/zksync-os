@@ -305,6 +305,29 @@ pub fn encode_l1_tx(tx: TransactionRequest) -> Vec<u8> {
     )
 }
 
+fn encode_access_list(list: Vec<([u8; 20], Vec<[u8; 32]>)>) -> Option<Vec<u8>> {
+    if list.is_empty() {
+        return None;
+    }
+
+    let inner: Vec<Token> = list
+        .into_iter()
+        .map(|(addr, keys)| {
+            let address_token = Token::Address(addr.into());
+            let keys_token = Token::Array(
+                keys.into_iter()
+                    .map(|k| Token::FixedBytes(k.to_vec()))
+                    .collect(),
+            );
+            Token::Tuple(vec![address_token, keys_token])
+        })
+        .collect();
+
+    // Single element list to be able to extend reserved_dynamic
+    let outer = Token::Array(vec![Token::Array(inner)]);
+    Some(ethers::abi::encode(&[outer]))
+}
+
 ///
 /// Internal tx encoding method.
 ///
@@ -416,4 +439,65 @@ pub fn evm_bytecode_into_account_properties(bytecode: &[u8]) -> AccountPropertie
     result.observable_bytecode_len = bytecode.len() as u32;
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::encode_access_list;
+    use ruint::aliases::B160;
+    use zk_ee::utils::Bytes32;
+    #[test]
+    fn test_encode_access_list() {
+        use basic_bootloader::bootloader::transaction::AccessListParser;
+        let address0 = [0x11u8; 20];
+        let address1 = [0x10u8; 20];
+
+        let storage_keys0 = vec![[0x22u8; 32], [0x33u8; 32]];
+        let storage_keys1 = vec![[0x44u8; 32], [0x55u8; 32]];
+
+        let access_list = vec![
+            (address0, storage_keys0.clone()),
+            (address1, storage_keys1.clone()),
+        ];
+
+        let encoded = encode_access_list(access_list).expect("should encode");
+        let parser = AccessListParser { offset: 0 };
+        let mut iter = parser.into_iter(&encoded).expect("Must create iter");
+        let (address, mut keys_iter) = iter
+            .next()
+            .expect("Must have first")
+            .expect("Must decode first");
+        assert_eq!(address, B160::from_be_bytes(address0));
+        let key0 = keys_iter
+            .next()
+            .expect("Must have key")
+            .expect("Must decode key");
+        assert_eq!(key0, Bytes32::from_array(storage_keys0[0]));
+        let key1 = keys_iter
+            .next()
+            .expect("Must have key")
+            .expect("Must decode key");
+        assert_eq!(key1, Bytes32::from_array(storage_keys0[1]));
+        assert!(keys_iter.next().is_none());
+
+        let (address, mut keys_iter) = iter
+            .next()
+            .expect("Must have second")
+            .expect("Must decode second");
+        assert_eq!(address, B160::from_be_bytes(address1));
+        let key0 = keys_iter
+            .next()
+            .expect("Must have key")
+            .expect("Must decode key");
+        assert_eq!(key0, Bytes32::from_array(storage_keys1[0]));
+        let key1 = keys_iter
+            .next()
+            .expect("Must have key")
+            .expect("Must decode key");
+        assert_eq!(key1, Bytes32::from_array(storage_keys1[1]));
+        assert!(keys_iter.next().is_none());
+
+        assert!(iter.next().is_none());
+    }
 }
