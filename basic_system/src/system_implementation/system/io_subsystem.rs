@@ -600,7 +600,7 @@ where
         da_commitment_hasher.update([1u8]); // with calldata we should provide 1 blob
         da_commitment_hasher.update([0u8; 32]); // its hash will be ignored on the settlement layer
         let da_commitment = da_commitment_hasher.finalize();
-        let batch_output = public_input::batch::BatchOutput {
+        let batch_output = public_input::BatchOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
             first_block_timestamp: block_metadata.timestamp,
             last_block_timestamp: block_metadata.timestamp,
@@ -612,7 +612,7 @@ where
             upgrade_tx_hash,
         };
 
-        let public_input = public_input::batch::BatchPublicInput {
+        let public_input = public_input::BatchPublicInput {
             state_before: chain_state_commitment_before.into(),
             state_after: chain_state_commitment_after.into(),
             batch_output: batch_output.hash().into(),

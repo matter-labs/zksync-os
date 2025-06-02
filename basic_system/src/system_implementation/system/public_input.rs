@@ -1,5 +1,6 @@
+use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
-use ruint::aliases::U256;
+use ruint::aliases::{B160, U256};
 use zk_ee::utils::Bytes32;
 
 ///
@@ -107,84 +108,76 @@ impl BlocksPublicInput {
     }
 }
 
-#[cfg(feature = "wrap-in-batch")]
-pub mod batch {
-    use crypto::sha3::Keccak256;
-    use crypto::MiniDigest;
-    use ruint::aliases::{B160, U256};
-    use zk_ee::utils::Bytes32;
+///
+/// Except for proving existence of batch(of blocks) that changes state from one to another, we want to open some info about this batch on the settlement layer:
+/// - pubdata: to make sure that it's published and state is recoverable
+/// - executed priority ops: to process them on the settlement layer
+/// - l2 to l1 logs tree root: to be able to open them on the settlement layer
+/// - extra inputs to validate on the settlement layer(timestamp and chain id)
+///
+pub struct BatchOutput {
+    /// Chain id used during execution of the blocks.
+    pub chain_id: U256,
+    /// First block timestamp.
+    pub first_block_timestamp: u64,
+    /// Last block timestamp.
+    pub last_block_timestamp: u64,
+    // TODO: in future should be commitment scheme
+    // pub pubdata_commitment_scheme: DACommitmentScheme,
+    pub used_l2_da_validator_address: B160,
+    /// Pubdata commitment.
+    pub pubdata_commitment: Bytes32,
+    /// Number of l1 -> l2 rocessed txs in the batch.
+    pub number_of_layer_1_txs: U256,
+    /// Rolling keccak256 hash of l1 -> l2 txs processed in the batch.
+    pub priority_operations_hash: Bytes32,
+    /// L2 logs tree root.
+    /// Note that it's full root, it's keccak256 of:
+    /// - merkle root of l2 -> l1 logs in the batch .
+    /// - aggregated root - commitment to logs emitted on chains that settle on the current.
+    pub l2_logs_tree_root: Bytes32,
+    /// Protocol upgrade tx hash (0 if there wasn't)
+    pub upgrade_tx_hash: Bytes32,
+}
 
-    //
-    /// Except for proving existence of batch(of blocks) that changes state from one to another, we want to open some info about this batch on the settlement layer:
-    /// - pubdata: to make sure that it's published and state is recoverable
-    /// - executed priority ops: to process them on the settlement layer
-    /// - l2 to l1 logs tree root: to be able to open them on the settlement layer
-    /// - extra inputs to validate on the settlement layer(timestamp and chain id)
+impl BatchOutput {
     ///
-    pub struct BatchOutput {
-        /// Chain id used during execution of the blocks.
-        pub chain_id: U256,
-        /// First block timestamp.
-        pub first_block_timestamp: u64,
-        /// Last block timestamp.
-        pub last_block_timestamp: u64,
-        // TODO: in future should be commitment scheme
-        // pub pubdata_commitment_scheme: DACommitmentScheme,
-        pub used_l2_da_validator_address: B160,
-        /// Pubdata commitment.
-        pub pubdata_commitment: Bytes32,
-        /// Number of l1 -> l2 rocessed txs in the batch.
-        pub number_of_layer_1_txs: U256,
-        /// Rolling keccak256 hash of l1 -> l2 txs processed in the batch.
-        pub priority_operations_hash: Bytes32,
-        /// L2 logs tree root.
-        /// Note that it's full root, it's keccak256 of:
-        /// - merkle root of l2 -> l1 logs in the batch .
-        /// - aggregated root - commitment to logs emitted on chains that settle on the current.
-        pub l2_logs_tree_root: Bytes32,
-        /// Protocol upgrade tx hash (0 if there wasn't)
-        pub upgrade_tx_hash: Bytes32,
+    /// Calculate keccak256 hash of public input
+    ///
+    pub fn hash(&self) -> [u8; 32] {
+        let mut hasher = Keccak256::new();
+        hasher.update(self.chain_id.to_be_bytes::<32>());
+        hasher.update(&self.first_block_timestamp.to_be_bytes());
+        hasher.update(&self.last_block_timestamp.to_be_bytes());
+        hasher.update(self.used_l2_da_validator_address.to_be_bytes::<20>());
+        hasher.update(self.pubdata_commitment.as_u8_ref());
+        hasher.update(self.number_of_layer_1_txs.to_be_bytes::<32>());
+        hasher.update(self.priority_operations_hash.as_u8_ref());
+        hasher.update(self.l2_logs_tree_root.as_u8_ref());
+        hasher.update(self.upgrade_tx_hash.as_u8_ref());
+        hasher.finalize()
     }
+}
 
-    impl BatchOutput {
-        ///
-        /// Calculate keccak256 hash of public input
-        ///
-        pub fn hash(&self) -> [u8; 32] {
-            let mut hasher = Keccak256::new();
-            hasher.update(self.chain_id.to_be_bytes::<32>());
-            hasher.update(&self.first_block_timestamp.to_be_bytes());
-            hasher.update(&self.last_block_timestamp.to_be_bytes());
-            hasher.update(self.used_l2_da_validator_address.to_be_bytes::<20>());
-            hasher.update(self.pubdata_commitment.as_u8_ref());
-            hasher.update(self.number_of_layer_1_txs.to_be_bytes::<32>());
-            hasher.update(self.priority_operations_hash.as_u8_ref());
-            hasher.update(self.l2_logs_tree_root.as_u8_ref());
-            hasher.update(self.upgrade_tx_hash.as_u8_ref());
-            hasher.finalize()
-        }
-    }
+pub struct BatchPublicInput {
+    /// State commitment before the batch.
+    /// It should commit for everything needed for trustless execution(state, block number, hashes, etc).
+    pub state_before: Bytes32,
+    /// State commitment after the batch.
+    pub state_after: Bytes32,
+    /// Batch output to be opened on the settlement layer, needed to process DA, l1 <> l2 messaging, validate inputs.
+    pub batch_output: Bytes32,
+}
 
-    pub struct BatchPublicInput {
-        /// State commitment before the batch.
-        /// It should commit for everything needed for trustless execution(state, block number, hashes, etc).
-        pub state_before: Bytes32,
-        /// State commitment after the batch.
-        pub state_after: Bytes32,
-        /// Batch output to be opened on the settlement layer, needed to process DA, l1 <> l2 messaging, validate inputs.
-        pub batch_output: Bytes32,
-    }
-
-    impl BatchPublicInput {
-        ///
-        /// Calculate keccak256 hash of public input
-        ///
-        pub fn hash(&self) -> [u8; 32] {
-            let mut hasher = Keccak256::new();
-            hasher.update(self.state_before.as_u8_ref());
-            hasher.update(self.state_after.as_u8_ref());
-            hasher.update(self.batch_output.as_u8_ref());
-            hasher.finalize()
-        }
+impl BatchPublicInput {
+    ///
+    /// Calculate keccak256 hash of public input
+    ///
+    pub fn hash(&self) -> [u8; 32] {
+        let mut hasher = Keccak256::new();
+        hasher.update(self.state_before.as_u8_ref());
+        hasher.update(self.state_after.as_u8_ref());
+        hasher.update(self.batch_output.as_u8_ref());
+        hasher.finalize()
     }
 }
