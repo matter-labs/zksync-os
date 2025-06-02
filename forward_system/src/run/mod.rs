@@ -73,12 +73,7 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
 }
 
 // TODO: we should run it on native arch and it should return pubdata and other outputs via result keeper
-pub fn generate_proof_input<
-    T: ReadStorageTree,
-    PS: PreimageSource,
-    TS: TxSource,
-    TR: TxResultCallback,
->(
+pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
     zk_os_program_path: PathBuf,
     batch_context: BatchContext,
     storage_commitment: StorageCommitment,
