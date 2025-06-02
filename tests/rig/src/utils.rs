@@ -109,6 +109,22 @@ pub fn sign_and_encode_alloy_tx(
     let value = tx.value().to_be_bytes();
     let data = tx.input().to_vec();
 
+    let access_list = tx
+        .access_list()
+        .map(|access_list: &alloy::rpc::types::AccessList| {
+            access_list
+                .clone()
+                .0
+                .into_iter()
+                .map(|item| {
+                    let address = item.address.into_array();
+                    let keys: Vec<[u8; 32]> = item.storage_keys.into_iter().map(|k| k.0).collect();
+                    (address, keys)
+                })
+                .collect()
+        });
+    let reserved_dynamic = access_list.map(encode_access_list);
+
     encode_tx(
         tx_type,
         from,
@@ -123,7 +139,7 @@ pub fn sign_and_encode_alloy_tx(
         data,
         signature,
         None,
-        None,
+        reserved_dynamic,
         true,
     )
 }
@@ -148,8 +164,22 @@ pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> Vec<u8> {
     if signature[64] <= 1 {
         signature[64] += 27;
     }
+    let access_list = tx
+        .access_list
+        .map(|access_list: alloy::rpc::types::AccessList| {
+            access_list
+                .0
+                .into_iter()
+                .map(|item| {
+                    let address = item.address.into_array();
+                    let keys: Vec<[u8; 32]> = item.storage_keys.into_iter().map(|k| k.0).collect();
+                    (address, keys)
+                })
+                .collect()
+        });
+    let reserved_dynamic = access_list.map(encode_access_list);
 
-    encode_tx(
+    let tx = encode_tx(
         tx_type,
         from,
         to,
@@ -163,9 +193,11 @@ pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> Vec<u8> {
         data,
         signature,
         None,
-        None,
+        reserved_dynamic,
         is_eip155,
-    )
+    );
+    println!("Tx: {}", hex::encode(tx.clone()));
+    tx
 }
 
 ///
@@ -305,11 +337,7 @@ pub fn encode_l1_tx(tx: TransactionRequest) -> Vec<u8> {
     )
 }
 
-fn encode_access_list(list: Vec<([u8; 20], Vec<[u8; 32]>)>) -> Option<Vec<u8>> {
-    if list.is_empty() {
-        return None;
-    }
-
+fn encode_access_list(list: Vec<([u8; 20], Vec<[u8; 32]>)>) -> Vec<u8> {
     let inner: Vec<Token> = list
         .into_iter()
         .map(|(addr, keys)| {
@@ -325,7 +353,7 @@ fn encode_access_list(list: Vec<([u8; 20], Vec<[u8; 32]>)>) -> Option<Vec<u8>> {
 
     // Single element list to be able to extend reserved_dynamic
     let outer = Token::Array(vec![Token::Array(inner)]);
-    Some(ethers::abi::encode(&[outer]))
+    ethers::abi::encode(&[outer])
 }
 
 ///
@@ -410,7 +438,7 @@ fn encode_tx(
             // factory deps not supported for now
             Token::Array(vec![]),
             Token::Bytes(paymaster_input.unwrap_or_default()),
-            Token::Bytes(reserved_dynamic.unwrap_or_default()),
+            Token::Bytes(reserved_dynamic.unwrap_or(encode_access_list(vec![]))),
         ]),
     ])
     .expect("must encode")[100..]
@@ -445,11 +473,13 @@ pub fn evm_bytecode_into_account_properties(bytecode: &[u8]) -> AccountPropertie
 mod tests {
 
     use super::encode_access_list;
+    use basic_bootloader::bootloader::constants::TX_OFFSET;
     use ruint::aliases::B160;
     use zk_ee::utils::Bytes32;
     #[test]
     fn test_encode_access_list() {
         use basic_bootloader::bootloader::transaction::AccessListParser;
+        use ethers::abi::Token;
         let address0 = [0x11u8; 20];
         let address1 = [0x10u8; 20];
 
@@ -461,9 +491,14 @@ mod tests {
             (address1, storage_keys1.clone()),
         ];
 
-        let encoded = encode_access_list(access_list).expect("should encode");
-        let parser = AccessListParser { offset: 0 };
-        let mut iter = parser.into_iter(&encoded).expect("Must create iter");
+        let encoded_list = encode_access_list(access_list);
+        let encoded = ethers::abi::encode(&[Token::Bytes(encoded_list)]);
+        // Prepend TX_OFFSET bytes, as those are then ignored by the parser.
+        let mut full_buffer = vec![0u8; TX_OFFSET];
+        full_buffer.extend(encoded);
+        // Offset is 32 to skip the initial offset for the bytes encoding
+        let parser = AccessListParser { offset: 32 };
+        let mut iter = parser.into_iter(&full_buffer).expect("Must create iter");
         let (address, mut keys_iter) = iter
             .next()
             .expect("Must have first")
