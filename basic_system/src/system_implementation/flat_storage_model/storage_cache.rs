@@ -21,7 +21,7 @@ use zk_ee::{
 use zk_ee::common_structs::history_map::*;
 use zk_ee::common_structs::ValueDiffCompressionStrategy;
 
-type AddressItem<'a, K, V, A> = CacheItemRefMut<'a, K, V, StorageElementMetadata, A>;
+type AddressItem<'a, K, V, A> = HistoryMapItemRefMut<'a, K, V, StorageElementMetadata, A>;
 
 /// EE-specific IO charging.
 pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
@@ -149,7 +149,7 @@ where
         let mut cold_read_charged = false;
 
         cache
-            .materialize(resources, key, |resources| {
+            .materialize(&mut (), key, |_| {
                 let mut dst =
                     core::mem::MaybeUninit::<InitialStorageSlotData<EthereumIOTypesConfig>>::uninit(
                     );
@@ -161,7 +161,7 @@ where
                 unsafe { UsizeDeserializable::init_from_iter(&mut dst, &mut it).expect("must initialize") };
                 assert!(it.next().is_none());
 
-                // Safety: Since the `init_from_iter` has completed successfulle and there's no
+                // Safety: Since the `init_from_iter` has completed successfully and there's no
                 // outstanding data as per line before, we can assume that the value was read
                 // correctly.
                 let data_from_oracle = unsafe { dst.assume_init() } ;

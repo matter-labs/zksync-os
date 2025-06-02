@@ -40,7 +40,7 @@ use zk_ee::{
 };
 
 pub type BitsOrd160 = BitsOrd<{ B160::BITS }, { B160::LIMBS }>;
-type AddressItem<'a, A> = zk_ee::common_structs::history_map::CacheItemRefMut<
+type AddressItem<'a, A> = zk_ee::common_structs::history_map::HistoryMapItemRefMut<
     'a,
     BitsOrd<160, 3>,
     AccountProperties,
@@ -109,7 +109,7 @@ where
         let mut cold_read_charged = false;
 
         self.cache
-            .materialize(resources, address.into(), |resources| {
+            .materialize(&mut (), address.into(), |_| {
                 // - first get a hash of properties from storage
                 match ee_type {
                     ExecutionEnvironmentType::NoEE => (),
@@ -741,6 +741,7 @@ where
     }
 
     // Actually deconstruct accounts
+    // TODO move to io level?
     pub fn finish_tx(
         &mut self,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,

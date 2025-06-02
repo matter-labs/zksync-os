@@ -17,8 +17,8 @@ impl CacheSnapshotId {
     pub fn new() -> Self {
         Self(0)
     }
-    pub fn increment(&self) -> Self {
-        CacheSnapshotId(self.0 + 1)
+    pub fn increment(&mut self) {
+        self.0 += 1;
     }
 }
 
@@ -61,13 +61,13 @@ pub(crate) struct ElementContainer<V, M, A: Allocator + Clone> {
     alloc: A,
 }
 
-pub struct CacheItemRef<'a, K: Clone, V, M, A: Allocator + Clone> {
+pub struct HistoryMapItemRef<'a, K: Clone, V, M, A: Allocator + Clone> {
     key: &'a K,
     container: &'a ElementContainer<V, M, A>,
 }
 
 /// Returned to the user to manipulate and access the history.
-pub struct CacheItemRefMut<'a, K: Clone, V, M, A: Allocator + Clone> {
+pub struct HistoryMapItemRefMut<'a, K: Clone, V, M, A: Allocator + Clone> {
     container: &'a mut ElementContainer<V, M, A>,
     cache_state: &'a mut HistoryMapState<K, A>,
     source: &'a mut ElementSource<V, M, A>,
@@ -293,7 +293,7 @@ impl<V, M, A: Allocator + Clone> ElementContainer<V, M, A> {
     }
 }
 
-impl<'a, K, V, M, A> CacheItemRef<'a, K, V, M, A>
+impl<'a, K, V, M, A> HistoryMapItemRef<'a, K, V, M, A>
 where
     K: Clone,
     A: Allocator + Clone,
@@ -307,7 +307,7 @@ where
     }
 }
 
-impl<'a, K, V, M, A> CacheItemRefMut<'a, K, V, M, A>
+impl<'a, K, V, M, A> HistoryMapItemRefMut<'a, K, V, M, A>
 where
     K: Clone + Debug,
     V: Clone,
@@ -427,7 +427,7 @@ where
     }
 }
 
-impl<'a, K, V, M, A> CacheItemRefMut<'a, K, V, M, A>
+impl<'a, K, V, M, A> HistoryMapItemRefMut<'a, K, V, M, A>
 where
     K: Clone + Debug,
     V: Clone + Default,
@@ -550,8 +550,11 @@ where
         }
     }
 
-    pub fn get_current<'s>(&'s mut self, ix: &'s K) -> Option<CacheItemRefMut<'s, K, V, M, A>> {
-        self.btree.get_mut(ix).map(|ec| CacheItemRefMut {
+    pub fn get_current<'s>(
+        &'s mut self,
+        ix: &'s K,
+    ) -> Option<HistoryMapItemRefMut<'s, K, V, M, A>> {
+        self.btree.get_mut(ix).map(|ec| HistoryMapItemRefMut {
             key: ix,
             container: ec,
             cache_state: &mut self.state,
@@ -564,7 +567,7 @@ where
         context: &mut C,
         ix: &'s K,
         spawn_v: impl FnOnce(&mut C) -> Result<(V, Appearance), E>,
-    ) -> Result<CacheItemRefMut<'s, K, V, M, A>, E> {
+    ) -> Result<HistoryMapItemRefMut<'s, K, V, M, A>, E> {
         let mut c = self.btree.lower_bound_mut(core::ops::Bound::Included(ix));
 
         let v = match c.peek_next() {
@@ -606,7 +609,7 @@ where
             }
         };
 
-        Ok(CacheItemRefMut {
+        Ok(HistoryMapItemRefMut {
             key: ix,
             container: v,
             cache_state: &mut self.state,
@@ -617,7 +620,7 @@ where
     pub fn snapshot(&mut self, tx_id: TransactionId) -> CacheSnapshotId {
         debug_assert!(self.state.current_transaction_id <= tx_id);
 
-        self.state.current_snapshot_id.0 += 1;
+        self.state.current_snapshot_id.increment();
         self.state.current_transaction_id = tx_id;
         self.state.current_snapshot_id
     }
@@ -700,10 +703,10 @@ where
         mut do_fn: F,
     ) -> Result<(), InternalError>
     where
-        F: FnMut(CacheItemRefMut<K, V, M, A>) -> Result<(), InternalError>,
+        F: FnMut(HistoryMapItemRefMut<K, V, M, A>) -> Result<(), InternalError>,
     {
         for (k, v) in self.btree.range_mut(range) {
-            do_fn(CacheItemRefMut {
+            do_fn(HistoryMapItemRefMut {
                 key: &k,
                 container: v,
                 cache_state: &mut self.state,
@@ -715,19 +718,21 @@ where
     }
 
     // TODO only for new preimages publication storage
-    pub fn iter(&self) -> impl Iterator<Item = CacheItemRef<'_, K, V, M, A>> {
-        self.btree.iter().map(|(k, v)| CacheItemRef {
+    pub fn iter(&self) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, M, A>> {
+        self.btree.iter().map(|(k, v)| HistoryMapItemRef {
             key: k,
             container: v,
         })
     }
 
     // TODO use only for account cache
-    pub fn iter_altered_since_commit(&self) -> impl Iterator<Item = CacheItemRef<'_, K, V, M, A>> {
+    pub fn iter_altered_since_commit(
+        &self,
+    ) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, M, A>> {
         self.state
             .updated_elems
             .iter()
-            .map(|(k, _, _)| CacheItemRef {
+            .map(|(k, _, _)| HistoryMapItemRef {
                 key: k,
                 container: self
                     .btree

@@ -5,7 +5,7 @@ use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use core::alloc::Allocator;
 
-use super::history_map::{CacheItemRef, CacheSnapshotId, HistoryMap, TransactionId};
+use super::history_map::{CacheSnapshotId, HistoryMap, HistoryMapItemRef, TransactionId};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -120,7 +120,7 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
         size as u64
     }
 
-    pub fn net_diffs_iter(&self) -> impl Iterator<Item = CacheItemRef<Bytes32, Elem, (), A>> {
+    pub fn net_diffs_iter(&self) -> impl Iterator<Item = HistoryMapItemRef<Bytes32, Elem, (), A>> {
         self.cache.iter()
     }
 }

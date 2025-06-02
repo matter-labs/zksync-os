@@ -1,4 +1,5 @@
 use alloc::alloc::Global;
+use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 
 use core::alloc::Allocator;
 use core::marker::PhantomData;
@@ -6,9 +7,7 @@ use ruint::aliases::B160;
 use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::system::errors::SystemError;
 use zk_ee::{
-    common_structs::history_map::{
-        Appearance, CacheItemRefMut, CacheSnapshotId, HistoryMap, TransactionId,
-    },
+    common_structs::history_map::{Appearance, CacheSnapshotId, HistoryMap, TransactionId},
     memory::stack_trait::{StackCtor, StackCtorConst},
 };
 
@@ -61,7 +60,7 @@ where
     fn materialize_element<'a>(
         cache: &'a mut HistoryMap<K, V, (), A>,
         key: &'a K,
-    ) -> Result<CacheItemRefMut<'a, K, V, (), A>, SystemError>
+    ) -> Result<HistoryMapItemRefMut<'a, K, V, (), A>, SystemError>
     where
         V: Default,
     {
