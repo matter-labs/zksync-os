@@ -30,6 +30,8 @@ mod io_subsystem;
 mod public_input;
 
 pub use self::io_subsystem::*;
+pub use self::public_input::BatchOutput;
+pub use self::public_input::BatchPublicInput;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EthereumLikeStorageAccessCostModel;

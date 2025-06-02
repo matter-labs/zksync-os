@@ -6,7 +6,7 @@ from collections import defaultdict
 from statistics import mean, median
 
 # Constants
-U256BIGINTOPS_RATIO = 8
+U256BIGINTOPS_RATIO = 4
 BLAKE2ROUNDEXTENDED_RATIO = 16
 ERGS_PER_GAS = 256
 
