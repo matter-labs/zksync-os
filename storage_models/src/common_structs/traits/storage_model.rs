@@ -1,4 +1,3 @@
-
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::{
@@ -10,23 +9,20 @@ use zk_ee::{
     types_config::SystemIOTypesConfig,
 };
 
+use super::snapshottable_io::SnapshottableIo;
+
 ///
 /// Storage model trait needed to allow using different storage models in the system.
 ///
 /// It defines methods to read/write contracts storage slots and account data,
 /// but all the details about underlying structure, commitment, pubdata compression are hidden behind this trait.
 ///
-pub trait StorageModel: Sized {
+pub trait StorageModel: Sized + SnapshottableIo {
     type IOTypes: SystemIOTypesConfig;
     type Resources: Resources;
-    type StateSnapshot;
     type StorageCommitment;
 
-    fn begin_new_tx(&mut self);
     fn finish_tx(&mut self) -> Result<(), InternalError>;
-
-    fn start_frame(&mut self) -> Self::StateSnapshot;
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>);
 
     fn storage_read(
         &mut self,

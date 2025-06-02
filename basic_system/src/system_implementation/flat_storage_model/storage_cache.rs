@@ -4,6 +4,7 @@ use crate::system_implementation::system::ExtraCheck;
 use alloc::fmt::Debug;
 use core::alloc::Allocator;
 use ruint::aliases::B160;
+use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
 use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -291,6 +292,7 @@ pub struct NewStorageWithAccountPropertiesUnderHash<
 >(pub GenericPubdataAwarePlainStorage<WarmStorageKey, Bytes32, A, SC, SCC, R, P>)
 where
     ExtraCheck<SCC, A>:;
+
 impl<
         A: Allocator + Clone,
         SC: StackCtor<SCC>,
@@ -303,20 +305,6 @@ where
 {
     type IOTypes = EthereumIOTypesConfig;
     type Resources = R;
-    type TxStats = i32;
-    type StateSnapshot = CacheSnapshotId;
-
-    fn begin_new_tx(&mut self) {
-        self.0.begin_new_tx();
-    }
-
-    fn start_frame(&mut self) -> Self::StateSnapshot {
-        self.0.start_frame()
-    }
-
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
-        self.0.finish_frame_impl(rollback_handle);
-    }
 
     fn read(
         &mut self,
@@ -446,6 +434,32 @@ where
         };
 
         Ok(old_value)
+    }
+}
+
+impl<
+        A: Allocator + Clone,
+        SC: StackCtor<SCC>,
+        SCC: const StackCtorConst,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+    > SnapshottableIo for NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>
+where
+    ExtraCheck<SCC, A>:,
+{
+    type TxStats = i32;
+    type StateSnapshot = CacheSnapshotId;
+
+    fn begin_new_tx(&mut self) {
+        self.0.begin_new_tx();
+    }
+
+    fn start_frame(&mut self) -> Self::StateSnapshot {
+        self.0.start_frame()
+    }
+
+    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
+        self.0.finish_frame_impl(rollback_handle);
     }
 
     fn tx_stats(&self) -> Self::TxStats {

@@ -15,6 +15,7 @@ use evm_interpreter::gas_constants::LOGTOPIC;
 use evm_interpreter::gas_constants::TLOAD;
 use evm_interpreter::gas_constants::TSTORE;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
+use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::BasicIOImplementerFSM;
 use zk_ee::system::metadata::BlockMetadataFromOracle;

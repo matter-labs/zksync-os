@@ -19,7 +19,7 @@ pub use self::storage_cache::*;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
-use storage_models::common_structs::PreimageCacheModel;
+use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageCacheModel;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::{derive_flat_storage_key, ValueDiffCompressionStrategy};
@@ -95,40 +95,10 @@ where
     type StorageCommitment = FlatStorageCommitment<TREE_HEIGHT>;
 
     type IOTypes = EthereumIOTypesConfig;
-
     type InitData = P;
-
-    type StateSnapshot = FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot;
-
-    fn begin_new_tx(&mut self) {
-        self.storage_cache.begin_new_tx();
-        self.preimages_cache.begin_new_tx();
-        self.account_data_cache.begin_new_tx();
-    }
 
     fn finish_tx(&mut self) -> Result<(), zk_ee::system::errors::InternalError> {
         self.account_data_cache.finish_tx(&mut self.storage_cache)
-    }
-
-    fn start_frame(&mut self) -> Self::StateSnapshot {
-        let storage_handle = self.storage_cache.start_frame();
-        let preimages_handle = self.preimages_cache.start_frame();
-        let account_handle = self.account_data_cache.start_frame();
-
-        FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
-            storage: storage_handle,
-            preimages: preimages_handle,
-            account_data: account_handle,
-        }
-    }
-
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
-        self.storage_cache
-            .finish_frame(rollback_handle.map(|x| &x.storage));
-        self.preimages_cache
-            .finish_frame(rollback_handle.map(|x| &x.preimages));
-        self.account_data_cache
-            .finish_frame(rollback_handle.map(|x| &x.account_data));
     }
 
     fn construct(init_data: Self::InitData, allocator: Self::Allocator) -> Self {
@@ -443,5 +413,51 @@ where
                 &mut self.preimages_cache,
                 oracle,
             )
+    }
+}
+
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+        SC: StackCtor<SCC>,
+        SCC: const StackCtorConst,
+        const PROOF_ENV: bool,
+    > SnapshottableIo for FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SC, SCC, PROOF_ENV>
+where
+    ExtraCheck<SCC, A>:,
+{
+    type TxStats = i32;
+    type StateSnapshot = FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot;
+
+    fn begin_new_tx(&mut self) {
+        self.storage_cache.begin_new_tx();
+        self.preimages_cache.begin_new_tx();
+        self.account_data_cache.begin_new_tx();
+    }
+
+    fn start_frame(&mut self) -> Self::StateSnapshot {
+        let storage_handle = self.storage_cache.start_frame();
+        let preimages_handle = self.preimages_cache.start_frame();
+        let account_handle = self.account_data_cache.start_frame();
+
+        FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
+            storage: storage_handle,
+            preimages: preimages_handle,
+            account_data: account_handle,
+        }
+    }
+
+    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
+        self.storage_cache
+            .finish_frame(rollback_handle.map(|x| &x.storage));
+        self.preimages_cache
+            .finish_frame(rollback_handle.map(|x| &x.preimages));
+        self.account_data_cache
+            .finish_frame(rollback_handle.map(|x| &x.account_data));
+    }
+
+    fn tx_stats(&self) -> Self::TxStats {
+        todo!()
     }
 }
