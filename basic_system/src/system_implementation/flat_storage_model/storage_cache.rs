@@ -149,7 +149,7 @@ where
         let mut cold_read_charged = false;
 
         cache
-            .get_or_insert(&mut (), key, |_| {
+            .get_or_insert( key, || {
                 let mut dst =
                     core::mem::MaybeUninit::<InitialStorageSlotData<EthereumIOTypesConfig>>::uninit(
                     );

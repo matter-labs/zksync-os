@@ -109,7 +109,7 @@ where
         let mut cold_read_charged = false;
 
         self.cache
-            .get_or_insert(&mut (), address.into(), |_| {
+            .get_or_insert(address.into(), || {
                 // - first get a hash of properties from storage
                 match ee_type {
                     ExecutionEnvironmentType::NoEE => (),

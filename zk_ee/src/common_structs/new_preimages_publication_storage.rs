@@ -80,7 +80,7 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
         preimage_publication_byte_len: usize,
         preimage_type: PreimageType,
     ) -> Result<(), InternalError> {
-        let mut item = self.cache.get_or_insert(&mut (), hash, |_| {
+        let mut item = self.cache.get_or_insert(hash, || {
             let new = Elem {
                 preimage_type,
                 value: PreimagesPublicationStorageValue {

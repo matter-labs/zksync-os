@@ -64,7 +64,7 @@ where
     where
         V: Default,
     {
-        cache.get_or_insert(&mut (), key, |_| {
+        cache.get_or_insert(key, || {
             let new_value = V::default();
             Ok((new_value, Appearance::Unset))
         })

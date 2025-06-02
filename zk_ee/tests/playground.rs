@@ -11,7 +11,7 @@ fn miri_rollback_reuse() {
     map.snapshot(TransactionId(1));
 
     let mut v = map
-        .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((1, Appearance::Retrieved)))
+        .get_or_insert::<()>(&1, || Ok((1, Appearance::Retrieved)))
         .unwrap();
 
     v.update(|x, _| {
@@ -24,7 +24,7 @@ fn miri_rollback_reuse() {
     let ss = map.snapshot(TransactionId(1));
 
     let mut v = map
-        .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((4, Appearance::Retrieved)))
+        .get_or_insert::<()>(&1, || Ok((4, Appearance::Retrieved)))
         .unwrap();
 
     // This snapshot will be rollbacked.
@@ -40,7 +40,7 @@ fn miri_rollback_reuse() {
     map.rollback(ss);
 
     let mut v = map
-        .get_or_insert::<_, ()>(&mut 0, &1, |_| Ok((5, Appearance::Retrieved)))
+        .get_or_insert::<()>(&1, || Ok((5, Appearance::Retrieved)))
         .unwrap();
 
     // This will create a new snapshot and will reuse the one that rollbacked.
