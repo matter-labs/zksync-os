@@ -1,0 +1,33 @@
+{
+  "types": [],
+  "domains": [
+    {
+      "domain_name": "OS",
+      "domain_code": 10,
+      "identifier_encoding": "os",
+      "bindings": {
+        "rust": "Os"
+      },
+      "components": [
+        {
+          "component_name": "System",
+          "component_code": 1,
+          "identifier_encoding": "sys",
+          "errors": []
+        },
+        {
+          "component_name": "SystemEnvironment",
+          "component_code": 2,
+          "identifier_encoding": "env",
+          "errors": []
+        },
+        {
+          "component_name": "Storage",
+          "component_code": 3,
+          "identifier_encoding": "storage",
+          "errors": []
+        }
+      ]
+    }
+  ]
+}
