@@ -582,7 +582,10 @@ where
             .apply_pubdata(&mut pubdata_hasher, result_keeper);
         result_keeper.logs(self.logs_storage.messages_ref_iter());
         result_keeper.events(self.events_storage.events_ref_iter());
-        let l2_to_l1_logs_tree_root = self.logs_storage.tree_root();
+        let mut full_root_hasher = crypto::sha3::Keccak256::new();
+        full_root_hasher.update(self.logs_storage.tree_root().as_u8_ref());
+        full_root_hasher.update([0u8; 32]); // aggregated root 0 for now
+        let full_l2_to_l1_logs_root = full_root_hasher.finalize();
         let l1_txs_commitment = self.logs_storage.l1_txs_commitment();
 
         let pubdata_hash = pubdata_hasher.finalize();
@@ -608,7 +611,7 @@ where
             pubdata_commitment: da_commitment.into(),
             number_of_layer_1_txs: U256::try_from(l1_txs_commitment.0).unwrap(),
             priority_operations_hash: l1_txs_commitment.1,
-            l2_logs_tree_root: l2_to_l1_logs_tree_root,
+            l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash,
         };
 
