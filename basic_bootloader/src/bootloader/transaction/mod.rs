@@ -259,9 +259,6 @@ impl<'a> ZkSyncTransaction<'a> {
         {
             return Err(());
         }
-        if self.factory_deps.range.len() != 0 {
-            return Err(());
-        }
         if self.reserved_dynamic.range.len() != 0 {
             return Err(());
         }
