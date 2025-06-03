@@ -3,11 +3,10 @@ use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 
 use core::alloc::Allocator;
 use core::marker::PhantomData;
-use ruint::aliases::B160;
-use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
+use zk_ee::common_traits::key_like_with_bounds::KeyLikeWithBounds;
 use zk_ee::system::errors::SystemError;
 use zk_ee::{
-    common_structs::history_map::{Appearance, CacheSnapshotId, HistoryMap, TransactionId},
+    common_structs::history_map::{CacheSnapshotId, HistoryMap, TransactionId},
     memory::stack_trait::{StackCtor, StackCtorConst},
 };
 
@@ -23,7 +22,7 @@ pub struct GenericTransientStorage<
 > where
     GenericTransientStorageStackCheck<SCC, A>:,
 {
-    cache: HistoryMap<K, V, (), A>,
+    cache: HistoryMap<K, V, A>,
     pub(crate) current_tx_number: u32,
     phantom: PhantomData<(SC, SCC)>,
 }
@@ -58,16 +57,13 @@ where
     }
 
     fn materialize_element<'a>(
-        cache: &'a mut HistoryMap<K, V, (), A>,
+        cache: &'a mut HistoryMap<K, V, A>,
         key: &'a K,
-    ) -> Result<HistoryMapItemRefMut<'a, K, V, (), A>, SystemError>
+    ) -> Result<HistoryMapItemRefMut<'a, K, V, A>, SystemError>
     where
         V: Default,
     {
-        cache.get_or_insert(key, || {
-            let new_value = V::default();
-            Ok((new_value, Appearance::Unset))
-        })
+        cache.get_or_insert(key, || Ok(V::default()))
     }
 
     pub fn apply_read(&mut self, key: &K, dst: &mut V) -> Result<(), SystemError>
@@ -75,7 +71,7 @@ where
         V: Default,
     {
         let data = Self::materialize_element(&mut self.cache, key)?;
-        *dst = data.current().value.clone();
+        *dst = data.current().clone();
 
         Ok(())
     }
@@ -85,7 +81,7 @@ where
         V: Default,
     {
         let mut data = Self::materialize_element(&mut self.cache, key)?;
-        data.update(|x, _| {
+        data.update(|x| {
             *x = value.clone();
             Ok(())
         })
@@ -97,20 +93,5 @@ where
         if let Some(x) = rollback_handle {
             self.cache.rollback(*x);
         }
-    }
-
-    pub fn clear_state(&mut self, address: &B160) -> Result<(), SystemError>
-    where
-        K::Subspace: TyEq<B160>,
-    {
-        use core::ops::Bound::Included;
-        let lower_bound = K::lower_bound(TyEq::rwi(*address));
-        let upper_bound = K::upper_bound(TyEq::rwi(*address));
-        self.cache
-            .for_each_range((Included(&lower_bound), Included(&upper_bound)), |mut x| {
-                x.unset()
-            })?;
-
-        Ok(())
     }
 }

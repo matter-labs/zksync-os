@@ -1,11 +1,13 @@
-use crate::common_structs::history_map::Appearance;
 use crate::system::errors::InternalError;
 use crate::utils::Bytes32;
 use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use core::alloc::Allocator;
 
-use super::history_map::{CacheSnapshotId, HistoryMap, HistoryMapItemRef, TransactionId};
+use super::{
+    history_map::{CacheSnapshotId, TransactionId},
+    io_cache::{Appearance, CacheSnapshot, IoCache, IoCacheItemRef},
+};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -41,7 +43,7 @@ impl PreimagesPublicationStorageValue {
 // we want to store new preimages for DA
 
 pub struct NewPreimagesPublicationStorage<A: Allocator + Clone = Global> {
-    cache: HistoryMap<Bytes32, Elem, (), A>,
+    cache: IoCache<Bytes32, Elem, (), A>,
     current_tx_number: u32,
     pub inner: BTreeMap<Bytes32, (PreimagesPublicationStorageValue, PreimageType), A>,
 }
@@ -49,7 +51,7 @@ pub struct NewPreimagesPublicationStorage<A: Allocator + Clone = Global> {
 impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
-            cache: HistoryMap::new(allocator.clone()),
+            cache: IoCache::new(allocator.clone()),
             current_tx_number: 0,
             inner: BTreeMap::new_in(allocator.clone()),
         }
@@ -88,7 +90,7 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
                     publication_net_bytes: preimage_publication_byte_len,
                 },
             };
-            Ok((new, Appearance::Unset))
+            Ok(CacheSnapshot::new(new, Appearance::Unset))
         })?;
 
         item.update(|x, _| {
@@ -104,6 +106,7 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
     }
 
     pub fn net_pubdata_used(&self) -> u64 {
+        // TODO pubdata counter
         let mut size = 0;
         self.cache
             .for_total_diff_operands::<_, ()>(|_, r, _| {
@@ -120,7 +123,7 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
         size as u64
     }
 
-    pub fn net_diffs_iter(&self) -> impl Iterator<Item = HistoryMapItemRef<Bytes32, Elem, (), A>> {
+    pub fn net_diffs_iter(&self) -> impl Iterator<Item = IoCacheItemRef<Bytes32, Elem, (), A>> {
         self.cache.iter()
     }
 }

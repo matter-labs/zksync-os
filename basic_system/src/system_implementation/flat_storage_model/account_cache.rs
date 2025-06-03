@@ -18,10 +18,12 @@ use ruint::aliases::U256;
 use storage_models::common_structs::AccountAggregateDataHash;
 use storage_models::common_structs::PreimageCacheModel;
 use storage_models::common_structs::StorageCacheModel;
-use zk_ee::common_structs::history_map::Appearance;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
-use zk_ee::common_structs::history_map::HistoryMap;
 use zk_ee::common_structs::history_map::TransactionId;
+use zk_ee::common_structs::io_cache::Appearance;
+use zk_ee::common_structs::io_cache::CacheSnapshot;
+use zk_ee::common_structs::io_cache::IoCache;
+use zk_ee::common_structs::io_cache::IoCacheItemRefMut;
 use zk_ee::common_structs::PreimageType;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::stack_trait::StackCtor;
@@ -40,13 +42,8 @@ use zk_ee::{
 };
 
 pub type BitsOrd160 = BitsOrd<{ B160::BITS }, { B160::LIMBS }>;
-type AddressItem<'a, A> = zk_ee::common_structs::history_map::HistoryMapItemRefMut<
-    'a,
-    BitsOrd<160, 3>,
-    AccountProperties,
-    AccountPropertiesMetadata,
-    A,
->;
+type AddressItem<'a, A> =
+    IoCacheItemRefMut<'a, BitsOrd<160, 3>, AccountProperties, AccountPropertiesMetadata, A>;
 
 pub struct NewModelAccountCache<
     A: Allocator + Clone, // = Global,
@@ -57,7 +54,7 @@ pub struct NewModelAccountCache<
 > where
     ExtraCheck<SCC, A>:,
 {
-    pub(crate) cache: HistoryMap<BitsOrd160, AccountProperties, AccountPropertiesMetadata, A>,
+    pub(crate) cache: IoCache<BitsOrd160, AccountProperties, AccountPropertiesMetadata, A>,
     pub(crate) current_tx_number: u32,
     phantom: PhantomData<(R, P, SC, SCC)>,
 }
@@ -74,7 +71,7 @@ where
 {
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
-            cache: HistoryMap::new(allocator.clone()),
+            cache: IoCache::new(allocator.clone()),
             current_tx_number: 0,
             phantom: PhantomData,
         }
@@ -167,7 +164,7 @@ where
                     }
                 };
 
-                Ok(acc_data)
+                Ok(CacheSnapshot::new(acc_data.0, acc_data.1))
             })
             // We're adding a read snapshot for case when we're rollbacking the initial read.
             .and_then(|mut x| {

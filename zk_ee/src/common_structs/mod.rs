@@ -3,6 +3,7 @@ pub mod events_storage;
 pub mod generic_ethereum_like_fsm_state;
 pub mod history_list;
 pub mod history_map;
+pub mod io_cache;
 pub mod logs_storage;
 pub mod new_preimages_publication_storage;
 pub mod pubdata_compression;
