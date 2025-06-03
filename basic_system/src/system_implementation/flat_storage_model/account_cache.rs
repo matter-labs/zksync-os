@@ -93,6 +93,7 @@ where
         preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
+        is_access_list: bool,
     ) -> Result<AddressItem<A>, SystemError> {
         let ergs = match ee_type {
             ExecutionEnvironmentType::NoEE => Ergs::empty(),
@@ -116,7 +117,14 @@ where
             .get_or_insert(address.into(), || {
                 // - first get a hash of properties from storage
                 match ee_type {
-                    ExecutionEnvironmentType::NoEE => (),
+                    ExecutionEnvironmentType::NoEE => {
+                        // Access list accesses are always done in NoEE.
+                        // Note that, for that reason, the warm cost isn't charged,
+                        // so here we charge full cold cost.
+                        if is_access_list {
+                            resources.charge(&R::from_ergs(Ergs(2400 * ERGS_PER_GAS)))?
+                        }
+                    }
                     ExecutionEnvironmentType::EVM => {
                         let mut cost: R = if evm_interpreter::utils::is_precompile(&address) {
                             R::empty() // We've charged the access already.
@@ -181,16 +189,31 @@ where
                     .considered_warm(self.current_tx_number);
                 if is_warm == false {
                     if cold_read_charged == false {
-                        let mut cost: R = match evm_interpreter::utils::is_precompile(&address) {
-                            true => R::empty(), // We've charged the access already.
-                            false => R::from_ergs(COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS),
-                        };
-                        if is_selfdestruct {
-                            // Selfdestruct doesn't charge for warm, but it
-                            // includes the warm cost for cold access
-                            cost.add_ergs(WARM_PROPERTIES_ACCESS_COST_ERGS)
-                        };
-                        resources.charge(&cost)?
+                        match ee_type {
+                            ExecutionEnvironmentType::NoEE => {
+                                // Access list accesses are always done in NoEE.
+                                // Note that, for that reason, the warm cost isn't charged,
+                                // so here we charge full cold cost.
+                                if is_access_list {
+                                    resources.charge(&R::from_ergs(Ergs(2400 * ERGS_PER_GAS)))?
+                                }
+                            }
+                            ExecutionEnvironmentType::EVM => {
+                                let mut cost: R = if evm_interpreter::utils::is_precompile(&address)
+                                {
+                                    R::empty() // We've charged the access already.
+                                } else {
+                                    R::from_ergs(COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS)
+                                };
+                                if is_selfdestruct {
+                                    // Selfdestruct doesn't charge for warm, but it
+                                    // includes the warm cost for cold access
+                                    cost.add_ergs(WARM_PROPERTIES_ACCESS_COST_ERGS)
+                                };
+                                resources.charge(&cost)?;
+                            }
+                            _ => return Err(InternalError("Unsupported EE").into()),
+                        }
                     }
 
                     x.update(|cache_record| {
@@ -223,6 +246,7 @@ where
             preimages_cache,
             oracle,
             is_selfdestruct,
+            false,
         )?;
 
         resources.charge(&R::from_native(R::Native::from_computational(
@@ -387,6 +411,29 @@ where
         }
     }
 
+    pub fn touch_account<const PROOF_ENV: bool>(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut R,
+        address: &B160,
+        storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
+        preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
+        oracle: &mut impl IOOracle,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.materialize_element::<PROOF_ENV>(
+            ee_type,
+            resources,
+            address,
+            storage,
+            preimages_cache,
+            oracle,
+            false,
+            is_access_list,
+        )?;
+        Ok(())
+    }
+
     pub fn read_account_properties<
         const PROOF_ENV: bool,
         EEVersion: Maybe<u8>,
@@ -440,6 +487,7 @@ where
             storage,
             preimages_cache,
             oracle,
+            false,
             false,
         )?;
 
@@ -506,6 +554,7 @@ where
             storage,
             preimages_cache,
             oracle,
+            false,
             false,
         )?;
 
@@ -612,6 +661,7 @@ where
                 preimages_cache,
                 oracle,
                 false,
+                false,
             )
         })?;
 
@@ -700,6 +750,7 @@ where
             preimages_cache,
             oracle,
             true,
+            false,
         )?;
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,

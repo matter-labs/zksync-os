@@ -737,6 +737,24 @@ where
         self.storage.finish_tx()
     }
 
+    fn storage_touch(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.storage.storage_touch(
+            ee_type,
+            resources,
+            address,
+            key,
+            &mut self.oracle,
+            is_access_list,
+        )
+    }
+
     fn read_nonce(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -763,6 +781,22 @@ where
     ) -> Result<u64, UpdateQueryError> {
         self.storage
             .increment_nonce(ee_type, resources, address, increment_by, &mut self.oracle)
+    }
+
+    fn touch_account(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.storage.touch_account(
+            ee_type,
+            resources,
+            address,
+            &mut self.oracle,
+            is_access_list,
+        )
     }
 
     fn read_account_properties<

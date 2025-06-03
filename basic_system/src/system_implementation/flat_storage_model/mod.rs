@@ -226,6 +226,19 @@ where
             .read(ee_type, resources, address, key, oracle)
     }
 
+    fn storage_touch(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        oracle: &mut impl IOOracle,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.storage_cache
+            .touch(ee_type, resources, address, key, oracle, is_access_list)
+    }
+
     fn storage_write(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -292,6 +305,25 @@ where
                 &mut self.preimages_cache,
                 oracle,
             )
+    }
+
+    fn touch_account(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        oracle: &mut impl IOOracle,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.account_data_cache.touch_account::<PROOF_ENV>(
+            ee_type,
+            resources,
+            address,
+            &mut self.storage_cache,
+            &mut self.preimages_cache,
+            oracle,
+            is_access_list,
+        )
     }
 
     fn get_selfbalance(
