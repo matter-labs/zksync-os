@@ -1,0 +1,31 @@
+{
+  "types": [],
+  "domains": [
+    {
+      "domain_name": "OS",
+      "domain_code": 10,
+      "identifier_encoding": "os",
+      "components": [
+        {
+          "component_name": "EVM",
+          "component_code": 11,
+          "identifier_encoding": "evm",
+          "errors": [
+            {
+              "name": "InvalidArguments",
+              "code": 1,
+              "message": "Invalid arguments: {details}.",
+              "fields": [
+                {
+                  "name": "details",
+                  "type": "string"
+                }
+              ]
+            }
+          ]
+        }
+
+      ]
+    }
+  ]
+}

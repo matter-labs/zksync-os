@@ -1,0 +1,45 @@
+{
+  "types": [],
+  "domains": [
+    {
+      "domain_name": "OS",
+      "domain_code": 10,
+      "identifier_encoding": "os",
+      "bindings": {
+        "rust": "Os"
+      },
+      "components": [
+        {
+          "component_name": "Storage",
+          "component_code": 1,
+          "identifier_encoding": "store",
+          "errors": []
+        },
+        {
+          "component_name": "ExecutionEnvironments",
+          "component_code": 10,
+          "identifier_encoding": "ee",
+          "errors": [
+            {
+              "name": "Evm",
+              "code": 1,
+              "message": "EVM execution environment error: {inner}.",
+              "fields": [
+                {
+                  "name": "inner",
+                  "type": "EVM"
+                }
+              ]
+            },
+            {
+              "name": "Wasm",
+              "code": 2,
+              "message": "WASM execution environment error.",
+              "fields": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
