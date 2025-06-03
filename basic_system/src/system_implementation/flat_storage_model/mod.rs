@@ -170,7 +170,7 @@ where
                 pubdata_hasher.update(derived_key.as_u8_ref());
                 result_keeper.pubdata(derived_key.as_u8_ref());
 
-                if l.value == r.value {
+                if l.value() == r.value() {
                     return Ok(());
                 }
                 // we publish preimages for account details
@@ -181,8 +181,8 @@ where
                     let cache_item = account_data_cache.cache.get(&account_address).ok_or(())?;
                     let (l, r) = cache_item.diff_operands_total().ok_or(())?;
                     AccountProperties::diff_compression::<PROOF_ENV, _, _>(
-                        &l.value,
-                        &r.value,
+                        l.value(),
+                        r.value(),
                         pubdata_hasher,
                         result_keeper,
                         &mut preimages_cache,
@@ -191,8 +191,8 @@ where
                     .map_err(|_| ())?;
                 } else {
                     ValueDiffCompressionStrategy::optimal_compression(
-                        &l.value,
-                        &r.value,
+                        l.value(),
+                        r.value(),
                         pubdata_hasher,
                         result_keeper,
                     );

@@ -6,7 +6,7 @@ use core::alloc::Allocator;
 
 use super::{
     history_map::{CacheSnapshotId, TransactionId},
-    io_cache::{Appearance, CacheSnapshot, IoCache, IoCacheItemRef},
+    io_cache::{Appearance, CacheRecord, IoCache, IoCacheItemRef},
 };
 
 #[repr(u8)]
@@ -90,7 +90,7 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
                     publication_net_bytes: preimage_publication_byte_len,
                 },
             };
-            Ok(CacheSnapshot::new(new, Appearance::Unset))
+            Ok(CacheRecord::new(new, Appearance::Unset))
         })?;
 
         item.update(|x, _| {
@@ -110,10 +110,10 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
         let mut size = 0;
         self.cache
             .for_total_diff_operands::<_, ()>(|_, r, _| {
-                match r.appearance {
+                match r.appearance() {
                     Appearance::Unset | Appearance::Retrieved => {}
                     Appearance::Deconstructed | Appearance::Updated => {
-                        size += r.value.value.publication_net_bytes
+                        size += r.value().value.publication_net_bytes
                     }
                 };
                 Ok(())

@@ -168,7 +168,10 @@ where
             })
             // We're adding a read snapshot for case when we're rollbacking the initial read.
             .and_then(|mut x| {
-                let is_warm = x.current().metadata.considered_warm(self.current_tx_number);
+                let is_warm = x
+                    .current()
+                    .metadata()
+                    .considered_warm(self.current_tx_number);
                 if is_warm == false {
                     if cold_read_charged == false {
                         let mut cost: R = match evm_interpreter::utils::is_precompile(&address) {
@@ -217,7 +220,7 @@ where
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
 
-        let cur = account_data.current().value.balance;
+        let cur = account_data.current().value().balance;
         let new = update_fn(&cur)?;
         account_data.update(|x, _| {
             x.balance = new;
@@ -275,12 +278,12 @@ where
         _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
     ) -> Result<(), SystemError> {
         self.cache.for_total_diff_operands(|l, r, addr| {
-            if l.value == r.value {
+            if l.value() == r.value() {
                 return Ok(());
             }
             // We don't care of the left side, since we're storing the entire snapshot.
-            let encoding = r.value.encoding();
-            let properties_hash = r.value.compute_hash();
+            let encoding = r.value().encoding();
+            let properties_hash = r.value().compute_hash();
 
             // Not part of a transaction, should be included in other costs.
             let mut inf_resources = R::FORMAL_INFINITE;
@@ -314,7 +317,7 @@ where
         self.cache
             .for_total_diff_operands::<_, ()>(|l, r, _| {
                 pubdata_used +=
-                    AccountProperties::diff_compression_length(&l.value, &r.value).unwrap();
+                    AccountProperties::diff_compression_length(l.value(), r.value()).unwrap();
                 Ok(())
             })
             .expect("We're returning Ok(()).");
@@ -355,7 +358,7 @@ where
         }
 
         match self.cache.get(address.into()) {
-            Some(cache_item) => Ok(cache_item.current().value.balance),
+            Some(cache_item) => Ok(cache_item.current().value().balance),
             None => Err(InternalError("Balance assumed warm but not in cache").into()),
         }
     }
@@ -416,7 +419,7 @@ where
             false,
         )?;
 
-        let full_data = account_data.current().value;
+        let full_data = account_data.current().value();
 
         // we already charged for "cold" case, and now can charge more precisely
 
@@ -486,7 +489,7 @@ where
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
 
-        let nonce = account_data.current().value.nonce;
+        let nonce = account_data.current().value().nonce;
         if let Some(new_nonce) = nonce.checked_add(increment_by) {
             account_data.update(|x, _| {
                 x.nonce = new_nonce;
@@ -675,9 +678,9 @@ where
         )))?;
 
         let same_address = at_address == nominal_token_beneficiary;
-        let transfer_amount = account_data.current().value.balance;
+        let transfer_amount = account_data.current().value().balance;
 
-        if account_data.current().metadata.deployed_in_tx == cur_tx {
+        if account_data.current().metadata().deployed_in_tx == cur_tx {
             account_data.deconstruct()?;
         }
 
@@ -701,7 +704,7 @@ where
                 }
                 UpdateQueryError::System(e) => e,
             })?
-        } else if account_data.current().metadata.deployed_in_tx == cur_tx {
+        } else if account_data.current().metadata().deployed_in_tx == cur_tx {
             account_data.update(|k, _| {
                 k.balance = U256::ZERO;
                 Ok(())
@@ -717,7 +720,7 @@ where
                         Some(entry) => Ok(entry),
                         None => Err(InternalError("Account assumed warm but not in cache")),
                     }?;
-                    let beneficiary_properties = entry.current().value;
+                    let beneficiary_properties = entry.current().value();
 
                     let beneficiary_is_empty = beneficiary_properties.nonce == 0
                         && beneficiary_properties.bytecode_len == 0
@@ -744,7 +747,7 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
     ) -> Result<(), InternalError> {
         for i in self.cache.iter_altered_since_commit() {
-            if i.current().appearance == Appearance::Deconstructed {
+            if i.current().appearance() == Appearance::Deconstructed {
                 storage
                     .0
                     .clear_state_impl(i.key())

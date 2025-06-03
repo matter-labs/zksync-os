@@ -58,7 +58,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             (
                 x.key(),
                 preimage.as_slice(),
-                x.current().value.preimage_type,
+                x.current().value().preimage_type,
             )
         }));
 

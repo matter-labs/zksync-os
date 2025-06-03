@@ -178,7 +178,7 @@ where
             })
             // We're adding a read snapshot for case when we're rollbacking the initial read.
             .and_then(|mut x| {
-                let is_warm_read = x.current().metadata.considered_warm(current_tx_number);
+                let is_warm_read = x.current().metadata().considered_warm(current_tx_number);
                 if is_warm_read == false {
                     if cold_read_charged == false {
                         resources_policy.charge_cold_storage_read_extra(ee_type, resources,false)?;
@@ -214,7 +214,7 @@ where {
             oracle,
         )?;
 
-        Ok(addr_data.current().value.clone())
+        Ok(addr_data.current().value().clone())
     }
 
     pub fn apply_write_impl(
@@ -243,15 +243,15 @@ where {
             .unwrap_or((addr_data.current(), addr_data.current()));
         self.resources_policy.charge_storage_write_extra(
             ee_type,
-            &val_at_tx_start.value,
-            &val_current.value,
+            val_at_tx_start.value(),
+            val_current.value(),
             new_value,
             resources,
             is_warm_read.0,
-            addr_data.current().appearance == Appearance::Unset,
+            addr_data.current().appearance() == Appearance::Unset,
         )?;
 
-        let old_value = addr_data.current().value.clone();
+        let old_value = addr_data.current().value().clone();
         addr_data.update(|x, _| {
             *x = new_value.clone();
             Ok(())
@@ -509,9 +509,10 @@ where
                 if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
                     return Ok(());
                 }
-                if l.value != r.value {
+                if l.value() != r.value() {
                     pubdata_used += ValueDiffCompressionStrategy::optimal_compression_length(
-                        &l.value, &r.value,
+                        l.value(),
+                        r.value(),
                     ) as u32;
                 }
                 Ok(())

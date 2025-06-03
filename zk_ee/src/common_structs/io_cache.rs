@@ -20,14 +20,14 @@ pub enum Appearance {
 }
 
 #[derive(Clone, Default)]
-/// A snapshot. User facing struct.
-pub struct CacheSnapshot<V, M> {
-    pub appearance: Appearance,
-    pub value: V,
-    pub metadata: M,
+/// A cache entry. User facing struct.
+pub struct CacheRecord<V, M> {
+    appearance: Appearance,
+    value: V,
+    metadata: M,
 }
 
-impl<V, M: Default> CacheSnapshot<V, M> {
+impl<V, M: Default> CacheRecord<V, M> {
     pub fn new(value: V, appearance: Appearance) -> Self {
         Self {
             appearance,
@@ -37,8 +37,53 @@ impl<V, M: Default> CacheSnapshot<V, M> {
     }
 }
 
+impl<V, M> CacheRecord<V, M> {
+    pub fn appearance(&self) -> Appearance {
+        self.appearance
+    }
+
+    pub fn value(&self) -> &V {
+        &self.value
+    }
+
+    pub fn metadata(&self) -> &M {
+        &self.metadata
+    }
+
+    #[must_use]
+    pub fn update<F>(&mut self, f: F) -> Result<(), InternalError>
+    where
+        F: FnOnce(&mut V, &mut M) -> Result<(), InternalError>,
+    {
+        if self.appearance != Appearance::Deconstructed {
+            self.appearance = Appearance::Updated
+        };
+
+        f(&mut self.value, &mut self.metadata)
+    }
+
+    #[must_use]
+    /// Updates the metadata and retains the appearance.
+    pub fn update_metadata<F>(&mut self, f: F) -> Result<(), SystemError>
+    where
+        F: FnOnce(&mut M) -> Result<(), SystemError>,
+    {
+        f(&mut self.metadata)
+    }
+
+    /// Sets appearance to deconstructed. The value itself remains untouched.
+    pub fn deconstruct(&mut self) {
+        self.appearance = Appearance::Deconstructed;
+    }
+
+    /// Sets appearance to unset. The value itself remains untouched.
+    pub fn unset(&mut self) {
+        self.appearance = Appearance::Unset;
+    }
+}
+
 pub struct IoCacheItemRef<'a, K: Clone, V, M, A: Allocator + Clone>(
-    HistoryMapItemRef<'a, K, CacheSnapshot<V, M>, A>,
+    HistoryMapItemRef<'a, K, CacheRecord<V, M>, A>,
 );
 
 impl<'a, K, V, M, A> IoCacheItemRef<'a, K, V, M, A>
@@ -50,22 +95,22 @@ where
         &self.0.key()
     }
 
-    pub fn current(&self) -> &CacheSnapshot<V, M> {
+    pub fn current(&self) -> &CacheRecord<V, M> {
         &self.0.current()
     }
 
-    pub fn last(&self) -> &CacheSnapshot<V, M> {
+    pub fn last(&self) -> &CacheRecord<V, M> {
         &self.0.last()
     }
 
     // TODO remove?
-    pub fn diff_operands_total(&self) -> Option<(&CacheSnapshot<V, M>, &CacheSnapshot<V, M>)> {
+    pub fn diff_operands_total(&self) -> Option<(&CacheRecord<V, M>, &CacheRecord<V, M>)> {
         self.0.diff_operands_total()
     }
 }
 
 pub struct IoCacheItemRefMut<'a, K: Clone, V, M, A: Allocator + Clone>(
-    HistoryMapItemRefMut<'a, K, CacheSnapshot<V, M>, A>,
+    HistoryMapItemRefMut<'a, K, CacheRecord<V, M>, A>,
 );
 
 impl<'a, K, V, M, A> IoCacheItemRefMut<'a, K, V, M, A>
@@ -75,18 +120,18 @@ where
     V: Clone,
     A: Allocator + Clone,
 {
-    pub fn current(&self) -> &CacheSnapshot<V, M> {
+    pub fn current(&self) -> &CacheRecord<V, M> {
         self.0.current()
     }
 
     // TODO remove?
-    pub fn diff_operands_tx(&self) -> Option<(&CacheSnapshot<V, M>, &CacheSnapshot<V, M>)> {
+    pub fn diff_operands_tx(&self) -> Option<(&CacheRecord<V, M>, &CacheRecord<V, M>)> {
         self.0.diff_operands_tx()
     }
 
     // TODO remove?
     #[allow(dead_code)]
-    pub fn diff_operands_total(&self) -> Option<(&CacheSnapshot<V, M>, &CacheSnapshot<V, M>)> {
+    pub fn diff_operands_total(&self) -> Option<(&CacheRecord<V, M>, &CacheRecord<V, M>)> {
         self.0.diff_operands_total()
     }
 
@@ -97,10 +142,7 @@ where
     where
         F: FnOnce(&mut M) -> Result<(), SystemError>,
     {
-        self.0.update(|v| {
-            f(&mut v.metadata)?;
-            Ok(())
-        })
+        self.0.update(|v| v.update_metadata(f))
     }
 
     #[must_use]
@@ -108,14 +150,7 @@ where
     where
         F: FnOnce(&mut V, &mut M) -> Result<(), InternalError>,
     {
-        self.0.update(|v| {
-            if v.appearance != Appearance::Deconstructed {
-                v.appearance = Appearance::Updated
-            };
-
-            f(&mut v.value, &mut v.metadata)?;
-            Ok(())
-        })
+        self.0.update(|v| v.update(f))
     }
 }
 
@@ -130,7 +165,7 @@ where
     /// Sets appearance to deconstructed. The value itself remains untouched.
     pub fn deconstruct(&mut self) -> Result<(), InternalError> {
         self.0.update(|v| {
-            v.appearance = Appearance::Deconstructed;
+            v.deconstruct();
             Ok(())
         })
     }
@@ -138,14 +173,14 @@ where
     /// Sets appearance to unset. The value itself remains untouched.
     pub fn unset(&mut self) -> Result<(), InternalError> {
         self.0.update(|v| {
-            v.appearance = Appearance::Unset;
+            v.unset();
             Ok(())
         })
     }
 }
 
 pub struct IoCache<K, V, M, A: Allocator + Clone> {
-    history_map: HistoryMap<K, CacheSnapshot<V, M>, A>,
+    history_map: HistoryMap<K, CacheRecord<V, M>, A>,
 }
 
 impl<K, V, M: Default, A> IoCache<K, V, M, A>
@@ -170,7 +205,7 @@ where
     pub fn get_or_insert<'s, E>(
         &'s mut self,
         key: &'s K,
-        spawn_v: impl FnOnce() -> Result<CacheSnapshot<V, M>, E>,
+        spawn_v: impl FnOnce() -> Result<CacheRecord<V, M>, E>,
     ) -> Result<IoCacheItemRefMut<'s, K, V, M, A>, E> {
         Ok(IoCacheItemRefMut(
             self.history_map.get_or_insert(key, spawn_v)?,
@@ -196,7 +231,7 @@ where
     // TODO check usage
     pub fn for_total_diff_operands<F, E>(&self, do_fn: F) -> Result<(), E>
     where
-        F: FnMut(&CacheSnapshot<V, M>, &CacheSnapshot<V, M>, &K) -> Result<(), E>,
+        F: FnMut(&CacheRecord<V, M>, &CacheRecord<V, M>, &K) -> Result<(), E>,
     {
         self.history_map.for_total_diff_operands(do_fn)
     }
