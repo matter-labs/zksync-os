@@ -8,6 +8,7 @@ use crate::bootloader::rlp;
 use core::ops::Range;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
+use errors::InvalidTransaction;
 use ruint::aliases::U256;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};
 
@@ -528,6 +529,41 @@ impl<'a> ZkSyncTransaction<'a> {
             for key in keys {
                 let key = key?;
                 rlp::apply_bytes_encoding_to_hash(key.as_u8_ref(), hasher);
+            }
+        }
+        Ok(())
+    }
+
+    ///
+    /// Parse and validate access list, while warming up accounts and
+    /// storage slots.
+    ///
+    pub fn process_access_list<S: EthereumLikeTypes>(
+        &self,
+        system: &mut System<S>,
+        resources: &mut S::Resources,
+    ) -> Result<(), TxError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        let iter = self
+            .reserved_dynamic
+            .into_iter(&self.underlying_buffer)
+            .map_err(|()| InvalidTransaction::InvalidStructure)?;
+        for res in iter {
+            let (address, keys) = res.map_err(|()| InvalidTransaction::InvalidStructure)?;
+            system
+                .io
+                .touch_account(ExecutionEnvironmentType::NoEE, resources, &address, true)?;
+            for key in keys {
+                let key = key.map_err(|()| InvalidTransaction::InvalidStructure)?;
+                system.io.storage_touch(
+                    ExecutionEnvironmentType::NoEE,
+                    resources,
+                    &address,
+                    &key,
+                    true,
+                )?;
             }
         }
         Ok(())
