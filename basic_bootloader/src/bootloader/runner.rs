@@ -47,6 +47,7 @@ where
         system,
         hooks,
         initial_ee_version,
+        callstack_height: 0,
     };
 
     match initial_request {
@@ -80,6 +81,7 @@ where
     system: &'a mut System<S>,
     hooks: &'a mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
+    callstack_height: usize,
 }
 
 const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUND, 0, 0]);
@@ -90,6 +92,22 @@ where
 {
     #[inline(always)]
     fn handle_spawn<'a>(
+        &mut self,
+        previous_vm: &mut SupportedEEVMState<'a, S>,
+        spawn: ExecutionEnvironmentSpawnRequest<S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError>
+    where
+        S::IO: IOSubsystemExt,
+        S::Memory: MemorySubsystemExt,
+    {
+        self.callstack_height += 1;
+        let result = self.handle_spawn_inner(previous_vm, spawn);
+        self.callstack_height -= 1;
+        result
+    }
+
+    #[inline(always)]
+    fn handle_spawn_inner<'a>(
         &mut self,
         previous_vm: &mut SupportedEEVMState<'a, S>,
         spawn: ExecutionEnvironmentSpawnRequest<S>,
@@ -278,42 +296,51 @@ where
                             return_values: ReturnValues::empty(self.system),
                         },
                     ));
-                } else {
-                    if DEBUG_OUTPUT {
-                        let _ = self.system.get_logger().write_fmt(format_args!(
-                            "Bytecode len for `callee` = {}\n",
-                            bytecode.len(),
-                        ));
-                        let _ = self
-                            .system
-                            .get_logger()
-                            .write_fmt(format_args!("Bytecode for `callee` = "));
-                        let _ = self
-                            .system
-                            .get_logger()
-                            .log_data(bytecode.as_ref().iter().copied());
-                    }
-
-                    // resources are checked and spent, so we continue with actual transition of control flow
-
-                    // now grow callstack and prepare initial state
-                    new_vm = create_ee(next_ee_version, self.system)?;
-
-                    preemption = new_vm.start_executing_frame(
-                        self.system,
-                        ExecutionEnvironmentLaunchParams {
-                            external_call: ExternalCallRequest {
-                                available_resources: actual_resources_to_pass,
-                                ..call_request
-                            },
-                            environment_parameters: EnvironmentParameters {
-                                decommitted_bytecode: bytecode,
-                                bytecode_len,
-                                scratch_space_len: artifacts_len,
-                            },
-                        },
-                    )?;
                 }
+
+                if self.callstack_height > 1024 {
+                    return Ok((
+                        actual_resources_to_pass,
+                        CallResult::Failed {
+                            return_values: ReturnValues::empty(self.system),
+                        },
+                    ));
+                }
+
+                if DEBUG_OUTPUT {
+                    let _ = self.system.get_logger().write_fmt(format_args!(
+                        "Bytecode len for `callee` = {}\n",
+                        bytecode.len(),
+                    ));
+                    let _ = self
+                        .system
+                        .get_logger()
+                        .write_fmt(format_args!("Bytecode for `callee` = "));
+                    let _ = self
+                        .system
+                        .get_logger()
+                        .log_data(bytecode.as_ref().iter().copied());
+                }
+
+                // resources are checked and spent, so we continue with actual transition of control flow
+
+                // now grow callstack and prepare initial state
+                new_vm = create_ee(next_ee_version, self.system)?;
+
+                preemption = new_vm.start_executing_frame(
+                    self.system,
+                    ExecutionEnvironmentLaunchParams {
+                        external_call: ExternalCallRequest {
+                            available_resources: actual_resources_to_pass,
+                            ..call_request
+                        },
+                        environment_parameters: EnvironmentParameters {
+                            decommitted_bytecode: bytecode,
+                            bytecode_len,
+                            scratch_space_len: artifacts_len,
+                        },
+                    },
+                )?;
             }
             Ok(CallPreparationResult::Failure {
                 resources_returned,
@@ -501,6 +528,16 @@ where
                     .available_resources
                     .reclaim(resources_for_deployer);
             }
+        }
+
+        if self.callstack_height > 1024 {
+            return Ok(CompletedDeployment {
+                resources_returned: launch_params.external_call.available_resources,
+                deployment_result: DeploymentResult::Failed {
+                    return_values: ReturnValues::empty(self.system),
+                    execution_reverted: false,
+                },
+            });
         }
 
         let constructor_rollback_handle = self
