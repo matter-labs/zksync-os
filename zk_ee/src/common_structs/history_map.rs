@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 use crate::{system::errors::InternalError, utils::stack_linked_list::StackLinkedList};
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
-use core::{alloc::Allocator, fmt::Debug, marker::PhantomData, ops::Bound, ptr::NonNull};
+use core::{alloc::Allocator, fmt::Debug, ops::Bound, ptr::NonNull};
 
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
@@ -19,41 +19,52 @@ impl CacheSnapshotId {
     }
 }
 
-type HistoryLink<V, A> = NonNull<HistoryItem<V, A>>;
+type HistoryRecordLink<V> = NonNull<HistoryRecord<V>>;
 
-/// The history linked list. Always has at least one item with the snapshot id of 0.
-struct HistoryItem<V, A: Allocator> {
+struct HistoryRecord<V> {
     touch_ss_id: CacheSnapshotId,
     value: V,
-    next: Option<HistoryLink<V, A>>,
-    phantom: PhantomData<(V, A)>,
+    previous: Option<HistoryRecordLink<V>>,
 }
 
-pub(crate) struct ElementContainer<V, A: Allocator + Clone> {
-    ultimate: HistoryLink<V, A>,
-    penultimate: HistoryLink<V, A>,
-    head: HistoryLink<V, A>,
+impl<T> HistoryRecord<T> {
+    pub fn initial(&self) -> &T {
+        let mut elem = self;
+
+        while let Some(n) = &elem.previous {
+            elem = unsafe { &*n.as_ptr() };
+        }
+
+        &elem.value
+    }
+}
+
+/// The history linked list. Always has at least one item with the snapshot id of 0.
+pub(crate) struct ElementHistory<V, A: Allocator + Clone> {
+    initial: HistoryRecordLink<V>,
+    first: HistoryRecordLink<V>,
+    head: HistoryRecordLink<V>,
     alloc: A,
 }
 
 pub struct HistoryMapItemRef<'a, K: Clone, V, A: Allocator + Clone> {
     key: &'a K,
-    container: &'a ElementContainer<V, A>,
+    history: &'a ElementHistory<V, A>,
 }
 
 /// Returned to the user to manipulate and access the history.
 pub struct HistoryMapItemRefMut<'a, K: Clone, V, A: Allocator + Clone> {
-    container: &'a mut ElementContainer<V, A>,
+    history: &'a mut ElementHistory<V, A>,
     cache_state: &'a mut HistoryMapState<K, A>,
     source: &'a mut ElementSource<V, A>,
     key: &'a K,
 }
 
-impl<V, A: Allocator + Clone> Drop for ElementContainer<V, A> {
+impl<V, A: Allocator + Clone> Drop for ElementHistory<V, A> {
     fn drop(&mut self) {
         let mut elem = unsafe { Box::from_raw_in(self.head.as_ptr(), self.alloc.clone()) };
 
-        while let Some(n) = elem.next.take() {
+        while let Some(n) = elem.previous.take() {
             let n = unsafe { Box::from_raw_in(n.as_ptr(), self.alloc.clone()) };
 
             elem = n;
@@ -61,45 +72,7 @@ impl<V, A: Allocator + Clone> Drop for ElementContainer<V, A> {
     } // last elem is dropped here.
 }
 
-impl<V, A: Allocator> Debug for HistoryItem<V, A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("CacheHistoryItem")
-            .field("snapshot_id", &self.touch_ss_id)
-            .field("tail", &self.next)
-            .finish()
-    }
-}
-
-impl<T, A: Allocator> HistoryItem<T, A> {
-    pub fn last(&self) -> &T {
-        let mut elem = self;
-
-        while let Some(n) = &elem.next {
-            elem = unsafe { &*n.as_ptr() };
-        }
-
-        &elem.value
-    }
-
-    #[allow(dead_code)]
-    pub fn diff_operands_total(&self) -> Option<(&T, &T)> {
-        match &self.next {
-            None => None,
-            Some(next) => {
-                let right = &self.value;
-                let mut left = next;
-
-                while let Some(next) = &(unsafe { left.as_ref() }).next {
-                    left = next;
-                }
-
-                Some((&(unsafe { left.as_ref() }).value, right))
-            }
-        }
-    }
-}
-
-impl<V, A: Allocator + Clone> ElementContainer<V, A> {
+impl<V, A: Allocator + Clone> ElementHistory<V, A> {
     #[inline(always)]
     fn new(value: V, source: &mut ElementSource<V, A>, alloc: A) -> Self {
         let elem = match source.get() {
@@ -111,17 +84,16 @@ impl<V, A: Allocator + Clone> ElementContainer<V, A> {
                     // Safety: We *must* rewrite all the links in `elem`.
                     elem.touch_ss_id = CacheSnapshotId(0);
                     elem.value = value;
-                    elem.next = None;
+                    elem.previous = None;
                 }
                 elem
             }
             None => {
                 let raw = Box::into_raw(Box::new_in(
-                    HistoryItem {
+                    HistoryRecord {
                         touch_ss_id: CacheSnapshotId(0),
                         value,
-                        next: None,
-                        phantom: PhantomData,
+                        previous: None,
                     },
                     alloc.clone(),
                 ));
@@ -133,8 +105,8 @@ impl<V, A: Allocator + Clone> ElementContainer<V, A> {
 
         Self {
             head: elem,
-            ultimate: elem,
-            penultimate: elem,
+            initial: elem,
+            first: elem,
             alloc,
         }
     }
@@ -150,7 +122,7 @@ impl<V, A: Allocator + Clone> ElementContainer<V, A> {
             let n_lnk = unsafe {
                 elem_lnk
                     .as_mut()
-                    .next
+                    .previous
                     .as_mut()
                     .expect("Every history is terminated with a 0'th snapshot")
             };
@@ -169,53 +141,53 @@ impl<V, A: Allocator + Clone> ElementContainer<V, A> {
         let freed_start = self.head;
         let freed_end = elem_lnk;
 
-        let n_head = unsafe { elem_lnk.as_mut() }.next.take().unwrap();
-        let n_h1 = unsafe { n_head.as_ref() }.next;
-        let (penultimate, ultimate) = match n_h1 {
+        let n_head = unsafe { elem_lnk.as_mut() }.previous.take().unwrap();
+        let n_h1 = unsafe { n_head.as_ref() }.previous;
+        let (first, initial) = match n_h1 {
             None => (n_head, n_head),
             Some(n_h1) => unsafe { n_h1.as_ref() }
-                .next
+                .previous
                 .map_or((n_head, n_h1), |n_h2| (n_h1, n_h2)),
         };
         self.head = n_head;
-        self.penultimate = penultimate;
-        self.ultimate = ultimate;
+        self.first = first;
+        self.initial = initial;
 
         reuse.put_back(freed_start, freed_end);
     }
 
     fn diff_operands_total(&self) -> Option<(&V, &V)> {
         let entry = unsafe { self.head.as_ref() };
-        match entry.next {
+        match entry.previous {
             None => None,
-            Some(_) => Some((unsafe { &self.ultimate.as_ref().value }, &entry.value)),
+            Some(_) => Some((unsafe { &self.initial.as_ref().value }, &entry.value)),
         }
     }
 
     fn commit(&mut self, reuse: &mut ElementSource<V, A>) {
         // Single snapshot.
-        if self.head == self.ultimate {
+        if self.head == self.initial {
             return;
         }
 
         // Current snapshot is the one we're committing to.
-        if self.head == self.penultimate {
+        if self.head == self.first {
             return;
         }
 
-        // Safety: Ultimate and penultimate elements are distinct, because they only are when
+        // Safety: initial and first elements are distinct, because they only are when
         // there's only a single snapshot in the history, a case we've covered above. On an update,
-        // the penultimate link will point to correct item.
+        // the first link will point to correct item.
         //
-        // We're removing the non extremities, such that penultimate item becomes the top.
+        // We're removing the non extremities, such that first item becomes the top.
 
-        let freed_end = self.penultimate;
-        self.penultimate = self.head;
+        let freed_end = self.first;
+        self.first = self.head;
 
         let top = unsafe { self.head.as_mut() };
         let freed_start = top
-            .next
-            .replace(self.ultimate)
+            .previous
+            .replace(self.initial)
             .expect("History has at least 3 items.");
 
         reuse.put_back(freed_start, freed_end);
@@ -232,15 +204,15 @@ where
     }
 
     pub fn current(&self) -> &V {
-        unsafe { &self.container.head.as_ref().value }
+        unsafe { &self.history.head.as_ref().value }
     }
 
-    pub fn last(&self) -> &V {
-        unsafe { &self.container.head.as_ref().last() }
+    pub fn initial(&self) -> &V {
+        unsafe { &self.history.head.as_ref().initial() }
     }
 
     pub fn diff_operands_total(&self) -> Option<(&V, &V)> {
-        self.container.diff_operands_total()
+        self.history.diff_operands_total()
     }
 }
 
@@ -251,12 +223,12 @@ where
     A: Allocator + Clone,
 {
     pub fn current(&self) -> &V {
-        unsafe { &self.container.head.as_ref().value }
+        unsafe { &self.history.head.as_ref().value }
     }
 
     #[allow(dead_code)]
     pub fn diff_operands_total(&self) -> Option<(&V, &V)> {
-        self.container.diff_operands_total()
+        self.history.diff_operands_total()
     }
 
     #[must_use]
@@ -264,7 +236,7 @@ where
     where
         F: FnOnce(&mut V) -> Result<(), E>,
     {
-        let history = unsafe { self.container.head.as_mut() };
+        let history = unsafe { self.history.head.as_mut() };
 
         if history.touch_ss_id == self.cache_state.current_snapshot_id {
             // We're in the context of the current stapshot.
@@ -279,19 +251,18 @@ where
 
                         elem.value = history.value.clone();
                         elem.touch_ss_id = self.cache_state.current_snapshot_id;
-                        elem.next = Some(self.container.head);
+                        elem.previous = Some(self.history.head);
                     }
 
                     elem
                 }
                 None => {
-                    let item = HistoryItem {
+                    let item = HistoryRecord {
                         value: history.value.clone(),
                         touch_ss_id: self.cache_state.current_snapshot_id,
-                        next: Some(self.container.head),
-                        phantom: PhantomData,
+                        previous: Some(self.history.head),
                     };
-                    let raw = Box::into_raw(Box::new_in(item, self.container.alloc.clone()));
+                    let raw = Box::into_raw(Box::new_in(item, self.history.alloc.clone()));
                     unsafe { NonNull::new_unchecked(raw) }
                 }
             };
@@ -301,10 +272,10 @@ where
                 f(&mut new.value)?;
             }
 
-            self.container.head = new;
-            if self.container.ultimate == self.container.penultimate {
+            self.history.head = new;
+            if self.history.initial == self.history.first {
                 // When we have a single item.
-                self.container.penultimate = new;
+                self.history.first = new;
             }
 
             self.cache_state
@@ -317,8 +288,8 @@ where
 }
 
 struct ElementSource<V, A: Allocator + Clone> {
-    head: Option<HistoryLink<V, A>>,
-    last: Option<HistoryLink<V, A>>,
+    head: Option<HistoryRecordLink<V>>,
+    last: Option<HistoryRecordLink<V>>,
     alloc: A,
 }
 
@@ -327,7 +298,7 @@ impl<V, A: Allocator + Clone> Drop for ElementSource<V, A> {
         if let Some(head) = self.head {
             let mut elem = unsafe { Box::from_raw_in(head.as_ptr(), self.alloc.clone()) };
 
-            while let Some(n) = elem.next.take() {
+            while let Some(n) = elem.previous.take() {
                 let n = unsafe { Box::from_raw_in(n.as_ptr(), self.alloc.clone()) };
 
                 elem = n;
@@ -344,14 +315,14 @@ impl<V, A: Allocator + Clone> ElementSource<V, A> {
             alloc,
         }
     }
-    fn get(&mut self) -> Option<HistoryLink<V, A>> {
+    fn get(&mut self) -> Option<HistoryRecordLink<V>> {
         match self.head {
             None => None,
             Some(mut elem) => {
                 {
                     let elem = unsafe { elem.as_mut() };
 
-                    self.head = elem.next.take();
+                    self.head = elem.previous.take();
 
                     if self.head.is_none() {
                         self.last = None;
@@ -363,19 +334,19 @@ impl<V, A: Allocator + Clone> ElementSource<V, A> {
         }
     }
 
-    fn put_back(&mut self, chain_start: HistoryLink<V, A>, mut chain_end: HistoryLink<V, A>) {
+    fn put_back(&mut self, chain_start: HistoryRecordLink<V>, mut chain_end: HistoryRecordLink<V>) {
         match self.last {
             None => {
                 self.head = Some(chain_start);
             }
             Some(ref mut last) => {
-                unsafe { last.as_mut().next = Some(chain_start) };
+                unsafe { last.as_mut().previous = Some(chain_start) };
             }
         }
 
         // We need to unlink this, cause it still points to the original history it's been taken
         // from.
-        unsafe { chain_end.as_mut().next = None };
+        unsafe { chain_end.as_mut().previous = None };
 
         self.last = Some(chain_end);
     }
@@ -394,7 +365,7 @@ struct HistoryMapState<K, A: Allocator + Clone> {
 /// Structure:
 /// [ keys ] => [ history ] := [ snapshot 0 .. snapshot n ].
 pub struct HistoryMap<K, V, A: Allocator + Clone> {
-    btree: BTreeMap<K, ElementContainer<V, A>, A>,
+    btree: BTreeMap<K, ElementHistory<V, A>, A>,
     state: HistoryMapState<K, A>,
     reuse: ElementSource<V, A>,
 }
@@ -421,13 +392,13 @@ where
     pub fn get<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRef<'s, K, V, A>> {
         self.btree
             .get(key)
-            .map(|ec| HistoryMapItemRef { key, container: ec })
+            .map(|ec| HistoryMapItemRef { key, history: ec })
     }
 
     pub fn get_mut<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRefMut<'s, K, V, A>> {
         self.btree.get_mut(key).map(|ec| HistoryMapItemRefMut {
             key,
-            container: ec,
+            history: ec,
             cache_state: &mut self.state,
             source: &mut self.reuse,
         })
@@ -444,7 +415,7 @@ where
             Entry::Occupied(o) => o.into_mut(),
             Entry::Vacant(vacant_entry) => {
                 let v = spawn_v()?;
-                vacant_entry.insert(ElementContainer::new(
+                vacant_entry.insert(ElementHistory::new(
                     v,
                     &mut self.reuse,
                     self.state.alloc.clone(),
@@ -454,7 +425,7 @@ where
 
         Ok(HistoryMapItemRefMut {
             key,
-            container: v,
+            history: v,
             cache_state: &mut self.state,
             source: &mut self.reuse,
         })
@@ -536,7 +507,7 @@ where
         Ok(())
     }
 
-    // TODO used to cleanup in storage and transient storage
+    // TODO used to cleanup in storage
     pub fn for_each_range<F>(
         &mut self,
         range: (Bound<&K>, Bound<&K>),
@@ -548,7 +519,7 @@ where
         for (k, v) in self.btree.range_mut(range) {
             do_fn(HistoryMapItemRefMut {
                 key: &k,
-                container: v,
+                history: v,
                 cache_state: &mut self.state,
                 source: &mut self.reuse,
             })?
@@ -559,10 +530,9 @@ where
 
     // TODO only for new preimages publication storage
     pub fn iter(&self) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, A>> + Clone {
-        self.btree.iter().map(|(k, v)| HistoryMapItemRef {
-            key: k,
-            container: v,
-        })
+        self.btree
+            .iter()
+            .map(|(k, v)| HistoryMapItemRef { key: k, history: v })
     }
 
     // TODO use only for account cache
@@ -574,7 +544,7 @@ where
             .iter()
             .map(|(k, _)| HistoryMapItemRef {
                 key: k,
-                container: self
+                history: self
                     .btree
                     .get(k)
                     .expect("We've updated this, so it must be present."),

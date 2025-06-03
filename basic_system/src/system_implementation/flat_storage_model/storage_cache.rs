@@ -511,7 +511,7 @@ where
     {
         self.0.cache.iter().map(|item| {
             let current_record = item.current();
-            let initial_record = item.last();
+            let initial_record = item.initial();
             (
                 *item.key(),
                 // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
