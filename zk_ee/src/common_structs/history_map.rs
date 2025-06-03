@@ -27,18 +27,6 @@ struct HistoryRecord<V> {
     previous: Option<HistoryRecordLink<V>>,
 }
 
-impl<T> HistoryRecord<T> {
-    pub fn initial(&self) -> &T {
-        let mut elem = self;
-
-        while let Some(n) = &elem.previous {
-            elem = unsafe { &*n.as_ptr() };
-        }
-
-        &elem.value
-    }
-}
-
 /// The history linked list. Always has at least one item with the snapshot id of 0.
 pub(crate) struct ElementHistory<V, A: Allocator + Clone> {
     initial: HistoryRecordLink<V>,
@@ -112,15 +100,17 @@ impl<V, A: Allocator + Clone> ElementHistory<V, A> {
     }
 
     fn rollback(&mut self, reuse: &mut ElementSource<V, A>, snapshot_id: CacheSnapshotId) {
+        // Caller should guarantee that snapshot_id > 0
+
         if unsafe { self.head.as_ref() }.touch_ss_id < snapshot_id {
             return;
         }
 
-        let mut elem_lnk = self.head;
-
+        // Find first elem such that elem.touch_ss_id >= snapshot_id
+        let mut first_removed_record = self.head;
         loop {
             let n_lnk = unsafe {
-                elem_lnk
+                first_removed_record
                     .as_mut()
                     .previous
                     .as_mut()
@@ -131,29 +121,26 @@ impl<V, A: Allocator + Clone> ElementHistory<V, A> {
 
             if n.touch_ss_id < snapshot_id {
                 // This is guaranteed to happen by encountering the terminator snapshot.
-
                 break;
             }
 
-            elem_lnk = *n_lnk;
+            first_removed_record = *n_lnk;
         }
 
-        let freed_start = self.head;
-        let freed_end = elem_lnk;
+        let last_removed_record = self.head;
 
-        let n_head = unsafe { elem_lnk.as_mut() }.previous.take().unwrap();
-        let n_h1 = unsafe { n_head.as_ref() }.previous;
-        let (first, initial) = match n_h1 {
-            None => (n_head, n_head),
-            Some(n_h1) => unsafe { n_h1.as_ref() }
-                .previous
-                .map_or((n_head, n_h1), |n_h2| (n_h1, n_h2)),
-        };
-        self.head = n_head;
-        self.first = first;
-        self.initial = initial;
+        let new_head = unsafe { first_removed_record.as_mut() }
+            .previous
+            .take()
+            .unwrap();
 
-        reuse.put_back(freed_start, freed_end);
+        if first_removed_record == self.first {
+            self.first = new_head;
+        }
+
+        self.head = new_head;
+
+        reuse.put_back(last_removed_record, first_removed_record);
     }
 
     fn diff_operands_total(&self) -> Option<(&V, &V)> {
@@ -208,7 +195,7 @@ where
     }
 
     pub fn initial(&self) -> &V {
-        unsafe { &self.history.head.as_ref().initial() }
+        unsafe { &self.history.initial.as_ref().value }
     }
 
     pub fn diff_operands_total(&self) -> Option<(&V, &V)> {
