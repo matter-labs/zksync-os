@@ -1,16 +1,23 @@
 *
 !Cargo.toml
 
+!api
 !basic_bootloader
 !basic_system
+!callable_oracles
 !crypto
 !cycle_marker
 !evm_interpreter
+!forward_system
+!oracle_provider
 !proof_running_system
 !storage_models
 !supporting_crates
 !system_hooks
+!tests
 !zk_ee
+!zksync_os_error
+!zksync_os_runner
 
 !zksync_os
 zksync_os/target
