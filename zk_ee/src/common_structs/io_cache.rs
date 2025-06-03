@@ -57,6 +57,11 @@ where
     pub fn last(&self) -> &CacheSnapshot<V, M> {
         &self.0.last()
     }
+
+    // TODO remove?
+    pub fn diff_operands_total(&self) -> Option<(&CacheSnapshot<V, M>, &CacheSnapshot<V, M>)> {
+        self.0.diff_operands_total()
+    }
 }
 
 pub struct IoCacheItemRefMut<'a, K: Clone, V, M, A: Allocator + Clone>(
@@ -154,8 +159,12 @@ where
         }
     }
 
-    pub fn get<'s>(&'s mut self, key: &'s K) -> Option<IoCacheItemRefMut<'s, K, V, M, A>> {
-        self.history_map.get(key).map(|x| IoCacheItemRefMut(x))
+    pub fn get<'s>(&'s mut self, key: &'s K) -> Option<IoCacheItemRef<'s, K, V, M, A>> {
+        self.history_map.get(key).map(|x| IoCacheItemRef(x))
+    }
+
+    pub fn get_mut<'s>(&'s mut self, key: &'s K) -> Option<IoCacheItemRefMut<'s, K, V, M, A>> {
+        self.history_map.get_mut(key).map(|x| IoCacheItemRefMut(x))
     }
 
     pub fn get_or_insert<'s, E>(

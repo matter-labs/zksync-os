@@ -275,6 +275,10 @@ where
     pub fn last(&self) -> &V {
         unsafe { &self.container.head.as_ref().last() }
     }
+
+    pub fn diff_operands_total(&self) -> Option<(&V, &V)> {
+        self.container.diff_operands_total()
+    }
 }
 
 impl<'a, K, V, A> HistoryMapItemRefMut<'a, K, V, A>
@@ -461,7 +465,13 @@ where
         }
     }
 
-    pub fn get<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRefMut<'s, K, V, A>> {
+    pub fn get<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRef<'s, K, V, A>> {
+        self.btree
+            .get(key)
+            .map(|ec| HistoryMapItemRef { key, container: ec })
+    }
+
+    pub fn get_mut<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRefMut<'s, K, V, A>> {
         self.btree.get_mut(key).map(|ec| HistoryMapItemRefMut {
             key,
             container: ec,
