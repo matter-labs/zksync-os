@@ -48,6 +48,7 @@ pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         is_new_slot: bool,
+        is_access_list: bool,
     ) -> Result<(), SystemError>;
 
     /// Charge the additional cost of performing a write.
@@ -154,6 +155,7 @@ where
         address: &StorageAddress<EthereumIOTypesConfig>,
         key: &'a K,
         oracle: &mut impl IOOracle,
+        is_access_list: bool,
     ) -> Result<(AddressItem<'a, K, V, A>, IsWarmRead), SystemError> {
         resources_policy.charge_warm_storage_read(ee_type, resources)?;
 
@@ -177,7 +179,7 @@ where
                 // correctly.
                 let data_from_oracle = unsafe { dst.assume_init() } ;
 
-                resources_policy.charge_cold_storage_read_extra(ee_type, resources, data_from_oracle.is_new_storage_slot)?;
+                resources_policy.charge_cold_storage_read_extra(ee_type, resources, data_from_oracle.is_new_storage_slot,is_access_list)?;
                 cold_read_charged = true;
 
                 let appearance = match data_from_oracle.is_new_storage_slot {
@@ -191,7 +193,7 @@ where
                 let is_warm_read = x.current().metadata().considered_warm(current_tx_number);
                 if is_warm_read == false {
                     if cold_read_charged == false {
-                        resources_policy.charge_cold_storage_read_extra(ee_type, resources,false)?;
+                        resources_policy.charge_cold_storage_read_extra(ee_type, resources,false,is_access_list)?;
                     }
 
                     x.update(|cache_record| {
@@ -213,6 +215,7 @@ where
         key: &K,
         resources: &mut R,
         oracle: &mut impl IOOracle,
+        is_access_list: bool,
     ) -> Result<V, SystemError>
 where {
         let (addr_data, _) = Self::materialize_element(
@@ -224,6 +227,7 @@ where {
             address,
             key,
             oracle,
+            is_access_list,
         )?;
 
         Ok(addr_data.current().value().clone())
@@ -248,6 +252,7 @@ where {
             address,
             key,
             oracle,
+            false,
         )?;
 
         let val_current = addr_data.current().value();
@@ -361,7 +366,33 @@ where
         };
 
         self.0
-            .apply_read_impl(ee_type, &sa, &key, resources, oracle)
+            .apply_read_impl(ee_type, &sa, &key, resources, oracle, false)
+    }
+
+    fn touch(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        oracle: &mut impl IOOracle,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        // TODO: use a different low-level function to avoid creating pubdata
+        // and merkle proof obligations until we actually read the value
+        let sa = StorageAddress {
+            address: *address,
+            key: *key,
+        };
+
+        let key = WarmStorageKey {
+            address: *address,
+            key: *key,
+        };
+
+        self.0
+            .apply_read_impl(ee_type, &sa, &key, resources, oracle, is_access_list)?;
+        Ok(())
     }
 
     fn write(
@@ -419,7 +450,7 @@ where
 
         let raw_value = self
             .0
-            .apply_read_impl(ee_type, &sa, &key, resources, oracle)?;
+            .apply_read_impl(ee_type, &sa, &key, resources, oracle, false)?;
 
         let value = unsafe {
             // we checked TypeId above, so we reinterpret. No drop/forget needed

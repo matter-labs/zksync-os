@@ -58,9 +58,19 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         is_new_slot: bool,
+        is_access_list: bool,
     ) -> Result<(), SystemError> {
         let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
+            ExecutionEnvironmentType::NoEE => {
+                // Access list accesses are always done in NoEE.
+                // Note that, for that reason, the warm cost isn't charged,
+                // so here we charge full cold cost.
+                if is_access_list {
+                    Ergs(1900 * ERGS_PER_GAS)
+                } else {
+                    Ergs::empty()
+                }
+            }
             ExecutionEnvironmentType::EVM => {
                 Ergs((COLD_SLOAD_COST - WARM_STORAGE_READ_COST) * ERGS_PER_GAS)
             }
