@@ -8,7 +8,7 @@ use zk_ee::common_structs::history_map::*;
 fn miri_rollback_reuse() {
     let mut map = HistoryMap::<usize, usize, Global>::new(Global);
 
-    map.snapshot(TransactionId(1));
+    map.snapshot();
 
     let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
@@ -19,7 +19,7 @@ fn miri_rollback_reuse() {
     .unwrap();
 
     // We'll rollback to this point.
-    let ss = map.snapshot(TransactionId(1));
+    let ss = map.snapshot();
 
     let mut v = map.get_or_insert::<()>(&1, || Ok(4)).unwrap();
 
@@ -31,7 +31,7 @@ fn miri_rollback_reuse() {
     .unwrap();
 
     // Just for fun.
-    map.snapshot(TransactionId(1));
+    map.snapshot();
 
     map.rollback(ss);
 

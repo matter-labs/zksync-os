@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 use zk_ee::common_traits::key_like_with_bounds::KeyLikeWithBounds;
 use zk_ee::system::errors::SystemError;
 use zk_ee::{
-    common_structs::history_map::{CacheSnapshotId, HistoryMap, TransactionId},
+    common_structs::history_map::{CacheSnapshotId, HistoryMap},
     memory::stack_trait::{StackCtor, StackCtorConst},
 };
 
@@ -52,8 +52,7 @@ where
 
     #[track_caller]
     pub fn start_frame(&mut self) -> CacheSnapshotId {
-        self.cache
-            .snapshot(TransactionId(self.current_tx_number as u64))
+        self.cache.snapshot()
     }
 
     fn materialize_element<'a>(

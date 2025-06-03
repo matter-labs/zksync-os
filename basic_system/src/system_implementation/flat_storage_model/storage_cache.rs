@@ -1,6 +1,7 @@
 //! Storage cache, backed by a history map.
 use crate::system_implementation::flat_storage_model::address_into_special_storage_key;
 use crate::system_implementation::system::ExtraCheck;
+use alloc::collections::BTreeMap;
 use alloc::fmt::Debug;
 use core::alloc::Allocator;
 use ruint::aliases::B160;
@@ -24,6 +25,10 @@ use zk_ee::common_structs::ValueDiffCompressionStrategy;
 
 type AddressItem<'a, K, V, A> =
     HistoryMapItemRefMut<'a, K, CacheRecord<V, StorageElementMetadata>, A>;
+
+#[repr(transparent)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+pub struct TransactionId(pub u32);
 
 /// EE-specific IO charging.
 pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
@@ -64,11 +69,11 @@ pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
 pub struct StorageElementMetadata {
     /// Transaction where this account was last accessed.
     /// Considered warm if equal to Some(current_tx)
-    pub last_touched_in_tx: Option<u32>,
+    pub last_touched_in_tx: Option<TransactionId>,
 }
 
 impl StorageElementMetadata {
-    pub fn considered_warm(&self, current_tx_number: u32) -> bool {
+    pub fn considered_warm(&self, current_tx_number: TransactionId) -> bool {
         self.last_touched_in_tx == Some(current_tx_number)
     }
 }
@@ -86,7 +91,8 @@ pub struct GenericPubdataAwarePlainStorage<
 {
     pub(crate) cache: HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
     pub(crate) resources_policy: P,
-    pub(crate) current_tx_number: u32,
+    pub(crate) current_tx_number: TransactionId,
+    pub(crate) initial_values: BTreeMap<K, (V, TransactionId), A>, // Used to cache initial values at the beginning of the tx (For EVM gas model)
     pub(crate) _marker: core::marker::PhantomData<(R, SC, SCC)>,
 }
 
@@ -111,8 +117,9 @@ where
     pub fn new_from_parts(allocator: A, resources_policy: P) -> Self {
         Self {
             cache: HistoryMap::new(allocator.clone()),
-            current_tx_number: 0,
+            current_tx_number: TransactionId(0),
             resources_policy,
+            initial_values: BTreeMap::new_in(allocator.clone()),
             _marker: core::marker::PhantomData,
         }
     }
@@ -120,13 +127,12 @@ where
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
 
-        self.current_tx_number += 1;
+        self.current_tx_number.0 += 1;
     }
 
     #[track_caller]
     pub fn start_frame(&mut self) -> CacheSnapshotId {
-        self.cache
-            .snapshot(TransactionId(self.current_tx_number as u64))
+        self.cache.snapshot()
     }
 
     #[track_caller]
@@ -139,7 +145,7 @@ where
     fn materialize_element<'a>(
         cache: &'a mut HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
         resources_policy: &mut P,
-        current_tx_number: u32,
+        current_tx_number: TransactionId,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         address: &StorageAddress<EthereumIOTypesConfig>,
@@ -241,13 +247,31 @@ where {
             oracle,
         )?;
 
-        let (val_at_tx_start, val_current) = addr_data
-            .diff_operands_tx()
-            .unwrap_or((addr_data.current(), addr_data.current()));
+        let val_current = addr_data.current().value();
+
+        // TODO: suboptimal, maybe can just keep pointers to values?
+        // Try to get initial value at the beginning of the tx.
+        let val_at_tx_start = match self.initial_values.entry(*key) {
+            alloc::collections::btree_map::Entry::Vacant(vacant_entry) => {
+                &vacant_entry
+                    .insert((val_current.clone(), self.current_tx_number))
+                    .0
+            }
+            alloc::collections::btree_map::Entry::Occupied(occupied_entry) => {
+                let (value, tx_number) = occupied_entry.into_mut();
+                // TODO:
+                if *tx_number != self.current_tx_number {
+                    *value = val_current.clone();
+                    *tx_number = self.current_tx_number;
+                }
+                value
+            }
+        };
+
         self.resources_policy.charge_storage_write_extra(
             ee_type,
-            val_at_tx_start.value(),
-            val_current.value(),
+            val_at_tx_start,
+            val_current,
             new_value,
             resources,
             is_warm_read.0,

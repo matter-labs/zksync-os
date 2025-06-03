@@ -23,7 +23,6 @@ use zk_ee::common_structs::cache_record::CacheRecord;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::history_map::HistoryMap;
 use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
-use zk_ee::common_structs::history_map::TransactionId;
 use zk_ee::common_structs::PreimageType;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::stack_trait::StackCtor;
@@ -340,8 +339,7 @@ where
     }
 
     pub fn start_frame(&mut self) -> CacheSnapshotId {
-        self.cache
-            .snapshot(TransactionId(self.current_tx_number as u64))
+        self.cache.snapshot()
     }
 
     pub fn finish_frame(&mut self, rollback_handle: Option<&CacheSnapshotId>) {

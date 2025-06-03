@@ -1,12 +1,11 @@
 use crate::system::errors::InternalError;
 use crate::utils::Bytes32;
 use alloc::alloc::Global;
-use alloc::collections::BTreeMap;
 use core::alloc::Allocator;
 
 use super::{
     cache_record::{Appearance, CacheRecord},
-    history_map::{CacheSnapshotId, HistoryMap, HistoryMapItemRef, TransactionId},
+    history_map::{CacheSnapshotId, HistoryMap, HistoryMapItemRef},
 };
 
 #[repr(u8)]
@@ -44,29 +43,22 @@ impl PreimagesPublicationStorageValue {
 
 pub struct NewPreimagesPublicationStorage<A: Allocator + Clone = Global> {
     cache: HistoryMap<Bytes32, CacheRecord<Elem, ()>, A>,
-    current_tx_number: u32,
-    pub inner: BTreeMap<Bytes32, (PreimagesPublicationStorageValue, PreimageType), A>,
 }
 
 impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
             cache: HistoryMap::new(allocator.clone()),
-            current_tx_number: 0,
-            inner: BTreeMap::new_in(allocator.clone()),
         }
     }
 
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
-
-        self.current_tx_number += 1;
     }
 
     #[track_caller]
     pub fn start_frame(&mut self) -> CacheSnapshotId {
-        self.cache
-            .snapshot(TransactionId(self.current_tx_number as u64))
+        self.cache.snapshot()
     }
 
     #[track_caller]

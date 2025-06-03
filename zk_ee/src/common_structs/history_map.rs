@@ -19,16 +19,11 @@ impl CacheSnapshotId {
     }
 }
 
-#[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
-pub struct TransactionId(pub u64);
-
 type HistoryLink<V, A> = NonNull<HistoryItem<V, A>>;
 
 /// The history linked list. Always has at least one item with the snapshot id of 0.
 struct HistoryItem<V, A: Allocator> {
     touch_ss_id: CacheSnapshotId,
-    update_tx_id: TransactionId,
     value: V,
     next: Option<HistoryLink<V, A>>,
     phantom: PhantomData<(V, A)>,
@@ -102,32 +97,6 @@ impl<T, A: Allocator> HistoryItem<T, A> {
             }
         }
     }
-
-    fn diff_operands_tx(&self) -> Option<(&T, &T)> {
-        let right = &self.value;
-        let right_tx_id = self.update_tx_id;
-
-        let mut left = None;
-        let mut next = &self.next;
-        while let Some(n) = &next {
-            let n = unsafe { n.as_ref() };
-            #[cfg(test)]
-            {
-                println!(
-                    "some item, tx id {} against {} ",
-                    n.update_tx_id.0, right_tx_id.0
-                )
-            }
-            if n.update_tx_id != right_tx_id {
-                left = Some(n);
-                break;
-            }
-
-            next = &n.next;
-        }
-
-        left.map(|left| (&left.value, right))
-    }
 }
 
 impl<V, A: Allocator + Clone> ElementContainer<V, A> {
@@ -141,7 +110,6 @@ impl<V, A: Allocator + Clone> ElementContainer<V, A> {
 
                     // Safety: We *must* rewrite all the links in `elem`.
                     elem.touch_ss_id = CacheSnapshotId(0);
-                    elem.update_tx_id = TransactionId(0);
                     elem.value = value;
                     elem.next = None;
                 }
@@ -151,7 +119,6 @@ impl<V, A: Allocator + Clone> ElementContainer<V, A> {
                 let raw = Box::into_raw(Box::new_in(
                     HistoryItem {
                         touch_ss_id: CacheSnapshotId(0),
-                        update_tx_id: TransactionId(0),
                         value,
                         next: None,
                         phantom: PhantomData,
@@ -225,10 +192,6 @@ impl<V, A: Allocator + Clone> ElementContainer<V, A> {
         }
     }
 
-    fn diff_operands_tx(&self) -> Option<(&V, &V)> {
-        unsafe { self.head.as_ref() }.diff_operands_tx()
-    }
-
     fn commit(&mut self, reuse: &mut ElementSource<V, A>) {
         // Single snapshot.
         if self.head == self.ultimate {
@@ -291,10 +254,6 @@ where
         unsafe { &self.container.head.as_ref().value }
     }
 
-    pub fn diff_operands_tx(&self) -> Option<(&V, &V)> {
-        self.container.diff_operands_tx()
-    }
-
     #[allow(dead_code)]
     pub fn diff_operands_total(&self) -> Option<(&V, &V)> {
         self.container.diff_operands_total()
@@ -320,7 +279,6 @@ where
 
                         elem.value = history.value.clone();
                         elem.touch_ss_id = self.cache_state.current_snapshot_id;
-                        elem.update_tx_id = self.cache_state.current_transaction_id;
                         elem.next = Some(self.container.head);
                     }
 
@@ -330,7 +288,6 @@ where
                     let item = HistoryItem {
                         value: history.value.clone(),
                         touch_ss_id: self.cache_state.current_snapshot_id,
-                        update_tx_id: self.cache_state.current_transaction_id,
                         next: Some(self.container.head),
                         phantom: PhantomData,
                     };
@@ -350,11 +307,9 @@ where
                 self.container.penultimate = new;
             }
 
-            self.cache_state.updated_elems.push((
-                self.key.clone(),
-                self.cache_state.current_snapshot_id,
-                self.cache_state.current_transaction_id,
-            ));
+            self.cache_state
+                .updated_elems
+                .push((self.key.clone(), self.cache_state.current_snapshot_id));
 
             Ok(())
         }
@@ -428,8 +383,7 @@ impl<V, A: Allocator + Clone> ElementSource<V, A> {
 
 struct HistoryMapState<K, A: Allocator + Clone> {
     current_snapshot_id: CacheSnapshotId,
-    current_transaction_id: TransactionId,
-    updated_elems: StackLinkedList<(K, CacheSnapshotId, TransactionId), A>,
+    updated_elems: StackLinkedList<(K, CacheSnapshotId), A>,
     alloc: A,
 }
 
@@ -458,7 +412,6 @@ where
                 // All new retreivals are going to id 0 to allow differentiating retreivals with
                 // updates in a single snapshot span.
                 current_snapshot_id: CacheSnapshotId(1),
-                current_transaction_id: TransactionId(0),
                 updated_elems: StackLinkedList::empty(alloc.clone()),
             },
             reuse: ElementSource::new(alloc),
@@ -507,11 +460,8 @@ where
         })
     }
 
-    pub fn snapshot(&mut self, tx_id: TransactionId) -> CacheSnapshotId {
-        debug_assert!(self.state.current_transaction_id <= tx_id);
-
+    pub fn snapshot(&mut self) -> CacheSnapshotId {
         self.state.current_snapshot_id.increment();
-        self.state.current_transaction_id = tx_id;
         self.state.current_snapshot_id
     }
 
@@ -525,10 +475,10 @@ where
         loop {
             match node {
                 None => break,
-                Some((key, update_snapshot_id, x)) => {
+                Some((key, update_snapshot_id)) => {
                     // The items in the address_snapshot_updates are ordered chronologically.
                     if update_snapshot_id < snapshot_id {
-                        self.state.updated_elems.push((key, update_snapshot_id, x));
+                        self.state.updated_elems.push((key, update_snapshot_id));
                         break;
                     }
 
@@ -554,7 +504,7 @@ where
             match node {
                 None => break,
                 Some(ref n) => {
-                    let (key, _update_snapshot_id, _) = &n.value;
+                    let (key, _update_snapshot_id) = &n.value;
 
                     let item = self
                         .btree
@@ -622,7 +572,7 @@ where
         self.state
             .updated_elems
             .iter()
-            .map(|(k, _, _)| HistoryMapItemRef {
+            .map(|(k, _)| HistoryMapItemRef {
                 key: k,
                 container: self
                     .btree
@@ -651,7 +601,7 @@ mod tests {
     fn miri_diff_elem_total() {
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
 
-        map.snapshot(super::TransactionId(1));
+        map.snapshot();
 
         let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
@@ -671,7 +621,7 @@ mod tests {
     fn miri_diff_tree_total() {
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
 
-        map.snapshot(super::TransactionId(1));
+        map.snapshot();
 
         let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
@@ -695,7 +645,7 @@ mod tests {
     fn miri_commit_1() {
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
 
-        map.snapshot(super::TransactionId(1));
+        map.snapshot();
 
         map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
@@ -711,7 +661,7 @@ mod tests {
     fn miri_commit_2() {
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
 
-        map.snapshot(super::TransactionId(1));
+        map.snapshot();
 
         let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
@@ -737,7 +687,7 @@ mod tests {
     fn miri_commit_3() {
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
 
-        map.snapshot(super::TransactionId(1));
+        map.snapshot();
 
         let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
@@ -747,7 +697,7 @@ mod tests {
         })
         .unwrap();
 
-        map.snapshot(super::TransactionId(1));
+        map.snapshot();
 
         let mut v = map.get_or_insert::<()>(&1, || Ok(4)).unwrap();
 
@@ -773,7 +723,7 @@ mod tests {
     fn miri_rollback() {
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
 
-        map.snapshot(super::TransactionId(1));
+        map.snapshot();
 
         let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
@@ -783,7 +733,7 @@ mod tests {
         })
         .unwrap();
 
-        let ss = map.snapshot(super::TransactionId(1));
+        let ss = map.snapshot();
 
         let mut v = map.get_or_insert::<()>(&1, || Ok(4)).unwrap();
 
@@ -793,7 +743,7 @@ mod tests {
         })
         .unwrap();
 
-        map.snapshot(super::TransactionId(1));
+        map.snapshot();
 
         map.rollback(ss);
 
@@ -811,7 +761,7 @@ mod tests {
     fn miri_rollback_reuse() {
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
 
-        map.snapshot(super::TransactionId(1));
+        map.snapshot();
 
         let mut v = map.get_or_insert::<()>(&1, || Ok(1)).unwrap();
 
@@ -822,7 +772,7 @@ mod tests {
         .unwrap();
 
         // We'll rollback to this point.
-        let ss = map.snapshot(super::TransactionId(1));
+        let ss = map.snapshot();
 
         let mut v = map.get_or_insert::<()>(&1, || Ok(4)).unwrap();
 
@@ -834,7 +784,7 @@ mod tests {
         .unwrap();
 
         // Just for fun.
-        map.snapshot(super::TransactionId(1));
+        map.snapshot();
 
         map.rollback(ss);
 
