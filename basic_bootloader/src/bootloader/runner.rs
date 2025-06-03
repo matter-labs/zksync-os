@@ -241,6 +241,8 @@ where
     // CALLER to perform some reads. If we bail, then we will roll back the frame and all
     // potential writes below, otherwise we will pass what's needed to caller
 
+    // declaring these here rather than returning them reduces stack usage.
+    let (mut new_vm, mut preemption);
     match run_call_preparation(caller_vm, system, ee_type, &call_request) {
         Ok(CallPreparationResult::Success {
             next_ee_version,
@@ -255,12 +257,12 @@ where
 
             // Calls to EOAs succeed with empty return value
             if bytecode.len() == 0 {
-                Ok((
+                return Ok((
                     actual_resources_to_pass,
                     CallResult::Successful {
                         return_values: ReturnValues::empty(system),
                     },
-                ))
+                ));
             } else {
                 if DEBUG_OUTPUT {
                     let _ = system.get_logger().write_fmt(format_args!(
@@ -278,9 +280,9 @@ where
                 // resources are checked and spent, so we continue with actual transition of control flow
 
                 // now grow callstack and prepare initial state
-                let mut new_vm = create_ee(next_ee_version, system)?;
+                new_vm = create_ee(next_ee_version, system)?;
 
-                let mut preemption = new_vm.start_executing_frame(
+                preemption = new_vm.start_executing_frame(
                     system,
                     ExecutionEnvironmentLaunchParams {
                         external_call: ExternalCallRequest {
@@ -294,45 +296,44 @@ where
                         },
                     },
                 )?;
-
-                loop {
-                    match preemption {
-                        ExecutionEnvironmentPreemptionPoint::Spawn(spawn) => {
-                            preemption =
-                                handle_spawn(&mut new_vm, spawn, system, hooks, initial_ee_version)?
-                        }
-                        ExecutionEnvironmentPreemptionPoint::End(
-                            TransactionEndPoint::CompletedExecution(CompletedExecution {
-                                resources_returned,
-                                return_values,
-                                reverted,
-                            }),
-                        ) => {
-                            break Ok((
-                                resources_returned,
-                                if reverted {
-                                    CallResult::Failed { return_values }
-                                } else {
-                                    CallResult::Successful { return_values }
-                                },
-                            ))
-                        }
-                        ExecutionEnvironmentPreemptionPoint::End(
-                            TransactionEndPoint::CompletedDeployment(_),
-                        ) => {
-                            return Err(FatalError::Internal(InternalError(
-                                "returned from external call as if it was a deployment",
-                            )))
-                        }
-                    }
-                }
             }
         }
         Ok(CallPreparationResult::Failure {
             resources_returned,
             call_result,
-        }) => Ok((resources_returned, call_result)),
-        Err(e) => Err(e),
+        }) => return Ok((resources_returned, call_result)),
+        Err(e) => return Err(e),
+    };
+
+    loop {
+        match preemption {
+            ExecutionEnvironmentPreemptionPoint::Spawn(spawn) => {
+                preemption = handle_spawn(&mut new_vm, spawn, system, hooks, initial_ee_version)?
+            }
+            ExecutionEnvironmentPreemptionPoint::End(TransactionEndPoint::CompletedExecution(
+                CompletedExecution {
+                    resources_returned,
+                    return_values,
+                    reverted,
+                },
+            )) => {
+                break Ok((
+                    resources_returned,
+                    if reverted {
+                        CallResult::Failed { return_values }
+                    } else {
+                        CallResult::Successful { return_values }
+                    },
+                ))
+            }
+            ExecutionEnvironmentPreemptionPoint::End(TransactionEndPoint::CompletedDeployment(
+                _,
+            )) => {
+                return Err(FatalError::Internal(InternalError(
+                    "returned from external call as if it was a deployment",
+                )))
+            }
+        }
     }
 }
 
