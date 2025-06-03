@@ -12,10 +12,12 @@ use crate::{
 };
 use alloc::alloc::Global;
 use core::alloc::Allocator;
+use core::fmt::Write;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
+use crate::system::logger::Logger;
 
 const L2_TO_L1_LOG_SERIALIZE_SIZE: usize = 88;
 
@@ -430,7 +432,7 @@ where
     }
 
     // we use it for tests to generate single block batches
-    pub fn l1_txs_commitment(&self) -> (u32, Bytes32) {
+    pub fn l1_txs_commitment(&self, logger: &mut impl Logger) -> (u32, Bytes32) {
         let mut count = 0u32;
         // keccak256([])
         let mut rolling_hash = Bytes32::from([
@@ -440,6 +442,7 @@ where
         ]);
         for log in self.list.iter() {
             if let GenericLogContentData::L1TxLog(l1_tx) = &log.data {
+                logger.write_fmt(format_args!("l1 tx hash: {:?}", l1_tx));
                 count += 1;
                 let mut hasher = Keccak256::new();
                 hasher.update(rolling_hash.as_u8_ref());

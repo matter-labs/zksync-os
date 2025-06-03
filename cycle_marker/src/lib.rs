@@ -130,13 +130,13 @@ macro_rules! wrap_with_resources {
             use zk_ee::system::resources::Resource;
 
             let spent_resources = resources_before.diff($resources.clone());
-            cycle_marker::log_marker(&format!(
+            cycle_marker::log_marker(&alloc::format!(
                 "Spent ergs for [{}]: {:?}\n",
                 $label,
                 spent_resources.ergs().0
             ));
             use zk_ee::system::Computational;
-            cycle_marker::log_marker(&format!(
+            cycle_marker::log_marker(&alloc::format!(
                 "Spent native for [{}]: {}\n",
                 $label,
                 spent_resources.native().as_u64()
@@ -198,12 +198,12 @@ pub fn print_cycle_markers() {
 
     for (label, (start, end)) in markers {
         let diff = end.diff(&start);
-        log_marker(&format!(
+        log_marker(&alloc::format!(
             "{}: net cycles: {}, net delegations: {:?}",
             label, diff.cycles, diff.delegations
         ))
     }
-    log_marker(&format!(
+    log_marker(&alloc::format!(
         "Total delegations: {:?}\n==================",
         cm.delegation_counter
     ))

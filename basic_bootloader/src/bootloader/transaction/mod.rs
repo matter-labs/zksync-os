@@ -22,6 +22,7 @@ use super::*;
 ///
 /// The generic transaction format. The structure fields are slices/references in fact.
 ///
+#[derive(Debug)]
 pub struct ZkSyncTransaction<'a> {
     underlying_buffer: &'a mut [u8],
     // field below are parsed

@@ -15,21 +15,7 @@ pub use self::convenience::*;
 pub use self::integer_utils::*;
 pub use self::type_assert::*;
 
-pub static mut GLOBAL_ALLOC_ALLOWED: bool = false;
-
-pub fn with_global_allocator<T>(closure: impl FnOnce() -> T) -> T {
-    #[cfg(target_arch = "riscv32")]
-    unsafe {
-        GLOBAL_ALLOC_ALLOWED = true;
-    }
-    let result = (closure)();
-    #[cfg(target_arch = "riscv32")]
-    unsafe {
-        GLOBAL_ALLOC_ALLOWED = false;
-    }
-
-    result
-}
+pub const GLOBAL_ALLOC_ALLOWED: bool = true;
 
 pub struct NopHasher;
 

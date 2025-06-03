@@ -92,6 +92,8 @@ where
         transaction: ZkSyncTransaction<'static>,
         is_priority_op: bool,
     ) -> Result<TxProcessingResult<S>, TxError> {
+        let mut logger = system.get_logger();
+        let _ = logger.write_fmt(format_args!("l1 tx struct: {:?}", transaction));
         // The work done by the bootloader (outside of EE or EOA specific
         // computation) is charged as part of the intrinsic gas cost.
         let gas_limit = transaction.gas_limit.read();

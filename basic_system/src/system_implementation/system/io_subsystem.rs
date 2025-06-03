@@ -560,6 +560,7 @@ where
 
         // chain state before
         // currently we generate simplified commitment(only to state) for tests.
+        logger.write_fmt(format_args!("PI: state commitment before {:?}\n", state_commitment));
         let mut chain_state_hasher = Blake2s256::new();
         chain_state_hasher.update(state_commitment.root.as_u8_ref());
         chain_state_hasher.update(state_commitment.next_free_slot.to_be_bytes());
@@ -587,12 +588,13 @@ where
         full_root_hasher.update(self.logs_storage.tree_root().as_u8_ref());
         full_root_hasher.update([0u8; 32]); // aggregated root 0 for now
         let full_l2_to_l1_logs_root = full_root_hasher.finalize();
-        let l1_txs_commitment = self.logs_storage.l1_txs_commitment();
+        let l1_txs_commitment = self.logs_storage.l1_txs_commitment(&mut logger);
 
         let pubdata_hash = pubdata_hasher.finalize();
 
         // chain state after
         // currently we generate simplified commitment(only to state) for tests.
+        logger.write_fmt(format_args!("PI: state commitment after {:?}\n", state_commitment));
         let mut chain_state_hasher = Blake2s256::new();
         chain_state_hasher.update(state_commitment.root.as_u8_ref());
         chain_state_hasher.update(state_commitment.next_free_slot.to_be_bytes());
@@ -615,12 +617,17 @@ where
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash,
         };
+        logger.write_fmt(format_args!("PI: batch output {:?}\n", batch_output,));
 
         let public_input = public_input::BatchPublicInput {
             state_before: chain_state_commitment_before.into(),
             state_after: chain_state_commitment_after.into(),
             batch_output: batch_output.hash().into(),
         };
+        logger.write_fmt(format_args!(
+            "PI: final batch public input {:?}\n",
+            public_input,
+        ));
 
         (self.oracle, public_input.hash().into())
     }
