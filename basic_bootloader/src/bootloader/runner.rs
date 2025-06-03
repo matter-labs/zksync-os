@@ -98,6 +98,7 @@ where
         S::IO: IOSubsystemExt,
         S::Memory: MemorySubsystemExt,
     {
+        let preemption;
         match spawn {
             ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
                 let rollback_handle = self
@@ -139,7 +140,11 @@ where
                     _ => {}
                 }
 
-                previous_vm.continue_after_external_call(self.system, resources, call_result)
+                preemption = previous_vm.continue_after_external_call(
+                    self.system,
+                    resources,
+                    call_result,
+                )?;
             }
             ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => {
                 let CompletedDeployment {
@@ -168,13 +173,15 @@ where
                     }
                 }
 
-                previous_vm.continue_after_deployment(
+                preemption = previous_vm.continue_after_deployment(
                     self.system,
                     resources_returned,
                     deployment_result,
-                )
+                )?;
             }
         }
+
+        Ok(preemption)
     }
 
     fn handle_requested_external_call(
