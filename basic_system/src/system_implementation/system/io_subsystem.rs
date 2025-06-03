@@ -8,7 +8,6 @@ use cost_constants::EVENT_TOPIC_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use crypto::blake2s::Blake2s256;
-use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use evm_interpreter::gas_constants::LOG;
 use evm_interpreter::gas_constants::LOGDATA;
@@ -583,7 +582,7 @@ where
             .apply_pubdata(&mut pubdata_hasher, result_keeper);
         result_keeper.logs(self.logs_storage.messages_ref_iter());
         result_keeper.events(self.events_storage.events_ref_iter());
-        let mut full_root_hasher = Keccak256::new();
+        let mut full_root_hasher = crypto::sha3::Keccak256::new();
         full_root_hasher.update(self.logs_storage.tree_root().as_u8_ref());
         full_root_hasher.update([0u8; 32]); // aggregated root 0 for now
         let full_l2_to_l1_logs_root = full_root_hasher.finalize();
