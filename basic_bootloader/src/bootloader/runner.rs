@@ -278,10 +278,7 @@ where
                 // resources are checked and spent, so we continue with actual transition of control flow
 
                 // now grow callstack and prepare initial state
-                let mut new_vm = Box::new_in(
-                    SupportedEEVMState::create_initial(next_ee_version, system)?,
-                    system.get_allocator(),
-                );
+                let mut new_vm = create_ee(next_ee_version, system)?;
 
                 let mut preemption = new_vm.start_executing_frame(
                     system,
@@ -739,7 +736,6 @@ where
     })
 }
 
-#[inline(always)]
 fn handle_requested_deployment<'a, S: EthereumLikeTypes>(
     caller_vm: Option<&mut SupportedEEVMState<S>>,
     system: &mut System<S>,
@@ -794,10 +790,7 @@ where
         .map_err(|_| InternalError("must start a new frame for init code"))?;
 
     // EE made all the preparations and we are in callee's frame already
-    let mut constructor = Box::new_in(
-        SupportedEEVMState::create_initial(ee_type as u8, system)?,
-        system.get_allocator(),
-    );
+    let mut constructor = create_ee(ee_type as u8, system)?;
 
     let nominal_token_value = launch_params.external_call.nominal_token_value;
 
@@ -932,4 +925,17 @@ where
         resources_returned,
         deployment_result,
     })
+}
+
+/// This needs to be a separate function so the stack memory
+/// that this (unfortunately) allocates gets cleaned up.
+#[inline(never)]
+fn create_ee<S: EthereumLikeTypes>(
+    ee_type: u8,
+    system: &mut System<S>,
+) -> Result<Box<SupportedEEVMState<'static, S>, S::Allocator>, InternalError> {
+    Ok(Box::new_in(
+        SupportedEEVMState::create_initial(ee_type, system)?,
+        system.get_allocator(),
+    ))
 }
