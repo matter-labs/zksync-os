@@ -63,33 +63,7 @@ impl<V, A: Allocator + Clone> Drop for ElementHistory<V, A> {
 impl<V, A: Allocator + Clone> ElementHistory<V, A> {
     #[inline(always)]
     fn new(value: V, source: &mut ElementSource<V, A>, alloc: A) -> Self {
-        let elem = match source.get() {
-            Some(mut elem) => {
-                {
-                    // Safety:
-                    let elem = unsafe { elem.as_mut() };
-
-                    // Safety: We *must* rewrite all the links in `elem`.
-                    elem.touch_ss_id = CacheSnapshotId(0);
-                    elem.value = value;
-                    elem.previous = None;
-                }
-                elem
-            }
-            None => {
-                let raw = Box::into_raw(Box::new_in(
-                    HistoryRecord {
-                        touch_ss_id: CacheSnapshotId(0),
-                        value,
-                        previous: None,
-                    },
-                    alloc.clone(),
-                ));
-                // Safety: `Box::into_raw` pinky swears that the ptr is non null and properly
-                // aligned.
-                unsafe { NonNull::new_unchecked(raw) }
-            }
-        };
+        let elem = source.get(value, None, CacheSnapshotId(0));
 
         Self {
             head: elem,
@@ -231,32 +205,14 @@ where
         } else {
             // The item was last updated before the current snapshot.
 
-            let mut new = match self.source.get() {
-                Some(mut elem) => {
-                    {
-                        let elem = unsafe { elem.as_mut() };
-
-                        elem.value = history.value.clone();
-                        elem.touch_ss_id = self.cache_state.current_snapshot_id;
-                        elem.previous = Some(self.history.head);
-                    }
-
-                    elem
-                }
-                None => {
-                    let item = HistoryRecord {
-                        value: history.value.clone(),
-                        touch_ss_id: self.cache_state.current_snapshot_id,
-                        previous: Some(self.history.head),
-                    };
-                    let raw = Box::into_raw(Box::new_in(item, self.history.alloc.clone()));
-                    unsafe { NonNull::new_unchecked(raw) }
-                }
-            };
+            let mut new = self.source.get(
+                history.value.clone(),
+                Some(self.history.head),
+                self.cache_state.current_snapshot_id,
+            );
 
             unsafe {
-                let new = new.as_mut();
-                f(&mut new.value)?;
+                f(&mut new.as_mut().value)?;
             }
 
             self.history.head = new;
@@ -302,10 +258,30 @@ impl<V, A: Allocator + Clone> ElementSource<V, A> {
             alloc,
         }
     }
-    fn get(&mut self) -> Option<HistoryRecordLink<V>> {
+
+    fn get(
+        &mut self,
+        value: V,
+        previous: Option<HistoryRecordLink<V>>,
+        snapshot_id: CacheSnapshotId,
+    ) -> HistoryRecordLink<V> {
         match self.head {
-            None => None,
+            None => {
+                // Allocate
+                let raw = Box::into_raw(Box::new_in(
+                    HistoryRecord {
+                        touch_ss_id: snapshot_id,
+                        value,
+                        previous,
+                    },
+                    self.alloc.clone(),
+                ));
+                // Safety: `Box::into_raw` pinky swears that the ptr is non null and properly
+                // aligned.
+                unsafe { NonNull::new_unchecked(raw) }
+            }
             Some(mut elem) => {
+                // Reuse old allocation
                 {
                     let elem = unsafe { elem.as_mut() };
 
@@ -314,9 +290,14 @@ impl<V, A: Allocator + Clone> ElementSource<V, A> {
                     if self.head.is_none() {
                         self.last = None;
                     }
+
+                    // Safety: We *must* rewrite all the links in `elem`.
+                    elem.touch_ss_id = snapshot_id;
+                    elem.value = value;
+                    elem.previous = previous;
                 }
 
-                Some(elem)
+                elem
             }
         }
     }
