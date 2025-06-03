@@ -29,7 +29,8 @@ impl Block {
                 .into_transactions()
                 .enumerate()
                 .filter_map(|(i, tx)| {
-                    if tx.access_list.as_ref().is_none_or(|l| l.is_empty()) {
+                    // Useful to keep [if] to select a given tx while debugging
+                    if true {
                         Some(encode_alloy_rpc_tx(tx))
                     } else {
                         skipped.insert(i);
