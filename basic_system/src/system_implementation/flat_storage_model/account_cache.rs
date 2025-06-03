@@ -18,12 +18,12 @@ use ruint::aliases::U256;
 use storage_models::common_structs::AccountAggregateDataHash;
 use storage_models::common_structs::PreimageCacheModel;
 use storage_models::common_structs::StorageCacheModel;
+use zk_ee::common_structs::cache_record::Appearance;
+use zk_ee::common_structs::cache_record::CacheRecord;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
+use zk_ee::common_structs::history_map::HistoryMap;
+use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 use zk_ee::common_structs::history_map::TransactionId;
-use zk_ee::common_structs::io_cache::Appearance;
-use zk_ee::common_structs::io_cache::CacheSnapshot;
-use zk_ee::common_structs::io_cache::IoCache;
-use zk_ee::common_structs::io_cache::IoCacheItemRefMut;
 use zk_ee::common_structs::PreimageType;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::stack_trait::StackCtor;
@@ -42,8 +42,12 @@ use zk_ee::{
 };
 
 pub type BitsOrd160 = BitsOrd<{ B160::BITS }, { B160::LIMBS }>;
-type AddressItem<'a, A> =
-    IoCacheItemRefMut<'a, BitsOrd<160, 3>, AccountProperties, AccountPropertiesMetadata, A>;
+type AddressItem<'a, A> = HistoryMapItemRefMut<
+    'a,
+    BitsOrd<160, 3>,
+    CacheRecord<AccountProperties, AccountPropertiesMetadata>,
+    A,
+>;
 
 pub struct NewModelAccountCache<
     A: Allocator + Clone, // = Global,
@@ -54,7 +58,8 @@ pub struct NewModelAccountCache<
 > where
     ExtraCheck<SCC, A>:,
 {
-    pub(crate) cache: IoCache<BitsOrd160, AccountProperties, AccountPropertiesMetadata, A>,
+    pub(crate) cache:
+        HistoryMap<BitsOrd160, CacheRecord<AccountProperties, AccountPropertiesMetadata>, A>,
     pub(crate) current_tx_number: u32,
     phantom: PhantomData<(R, P, SC, SCC)>,
 }
@@ -71,7 +76,7 @@ where
 {
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
-            cache: IoCache::new(allocator.clone()),
+            cache: HistoryMap::new(allocator.clone()),
             current_tx_number: 0,
             phantom: PhantomData,
         }
@@ -164,7 +169,7 @@ where
                     }
                 };
 
-                Ok(CacheSnapshot::new(acc_data.0, acc_data.1))
+                Ok(CacheRecord::new(acc_data.0, acc_data.1))
             })
             // We're adding a read snapshot for case when we're rollbacking the initial read.
             .and_then(|mut x| {
@@ -186,9 +191,11 @@ where
                         resources.charge(&cost)?
                     }
 
-                    x.update_metadata(|m| {
-                        m.last_touched_in_tx = Some(self.current_tx_number);
-                        Ok(())
+                    x.update(|cache_record| {
+                        cache_record.update_metadata(|m| {
+                            m.last_touched_in_tx = Some(self.current_tx_number);
+                            Ok(())
+                        })
                     })?;
                 }
                 Ok(x)
@@ -222,9 +229,11 @@ where
 
         let cur = account_data.current().value().balance;
         let new = update_fn(&cur)?;
-        account_data.update(|x, _| {
-            x.balance = new;
-            Ok(())
+        account_data.update(|cache_record| {
+            cache_record.update(|v, _| {
+                v.balance = new;
+                Ok(())
+            })
         })?;
 
         Ok(cur)
@@ -491,9 +500,11 @@ where
 
         let nonce = account_data.current().value().nonce;
         if let Some(new_nonce) = nonce.checked_add(increment_by) {
-            account_data.update(|x, _| {
-                x.nonce = new_nonce;
-                Ok(())
+            account_data.update(|cache_record| {
+                cache_record.update(|x, _| {
+                    x.nonce = new_nonce;
+                    Ok(())
+                })
             })?;
         } else {
             return Err(UpdateQueryError::NumericBoundsError);
@@ -634,20 +645,22 @@ where
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
 
-        account_data.update(|x, m| {
-            x.observable_bytecode_hash = observable_bytecode_hash;
-            x.observable_bytecode_len = bytecode_len;
-            x.bytecode_hash = bytecode_hash;
-            x.bytecode_len = bytecode_len;
-            x.artifacts_len = artifacts_len;
-            x.versioning_data.set_as_deployed();
-            x.versioning_data.set_ee_version(from_ee as u8);
-            x.versioning_data
-                .set_code_version(DEFAULT_CODE_VERSION_BYTE);
+        account_data.update(|cache_record| {
+            cache_record.update(|v, m| {
+                v.observable_bytecode_hash = observable_bytecode_hash;
+                v.observable_bytecode_len = bytecode_len;
+                v.bytecode_hash = bytecode_hash;
+                v.bytecode_len = bytecode_len;
+                v.artifacts_len = artifacts_len;
+                v.versioning_data.set_as_deployed();
+                v.versioning_data.set_ee_version(from_ee as u8);
+                v.versioning_data
+                    .set_code_version(DEFAULT_CODE_VERSION_BYTE);
 
-            m.deployed_in_tx = cur_tx;
+                m.deployed_in_tx = cur_tx;
 
-            Ok(())
+                Ok(())
+            })
         })?;
 
         Ok(bytecode)
@@ -681,7 +694,10 @@ where
         let transfer_amount = account_data.current().value().balance;
 
         if account_data.current().metadata().deployed_in_tx == cur_tx {
-            account_data.deconstruct()?;
+            account_data.update::<_, SystemError>(|cache_record| {
+                cache_record.deconstruct();
+                Ok(())
+            })?
         }
 
         // First do the token transfer
@@ -705,9 +721,12 @@ where
                 UpdateQueryError::System(e) => e,
             })?
         } else if account_data.current().metadata().deployed_in_tx == cur_tx {
-            account_data.update(|k, _| {
-                k.balance = U256::ZERO;
-                Ok(())
+            // TODO updating twice
+            account_data.update(|cache_record| {
+                cache_record.update(|v, _| {
+                    v.balance = U256::ZERO;
+                    Ok(())
+                })
             })?;
         }
 

@@ -5,8 +5,8 @@ use alloc::collections::BTreeMap;
 use core::alloc::Allocator;
 
 use super::{
-    history_map::{CacheSnapshotId, TransactionId},
-    io_cache::{Appearance, CacheRecord, IoCache, IoCacheItemRef},
+    cache_record::{Appearance, CacheRecord},
+    history_map::{CacheSnapshotId, HistoryMap, HistoryMapItemRef, TransactionId},
 };
 
 #[repr(u8)]
@@ -43,7 +43,7 @@ impl PreimagesPublicationStorageValue {
 // we want to store new preimages for DA
 
 pub struct NewPreimagesPublicationStorage<A: Allocator + Clone = Global> {
-    cache: IoCache<Bytes32, Elem, (), A>,
+    cache: HistoryMap<Bytes32, CacheRecord<Elem, ()>, A>,
     current_tx_number: u32,
     pub inner: BTreeMap<Bytes32, (PreimagesPublicationStorageValue, PreimageType), A>,
 }
@@ -51,7 +51,7 @@ pub struct NewPreimagesPublicationStorage<A: Allocator + Clone = Global> {
 impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
-            cache: IoCache::new(allocator.clone()),
+            cache: HistoryMap::new(allocator.clone()),
             current_tx_number: 0,
             inner: BTreeMap::new_in(allocator.clone()),
         }
@@ -93,13 +93,16 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
             Ok(CacheRecord::new(new, Appearance::Unset))
         })?;
 
-        item.update(|x, _| {
-            if x.value.num_uses > 1 {
-                assert_eq!(x.value.publication_net_bytes, preimage_publication_byte_len);
-            }
-            x.value.mark_use()?;
-
-            Ok(())
+        item.update(|x| {
+            x.update(|elem, _| {
+                if elem.value.num_uses > 1 {
+                    assert_eq!(
+                        elem.value.publication_net_bytes,
+                        preimage_publication_byte_len
+                    );
+                }
+                elem.value.mark_use()
+            })
         })?;
 
         Ok(())
@@ -123,7 +126,9 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
         size as u64
     }
 
-    pub fn net_diffs_iter(&self) -> impl Iterator<Item = IoCacheItemRef<Bytes32, Elem, (), A>> {
+    pub fn net_diffs_iter(
+        &self,
+    ) -> impl Iterator<Item = HistoryMapItemRef<Bytes32, CacheRecord<Elem, ()>, A>> {
         self.cache.iter()
     }
 }

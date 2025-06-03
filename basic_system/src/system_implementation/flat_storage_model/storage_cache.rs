@@ -6,7 +6,7 @@ use core::alloc::Allocator;
 use ruint::aliases::B160;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
-use zk_ee::common_structs::io_cache::{Appearance, CacheSnapshot, IoCache, IoCacheItemRefMut};
+use zk_ee::common_structs::cache_record::{Appearance, CacheRecord};
 use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::{
@@ -22,7 +22,8 @@ use zk_ee::{
 use zk_ee::common_structs::history_map::*;
 use zk_ee::common_structs::ValueDiffCompressionStrategy;
 
-type AddressItem<'a, K, V, A> = IoCacheItemRefMut<'a, K, V, StorageElementMetadata, A>;
+type AddressItem<'a, K, V, A> =
+    HistoryMapItemRefMut<'a, K, CacheRecord<V, StorageElementMetadata>, A>;
 
 /// EE-specific IO charging.
 pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
@@ -83,7 +84,7 @@ pub struct GenericPubdataAwarePlainStorage<
 > where
     ExtraCheck<SCC, A>:,
 {
-    pub(crate) cache: IoCache<K, V, StorageElementMetadata, A>,
+    pub(crate) cache: HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
     pub(crate) resources_policy: P,
     pub(crate) current_tx_number: u32,
     pub(crate) _marker: core::marker::PhantomData<(R, SC, SCC)>,
@@ -109,7 +110,7 @@ where
 {
     pub fn new_from_parts(allocator: A, resources_policy: P) -> Self {
         Self {
-            cache: IoCache::new(allocator.clone()),
+            cache: HistoryMap::new(allocator.clone()),
             current_tx_number: 0,
             resources_policy,
             _marker: core::marker::PhantomData,
@@ -136,7 +137,7 @@ where
     }
 
     fn materialize_element<'a>(
-        cache: &'a mut IoCache<K, V, StorageElementMetadata, A>,
+        cache: &'a mut HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
         resources_policy: &mut P,
         current_tx_number: u32,
         ee_type: ExecutionEnvironmentType,
@@ -174,7 +175,7 @@ where
                     true => Appearance::Unset,
                     false => Appearance::Retrieved,
                 };
-                Ok(CacheSnapshot::new(data_from_oracle.initial_value.into(), appearance))
+                Ok(CacheRecord::new(data_from_oracle.initial_value.into(), appearance))
             })
             // We're adding a read snapshot for case when we're rollbacking the initial read.
             .and_then(|mut x| {
@@ -184,9 +185,11 @@ where
                         resources_policy.charge_cold_storage_read_extra(ee_type, resources,false)?;
                     }
 
-                    x.update_metadata(|m| {
-                        m.last_touched_in_tx = Some(current_tx_number);
-                        Ok(())
+                    x.update(|cache_record| {
+                        cache_record.update_metadata(|m| {
+                            m.last_touched_in_tx = Some(current_tx_number);
+                            Ok(())
+                        })
                     })?;
                 }
 
@@ -252,9 +255,11 @@ where {
         )?;
 
         let old_value = addr_data.current().value().clone();
-        addr_data.update(|x, _| {
-            *x = new_value.clone();
-            Ok(())
+        addr_data.update(|cache_record| {
+            cache_record.update(|x, _| {
+                *x = new_value.clone();
+                Ok(())
+            })
         })?;
 
         Ok(old_value)
@@ -269,7 +274,10 @@ where {
         let upper_bound = K::upper_bound(TyEq::rwi(*address.as_ref()));
         self.cache
             .for_each_range((Included(&lower_bound), Included(&upper_bound)), |mut x| {
-                x.unset()
+                x.update(|cache_record| {
+                    cache_record.unset();
+                    Ok(())
+                })
             })?;
 
         Ok(())
@@ -473,6 +481,27 @@ impl<
 where
     ExtraCheck<SCC, A>:,
 {
+    pub fn iter_as_storage_types(
+        &self,
+    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SC, SCC, R, P>
+    {
+        self.0.cache.iter().map(|item| {
+            let current_record = item.current();
+            let initial_record = item.last();
+            (
+                *item.key(),
+                // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
+                // not actually 'using' it.
+                WarmStorageValue {
+                    current_value: current_record.value().clone(), // TODO do we need to clone here?
+                    is_new_storage_slot: initial_record.appearance() == Appearance::Unset,
+                    initial_value: initial_record.value().clone(),
+                    initial_value_used: true,
+                    ..Default::default()
+                },
+            )
+        })
+    }
     ///
     /// Returns all the accessed storage slots.
     ///
@@ -482,7 +511,7 @@ where
         &self,
     ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SC, SCC, R, P>
     {
-        self.0.cache.iter_as_storage_types()
+        self.iter_as_storage_types()
     }
 
     ///
@@ -491,9 +520,7 @@ where
     pub fn net_diffs_iter(
         &self,
     ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + use<'_, A, SC, SCC, R, P> {
-        self.0
-            .cache
-            .iter_as_storage_types()
+        self.iter_as_storage_types()
             .filter(|(_, v)| v.current_value != v.initial_value)
     }
 
