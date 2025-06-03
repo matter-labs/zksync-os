@@ -377,72 +377,51 @@ fn encode_tx(
     reserved_dynamic: Option<Vec<u8>>,
     is_eip155: bool,
 ) -> Vec<u8> {
-    // we are using aa abi just for easier encoding implementation
-    let path = format!(
-        "{}tests/contracts_sol/c_aa/out/IAccount.abi.json",
-        PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
-            .as_os_str()
-            .to_str()
-            .unwrap()
-    );
-    let file = std::fs::File::open(path.as_str()).expect("AA ABI missing.");
-    let abi = ethers::abi::Abi::load(file).expect("AA ABI couldn't be parsed.");
-    let func = abi
-        .function("validateTransaction")
-        .expect("function_must_exist");
-
     fn address_to_uint(address: &[u8; 20]) -> Uint {
         let mut padded = [0u8; 32];
         padded[12..].copy_from_slice(address.as_slice());
         Uint::from(padded)
     }
 
-    // encoding `validateTransaction` method calldata, and skip first 100 bytes(4 selector, 32 + 32 other fields, 32 for tx offset)
-    func.encode_input(&[
-        // any zeroes for hashes, as they will be skipped in the calldata
-        Token::FixedBytes(vec![0u8; 32]),
-        Token::FixedBytes(vec![0u8; 32]),
-        Token::Tuple(vec![
-            Token::Uint(tx_type.into()),
-            Token::Uint(address_to_uint(&from)),
-            Token::Uint(address_to_uint(&to.unwrap_or_default())),
-            Token::Uint(gas_limit.into()),
-            Token::Uint(gas_per_pubdata_byte_limit.unwrap_or_default().into()),
-            Token::Uint(max_fee_per_gas.into()),
-            Token::Uint(max_priority_fee_per_gas.unwrap_or(max_fee_per_gas).into()),
-            Token::Uint(address_to_uint(&paymaster.unwrap_or_default())),
-            Token::Uint(U256::from(nonce)),
-            Token::Uint(U256::from(value)),
-            Token::FixedArray(vec![
-                Token::Uint(if tx_type == 0 {
-                    if is_eip155 {
-                        U256::one()
-                    } else {
-                        U256::zero()
-                    }
-                } else if tx_type == 255 {
-                    U256::from(value).add(gas_limit * max_fee_per_gas)
-                } else {
-                    U256::zero()
-                }),
-                Token::Uint(if to.is_none() {
+    ethers::abi::encode(&[
+        Token::Uint(tx_type.into()),
+        Token::Uint(address_to_uint(&from)),
+        Token::Uint(address_to_uint(&to.unwrap_or_default())),
+        Token::Uint(gas_limit.into()),
+        Token::Uint(gas_per_pubdata_byte_limit.unwrap_or_default().into()),
+        Token::Uint(max_fee_per_gas.into()),
+        Token::Uint(max_priority_fee_per_gas.unwrap_or(max_fee_per_gas).into()),
+        Token::Uint(address_to_uint(&paymaster.unwrap_or_default())),
+        Token::Uint(U256::from(nonce)),
+        Token::Uint(U256::from(value)),
+        Token::FixedArray(vec![
+            Token::Uint(if tx_type == 0 {
+                if is_eip155 {
                     U256::one()
                 } else {
                     U256::zero()
-                }),
-                Token::Uint(U256::zero()),
-                Token::Uint(U256::zero()),
-            ]),
-            Token::Bytes(data),
-            Token::Bytes(signature),
-            // factory deps not supported for now
-            Token::Array(vec![]),
-            Token::Bytes(paymaster_input.unwrap_or_default()),
-            Token::Bytes(reserved_dynamic.unwrap_or(encode_access_list(vec![]))),
+                }
+            } else if tx_type == 255 {
+                U256::from(value).add(gas_limit * max_fee_per_gas)
+            } else {
+                U256::zero()
+            }),
+            Token::Uint(if to.is_none() {
+                U256::one()
+            } else {
+                U256::zero()
+            }),
+            Token::Uint(U256::zero()),
+            Token::Uint(U256::zero()),
         ]),
+        Token::Bytes(data),
+        Token::Bytes(signature),
+        // factory deps not supported for now
+        Token::Array(vec![]),
+        Token::Bytes(paymaster_input.unwrap_or_default()),
+        Token::Bytes(reserved_dynamic.unwrap_or(encode_access_list(vec![]))),
     ])
-    .expect("must encode")[100..]
-        .to_vec()
+    .to_vec()
 }
 
 pub fn evm_bytecode_into_account_properties(bytecode: &[u8]) -> AccountProperties {
