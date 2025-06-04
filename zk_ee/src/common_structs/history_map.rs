@@ -377,6 +377,7 @@ where
         key: &'s K,
         spawn_v: impl FnOnce() -> Result<V, E>,
     ) -> Result<HistoryMapItemRefMut<'s, K, V, A>, E> {
+        // TODO: we clone key (32+ bytes in some cases) for every access
         let entry = self.btree.entry(key.clone());
 
         let v = match entry {
