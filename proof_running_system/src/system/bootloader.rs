@@ -8,7 +8,6 @@ use core::ptr::NonNull;
 use zk_ee::memory::ZSTAllocator;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
 use zk_ee::system_io_oracle::{DisconnectOracleFormalIterator, IOOracle};
-use zk_ee::utils::GLOBAL_ALLOC_ALLOWED;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ProxyAllocator;
@@ -108,11 +107,9 @@ pub type BootloaderAllocator = ProxyAllocator;
 // TODO: disable global alloc once dependencies are fixed
 pub struct OptionalGlobalAllocator;
 
+#[cfg(feature = "global-alloc")]
 unsafe impl GlobalAlloc for OptionalGlobalAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if !GLOBAL_ALLOC_ALLOWED {
-            panic!("global alloc not allowed")
-        }
         BootloaderAllocator::default()
             .allocate(layout)
             .expect("Global allocactor: alloc")
@@ -120,13 +117,22 @@ unsafe impl GlobalAlloc for OptionalGlobalAllocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if !GLOBAL_ALLOC_ALLOWED {
-            panic!("global alloc not allowed")
-        }
         BootloaderAllocator::default().deallocate(
             NonNull::new(ptr).expect("Global allocator: dealloc"),
             layout,
         );
+    }
+}
+
+
+#[cfg(not(feature = "global-alloc"))]
+unsafe impl GlobalAlloc for OptionalGlobalAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        panic!("global alloc not allowed")
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        panic!("global alloc not allowed");
     }
 }
 

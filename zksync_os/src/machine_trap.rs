@@ -211,7 +211,7 @@ fn custom_machine_exception_handler(trap_frame: &mut MachineTrapFrame) -> usize 
     let epc = riscv::register::mepc::read();
     let satp = riscv::register::satp::read();
 
-    #[cfg(not(feature = "no_print"))]
+    #[cfg(feature = "print_debug_info")]
     crate::println!("Exception");
 
     // fast track for misaligned memory access
