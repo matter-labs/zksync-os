@@ -419,7 +419,7 @@ fn encode_tx(
         // factory deps not supported for now
         Token::Array(vec![]),
         Token::Bytes(paymaster_input.unwrap_or_default()),
-        Token::Bytes(reserved_dynamic.unwrap_or(encode_access_list(vec![]))),
+        Token::Bytes(reserved_dynamic.unwrap_or_default()),
     ])
     .to_vec()
 }

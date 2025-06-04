@@ -1024,8 +1024,19 @@ impl<'a> AccessListIter<'a> {
         let slice = &slice[TX_OFFSET..];
         // Reserved dynamic is a bytestring of a list,
         // so that we can add fields later on.
-        // We ignore the length
+
+        let bytestring_len = Self::parse_u256(slice, offset)?.as_limbs()[0] as usize;
+        if bytestring_len == 0 {
+            // If empty bytestring, interpret as empty list
+            return Ok(AccessListIter {
+                slice,
+                count: 0,
+                head_start: offset + 32,
+                index: 0,
+            });
+        }
         let offset = offset + 32;
+
         // For now, it only has the access list
         let outer_offset = Self::parse_u256(slice, offset)?.as_limbs()[0] as usize;
         let outer_base = offset + outer_offset;
