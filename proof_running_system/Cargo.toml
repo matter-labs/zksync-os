@@ -38,4 +38,5 @@ scalloc = []
 cycle_marker = ["zk_ee/cycle_marker", "evm_interpreter/cycle_marker", "basic_system/cycle_marker", "basic_bootloader/cycle_marker"]
 evm-compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-compatibility","evm_interpreter/evm-compatibility"]
 unlimited_native = []
+wrap-in-batch = ["basic_system/wrap-in-batch"]
 

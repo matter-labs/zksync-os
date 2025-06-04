@@ -453,24 +453,6 @@ impl<S: EthereumLikeSystem> ExecutionEnvironment<S> for IWasmInterpreter<S> {
             .spendable_part_mut()
             .add(returned_resources.spendable_part());
         match deployment_result {
-            DeploymentResult::DeploymentCallFailedToExecute => {
-                // TODO: pass error to return state
-                // we still didn't pass the control flow, so we bail as panic
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Deployment failed, out of gas\n"));
-                let host = ZkOSHost {
-                    context: &self.context,
-                    import_context: &mut self.iwasm_import_context,
-                    resources: &mut self.resources,
-                    system,
-                    returndata_region: MemoryRegion {
-                        region_type: MemoryRegionType::Shared,
-                        description: MemoryRegionDescription::empty(),
-                    },
-                };
-                return host.create_immediate_return_state(MemoryRegion::empty_shared(), true);
-            }
             DeploymentResult::Failed { return_values, .. } => {
                 assert!(return_values.return_scratch_space.is_none());
                 // top two elements of the stack are the output place of our host fn

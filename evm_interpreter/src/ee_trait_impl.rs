@@ -94,7 +94,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
             external_call:
                 ExternalCallRequest {
                     ergs_to_pass: _,
-                    available_resources,
+                    mut available_resources,
                     caller,
                     callee,
                     callers_caller,
@@ -194,6 +194,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
             bytecode,
             original_bytecode_len,
             system,
+            &mut available_resources,
         )?;
 
         self.resources = available_resources;
@@ -257,14 +258,6 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
         assert!(self.resources.native().as_u64() == 0);
         self.resources.reclaim(returned_resources);
         match deployment_result {
-            DeploymentResult::DeploymentCallFailedToExecute => {
-                let _ = system.get_logger().write_fmt(format_args!(
-                    "Deployment failed, out of gas. Available: {:?}\n",
-                    self.resources
-                ));
-                // we still didn't pass the control flow, so we bail as panic
-                return self.create_immediate_return_state(system, true, true, false);
-            }
             DeploymentResult::Failed {
                 return_values,
                 execution_reverted,

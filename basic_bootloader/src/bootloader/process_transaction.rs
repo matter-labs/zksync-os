@@ -7,6 +7,7 @@ use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidAA, InvalidTransaction, TxError};
 use crate::{require, require_internal};
+use constants::SIMULATION_NATIVE_PER_GAS;
 use constants::{
     L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_PUBDATA, L2_TX_INTRINSIC_GAS, L2_TX_INTRINSIC_PUBDATA,
     MAX_BLOCK_GAS_LIMIT,
@@ -256,7 +257,13 @@ where
 
         // Emit log
         let chain_id = system.get_chain_id();
-        let tx_hash: Bytes32 = transaction.calculate_hash(chain_id)?.into();
+        let tx_hash: Bytes32 = transaction
+            .calculate_hash(chain_id, &mut inf_resources)
+            .map_err(|e| match e {
+                FatalError::Internal(e) => e,
+                FatalError::OutOfNativeResources => InternalError("Out of native on infinite"),
+            })?
+            .into();
         let success = matches!(result, ExecutionResult::Success { .. });
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
         system.io.emit_l1_l2_tx_log(
@@ -429,6 +436,8 @@ where
         };
         let native_per_gas = if cfg!(feature = "resources_for_tester") {
             U256::from(crate::bootloader::constants::TESTER_NATIVE_PER_GAS)
+        } else if Config::ONLY_SIMULATE {
+            SIMULATION_NATIVE_PER_GAS
         } else {
             U256::from(gas_price).div_ceil(native_price)
         };
@@ -479,8 +488,14 @@ where
 
         let chain_id = system.get_chain_id();
 
-        let tx_hash: Bytes32 = transaction.calculate_hash(chain_id)?.into();
-        let suggested_signed_hash: Bytes32 = transaction.calculate_signed_hash(chain_id)?.into();
+        let tx_hash: Bytes32 = transaction
+            .calculate_hash(chain_id, &mut resources)
+            .map_err(TxError::oon_as_validation)?
+            .into();
+        let suggested_signed_hash: Bytes32 = transaction
+            .calculate_signed_hash(chain_id, &mut resources)
+            .map_err(TxError::oon_as_validation)?
+            .into();
 
         let ValidationResult { validation_pubdata } = if !Config::ONLY_SIMULATE {
             Self::transaction_validation::<_, Config>(

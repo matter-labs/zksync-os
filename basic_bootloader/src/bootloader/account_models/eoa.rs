@@ -624,9 +624,6 @@ where
             ..
         } => (true, false, return_values, Some(deployed_at)),
         DeploymentResult::Failed { return_values, .. } => (false, true, return_values, None),
-        DeploymentResult::DeploymentCallFailedToExecute => {
-            (false, true, ReturnValues::empty(system), None)
-        }
     };
     // Do not forget to reassign it back after potential copy when finishing frame
     system.finish_global_frame(reverted.then_some(&rollback_handle))?;

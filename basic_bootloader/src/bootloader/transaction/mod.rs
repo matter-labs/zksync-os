@@ -9,7 +9,7 @@ use core::ops::Range;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::U256;
-use zk_ee::system::errors::InternalError;
+use zk_ee::system::errors::{FatalError, InternalError, SystemError};
 
 mod abi_utils;
 
@@ -259,9 +259,6 @@ impl<'a> ZkSyncTransaction<'a> {
         {
             return Err(());
         }
-        if self.factory_deps.range.len() != 0 {
-            return Err(());
-        }
         if self.reserved_dynamic.range.len() != 0 {
             return Err(());
         }
@@ -326,14 +323,18 @@ impl<'a> ZkSyncTransaction<'a> {
     /// Calculate the signed transaction hash.
     /// i.e. the one should be signed for the EOA accounts.
     ///
-    pub fn calculate_signed_hash(&self, chain_id: u64) -> Result<[u8; 32], InternalError> {
+    pub fn calculate_signed_hash<R: Resources>(
+        &self,
+        chain_id: u64,
+        resources: &mut R,
+    ) -> Result<[u8; 32], FatalError> {
         let tx_type = self.tx_type.read();
         match tx_type {
-            Self::LEGACY_TX_TYPE => Ok(self.legacy_tx_calculate_hash(chain_id, true)),
-            Self::EIP_2930_TX_TYPE => Ok(self.eip2930_tx_calculate_hash(chain_id, true)),
-            Self::EIP_1559_TX_TYPE => Ok(self.eip1559_tx_calculate_hash(chain_id, true)),
-            Self::EIP_712_TX_TYPE => Ok(self.eip712_tx_calculate_signed_hash(chain_id)),
-            _ => Err(InternalError("Type should be validated")),
+            Self::LEGACY_TX_TYPE => self.legacy_tx_calculate_hash(chain_id, true, resources),
+            Self::EIP_2930_TX_TYPE => self.eip2930_tx_calculate_hash(chain_id, true, resources),
+            Self::EIP_1559_TX_TYPE => self.eip1559_tx_calculate_hash(chain_id, true, resources),
+            Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_signed_hash(chain_id, resources),
+            _ => Err(InternalError("Type should be validated").into()),
         }
     }
 
@@ -341,16 +342,20 @@ impl<'a> ZkSyncTransaction<'a> {
     /// Calculate the transaction hash.
     /// i.e. the transaction hash to be used in the explorer.
     ///
-    pub fn calculate_hash(&self, chain_id: u64) -> Result<[u8; 32], InternalError> {
+    pub fn calculate_hash<R: Resources>(
+        &self,
+        chain_id: u64,
+        resources: &mut R,
+    ) -> Result<[u8; 32], FatalError> {
         let tx_type = self.tx_type.read();
         match tx_type {
-            Self::LEGACY_TX_TYPE => Ok(self.legacy_tx_calculate_hash(chain_id, false)),
-            Self::EIP_2930_TX_TYPE => Ok(self.eip2930_tx_calculate_hash(chain_id, false)),
-            Self::EIP_1559_TX_TYPE => Ok(self.eip1559_tx_calculate_hash(chain_id, false)),
-            Self::EIP_712_TX_TYPE => Ok(self.eip712_tx_calculate_hash(chain_id)),
-            Self::L1_L2_TX_TYPE => Ok(self.l1_tx_calculate_hash()),
-            Self::UPGRADE_TX_TYPE => Ok(self.l1_tx_calculate_hash()),
-            _ => Err(InternalError("Type should be validated")),
+            Self::LEGACY_TX_TYPE => self.legacy_tx_calculate_hash(chain_id, false, resources),
+            Self::EIP_2930_TX_TYPE => self.eip2930_tx_calculate_hash(chain_id, false, resources),
+            Self::EIP_1559_TX_TYPE => self.eip1559_tx_calculate_hash(chain_id, false, resources),
+            Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_hash(chain_id, resources),
+            Self::L1_L2_TX_TYPE => self.l1_tx_calculate_hash(resources),
+            Self::UPGRADE_TX_TYPE => self.l1_tx_calculate_hash(resources),
+            _ => Err(InternalError("Type should be validated").into()),
         }
     }
 
@@ -363,7 +368,12 @@ impl<'a> ZkSyncTransaction<'a> {
     /// - RLP(nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0) for EIP-155 txs
     /// - RLP(nonce, gasPrice, gasLimit, to, value, data) for pre EIP-155 txs
     ///
-    fn legacy_tx_calculate_hash(&self, chain_id: u64, signed: bool) -> [u8; 32] {
+    fn legacy_tx_calculate_hash<R: Resources>(
+        &self,
+        chain_id: u64,
+        signed: bool,
+        resources: &mut R,
+    ) -> Result<[u8; 32], FatalError> {
         let mut total_list_len =
             rlp::estimate_number_encoding_len(self.nonce.encoding(&self.underlying_buffer))
                 + rlp::estimate_number_encoding_len(
@@ -407,6 +417,9 @@ impl<'a> ZkSyncTransaction<'a> {
             }
             total_list_len += rlp::estimate_number_encoding_len(&v.to_be_bytes());
         }
+
+        let encoding_length = rlp::estimate_length_encoding_len(total_list_len) + total_list_len;
+        charge_keccak(encoding_length, resources)?;
 
         let mut hasher = Keccak256::new();
         rlp::apply_list_length_encoding_to_hash(total_list_len, &mut hasher);
@@ -462,9 +475,8 @@ impl<'a> ZkSyncTransaction<'a> {
                 v += 8 + chain_id as u128 * 2;
             }
             rlp::apply_number_encoding_to_hash(&v.to_be_bytes(), &mut hasher);
-        }
-
-        hasher.finalize()
+        };
+        Ok(hasher.finalize())
     }
 
     ///
@@ -476,7 +488,12 @@ impl<'a> ZkSyncTransaction<'a> {
     ///
     /// Note, that on zkSync access lists are not supported and should always be empty.
     ///
-    pub fn eip2930_tx_calculate_hash(&self, chain_id: u64, signed: bool) -> [u8; 32] {
+    pub fn eip2930_tx_calculate_hash<R: Resources>(
+        &self,
+        chain_id: u64,
+        signed: bool,
+        resources: &mut R,
+    ) -> Result<[u8; 32], FatalError> {
         let mut total_list_len = rlp::estimate_number_encoding_len(&chain_id.to_be_bytes())
             + rlp::estimate_number_encoding_len(self.nonce.encoding(&self.underlying_buffer))
             + rlp::estimate_number_encoding_len(
@@ -511,6 +528,9 @@ impl<'a> ZkSyncTransaction<'a> {
                 &self.signature.encoding(&self.underlying_buffer)[64..65],
             );
         }
+
+        let encoding_length = rlp::estimate_length_encoding_len(total_list_len) + total_list_len;
+        charge_keccak(encoding_length, resources)?;
 
         let mut hasher = Keccak256::new();
         hasher.update([0x01]);
@@ -564,7 +584,7 @@ impl<'a> ZkSyncTransaction<'a> {
             );
         }
 
-        hasher.finalize()
+        Ok(hasher.finalize())
     }
 
     ///
@@ -576,7 +596,12 @@ impl<'a> ZkSyncTransaction<'a> {
     ///
     /// Note, that on zkSync access lists are not supported and should always be empty.
     ///
-    pub fn eip1559_tx_calculate_hash(&self, chain_id: u64, signed: bool) -> [u8; 32] {
+    pub fn eip1559_tx_calculate_hash<R: Resources>(
+        &self,
+        chain_id: u64,
+        signed: bool,
+        resources: &mut R,
+    ) -> Result<[u8; 32], FatalError> {
         let mut total_list_len = rlp::estimate_number_encoding_len(&chain_id.to_be_bytes())
             + rlp::estimate_number_encoding_len(self.nonce.encoding(&self.underlying_buffer))
             + rlp::estimate_number_encoding_len(
@@ -615,6 +640,9 @@ impl<'a> ZkSyncTransaction<'a> {
                 &self.signature.encoding(&self.underlying_buffer)[64..65],
             );
         }
+
+        let encoding_length = rlp::estimate_length_encoding_len(total_list_len) + total_list_len;
+        charge_keccak(encoding_length, resources)?;
 
         let mut hasher = Keccak256::new();
         hasher.update([0x02]);
@@ -673,7 +701,7 @@ impl<'a> ZkSyncTransaction<'a> {
             );
         }
 
-        hasher.finalize()
+        Ok(hasher.finalize())
     }
 
     // Keccak256 of:
@@ -702,13 +730,22 @@ impl<'a> ZkSyncTransaction<'a> {
         0x14, 0xa5,
     ];
 
-    fn domain_hash_struct(chain_id: u64) -> [u8; 32] {
+    fn domain_hash_struct<R: Resources>(
+        chain_id: u64,
+        resources: &mut R,
+    ) -> Result<[u8; 32], FatalError> {
+        let len = Self::DOMAIN_TYPE_HASH.len()
+            + Self::DOMAIN_NAME_HASH.len()
+            + Self::DOMAIN_VERSION_HASH.len()
+            + U256::BYTES;
+        charge_keccak(len, resources)?;
+
         let mut hasher = Keccak256::new();
         hasher.update(Self::DOMAIN_TYPE_HASH);
         hasher.update(Self::DOMAIN_NAME_HASH);
         hasher.update(Self::DOMAIN_VERSION_HASH);
         hasher.update(U256::from(chain_id).to_be_bytes::<32>());
-        *hasher.finalize().split_first_chunk::<32>().unwrap().0
+        Ok(*hasher.finalize().split_first_chunk::<32>().unwrap().0)
     }
 
     // Keccak256 of:
@@ -720,7 +757,10 @@ impl<'a> ZkSyncTransaction<'a> {
         0xaa, 0xc8,
     ];
 
-    fn hash_struct(&self) -> [u8; 32] {
+    fn hash_struct<R: Resources>(&self, resources: &mut R) -> Result<[u8; 32], FatalError> {
+        let len = U256::BYTES * 14;
+        charge_keccak(len, resources)?;
+
         let mut hasher = Keccak256::new();
         hasher.update(Self::TYPE_HASH);
         hasher.update(self.tx_type.encoding(&self.underlying_buffer));
@@ -737,43 +777,56 @@ impl<'a> ZkSyncTransaction<'a> {
         hasher.update(self.nonce.encoding(&self.underlying_buffer));
         hasher.update(self.value.encoding(&self.underlying_buffer));
 
+        charge_keccak(self.data.range.len(), resources)?;
         let data_hash =
             <Keccak256 as MiniDigest>::digest(self.data.encoding(&self.underlying_buffer));
         hasher.update(&data_hash);
 
+        charge_keccak(self.factory_deps.range.len(), resources)?;
         let factory_deps_hash =
             <Keccak256 as MiniDigest>::digest(self.factory_deps.encoding(&self.underlying_buffer));
         hasher.update(&factory_deps_hash);
 
+        charge_keccak(self.paymaster_input.range.len(), resources)?;
         let paymaster_input_hash = <Keccak256 as MiniDigest>::digest(
             self.paymaster_input.encoding(&self.underlying_buffer),
         );
         hasher.update(&paymaster_input_hash);
 
-        hasher.finalize()
+        Ok(hasher.finalize())
     }
 
     ///
     /// Calculate signed tx hash(the one that should be signed by the sender):
     /// Keccak256(0x19 0x01 ‖ domainSeparator ‖ hashStruct(tx))
     ///
-    fn eip712_tx_calculate_signed_hash(&self, chain_id: u64) -> [u8; 32] {
-        let domain_separator = Self::domain_hash_struct(chain_id);
-        let hs = self.hash_struct();
+    fn eip712_tx_calculate_signed_hash<R: Resources>(
+        &self,
+        chain_id: u64,
+        resources: &mut R,
+    ) -> Result<[u8; 32], FatalError> {
+        let domain_separator = Self::domain_hash_struct(chain_id, resources)?;
+        let hs = self.hash_struct(resources)?;
+        charge_keccak(2 + 2 * U256::BYTES, resources)?;
         let mut hasher = Keccak256::new();
         hasher.update([0x19, 0x01]);
         hasher.update(domain_separator);
         hasher.update(hs);
 
-        hasher.finalize()
+        Ok(hasher.finalize())
     }
 
     ///
     /// Calculate tx hash with signature(to be used in the explorer):
     /// Keccak256(signed_hash || Keccak256(signature))
     ///
-    fn eip712_tx_calculate_hash(&self, chain_id: u64) -> [u8; 32] {
-        let signed_hash = self.eip712_tx_calculate_signed_hash(chain_id);
+    fn eip712_tx_calculate_hash<R: Resources>(
+        &self,
+        chain_id: u64,
+        resources: &mut R,
+    ) -> Result<[u8; 32], FatalError> {
+        let signed_hash = self.eip712_tx_calculate_signed_hash(chain_id, resources)?;
+        charge_keccak(U256::BYTES * 2 + self.signature.range.len(), resources)?;
         let signature_hash =
             <Keccak256 as MiniDigest>::digest(self.signature.encoding(&self.underlying_buffer));
 
@@ -781,19 +834,23 @@ impl<'a> ZkSyncTransaction<'a> {
         hasher.update(signed_hash);
         hasher.update(signature_hash);
 
-        hasher.finalize()
+        Ok(hasher.finalize())
     }
 
     ///
     /// Calculate l1 tx hash:
     /// Keccak256(abi.encode(transaction))
     ///
-    fn l1_tx_calculate_hash(&self) -> [u8; 32] {
+    fn l1_tx_calculate_hash<R: Resources>(
+        &self,
+        _resources: &mut R,
+    ) -> Result<[u8; 32], FatalError> {
+        // TODO: should we charge here or intrinsic?
         let mut hasher = Keccak256::new();
         // Note, that the correct ABI encoding of the Transaction structure starts with 0x20
         hasher.update(&U256::from(0x20).to_be_bytes::<32>());
         hasher.update(&self.underlying_buffer[TX_OFFSET..]);
-        hasher.finalize()
+        Ok(hasher.finalize())
     }
 
     /// Checks if the transaction is of type EIP-712
@@ -980,4 +1037,15 @@ impl<'a> Parser<'a> {
 
         Ok(value)
     }
+}
+
+fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), FatalError> {
+    let native_cost = basic_system::system_functions::keccak256::keccak256_native_cost::<R>(len);
+    resources
+        .charge(&R::from_native(native_cost))
+        .map_err(|e| match e {
+            SystemError::OutOfErgs => unreachable!(),
+            SystemError::Internal(e) => FatalError::Internal(e),
+            SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+        })
 }
