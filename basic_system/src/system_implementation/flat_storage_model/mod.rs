@@ -10,6 +10,7 @@ pub mod cost_constants;
 pub mod preimage_cache;
 mod simple_growable_storage;
 pub mod storage_cache;
+mod storage_tree;
 
 pub use self::account_cache::*;
 pub use self::account_cache_entry::*;
