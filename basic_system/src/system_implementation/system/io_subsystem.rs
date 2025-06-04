@@ -633,12 +633,12 @@ where
             batch_output: batch_output.hash().into(),
         };
         let _ = logger.write_fmt(format_args!(
-            "PI calculation: final batch public input {:?}\n"
+            "PI calculation: final batch public input {:?}\n",
             public_input,
         ));
         let public_input_hash = public_input.hash().into();
         let _ = logger.write_fmt(format_args!(
-            "PI calculation: final batch public input hash {:?}\n"
+            "PI calculation: final batch public input hash {:?}\n",
             public_input_hash,
         ));
 
