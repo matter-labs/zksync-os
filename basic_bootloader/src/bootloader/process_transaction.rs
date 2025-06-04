@@ -498,7 +498,7 @@ where
         // Note: this operation should be performed before the hashing of the
         // transaction, as the latter assumes the transaction structure has
         // already been validated.
-        transaction.process_access_list(system, &mut resources)?;
+        transaction.parse_and_warm_up_access_list(system, &mut resources)?;
 
         let tx_hash: Bytes32 = transaction
             .calculate_hash(chain_id, &mut resources)

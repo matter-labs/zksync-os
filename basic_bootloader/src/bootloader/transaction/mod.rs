@@ -538,7 +538,7 @@ impl<'a> ZkSyncTransaction<'a> {
     /// Parse and validate access list, while warming up accounts and
     /// storage slots.
     ///
-    pub fn process_access_list<S: EthereumLikeTypes>(
+    pub fn parse_and_warm_up_access_list<S: EthereumLikeTypes>(
         &self,
         system: &mut System<S>,
         resources: &mut S::Resources,
@@ -577,7 +577,7 @@ impl<'a> ZkSyncTransaction<'a> {
     /// Keccak256(0x01 || RLP(chain_id, nonce, gas_price, gas_limit, destination, amount, data, access_list))
     ///
     /// Note that this function assumes that if the transaction has an access list,
-    /// this field has been validated previously by [process_access_list].
+    /// this field has been validated previously by [parse_and_warm_up_access_list].
     ///
     pub fn eip2930_tx_calculate_hash<R: Resources>(
         &self,
@@ -692,7 +692,8 @@ impl<'a> ZkSyncTransaction<'a> {
     /// Keccak256(0x02 || RLP(chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, destination, amount, data, access_list))
     ///
     /// Note that this function assumes that if the transaction has an access list,
-    /// this field has been validated previously by [process_access_list].
+    /// this field has been validated previously by
+    /// [parse_and_warm_up_access_list].
     ///
     pub fn eip1559_tx_calculate_hash<R: Resources>(
         &self,
