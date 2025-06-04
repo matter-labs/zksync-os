@@ -17,6 +17,7 @@ pub use self::preimage_cache::*;
 pub use self::simple_growable_storage::*;
 pub use self::storage_cache::*;
 use core::alloc::Allocator;
+use core::fmt::Write;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
 use storage_models::common_structs::PreimageCacheModel;
@@ -197,6 +198,7 @@ where
             .for_total_diff_operands::<_, ()>(|l, r, k| {
                 // TODO: use tree index instead of key for repeated writes
                 let derived_key = derive_flat_storage_key(&k.address, &k.key);
+                let _ = logger.write_fmt(format_args!("Storage access: key: {:?}:{:?}, initial value {:?}, final value {:?}\n", &k.address, &k.key, l.value, r.value));
                 pubdata_hasher.update(derived_key.as_u8_ref());
                 result_keeper.pubdata(derived_key.as_u8_ref());
 
