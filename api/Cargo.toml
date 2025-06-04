@@ -14,7 +14,7 @@ categories.workspace = true
 forward_system = { path = "../forward_system"}
 oracle_provider = { path = "../oracle_provider" }
 zksync_os_runner = { path = "../zksync_os_runner"}
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender"}
+risc_v_simulator = { workspace = true }
 
 
 [features]

@@ -10,10 +10,10 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", features = ["delegation"] }
-trace_and_split = { git = "https://github.com/matter-labs/zksync-airbender" }
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender" }
-prover_examples = { git = "https://github.com/matter-labs/zksync-airbender" }
+risc_v_simulator = { workspace = true, features = ["delegation"] }
+trace_and_split = { workspace = true }
+execution_utils = { workspace = true }
+prover_examples = { workspace = true }
 cycle_marker = { path = "../cycle_marker" }
 # risc_v_simulator = { path = "../../zksync-airbender/risc_v_simulator" }
 
