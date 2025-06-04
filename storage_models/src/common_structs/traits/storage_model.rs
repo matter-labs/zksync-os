@@ -159,10 +159,10 @@ pub trait StorageModel: Sized + SnapshottableIo {
 
     fn construct(init_data: Self::InitData, allocator: Self::Allocator) -> Self;
 
-    ///
+    /// TODO
     /// Get amount of pubdata needed to encode current diff in bytes.
     ///
-    fn pubdata_used(&self) -> u32;
+    fn pubdata_used_by_tx(&self) -> u32;
 
     ///
     /// Finish work, there are 3 outputs:

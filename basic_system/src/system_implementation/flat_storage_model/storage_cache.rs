@@ -2,10 +2,10 @@
 use crate::system_implementation::flat_storage_model::address_into_special_storage_key;
 use crate::system_implementation::system::ExtraCheck;
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::fmt::Debug;
 use core::alloc::Allocator;
 use ruint::aliases::B160;
-use alloc::collections::BTreeSet;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
 use zk_ee::common_structs::cache_record::{Appearance, CacheRecord};
@@ -94,8 +94,6 @@ pub struct GenericPubdataAwarePlainStorage<
     pub(crate) resources_policy: P,
     pub(crate) current_tx_number: TransactionId,
     pub(crate) initial_values: BTreeMap<K, (V, TransactionId), A>, // Used to cache initial values at the beginning of the tx (For EVM gas model)
-    total_pubdata_used: u32,
-    pubdata_used_by_tx: Option<u32>,
     alloc: A,
     pub(crate) _marker: core::marker::PhantomData<(R, SC, SCC)>,
 }
@@ -124,8 +122,6 @@ where
             current_tx_number: TransactionId(0),
             resources_policy,
             initial_values: BTreeMap::new_in(allocator.clone()),
-            total_pubdata_used: 0,
-            pubdata_used_by_tx: None,
             alloc: allocator.clone(),
             _marker: core::marker::PhantomData,
         }
@@ -133,7 +129,6 @@ where
 
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
-        self.pubdata_used_by_tx = None;
 
         self.current_tx_number.0 += 1;
     }
@@ -591,16 +586,6 @@ where
             }
         }
 
-        //if let Some(prev_pubdata_used_by_tx) = self.0.pubdata_used_by_tx {
-        //     self.0.total_pubdata_used.checked_sub(rhs)
-        // }
-        //self.0.pubdata_used_by_tx = Some(pubdata_used);
-
         pubdata_used
-    }
-
-    pub fn net_pubdata_used(&self) -> u32 {
-        assert!(self.0.pubdata_used_by_tx.is_some());
-        self.0.total_pubdata_used // TODO do we need total pubdata counter? Maybe to limit total pubdata in block
     }
 }

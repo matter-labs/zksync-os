@@ -326,7 +326,7 @@ where
     }
 
     fn net_pubdata_used(&self) -> u64 {
-        self.storage.pubdata_used() as u64 + self.logs_storage.pubdata_used() as u64
+        self.storage.pubdata_used_by_tx() as u64 + self.logs_storage.pubdata_used() as u64
     }
 
     fn start_io_frame(&mut self) -> Result<FullIOStateSnapshot, InternalError> {

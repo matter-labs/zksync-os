@@ -10,6 +10,7 @@ use crate::system_implementation::flat_storage_model::PreimageRequest;
 use crate::system_implementation::flat_storage_model::StorageAccessPolicy;
 use crate::system_implementation::flat_storage_model::DEFAULT_CODE_VERSION_BYTE;
 use crate::system_implementation::system::ExtraCheck;
+use alloc::collections::BTreeSet;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
 use evm_interpreter::ERGS_PER_GAS;
@@ -60,6 +61,7 @@ pub struct NewModelAccountCache<
     pub(crate) cache:
         HistoryMap<BitsOrd160, CacheRecord<AccountProperties, AccountPropertiesMetadata>, A>,
     pub(crate) current_tx_number: u32,
+    alloc: A,
     phantom: PhantomData<(R, P, SC, SCC)>,
 }
 
@@ -77,6 +79,7 @@ where
         Self {
             cache: HistoryMap::new(allocator.clone()),
             current_tx_number: 0,
+            alloc: allocator.clone(),
             phantom: PhantomData,
         }
     }
@@ -319,16 +322,30 @@ where
         })
     }
 
-    pub fn net_pubdata_used(&self) -> u32 {
+    pub fn calculate_pubdata_used_by_tx(&self) -> u32 {
         // TODO: should be constant complexity
+
+        let mut visited_elements = BTreeSet::new_in(self.alloc.clone());
+
         let mut pubdata_used = 0u32;
-        self.cache
-            .for_total_diff_operands::<_, ()>(|l, r, _| {
-                pubdata_used +=
-                    AccountProperties::diff_compression_length(l.value(), r.value()).unwrap();
-                Ok(())
-            })
-            .expect("We're returning Ok(()).");
+        for element_history in self.cache.iter_altered_since_commit() {
+            // Elements are sorted chronologically
+
+            let element_key = element_history.key();
+
+            // Skip if already calculated pubdata for this element
+            if visited_elements.contains(element_key) {
+                continue;
+            }
+            visited_elements.insert(element_key);
+
+            let current_value = element_history.current().value();
+            let initial_value = element_history.initial().value();
+
+            pubdata_used +=
+                AccountProperties::diff_compression_length(initial_value, current_value).unwrap();
+        }
+
         pubdata_used
     }
 

@@ -119,9 +119,9 @@ where
         }
     }
 
-    fn pubdata_used(&self) -> u32 {
-        self.account_data_cache.net_pubdata_used()
-            + self.storage_cache.calculate_pubdata_used_by_tx()
+    fn pubdata_used_by_tx(&self) -> u32 {
+        self.account_data_cache.calculate_pubdata_used_by_tx()
+            + self.storage_cache.calculate_pubdata_used_by_tx() // TODO: what about preimages cache?
     }
 
     fn finish(
