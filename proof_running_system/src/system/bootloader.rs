@@ -4,7 +4,6 @@ use alloc::alloc::{GlobalAlloc, Layout};
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
-use core::ptr::NonNull;
 use zk_ee::memory::ZSTAllocator;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
 use zk_ee::system_io_oracle::{DisconnectOracleFormalIterator, IOOracle};
@@ -118,20 +117,19 @@ unsafe impl GlobalAlloc for OptionalGlobalAllocator {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         BootloaderAllocator::default().deallocate(
-            NonNull::new(ptr).expect("Global allocator: dealloc"),
+            core::ptr::NonNull::new(ptr).expect("Global allocator: dealloc"),
             layout,
         );
     }
 }
 
-
 #[cfg(not(feature = "global-alloc"))]
 unsafe impl GlobalAlloc for OptionalGlobalAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+    unsafe fn alloc(&self, _layout: Layout) -> *mut u8 {
         panic!("global alloc not allowed")
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
         panic!("global alloc not allowed");
     }
 }
