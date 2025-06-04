@@ -2,13 +2,17 @@
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
+    use std::{io::Read, path::PathBuf, str::FromStr};
 
     use prover::{cs::machine::Machine, field::Mersenne31Field};
 
     fn read_text_section() -> Vec<u32> {
         let mut binary = vec![];
-        let mut file = std::fs::File::open("../../zksync_os/app.text").unwrap();
+
+        let zksync_os_path =
+            std::env::var("ZKOS_DIR").unwrap_or_else(|_| String::from("../../zksync_os"));
+        let file_path = PathBuf::from_str(&zksync_os_path).unwrap().join("app.text");
+        let mut file = std::fs::File::open(file_path).unwrap();
         file.read_to_end(&mut binary).unwrap();
         assert!(binary.len() % 4 == 0);
 
