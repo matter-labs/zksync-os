@@ -5,6 +5,7 @@ use alloc::collections::BTreeMap;
 use alloc::fmt::Debug;
 use core::alloc::Allocator;
 use ruint::aliases::B160;
+use alloc::collections::BTreeSet;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
 use zk_ee::common_structs::cache_record::{Appearance, CacheRecord};
@@ -93,6 +94,9 @@ pub struct GenericPubdataAwarePlainStorage<
     pub(crate) resources_policy: P,
     pub(crate) current_tx_number: TransactionId,
     pub(crate) initial_values: BTreeMap<K, (V, TransactionId), A>, // Used to cache initial values at the beginning of the tx (For EVM gas model)
+    total_pubdata_used: u32,
+    pubdata_used_by_tx: Option<u32>,
+    alloc: A,
     pub(crate) _marker: core::marker::PhantomData<(R, SC, SCC)>,
 }
 
@@ -120,12 +124,16 @@ where
             current_tx_number: TransactionId(0),
             resources_policy,
             initial_values: BTreeMap::new_in(allocator.clone()),
+            total_pubdata_used: 0,
+            pubdata_used_by_tx: None,
+            alloc: allocator.clone(),
             _marker: core::marker::PhantomData,
         }
     }
 
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
+        self.pubdata_used_by_tx = None;
 
         self.current_tx_number.0 += 1;
     }
@@ -548,27 +556,51 @@ where
             .filter(|(_, v)| v.current_value != v.initial_value)
     }
 
-    pub fn net_pubdata_used(&self) -> u32 {
+    pub fn calculate_pubdata_used_by_tx(&self) -> u32 {
         // TODO: should be constant complexity
+
+        let mut visited_elements = BTreeSet::new_in(self.0.alloc.clone());
+
         let mut pubdata_used = 0u32;
-        self.0
-            .cache
-            .for_total_diff_operands::<_, ()>(|l, r, k| {
+        for element_history in self.0.cache.iter_altered_since_commit() {
+            // Elements are sorted chronologically
+
+            let element_key = element_history.key();
+
+            // we publish preimages for account details, so no need to publish hash
+            if element_key.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
+                continue;
+            }
+
+            // Skip if already calculated pubdata for this element
+            if visited_elements.contains(element_key) {
+                continue;
+            }
+            visited_elements.insert(element_key);
+
+            let current_value = element_history.current().value();
+            let initial_value = element_history.initial().value();
+
+            if initial_value != current_value {
                 // TODO: use tree index instead of key for repeated writes
                 pubdata_used += 32; // key
-                                    // we publish preimages for account details, so no need to publish hash
-                if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
-                    return Ok(());
-                }
-                if l.value() != r.value() {
-                    pubdata_used += ValueDiffCompressionStrategy::optimal_compression_length(
-                        l.value(),
-                        r.value(),
-                    ) as u32;
-                }
-                Ok(())
-            })
-            .expect("We're returning Ok(())");
+                pubdata_used += ValueDiffCompressionStrategy::optimal_compression_length(
+                    initial_value,
+                    current_value,
+                ) as u32;
+            }
+        }
+
+        //if let Some(prev_pubdata_used_by_tx) = self.0.pubdata_used_by_tx {
+        //     self.0.total_pubdata_used.checked_sub(rhs)
+        // }
+        //self.0.pubdata_used_by_tx = Some(pubdata_used);
+
         pubdata_used
+    }
+
+    pub fn net_pubdata_used(&self) -> u32 {
+        assert!(self.0.pubdata_used_by_tx.is_some());
+        self.0.total_pubdata_used // TODO do we need total pubdata counter? Maybe to limit total pubdata in block
     }
 }

@@ -120,7 +120,8 @@ where
     }
 
     fn pubdata_used(&self) -> u32 {
-        self.account_data_cache.net_pubdata_used() + self.storage_cache.net_pubdata_used()
+        self.account_data_cache.net_pubdata_used()
+            + self.storage_cache.calculate_pubdata_used_by_tx()
     }
 
     fn finish(

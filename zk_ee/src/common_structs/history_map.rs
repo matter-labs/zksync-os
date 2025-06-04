@@ -187,6 +187,10 @@ where
         unsafe { &self.history.head.as_ref().value }
     }
 
+    pub fn initial(&self) -> &V {
+        unsafe { &self.history.initial.as_ref().value }
+    }
+
     #[allow(dead_code)]
     pub fn diff_operands_total(&self) -> Option<(&V, &V)> {
         self.history.diff_operands_total()
