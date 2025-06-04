@@ -10,7 +10,7 @@ mod tests {
         let mut binary = vec![];
 
         let zksync_os_path =
-            std::env::var("ZKOS_DIR").unwrap_or_else(|_| String::from("../../zksync_os"));
+            std::env::var("ZKSYNC_OS_DIR").unwrap_or_else(|_| String::from("../../zksync_os"));
         let file_path = PathBuf::from_str(&zksync_os_path).unwrap().join("app.text");
         let mut file = std::fs::File::open(file_path).unwrap();
         file.read_to_end(&mut binary).unwrap();

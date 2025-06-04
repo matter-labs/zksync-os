@@ -33,7 +33,8 @@ pub fn run_default_with_flamegraph_path(
     non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
     diagnostics_path: Option<PathBuf>,
 ) -> [u32; 8] {
-    let zksync_os_path = std::env::var("ZKOS_DIR").unwrap_or_else(|_| String::from("../zksync_os"));
+    let zksync_os_path =
+        std::env::var("ZKSYNC_OS_DIR").unwrap_or_else(|_| String::from("../zksync_os"));
     let diag_config = diagnostics_path.map(|path| {
         let sym_path = PathBuf::from_str(&zksync_os_path).unwrap().join("app.elf");
 
