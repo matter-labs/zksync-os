@@ -11,7 +11,7 @@ categories.workspace = true
 
 [dependencies]
 basic_bootloader = { path = "../../basic_bootloader", features = ["evm-compatibility"] }
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", features = ["delegation"] }
+risc_v_simulator = { workspace = true , features = ["delegation"] }
 basic_system = { path = "../../basic_system", features = ["evm-compatibility"] }
 evm_interpreter = { path = "../../evm_interpreter", features = ["evm-compatibility"] }
 forward_system = { path = "../../forward_system" }
@@ -22,7 +22,7 @@ system_hooks = { path = "../../system_hooks" }
 crypto = { path = "../../crypto" }
 cycle_marker = { path = "../../cycle_marker", optional = true }
 
-prover_examples = {git = "https://github.com/matter-labs/zksync-airbender", optional=true}
+prover_examples = { workspace = true, optional=true}
 
 ethers = "2.0.0" # ethers 2.0.0 is required due to dependency conflict TODO: replace with alloy
 futures = "0.3.30"
