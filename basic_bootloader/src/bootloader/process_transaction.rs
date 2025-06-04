@@ -7,6 +7,7 @@ use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidAA, InvalidTransaction, TxError};
 use crate::{require, require_internal};
+use constants::SIMULATION_NATIVE_PER_GAS;
 use constants::{
     L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_PUBDATA, L2_TX_INTRINSIC_GAS, L2_TX_INTRINSIC_PUBDATA,
     MAX_BLOCK_GAS_LIMIT,
@@ -435,6 +436,8 @@ where
         };
         let native_per_gas = if cfg!(feature = "resources_for_tester") {
             U256::from(crate::bootloader::constants::TESTER_NATIVE_PER_GAS)
+        } else if Config::ONLY_SIMULATE {
+            SIMULATION_NATIVE_PER_GAS
         } else {
             U256::from(gas_price).div_ceil(native_price)
         };
