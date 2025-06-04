@@ -86,7 +86,7 @@ fn test_talc_huge_allocation() {
     unsafe {
         let oom_handler = ClaimOnOom::new(Span::from_base_size(backing.as_mut_ptr().cast(), size));
         let allocator = Talc::new(oom_handler);
-        let allocator = TalcWrapper(allocator);
+        let allocator = TalcWrapper::new(allocator);
         // let mut huge_vec: Vec<u8, _> = Vec::try_with_capacity_in(1 << 27, &allocator).unwrap();
         let mut huge_vec: Vec<u8, _> = Vec::with_capacity_in(1 << 27, &allocator);
         assert!(huge_vec.capacity() == 1 << 27);
