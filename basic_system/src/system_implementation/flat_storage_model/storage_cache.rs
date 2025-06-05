@@ -1,6 +1,7 @@
 //! Storage cache, backed by a history map.
 use crate::system_implementation::flat_storage_model::address_into_special_storage_key;
 use crate::system_implementation::system::ExtraCheck;
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::fmt::Debug;
 use core::alloc::Allocator;
@@ -92,6 +93,7 @@ pub struct GenericPubdataAwarePlainStorage<
     pub(crate) cache: HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
     pub(crate) resources_policy: P,
     pub(crate) current_tx_number: TransactionId,
+    pub(crate) initial_values: BTreeMap<K, (V, TransactionId), A>, // Used to cache initial values at the beginning of the tx (For EVM gas model)
     alloc: A,
     pub(crate) _marker: core::marker::PhantomData<(R, SC, SCC)>,
 }
@@ -119,6 +121,7 @@ where
             cache: HistoryMap::new(allocator.clone()),
             current_tx_number: TransactionId(0),
             resources_policy,
+            initial_values: BTreeMap::new_in(allocator.clone()),
             alloc: allocator.clone(),
             _marker: core::marker::PhantomData,
         }
@@ -248,7 +251,25 @@ where {
         )?;
 
         let val_current = addr_data.current().value();
-        let val_at_tx_start = addr_data.first().value();
+
+        // TODO: suboptimal, maybe can just keep pointers to values?
+        // Try to get initial value at the beginning of the tx.
+        let val_at_tx_start = match self.initial_values.entry(*key) {
+            alloc::collections::btree_map::Entry::Vacant(vacant_entry) => {
+                &vacant_entry
+                    .insert((val_current.clone(), self.current_tx_number))
+                    .0
+            }
+            alloc::collections::btree_map::Entry::Occupied(occupied_entry) => {
+                let (value, tx_number) = occupied_entry.into_mut();
+                // TODO:
+                if *tx_number != self.current_tx_number {
+                    *value = val_current.clone();
+                    *tx_number = self.current_tx_number;
+                }
+                value
+            }
+        };
 
         self.resources_policy.charge_storage_write_extra(
             ee_type,
