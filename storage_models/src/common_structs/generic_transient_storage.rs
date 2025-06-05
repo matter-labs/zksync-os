@@ -25,6 +25,7 @@ pub struct GenericTransientStorage<
     cache: HistoryMap<K, V, A>,
     pub(crate) current_tx_number: u32,
     phantom: PhantomData<(SC, SCC)>,
+    alloc: A
 }
 
 impl<
@@ -42,11 +43,14 @@ where
             cache: HistoryMap::new(allocator.clone()),
             current_tx_number: 0,
             phantom: PhantomData,
+            alloc: allocator.clone(),
         }
     }
 
     pub fn begin_new_tx(&mut self) {
-        self.cache.commit();
+        // Just discard old history
+        // It will reset snapshots counter, but it should be ok
+        self.cache = HistoryMap::new(self.alloc.clone());
         self.current_tx_number += 1;
     }
 
