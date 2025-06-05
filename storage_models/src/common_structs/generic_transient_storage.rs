@@ -25,7 +25,7 @@ pub struct GenericTransientStorage<
     cache: HistoryMap<K, V, A>,
     pub(crate) current_tx_number: u32,
     phantom: PhantomData<(SC, SCC)>,
-    alloc: A
+    alloc: A,
 }
 
 impl<
