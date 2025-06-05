@@ -412,11 +412,11 @@ where
         current_snapshot_id
     }
 
-    /// Rollbacks the data to the state before the provided `snapshot_id`.
+    /// Rollbacks the data to the state at the provided `snapshot_id`.
     pub fn rollback(&mut self, snapshot_id: CacheSnapshotId) {
         if snapshot_id < self.state.frozen_snapshot_id {
             // TODO: replace with internal error
-            panic!("Rolling to frozen snapshot is illegal and will cause UB.")
+            panic!("Rolling below frozen snapshot is illegal and will cause UB.")
         }
 
         let mut node = self.state.updated_elems.pop();
@@ -447,28 +447,19 @@ where
     /// rollbacked to.
     /// TODO rename to reset or smth
     pub fn commit(&mut self) {
-        let mut node = self.state.updated_elems.peek();
-        loop {
-            match node {
-                None => break,
-                Some(ref n) => {
-                    let (key, _update_snapshot_id) = &n.value;
+        self.state.frozen_snapshot_id = self.snapshot();
 
-                    let item = self
-                        .btree
-                        .get_mut(key)
-                        .expect("We've updated this, so it must be present.");
+        for (key, _) in self.state.updated_elems.iter() {
+            let item = self
+                .btree
+                .get_mut(key)
+                .expect("We've updated this, so it must be present.");
 
-                    item.commit(&mut self.reuse);
-
-                    node = &n.next;
-                }
-            }
+            item.commit(&mut self.reuse);
         }
 
         // We've committed, so we don't need those changes anymore.
         self.state.updated_elems = StackLinkedList::empty(self.state.alloc.clone());
-        self.state.frozen_snapshot_id = CacheSnapshotId(self.state.current_snapshot_id.0 - 1);
     }
 
     // TODO check usage
