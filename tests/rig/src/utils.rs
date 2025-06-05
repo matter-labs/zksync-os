@@ -457,7 +457,7 @@ mod tests {
     use zk_ee::utils::Bytes32;
     #[test]
     fn test_encode_access_list() {
-        use basic_bootloader::bootloader::transaction::AccessListParser;
+        use basic_bootloader::bootloader::transaction::access_list_parser::AccessListParser;
         use ethers::abi::Token;
         let address0 = [0x11u8; 20];
         let address1 = [0x10u8; 20];
