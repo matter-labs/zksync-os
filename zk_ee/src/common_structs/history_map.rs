@@ -29,7 +29,7 @@ struct HistoryRecord<V> {
 
 /// The history linked list. Always has at least one item with the snapshot id of 0.
 pub(crate) struct ElementHistory<V, A: Allocator + Clone> {
-    initial: HistoryRecordLink<V>,
+    initial: HistoryRecordLink<V>, // TODO: 'initial' doesn't really fit in current implementation, should be stored outside?
     first: HistoryRecordLink<V>,
     head: HistoryRecordLink<V>,
     alloc: A,
@@ -88,7 +88,7 @@ impl<V, A: Allocator + Clone> ElementHistory<V, A> {
                     .as_mut()
                     .previous
                     .as_mut()
-                    .expect("Every history is terminated with a 0'th snapshot")
+                    .expect("Every history is terminated with a frozen snapshot")
             };
 
             let n = unsafe { n_lnk.as_mut() };
@@ -133,6 +133,9 @@ impl<V, A: Allocator + Clone> ElementHistory<V, A> {
 
         // Current snapshot is the one we're committing to.
         if self.head == self.first {
+            // Remove link to previous element, if any
+            let first = unsafe { self.head.as_mut() };
+            _ = first.previous.take();
             return;
         }
 
@@ -146,10 +149,7 @@ impl<V, A: Allocator + Clone> ElementHistory<V, A> {
         self.first = self.head;
 
         let top = unsafe { self.head.as_mut() };
-        let freed_start = top
-            .previous
-            .replace(self.initial)
-            .expect("History has at least 3 items.");
+        let freed_start = top.previous.take().expect("History has at least 3 items.");
 
         reuse.put_back(freed_start, freed_end);
     }
@@ -187,8 +187,20 @@ where
         unsafe { &self.history.head.as_ref().value }
     }
 
+    // Get the globally initial value
     pub fn initial(&self) -> &V {
         unsafe { &self.history.initial.as_ref().value }
+    }
+
+    // Get first record in current history
+    pub fn first(&self) -> &V {
+        let first_record = unsafe { &self.history.first.as_ref() };
+        if first_record.previous.is_some() {
+            // Before the first commit actual first record is `initial`
+            self.initial()
+        } else {
+            &first_record.value
+        }
     }
 
     #[allow(dead_code)]
