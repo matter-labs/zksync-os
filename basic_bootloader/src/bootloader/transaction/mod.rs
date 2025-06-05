@@ -13,6 +13,8 @@ use ruint::aliases::U256;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};
 
 mod abi_utils;
+pub mod access_list_parser;
+use self::access_list_parser::*;
 
 #[cfg(test)]
 mod tests;
@@ -996,136 +998,6 @@ impl<T: 'static + Clone + Copy + core::fmt::Debug> ParsedValue<T> {
     }
 }
 
-pub struct AccessListParser {
-    pub offset: usize,
-}
-
-impl AccessListParser {
-    pub fn into_iter<'a>(&self, slice: &'a [u8]) -> Result<AccessListIter<'a>, ()> {
-        AccessListIter::new(slice, self.offset)
-    }
-}
-
-pub struct AccessListIter<'a> {
-    slice: &'a [u8],
-    count: usize,
-    head_start: usize,
-    index: usize,
-}
-
-impl<'a> AccessListIter<'a> {
-    fn parse_u256(slice: &'a [u8], offset: usize) -> Result<U256, ()> {
-        Ok(U256::from_be_slice(
-            slice.get(offset..(offset + 32)).ok_or(())?,
-        ))
-    }
-
-    fn new(slice: &'a [u8], offset: usize) -> Result<Self, ()> {
-        // Ignore pre tx buffer:
-        let slice = &slice[TX_OFFSET..];
-        // Reserved dynamic is a bytestring of a list,
-        // so that we can add fields later on.
-
-        let bytestring_len = Self::parse_u256(slice, offset)?.as_limbs()[0] as usize;
-        if bytestring_len == 0 {
-            // If empty bytestring, interpret as empty list
-            return Ok(AccessListIter {
-                slice,
-                count: 0,
-                head_start: offset + 32,
-                index: 0,
-            });
-        }
-        let offset = offset + 32;
-
-        // For now, it only has the access list
-        let outer_offset = Self::parse_u256(slice, offset)?.as_limbs()[0] as usize;
-        let outer_base = offset + outer_offset;
-        let outer_len = Self::parse_u256(slice, outer_base)?.as_limbs()[0] as usize;
-        if outer_len != 1 {
-            return Err(());
-        }
-
-        let access_list_rel_offset =
-            Self::parse_u256(slice, outer_base + 32)?.as_limbs()[0] as usize;
-        let access_list_base = outer_base + 32 + access_list_rel_offset;
-        let count = Self::parse_u256(slice, access_list_base)?.as_limbs()[0] as usize;
-        let head_start = access_list_base + 32;
-
-        Ok(AccessListIter {
-            slice,
-            count,
-            head_start,
-            index: 0,
-        })
-    }
-
-    fn parse_current(&mut self) -> Result<(B160, StorageKeysIter<'a>), ()> {
-        // Assume index < count, checked by iterator impl
-        let offset = self.head_start + self.index.checked_mul(32).ok_or(())?;
-        let item_ptr_offset = Self::parse_u256(self.slice, offset)?.as_limbs()[0] as usize;
-        let item_offset = self.head_start + item_ptr_offset;
-        let address_bytes = &self.slice.get(item_offset..item_offset + 32).ok_or(())?[12..];
-        let address = B160::try_from_be_slice(address_bytes).unwrap();
-        let keys_ptr_offset =
-            Self::parse_u256(self.slice, item_offset + 32)?.as_limbs()[0] as usize;
-        let keys_offset = item_offset + keys_ptr_offset;
-        let keys_len = Self::parse_u256(self.slice, keys_offset)?.as_limbs()[0] as usize;
-        let keys_slice = self.slice.get(keys_offset + 32..).ok_or(())?;
-
-        Ok((
-            address,
-            StorageKeysIter {
-                slice: keys_slice,
-                index: 0,
-                count: keys_len,
-            },
-        ))
-    }
-}
-
-pub struct StorageKeysIter<'a> {
-    slice: &'a [u8],
-    index: usize,
-    count: usize,
-}
-
-impl<'a> StorageKeysIter<'a> {
-    fn parse_current(&mut self) -> Result<Bytes32, ()> {
-        // Assume index < count, checked by iterator impl
-        let offset = self.index.checked_mul(32).ok_or(())?;
-        let bytes = self.slice.get(offset..offset + 32).ok_or(())?;
-        let item = Bytes32::from_array(bytes.try_into().unwrap());
-        Ok(item)
-    }
-}
-
-impl<'a> Iterator for AccessListIter<'a> {
-    type Item = Result<(B160, StorageKeysIter<'a>), ()>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.count {
-            return None;
-        }
-        let current = self.parse_current();
-        self.index += 1;
-        Some(current)
-    }
-}
-
-impl<'a> Iterator for StorageKeysIter<'a> {
-    type Item = Result<Bytes32, ()>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.count {
-            return None;
-        }
-        let current = self.parse_current();
-        self.index += 1;
-        Some(current)
-    }
-}
-
 struct Parser<'a> {
     slice: &'a [u8],
     offset: usize,
@@ -1286,6 +1158,7 @@ fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), Fata
 
 /// Returns (full_item_length, item_raw_length, keys_raw_length)
 fn estimate_access_list_item_length(nb_keys: usize) -> (usize, usize, usize) {
+    // 32 bytes for key + 1 byte for tag and length.
     let single_key_length = 33;
     let keys_raw_length = single_key_length * nb_keys;
     let keys_length = estimate_length_encoding_len(keys_raw_length) + keys_raw_length;
