@@ -39,7 +39,7 @@ impl<'calldata, S: EthereumLikeTypes> SupportedEEVMState<'calldata, S> {
         ee_version: ExecutionEnvironmentType,
         resources_available_in_caller_frame: &mut S::Resources,
         desired_ergs_to_pass: Ergs,
-    ) -> Result<S::Resources, SystemError> {
+    ) -> Result<S::Resources, FatalError> {
         match ee_version {
             ExecutionEnvironmentType::EVM => {
                 SystemBoundEVMInterpreter::<S>::clarify_and_take_passed_resources(

@@ -782,16 +782,10 @@ where
                             call_request.ergs_to_pass,
                         ) {
                             Ok(resources_to_pass) => resources_to_pass,
-                            Err(SystemError::OutOfErgs) => {
-                                return Ok(CallPreparationResult::Failure {
-                                    resources_returned: resources_available,
-                                    call_result: CallResult::CallFailedToExecute,
-                                })
-                            }
-                            Err(SystemError::OutOfNativeResources) => {
+                            Err(FatalError::OutOfNativeResources) => {
                                 return Err(FatalError::OutOfNativeResources)
                             }
-                            Err(SystemError::Internal(error)) => {
+                            Err(FatalError::Internal(error)) => {
                                 return Err(error.into());
                             }
                         };
@@ -826,16 +820,10 @@ where
                 call_request.ergs_to_pass,
             ) {
                 Ok(x) => x,
-                Err(SystemError::OutOfErgs) => {
-                    return Ok(CallPreparationResult::Failure {
-                        resources_returned: resources_available,
-                        call_result: CallResult::CallFailedToExecute,
-                    })
-                }
-                Err(SystemError::OutOfNativeResources) => {
+                Err(FatalError::OutOfNativeResources) => {
                     return Err(FatalError::OutOfNativeResources)
                 }
-                Err(SystemError::Internal(error)) => {
+                Err(FatalError::Internal(error)) => {
                     return Err(error.into());
                 }
             };

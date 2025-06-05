@@ -306,7 +306,7 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
     fn clarify_and_take_passed_resources(
         resources_available_in_caller_frame: &mut S::Resources,
         desired_ergs_to_pass: Ergs,
-    ) -> Result<S::Resources, SystemError> {
+    ) -> Result<S::Resources, FatalError> {
         // we just need to apply 63/64 rule, as System/IO is responsible for the rest
 
         let max_passable_ergs = apply_63_64_rule(resources_available_in_caller_frame.ergs());
@@ -314,7 +314,11 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
 
         // Charge caller frame
         let mut resources_to_pass = S::Resources::from_ergs(ergs_to_pass);
-        resources_available_in_caller_frame.charge(&resources_to_pass)?;
+
+        // This never panics because max_passable_ergs <= resources_available_in_caller_frame
+        resources_available_in_caller_frame
+            .charge(&resources_to_pass)
+            .unwrap();
         // Give native resource to the passed.
         resources_available_in_caller_frame.give_native_to(&mut resources_to_pass);
 

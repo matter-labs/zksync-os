@@ -16,7 +16,6 @@ pub use self::interaction_params::*;
 
 use super::errors::FatalError;
 use super::errors::InternalError;
-use super::errors::SystemError;
 use super::system::System;
 use super::system::SystemTypes;
 use super::IOSubsystemExt;
@@ -130,7 +129,7 @@ pub trait ExecutionEnvironment<'calldata, S: SystemTypes>: Sized {
     fn clarify_and_take_passed_resources(
         resources_available_in_deployer_frame: &mut S::Resources,
         ergs_desired_to_pass: Ergs,
-    ) -> Result<S::Resources, SystemError>;
+    ) -> Result<S::Resources, FatalError>;
 
     /// Runs some pre-deployment preparation and checks.
     /// The result can be None to represent unsuccessful preparation for deployment.
