@@ -34,4 +34,5 @@ testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "
 default = ["testing"]
 no_print = []
 unlimited_native = []
+evm-compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-compatibility","evm_interpreter/evm-compatibility"]
 
