@@ -220,7 +220,7 @@ where
                 .write_fmt(format_args!("External call to {:?}\n", call_request.callee));
 
             let _ = self.system.get_logger().write_fmt(format_args!(
-                "External call with parameters:\n{:?}",
+                "External call with parameters:\n{:?}\n",
                 &call_request,
             ));
         }
