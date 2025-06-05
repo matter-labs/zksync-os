@@ -52,23 +52,21 @@ impl U512 {
     //     carry
     // }
 
-    pub(crate) fn add_assign_narrow(&mut self, rhs: &U256) -> bool {
+    pub(crate) fn add_assign_narrow(&mut self, rhs: &U256, one: &U256) -> bool {
         let carry = self.0[0].overflowing_add_assign(rhs);
 
         match carry {
-            true => self.0[1].overflowing_add_assign(&U256::ONE),
+            true => self.0[1].overflowing_add_assign(&one),
             false => false
         }
     }
  
-    pub(crate) fn from_narrow_mul_into<L: Logger>(logger: &mut L, lhs: &U256, rhs: &U256, out: &mut [MaybeUninit<U256>; 2]) {
-        // lhs.clone_into(&mut out[0]);
-        // lhs.clone_into(&mut out[1]);
+    /// Safety: lhs can't be placed in RO memory.
+    pub(crate) unsafe fn from_narrow_mul_into<L: Logger>(logger: &mut L, lhs: &U256, rhs: &U256, out: &mut [MaybeUninit<U256>; 2]) {
+        unsafe { lhs.clone_into_unchecked(&raw mut out[0] as *mut _) };
+        unsafe { lhs.clone_into_unchecked(&raw mut out[1] as *mut _) };
 
         let out = unsafe { core::mem::transmute::<&mut [MaybeUninit<U256>; 2], &mut [U256; 2]>(out) };
-
-        out[0].clone_from(lhs);
-        out[1].clone_from(lhs);
 
         let r = out;
 

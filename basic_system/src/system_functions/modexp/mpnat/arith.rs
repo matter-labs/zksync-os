@@ -8,6 +8,7 @@ use core::{alloc::Allocator, mem::MaybeUninit};
 
 static mut U512_SCRATCH: U512 = U512::zero_const();
 static mut ZERO: Option<U256> = None;
+static mut ONE: Option<U256> = None;
 
 /// Computes `(x * y) mod 2^(WORD_BITS*out.len())`.
 pub fn big_wrapping_mul<L: Logger>(
@@ -16,20 +17,14 @@ pub fn big_wrapping_mul<L: Logger>(
     y: &[U256],
     out: &mut [U256]
 ) {
-    let zero = match unsafe { &mut ZERO } {
-        Some(x) => x,
-        x @ None => {
-            *x = Some(U256::zero());
-            x.as_ref().unwrap()
-        },
-    };
+    let zero = unsafe { ZERO.get_or_insert_with(|| U256::ZERO) };
+    let one = unsafe { ONE.get_or_insert_with(|| U256::ONE) };
     let s = out.len();
     let mut double = unsafe { &mut U512_SCRATCH };
     let mut c = MaybeUninit::uninit();
     for i in 0..s {
-        zero.clone_into_unchecked(c.as_mut_ptr() as *mut _);
+        unsafe { zero.clone_into_unchecked(c.as_mut_ptr() as *mut _) };
         let c = unsafe { c.assume_init_mut() };
-        // let mut c = U256::ZERO;
         for j in 0..(s - i) {
             let x = match x.get(j) {
                 Some(x) => x,
@@ -39,9 +34,10 @@ pub fn big_wrapping_mul<L: Logger>(
                 l, 
                 &out[i + j],
                 &x,
-                y.get(i).unwrap_or(&U256::ZERO),
+                y.get(i).unwrap_or(&zero),
                 &c,
                 double,
+                one,
             );
             c.clone_from(double.high());
             out[i + j].clone_from(double.low());
@@ -68,17 +64,18 @@ pub fn in_place_add(a: &mut [U256], b: &[U256]) -> bool {
 /// the second part of the output. The arithmetic in this function is
 /// guaranteed to never overflow because even when all 4 variables are
 /// equal to `Word::MAX` the output is smaller than `DoubleWord::MAX`.
-fn shifted_carrying_mul<L: Logger>(logger: &mut L, a: &U256, x: &U256, y: &U256, c: &U256, out: &mut U512) {
+/// Safety: `x`,`y` can't be placed in RO memory.
+fn shifted_carrying_mul<L: Logger>(logger: &mut L, a: &U256, x: &U256, y: &U256, c: &U256, out: &mut U512, one: &U256) {
 
     {
         let out = &mut out.0;
         let out = unsafe { core::mem::transmute(out) };
 
-        U512::from_narrow_mul_into(logger, x, y, out);
+        unsafe { U512::from_narrow_mul_into(logger, x, y, out) };
     }
 
-    out.add_assign_narrow(a);
-    out.add_assign_narrow(c);
+    out.add_assign_narrow(a, one);
+    out.add_assign_narrow(c, one);
 }
 
 fn widening_mul<L: Logger>(logger: &mut L, lhs: &U256, rhs: &U256, out: &mut [&mut U256; 2]) {

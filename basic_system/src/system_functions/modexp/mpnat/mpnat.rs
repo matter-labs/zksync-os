@@ -14,6 +14,7 @@ use zk_ee::system_io_oracle::Arithmetics;
 use alloc::boxed::Box;
 
 pub(crate) static U256_ZERO: U256 = U256::ZERO;
+static mut ZERO: Option<U256> = None;
 
 static mut Q_U8_SCRATCH: *mut () = core::ptr::null_mut();
 static mut R_U8_SCRATCH: *mut () = core::ptr::null_mut();
@@ -314,6 +315,15 @@ impl<A: Allocator + Clone> MPNatU256<A> {
             arg
         };
 
+        // let zero = match unsafe { &mut ZERO } {
+        //     Some(x) => x,
+        //     x @ None => {
+        //         *x = Some(U256::zero());
+        //         x.as_ref().unwrap()
+        //     },
+        // };
+        let zero = unsafe { ZERO.get_or_insert_with(|| U256::ZERO) };
+
         let mut it = 
             oracle
             .create_oracle_access_iterator::<Arithmetics>(&raw mut arg as usize as u32)
@@ -360,6 +370,11 @@ impl<A: Allocator + Clone> MPNatU256<A> {
 
             let r_ptr = r.as_mut_ptr().cast::<usize>();
 
+            // Since the buffers are rotated in the modpow fn, we need to keep them same size. At
+            // some point this buffer here is going to be used as the modpow result accumulator and
+            // must be of appropriate size.
+            let len = rhs.digits.len() * 2;
+
             for i in 0..r_len {
                 let word = it.next().expect("Remainder word.");
                 // Safety: 
@@ -373,20 +388,20 @@ impl<A: Allocator + Clone> MPNatU256<A> {
             // `r_len` is asserted to be small enough not to cause wrapping.
             let r_ptr = unsafe { r_ptr.add(r_len).cast::<U256>() };
 
-            for i in 0 .. rhs.digits.len() - r_len / 8 {
+            for i in 0 .. len - r_len / 8 {
                 // Safety:
                 // `r_len` is 8 aligned:
                 // - The base ptr is for `Vec<U256>`
                 // - Added `r_len`, which is asserted to be a multiple of 8.
                 // `i` is limited by `rhs.digits.len()`, which is the capacity for `r`.
                 // Addition will not overflow, since the resulting pointer lies within `rhs`.
-                U256_ZERO.clone_into_unchecked(unsafe { r_ptr.add(i) });
+                unsafe { zero.clone_into_unchecked(unsafe { r_ptr.add(i) }) };
             }
 
             // Safety:
             // Elements within 0..r_len, r_len .. rhs.digits.len() are init due to two previous
             // `for` loops.
-            unsafe { r.set_len(self.digits.len()); }
+            unsafe { r.set_len(len); }
         }
 
         assert!(it.next().is_none(), "Oracle iterator not exhausted.");
@@ -411,6 +426,8 @@ impl<A: Allocator + Clone> MPNatU256<A> {
                 // Safety: elems 0..r.len() were just written.
                 unsafe { check.set_len(r.len()) };
             }
+
+
 
             // r += q * d
             // TODO: Instead of cloning `r` into `check`, send `r` inside and use it as carry for
@@ -449,13 +466,19 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         let mut scratch_space = Vec::with_capacity_in(modulus.digits.len() * 2, allocator.clone());
         scratch_space.resize(scratch_space.capacity(), U256::ZERO);
 
-        // Div swaps self and scratch buffers.
-        // Widths after:
-        // self: same.
-        // scratch: len m, cap 2m.
-        self.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
+        let base = if self.digits.len() > modulus.digits.len() {
+            logger.write_str("init redc");
+            // Div swaps self and scratch buffers.
+            // Widths after:
+            // self: same.
+            // scratch: len m, cap 2m.
+            self.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
+            scratch_space.clone()
+        } else {
+            self.digits.clone()
+        };
 
-        let base = scratch_space.clone();
+        // let base = scratch_space.clone();
 
         scratch_space.fill(U256::ZERO); // zero-out the scratch space
         scratch_space.resize_with(modulus.digits.len() * 2, || U256::ZERO.clone());
@@ -464,15 +487,28 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         result.resize_with(result.capacity(), || U256_ZERO.clone());
         let mut result = MPNatU256 { digits: result };
 
+        let mut outer = 0;
+        let mut inner = 0;
+
         result.digits[0] = U256::ONE;
-        for &b in exp {
-            let mut mask: u8 = 1 << 7;
+        for (i, &b) in exp.iter().enumerate() {
+            logger.write_fmt(format_args!("leading_zeros {}", b.leading_zeros()));
+            logger.write_fmt(format_args!("exp {:b}", b));
+            let mut mask = match i + 1 == exp.len() {
+                true => 1 << (8 - b.leading_zeros() - 1),
+                false => 1 << 7,
+            };
+            // let mut mask: u8 = 1 << 7;
             while mask > 0 {
+
+                outer += 1;
 
                 // result width: 2m
                 // scratch width: 2m
                 big_wrapping_mul(logger, &result.digits, &result.digits, &mut scratch_space);
                 result.digits.clone_from_slice(&scratch_space);
+
+
 
                 // `scratch_space` isn't used inside `div`, an is only used as the result
                 // dst, so not need to zero it out. For the next call `div` will write over the
@@ -489,6 +525,7 @@ impl<A: Allocator + Clone> MPNatU256<A> {
                 scratch_space.fill(U256::ZERO); // zero-out the scratch space
 
                 if b & mask != 0 {
+                    inner += 1;
                     big_wrapping_mul(logger, &result.digits, &base, &mut scratch_space);
                     result.digits.clone_from_slice(&scratch_space);
 
@@ -500,6 +537,8 @@ impl<A: Allocator + Clone> MPNatU256<A> {
                 mask >>= 1;
             }
         }
+
+        logger.write_fmt(format_args!("modpow stats \n outer {} inner {}", outer, inner));
 
         let mut scratch_space = MPNatU256 { digits: scratch_space };
 
