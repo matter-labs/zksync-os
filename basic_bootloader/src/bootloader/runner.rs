@@ -52,7 +52,7 @@ where
 
     match initial_request {
         ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
-            let (resources_returned, call_result) =
+            let (resources_returned, call_result, _) =
                 run.handle_requested_external_call(None, external_call_request)?;
             let (return_values, reverted) = match call_result {
                 CallResult::CallFailedToExecute => (ReturnValues::empty(system), true),
@@ -124,7 +124,7 @@ where
                     .start_global_frame()
                     .map_err(|_| InternalError("must start a new frame"))?;
 
-                let (resources, mut call_result) =
+                let (resources, mut call_result, do_not_roll_back) =
                     self.handle_requested_external_call(Some(previous_vm), external_call_request)?;
 
                 let success = matches!(call_result, CallResult::Successful { .. });
@@ -135,7 +135,9 @@ where
                 ));
 
                 self.system
-                    .finish_global_frame((!success).then_some(&rollback_handle))
+                    .finish_global_frame(
+                        (!success && !do_not_roll_back).then_some(&rollback_handle),
+                    )
                     .map_err(|_| InternalError("must finish execution frame"))?;
 
                 match &mut call_result {
@@ -206,7 +208,7 @@ where
         &mut self,
         caller_vm: Option<&mut SupportedEEVMState<S>>,
         call_request: ExternalCallRequest<S>,
-    ) -> Result<(S::Resources, CallResult<S>), FatalError>
+    ) -> Result<(S::Resources, CallResult<S>, bool), FatalError>
     where
         S::IO: IOSubsystemExt,
         S::Memory: MemorySubsystemExt,
@@ -250,7 +252,8 @@ where
         // The call is targeting the "system contract" space.
         if is_call_to_special_address {
             return self
-                .handle_requested_external_call_to_special_address_space(caller_vm, call_request);
+                .handle_requested_external_call_to_special_address_space(caller_vm, call_request)
+                .map(|(a, b)| (a, b, false));
         }
 
         let ee_type = match &caller_vm {
@@ -295,6 +298,7 @@ where
                         CallResult::Successful {
                             return_values: ReturnValues::empty(self.system),
                         },
+                        false,
                     ));
                 }
 
@@ -304,6 +308,7 @@ where
                         CallResult::Failed {
                             return_values: ReturnValues::empty(self.system),
                         },
+                        false,
                     ));
                 }
 
@@ -345,7 +350,7 @@ where
             Ok(CallPreparationResult::Failure {
                 resources_returned,
                 call_result,
-            }) => return Ok((resources_returned, call_result)),
+            }) => return Ok((resources_returned, call_result, true)),
             Err(e) => return Err(e),
         };
 
@@ -368,6 +373,7 @@ where
                         } else {
                             CallResult::Successful { return_values }
                         },
+                        false,
                     ))
                 }
                 ExecutionEnvironmentPreemptionPoint::End(
