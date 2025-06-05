@@ -326,6 +326,7 @@ impl<V, A: Allocator + Clone> ElementSource<V, A> {
 
 struct HistoryMapState<K, A: Allocator + Clone> {
     current_snapshot_id: CacheSnapshotId,
+    frozen_snapshot_id: CacheSnapshotId,
     updated_elems: StackLinkedList<(K, CacheSnapshotId), A>,
     alloc: A,
 }
@@ -355,6 +356,7 @@ where
                 // All new retreivals are going to id 0 to allow differentiating retreivals with
                 // updates in a single snapshot span.
                 current_snapshot_id: CacheSnapshotId(1),
+                frozen_snapshot_id: CacheSnapshotId(0),
                 updated_elems: StackLinkedList::empty(alloc.clone()),
             },
             reuse: ElementSource::new(alloc),
@@ -411,8 +413,9 @@ where
 
     /// Rollbacks the data to the state before the provided `snapshot_id`.
     pub fn rollback(&mut self, snapshot_id: CacheSnapshotId) {
-        if snapshot_id == CacheSnapshotId(0) {
-            panic!("Rolling to 0'th snapshot is illegal and will cause UB.")
+        if snapshot_id <= self.state.frozen_snapshot_id {
+            // TODO: replace with internal error
+            panic!("Rolling to frozen snapshot is illegal and will cause UB.")
         }
 
         let mut node = self.state.updated_elems.pop();
@@ -464,6 +467,7 @@ where
 
         // We've committed, so we don't need those changes anymore.
         self.state.updated_elems = StackLinkedList::empty(self.state.alloc.clone());
+        self.state.frozen_snapshot_id = CacheSnapshotId(self.state.current_snapshot_id.0 - 1);
     }
 
     // TODO check usage
