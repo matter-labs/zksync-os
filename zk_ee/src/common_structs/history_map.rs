@@ -76,7 +76,7 @@ impl<V, A: Allocator + Clone> ElementHistory<V, A> {
     fn rollback(&mut self, reuse: &mut ElementSource<V, A>, snapshot_id: CacheSnapshotId) {
         // Caller should guarantee that snapshot_id > 0
 
-        if unsafe { self.head.as_ref() }.touch_ss_id < snapshot_id {
+        if unsafe { self.head.as_ref() }.touch_ss_id <= snapshot_id {
             return;
         }
 
@@ -93,7 +93,7 @@ impl<V, A: Allocator + Clone> ElementHistory<V, A> {
 
             let n = unsafe { n_lnk.as_mut() };
 
-            if n.touch_ss_id < snapshot_id {
+            if n.touch_ss_id <= snapshot_id {
                 // This is guaranteed to happen by encountering the terminator snapshot.
                 break;
             }
@@ -146,10 +146,7 @@ impl<V, A: Allocator + Clone> ElementHistory<V, A> {
         self.first = self.head;
 
         let top = unsafe { self.head.as_mut() };
-        let freed_start = top
-            .previous
-            .replace(self.initial)
-            .expect("History has at least 3 items.");
+        let freed_start = top.previous.take().expect("History has at least 3 items.");
 
         reuse.put_back(freed_start, freed_end);
     }
@@ -189,6 +186,17 @@ where
 
     pub fn initial(&self) -> &V {
         unsafe { &self.history.initial.as_ref().value }
+    }
+
+    // Get first value in recorded history
+    pub fn first(&self) -> &V {
+        let first_element = unsafe { &self.history.first.as_ref() };
+        if first_element.previous.is_some() {
+            // Before the first "commit" execution `initial` is an actual first value
+            unsafe { &self.history.initial.as_ref().value }
+        } else {
+            &first_element.value
+        }
     }
 
     #[allow(dead_code)]
@@ -407,15 +415,16 @@ where
     }
 
     pub fn snapshot(&mut self) -> CacheSnapshotId {
+        let current_snapshot_id = self.state.current_snapshot_id;
         self.state.current_snapshot_id.increment();
-        self.state.current_snapshot_id
+        current_snapshot_id
     }
 
-    /// Rollbacks the data to the state before the provided `snapshot_id`.
+    /// Rollbacks the data to the state at the provided `snapshot_id`.
     pub fn rollback(&mut self, snapshot_id: CacheSnapshotId) {
-        if snapshot_id <= self.state.frozen_snapshot_id {
+        if snapshot_id < self.state.frozen_snapshot_id {
             // TODO: replace with internal error
-            panic!("Rolling to frozen snapshot is illegal and will cause UB.")
+            panic!("Rolling below frozen snapshot is illegal and will cause UB.")
         }
 
         let mut node = self.state.updated_elems.pop();
@@ -424,7 +433,7 @@ where
                 None => break,
                 Some((key, update_snapshot_id)) => {
                     // The items in the address_snapshot_updates are ordered chronologically.
-                    if update_snapshot_id < snapshot_id {
+                    if update_snapshot_id <= snapshot_id {
                         self.state.updated_elems.push((key, update_snapshot_id));
                         break;
                     }
@@ -446,6 +455,9 @@ where
     /// rollbacked to.
     /// TODO rename to reset or smth
     pub fn commit(&mut self) {
+        self.state.frozen_snapshot_id = self.state.current_snapshot_id;
+        _ = self.snapshot();
+
         let mut node = self.state.updated_elems.peek();
         loop {
             match node {
@@ -467,7 +479,6 @@ where
 
         // We've committed, so we don't need those changes anymore.
         self.state.updated_elems = StackLinkedList::empty(self.state.alloc.clone());
-        self.state.frozen_snapshot_id = CacheSnapshotId(self.state.current_snapshot_id.0 - 1);
     }
 
     // TODO check usage
