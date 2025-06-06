@@ -47,7 +47,6 @@ where
         system,
         hooks,
         initial_ee_version,
-        callstack_height: 0,
     };
 
     match initial_request {
@@ -81,7 +80,6 @@ where
     system: &'a mut System<S>,
     hooks: &'a mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
-    callstack_height: usize,
 }
 
 const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUND, 0, 0]);
@@ -92,23 +90,6 @@ where
 {
     #[inline(always)]
     fn handle_spawn<'a, 'calldata>(
-        &mut self,
-        previous_vm: &mut SupportedEEVMState<'a, S>,
-        callstack: &mut SliceVec<SupportedEEVMState<'calldata, S>>,
-        spawn: ExecutionEnvironmentSpawnRequest<'calldata, S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError>
-    where
-        S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
-    {
-        self.callstack_height += 1;
-        let result = self.handle_spawn_inner(previous_vm, callstack, spawn);
-        self.callstack_height -= 1;
-        result
-    }
-
-    #[inline(always)]
-    fn handle_spawn_inner<'a, 'calldata>(
         &mut self,
         previous_vm: &mut SupportedEEVMState<'a, S>,
         callstack: &mut SliceVec<SupportedEEVMState<'calldata, S>>,
@@ -315,8 +296,19 @@ where
                 // resources are checked and spent, so we continue with actual transition of control flow
 
                 // now grow callstack and prepare initial state
-                (new_vm, new_callstack) =
-                    create_ee(next_ee_version, self.system, callstack)?.unwrap();
+                (new_vm, new_callstack) = match create_ee(next_ee_version, self.system, callstack)?
+                {
+                    Some(x) => x,
+                    None => {
+                        self.system.finish_global_frame(Some(&rollback_handle))?;
+                        return Ok((
+                            actual_resources_to_pass,
+                            CallResult::Failed {
+                                return_values: ReturnValues::empty(self.system),
+                            },
+                        ));
+                    }
+                };
 
                 preemption = new_vm.start_executing_frame(
                     self.system,
@@ -431,12 +423,6 @@ where
         // Calls to EOAs succeed with empty return value
         if is_eoa {
             return Ok(Some(CallResult::Successful {
-                return_values: ReturnValues::empty(self.system),
-            }));
-        }
-
-        if self.callstack_height > 1024 {
-            return Ok(Some(CallResult::Failed {
                 return_values: ReturnValues::empty(self.system),
             }));
         }
@@ -623,24 +609,24 @@ where
             }
         }
 
-        if self.callstack_height > 1024 {
-            return Ok(CompletedDeployment {
-                resources_returned: launch_params.external_call.available_resources,
-                deployment_result: DeploymentResult::Failed {
-                    return_values: ReturnValues::empty(self.system),
-                    execution_reverted: false,
-                },
-            });
-        }
+        let (mut constructor, mut callstack) =
+            match create_ee(ee_type as u8, self.system, callstack)? {
+                Some(x) => x,
+                None => {
+                    return Ok(CompletedDeployment {
+                        resources_returned: launch_params.external_call.available_resources,
+                        deployment_result: DeploymentResult::Failed {
+                            return_values: ReturnValues::empty(self.system),
+                            execution_reverted: false,
+                        },
+                    })
+                }
+            };
 
         let constructor_rollback_handle = self
             .system
             .start_global_frame()
             .map_err(|_| InternalError("must start a new frame for init code"))?;
-
-        // EE made all the preparations and we are in callee's frame already
-        let (mut constructor, mut callstack) =
-            create_ee(ee_type as u8, self.system, callstack)?.unwrap();
 
         let nominal_token_value = launch_params.external_call.nominal_token_value;
 
