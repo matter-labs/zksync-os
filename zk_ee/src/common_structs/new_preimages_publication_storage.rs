@@ -100,6 +100,7 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
         Ok(())
     }
 
+    // TODO remove?
     pub fn net_pubdata_used(&self) -> u64 {
         // TODO pubdata counter
         let mut size = 0;
