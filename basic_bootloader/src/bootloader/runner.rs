@@ -3,7 +3,6 @@ use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::DEBUG_OUTPUT;
 use alloc::boxed::Box;
 use core::fmt::Write;
-use errors::CallPreparationError;
 use errors::FatalError;
 use evm_interpreter::gas_constants::CALLVALUE;
 use evm_interpreter::gas_constants::CALL_STIPEND;
@@ -13,6 +12,7 @@ use ruint::aliases::B160;
 use ruint::aliases::U256;
 use system_hooks::*;
 use zk_ee::common_structs::CalleeParameters;
+use zk_ee::common_structs::TransferInfo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::{
@@ -278,8 +278,55 @@ where
                 bytecode,
                 bytecode_len,
                 artifacts_len,
-                actual_resources_to_pass,
+                mut actual_resources_to_pass,
+                transfer_to_perform,
             }) => {
+                // TODO: START FRAME HERE!
+
+                // Now, perform transfer with infinite ergs
+                if let Some(TransferInfo { value, target }) = transfer_to_perform {
+                    match actual_resources_to_pass.with_infinite_ergs(|inf_resources| {
+                        self.system.io.transfer_nominal_token_value(
+                            ExecutionEnvironmentType::NoEE,
+                            inf_resources,
+                            &call_request.caller,
+                            &target,
+                            &value,
+                        )
+                    }) {
+                        Ok(()) => (),
+                        Err(UpdateQueryError::System(SystemError::OutOfErgs)) => {
+                            return Err(InternalError("Our of ergs on infinite").into());
+                        }
+                        Err(UpdateQueryError::System(SystemError::Internal(e))) => {
+                            return Err(FatalError::Internal(e))
+                        }
+                        Err(UpdateQueryError::System(SystemError::OutOfNativeResources)) => {
+                            return Err(FatalError::OutOfNativeResources)
+                        }
+                        Err(UpdateQueryError::NumericBoundsError) => {
+                            // Insufficient balance
+                            match ee_type {
+                                ExecutionEnvironmentType::NoEE => {
+                                    unreachable!("Cannot be in NoEE deep in the callstack")
+                                }
+                                ExecutionEnvironmentType::EVM => {
+                                    // Following EVM, a call with insufficient balance is not a revert,
+                                    // but rather a normal failing call.
+                                    return Ok((
+                                        actual_resources_to_pass,
+                                        CallResult::Failed {
+                                            return_values: ReturnValues::empty(self.system),
+                                        },
+                                        false,
+                                    ));
+                                }
+                                _ => return Err(InternalError("Unsupported EE").into()),
+                            }
+                        }
+                    }
+                }
+
                 let calldata_slice = &call_request.calldata;
                 let _ = self
                     .system
@@ -346,10 +393,11 @@ where
                     },
                 )?;
             }
+
             Ok(CallPreparationResult::Failure {
                 resources_returned,
-                call_result,
-            }) => return Ok((resources_returned, call_result, true)),
+                // call_result,
+            }) => return Ok((resources_returned, CallResult::CallFailedToExecute, true)),
             Err(e) => return Err(e),
         };
 
@@ -419,13 +467,59 @@ where
         let actual_resources_to_pass =
             match run_call_preparation(caller_vm, self.system, ee_type, &call_request) {
                 Ok(CallPreparationResult::Success {
-                    actual_resources_to_pass,
+                    mut actual_resources_to_pass,
+                    transfer_to_perform,
                     ..
-                }) => actual_resources_to_pass,
+                }) => {
+                    // Now, perform transfer with infinite ergs
+                    if let Some(TransferInfo { value, target }) = transfer_to_perform {
+                        match actual_resources_to_pass.with_infinite_ergs(|inf_resources| {
+                            self.system.io.transfer_nominal_token_value(
+                                ExecutionEnvironmentType::NoEE,
+                                inf_resources,
+                                &call_request.caller,
+                                &target,
+                                &value,
+                            )
+                        }) {
+                            Ok(()) => (),
+                            Err(UpdateQueryError::System(SystemError::OutOfErgs)) => {
+                                return Err(InternalError("Our of ergs on infinite").into());
+                            }
+                            Err(UpdateQueryError::System(SystemError::Internal(e))) => {
+                                return Err(FatalError::Internal(e))
+                            }
+                            Err(UpdateQueryError::System(SystemError::OutOfNativeResources)) => {
+                                return Err(FatalError::OutOfNativeResources)
+                            }
+                            Err(UpdateQueryError::NumericBoundsError) => {
+                                // Insufficient balance
+                                match ee_type {
+                                    ExecutionEnvironmentType::NoEE => {
+                                        unreachable!("Cannot be in NoEE deep in the callstack")
+                                    }
+                                    ExecutionEnvironmentType::EVM => {
+                                        // Following EVM, a call with insufficient balance is not a revert,
+                                        // but rather a normal failing call.
+                                        return Ok((
+                                            actual_resources_to_pass,
+                                            CallResult::Failed {
+                                                return_values: ReturnValues::empty(self.system),
+                                            },
+                                        ));
+                                    }
+                                    _ => return Err(InternalError("Unsupported EE").into()),
+                                }
+                            }
+                        }
+                    }
+
+                    actual_resources_to_pass
+                }
                 Ok(CallPreparationResult::Failure {
                     resources_returned,
-                    call_result,
-                }) => return Ok((resources_returned, call_result)),
+                    // call_result,
+                }) => return Ok((resources_returned, CallResult::CallFailedToExecute)),
                 Err(e) => return Err(e),
             };
 
@@ -570,7 +664,6 @@ where
                     1,
                 )
             })
-            // TODO: make sure we don't capture out of native
             .map_err(|e| match e {
                 UpdateQueryError::System(SystemError::OutOfNativeResources) => {
                     FatalError::OutOfNativeResources
@@ -698,10 +791,11 @@ pub enum CallPreparationResult<'a, S: SystemTypes> {
         bytecode_len: u32,
         artifacts_len: u32,
         actual_resources_to_pass: S::Resources,
+        transfer_to_perform: Option<TransferInfo>,
     },
     Failure {
         resources_returned: S::Resources,
-        call_result: CallResult<S>,
+        // call_result: CallResult<S>,
     },
 }
 
@@ -752,59 +846,17 @@ where
         bytecode_len,
         artifacts_len,
         stipend,
+        transfer_to_perform,
     } = match r {
         Ok(x) => x,
-        Err(CallPreparationError::System(SystemError::OutOfErgs)) => {
+        Err(SystemError::OutOfErgs) => {
             return Ok(CallPreparationResult::Failure {
                 resources_returned: resources_available,
-                call_result: CallResult::CallFailedToExecute,
-            })
+                // call_result: CallResult::CallFailedToExecute,
+            });
         }
-        Err(CallPreparationError::System(SystemError::OutOfNativeResources)) => {
-            return Err(FatalError::OutOfNativeResources)
-        }
-        Err(CallPreparationError::System(SystemError::Internal(e))) => return Err(e.into()),
-        Err(CallPreparationError::InsufficientBalance { stipend }) => {
-            match ee_version {
-                ExecutionEnvironmentType::NoEE => {
-                    unreachable!("Cannot be in NoEE deep in the callstack")
-                }
-                ExecutionEnvironmentType::EVM => {
-                    // Following EVM, a call with insufficient balance is not a revert,
-                    // but rather a normal failing call.
-                    // Balance is validated for first frame, we must be deeper in
-                    // the callstack, so it's safe to unwrap.
-                    let mut resources_to_pass: S::Resources =
-                        match SupportedEEVMState::<S>::clarify_and_take_passed_resources(
-                            ee_version,
-                            &mut resources_available,
-                            call_request.ergs_to_pass,
-                        ) {
-                            Ok(resources_to_pass) => resources_to_pass,
-                            Err(FatalError::OutOfNativeResources) => {
-                                return Err(FatalError::OutOfNativeResources)
-                            }
-                            Err(FatalError::Internal(error)) => {
-                                return Err(error.into());
-                            }
-                        };
-                    // Give remaining ergs back to caller
-                    vm.unwrap().give_back_ergs(resources_available);
-                    // Add stipend
-                    if let Some(stipend) = stipend {
-                        resources_to_pass.add_ergs(stipend)
-                    }
-
-                    return Ok(CallPreparationResult::Failure {
-                        resources_returned: resources_to_pass,
-                        call_result: CallResult::Failed {
-                            return_values: ReturnValues::empty(system),
-                        },
-                    });
-                }
-                _ => return Err(InternalError("Unsupported EE").into()),
-            }
-        }
+        Err(SystemError::OutOfNativeResources) => return Err(FatalError::OutOfNativeResources),
+        Err(SystemError::Internal(e)) => return Err(e.into()),
     };
 
     // If we're in the entry frame, i.e. not the execution of a CALL opcode,
@@ -844,20 +896,21 @@ where
         bytecode_len,
         artifacts_len,
         actual_resources_to_pass,
+        transfer_to_perform,
     })
 }
 
 // TODO: all the gas computation in this function seems very EVM-specific.
 // It should be split into EVM and generic part.
-/// Run call preparation, which includes reading the callee parameters,
-/// performing a token transfer and charging for resources.
+/// Run call preparation, which includes reading the callee parameters
+/// and charging for resources.
 fn prepare_for_call<'a, S: EthereumLikeTypes>(
     system: &mut System<S>,
     ee_version: ExecutionEnvironmentType,
     resources: &mut S::Resources,
     call_request: &ExternalCallRequest<S>,
     is_entry_frame: bool,
-) -> Result<CalleeParameters<'a>, CallPreparationError>
+) -> Result<CalleeParameters<'a>, SystemError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
@@ -880,14 +933,10 @@ where
             let _ = system.get_logger().write_fmt(format_args!(
                 "Call failed: insufficient resources to read callee account data\n",
             ));
-            return Err(CallPreparationError::System(SystemError::OutOfErgs));
+            return Err(SystemError::OutOfErgs);
         }
-        Err(SystemError::OutOfNativeResources) => {
-            return Err(CallPreparationError::System(
-                SystemError::OutOfNativeResources,
-            ))
-        }
-        Err(SystemError::Internal(e)) => return Err(CallPreparationError::System(e.into())),
+        Err(SystemError::OutOfNativeResources) => return Err(SystemError::OutOfNativeResources),
+        Err(SystemError::Internal(e)) => return Err(e.into()),
     };
 
     // Now we charge for the rest of the CALL related costs
@@ -930,47 +979,31 @@ where
         None
     };
 
-    // From now on, we use infinite ergs.
-
-    // Read required data to perform a call
-    let (next_ee_version, bytecode, bytecode_len, artifacts_len) = {
-        // transfer base token balance if needed
-        // Note that for delegate calls, call_request.nominal_token_value might be positive,
-        // but it shouldn't be transferred. This is the value used for the
-        // execution context.
+    // Check transfer is allowed an determine transfer target
+    let transfer_to_perform =
         if call_request.nominal_token_value != U256::ZERO && !call_request.is_delegate() {
             if !call_request.is_transfer_allowed() {
                 let _ = system.get_logger().write_fmt(format_args!(
                     "Call failed: positive value with modifier {:?}\n",
                     call_request.modifier
                 ));
-                return Err(CallPreparationError::System(SystemError::OutOfErgs));
+                return Err(SystemError::OutOfErgs);
             }
-
             // Adjust transfer target due to CALLCODE
-            let transfer_target = match call_request.modifier {
+            let target = match call_request.modifier {
                 CallModifier::EVMCallcode | CallModifier::EVMCallcodeStatic => call_request.caller,
                 _ => call_request.callee,
             };
-            match resources.with_infinite_ergs(|inf_resources| {
-                system.io.transfer_nominal_token_value(
-                    ExecutionEnvironmentType::NoEE,
-                    inf_resources,
-                    &call_request.caller,
-                    &transfer_target,
-                    &call_request.nominal_token_value,
-                )
-            }) {
-                Ok(x) => x,
-                Err(UpdateQueryError::System(error)) => {
-                    return Err(error.into());
-                }
-                Err(UpdateQueryError::NumericBoundsError) => {
-                    return Err(CallPreparationError::InsufficientBalance { stipend });
-                }
-            }
-        }
+            Some(TransferInfo {
+                value: call_request.nominal_token_value,
+                target,
+            })
+        } else {
+            None
+        };
 
+    // Read required data to perform a call
+    let (next_ee_version, bytecode, bytecode_len, artifacts_len) = {
         let ee_version = account_properties.ee_version.0;
         let bytecode_len = account_properties.bytecode_len.0;
         let artifacts_len = account_properties.artifacts_len.0;
@@ -978,12 +1011,14 @@ where
 
         (ee_version, bytecode, bytecode_len, artifacts_len)
     };
+
     Ok(CalleeParameters {
         next_ee_version,
         bytecode,
         bytecode_len,
         artifacts_len,
         stipend,
+        transfer_to_perform,
     })
 }
 

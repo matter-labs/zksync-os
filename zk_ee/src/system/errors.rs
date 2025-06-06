@@ -108,26 +108,26 @@ impl From<InternalError> for SystemFunctionError {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum CallPreparationError {
-    System(SystemError),
-    /// Call preparation failed because the caller doesn't have
-    /// enough resources for nominal token value transfer.
-    /// In EVM this is just a normal failing call, so we might
-    /// have to return the stipend back to the caller.
-    InsufficientBalance {
-        stipend: Option<Ergs>,
-    },
-}
+// #[derive(Debug, PartialEq)]
+// pub enum CallPreparationError {
+//     System(SystemError),
+//     /// Call preparation failed because the caller doesn't have
+//     /// enough resources for nominal token value transfer.
+//     /// In EVM this is just a normal failing call, so we might
+//     /// have to return the stipend back to the caller.
+//     InsufficientBalance {
+//         stipend: Option<Ergs>,
+//     },
+// }
 
-impl From<SystemError> for CallPreparationError {
-    fn from(e: SystemError) -> Self {
-        Self::System(e)
-    }
-}
+// impl From<SystemError> for CallPreparationError {
+//     fn from(e: SystemError) -> Self {
+//         Self::System(e)
+//     }
+// }
 
-impl From<InternalError> for CallPreparationError {
-    fn from(e: InternalError) -> Self {
-        Self::System(e.into())
-    }
-}
+// impl From<InternalError> for CallPreparationError {
+//     fn from(e: InternalError) -> Self {
+//         Self::System(e.into())
+//     }
+// }
