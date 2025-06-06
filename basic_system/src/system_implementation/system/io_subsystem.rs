@@ -325,9 +325,10 @@ where
         )
     }
 
-    fn net_pubdata_used(&self) -> u64 {
-        self.storage.pubdata_used_by_tx() as u64
-            + self.logs_storage.calculate_pubdata_used_by_tx() as u64
+    // TODO: why u64
+    fn net_pubdata_used(&self) -> Result<u64, InternalError> {
+        Ok(self.storage.pubdata_used_by_tx() as u64
+            + self.logs_storage.calculate_pubdata_used_by_tx()? as u64)
     }
 
     fn start_io_frame(&mut self) -> Result<FullIOStateSnapshot, InternalError> {

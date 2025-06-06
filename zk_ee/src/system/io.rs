@@ -119,7 +119,7 @@ pub trait IOSubsystem: Sized {
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
     ) -> Result<(), SystemError>;
 
-    fn net_pubdata_used(&self) -> u64;
+    fn net_pubdata_used(&self) -> Result<u64, InternalError>;
 
     /// Starts a new "local" frame that does not that memory (like `near_call` in the EraVM).
     /// Returns a snapshot to which the system can rollback to on frame finish.
