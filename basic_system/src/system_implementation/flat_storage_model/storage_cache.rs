@@ -519,10 +519,11 @@ where
                 *item.key(),
                 // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
                 // not actually 'using' it.
+                // TODO: redundant data type
                 WarmStorageValue {
-                    current_value: current_record.value().clone(), // TODO do we need to clone here?
+                    current_value: *current_record.value(),
                     is_new_storage_slot: initial_record.appearance() == Appearance::Unset,
-                    initial_value: initial_record.value().clone(),
+                    initial_value: *initial_record.value(),
                     initial_value_used: true,
                     ..Default::default()
                 },
