@@ -48,7 +48,8 @@ impl Resource for DecreasingNative {
 
     fn reclaim(&mut self, to_reclaim: Self) {
         // This is only used to "give back" the native resource.
-        assert!(self.0 == 0 || to_reclaim.0 == 0);
+        // TODO: either rename the struct or make a new method for this.
+        // assert!(self.0 == 0 || to_reclaim.0 == 0);
         self.0 += to_reclaim.0
     }
 
