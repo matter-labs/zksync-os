@@ -1,4 +1,3 @@
-use super::StackFrame;
 use crate::bootloader::constants::SPECIAL_ADDRESS_SPACE_BOUND;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::DEBUG_OUTPUT;
@@ -25,7 +24,7 @@ use zk_ee::system::{
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
 pub fn run_till_completion<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+    callstack: &mut SliceVec<SupportedEEVMState<S>>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,

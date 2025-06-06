@@ -2,11 +2,12 @@ use super::transaction::ZkSyncTransaction;
 use super::*;
 use crate::bootloader::errors::InvalidTransaction::AAValidationError;
 use crate::bootloader::errors::{InvalidAA, TxError};
+use crate::bootloader::supported_ees::SupportedEEVMState;
 use constants::{PAYMASTER_VALIDATE_AND_PAY_SELECTOR, TX_CALLDATA_OFFSET};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::system::errors::{FatalError, InternalError};
-use zk_ee::system::{EthereumLikeTypes, System, SystemFrameSnapshot};
+use zk_ee::system::{EthereumLikeTypes, System};
 
 // Helpers for paymaster flow.
 
@@ -16,7 +17,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub(crate) fn validate_and_pay_for_paymaster_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
@@ -162,7 +163,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub(crate) fn paymaster_post_op(
         _system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
         _transaction: &mut ZkSyncTransaction,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
@@ -326,7 +327,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub fn call_account_method(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,

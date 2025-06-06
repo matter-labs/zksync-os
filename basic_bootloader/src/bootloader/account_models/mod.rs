@@ -9,6 +9,7 @@ mod eoa;
 use core::ops::Deref;
 
 use crate::bootloader::errors::TxError;
+use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::transaction::ZkSyncTransaction;
 pub use abstract_account::AA;
 use errors::FatalError;
@@ -18,12 +19,9 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system::System;
-use zk_ee::system::SystemFrameSnapshot;
 use zk_ee::system::*;
 
 use zk_ee::utils::Bytes32;
-
-use super::StackFrame;
 
 ///
 /// The execution step output
@@ -126,7 +124,7 @@ where
     fn validate(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -145,7 +143,7 @@ where
     fn execute(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -183,7 +181,7 @@ where
     fn pay_for_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -198,7 +196,7 @@ where
     fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,

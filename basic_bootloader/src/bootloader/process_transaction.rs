@@ -6,6 +6,7 @@ use crate::bootloader::account_models::AA;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidAA, InvalidTransaction, TxError};
+use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::{require, require_internal};
 use constants::{
     L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_PUBDATA, L2_TX_INTRINSIC_GAS, L2_TX_INTRINSIC_PUBDATA,
@@ -18,7 +19,7 @@ use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
-use zk_ee::system::{EthereumLikeTypes, Resources, SystemFrameSnapshot};
+use zk_ee::system::{EthereumLikeTypes, Resources};
 
 /// Return value of validation step
 #[derive(Default)]
@@ -41,7 +42,7 @@ where
         initial_calldata_buffer: &mut [u8],
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         // TODO: we can get it from the system
         is_first_tx: bool,
     ) -> Result<TxProcessingResult<S>, TxError> {
@@ -81,7 +82,7 @@ where
     fn process_l1_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         transaction: ZkSyncTransaction,
         is_priority_op: bool,
     ) -> Result<TxProcessingResult<S>, TxError> {
@@ -277,7 +278,7 @@ where
     fn execute_l1_transaction_and_notify_result(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         transaction: &ZkSyncTransaction,
         from: B160,
         to: B160,
@@ -376,7 +377,7 @@ where
     fn process_l2_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         mut transaction: ZkSyncTransaction,
     ) -> Result<TxProcessingResult<S>, TxError> {
         let from = transaction.from.read();
@@ -580,7 +581,7 @@ where
     fn transaction_validation<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -671,7 +672,7 @@ where
     fn transaction_execution(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -722,7 +723,7 @@ where
     fn ensure_payment<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -870,7 +871,7 @@ where
     fn refund_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut SliceVec<StackFrame<S, SystemFrameSnapshot<S>>>,
+        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
