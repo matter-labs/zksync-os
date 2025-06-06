@@ -268,7 +268,7 @@ where
         let total_pubdata_used = self.list.top().map_or(0, |(_, m)| *m);
 
         if total_pubdata_used < self.pubdata_used_by_committed_logs {
-            Err(InternalError("Pubdata used by logs unexpectedly decreased").into())
+            Err(InternalError("Pubdata used by logs unexpectedly decreased"))
         } else {
             Ok(total_pubdata_used - self.pubdata_used_by_committed_logs)
         }
