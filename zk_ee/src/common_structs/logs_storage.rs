@@ -157,7 +157,7 @@ where
     LogsStorageStackCheck<SCC, A>:,
 {
     list: HistoryList<LogContent<A>, u32, SC, SCC, A>,
-    pubdata_used_by_commited_logs: u32,
+    pubdata_used_by_committed_logs: u32,
     _marker: core::marker::PhantomData<A>,
 }
 
@@ -169,13 +169,13 @@ where
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
             list: HistoryList::new(allocator),
-            pubdata_used_by_commited_logs: 0,
+            pubdata_used_by_committed_logs: 0,
             _marker: core::marker::PhantomData,
         }
     }
 
     pub fn begin_new_tx(&mut self) {
-        self.pubdata_used_by_commited_logs = self.list.top().map_or(0, |(_, m)| *m);
+        self.pubdata_used_by_committed_logs = self.list.top().map_or(0, |(_, m)| *m);
     }
 
     #[track_caller]
@@ -266,12 +266,12 @@ where
     pub fn calculate_pubdata_used_by_tx(&self) -> u32 {
         let total_pubdata_used = self.list.top().map_or(0, |(_, m)| *m);
 
-        if total_pubdata_used < self.pubdata_used_by_commited_logs {
+        if total_pubdata_used < self.pubdata_used_by_committed_logs {
             // TODO replace with internal error?
             panic!("Pubdata used by logs unexpectedly decreased");
         }
 
-        total_pubdata_used - self.pubdata_used_by_commited_logs
+        total_pubdata_used - self.pubdata_used_by_committed_logs
     }
 
     pub fn apply_pubdata(
