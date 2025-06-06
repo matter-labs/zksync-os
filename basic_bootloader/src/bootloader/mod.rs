@@ -6,6 +6,7 @@ use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
+use zk_ee::system::errors::InternalError;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
 pub mod run_single_interaction;
@@ -169,7 +170,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
         oracle: <S::IO as IOSubsystemExt>::IOOracle,
         result_keeper: &mut impl ResultKeeperExt,
-    ) -> <S::IO as IOSubsystemExt>::FinalData
+    ) -> Result<<S::IO as IOSubsystemExt>::FinalData, InternalError>
     where
         S::IO: IOSubsystemExt,
         S::Memory: MemorySubsystemExt,
@@ -241,7 +242,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                         "Tx execution result: Internal error = {:?}\n",
                         err,
                     ));
-                    panic!("Internal error during tx execution {:?}", err)
+                    return Err(err);
                 }
                 Err(TxError::Validation(err)) => {
                     let _ = system.get_logger().write_fmt(format_args!(
@@ -288,6 +289,11 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                     }
                 }
             }
+
+            let tx_stats = system.flush_tx();
+            let _ = system
+                .get_logger()
+                .write_fmt(format_args!("Tx stats = {:?}\n", tx_stats));
 
             first_tx = false;
 
@@ -369,6 +375,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let r = system.finish(block_hash, l1_to_l2_tx_hash, upgrade_tx_hash, result_keeper);
         cycle_marker::end!("run_prepared");
         #[allow(clippy::let_and_return)]
-        r
+        Ok(r)
     }
 }

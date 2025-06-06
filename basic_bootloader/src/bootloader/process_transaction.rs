@@ -8,6 +8,9 @@ use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidAA, InvalidTransaction, TxError};
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::{require, require_internal};
+use constants::L1_TX_INTRINSIC_NATIVE_COST;
+use constants::L1_TX_NATIVE_PRICE;
+use constants::L2_TX_INTRINSIC_NATIVE_COST;
 use constants::SIMULATION_NATIVE_PER_GAS;
 use constants::{
     L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_PUBDATA, L2_TX_INTRINSIC_GAS, L2_TX_INTRINSIC_PUBDATA,
@@ -103,10 +106,8 @@ where
         // will be refunded to the user.
         let gas_per_pubdata = transaction.gas_per_pubdata_limit.read();
 
-        let native_price = system.get_native_price();
-        if native_price.is_zero() {
-            return Err(InternalError("Native price cannot be 0").into());
-        };
+        // For L1->L2 txs, we use a constant native price to avoid censorship.
+        let native_price = L1_TX_NATIVE_PRICE;
         let native_per_gas = U256::from(gas_price).div_ceil(native_price);
         let native_per_pubdata = U256::from(gas_per_pubdata)
             .checked_mul(native_per_gas)
@@ -119,10 +120,8 @@ where
             transaction.calldata(),
             L1_TX_INTRINSIC_L2_GAS,
             L1_TX_INTRINSIC_PUBDATA,
+            L1_TX_INTRINSIC_NATIVE_COST,
         )?;
-
-        // TODO: l1 transaction preparation (marking factory deps and
-        // computing hash)
 
         let tx_internal_cost = gas_price
             .checked_mul(gas_limit as u128)
@@ -138,46 +137,75 @@ where
             system
         )?;
 
-        // Take a snapshot in case we need to revert due to out of native.
-        let rollback_handle = system.start_global_frame()?;
+        // TODO: l1 transaction preparation (marking factory deps)
+        let chain_id = system.get_chain_id();
 
-        // Tx execution
-        let from = transaction.from.read();
-        let to = transaction.to.read();
-        let result = match Self::execute_l1_transaction_and_notify_result(
-            system,
-            system_functions,
-            callstack,
-            &transaction,
-            from,
-            to,
-            value,
-            native_per_pubdata,
-            &mut resources,
-        ) {
-            Ok(r) => {
-                system.finish_global_frame(None)?;
-                r
-            }
-            // TODO: reconsider for L1 txs!
-            // Out of native is converted to a top-level revert and
-            // gas is exhausted.
-            Err(FatalError::OutOfNativeResources) => {
-                resources.exhaust_ergs();
-                system.finish_global_frame(Some(&rollback_handle))?;
-                callstack.clear();
-                ExecutionResult::Revert {
-                    output: system.memory.empty_immutable_slice(),
+        let (tx_hash, preparation_out_of_resources): (Bytes32, bool) =
+            match transaction.calculate_hash(chain_id, &mut resources) {
+                Ok(h) => (h.into(), false),
+                Err(FatalError::Internal(e)) => return Err(e.into()),
+                Err(FatalError::OutOfNativeResources) => {
+                    resources.exhaust_ergs();
+                    // We need to compute the hash anyways, we do with inf resources
+                    let mut inf_resources = S::Resources::FORMAL_INFINITE;
+                    (
+                        transaction
+                            .calculate_hash(chain_id, &mut inf_resources)
+                            .expect("must succeed")
+                            .into(),
+                        true,
+                    )
                 }
+            };
+
+        let result = if !preparation_out_of_resources {
+            // Take a snapshot in case we need to revert due to out of native.
+            let rollback_handle = system.start_global_frame()?;
+
+            // Tx execution
+            let from = transaction.from.read();
+            let to = transaction.to.read();
+            match Self::execute_l1_transaction_and_notify_result(
+                system,
+                system_functions,
+                callstack,
+                &transaction,
+                from,
+                to,
+                value,
+                native_per_pubdata,
+                &mut resources,
+            ) {
+                Ok(r) => {
+                    match r {
+                        ExecutionResult::Success { .. } => system.finish_global_frame(None)?,
+                        ExecutionResult::Revert { .. } => {
+                            system.finish_global_frame(Some(&rollback_handle))?
+                        }
+                    }
+                    r
+                }
+                // TODO: reconsider for L1 txs!
+                // Out of native is converted to a top-level revert and
+                // gas is exhausted.
+                Err(FatalError::OutOfNativeResources) => {
+                    resources.exhaust_ergs();
+                    system.finish_global_frame(Some(&rollback_handle))?;
+                    callstack.clear();
+                    ExecutionResult::Revert {
+                        output: system.memory.empty_immutable_slice(),
+                    }
+                }
+                Err(FatalError::Internal(e)) => return Err(e.into()),
             }
-            Err(FatalError::Internal(e)) => return Err(e.into()),
+        } else {
+            ExecutionResult::Revert {
+                output: system.memory.empty_immutable_slice(),
+            }
         };
 
         // Compute gas to refund
         // TODO: consider operator refund
-
-        // Pubdata for validation has been charged already,
-        // we charge for the rest now.
         let (_pubdata_spent, to_charge_for_pubdata) =
             get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
         let (_, gas_used) = Self::compute_gas_refund(
@@ -250,14 +278,6 @@ where
         }
 
         // Emit log
-        let chain_id = system.get_chain_id();
-        let tx_hash: Bytes32 = transaction
-            .calculate_hash(chain_id, &mut inf_resources)
-            .map_err(|e| match e {
-                FatalError::Internal(e) => e,
-                FatalError::OutOfNativeResources => InternalError("Out of native on infinite"),
-            })?
-            .into();
         let success = matches!(result, ExecutionResult::Success { .. });
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
         system.io.emit_l1_l2_tx_log(
@@ -266,11 +286,6 @@ where
             tx_hash,
             success,
         )?;
-
-        let tx_stats = system.flush_tx();
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Tx stats = {:?}\n", tx_stats));
 
         Ok(TxProcessingResult {
             result,
@@ -435,6 +450,7 @@ where
             calldata,
             L2_TX_INTRINSIC_GAS,
             L2_TX_INTRINSIC_PUBDATA,
+            L2_TX_INTRINSIC_NATIVE_COST,
         )?;
         let initial_resources = resources.clone();
 
@@ -519,7 +535,12 @@ where
             &mut resources,
         ) {
             Ok(r) => {
-                system.finish_global_frame(None)?;
+                match r {
+                    ExecutionResult::Success { .. } => system.finish_global_frame(None)?,
+                    ExecutionResult::Revert { .. } => {
+                        system.finish_global_frame(Some(&rollback_handle))?
+                    }
+                }
                 r
             }
             // Out of native is converted to a top-level revert and
@@ -558,12 +579,6 @@ where
         } else {
             0
         };
-
-        let tx_stats = system.flush_tx();
-
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Tx stats = {:?}\n", tx_stats));
 
         #[cfg(not(target_arch = "riscv32"))]
         cycle_marker::log_marker(

@@ -843,9 +843,9 @@ impl<'a> ZkSyncTransaction<'a> {
     ///
     fn l1_tx_calculate_hash<R: Resources>(
         &self,
-        _resources: &mut R,
+        resources: &mut R,
     ) -> Result<[u8; 32], FatalError> {
-        // TODO: should we charge here or intrinsic?
+        charge_keccak(32 + self.underlying_buffer[TX_OFFSET..].len(), resources)?;
         let mut hasher = Keccak256::new();
         // Note, that the correct ABI encoding of the Transaction structure starts with 0x20
         hasher.update(&U256::from(0x20).to_be_bytes::<32>());

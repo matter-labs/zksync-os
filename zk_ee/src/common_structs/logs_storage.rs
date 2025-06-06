@@ -18,7 +18,7 @@ use crypto::MiniDigest;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
 
-const L2_TO_L1_LOG_SERIALIZE_SIZE: usize = 88;
+pub const L2_TO_L1_LOG_SERIALIZE_SIZE: usize = 88;
 
 ///
 /// L2 to l1 log structure, used for merkle tree leaves.

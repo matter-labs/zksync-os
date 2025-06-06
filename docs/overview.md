@@ -42,3 +42,8 @@ The two running environments are:
 2. **Proving running mode** - to be used during proofs generation. The code is running on the pure RISC-V platform without OS, so we should manage memory, also different non-determinism source needed to pass the data inside the RISC-V machine. And we should prove everything.
 
 In order to achieve that we want to have some way to configure the system, as mentioned above - oracle, allocator, disabling/enabling code that is needed only during proving.
+
+## System Resources
+
+In ZKsyncOS we need a concept of "resources" to limit and charge for computation (mainly proving) and data.
+This is trickier that it may seem: ZKsyncOS is built to be EVM gas-equivalent, meaning that EVM code execution should follow the same gas schedule as Ethereum. The main issue with this is that for several reasons the EVM gas schedule doesn't correspond to the costs of proving it. The solution to this problem is to perform double accounting of both Execution Environment gas (think of EVM gas) and a "native" computational resource, the latter modeling the cost of proving. More details about this solution can be found in [Double resource accounting](./double_resource_accounting.md)
