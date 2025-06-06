@@ -538,18 +538,17 @@ mod tests {
 
         for &(x_bytes, y_bytes) in ADD_TEST_VECTORS {
             let a = p.to_affine();
-        
+
             let expected = Affine {
                 x: FieldElement::from_bytes(&x_bytes).expect("valid x coord"),
                 y: FieldElement::from_bytes(&y_bytes).expect("valid y coord"),
                 infinity: false,
             };
-        
+
             assert_eq!(expected, a);
-        
+
             p.add_ge_in_place(g, None);
         }
-        
     }
 
     #[test]
@@ -560,15 +559,15 @@ mod tests {
 
         for &(x_bytes, y_bytes) in ADD_TEST_VECTORS {
             let a = p.to_affine_const();
-        
+
             let expected = AffineConst {
                 x: FieldElementConst::from_bytes_unchecked(&x_bytes),
                 y: FieldElementConst::from_bytes_unchecked(&y_bytes),
                 infinity: false,
             };
-        
+
             assert_eq!(expected, a);
-        
+
             p = p.add_ge(&g, None);
         }
     }
