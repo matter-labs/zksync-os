@@ -5,6 +5,7 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(slice_ptr_get)]
 #![feature(const_trait_impl)]
+#![feature(unsafe_cell_access)]
 
 extern crate alloc;
 

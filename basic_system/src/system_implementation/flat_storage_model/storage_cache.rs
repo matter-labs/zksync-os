@@ -1,11 +1,11 @@
 //! Storage cache, backed by a history map.
-use crate::system_implementation::io::address_into_special_storage_key;
+use crate::system_implementation::flat_storage_model::address_into_special_storage_key;
 use crate::system_implementation::system::ExtraCheck;
 use alloc::fmt::Debug;
 use core::alloc::Allocator;
 use ruint::aliases::B160;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
-use storage_models::{diffable::*, TyEq};
+use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::{
     common_structs::{WarmStorageKey, WarmStorageValue},
@@ -18,6 +18,7 @@ use zk_ee::{
 };
 
 use zk_ee::common_structs::history_map::*;
+use zk_ee::common_structs::ValueDiffCompressionStrategy;
 
 type AddressItem<'a, K, V, A> = CacheItemRefMut<'a, K, V, StorageElementMetadata, A>;
 
@@ -80,7 +81,7 @@ pub struct GenericPubdataAwarePlainStorage<
 > where
     ExtraCheck<SCC, A>:,
 {
-    cache: HistoryMap<K, V, StorageElementMetadata, A>,
+    pub(crate) cache: HistoryMap<K, V, StorageElementMetadata, A>,
     pub(crate) resources_policy: P,
     pub(crate) current_tx_number: u32,
     pub(crate) _marker: core::marker::PhantomData<(R, SC, SCC)>,
@@ -130,22 +131,6 @@ where
         if let Some(x) = rollback_handle {
             self.cache.rollback(*x);
         }
-    }
-
-    pub fn net_pubdata_used(&self) -> u64 {
-        let mut size = 0;
-        self.cache
-            .for_total_diff_operands::<_, ()>(|_l, r, _| {
-                match r.appearance {
-                    Appearance::Retrieved => size += 0,
-                    Appearance::Unset => size += 0,
-                    Appearance::Deconstructed => size += 32,
-                    Appearance::Updated => size += 32,
-                };
-                Ok(())
-            })
-            .expect("We're returning Ok(())");
-        size
     }
 
     fn materialize_element<'a>(
@@ -478,7 +463,11 @@ impl<
 where
     ExtraCheck<SCC, A>:,
 {
-    // This one if for merkle proof validation, includes initial reads
+    ///
+    /// Returns all the accessed storage slots.
+    ///
+    /// This one should be used for merkle proof validation, includes initial reads.
+    ///
     pub fn net_accesses_iter(
         &self,
     ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SC, SCC, R, P>
@@ -486,6 +475,9 @@ where
         self.0.cache.iter_as_storage_types()
     }
 
+    ///
+    /// Returns slots that were changed during execution.
+    ///
     pub fn net_diffs_iter(
         &self,
     ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SC, SCC, R, P>
@@ -496,8 +488,26 @@ where
             .filter(|(_, v)| v.current_value != v.initial_value)
     }
 
-    pub fn net_pubdata_used(&self) -> u64 {
-        // TODO: check we don't count initial reads
-        self.0.net_pubdata_used()
+    pub fn net_pubdata_used(&self) -> u32 {
+        // TODO: should be constant complexity
+        let mut pubdata_used = 0u32;
+        self.0
+            .cache
+            .for_total_diff_operands::<_, ()>(|l, r, k| {
+                // TODO: use tree index instead of key for repeated writes
+                pubdata_used += 32; // key
+                                    // we publish preimages for account details, so no need to publish hash
+                if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
+                    return Ok(());
+                }
+                if l.value != r.value {
+                    pubdata_used += ValueDiffCompressionStrategy::optimal_compression_length(
+                        &l.value, &r.value,
+                    ) as u32;
+                }
+                Ok(())
+            })
+            .expect("We're returning Ok(())");
+        pubdata_used
     }
 }

@@ -1,5 +1,7 @@
 # ZKsync OS
 
+[![Logo](zksync-os-logo.png)](https://zksync.io/)
+
 ZKsync OS is a new state transition function implementation that enables multiple execution environments (EVM, EraVM, Wasm, etc.) to operate within a unified ecosystem. It is implemented in Rust and compiled into a RISC-V binary, which can later be proven using the `zksync-airbender`.
 
 ## Documentation

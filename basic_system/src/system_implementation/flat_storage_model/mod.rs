@@ -1,3 +1,9 @@
+//!
+//! This module contains flat(aka new ZKsyncOS) storage model implementation.
+//!
+//! It's fixed height merkle tree with linked list in the leaves sorted by storage keys.
+//! Account data hashes stored in this tree and published separately.
+//!
 pub mod account_cache;
 mod account_cache_entry;
 pub mod cost_constants;
@@ -13,17 +19,15 @@ pub use self::storage_cache::*;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
-use storage_models::common_structs::GenericPlainStorageRollbackData;
 use storage_models::common_structs::PreimageCacheModel;
 use storage_models::common_structs::StorageCacheModel;
 use storage_models::common_structs::StorageModel;
-use zk_ee::common_structs::derive_flat_storage_key;
+use zk_ee::common_structs::{derive_flat_storage_key, ValueDiffCompressionStrategy};
 use zk_ee::system::errors::InternalError;
 use zk_ee::system::Resources;
 use zk_ee::{
     common_structs::{
-        history_map::CacheSnapshotId, state_root_view::StateRootView, TransientStorageValue,
-        WarmStorageKey, WarmStorageValue,
+        history_map::CacheSnapshotId, state_root_view::StateRootView, WarmStorageKey,
     },
     execution_environment_type::ExecutionEnvironmentType,
     memory::stack_trait::{StackCtor, StackCtorConst},
@@ -40,10 +44,6 @@ use zk_ee::{
 use super::system::ExtraCheck;
 
 pub const DEFAULT_CODE_VERSION_BYTE: u8 = 1;
-
-pub type StorageDiff = GenericPlainStorageRollbackData<WarmStorageKey, WarmStorageValue>;
-pub type TransientStorageDiff =
-    GenericPlainStorageRollbackData<WarmStorageKey, TransientStorageValue>;
 
 pub fn address_into_special_storage_key(address: &B160) -> Bytes32 {
     let mut key = Bytes32::zero();
@@ -80,24 +80,6 @@ pub struct FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
 }
 
 impl<
-        A: Allocator + Clone,
-        R: Resources,
-        P: StorageAccessPolicy<R, Bytes32>,
-        SC: StackCtor<SCC>,
-        SCC: const StackCtorConst,
-        const PROOF_ENV: bool,
-    > FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SC, SCC, PROOF_ENV>
-where
-    ExtraCheck<SCC, A>:,
-{
-    pub fn net_pubdata_used(&self) -> u64 {
-        self.account_data_cache.net_pubdata_used()
-            + self.storage_cache.net_pubdata_used()
-            + self.preimages_cache.publication_storage.net_pubdata_used()
-    }
-}
-
-impl<
         A: Allocator + Clone + Default,
         R: Resources,
         P: StorageAccessPolicy<R, Bytes32>,
@@ -113,7 +95,6 @@ where
     type StorageCommitment = FlatStorageCommitment<TREE_HEIGHT>;
 
     type IOTypes = EthereumIOTypesConfig;
-    type TxStats = i32;
 
     type InitData = P;
 
@@ -168,8 +149,8 @@ where
         }
     }
 
-    fn tx_stats(&self) -> Self::TxStats {
-        todo!();
+    fn pubdata_used(&self) -> u32 {
+        self.account_data_cache.net_pubdata_used() + self.storage_cache.net_pubdata_used()
     }
 
     fn finish(
@@ -177,13 +158,13 @@ where
         oracle: &mut impl IOOracle,
         state_commitment: Option<&mut Self::StorageCommitment>,
         pubdata_hasher: &mut impl MiniDigest,
-        logger: &mut impl Logger,
         result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
+        logger: &mut impl Logger,
     ) -> Result<(), InternalError> {
         let Self {
             mut storage_cache,
             mut preimages_cache,
-            account_data_cache,
+            mut account_data_cache,
             allocator,
         } = self;
         // flush accounts into storage
@@ -196,31 +177,64 @@ where
             )
             .expect("must persist changes from account cache");
 
-        // uncompressed state diffs for sequencer
+        // 1. Return uncompressed state diffs for sequencer
         result_keeper.storage_diffs(storage_cache.net_diffs_iter().map(|(k, v)| {
             let WarmStorageKey { address, key } = k;
             let value = v.current_value;
             (address, key, value)
         }));
+        preimages_cache.report_new_preimages(result_keeper)?;
 
-        // pubdata
-        // TODO: we should compress pubdata
+        // 2. Commit to/return compressed pubdata
         let encdoded_state_diffs_count =
             (storage_cache.net_diffs_iter().count() as u32).to_be_bytes();
         pubdata_hasher.update(&encdoded_state_diffs_count);
         result_keeper.pubdata(&encdoded_state_diffs_count);
-        let _ = storage_cache.net_diffs_iter().map(|(k, v)| {
-            let WarmStorageKey { address, key } = k;
-            let flat_key = derive_flat_storage_key(&address, &key);
-            let value = v.current_value;
-            pubdata_hasher.update(flat_key.as_u8_ref());
-            pubdata_hasher.update(value.as_u8_ref());
-            result_keeper.pubdata(flat_key.as_u8_ref());
-            result_keeper.pubdata(value.as_u8_ref());
-        });
 
-        preimages_cache.report_new_preimages(result_keeper, pubdata_hasher)?;
+        storage_cache
+            .0
+            .cache
+            .for_total_diff_operands::<_, ()>(|l, r, k| {
+                // TODO: use tree index instead of key for repeated writes
+                let derived_key = derive_flat_storage_key(&k.address, &k.key);
+                pubdata_hasher.update(derived_key.as_u8_ref());
+                result_keeper.pubdata(derived_key.as_u8_ref());
 
+                if l.value == r.value {
+                    return Ok(());
+                }
+                // we publish preimages for account details
+                if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
+                    let account_address = B160::try_from_be_slice(&k.key.as_u8_ref()[12..])
+                        .unwrap()
+                        .into();
+                    let cache_item = account_data_cache
+                        .cache
+                        .get_current(&account_address)
+                        .ok_or(())?;
+                    let (l, r) = cache_item.diff_operands_total().ok_or(())?;
+                    AccountProperties::diff_compression::<PROOF_ENV, _, _>(
+                        &l.value,
+                        &r.value,
+                        pubdata_hasher,
+                        result_keeper,
+                        &mut preimages_cache,
+                        oracle,
+                    )
+                    .map_err(|_| ())?;
+                } else {
+                    ValueDiffCompressionStrategy::optimal_compression(
+                        &l.value,
+                        &r.value,
+                        pubdata_hasher,
+                        result_keeper,
+                    );
+                }
+                Ok(())
+            })
+            .map_err(|_| InternalError("Failed to compute pubdata"))?;
+
+        // 3. Verify/apply reads and writes
         cycle_marker::wrap!("verify_and_apply_batch", {
             if let Some(state_commitment) = state_commitment {
                 let it = storage_cache.net_accesses_iter();

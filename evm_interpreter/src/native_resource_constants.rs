@@ -175,3 +175,6 @@ pub const SWAP_NATIVE_COST: u64 = 90;
 pub const LOG_NATIVE_COST: u64 = 50;
 
 pub const STEP_NATIVE_COST: u64 = 20;
+
+// Cost of bytecode preprocessing per byte
+pub const BYTECODE_PREPROCESSING_BYTE_NATIVE_COST: u64 = 6;

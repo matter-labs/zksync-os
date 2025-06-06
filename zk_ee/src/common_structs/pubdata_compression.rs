@@ -1,85 +1,239 @@
+//!
+//! This module contains utils for pubdata compression that can be reused by different systems/storage models.
+//!
+use crate::system::IOResultKeeper;
+use crate::types_config::SystemIOTypesConfig;
 use crate::utils::*;
-use ruint::aliases::B160;
+use crypto::MiniDigest;
+use ruint::aliases::U256;
 
-// we can empty 2 compression strategies
+///
+/// value diff "Era VM" compression, can be used for contracts storage values and account data fields(nonce and balance).
+/// Works for 32 bytes values, numbers encoded/decoded as BE.
+///
+/// There are 4 compression types:
+/// - `Nothing`, final 32 byte value.
+/// - `Add`, value increased by specified 0-31 byte value.
+/// - `Subtract`, value decreased by specified 0-31 byte value.
+/// - `Transform`, final 0-31 byte value, leading zeroes removed.
+///
 #[derive(PartialEq, Eq)]
-pub enum CompressionStrategy {
+pub enum ValueDiffCompressionStrategy {
+    Nothing,
     Add,
     Sub,
+    Transform,
 }
 
-pub const NUM_EXTRA_BYTES_IN_ENCODING_SCHEME: u8 = 1;
-pub const NUM_BYTE_FOR_REPEATED_KEY_ENCODING: u8 = 4;
-pub const NUM_BYTE_FOR_NEW_ENCODING: u8 = 32;
-
-impl CompressionStrategy {
-    pub fn output_num_bytes(&self, initial_value: &Bytes32, final_value: &Bytes32) -> u8 {
+impl ValueDiffCompressionStrategy {
+    fn compression_length(&self, initial_value: U256, final_value: U256) -> Option<u8> {
         match self {
+            Self::Nothing => Some(33), //full value + metadata byte
             Self::Add => {
-                let (result, of) = initial_value
-                    .into_u256_be()
-                    .overflowing_add(final_value.into_u256_be());
-                if of {
-                    32
+                let (result, of) = final_value.overflowing_sub(initial_value);
+                let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
+                if of || length == 32 {
+                    None
                 } else {
-                    (result.bit_len().next_multiple_of(8) / 8) as u8
+                    Some(length + 1)
                 }
             }
             Self::Sub => {
-                let (result, of) = initial_value
-                    .into_u256_be()
-                    .overflowing_sub(final_value.into_u256_be());
-                if of {
-                    32
+                let (result, of) = initial_value.overflowing_sub(final_value);
+                let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
+                if of || length == 32 {
+                    None
                 } else {
-                    (result.bit_len().next_multiple_of(8) / 8) as u8
+                    Some(length + 1)
+                }
+            }
+            Self::Transform => {
+                let length = (final_value.bit_len().next_multiple_of(8) / 8) as u8;
+                if length == 32 {
+                    None
+                } else {
+                    Some(length + 1)
                 }
             }
         }
     }
 
-    pub fn apply_best_strategy(initial_value: &Bytes32, final_value: &Bytes32) -> u8 {
-        let mut optimal = 32;
-        for strategy in [Self::Add, Self::Sub].iter() {
-            optimal = core::cmp::min(
-                optimal,
-                strategy.output_num_bytes(initial_value, final_value),
-            );
+    fn compress<IOTypes: SystemIOTypesConfig>(
+        &self,
+        initial_value: U256,
+        final_value: U256,
+        hasher: &mut impl MiniDigest,
+        result_keeper: &mut impl IOResultKeeper<IOTypes>,
+    ) -> Result<(), ()> {
+        match self {
+            Self::Nothing => {
+                let metadata_byte = 0u8;
+                hasher.update([metadata_byte]);
+                hasher.update(final_value.to_be_bytes::<32>());
+                result_keeper.pubdata(&[metadata_byte]);
+                result_keeper.pubdata(&final_value.to_be_bytes::<32>());
+
+                Ok(())
+            }
+            Self::Add => {
+                let (result, of) = final_value.overflowing_sub(initial_value);
+                let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
+
+                if of || length == 32 {
+                    Err(())
+                } else {
+                    let metadata_byte = (length << 3) | 1;
+                    hasher.update([metadata_byte]);
+                    hasher.update(&result.to_be_bytes::<32>()[32usize - length as usize..]);
+                    result_keeper.pubdata(&[metadata_byte]);
+                    result_keeper.pubdata(&result.to_be_bytes::<32>()[32usize - length as usize..]);
+
+                    Ok(())
+                }
+            }
+            Self::Sub => {
+                let (result, of) = initial_value.overflowing_sub(final_value);
+                let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
+
+                if of || length == 32 {
+                    Err(())
+                } else {
+                    let metadata_byte = (length << 3) | 2;
+                    hasher.update([metadata_byte]);
+                    hasher.update(&result.to_be_bytes::<32>()[32usize - length as usize..]);
+                    result_keeper.pubdata(&[metadata_byte]);
+                    result_keeper.pubdata(&result.to_be_bytes::<32>()[32usize - length as usize..]);
+
+                    Ok(())
+                }
+            }
+            Self::Transform => {
+                let length = (final_value.bit_len().next_multiple_of(8) / 8) as u8;
+                if length == 32 {
+                    Err(())
+                } else {
+                    let metadata_byte = (length << 3) | 3;
+                    hasher.update([metadata_byte]);
+                    hasher.update(&final_value.to_be_bytes::<32>()[32usize - length as usize..]);
+                    result_keeper.pubdata(&[metadata_byte]);
+                    result_keeper
+                        .pubdata(&final_value.to_be_bytes::<32>()[32usize - length as usize..]);
+
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    pub fn optimal_compression_length_u256(initial_value: U256, final_value: U256) -> u8 {
+        // worst case "Nothing" strategy, always possible to encode
+        let mut optimal = Self::Nothing
+            .compression_length(initial_value, final_value)
+            .unwrap();
+
+        // so we don't check nothing here
+        for strategy in [Self::Add, Self::Sub, Self::Transform].iter() {
+            if let Some(length) = strategy.compression_length(initial_value, final_value) {
+                optimal = core::cmp::min(optimal, length);
+            }
         }
 
-        optimal + NUM_EXTRA_BYTES_IN_ENCODING_SCHEME
+        optimal
+    }
+
+    pub fn optimal_compression_length(initial_value: &Bytes32, final_value: &Bytes32) -> u8 {
+        let initial_value = initial_value.into_u256_be();
+        let final_value = final_value.into_u256_be();
+        Self::optimal_compression_length_u256(initial_value, final_value)
+    }
+
+    pub fn optimal_compression_u256<IOTypes: SystemIOTypesConfig>(
+        initial_value: U256,
+        final_value: U256,
+        hasher: &mut impl MiniDigest,
+        result_keeper: &mut impl IOResultKeeper<IOTypes>,
+    ) {
+        let mut optimal_strategy = Self::Nothing;
+        let mut optimal_length = optimal_strategy
+            .compression_length(initial_value, final_value)
+            .unwrap();
+
+        // nothing already checked
+        for strategy in [Self::Add, Self::Sub, Self::Transform] {
+            if let Some(length) = strategy.compression_length(initial_value, final_value) {
+                if length < optimal_length {
+                    optimal_strategy = strategy;
+                    optimal_length = length;
+                }
+            }
+        }
+
+        // safe to unwrap here as strategy is checked to be applicable to the current values
+        optimal_strategy
+            .compress(initial_value, final_value, hasher, result_keeper)
+            .unwrap()
+    }
+
+    pub fn optimal_compression<IOTypes: SystemIOTypesConfig>(
+        initial_value: &Bytes32,
+        final_value: &Bytes32,
+        hasher: &mut impl MiniDigest,
+        result_keeper: &mut impl IOResultKeeper<IOTypes>,
+    ) {
+        let initial_value = initial_value.into_u256_be();
+        let final_value = final_value.into_u256_be();
+        Self::optimal_compression_u256(initial_value, final_value, hasher, result_keeper);
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct PubdataDiffLog {
-    pub address: B160,
-    pub storage_key: Bytes32,
-    pub initial_value: Bytes32,
-    pub final_value: Bytes32,
-    pub is_new_storage_slot: bool,
-}
+#[cfg(test)]
+mod tests {
+    use super::ValueDiffCompressionStrategy;
+    use crate::system::IOResultKeeper;
+    use crate::types_config::EthereumIOTypesConfig;
+    use crate::utils::*;
+    use crypto::MiniDigest;
 
-impl PubdataDiffLog {
-    pub const BYTE_LEN: usize = const {
-        let size: usize = 20 + 32 * 3 + 4 + 1 + 1;
+    struct TestResultKeeper {
+        pub pubdata: Vec<u8>,
+    }
 
-        size.next_multiple_of(USIZE_SIZE)
-    };
-    pub fn as_byte_array(&self) -> [u8; Self::BYTE_LEN] {
-        let mut dst = [0; Self::BYTE_LEN];
+    impl IOResultKeeper<EthereumIOTypesConfig> for TestResultKeeper {
+        fn pubdata<'a>(&mut self, value: &'a [u8]) {
+            self.pubdata.extend_from_slice(value)
+        }
+    }
 
-        let mut idx = 0;
-        dst[idx..(idx + 20)].copy_from_slice(&self.address.to_le_bytes::<{ B160::BYTES }>());
-        idx += 20;
-        dst[idx..(idx + 32)].copy_from_slice(self.storage_key.as_u8_array_ref());
-        idx += 32;
-        dst[idx..(idx + 32)].copy_from_slice(self.initial_value.as_u8_array_ref());
-        idx += 32;
-        dst[idx..(idx + 32)].copy_from_slice(self.final_value.as_u8_array_ref());
-        idx += 32;
-        dst[idx] = self.is_new_storage_slot as u8;
+    #[test]
+    fn basic_compression_test() {
+        let initial = Bytes32::from_array([
+            0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0,
+        ]);
+        let r#final = Bytes32::from_array([
+            0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 3,
+        ]);
 
-        dst
+        let optimal_length =
+            ValueDiffCompressionStrategy::optimal_compression_length(&initial, &r#final);
+
+        let mut nop_hasher = NopHasher::new();
+        let mut result_keeper = TestResultKeeper { pubdata: vec![] };
+
+        ValueDiffCompressionStrategy::optimal_compression(
+            &initial,
+            &r#final,
+            &mut nop_hasher,
+            &mut result_keeper,
+        );
+        let compression = result_keeper.pubdata;
+
+        assert_eq!(optimal_length as usize, compression.len());
+        // "Addition" strategy is optimal in this case
+        assert_eq!(compression.len(), 2);
+        println!("{:?}", compression);
+        assert_eq!(compression[0], 0b00001001);
+        assert_eq!(compression[1], 3);
     }
 }

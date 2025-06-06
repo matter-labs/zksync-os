@@ -1,7 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
-use evm_interpreter::ERGS_PER_GAS;
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
@@ -353,7 +352,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         cycle_marker::log_marker(
             format!(
                 "Spent ergs for [run_prepared]: {}",
-                result_keeper.get_gas_used() * ERGS_PER_GAS
+                result_keeper.get_gas_used() * evm_interpreter::ERGS_PER_GAS
             )
             .as_str(),
         );

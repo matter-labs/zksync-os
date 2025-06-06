@@ -98,7 +98,7 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
             external_call:
                 ExternalCallRequest {
                     ergs_to_pass: _,
-                    available_resources,
+                    mut available_resources,
                     caller,
                     callee,
                     callers_caller,
@@ -196,6 +196,7 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
             decommitted_bytecode,
             original_bytecode_len,
             system,
+            &mut available_resources,
         )?;
 
         self.resources = available_resources;
