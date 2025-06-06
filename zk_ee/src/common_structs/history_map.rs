@@ -51,7 +51,7 @@ where
             btree: BTreeMap::new_in(alloc.clone()),
             state: HistoryMapState {
                 alloc: alloc.clone(),
-                // Initial values will be associated with snapshot 0 (so the can't be reverted)
+                // Initial values will be associated with snapshot 0 (so they can't be reverted)
                 next_snapshot_id: CacheSnapshotId(1),
                 frozen_snapshot_id: CacheSnapshotId(0),
                 pending_updated_elements: StackLinkedList::empty(alloc.clone()),
@@ -153,7 +153,7 @@ where
     pub fn commit(&mut self) {
         self.state.frozen_snapshot_id = self.snapshot();
 
-        // Go over all elements changed since last `commit` and `commit` heir history
+        // Go over all elements changed since last `commit` and `commit` their history
         for (key, _) in self.state.pending_updated_elements.iter() {
             let item = self
                 .btree
