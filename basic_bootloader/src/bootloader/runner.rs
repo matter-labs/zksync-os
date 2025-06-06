@@ -398,10 +398,9 @@ where
                 )?;
             }
 
-            Ok(CallPreparationResult::Failure {
-                resources_returned,
-                // call_result,
-            }) => return Ok((resources_returned, CallResult::CallFailedToExecute)),
+            Ok(CallPreparationResult::Failure { resources_returned }) => {
+                return Ok((resources_returned, CallResult::CallFailedToExecute))
+            }
             Err(e) => return Err(e),
         };
 
@@ -541,10 +540,9 @@ where
 
                     actual_resources_to_pass
                 }
-                Ok(CallPreparationResult::Failure {
-                    resources_returned,
-                    // call_result,
-                }) => return Ok((resources_returned, CallResult::CallFailedToExecute)),
+                Ok(CallPreparationResult::Failure { resources_returned }) => {
+                    return Ok((resources_returned, CallResult::CallFailedToExecute))
+                }
                 Err(e) => return Err(e),
             };
 
@@ -828,7 +826,6 @@ pub enum CallPreparationResult<'a, S: SystemTypes> {
     },
     Failure {
         resources_returned: S::Resources,
-        // call_result: CallResult<S>,
     },
 }
 
@@ -885,7 +882,6 @@ where
         Err(SystemError::OutOfErgs) => {
             return Ok(CallPreparationResult::Failure {
                 resources_returned: resources_available,
-                // call_result: CallResult::CallFailedToExecute,
             });
         }
         Err(SystemError::OutOfNativeResources) => return Err(FatalError::OutOfNativeResources),
