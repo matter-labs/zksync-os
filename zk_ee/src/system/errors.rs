@@ -1,5 +1,3 @@
-use super::Ergs;
-
 ///
 /// Possible errors raised by the system.
 ///
