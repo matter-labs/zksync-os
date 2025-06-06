@@ -367,6 +367,7 @@ pub trait FinishIO {
         current_block_hash: Bytes32,
         l1_to_l2_txs_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
+        interop_root_rolling_hash: Bytes32,
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         logger: impl Logger,
     ) -> Self::FinalData;
@@ -390,6 +391,7 @@ where
         current_block_hash: Bytes32,
         _l1_to_l2_txs_hash: Bytes32,
         _upgrade_tx_hash: Bytes32,
+        _interop_root_rolling_hash: Bytes32,
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
@@ -434,6 +436,7 @@ where
         current_block_hash: Bytes32,
         l1_to_l2_txs_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
+        interop_root_rolling_hash: Bytes32,
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
@@ -512,6 +515,7 @@ where
             priority_ops_hashes_hash: l1_to_l2_txs_hash,
             l2_to_l1_logs_hashes_hash: l2_to_l1_logs_hashes_hash.into(),
             upgrade_tx_hash,
+            interop_root_rolling_hash,
         };
 
         let public_input = BlocksPublicInput {
@@ -799,6 +803,7 @@ where
         current_block_hash: Bytes32,
         l1_to_l2_txs_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
+        interop_root_rolling_hash: Bytes32,
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         logger: impl Logger,
     ) -> Self::FinalData {
@@ -808,6 +813,7 @@ where
             current_block_hash,
             l1_to_l2_txs_hash,
             upgrade_tx_hash,
+            interop_root_rolling_hash,
             result_keeper,
             logger,
         )

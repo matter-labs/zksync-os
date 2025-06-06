@@ -26,7 +26,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use zk_ee::common_structs::derive_flat_storage_key;
-use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle};
+use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle, InteropRoots};
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
 
@@ -48,6 +48,7 @@ pub struct BlockContext {
     pub gas_per_pubdata: U256,
     pub native_price: U256,
     pub coinbase: B160,
+    pub interop_roots: InteropRoots,
 }
 
 impl Default for BlockContext {
@@ -58,6 +59,7 @@ impl Default for BlockContext {
             gas_per_pubdata: U256::default(),
             native_price: U256::from(10),
             coinbase: B160::default(),
+            interop_roots: InteropRoots::default(),
         }
     }
 }
@@ -133,6 +135,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             native_price: block_context.native_price,
             coinbase: block_context.coinbase,
             gas_limit: MAX_BLOCK_GAS_LIMIT,
+            interop_roots: block_context.interop_roots,
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),

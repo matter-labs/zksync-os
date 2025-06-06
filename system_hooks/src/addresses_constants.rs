@@ -36,6 +36,11 @@ pub const NONCE_HOLDER_HOOK_ADDRESS_LOW: u16 = 0x8003;
 pub const NONCE_HOLDER_HOOK_ADDRESS: B160 =
     B160::from_limbs([NONCE_HOLDER_HOOK_ADDRESS_LOW as u64, 0, 0]);
 
+// l2 interop root storage system hook (contract) needed for all envs (add interop root)
+pub const L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW: u32 = 0x10008;
+pub const L2_INTEROP_ROOT_STORAGE_ADDRESS: B160 =
+    B160::from_limbs([L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW as u64, 0, 0]);
+
 // ERA VM system contracts (in fact we need implement only the methods that should be available for user contracts)
 // TODO: may be better to implement as ifs inside EraVM EE
 pub const ACCOUNT_CODE_STORAGE_STORAGE_ADDRESS: B160 = B160::from_limbs([0x8002, 0, 0]);

@@ -378,6 +378,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         current_block_hash: Bytes32,
         l1_to_l2_txs_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
+        interop_root_rolling_hash: Bytes32,
         result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
         logger: impl Logger,
     ) -> Self::FinalData;

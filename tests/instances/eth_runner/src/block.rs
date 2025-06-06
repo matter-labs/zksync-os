@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use rig::utils::encode_alloy_rpc_tx;
 use ruint::aliases::{B160, U256};
 use serde::Deserialize;
+use zk_ee::system::metadata::InteropRoots;
 
 #[derive(Debug, Deserialize)]
 pub struct Block {
@@ -18,6 +19,7 @@ impl Block {
             gas_per_pubdata: U256::ZERO,
             native_price: base_fee / U256::from(100),
             coinbase: B160::from_be_bytes(self.result.header.miner.0 .0),
+            interop_roots: InteropRoots::default(),
         }
     }
 
