@@ -56,6 +56,13 @@ license = "MIT OR Apache-2.0"
 keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
+[workspace.dependencies]
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "0.1.0"}
+blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "0.1.0"}
+prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag = "0.1.0"}
+trace_and_split = { git = "https://github.com/matter-labs/zksync-airbender", tag = "0.1.0"}
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "0.1.0"}
+
 # [profile.dev]
 # opt-level = 0
 # lto = false
