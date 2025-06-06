@@ -13,6 +13,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     calldata: &[u8],
     intrinsic_gas: usize,
     intrinsic_pubdata: usize,
+    intrinsic_native: usize,
 ) -> Result<(S::Resources, S::Resources), TxError> {
     // TODO: operator trusted gas limit?
 
@@ -55,11 +56,12 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         (MAX_NATIVE_COMPUTATIONAL, S::Resources::from_native(withheld))
     };
 
-    // Charge for calldata
+    // Charge for calldata and intrinsic native
     let (calldata_gas, calldata_native) = cost_for_calldata(calldata)?;
 
     let native_limit = native_limit
         .checked_sub(calldata_native)
+        .and_then(|native| native.checked_sub(intrinsic_native as u64))
         .ok_or(TxError::Validation(
             errors::InvalidTransaction::AAValidationError(
                 errors::InvalidAA::OutOfNativeResourcesDuringValidation,

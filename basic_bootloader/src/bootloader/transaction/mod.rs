@@ -268,9 +268,9 @@ impl<'a> ZkSyncTransaction<'a> {
 
     // To be used only with field belonging to this transaction
     pub fn encoding<T: 'static + Clone + Copy + core::fmt::Debug>(
-        &'_ self,
+        &self,
         field: ParsedValue<T>,
-    ) -> &'_ [u8] {
+    ) -> &[u8] {
         unsafe { self.underlying_buffer.get_unchecked(field.range) }
     }
 
@@ -295,28 +295,28 @@ impl<'a> ZkSyncTransaction<'a> {
         self.underlying_buffer
     }
 
-    pub fn calldata(&'_ self) -> &'_ [u8] {
+    pub fn calldata(&self) -> &[u8] {
         unsafe {
             self.underlying_buffer
                 .get_unchecked(self.data.range.clone())
         }
     }
 
-    pub fn signature(&'_ self) -> &'_ [u8] {
+    pub fn signature(&self) -> &[u8] {
         unsafe {
             self.underlying_buffer
                 .get_unchecked(self.signature.range.clone())
         }
     }
 
-    pub fn paymaster_input(&'_ self) -> &'_ [u8] {
+    pub fn paymaster_input(&self) -> &[u8] {
         unsafe {
             self.underlying_buffer
                 .get_unchecked(self.paymaster_input.range.clone())
         }
     }
 
-    pub fn pre_tx_buffer(&'_ mut self) -> &'_ mut [u8] {
+    pub fn pre_tx_buffer(&mut self) -> &mut [u8] {
         unsafe { self.underlying_buffer.get_unchecked_mut(0..TX_OFFSET) }
     }
     ///
@@ -843,9 +843,9 @@ impl<'a> ZkSyncTransaction<'a> {
     ///
     fn l1_tx_calculate_hash<R: Resources>(
         &self,
-        _resources: &mut R,
+        resources: &mut R,
     ) -> Result<[u8; 32], FatalError> {
-        // TODO: should we charge here or intrinsic?
+        charge_keccak(32 + self.underlying_buffer[TX_OFFSET..].len(), resources)?;
         let mut hasher = Keccak256::new();
         // Note, that the correct ABI encoding of the Transaction structure starts with 0x20
         hasher.update(&U256::from(0x20).to_be_bytes::<32>());
