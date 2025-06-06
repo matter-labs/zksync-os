@@ -34,7 +34,12 @@ where
     S::Memory: MemorySubsystemExt,
 {
     // SAFETY: since the memory is overwritten anyway, it doesn't matter what lifetime the EE would have contained
-    let callstack = unsafe { core::mem::transmute(callstack) };
+    let callstack = unsafe {
+        core::mem::transmute::<
+            &mut [MaybeUninit<SupportedEEVMState<S>>],
+            &mut [MaybeUninit<SupportedEEVMState<S>>],
+        >(callstack)
+    };
 
     // NOTE: we do not need to make a new frame as we are in the root already
 
