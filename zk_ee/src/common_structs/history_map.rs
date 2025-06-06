@@ -106,7 +106,7 @@ where
         })
     }
 
-    /// Save current state as a snapshot. Returns corresponging snapshot id
+    /// Save current state as a snapshot. Returns corresponding snapshot id
     pub fn snapshot(&mut self) -> CacheSnapshotId {
         let snapshot_id = self.state.next_snapshot_id;
         self.state.next_snapshot_id.increment();
@@ -422,7 +422,7 @@ where
     }
 
     #[must_use]
-    /// Use callfack `f` to add new record and update element
+    /// Use callback `f` to add new record and update element
     pub fn update<F, E>(&mut self, f: F) -> Result<(), E>
     where
         F: FnOnce(&mut V) -> Result<(), E>,
