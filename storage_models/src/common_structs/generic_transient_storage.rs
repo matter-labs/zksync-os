@@ -49,7 +49,8 @@ where
 
     pub fn begin_new_tx(&mut self) {
         // Just discard old history
-        // It will reset snapshots counter, but it should be ok
+        // Note: it will reset snapshots counter
+        // Could be also done in separate finish_tx (to not reset for first tx), but it doesn't matter
         self.cache = HistoryMap::new(self.alloc.clone());
         self.current_tx_number += 1;
     }

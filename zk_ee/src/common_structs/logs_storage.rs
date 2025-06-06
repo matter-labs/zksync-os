@@ -157,6 +157,7 @@ where
     LogsStorageStackCheck<SCC, A>:,
 {
     list: HistoryList<LogContent<A>, u32, SC, SCC, A>,
+    pubdata_used_by_commited_logs: u32,
     _marker: core::marker::PhantomData<A>,
 }
 
@@ -168,11 +169,14 @@ where
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
             list: HistoryList::new(allocator),
+            pubdata_used_by_commited_logs: 0,
             _marker: core::marker::PhantomData,
         }
     }
 
-    pub fn begin_new_tx(&mut self) {}
+    pub fn begin_new_tx(&mut self) {
+        self.pubdata_used_by_commited_logs = self.list.top().map_or(0, |(_, m)| *m);
+    }
 
     #[track_caller]
     pub fn start_frame(&mut self) -> usize {
@@ -187,12 +191,13 @@ where
         data_hash: Bytes32,
     ) -> Result<(), SystemError> {
         // We are publishing message data(4 bytes to encode length) and underlying log
+        // TODO: double check that we should have 4 here
         let total_pubdata = 4 + data.len() + L2_TO_L1_LOG_SERIALIZE_SIZE;
         let total_pubdata = total_pubdata as u32;
 
         let total_pubdata = self
             .list
-            .peek()
+            .top()
             .map_or(total_pubdata, |(_, m)| *m + total_pubdata);
 
         self.list.push(
@@ -221,7 +226,7 @@ where
 
         let total_pubdata = self
             .list
-            .peek()
+            .top()
             .map_or(total_pubdata, |(_, m)| *m + total_pubdata);
 
         self.list.push(
@@ -258,16 +263,15 @@ where
         }
     }
 
-    pub fn pubdata_used(&self) -> u32 {
-        // TODO: should be constant complexity
-        let mut pubdata_used = 0u32;
-        self.list.iter().for_each(|el| {
-            if let GenericLogContentData::UserMsg(msg) = &el.data {
-                pubdata_used += msg.data.len() as u32;
-            }
-            pubdata_used += L2_TO_L1_LOG_SERIALIZE_SIZE as u32;
-        });
-        pubdata_used
+    pub fn calculate_pubdata_used_by_tx(&self) -> u32 {
+        let total_pubdata_used = self.list.top().map_or(0, |(_, m)| *m);
+
+        if total_pubdata_used < self.pubdata_used_by_commited_logs {
+            // TODO replace with internal error?
+            panic!("Pubdata used by logs unexpectedly decreased");
+        }
+
+        total_pubdata_used - self.pubdata_used_by_commited_logs
     }
 
     pub fn apply_pubdata(

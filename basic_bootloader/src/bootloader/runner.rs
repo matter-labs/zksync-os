@@ -61,7 +61,7 @@ where
     S::Memory: MemorySubsystemExt,
 {
     resources_returned.exhaust_ergs();
-    match callstack.top() {
+    match callstack.top_mut() {
         None => Ok(ControlFlow::Break(
             ExecutionEnvironmentPreemptionPoint::CompletedExecution(CompletedExecution {
                 return_values: ReturnValues::empty(system),
@@ -100,7 +100,7 @@ fn halt_or_continue_after_external_call<
 where
     S::Memory: MemorySubsystemExt,
 {
-    match callstack.top() {
+    match callstack.top_mut() {
         None => {
             let (return_values, reverted) = match call_result {
                 CallResult::Failed { return_values } => (return_values, true),
@@ -141,7 +141,7 @@ fn halt_or_continue_after_deployment<
 where
     S::Memory: MemorySubsystemExt,
 {
-    match callstack.top() {
+    match callstack.top_mut() {
         None => {
             // the final frame isn't finished because the caller will want to look at it
             Ok(ControlFlow::Break(
@@ -422,7 +422,7 @@ where
             }
 
             Ok(ControlFlow::Normal(
-                callstack.top().unwrap().vm.start_executing_frame(
+                callstack.top_mut().unwrap().vm.start_executing_frame(
                     system,
                     ExecutionEnvironmentLaunchParams {
                         external_call: ExternalCallRequest {
@@ -721,7 +721,7 @@ where
                         };
                     // Give remaining ergs back to caller
                     callstack
-                        .top()
+                        .top_mut()
                         .unwrap()
                         .vm
                         .give_back_ergs(resources_available);
@@ -779,7 +779,7 @@ where
             };
             // Give remaining ergs back to caller
             callstack
-                .top()
+                .top_mut()
                 .unwrap()
                 .vm
                 .give_back_ergs(resources_available);
@@ -972,7 +972,7 @@ where
     match SupportedEEVMState::prepare_for_deployment(ee_type, system, deployment_parameters) {
         Ok((resources_for_deployer, Some(mut new_frame))) => {
             // resources returned back to caller
-            match callstack.top() {
+            match callstack.top_mut() {
                 Some(existing_frame) => existing_frame.vm.give_back_ergs(resources_for_deployer),
                 None => {
                     // resources returned back to caller do not make sense, so we join them back
@@ -1065,7 +1065,7 @@ where
 
             Ok(ControlFlow::Normal(
                 callstack
-                    .top()
+                    .top_mut()
                     .unwrap()
                     .vm
                     .start_executing_frame(system, new_frame)?,
@@ -1113,7 +1113,7 @@ where
         .pop()
         .ok_or(InternalError("Empty callstack on completed execution"))?;
 
-    if let Some(current_stack) = callstack.top() {
+    if let Some(current_stack) = callstack.top_mut() {
         // Remap and pass execution back to previous frame
         system
             .finish_global_frame(
@@ -1241,7 +1241,7 @@ where
         deployment_success
     ));
 
-    if let Some(caller_frame) = callstack.top() {
+    if let Some(caller_frame) = callstack.top_mut() {
         if let Some(returndata_region) = deployment_result.returndata() {
             let returndata_iter = returndata_region.iter().copied();
             let _ = system.get_logger().write_fmt(format_args!("Returndata = "));
