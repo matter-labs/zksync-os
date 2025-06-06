@@ -8,7 +8,7 @@ use zk_ee::system::*;
 
 use super::*;
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
     pub fn balance(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, BALANCE_NATIVE_COST)?;
         let [address] = self.pop_addresses::<1>()?;
@@ -209,7 +209,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
     pub fn create<const IS_CREATE2: bool>(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         self.spend_gas_and_native(
             gas_constants::CREATE,
@@ -247,8 +247,6 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         self.spend_gas(initcode_cost)?;
         let end = code_offset + len; // can not overflow as we resized heap above using same values
 
-        let code_region = OSManagedRegion::take_slice(&self.heap, code_offset..end);
-
         // we will charge for everything in the "should_continue..." function
         let scheme = if IS_CREATE2 {
             let [salt] = self.pop_values::<1>()?;
@@ -257,9 +255,12 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
             CreateScheme::Create
         };
 
+        // TODO: not necessary once heaps get the same treatment as calldata
+        let deployment_code: &'calldata [u8] =
+            unsafe { core::mem::transmute(&self.heap[code_offset..end]) };
+
         let ee_specific_data = alloc::boxed::Box::try_new_in(scheme, system.get_allocator())
             .expect("system allocator must be capable to allocate for EE deployment parameters");
-        let deployment_code = code_region;
         let constructor_parameters = system.memory.empty_immutable_slice();
         // at this preemption point we give all resources for preparation
         let all_resources = self.resources.take();
@@ -285,7 +286,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
     pub fn call(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         self.call_impl(system, CallScheme::Call, external_call_dest)
     }
@@ -293,7 +294,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
     pub fn call_code(
         &mut self,
         _system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         #[cfg(all(not(feature = "callcode"), not(miri)))]
         {
@@ -312,7 +313,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
     pub fn delegate_call(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         self.call_impl(system, CallScheme::DelegateCall, external_call_dest)
     }
@@ -320,7 +321,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
     pub fn static_call(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         self.call_impl(system, CallScheme::StaticCall, external_call_dest)
     }
@@ -329,7 +330,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         &mut self,
         system: &mut System<S>,
         scheme: CallScheme,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
         self.spend_gas_and_native(0, native_resource_constants::CALL_NATIVE_COST)?;
         self.clear_last_returndata();
@@ -366,7 +367,9 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         self.resize_heap(in_offset, in_len, system)?;
         self.resize_heap(out_offset, out_len, system)?;
 
-        let calldata = OSManagedRegion::take_slice(&self.heap, in_offset..(in_offset + in_len));
+        // TODO: not necessary once heaps get the calldata treatment
+        let calldata: &'calldata [u8] =
+            unsafe { core::mem::transmute(&self.heap[in_offset..(in_offset + in_len)]) };
 
         // NOTE: we give to the system both what we have NOW, and what we WANT to pass,
         // and depending on warm/cold behavior it may charge more from the current frame,

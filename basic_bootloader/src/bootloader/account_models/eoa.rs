@@ -9,9 +9,9 @@ use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
 use crate::bootloader::errors::{AAMethod, InvalidAA};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::run_till_completion;
-use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
+use crate::bootloader::supported_ees::{SupportedEEVMState, SystemBoundEVMInterpreter};
 use crate::bootloader::transaction::ZkSyncTransaction;
-use crate::bootloader::{BasicBootloader, Bytes32, StackFrame};
+use crate::bootloader::{BasicBootloader, Bytes32};
 use core::fmt::Write;
 use errors::FatalError;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
@@ -19,12 +19,12 @@ use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::{
     errors::{InternalError, SystemError, UpdateQueryError},
     logger::Logger,
-    EthereumLikeTypes, System, SystemFrameSnapshot, SystemTypes, *,
+    EthereumLikeTypes, System, SystemTypes, *,
 };
 use zk_ee::utils::{b160_to_u256, u256_to_b160_checked};
 
@@ -60,13 +60,13 @@ where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
-    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn validate(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut CS,
+        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
         _tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         caller_ee_type: ExecutionEnvironmentType,
         caller_is_code: bool,
         caller_nonce: u64,
@@ -169,13 +169,13 @@ where
         Ok(())
     }
 
-    fn execute<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn execute(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         // This data is read before bumping nonce
         current_tx_nonce: u64,
         resources: &mut S::Resources,
@@ -186,16 +186,8 @@ where
         // TODO: setup metadata for next tx based on out convention and TX fields
 
         let main_calldata = transaction.calldata();
-        let main_calldata = unsafe {
-            system
-                .memory
-                .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                    main_calldata,
-                ))
-        };
 
-        use zk_ee::memory::stack_trait::Stack;
-        assert!(Stack::len(callstack) == 0);
+        assert!(callstack.len() == 0);
 
         // panic is not reachable, to is validated
         let to = transaction.to.read();
@@ -216,7 +208,7 @@ where
             reverted,
             deployed_address,
         } = match to_ee_type {
-            Some(to_ee_type) => process_deployment::<_, _>(
+            Some(to_ee_type) => process_deployment(
                 system,
                 system_functions,
                 callstack,
@@ -228,7 +220,7 @@ where
                 current_tx_nonce,
             )?,
             None => {
-                let final_state = BasicBootloader::run_single_interaction::<_>(
+                let final_state = BasicBootloader::run_single_interaction(
                     system,
                     system_functions,
                     callstack,
@@ -326,13 +318,13 @@ where
         Ok(())
     }
 
-    fn pay_for_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pay_for_transaction(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut CS,
+        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
@@ -378,13 +370,13 @@ where
         Ok(())
     }
 
-    fn pre_paymaster<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         paymaster: B160,
         _caller_ee_type: ExecutionEnvironmentType,
@@ -428,7 +420,7 @@ where
             let min_allowance = min_allowance.unwrap();
 
             let pre_tx_buffer = transaction.pre_tx_buffer();
-            let current_allowance = erc20_allowance::<_, CS>(
+            let current_allowance = erc20_allowance(
                 system,
                 system_functions,
                 callstack,
@@ -441,7 +433,7 @@ where
             if current_allowance < min_allowance {
                 // Some tokens, e.g. USDT require that the allowance is
                 // firstly set to zero and only then updated to the new value.
-                let success = erc20_approve::<_, _>(
+                let success = erc20_approve(
                     system,
                     system_functions,
                     callstack,
@@ -458,7 +450,7 @@ where
                     "ERC20 0 approve failed",
                     system
                 )?;
-                let success = erc20_approve::<_, _>(
+                let success = erc20_approve(
                     system,
                     system_functions,
                     callstack,
@@ -539,16 +531,13 @@ struct TxExecutionResult<S: SystemTypes> {
 
 /// Run the deployment part of a contract creation tx
 /// The boolean in the return
-fn process_deployment<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
+fn process_deployment<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut CS,
+    callstack: &mut SliceVec<SupportedEEVMState<S>>,
     resources: &mut S::Resources,
     to_ee_type: ExecutionEnvironmentType,
-    main_calldata: OSImmutableSlice<S>,
+    main_calldata: &[u8],
     from: B160,
     nominal_token_value: U256,
     existing_nonce: u64,
@@ -602,14 +591,14 @@ where
     };
     let rollback_handle = system.start_global_frame()?;
 
-    let final_state = run_till_completion::<S, CS>(
+    let final_state = run_till_completion(
         callstack,
         system,
         system_functions,
         to_ee_type,
-        ExecutionEnvironmentPreemptionPoint::RequestedDeployment(deployment_parameters),
+        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters),
     )?;
-    let ExecutionEnvironmentPreemptionPoint::CompletedDeployment(CompletedDeployment {
+    let TransactionEndPoint::CompletedDeployment(CompletedDeployment {
         resources_returned,
         deployment_result,
     }) = final_state
@@ -656,13 +645,10 @@ where
 /// Call the ERC20 [allowance] method for [token]
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
-fn erc20_allowance<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
+fn erc20_allowance<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut CS,
+    callstack: &mut SliceVec<SupportedEEVMState<S>>,
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,
@@ -692,13 +678,7 @@ where
         .copy_from_slice(&b160_to_u256(paymaster).to_be_bytes::<{ U256::BYTES }>());
 
     // we are static relative to everything that happens later
-    let calldata = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)],
-            ))
-    };
+    let calldata = &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)];
 
     let _ = system
         .get_logger()
@@ -709,7 +689,7 @@ where
         return_values,
         reverted,
         ..
-    } = BasicBootloader::run_single_interaction::<CS>(
+    } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
         callstack,
@@ -746,13 +726,10 @@ where
 /// Call the ERC20 [approve] method for [token]
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
-fn erc20_approve<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
+fn erc20_approve<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut CS,
+    callstack: &mut SliceVec<SupportedEEVMState<S>>,
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,
@@ -783,13 +760,7 @@ where
         .copy_from_slice(&amount.to_be_bytes::<{ U256::BYTES }>());
 
     // we are static relative to everything that happens later
-    let calldata = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)],
-            ))
-    };
+    let calldata = &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)];
     let _ = system
         .get_logger()
         .write_fmt(format_args!("Calling ERC20 approve\n"));
@@ -799,7 +770,7 @@ where
         return_values,
         reverted,
         ..
-    } = BasicBootloader::run_single_interaction::<CS>(
+    } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
         callstack,

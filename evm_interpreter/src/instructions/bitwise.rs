@@ -1,7 +1,7 @@
 use super::*;
 use native_resource_constants::*;
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn lt(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, LT_NATIVE_COST)?;
         let ([op1], op2) = self.pop_values_and_peek::<1>()?;

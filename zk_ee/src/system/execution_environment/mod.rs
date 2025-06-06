@@ -16,7 +16,6 @@ pub use self::interaction_params::*;
 
 use super::errors::FatalError;
 use super::errors::InternalError;
-use super::errors::SystemError;
 use super::system::System;
 use super::system::SystemTypes;
 use super::IOSubsystemExt;
@@ -34,9 +33,6 @@ pub type OSImmutableSlice<S: SystemTypes> =
 // NOTE: even though it is not mandatory that bytecode resides in the same address space as managed
 // regions used by EEs, we make such alias for now. Later we can remove it and make as separate
 // associated type in MemorySubsystem
-#[allow(type_alias_bounds)]
-pub type BytecodeSource<S: SystemTypes> =
-    <<S::Memory as MemorySubsystem>::ManagedRegion as OSManagedRegion>::OSManagedImmutableSlice;
 #[allow(type_alias_bounds)]
 pub type OSAllocator<S: SystemTypes> = <S::Memory as MemorySubsystem>::Allocator;
 
@@ -56,7 +52,7 @@ pub trait EEDeploymentExtraParameters<S: SystemTypes>: 'static + Sized + core::a
 ///
 /// Execution environment interface.
 ///
-pub trait ExecutionEnvironment<S: SystemTypes>: Sized {
+pub trait ExecutionEnvironment<'calldata, S: SystemTypes>: Sized {
     const NEEDS_SCRATCH_SPACE: bool;
 
     const EE_VERSION_BYTE: u8;
@@ -91,11 +87,13 @@ pub trait ExecutionEnvironment<S: SystemTypes>: Sized {
     /// Start the execution of an EE frame in a given initial state.
     /// Returns a preemption point for the bootloader to handle.
     ///
-    fn start_executing_frame(
+    fn start_executing_frame<'a>(
         &mut self,
         system: &mut System<S>,
-        frame_start_state: ExecutionEnvironmentLaunchParams<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError>;
+        frame_state: ExecutionEnvironmentLaunchParams<'a, S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>
+    where
+        'a: 'calldata;
 
     ///
     /// Continues after the bootloader handled a completed external call.
@@ -105,7 +103,7 @@ pub trait ExecutionEnvironment<S: SystemTypes>: Sized {
         system: &mut System<S>,
         returned_resources: S::Resources,
         call_result: CallResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError>;
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>;
 
     ///
     /// Continues after the bootloader handled a completed deployment.
@@ -115,7 +113,7 @@ pub trait ExecutionEnvironment<S: SystemTypes>: Sized {
         system: &mut System<S>,
         returned_resources: S::Resources,
         deployment_result: DeploymentResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError>;
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>;
 
     type DeploymentExtraParameters: EEDeploymentExtraParameters<S>;
 
@@ -131,17 +129,23 @@ pub trait ExecutionEnvironment<S: SystemTypes>: Sized {
     fn clarify_and_take_passed_resources(
         resources_available_in_deployer_frame: &mut S::Resources,
         ergs_desired_to_pass: Ergs,
-    ) -> Result<S::Resources, SystemError>;
+    ) -> Result<S::Resources, FatalError>;
 
     /// Runs some pre-deployment preparation and checks.
     /// The result can be None to represent unsuccessful preparation for deployment.
     /// EE should prepare a new state to run as "constructor" and potentially OS/IO related data.
     /// OS then will perform it's own checks and decide whether deployment should proceed or not
     /// Returns the resources to give back to the deployer
-    fn prepare_for_deployment(
+    fn prepare_for_deployment<'a>(
         system: &mut System<S>,
-        deployment_parameters: DeploymentPreparationParameters<S>,
-    ) -> Result<(S::Resources, Option<ExecutionEnvironmentLaunchParams<S>>), FatalError>
+        deployment_parameters: DeploymentPreparationParameters<'a, S>,
+    ) -> Result<
+        (
+            S::Resources,
+            Option<ExecutionEnvironmentLaunchParams<'a, S>>,
+        ),
+        FatalError,
+    >
     where
         S::IO: IOSubsystemExt;
 }

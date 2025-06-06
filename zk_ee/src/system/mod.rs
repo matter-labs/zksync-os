@@ -138,7 +138,7 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_level_metadata.timestamp
     }
 
-    pub fn storage_code_version_for_execution_environment<EE: ExecutionEnvironment<S>>(
+    pub fn storage_code_version_for_execution_environment<'a, EE: ExecutionEnvironment<'a, S>>(
         &self,
     ) -> Result<u8, InternalError> {
         // TODO

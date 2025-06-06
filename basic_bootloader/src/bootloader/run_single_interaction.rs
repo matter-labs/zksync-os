@@ -1,9 +1,10 @@
 use crate::bootloader::runner::run_till_completion;
+use crate::bootloader::supported_ees::SupportedEEVMState;
 use system_hooks::HooksStorage;
-use zk_ee::memory::stack_trait::Stack;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::CallModifier;
-use zk_ee::system::{EthereumLikeTypes, System, SystemFrameSnapshot};
+use zk_ee::system::{EthereumLikeTypes, System};
 
 use super::*;
 
@@ -51,11 +52,11 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     /// assumes the caller's balance has been validated. It returns an
     /// internal error in case of balance underflow.
     ///
-    pub fn run_single_interaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn run_single_interaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
-        calldata: OSImmutableSlice<S>,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        calldata: &[u8],
         caller: &B160,
         callee: &B160,
         mut resources: S::Resources,
@@ -106,7 +107,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let ee_type = ExecutionEnvironmentType::parse_ee_version_byte(ee_version)?;
 
         let initial_request =
-            ExecutionEnvironmentPreemptionPoint::RequestedExternalCall(ExternalCallRequest {
+            ExecutionEnvironmentSpawnRequest::RequestedExternalCall(ExternalCallRequest {
                 available_resources: resources.clone(),
                 ergs_to_pass: Ergs(0),      // Doesn't matter in this case
                 callers_caller: B160::ZERO, // Fine to use placeholder
@@ -118,7 +119,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 nominal_token_value: *nominal_token_value,
             });
 
-        let final_state = run_till_completion::<_, _>(
+        let final_state = run_till_completion(
             callstack,
             system,
             system_functions,
@@ -126,7 +127,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             initial_request,
         )?;
 
-        let ExecutionEnvironmentPreemptionPoint::CompletedExecution(CompletedExecution {
+        let TransactionEndPoint::CompletedExecution(CompletedExecution {
             mut return_values,
             resources_returned,
             reverted,
