@@ -151,7 +151,7 @@ jobs:
           components: clippy
       - name: Run Clippy
         run: | 
-          cargo clippy --all -- -D warnings
+          cargo clippy --all --tests -- -D warnings
 
   typos:
     name: typos check
