@@ -22,6 +22,7 @@ impl core::fmt::Debug for ScalarInner {
     }
 }
 
+
 impl ScalarInner {
     pub(super) const ZERO: Self = Self(U256::ZERO);
     pub(super) const ONE: Self = Self(U256::ONE);

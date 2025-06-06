@@ -846,7 +846,9 @@ impl<P: FpConfig<N>, const N: usize> MulAssign<&Self> for Fp<P, N> {
 impl<P: FpConfig<N>, const N: usize> DivAssign<&Self> for Fp<P, N> {
     #[inline(always)]
     fn div_assign(&mut self, other: &Self) {
-        *self *= &other.inverse().unwrap();
+        let inv = other.inverse().unwrap();
+
+        self.mul_assign(&inv);
     }
 }
 

@@ -39,9 +39,7 @@ fn run_precompile(
         &wallet,
     );
 
-    let batch_output = chain.run_block(vec![tx], None, None);
-
-    batch_output
+    chain.run_block(vec![tx], None, None)
 }
 
 struct Test {
@@ -991,13 +989,13 @@ fn all_ones_bits(n: usize) -> Vec<u8> {
     vec![0xFF; 4 * n]
 }
 
-fn all_ones_except_top_bit(n: usize) -> Vec<u8> {
+fn _all_ones_except_top_bit(n: usize) -> Vec<u8> {
     let mut v = vec![0xFF; 4 * n];
     v[0] &= 0x7F; // clear the top (MSB) bit in the first byte
     v
 }
 
-fn mask_lowest(v: &mut Vec<u8>) {
+fn mask_lowest(v: &mut [u8]) {
     if let Some(last) = v.last_mut() {
         *last &= !1; // clear bit 0
     }

@@ -390,7 +390,7 @@ mod tests {
 
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
-    fn ecmult_0I_0G() {
+    fn ecmult_0i_0g() {
         #[cfg(feature = "bigint_ops")]
         crate::secp256k1::init();
 
@@ -410,7 +410,7 @@ mod tests {
 
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
-    fn ecmult_0I_1G() {
+    fn ecmult_0i_1g() {
         #[cfg(feature = "bigint_ops")]
         crate::secp256k1::init();
 
@@ -430,7 +430,7 @@ mod tests {
 
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
-    fn ecmult_0I_3G() {
+    fn ecmult_0i_3g() {
         #[cfg(feature = "bigint_ops")]
         crate::secp256k1::init();
 
@@ -448,7 +448,7 @@ mod tests {
 
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
-    fn ecmult_0I_5G() {
+    fn ecmult_0i_5g() {
         #[cfg(feature = "bigint_ops")]
         crate::secp256k1::init();
 
@@ -465,7 +465,7 @@ mod tests {
 
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
-    fn ecmult_0I_8G() {
+    fn ecmult_0i_8g() {
         #[cfg(feature = "bigint_ops")]
         crate::secp256k1::init();
 
@@ -489,7 +489,7 @@ mod tests {
 
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
-    fn ecmult_1G_0G() {
+    fn ecmult_1g_0g() {
         #[cfg(feature = "bigint_ops")]
         crate::secp256k1::init();
 
@@ -506,7 +506,7 @@ mod tests {
 
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
-    fn ecmult_1G_1G() {
+    fn ecmult_1g_1g() {
         #[cfg(feature = "bigint_ops")]
         crate::secp256k1::init();
 
@@ -526,7 +526,7 @@ mod tests {
 
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
-    fn ecmult_1G_2G() {
+    fn ecmult_1g_2g() {
         #[cfg(feature = "bigint_ops")]
         crate::secp256k1::init();
 
@@ -543,7 +543,7 @@ mod tests {
 
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
-    fn ecmult_2G_1G() {
+    fn ecmult_2g_1g() {
         #[cfg(feature = "bigint_ops")]
         crate::secp256k1::init();
 
@@ -586,7 +586,7 @@ mod tests {
     #[test]
     fn test_generator_multipules() {
         for (k, x, y) in MUL_TEST_VECTORS {
-            let k = Scalar::from_repr(k.clone().into());
+            let k = Scalar::from_repr((*k).into());
 
             let computed_ctx =
                 ecmult(&Jacobian::INFINITY, &Scalar::ZERO, &k, &ECRECOVER_CONTEXT).to_affine();

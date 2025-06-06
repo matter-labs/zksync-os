@@ -37,6 +37,7 @@ pub fn init() {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ScalarInner(BigInt<4>);
 
+#[allow(dead_code)]
 impl ScalarInner {
     pub(super) const ZERO: Self = Self(BigInt::zero());
     pub(super) const ONE: Self = Self::from_words([4624529908474429119, 4994812053365940164, 1, 0]);

@@ -36,6 +36,7 @@ pub fn init() {
     }
 }
 
+#[allow(dead_code)]
 impl FieldElement8x32 {
     pub(super) const ZERO: Self = Self(BigInt::zero());
     pub(super) const BETA: Self = Self(BigIntMacro!(

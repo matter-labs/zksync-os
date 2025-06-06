@@ -52,6 +52,7 @@ impl Scalar {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn from_be_hex(hex: &str) -> Self {
         Self(ScalarInner::from_be_hex(hex))
     }
@@ -134,7 +135,7 @@ impl proptest::arbitrary::Arbitrary for Scalar {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         use proptest::prelude::{any, Strategy};
 
-        any::<ScalarInner>().prop_map(|inner| Self(inner))
+        any::<ScalarInner>().prop_map(Self)
     }
 
     type Strategy = proptest::arbitrary::Mapped<ScalarInner, Self>;
@@ -246,7 +247,7 @@ mod tests {
         init();
 
         proptest!(|(k: Scalar)| {
-            let (mut r1, mut r2) = k.decompose();
+            let (r1, r2) = k.decompose();
             let lambda = -Scalar::MINUS_LAMBDA;
 
             #[cfg(feature = "bigint_ops")]

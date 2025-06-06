@@ -202,6 +202,7 @@ pub unsafe fn neg_mod_assign<T: DelegatedModParams<4>>(a: &mut U256) {
 }
 
 #[inline(always)]
+#[allow(dead_code)]
 /// It takes `a` as mutable for the purposes of delegation calls, but doesn't mutate it
 pub fn eq(a: &mut U256, b: &U256) -> bool {
     let b = delegation::copy_if_needed(b);
@@ -210,6 +211,7 @@ pub fn eq(a: &mut U256, b: &U256) -> bool {
 }
 
 #[inline(always)]
+#[allow(dead_code)]
 /// it takes `a` as mutable for the purposes of delegation calls, but doesn't mutate it
 pub fn is_zero(a: &mut U256) -> bool {
     let zero = unsafe { ZERO.assume_init_ref() };
@@ -261,6 +263,7 @@ pub unsafe fn eq_mod<T: DelegatedModParams<4>>(a: &U256, b: &U256) -> bool {
     }
 }
 
+#[allow(dead_code)]
 pub fn lt(a: &U256, b: &U256) -> bool {
     let b = delegation::copy_if_needed(b);
 
@@ -271,6 +274,7 @@ pub fn lt(a: &U256, b: &U256) -> bool {
     delegation::sub(temp, b) != 0
 }
 
+#[allow(dead_code)]
 pub fn leq(a: &U256, b: &U256) -> bool {
     let b = delegation::copy_if_needed(b);
 
@@ -395,7 +399,7 @@ impl<T: DelegatedModParams<4> + Debug> proptest::arbitrary::Arbitrary for U256Wr
                 sub_mod_with_carry::<Self::Parameters>(&mut res, false);
                 sub_mod_with_carry::<Self::Parameters>(&mut res, false);
             }
-            Self(res, PhantomData::default())
+            Self(res, PhantomData)
         })
     }
 
