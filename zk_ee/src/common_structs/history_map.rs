@@ -19,8 +19,218 @@ impl CacheSnapshotId {
     }
 }
 
+/// A key-value map with history. State can be reverted to snapshots.
+/// The snapshots are created using `Self::snapshot(...)` method.
+///
+/// Structure:
+/// [ keys ] => [ history ] := [ snapshot 0 .. snapshot n ].
+pub struct HistoryMap<K, V, A: Allocator + Clone> {
+    /// Map from key to history of an element
+    btree: BTreeMap<K, ElementHistory<V, A>, A>,
+    state: HistoryMapState<K, A>,
+    /// Manages memory allocations for history records, reuses old allocations for optimization
+    records_memory_pool: ElementSource<V, A>,
+}
+
+struct HistoryMapState<K, A: Allocator + Clone> {
+    next_snapshot_id: CacheSnapshotId,
+    /// State can be rolled back further than frozen snapshot id. Useful for transactions boundaries
+    frozen_snapshot_id: CacheSnapshotId,
+    /// List of updated elements that were not yet "frozen"
+    pending_updated_elements: StackLinkedList<(K, CacheSnapshotId), A>,
+    alloc: A,
+}
+
+impl<K, V, A> HistoryMap<K, V, A>
+where
+    K: Ord + Clone + Debug,
+    A: Allocator + Clone,
+{
+    pub fn new(alloc: A) -> Self {
+        Self {
+            btree: BTreeMap::new_in(alloc.clone()),
+            state: HistoryMapState {
+                alloc: alloc.clone(),
+                // Initial values will be associated with snapshot 0 (so the can't be reverted)
+                next_snapshot_id: CacheSnapshotId(1),
+                frozen_snapshot_id: CacheSnapshotId(0),
+                pending_updated_elements: StackLinkedList::empty(alloc.clone()),
+            },
+            records_memory_pool: ElementSource::new(alloc),
+        }
+    }
+
+    /// Get history of an element by key
+    pub fn get<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRef<'s, K, V, A>> {
+        self.btree
+            .get(key)
+            .map(|ec| HistoryMapItemRef { key, history: ec })
+    }
+
+    /// Get history of an element by key, mutable
+    pub fn get_mut<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRefMut<'s, K, V, A>> {
+        self.btree.get_mut(key).map(|ec| HistoryMapItemRefMut {
+            key,
+            history: ec,
+            cache_state: &mut self.state,
+            records_memory_pool: &mut self.records_memory_pool,
+        })
+    }
+
+    /// Get history of an element by key or use callback to insert initial value
+    pub fn get_or_insert<'s, E>(
+        &'s mut self,
+        key: &'s K,
+        spawn_v: impl FnOnce() -> Result<V, E>,
+    ) -> Result<HistoryMapItemRefMut<'s, K, V, A>, E> {
+        // TODO: we clone key (32+ bytes in some cases) for every access
+        let entry = self.btree.entry(key.clone());
+
+        let v = match entry {
+            Entry::Occupied(o) => o.into_mut(),
+            Entry::Vacant(vacant_entry) => {
+                let v = spawn_v()?;
+                vacant_entry.insert(ElementHistory::new(
+                    v,
+                    &mut self.records_memory_pool,
+                    self.state.alloc.clone(),
+                ))
+            }
+        };
+
+        Ok(HistoryMapItemRefMut {
+            key,
+            history: v,
+            cache_state: &mut self.state,
+            records_memory_pool: &mut self.records_memory_pool,
+        })
+    }
+
+    /// Save current state as a snapshot. Returns corresponging snapshot id
+    pub fn snapshot(&mut self) -> CacheSnapshotId {
+        let snapshot_id = self.state.next_snapshot_id;
+        self.state.next_snapshot_id.increment();
+        snapshot_id
+    }
+
+    /// Rollbacks the data to the state at the provided `snapshot_id`.
+    pub fn rollback(&mut self, snapshot_id: CacheSnapshotId) {
+        if snapshot_id < self.state.frozen_snapshot_id {
+            // TODO: replace with internal error
+            panic!("Rolling below frozen snapshot is illegal and will cause UB.")
+        }
+
+        // Go over all elements changed since last `commit` and roll them back
+        let mut node = self.state.pending_updated_elements.pop();
+        loop {
+            match node {
+                None => break,
+                Some((key, update_snapshot_id)) => {
+                    // The items in the address_snapshot_updates are ordered chronologically.
+                    if update_snapshot_id <= snapshot_id {
+                        self.state
+                            .pending_updated_elements
+                            .push((key, update_snapshot_id));
+                        break;
+                    }
+
+                    let item = self
+                        .btree
+                        .get_mut(&key)
+                        .expect("We've updated this, so it must be present.");
+
+                    item.rollback(&mut self.records_memory_pool, snapshot_id);
+
+                    node = self.state.pending_updated_elements.pop();
+                }
+            }
+        }
+    }
+
+    /// Commits (freezes) changes up to this point and frees memory taken by snapshots that can't be
+    /// rollbacked to.
+    /// TODO rename to reset or smth
+    pub fn commit(&mut self) {
+        self.state.frozen_snapshot_id = self.snapshot();
+
+        // Go over all elements changed since last `commit` and `commit` heir history
+        for (key, _) in self.state.pending_updated_elements.iter() {
+            let item = self
+                .btree
+                .get_mut(key)
+                .expect("We've updated this, so it must be present.");
+
+            item.commit(&mut self.records_memory_pool);
+        }
+
+        // We've committed, so we don't need those changes anymore.
+        self.state.pending_updated_elements = StackLinkedList::empty(self.state.alloc.clone());
+    }
+
+    // TODO check usage
+    /// Applies callback `do_fn` to all pairs (initial_value, current_value)
+    pub fn for_total_diff_operands<F, E>(&self, mut do_fn: F) -> Result<(), E>
+    where
+        F: FnMut(&V, &V, &K) -> Result<(), E>,
+    {
+        for (k, v) in &self.btree {
+            if let Some((l, r)) = v.diff_operands_total() {
+                do_fn(l, r, k)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    // TODO used only to cleanup in storage (reset appearance)
+    /// Applies callback `do_fn` to elements in range
+    pub fn for_each_range<F>(
+        &mut self,
+        range: (Bound<&K>, Bound<&K>),
+        mut do_fn: F,
+    ) -> Result<(), InternalError>
+    where
+        F: FnMut(HistoryMapItemRefMut<K, V, A>) -> Result<(), InternalError>,
+    {
+        for (k, v) in self.btree.range_mut(range) {
+            do_fn(HistoryMapItemRefMut {
+                key: &k,
+                history: v,
+                cache_state: &mut self.state,
+                records_memory_pool: &mut self.records_memory_pool,
+            })?
+        }
+
+        Ok(())
+    }
+
+    // TODO used only for new preimages publication storage
+    pub fn iter(&self) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, A>> + Clone {
+        self.btree
+            .iter()
+            .map(|(k, v)| HistoryMapItemRef { key: k, history: v })
+    }
+
+    // TODO used only for account cache
+    pub fn iter_altered_since_commit(
+        &self,
+    ) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, A>> {
+        self.state
+            .pending_updated_elements
+            .iter()
+            .map(|(k, _)| HistoryMapItemRef {
+                key: k,
+                history: self
+                    .btree
+                    .get(k)
+                    .expect("We've updated this, so it must be present."),
+            })
+    }
+}
+
 type HistoryRecordLink<V> = NonNull<HistoryRecord<V>>;
 
+/// Record in some element's history
 struct HistoryRecord<V> {
     touch_ss_id: CacheSnapshotId,
     value: V,
@@ -29,23 +239,12 @@ struct HistoryRecord<V> {
 
 /// The history linked list. Always has at least one item with the snapshot id of 0.
 pub(crate) struct ElementHistory<V, A: Allocator + Clone> {
+    /// Initial record (before history started)
     initial: HistoryRecordLink<V>,
     first: HistoryRecordLink<V>,
+    /// Current history record
     head: HistoryRecordLink<V>,
     alloc: A,
-}
-
-pub struct HistoryMapItemRef<'a, K: Clone, V, A: Allocator + Clone> {
-    key: &'a K,
-    history: &'a ElementHistory<V, A>,
-}
-
-/// Returned to the user to manipulate and access the history.
-pub struct HistoryMapItemRefMut<'a, K: Clone, V, A: Allocator + Clone> {
-    history: &'a mut ElementHistory<V, A>,
-    cache_state: &'a mut HistoryMapState<K, A>,
-    source: &'a mut ElementSource<V, A>,
-    key: &'a K,
 }
 
 impl<V, A: Allocator + Clone> Drop for ElementHistory<V, A> {
@@ -62,8 +261,9 @@ impl<V, A: Allocator + Clone> Drop for ElementHistory<V, A> {
 
 impl<V, A: Allocator + Clone> ElementHistory<V, A> {
     #[inline(always)]
-    fn new(value: V, source: &mut ElementSource<V, A>, alloc: A) -> Self {
-        let elem = source.get(value, None, CacheSnapshotId(0));
+    fn new(value: V, records_memory_pool: &mut ElementSource<V, A>, alloc: A) -> Self {
+        // Note: initial value always has snapshot id 0
+        let elem = records_memory_pool.create_element(value, None, CacheSnapshotId(0));
 
         Self {
             head: elem,
@@ -73,15 +273,21 @@ impl<V, A: Allocator + Clone> ElementHistory<V, A> {
         }
     }
 
-    fn rollback(&mut self, reuse: &mut ElementSource<V, A>, snapshot_id: CacheSnapshotId) {
-        // Caller should guarantee that snapshot_id > 0
+    /// Rollback element's state to snapshot_id
+    /// Removed history records stored in records_memory_pool to reuse later
+    fn rollback(
+        &mut self,
+        records_memory_pool: &mut ElementSource<V, A>,
+        snapshot_id: CacheSnapshotId,
+    ) {
+        // Caller should guarantee that snapshot_id is correct
 
         if unsafe { self.head.as_ref() }.touch_ss_id <= snapshot_id {
             return;
         }
 
-        // Find first elem such that elem.touch_ss_id >= snapshot_id
         let mut first_removed_record = self.head;
+        // Find first elem such that elem.touch_ss_id > snapshot_id and set previous as first_removed_record
         loop {
             let n_lnk = unsafe {
                 first_removed_record
@@ -114,9 +320,11 @@ impl<V, A: Allocator + Clone> ElementHistory<V, A> {
 
         self.head = new_head;
 
-        reuse.put_back(last_removed_record, first_removed_record);
+        // Return subchain to the pool to be reused later
+        records_memory_pool.recycle_memory(last_removed_record, first_removed_record);
     }
 
+    /// Returns (initial_value, current_value) if any
     fn diff_operands_total(&self) -> Option<(&V, &V)> {
         let entry = unsafe { self.head.as_ref() };
         match entry.previous {
@@ -125,34 +333,41 @@ impl<V, A: Allocator + Clone> ElementHistory<V, A> {
         }
     }
 
-    fn commit(&mut self, reuse: &mut ElementSource<V, A>) {
-        // Single snapshot.
+    /// Commits (freezes) changes up to this point
+    /// Frees memory taken by snapshots that can't be rollbacked to.
+    fn commit(&mut self, records_memory_pool: &mut ElementSource<V, A>) {
+        // Case with only initial value (no writes at all)
         if self.head == self.initial {
             return;
         }
 
-        // Current snapshot is the one we're committing to.
+        // Current snapshot is the one we're committing to (only one update).
         if self.head == self.first {
             return;
         }
 
-        // Safety: initial and first elements are distinct, because they only are when
-        // there's only a single snapshot in the history, a case we've covered above. On an update,
-        // the first link will point to correct item.
-        //
-        // We're removing the non extremities, such that first item becomes the top.
+        // Safety: initial and first elements are distinct. Cases with 0-1 updates are covered above.
 
-        let freed_end = self.first;
+        let first_removed_record = self.first;
+
+        // Previous head becomes new `first` record
         self.first = self.head;
 
-        let top = unsafe { self.head.as_mut() };
-        let freed_start = top
+        let head_mut = unsafe { self.head.as_mut() };
+        let last_removed_record = head_mut
             .previous
             .replace(self.initial)
             .expect("History has at least 3 items.");
 
-        reuse.put_back(freed_start, freed_end);
+        // Return subchain to the pool to be reused later
+        records_memory_pool.recycle_memory(last_removed_record, first_removed_record);
     }
+}
+
+/// External reference to element's history
+pub struct HistoryMapItemRef<'a, K: Clone, V, A: Allocator + Clone> {
+    key: &'a K,
+    history: &'a ElementHistory<V, A>,
 }
 
 impl<'a, K, V, A> HistoryMapItemRef<'a, K, V, A>
@@ -172,9 +387,18 @@ where
         unsafe { &self.history.initial.as_ref().value }
     }
 
+    /// Returns (initial_value, current_value) if any
     pub fn diff_operands_total(&self) -> Option<(&V, &V)> {
         self.history.diff_operands_total()
     }
+}
+
+/// External mutable reference to element's history
+pub struct HistoryMapItemRefMut<'a, K: Clone, V, A: Allocator + Clone> {
+    history: &'a mut ElementHistory<V, A>,
+    cache_state: &'a mut HistoryMapState<K, A>,
+    records_memory_pool: &'a mut ElementSource<V, A>,
+    key: &'a K,
 }
 
 impl<'a, K, V, A> HistoryMapItemRefMut<'a, K, V, A>
@@ -192,27 +416,29 @@ where
     }
 
     #[allow(dead_code)]
+    /// Returns (initial_value, current_value) if any
     pub fn diff_operands_total(&self) -> Option<(&V, &V)> {
         self.history.diff_operands_total()
     }
 
     #[must_use]
+    /// Use callfack `f` to add new record and update element
     pub fn update<F, E>(&mut self, f: F) -> Result<(), E>
     where
         F: FnOnce(&mut V) -> Result<(), E>,
     {
         let history = unsafe { self.history.head.as_mut() };
 
-        if history.touch_ss_id == self.cache_state.current_snapshot_id {
-            // We're in the context of the current stapshot.
+        if history.touch_ss_id == self.cache_state.next_snapshot_id {
+            // We're in the context of the current snapshot: there are changes that we will simply override
             f(&mut history.value)
         } else {
             // The item was last updated before the current snapshot.
 
-            let mut new = self.source.get(
-                history.value.clone(),
+            let mut new = self.records_memory_pool.create_element(
+                history.value.clone(), // TODO: cloning value
                 Some(self.history.head),
-                self.cache_state.current_snapshot_id,
+                self.cache_state.next_snapshot_id,
             );
 
             unsafe {
@@ -221,21 +447,25 @@ where
 
             self.history.head = new;
             if self.history.initial == self.history.first {
-                // When we have a single item.
+                // When don't have any updates before
                 self.history.first = new;
             }
 
             self.cache_state
-                .updated_elems
-                .push((self.key.clone(), self.cache_state.current_snapshot_id));
+                .pending_updated_elements
+                .push((self.key.clone(), self.cache_state.next_snapshot_id));
 
             Ok(())
         }
     }
 }
 
+// TODO: can be optimized using arena-like allocation strategy
+/// Manages memory allocations for history records, reuses old allocations for optimization
 struct ElementSource<V, A: Allocator + Clone> {
+    /// Head of `recycled` sub-list
     head: Option<HistoryRecordLink<V>>,
+    /// Tail of `recycled` sub-list
     last: Option<HistoryRecordLink<V>>,
     alloc: A,
 }
@@ -263,7 +493,8 @@ impl<V, A: Allocator + Clone> ElementSource<V, A> {
         }
     }
 
-    fn get(
+    /// Allocate memory or reuse old record and create a new record
+    fn create_element(
         &mut self,
         value: V,
         previous: Option<HistoryRecordLink<V>>,
@@ -306,218 +537,26 @@ impl<V, A: Allocator + Clone> ElementSource<V, A> {
         }
     }
 
-    fn put_back(&mut self, chain_start: HistoryRecordLink<V>, mut chain_end: HistoryRecordLink<V>) {
+    /// Store a chain of records to reuse them later
+    fn recycle_memory(
+        &mut self,
+        chain_head: HistoryRecordLink<V>,
+        mut chain_tail: HistoryRecordLink<V>,
+    ) {
         match self.last {
             None => {
-                self.head = Some(chain_start);
+                self.head = Some(chain_head);
             }
             Some(ref mut last) => {
-                unsafe { last.as_mut().previous = Some(chain_start) };
+                unsafe { last.as_mut().previous = Some(chain_head) };
             }
         }
 
         // We need to unlink this, cause it still points to the original history it's been taken
         // from.
-        unsafe { chain_end.as_mut().previous = None };
+        unsafe { chain_tail.as_mut().previous = None };
 
-        self.last = Some(chain_end);
-    }
-}
-
-struct HistoryMapState<K, A: Allocator + Clone> {
-    current_snapshot_id: CacheSnapshotId,
-    frozen_snapshot_id: CacheSnapshotId,
-    updated_elems: StackLinkedList<(K, CacheSnapshotId), A>,
-    alloc: A,
-}
-
-/// A key-value map that allows to store history of the values and to revert their state. The
-/// history is a list of stapshots. The snapshots are created on demand between
-/// `Self::snapshot(...)` calls.
-///
-/// Structure:
-/// [ keys ] => [ history ] := [ snapshot 0 .. snapshot n ].
-pub struct HistoryMap<K, V, A: Allocator + Clone> {
-    btree: BTreeMap<K, ElementHistory<V, A>, A>,
-    state: HistoryMapState<K, A>,
-    reuse: ElementSource<V, A>,
-}
-
-impl<K, V, A> HistoryMap<K, V, A>
-where
-    K: Ord + Clone + Debug,
-    A: Allocator + Clone,
-{
-    pub fn new(alloc: A) -> Self {
-        Self {
-            btree: BTreeMap::new_in(alloc.clone()),
-            state: HistoryMapState {
-                alloc: alloc.clone(),
-                // All new retreivals are going to id 0 to allow differentiating retreivals with
-                // updates in a single snapshot span.
-                current_snapshot_id: CacheSnapshotId(1),
-                frozen_snapshot_id: CacheSnapshotId(0),
-                updated_elems: StackLinkedList::empty(alloc.clone()),
-            },
-            reuse: ElementSource::new(alloc),
-        }
-    }
-
-    pub fn get<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRef<'s, K, V, A>> {
-        self.btree
-            .get(key)
-            .map(|ec| HistoryMapItemRef { key, history: ec })
-    }
-
-    pub fn get_mut<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRefMut<'s, K, V, A>> {
-        self.btree.get_mut(key).map(|ec| HistoryMapItemRefMut {
-            key,
-            history: ec,
-            cache_state: &mut self.state,
-            source: &mut self.reuse,
-        })
-    }
-
-    pub fn get_or_insert<'s, E>(
-        &'s mut self,
-        key: &'s K,
-        spawn_v: impl FnOnce() -> Result<V, E>,
-    ) -> Result<HistoryMapItemRefMut<'s, K, V, A>, E> {
-        // TODO: we clone key (32+ bytes in some cases) for every access
-        let entry = self.btree.entry(key.clone());
-
-        let v = match entry {
-            Entry::Occupied(o) => o.into_mut(),
-            Entry::Vacant(vacant_entry) => {
-                let v = spawn_v()?;
-                vacant_entry.insert(ElementHistory::new(
-                    v,
-                    &mut self.reuse,
-                    self.state.alloc.clone(),
-                ))
-            }
-        };
-
-        Ok(HistoryMapItemRefMut {
-            key,
-            history: v,
-            cache_state: &mut self.state,
-            source: &mut self.reuse,
-        })
-    }
-
-    pub fn snapshot(&mut self) -> CacheSnapshotId {
-        let current_snapshot_id = self.state.current_snapshot_id;
-        self.state.current_snapshot_id.increment();
-        current_snapshot_id
-    }
-
-    /// Rollbacks the data to the state at the provided `snapshot_id`.
-    pub fn rollback(&mut self, snapshot_id: CacheSnapshotId) {
-        if snapshot_id < self.state.frozen_snapshot_id {
-            // TODO: replace with internal error
-            panic!("Rolling below frozen snapshot is illegal and will cause UB.")
-        }
-
-        let mut node = self.state.updated_elems.pop();
-        loop {
-            match node {
-                None => break,
-                Some((key, update_snapshot_id)) => {
-                    // The items in the address_snapshot_updates are ordered chronologically.
-                    if update_snapshot_id <= snapshot_id {
-                        self.state.updated_elems.push((key, update_snapshot_id));
-                        break;
-                    }
-
-                    let item = self
-                        .btree
-                        .get_mut(&key)
-                        .expect("We've updated this, so it must be present.");
-
-                    item.rollback(&mut self.reuse, snapshot_id);
-
-                    node = self.state.updated_elems.pop();
-                }
-            }
-        }
-    }
-
-    /// Commits changes up to this point and frees memory taken by snapshots that can't be
-    /// rollbacked to.
-    /// TODO rename to reset or smth
-    pub fn commit(&mut self) {
-        self.state.frozen_snapshot_id = self.snapshot();
-
-        for (key, _) in self.state.updated_elems.iter() {
-            let item = self
-                .btree
-                .get_mut(key)
-                .expect("We've updated this, so it must be present.");
-
-            item.commit(&mut self.reuse);
-        }
-
-        // We've committed, so we don't need those changes anymore.
-        self.state.updated_elems = StackLinkedList::empty(self.state.alloc.clone());
-    }
-
-    // TODO check usage
-    pub fn for_total_diff_operands<F, E>(&self, mut do_fn: F) -> Result<(), E>
-    where
-        F: FnMut(&V, &V, &K) -> Result<(), E>,
-    {
-        for (k, v) in &self.btree {
-            if let Some((l, r)) = v.diff_operands_total() {
-                do_fn(l, r, k)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    // TODO used to cleanup in storage
-    pub fn for_each_range<F>(
-        &mut self,
-        range: (Bound<&K>, Bound<&K>),
-        mut do_fn: F,
-    ) -> Result<(), InternalError>
-    where
-        F: FnMut(HistoryMapItemRefMut<K, V, A>) -> Result<(), InternalError>,
-    {
-        for (k, v) in self.btree.range_mut(range) {
-            do_fn(HistoryMapItemRefMut {
-                key: &k,
-                history: v,
-                cache_state: &mut self.state,
-                source: &mut self.reuse,
-            })?
-        }
-
-        Ok(())
-    }
-
-    // TODO only for new preimages publication storage
-    pub fn iter(&self) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, A>> + Clone {
-        self.btree
-            .iter()
-            .map(|(k, v)| HistoryMapItemRef { key: k, history: v })
-    }
-
-    // TODO use only for account cache
-    pub fn iter_altered_since_commit(
-        &self,
-    ) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, A>> {
-        self.state
-            .updated_elems
-            .iter()
-            .map(|(k, _)| HistoryMapItemRef {
-                key: k,
-                history: self
-                    .btree
-                    .get(k)
-                    .expect("We've updated this, so it must be present."),
-            })
+        self.last = Some(chain_tail);
     }
 }
 
