@@ -5,7 +5,6 @@ use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::InternalError;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
@@ -186,7 +185,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         let mut callstack_memory =
             Box::new_uninit_slice_in(MAX_CALLSTACK_DEPTH, system.get_allocator());
-        let mut callstack = SliceVec::new(&mut callstack_memory);
         let mut system_functions = HooksStorage::new_in(system.get_allocator());
 
         system_functions.add_precompiles();
@@ -231,7 +229,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 initial_calldata_buffer,
                 &mut system,
                 &mut system_functions,
-                &mut callstack,
+                &mut callstack_memory,
                 first_tx,
             );
             cycle_marker::end!("process_transaction");

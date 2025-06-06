@@ -21,7 +21,6 @@ use gas_helpers::check_enough_resources_for_pubdata;
 use gas_helpers::get_resources_to_charge_for_pubdata;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
-use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::{EthereumLikeTypes, Resources};
 
@@ -46,7 +45,7 @@ where
         initial_calldata_buffer: &mut [u8],
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         // TODO: we can get it from the system
         is_first_tx: bool,
     ) -> Result<TxProcessingResult<S>, TxError> {
@@ -86,7 +85,7 @@ where
     fn process_l1_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         transaction: ZkSyncTransaction,
         is_priority_op: bool,
     ) -> Result<TxProcessingResult<S>, TxError> {
@@ -191,7 +190,6 @@ where
                 Err(FatalError::OutOfNativeResources) => {
                     resources.exhaust_ergs();
                     system.finish_global_frame(Some(&rollback_handle))?;
-                    callstack.clear();
                     ExecutionResult::Revert {
                         output: system.memory.empty_immutable_slice(),
                     }
@@ -300,7 +298,7 @@ where
     fn execute_l1_transaction_and_notify_result(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         transaction: &ZkSyncTransaction,
         from: B160,
         to: B160,
@@ -399,7 +397,7 @@ where
     fn process_l2_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         mut transaction: ZkSyncTransaction,
     ) -> Result<TxProcessingResult<S>, TxError> {
         let from = transaction.from.read();
@@ -551,7 +549,6 @@ where
                     .write_fmt(format_args!("Transaction ran out of native resource\n"));
                 resources.exhaust_ergs();
                 system.finish_global_frame(Some(&rollback_handle))?;
-                callstack.clear();
                 ExecutionResult::Revert {
                     output: system.memory.empty_immutable_slice(),
                 }
@@ -611,7 +608,7 @@ where
     fn transaction_validation<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -702,7 +699,7 @@ where
     fn transaction_execution(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -753,7 +750,7 @@ where
     fn ensure_payment<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -901,7 +898,7 @@ where
     fn refund_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        _callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,

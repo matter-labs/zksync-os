@@ -17,7 +17,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub(crate) fn validate_and_pay_for_paymaster_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
@@ -163,7 +163,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub(crate) fn paymaster_post_op(
         _system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        _callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         _transaction: &mut ZkSyncTransaction,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
@@ -327,7 +327,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub fn call_account_method(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,

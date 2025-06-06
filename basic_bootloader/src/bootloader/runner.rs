@@ -1,8 +1,8 @@
 use crate::bootloader::constants::SPECIAL_ADDRESS_SPACE_BOUND;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::DEBUG_OUTPUT;
-use alloc::boxed::Box;
 use core::fmt::Write;
+use core::mem::MaybeUninit;
 use errors::FatalError;
 use evm_interpreter::gas_constants::CALLVALUE;
 use evm_interpreter::gas_constants::CALL_STIPEND;
@@ -24,7 +24,7 @@ use zk_ee::system::{
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
 pub fn run_till_completion<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<SupportedEEVMState<S>>,
+    callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
@@ -34,7 +34,7 @@ where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
-    assert!(callstack.is_empty());
+    let mut callstack = SliceVec::new(unsafe { std::mem::transmute(callstack) });
 
     // NOTE: we do not need to make a new frame as we are in the root already
 
@@ -52,7 +52,7 @@ where
     match initial_request {
         ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
             let (resources_returned, call_result) =
-                run.handle_requested_external_call(None, external_call_request)?;
+                run.handle_requested_external_call(None, &mut callstack, external_call_request)?;
             let (return_values, reverted) = match call_result {
                 CallResult::CallFailedToExecute => (ReturnValues::empty(system), true),
                 CallResult::Failed { return_values } => (return_values, true),
@@ -68,7 +68,7 @@ where
         }
 
         ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => run
-            .handle_requested_deployment(None, deployment_parameters)
+            .handle_requested_deployment(None, &mut callstack, deployment_parameters)
             .map(TransactionEndPoint::CompletedDeployment),
     }
 }
@@ -90,26 +90,28 @@ where
     S::Memory: MemorySubsystemExt,
 {
     #[inline(always)]
-    fn handle_spawn<'a>(
+    fn handle_spawn<'a, 'calldata>(
         &mut self,
         previous_vm: &mut SupportedEEVMState<'a, S>,
-        spawn: ExecutionEnvironmentSpawnRequest<S>,
+        callstack: &mut SliceVec<SupportedEEVMState<'calldata, S>>,
+        spawn: ExecutionEnvironmentSpawnRequest<'calldata, S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError>
     where
         S::IO: IOSubsystemExt,
         S::Memory: MemorySubsystemExt,
     {
         self.callstack_height += 1;
-        let result = self.handle_spawn_inner(previous_vm, spawn);
+        let result = self.handle_spawn_inner(previous_vm, callstack, spawn);
         self.callstack_height -= 1;
         result
     }
 
     #[inline(always)]
-    fn handle_spawn_inner<'a>(
+    fn handle_spawn_inner<'a, 'calldata>(
         &mut self,
         previous_vm: &mut SupportedEEVMState<'a, S>,
-        spawn: ExecutionEnvironmentSpawnRequest<S>,
+        callstack: &mut SliceVec<SupportedEEVMState<'calldata, S>>,
+        spawn: ExecutionEnvironmentSpawnRequest<'calldata, S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError>
     where
         S::IO: IOSubsystemExt,
@@ -118,8 +120,11 @@ where
         let preemption;
         match spawn {
             ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
-                let (resources, mut call_result) =
-                    self.handle_requested_external_call(Some(previous_vm), external_call_request)?;
+                let (resources, mut call_result) = self.handle_requested_external_call(
+                    Some(previous_vm),
+                    callstack,
+                    external_call_request,
+                )?;
 
                 let success = matches!(call_result, CallResult::Successful { .. });
 
@@ -158,7 +163,11 @@ where
                 let CompletedDeployment {
                     resources_returned,
                     mut deployment_result,
-                } = self.handle_requested_deployment(Some(previous_vm), deployment_parameters)?;
+                } = self.handle_requested_deployment(
+                    Some(previous_vm),
+                    callstack,
+                    deployment_parameters,
+                )?;
 
                 if let Some(returndata_region) = deployment_result.returndata() {
                     let returndata_iter = returndata_region.iter().copied();
@@ -192,10 +201,11 @@ where
         Ok(preemption)
     }
 
-    fn handle_requested_external_call(
+    fn handle_requested_external_call<'a>(
         &mut self,
         caller_vm: Option<&mut SupportedEEVMState<S>>,
-        call_request: ExternalCallRequest<S>,
+        callstack: &mut SliceVec<SupportedEEVMState<'a, S>>,
+        call_request: ExternalCallRequest<'a, S>,
     ) -> Result<(S::Resources, CallResult<S>), FatalError>
     where
         S::IO: IOSubsystemExt,
@@ -259,7 +269,7 @@ where
         // potential writes below, otherwise we will pass what's needed to caller
 
         // declaring these here rather than returning them reduces stack usage.
-        let (mut new_vm, mut preemption, rollback_handle);
+        let (mut new_vm, mut new_callstack, mut preemption, rollback_handle);
         match run_call_preparation(caller_vm, self.system, ee_type, &call_request) {
             Ok(CallPreparationResult::Success {
                 next_ee_version,
@@ -304,7 +314,8 @@ where
                 // resources are checked and spent, so we continue with actual transition of control flow
 
                 // now grow callstack and prepare initial state
-                new_vm = create_ee(next_ee_version, self.system)?;
+                (new_vm, new_callstack) =
+                    create_ee(next_ee_version, self.system, callstack)?.unwrap();
 
                 preemption = new_vm.start_executing_frame(
                     self.system,
@@ -331,7 +342,8 @@ where
         loop {
             match preemption {
                 ExecutionEnvironmentPreemptionPoint::Spawn(spawn) => {
-                    preemption = self.handle_spawn(&mut new_vm, spawn)?
+                    let (_, mut callstack) = new_callstack.freeze();
+                    preemption = self.handle_spawn(&mut new_vm, &mut callstack, spawn)?
                 }
                 ExecutionEnvironmentPreemptionPoint::End(
                     TransactionEndPoint::CompletedExecution(CompletedExecution {
@@ -559,6 +571,7 @@ where
     fn handle_requested_deployment<'a>(
         &mut self,
         caller_vm: Option<&mut SupportedEEVMState<S>>,
+        callstack: &mut SliceVec<SupportedEEVMState<'a, S>>,
         deployment_parameters: DeploymentPreparationParameters<'a, S>,
     ) -> Result<CompletedDeployment<S>, FatalError>
     where
@@ -625,7 +638,8 @@ where
             .map_err(|_| InternalError("must start a new frame for init code"))?;
 
         // EE made all the preparations and we are in callee's frame already
-        let mut constructor = create_ee(ee_type as u8, self.system)?;
+        let (mut constructor, mut callstack) =
+            create_ee(ee_type as u8, self.system, callstack)?.unwrap();
 
         let nominal_token_value = launch_params.external_call.nominal_token_value;
 
@@ -683,7 +697,8 @@ where
         } = loop {
             match preemption {
                 ExecutionEnvironmentPreemptionPoint::Spawn(spawn) => {
-                    preemption = self.handle_spawn(&mut constructor, spawn)?
+                    let (_, mut callstack) = callstack.freeze();
+                    preemption = self.handle_spawn(&mut constructor, &mut callstack, spawn)?
                 }
                 ExecutionEnvironmentPreemptionPoint::End(end) => {
                     break match end {
@@ -1002,12 +1017,23 @@ where
 /// This needs to be a separate function so the stack memory
 /// that this (unfortunately) allocates gets cleaned up.
 #[inline(never)]
-fn create_ee<S: EthereumLikeTypes>(
+fn create_ee<'a, 'any, S: EthereumLikeTypes>(
     ee_type: u8,
     system: &mut System<S>,
-) -> Result<Box<SupportedEEVMState<'static, S>, S::Allocator>, InternalError> {
-    Ok(Box::new_in(
-        SupportedEEVMState::create_initial(ee_type, system)?,
-        system.get_allocator(),
-    ))
+    memory: &'a mut SliceVec<SupportedEEVMState<'any, S>>,
+) -> Result<
+    Option<(
+        &'a mut SupportedEEVMState<'any, S>,
+        SliceVec<'a, SupportedEEVMState<'any, S>>,
+    )>,
+    InternalError,
+> {
+    assert!(memory.len() == 0);
+    match memory.try_push(SupportedEEVMState::create_initial(ee_type, system)?) {
+        Ok(()) => {
+            let (vm, rest) = memory.freeze();
+            Ok(Some((&mut vm[0], rest)))
+        }
+        Err(()) => Ok(None),
+    }
 }
