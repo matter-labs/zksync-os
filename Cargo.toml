@@ -28,7 +28,8 @@ members = [
     "tests/instances/unit",
     "tests/instances/eth_runner",
     "tests/instances/system_hooks",
-    "cycle_marker"
+    "cycle_marker", 
+    "tests/binary_checker"
 ]
 
 exclude = [

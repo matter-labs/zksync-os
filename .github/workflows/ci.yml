@@ -37,7 +37,7 @@ jobs:
       - name: Compile for forward running
         run: cargo build --release
       - name: Run rust tests
-        run: cargo test --release -j 3
+        run: cargo test --release -j 3 -- --skip binary_checker
 
   evm_state_tests:
     name: EF EVM state tests
@@ -82,6 +82,29 @@ jobs:
         working-directory: ./era-evm-tester
         run: cargo run --bin evm-tester --features zksync_os_forward_system/no_print -- --environment=ZKsyncOS --spec_tests
 
+
+  verify_binary:
+    name: Verify binary
+    runs-on: [matterlabs-ci-runner]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: Setup
+        run: |
+          rustup set profile minimal
+          rustup target add riscv32i-unknown-none-elf
+          rustup target add wasm32-unknown-unknown
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          rustup component add rust-src
+      - name: Compile for RISC-V
+        working-directory: ./zksync_os
+        run: ./dump_bin.sh
+      - name: Run binary checker
+        run: cargo test -p binary_checker -- --nocapture
+      
   e2e_prove:
     name: e2e_prove
     runs-on: [matterlabs-ci-runner-highmem]
