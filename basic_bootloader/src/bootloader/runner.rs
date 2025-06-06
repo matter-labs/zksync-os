@@ -51,7 +51,7 @@ where
 
     match initial_request {
         ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
-            let (resources_returned, call_result, _) =
+            let (resources_returned, call_result) =
                 run.handle_requested_external_call(None, external_call_request)?;
             let (return_values, reverted) = match call_result {
                 CallResult::CallFailedToExecute => (ReturnValues::empty(system), true),
@@ -118,12 +118,7 @@ where
         let preemption;
         match spawn {
             ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
-                let rollback_handle = self
-                    .system
-                    .start_global_frame()
-                    .map_err(|_| InternalError("must start a new frame"))?;
-
-                let (resources, mut call_result, do_not_roll_back) =
+                let (resources, mut call_result) =
                     self.handle_requested_external_call(Some(previous_vm), external_call_request)?;
 
                 let success = matches!(call_result, CallResult::Successful { .. });
@@ -132,12 +127,6 @@ where
                     "Return from external call, success = {}\n",
                     success
                 ));
-
-                self.system
-                    .finish_global_frame(
-                        (!success && !do_not_roll_back).then_some(&rollback_handle),
-                    )
-                    .map_err(|_| InternalError("must finish execution frame"))?;
 
                 match &mut call_result {
                     CallResult::Successful { return_values }
@@ -207,7 +196,7 @@ where
         &mut self,
         caller_vm: Option<&mut SupportedEEVMState<S>>,
         call_request: ExternalCallRequest<S>,
-    ) -> Result<(S::Resources, CallResult<S>, bool), FatalError>
+    ) -> Result<(S::Resources, CallResult<S>), FatalError>
     where
         S::IO: IOSubsystemExt,
         S::Memory: MemorySubsystemExt,
@@ -251,8 +240,7 @@ where
         // The call is targeting the "system contract" space.
         if is_call_to_special_address {
             return self
-                .handle_requested_external_call_to_special_address_space(caller_vm, call_request)
-                .map(|(a, b)| (a, b, false));
+                .handle_requested_external_call_to_special_address_space(caller_vm, call_request);
         }
 
         let ee_type = match &caller_vm {
@@ -271,7 +259,7 @@ where
         // potential writes below, otherwise we will pass what's needed to caller
 
         // declaring these here rather than returning them reduces stack usage.
-        let (mut new_vm, mut preemption);
+        let (mut new_vm, mut preemption, rollback_handle);
         match run_call_preparation(caller_vm, self.system, ee_type, &call_request) {
             Ok(CallPreparationResult::Success {
                 next_ee_version,
@@ -281,7 +269,12 @@ where
                 mut actual_resources_to_pass,
                 transfer_to_perform,
             }) => {
-                // TODO: START FRAME HERE!
+                // We create a new frame for callee, should include transfer and
+                // callee execution
+                rollback_handle = self
+                    .system
+                    .start_global_frame()
+                    .map_err(|_| InternalError("must start a new frame"))?;
 
                 // Now, perform transfer with infinite ergs
                 if let Some(TransferInfo { value, target }) = transfer_to_perform {
@@ -302,7 +295,10 @@ where
                             return Err(FatalError::Internal(e))
                         }
                         Err(UpdateQueryError::System(SystemError::OutOfNativeResources)) => {
-                            return Err(FatalError::OutOfNativeResources)
+                            self.system
+                                .finish_global_frame(Some(&rollback_handle))
+                                .map_err(|_| InternalError("must finish execution frame"))?;
+                            return Err(FatalError::OutOfNativeResources);
                         }
                         Err(UpdateQueryError::NumericBoundsError) => {
                             // Insufficient balance
@@ -313,12 +309,16 @@ where
                                 ExecutionEnvironmentType::EVM => {
                                     // Following EVM, a call with insufficient balance is not a revert,
                                     // but rather a normal failing call.
+                                    self.system
+                                        .finish_global_frame(Some(&rollback_handle))
+                                        .map_err(|_| {
+                                            InternalError("must finish execution frame")
+                                        })?;
                                     return Ok((
                                         actual_resources_to_pass,
                                         CallResult::Failed {
                                             return_values: ReturnValues::empty(self.system),
                                         },
-                                        false,
                                     ));
                                 }
                                 _ => return Err(InternalError("Unsupported EE").into()),
@@ -339,22 +339,26 @@ where
 
                 // Calls to EOAs succeed with empty return value
                 if bytecode.len() == 0 {
+                    self.system
+                        .finish_global_frame(None)
+                        .map_err(|_| InternalError("must finish execution frame"))?;
                     return Ok((
                         actual_resources_to_pass,
                         CallResult::Successful {
                             return_values: ReturnValues::empty(self.system),
                         },
-                        false,
                     ));
                 }
 
                 if self.callstack_height > 1024 {
+                    self.system
+                        .finish_global_frame(Some(&rollback_handle))
+                        .map_err(|_| InternalError("must finish execution frame"))?;
                     return Ok((
                         actual_resources_to_pass,
                         CallResult::Failed {
                             return_values: ReturnValues::empty(self.system),
                         },
-                        false,
                     ));
                 }
 
@@ -397,7 +401,7 @@ where
             Ok(CallPreparationResult::Failure {
                 resources_returned,
                 // call_result,
-            }) => return Ok((resources_returned, CallResult::CallFailedToExecute, true)),
+            }) => return Ok((resources_returned, CallResult::CallFailedToExecute)),
             Err(e) => return Err(e),
         };
 
@@ -413,6 +417,13 @@ where
                         reverted,
                     }),
                 ) => {
+                    self.system
+                        .finish_global_frame(if reverted {
+                            Some(&rollback_handle)
+                        } else {
+                            None
+                        })
+                        .map_err(|_| InternalError("must finish execution frame"))?;
                     break Ok((
                         resources_returned,
                         if reverted {
@@ -420,8 +431,7 @@ where
                         } else {
                             CallResult::Successful { return_values }
                         },
-                        false,
-                    ))
+                    ));
                 }
                 ExecutionEnvironmentPreemptionPoint::End(
                     TransactionEndPoint::CompletedDeployment(_),
@@ -464,6 +474,7 @@ where
             None => self.initial_ee_version,
         };
 
+        let rollback_handle;
         let actual_resources_to_pass =
             match run_call_preparation(caller_vm, self.system, ee_type, &call_request) {
                 Ok(CallPreparationResult::Success {
@@ -471,6 +482,12 @@ where
                     transfer_to_perform,
                     ..
                 }) => {
+                    // We create a new frame for callee, should include transfer and
+                    // callee execution
+                    rollback_handle = self
+                        .system
+                        .start_global_frame()
+                        .map_err(|_| InternalError("must start a new frame"))?;
                     // Now, perform transfer with infinite ergs
                     if let Some(TransferInfo { value, target }) = transfer_to_perform {
                         match actual_resources_to_pass.with_infinite_ergs(|inf_resources| {
@@ -490,7 +507,10 @@ where
                                 return Err(FatalError::Internal(e))
                             }
                             Err(UpdateQueryError::System(SystemError::OutOfNativeResources)) => {
-                                return Err(FatalError::OutOfNativeResources)
+                                self.system
+                                    .finish_global_frame(Some(&rollback_handle))
+                                    .map_err(|_| InternalError("must finish execution frame"))?;
+                                return Err(FatalError::OutOfNativeResources);
                             }
                             Err(UpdateQueryError::NumericBoundsError) => {
                                 // Insufficient balance
@@ -501,6 +521,11 @@ where
                                     ExecutionEnvironmentType::EVM => {
                                         // Following EVM, a call with insufficient balance is not a revert,
                                         // but rather a normal failing call.
+                                        self.system
+                                            .finish_global_frame(Some(&rollback_handle))
+                                            .map_err(|_| {
+                                                InternalError("must finish execution frame")
+                                            })?;
                                         return Ok((
                                             actual_resources_to_pass,
                                             CallResult::Failed {
@@ -553,6 +578,13 @@ where
                 .write_fmt(format_args!("Returndata = "));
             let _ = self.system.get_logger().log_data(returndata_iter);
 
+            self.system
+                .finish_global_frame(if reverted {
+                    Some(&rollback_handle)
+                } else {
+                    None
+                })
+                .map_err(|_| InternalError("must finish execution frame"))?;
             Ok((
                 resources_returned,
                 if reverted {
@@ -566,7 +598,9 @@ where
             let _ = self.system.get_logger().write_fmt(format_args!(
                 "Call to special address was not intercepted\n",
             ));
-
+            self.system
+                .finish_global_frame(None)
+                .map_err(|_| InternalError("must finish execution frame"))?;
             Ok((
                 actual_resources_to_pass,
                 CallResult::Successful {
@@ -684,7 +718,6 @@ where
                         &nominal_token_value,
                     )
                 })
-                // TODO: make sure we don't capture out of native
                 .map_err(|e| match e {
                     UpdateQueryError::System(SystemError::OutOfNativeResources) => {
                         FatalError::OutOfNativeResources
