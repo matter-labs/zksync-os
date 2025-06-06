@@ -271,95 +271,19 @@ where
             }) => {
                 // We create a new frame for callee, should include transfer and
                 // callee execution
-                rollback_handle = self
-                    .system
-                    .start_global_frame()
-                    .map_err(|_| InternalError("must start a new frame"))?;
+                rollback_handle = self.system.start_global_frame()?;
 
-                // Now, perform transfer with infinite ergs
-                if let Some(TransferInfo { value, target }) = transfer_to_perform {
-                    match actual_resources_to_pass.with_infinite_ergs(|inf_resources| {
-                        self.system.io.transfer_nominal_token_value(
-                            ExecutionEnvironmentType::NoEE,
-                            inf_resources,
-                            &call_request.caller,
-                            &target,
-                            &value,
-                        )
-                    }) {
-                        Ok(()) => (),
-                        Err(UpdateQueryError::System(SystemError::OutOfErgs)) => {
-                            return Err(InternalError("Our of ergs on infinite").into());
-                        }
-                        Err(UpdateQueryError::System(SystemError::Internal(e))) => {
-                            return Err(FatalError::Internal(e))
-                        }
-                        Err(UpdateQueryError::System(SystemError::OutOfNativeResources)) => {
-                            self.system
-                                .finish_global_frame(Some(&rollback_handle))
-                                .map_err(|_| InternalError("must finish execution frame"))?;
-                            return Err(FatalError::OutOfNativeResources);
-                        }
-                        Err(UpdateQueryError::NumericBoundsError) => {
-                            // Insufficient balance
-                            match ee_type {
-                                ExecutionEnvironmentType::NoEE => {
-                                    unreachable!("Cannot be in NoEE deep in the callstack")
-                                }
-                                ExecutionEnvironmentType::EVM => {
-                                    // Following EVM, a call with insufficient balance is not a revert,
-                                    // but rather a normal failing call.
-                                    self.system
-                                        .finish_global_frame(Some(&rollback_handle))
-                                        .map_err(|_| {
-                                            InternalError("must finish execution frame")
-                                        })?;
-                                    return Ok((
-                                        actual_resources_to_pass,
-                                        CallResult::Failed {
-                                            return_values: ReturnValues::empty(self.system),
-                                        },
-                                    ));
-                                }
-                                _ => return Err(InternalError("Unsupported EE").into()),
-                            }
-                        }
-                    }
-                }
-
-                let calldata_slice = &call_request.calldata;
-                let _ = self
-                    .system
-                    .get_logger()
-                    .write_fmt(format_args!("Calldata = "));
-                let _ = self
-                    .system
-                    .get_logger()
-                    .log_data(calldata_slice.iter().copied());
-
-                // Calls to EOAs succeed with empty return value
-                if bytecode.len() == 0 {
+                if let Some(call_result) = self.external_call_before_vm(
+                    &mut actual_resources_to_pass,
+                    &call_request,
+                    bytecode.len() == 0,
+                    &transfer_to_perform,
+                    ee_type,
+                )? {
+                    let failure = !matches!(call_result, CallResult::Successful { .. });
                     self.system
-                        .finish_global_frame(None)
-                        .map_err(|_| InternalError("must finish execution frame"))?;
-                    return Ok((
-                        actual_resources_to_pass,
-                        CallResult::Successful {
-                            return_values: ReturnValues::empty(self.system),
-                        },
-                    ));
-                }
-
-                if self.callstack_height > 1024 {
-                    self.system
-                        .finish_global_frame(Some(&rollback_handle))
-                        .map_err(|_| InternalError("must finish execution frame"))?;
-                    return Ok((
-                        actual_resources_to_pass,
-                        CallResult::Failed {
-                            return_values: ReturnValues::empty(self.system),
-                        },
-                    ));
+                        .finish_global_frame(failure.then_some(&rollback_handle))?;
+                    return Ok((actual_resources_to_pass, call_result));
                 }
 
                 if DEBUG_OUTPUT {
@@ -417,11 +341,7 @@ where
                     }),
                 ) => {
                     self.system
-                        .finish_global_frame(if reverted {
-                            Some(&rollback_handle)
-                        } else {
-                            None
-                        })
+                        .finish_global_frame(reverted.then_some(&rollback_handle))
                         .map_err(|_| InternalError("must finish execution frame"))?;
                     break Ok((
                         resources_returned,
@@ -441,6 +361,74 @@ where
                 }
             }
         }
+    }
+
+    #[inline(always)]
+    fn external_call_before_vm(
+        &mut self,
+        actual_resources_to_pass: &mut S::Resources,
+        call_request: &ExternalCallRequest<S>,
+        is_eoa: bool,
+        transfer_to_perform: &Option<TransferInfo>,
+        ee_type: ExecutionEnvironmentType,
+    ) -> Result<Option<CallResult<S>>, FatalError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        // Now, perform transfer with infinite ergs
+        if let Some(TransferInfo { value, target }) = transfer_to_perform {
+            match actual_resources_to_pass.with_infinite_ergs(|inf_resources| {
+                self.system.io.transfer_nominal_token_value(
+                    ExecutionEnvironmentType::NoEE,
+                    inf_resources,
+                    &call_request.caller,
+                    &target,
+                    &value,
+                )
+            }) {
+                Ok(()) => (),
+                Err(UpdateQueryError::System(SystemError::OutOfErgs)) => {
+                    return Err(InternalError("Our of ergs on infinite").into());
+                }
+                Err(UpdateQueryError::System(SystemError::Internal(e))) => {
+                    return Err(FatalError::Internal(e))
+                }
+                Err(UpdateQueryError::System(SystemError::OutOfNativeResources)) => {
+                    return Err(FatalError::OutOfNativeResources);
+                }
+                Err(UpdateQueryError::NumericBoundsError) => {
+                    // Insufficient balance
+                    match ee_type {
+                        ExecutionEnvironmentType::NoEE => {
+                            unreachable!("Cannot be in NoEE deep in the callstack")
+                        }
+                        ExecutionEnvironmentType::EVM => {
+                            // Following EVM, a call with insufficient balance is not a revert,
+                            // but rather a normal failing call.
+                            return Ok(Some(CallResult::Failed {
+                                return_values: ReturnValues::empty(self.system),
+                            }));
+                        }
+                        _ => return Err(InternalError("Unsupported EE").into()),
+                    }
+                }
+            }
+        }
+
+        // Calls to EOAs succeed with empty return value
+        if is_eoa {
+            return Ok(Some(CallResult::Successful {
+                return_values: ReturnValues::empty(self.system),
+            }));
+        }
+
+        if self.callstack_height > 1024 {
+            return Ok(Some(CallResult::Failed {
+                return_values: ReturnValues::empty(self.system),
+            }));
+        }
+
+        Ok(None)
     }
 
     #[inline(always)]
@@ -483,59 +471,19 @@ where
                 }) => {
                     // We create a new frame for callee, should include transfer and
                     // callee execution
-                    rollback_handle = self
-                        .system
-                        .start_global_frame()
-                        .map_err(|_| InternalError("must start a new frame"))?;
-                    // Now, perform transfer with infinite ergs
-                    if let Some(TransferInfo { value, target }) = transfer_to_perform {
-                        match actual_resources_to_pass.with_infinite_ergs(|inf_resources| {
-                            self.system.io.transfer_nominal_token_value(
-                                ExecutionEnvironmentType::NoEE,
-                                inf_resources,
-                                &call_request.caller,
-                                &target,
-                                &value,
-                            )
-                        }) {
-                            Ok(()) => (),
-                            Err(UpdateQueryError::System(SystemError::OutOfErgs)) => {
-                                return Err(InternalError("Our of ergs on infinite").into());
-                            }
-                            Err(UpdateQueryError::System(SystemError::Internal(e))) => {
-                                return Err(FatalError::Internal(e))
-                            }
-                            Err(UpdateQueryError::System(SystemError::OutOfNativeResources)) => {
-                                self.system
-                                    .finish_global_frame(Some(&rollback_handle))
-                                    .map_err(|_| InternalError("must finish execution frame"))?;
-                                return Err(FatalError::OutOfNativeResources);
-                            }
-                            Err(UpdateQueryError::NumericBoundsError) => {
-                                // Insufficient balance
-                                match ee_type {
-                                    ExecutionEnvironmentType::NoEE => {
-                                        unreachable!("Cannot be in NoEE deep in the callstack")
-                                    }
-                                    ExecutionEnvironmentType::EVM => {
-                                        // Following EVM, a call with insufficient balance is not a revert,
-                                        // but rather a normal failing call.
-                                        self.system
-                                            .finish_global_frame(Some(&rollback_handle))
-                                            .map_err(|_| {
-                                                InternalError("must finish execution frame")
-                                            })?;
-                                        return Ok((
-                                            actual_resources_to_pass,
-                                            CallResult::Failed {
-                                                return_values: ReturnValues::empty(self.system),
-                                            },
-                                        ));
-                                    }
-                                    _ => return Err(InternalError("Unsupported EE").into()),
-                                }
-                            }
-                        }
+                    rollback_handle = self.system.start_global_frame()?;
+
+                    if let Some(call_result) = self.external_call_before_vm(
+                        &mut actual_resources_to_pass,
+                        &call_request,
+                        false,
+                        &transfer_to_perform,
+                        ee_type,
+                    )? {
+                        let failure = !matches!(call_result, CallResult::Successful { .. });
+                        self.system
+                            .finish_global_frame(failure.then_some(&rollback_handle))?;
+                        return Ok((actual_resources_to_pass, call_result));
                     }
 
                     actual_resources_to_pass
