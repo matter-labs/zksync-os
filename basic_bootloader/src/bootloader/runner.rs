@@ -34,6 +34,7 @@ where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
+    // SAFETY: since the memory is overwritten anyway, it doesn't matter what lifetime the EE would have contained
     let mut callstack = SliceVec::new(unsafe { std::mem::transmute(callstack) });
 
     // NOTE: we do not need to make a new frame as we are in the root already
