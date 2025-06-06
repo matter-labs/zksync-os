@@ -34,7 +34,7 @@ pub struct HistoryMap<K, V, A: Allocator + Clone> {
 
 struct HistoryMapState<K, A: Allocator + Clone> {
     next_snapshot_id: CacheSnapshotId,
-    /// State can be rolled back further than frozen snapshot id. Useful for transactions boundaries
+    /// State can't be rolled back further than frozen snapshot id. Useful for transactions boundaries
     frozen_snapshot_id: CacheSnapshotId,
     /// List of updated elements that were not yet "frozen"
     pending_updated_elements: StackLinkedList<(K, CacheSnapshotId), A>,
