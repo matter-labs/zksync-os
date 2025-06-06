@@ -161,7 +161,7 @@ where
 
         let result = if !preparation_out_of_resources {
             // Take a snapshot in case we need to revert due to out of native.
-            let rollback_handle = system.io.start_io_frame()?;
+            let rollback_handle = system.start_global_frame()?;
 
             // Tx execution
             let from = transaction.from.read();
@@ -179,9 +179,9 @@ where
             ) {
                 Ok(r) => {
                     match r {
-                        ExecutionResult::Success { .. } => system.io.finish_io_frame(None)?,
+                        ExecutionResult::Success { .. } => system.finish_global_frame(None)?,
                         ExecutionResult::Revert { .. } => {
-                            system.io.finish_io_frame(Some(&rollback_handle))?
+                            system.finish_global_frame(Some(&rollback_handle))?
                         }
                     }
                     r
@@ -191,7 +191,7 @@ where
                 // gas is exhausted.
                 Err(FatalError::OutOfNativeResources) => {
                     resources.exhaust_ergs();
-                    system.io.finish_io_frame(Some(&rollback_handle))?;
+                    system.finish_global_frame(Some(&rollback_handle))?;
                     callstack.clear();
                     ExecutionResult::Revert {
                         output: system.memory.empty_immutable_slice(),
@@ -525,7 +525,7 @@ where
         };
 
         // Take a snapshot in case we need to revert due to out of native.
-        let rollback_handle = system.io.start_io_frame()?;
+        let rollback_handle = system.start_global_frame()?;
 
         let execution_result = match Self::transaction_execution(
             system,
@@ -542,9 +542,9 @@ where
         ) {
             Ok(r) => {
                 match r {
-                    ExecutionResult::Success { .. } => system.io.finish_io_frame(None)?,
+                    ExecutionResult::Success { .. } => system.finish_global_frame(None)?,
                     ExecutionResult::Revert { .. } => {
-                        system.io.finish_io_frame(Some(&rollback_handle))?
+                        system.finish_global_frame(Some(&rollback_handle))?
                     }
                 }
                 r
@@ -556,7 +556,7 @@ where
                     .get_logger()
                     .write_fmt(format_args!("Transaction ran out of native resource\n"));
                 resources.exhaust_ergs();
-                system.io.finish_io_frame(Some(&rollback_handle))?;
+                system.finish_global_frame(Some(&rollback_handle))?;
                 callstack.clear();
                 ExecutionResult::Revert {
                     output: system.memory.empty_immutable_slice(),
