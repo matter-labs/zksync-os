@@ -117,7 +117,7 @@ where
         let native_per_pubdata = U256::from(gas_per_pubdata)
             .checked_mul(native_per_gas)
             .ok_or(InternalError("gpp*npg"))?;
-        
+
         let (mut resources, withheld_resources) = get_resources_for_tx::<S>(
             gas_limit,
             native_per_pubdata,
@@ -180,7 +180,7 @@ where
                 value,
                 native_per_pubdata,
                 &mut resources,
-                withheld_resources
+                withheld_resources,
             ) {
                 Ok(r) => {
                     match r {

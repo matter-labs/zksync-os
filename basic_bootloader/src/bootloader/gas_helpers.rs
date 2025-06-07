@@ -53,7 +53,10 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
                 native_limit - MAX_NATIVE_COMPUTATIONAL,
             );
 
-        (MAX_NATIVE_COMPUTATIONAL, S::Resources::from_native(withheld))
+        (
+            MAX_NATIVE_COMPUTATIONAL,
+            S::Resources::from_native(withheld),
+        )
     };
 
     // Charge for calldata and intrinsic native
