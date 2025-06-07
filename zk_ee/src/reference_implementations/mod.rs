@@ -52,6 +52,10 @@ impl Resource for DecreasingNative {
         self.0 += to_reclaim.0
     }
 
+    fn reclaim_withheld(&mut self, to_reclaim: Self) {
+        self.0 += to_reclaim.0
+    }
+
     fn diff(&self, other: Self) -> Self {
         Self(self.0.abs_diff(other.0))
     }
@@ -103,6 +107,11 @@ impl Resource for IncreasingNative {
     fn reclaim(&mut self, to_reclaim: Self) {
         self.count += to_reclaim.count;
         self.limit = to_reclaim.limit
+    }
+
+    fn reclaim_withheld(&mut self, to_reclaim: Self) {
+        self.count += to_reclaim.count;
+        self.limit += to_reclaim.limit
     }
 
     fn diff(&self, other: Self) -> Self {
@@ -186,6 +195,11 @@ impl<Native: Resource> Resource for BaseResources<Native> {
     fn reclaim(&mut self, to_reclaim: Self) {
         self.ergs.reclaim(to_reclaim.ergs);
         self.native.reclaim(to_reclaim.native);
+    }
+
+    fn reclaim_withheld(&mut self, to_reclaim: Self) {
+        self.ergs.reclaim(to_reclaim.ergs);
+        self.native.reclaim_withheld(to_reclaim.native);
     }
 
     fn diff(&self, other: Self) -> Self {
