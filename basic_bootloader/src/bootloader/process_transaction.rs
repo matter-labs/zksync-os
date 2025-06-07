@@ -4,6 +4,7 @@ use super::*;
 use crate::bootloader::account_models::ExecutionResult;
 use crate::bootloader::account_models::AA;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
+use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
 use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidAA, InvalidTransaction, TxError};
 use crate::bootloader::supported_ees::SupportedEEVMState;
@@ -111,8 +112,7 @@ where
         let native_per_gas = if is_priority_op {
             U256::from(gas_price).div_ceil(native_price)
         } else {
-            // TODO: maybe dedicate a constant
-            U256::from(1000)    
+            UPGRADE_TX_NATIVE_PER_GAS
         };
         let native_per_pubdata = U256::from(gas_per_pubdata)
             .checked_mul(native_per_gas)
@@ -180,9 +180,7 @@ where
                 value,
                 native_per_pubdata,
                 &mut resources,
-                withheld_resources,
-                is_priority_op,
-    
+                withheld_resources
             ) {
                 Ok(r) => {
                     match r {
@@ -316,23 +314,12 @@ where
         native_per_pubdata: U256,
         resources: &mut S::Resources,
         withheld_resources: S::Resources,
-        is_priority_op: bool,
     ) -> Result<ExecutionResult<S>, FatalError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Executing L1 transaction\n"));
 
-        let gas_price = if is_priority_op {
-            Self::get_gas_price(
-                system,
-                transaction.max_fee_per_gas.read(),
-                transaction.max_priority_fee_per_gas.read(),
-            )
-            .expect("gas price checks failed")
-        } else {
-            U256::from(transaction.max_fee_per_gas.read())
-        };
-        // let gas_price = U256::from(transaction.max_fee_per_gas.read());
+        let gas_price = U256::from(transaction.max_fee_per_gas.read());
         system.set_tx_context(from, gas_price);
 
         // Start a frame, to revert minting of value if execution fails
@@ -399,7 +386,7 @@ where
         // After the transaction is executed, we reclaim the withheld resources.
         // This is needed to ensure correct "gas_used" calculation, also these
         // resources could be spent for pubdata.
-        resources.reclaim(withheld_resources);
+        resources.reclaim_withheld(withheld_resources);
 
         let execution_result =
             if !check_enough_resources_for_pubdata(system, native_per_pubdata, resources, None)? {
@@ -582,7 +569,7 @@ where
         // After the transaction is executed, we reclaim the withheld resources.
         // This is needed to ensure correct "gas_used" calculation, also these
         // resources could be spent for pubdata.
-        resources.reclaim(withheld_resources);
+        resources.reclaim_withheld(withheld_resources);
 
         let gas_used = if !Config::ONLY_SIMULATE {
             Self::refund_transaction::<Config>(
@@ -1021,26 +1008,10 @@ where
         resources: &mut S::Resources,
     ) -> Result<(U256, u64), InternalError> {
         // Already checked
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("initial gas_limit: {}\n", gas_limit));
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("initial remaining native: {}\n", resources.native().remaining().as_u64()));
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("to_charge_for_pubdata: {}\n", to_charge_for_pubdata.native().as_u64()));
-
         resources.charge_unchecked(&to_charge_for_pubdata);
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("remaining native: {}\n", resources.native().remaining().as_u64()));
 
         let native_per_gas = u256_to_u64_saturated(&native_per_gas);
         let full_native_limit = gas_limit.saturating_mul(native_per_gas);
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("full_native_limit: {}\n", full_native_limit));
         let native_used = full_native_limit - resources.native().remaining().as_u64();
         let mut gas_used = gas_limit - resources.ergs().0.div_floor(ERGS_PER_GAS);
 
@@ -1053,9 +1024,6 @@ where
             gas_used += delta_gas as u64;
         }
         // TODO: return delta_gas to gas_used?
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("gas_limit: {}\n", gas_limit));
 
         let total_gas_refund = gas_limit - gas_used;
         let _ = system

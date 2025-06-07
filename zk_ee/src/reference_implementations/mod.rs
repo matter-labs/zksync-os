@@ -48,8 +48,11 @@ impl Resource for DecreasingNative {
 
     fn reclaim(&mut self, to_reclaim: Self) {
         // This is only used to "give back" the native resource.
-        // TODO: either rename the struct or make a new method for this.
-        // assert!(self.0 == 0 || to_reclaim.0 == 0);
+        assert!(self.0 == 0 || to_reclaim.0 == 0);
+        self.0 += to_reclaim.0
+    }
+
+    fn reclaim_withheld(&mut self, to_reclaim: Self) {
         self.0 += to_reclaim.0
     }
 
@@ -102,6 +105,11 @@ impl Resource for IncreasingNative {
     }
 
     fn reclaim(&mut self, to_reclaim: Self) {
+        self.count += to_reclaim.count;
+        self.limit = to_reclaim.limit
+    }
+
+    fn reclaim_withheld(&mut self, to_reclaim: Self) {
         self.count += to_reclaim.count;
         self.limit = to_reclaim.limit
     }
@@ -187,6 +195,11 @@ impl<Native: Resource> Resource for BaseResources<Native> {
     fn reclaim(&mut self, to_reclaim: Self) {
         self.ergs.reclaim(to_reclaim.ergs);
         self.native.reclaim(to_reclaim.native);
+    }
+
+    fn reclaim_withheld(&mut self, to_reclaim: Self) {
+        self.ergs.reclaim(to_reclaim.ergs);
+        self.native.reclaim_withheld(to_reclaim.native);
     }
 
     fn diff(&self, other: Self) -> Self {
