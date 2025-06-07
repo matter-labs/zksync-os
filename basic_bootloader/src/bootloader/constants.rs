@@ -106,3 +106,7 @@ pub const SIMULATION_NATIVE_PER_GAS: U256 = U256::from_limbs([100, 0, 0, 0]);
 // Default native price for L1->L2 transactions.
 // TODO: find a reasonable value for it.
 pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
+
+// Upgrade transactions are expected to have ~72 million gas. We will use enough
+// gas to ensure that multiplied by the 72 million they exceed the native computational limit.
+pub const UPGRADE_TX_NATIVE_PER_GAS: U256 = U256::from_limbs([10000, 0, 0, 0]);
