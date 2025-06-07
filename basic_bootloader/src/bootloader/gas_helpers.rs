@@ -135,7 +135,7 @@ pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
     native_per_pubdata: U256,
     base_pubdata: Option<u64>,
 ) -> Result<(u64, S::Resources), InternalError> {
-    let current_pubdata_spent = system.net_pubdata_used() - base_pubdata.unwrap_or(0);
+    let current_pubdata_spent = system.net_pubdata_used()? - base_pubdata.unwrap_or(0);
     let native_per_pubdata = u256_to_u64_saturated(&native_per_pubdata);
     let native = current_pubdata_spent
         .checked_mul(native_per_pubdata)

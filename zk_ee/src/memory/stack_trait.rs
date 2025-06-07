@@ -37,7 +37,8 @@ pub trait Stack<T: Sized, A: Allocator> {
         self.try_push(value).expect("must be able to push");
     }
     fn pop(&mut self) -> Option<T>;
-    fn top(&mut self) -> Option<&mut T>;
+    fn top(&self) -> Option<&T>;
+    fn top_mut(&mut self) -> Option<&mut T>;
     fn try_push(&mut self, value: T) -> Result<(), ()>;
     fn clear(&mut self);
     fn truncate(&mut self, new_len: usize) {
@@ -67,7 +68,10 @@ impl<T: Sized, A: Allocator> Stack<T, A> for Vec<T, A> {
     fn pop(&mut self) -> Option<T> {
         Vec::pop(self)
     }
-    fn top(&mut self) -> Option<&mut T> {
+    fn top(&self) -> Option<&T> {
+        self.last()
+    }
+    fn top_mut(&mut self) -> Option<&mut T> {
         self.last_mut()
     }
     fn try_push(&mut self, value: T) -> Result<(), ()> {

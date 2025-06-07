@@ -1,10 +1,14 @@
 //! Storage cache, backed by a history map.
 use crate::system_implementation::flat_storage_model::address_into_special_storage_key;
 use crate::system_implementation::system::ExtraCheck;
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::fmt::Debug;
 use core::alloc::Allocator;
 use ruint::aliases::B160;
+use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
+use zk_ee::common_structs::cache_record::{Appearance, CacheRecord};
 use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::{
@@ -20,7 +24,12 @@ use zk_ee::{
 use zk_ee::common_structs::history_map::*;
 use zk_ee::common_structs::ValueDiffCompressionStrategy;
 
-type AddressItem<'a, K, V, A> = CacheItemRefMut<'a, K, V, StorageElementMetadata, A>;
+type AddressItem<'a, K, V, A> =
+    HistoryMapItemRefMut<'a, K, CacheRecord<V, StorageElementMetadata>, A>;
+
+#[repr(transparent)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+pub struct TransactionId(pub u32);
 
 /// EE-specific IO charging.
 pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
@@ -61,11 +70,11 @@ pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
 pub struct StorageElementMetadata {
     /// Transaction where this account was last accessed.
     /// Considered warm if equal to Some(current_tx)
-    pub last_touched_in_tx: Option<u32>,
+    pub last_touched_in_tx: Option<TransactionId>,
 }
 
 impl StorageElementMetadata {
-    pub fn considered_warm(&self, current_tx_number: u32) -> bool {
+    pub fn considered_warm(&self, current_tx_number: TransactionId) -> bool {
         self.last_touched_in_tx == Some(current_tx_number)
     }
 }
@@ -81,9 +90,11 @@ pub struct GenericPubdataAwarePlainStorage<
 > where
     ExtraCheck<SCC, A>:,
 {
-    pub(crate) cache: HistoryMap<K, V, StorageElementMetadata, A>,
+    pub(crate) cache: HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
     pub(crate) resources_policy: P,
-    pub(crate) current_tx_number: u32,
+    pub(crate) current_tx_number: TransactionId,
+    pub(crate) initial_values: BTreeMap<K, (V, TransactionId), A>, // Used to cache initial values at the beginning of the tx (For EVM gas model)
+    alloc: A,
     pub(crate) _marker: core::marker::PhantomData<(R, SC, SCC)>,
 }
 
@@ -108,8 +119,10 @@ where
     pub fn new_from_parts(allocator: A, resources_policy: P) -> Self {
         Self {
             cache: HistoryMap::new(allocator.clone()),
-            current_tx_number: 0,
+            current_tx_number: TransactionId(0),
             resources_policy,
+            initial_values: BTreeMap::new_in(allocator.clone()),
+            alloc: allocator.clone(),
             _marker: core::marker::PhantomData,
         }
     }
@@ -117,13 +130,12 @@ where
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
 
-        self.current_tx_number += 1;
+        self.current_tx_number.0 += 1;
     }
 
     #[track_caller]
     pub fn start_frame(&mut self) -> CacheSnapshotId {
-        self.cache
-            .snapshot(TransactionId(self.current_tx_number as u64))
+        self.cache.snapshot()
     }
 
     #[track_caller]
@@ -134,9 +146,9 @@ where
     }
 
     fn materialize_element<'a>(
-        cache: &'a mut HistoryMap<K, V, StorageElementMetadata, A>,
+        cache: &'a mut HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
         resources_policy: &mut P,
-        current_tx_number: u32,
+        current_tx_number: TransactionId,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         address: &StorageAddress<EthereumIOTypesConfig>,
@@ -148,7 +160,7 @@ where
         let mut cold_read_charged = false;
 
         cache
-            .materialize(resources, key, |resources| {
+            .get_or_insert( key, || {
                 let mut dst =
                     core::mem::MaybeUninit::<InitialStorageSlotData<EthereumIOTypesConfig>>::uninit(
                     );
@@ -160,7 +172,7 @@ where
                 unsafe { UsizeDeserializable::init_from_iter(&mut dst, &mut it).expect("must initialize") };
                 assert!(it.next().is_none());
 
-                // Safety: Since the `init_from_iter` has completed successfulle and there's no
+                // Safety: Since the `init_from_iter` has completed successfully and there's no
                 // outstanding data as per line before, we can assume that the value was read
                 // correctly.
                 let data_from_oracle = unsafe { dst.assume_init() } ;
@@ -172,19 +184,21 @@ where
                     true => Appearance::Unset,
                     false => Appearance::Retrieved,
                 };
-                Ok((data_from_oracle.initial_value.into(), appearance))
+                Ok(CacheRecord::new(data_from_oracle.initial_value.into(), appearance))
             })
             // We're adding a read snapshot for case when we're rollbacking the initial read.
             .and_then(|mut x| {
-                let is_warm_read = x.current().metadata.considered_warm(current_tx_number);
+                let is_warm_read = x.current().metadata().considered_warm(current_tx_number);
                 if is_warm_read == false {
                     if cold_read_charged == false {
                         resources_policy.charge_cold_storage_read_extra(ee_type, resources,false)?;
                     }
 
-                    x.update_metadata(|m| {
-                        m.last_touched_in_tx = Some(current_tx_number);
-                        Ok(())
+                    x.update(|cache_record| {
+                        cache_record.update_metadata(|m| {
+                            m.last_touched_in_tx = Some(current_tx_number);
+                            Ok(())
+                        })
                     })?;
                 }
 
@@ -212,7 +226,7 @@ where {
             oracle,
         )?;
 
-        Ok(addr_data.current().value.clone())
+        Ok(addr_data.current().value().clone())
     }
 
     pub fn apply_write_impl(
@@ -236,23 +250,43 @@ where {
             oracle,
         )?;
 
-        let (val_at_tx_start, val_current) = addr_data
-            .diff_operands_tx()
-            .unwrap_or((addr_data.current(), addr_data.current()));
+        let val_current = addr_data.current().value();
+
+        // TODO: suboptimal, maybe can just keep pointers to values?
+        // Try to get initial value at the beginning of the tx.
+        let val_at_tx_start = match self.initial_values.entry(*key) {
+            alloc::collections::btree_map::Entry::Vacant(vacant_entry) => {
+                &vacant_entry
+                    .insert((val_current.clone(), self.current_tx_number))
+                    .0
+            }
+            alloc::collections::btree_map::Entry::Occupied(occupied_entry) => {
+                let (value, tx_number) = occupied_entry.into_mut();
+                // TODO:
+                if *tx_number != self.current_tx_number {
+                    *value = val_current.clone();
+                    *tx_number = self.current_tx_number;
+                }
+                value
+            }
+        };
+
         self.resources_policy.charge_storage_write_extra(
             ee_type,
-            &val_at_tx_start.value,
-            &val_current.value,
+            val_at_tx_start,
+            val_current,
             new_value,
             resources,
             is_warm_read.0,
-            addr_data.current().appearance == Appearance::Unset,
+            addr_data.current().appearance() == Appearance::Unset,
         )?;
 
-        let old_value = addr_data.current().value.clone();
-        addr_data.update(|x, _m| {
-            *x = new_value.clone();
-            Ok(())
+        let old_value = addr_data.current().value().clone();
+        addr_data.update(|cache_record| {
+            cache_record.update(|x, _| {
+                *x = new_value.clone();
+                Ok(())
+            })
         })?;
 
         Ok(old_value)
@@ -267,7 +301,10 @@ where {
         let upper_bound = K::upper_bound(TyEq::rwi(*address.as_ref()));
         self.cache
             .for_each_range((Included(&lower_bound), Included(&upper_bound)), |mut x| {
-                x.unset()
+                x.update(|cache_record| {
+                    cache_record.unset();
+                    Ok(())
+                })
             })?;
 
         Ok(())
@@ -291,6 +328,7 @@ pub struct NewStorageWithAccountPropertiesUnderHash<
 >(pub GenericPubdataAwarePlainStorage<WarmStorageKey, Bytes32, A, SC, SCC, R, P>)
 where
     ExtraCheck<SCC, A>:;
+
 impl<
         A: Allocator + Clone,
         SC: StackCtor<SCC>,
@@ -303,20 +341,6 @@ where
 {
     type IOTypes = EthereumIOTypesConfig;
     type Resources = R;
-    type TxStats = i32;
-    type StateSnapshot = CacheSnapshotId;
-
-    fn begin_new_tx(&mut self) {
-        self.0.begin_new_tx();
-    }
-
-    fn start_frame(&mut self) -> Self::StateSnapshot {
-        self.0.start_frame()
-    }
-
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
-        self.0.finish_frame_impl(rollback_handle);
-    }
 
     fn read(
         &mut self,
@@ -447,9 +471,30 @@ where
 
         Ok(old_value)
     }
+}
 
-    fn tx_stats(&self) -> Self::TxStats {
-        todo!()
+impl<
+        A: Allocator + Clone,
+        SC: StackCtor<SCC>,
+        SCC: const StackCtorConst,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+    > SnapshottableIo for NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>
+where
+    ExtraCheck<SCC, A>:,
+{
+    type StateSnapshot = CacheSnapshotId;
+
+    fn begin_new_tx(&mut self) {
+        self.0.begin_new_tx();
+    }
+
+    fn start_frame(&mut self) -> Self::StateSnapshot {
+        self.0.start_frame()
+    }
+
+    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
+        self.0.finish_frame_impl(rollback_handle);
     }
 }
 
@@ -463,6 +508,28 @@ impl<
 where
     ExtraCheck<SCC, A>:,
 {
+    pub fn iter_as_storage_types(
+        &self,
+    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SC, SCC, R, P>
+    {
+        self.0.cache.iter().map(|item| {
+            let current_record = item.current();
+            let initial_record = item.initial();
+            (
+                *item.key(),
+                // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
+                // not actually 'using' it.
+                // TODO: redundant data type
+                WarmStorageValue {
+                    current_value: *current_record.value(),
+                    is_new_storage_slot: initial_record.appearance() == Appearance::Unset,
+                    initial_value: *initial_record.value(),
+                    initial_value_used: true,
+                    ..Default::default()
+                },
+            )
+        })
+    }
     ///
     /// Returns all the accessed storage slots.
     ///
@@ -472,7 +539,7 @@ where
         &self,
     ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SC, SCC, R, P>
     {
-        self.0.cache.iter_as_storage_types()
+        self.iter_as_storage_types()
     }
 
     ///
@@ -480,34 +547,46 @@ where
     ///
     pub fn net_diffs_iter(
         &self,
-    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SC, SCC, R, P>
-    {
-        self.0
-            .cache
-            .iter_as_storage_types()
+    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + use<'_, A, SC, SCC, R, P> {
+        self.iter_as_storage_types()
             .filter(|(_, v)| v.current_value != v.initial_value)
     }
 
-    pub fn net_pubdata_used(&self) -> u32 {
+    pub fn calculate_pubdata_used_by_tx(&self) -> u32 {
         // TODO: should be constant complexity
+
+        let mut visited_elements = BTreeSet::new_in(self.0.alloc.clone());
+
         let mut pubdata_used = 0u32;
-        self.0
-            .cache
-            .for_total_diff_operands::<_, ()>(|l, r, k| {
+        for element_history in self.0.cache.iter_altered_since_commit() {
+            // Elements are sorted chronologically
+
+            let element_key = element_history.key();
+
+            // we publish preimages for account details, so no need to publish hash
+            if element_key.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
+                continue;
+            }
+
+            // Skip if already calculated pubdata for this element
+            if visited_elements.contains(element_key) {
+                continue;
+            }
+            visited_elements.insert(element_key);
+
+            let current_value = element_history.current().value();
+            let initial_value = element_history.initial().value();
+
+            if initial_value != current_value {
                 // TODO: use tree index instead of key for repeated writes
                 pubdata_used += 32; // key
-                                    // we publish preimages for account details, so no need to publish hash
-                if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
-                    return Ok(());
-                }
-                if l.value != r.value {
-                    pubdata_used += ValueDiffCompressionStrategy::optimal_compression_length(
-                        &l.value, &r.value,
-                    ) as u32;
-                }
-                Ok(())
-            })
-            .expect("We're returning Ok(())");
+                pubdata_used += ValueDiffCompressionStrategy::optimal_compression_length(
+                    initial_value,
+                    current_value,
+                ) as u32;
+            }
+        }
+
         pubdata_used
     }
 }
