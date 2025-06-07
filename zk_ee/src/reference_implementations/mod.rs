@@ -111,7 +111,7 @@ impl Resource for IncreasingNative {
 
     fn reclaim_withheld(&mut self, to_reclaim: Self) {
         self.count += to_reclaim.count;
-        self.limit = to_reclaim.limit
+        self.limit += to_reclaim.limit
     }
 
     fn diff(&self, other: Self) -> Self {
