@@ -1,6 +1,5 @@
 use crate::bootloader::account_models::{AccountModel, ExecutionOutput, ExecutionResult};
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
-use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::PREPARE_FOR_PAYMASTER_SELECTOR;
 use crate::bootloader::constants::{
     EXECUTE_SELECTOR, PAY_FOR_TRANSACTION_SELECTOR, VALIDATE_SELECTOR,
