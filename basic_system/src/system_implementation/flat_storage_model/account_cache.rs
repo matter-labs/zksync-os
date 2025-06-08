@@ -181,6 +181,8 @@ where
                     }
                 };
 
+                // Note: we initialize it as cold, should be warmed up separately
+                // Since in case of revert it should become cold again and initial record can't be rolled back
                 Ok(CacheRecord::new(acc_data.0, acc_data.1))
             })
             .and_then(|mut x| {
@@ -219,8 +221,6 @@ where
                         }
                     }
 
-                    // We update warmness with additional history record even if element was just initialized
-                    // Since in case of revert it should become cold again and initial record can't be rolled back
                     x.update(|cache_record| {
                         cache_record.update_metadata(|m| {
                             m.last_touched_in_tx = Some(self.current_tx_number);

@@ -196,6 +196,9 @@ where
                     true => Appearance::Unset,
                     false => Appearance::Retrieved,
                 };
+
+                // Note: we initialize it as cold, should be warmed up separately
+                // Since in case of revert it should become cold again and initial record can't be rolled back
                 Ok(CacheRecord::new(data_from_oracle.initial_value.into(), appearance))
             })
             .and_then(|mut x| {
@@ -207,8 +210,6 @@ where
                         resources_policy.charge_cold_storage_read_extra(ee_type, resources,false, is_access_list)?;
                     }
 
-                    // We update warmness with additional history record even if element was just initialized
-                    // Since in case of revert it should become cold again and initial record can't be rolled back
                     x.update(|cache_record| {
                         cache_record.update_metadata(|m| {
                             m.last_touched_in_tx = Some(current_tx_number);
