@@ -26,6 +26,7 @@ use zk_ee::system::{
     EthereumLikeTypes, System, SystemTypes, *,
 };
 use zk_ee::utils::{b160_to_u256, u256_to_b160_checked};
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 
 macro_rules! require_or_revert {
     ($b:expr, $m:expr, $s:expr, $system:expr) => {
@@ -58,7 +59,7 @@ impl<S: EthereumLikeTypes> AccountModel<S> for EOA
 where
     S::IO: IOSubsystemExt,
 {
-    fn validate(
+    fn validate<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _memories: RunnerMemoryBuffers,
@@ -108,45 +109,47 @@ where
             Err(SystemError::Internal(e)) => return Err(TxError::Internal(e)),
         }
 
-        let signature = transaction.signature();
-        let r = &signature[..32];
-        let s = &signature[32..64];
-        let v = &signature[64];
-        if U256::from_be_slice(s) > SECP256K1N_HALF {
-            return Err(InvalidTransaction::MalleableSignature.into());
-        }
-
-        let mut ecrecover_input = [0u8; 128];
-        ecrecover_input[0..32].copy_from_slice(suggested_signed_hash.as_u8_array_ref());
-        ecrecover_input[63] = *v;
-        ecrecover_input[64..96].copy_from_slice(r);
-        ecrecover_input[96..128].copy_from_slice(s);
-
-        let mut ecrecover_output = ArrayBuilder::default();
-        S::SystemFunctions::secp256k1_ec_recover(
-            ecrecover_input.as_slice(),
-            &mut ecrecover_output,
-            resources,
-            system.get_allocator(),
-        )?;
-
-        if ecrecover_output.is_empty() {
-            return Err(InvalidTransaction::IncorrectFrom {
-                recovered: B160::ZERO,
-                tx: from,
+        if Config::VALIDATE_EOA_SIGNATURE {
+            let signature = transaction.signature();
+            let r = &signature[..32];
+            let s = &signature[32..64];
+            let v = &signature[64];
+            if U256::from_be_slice(s) > SECP256K1N_HALF {
+                return Err(InvalidTransaction::MalleableSignature.into());
             }
-            .into());
-        }
 
-        let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
-            .ok_or(InternalError("Invalid ecrecover return value"))?;
+            let mut ecrecover_input = [0u8; 128];
+            ecrecover_input[0..32].copy_from_slice(suggested_signed_hash.as_u8_array_ref());
+            ecrecover_input[63] = *v;
+            ecrecover_input[64..96].copy_from_slice(r);
+            ecrecover_input[96..128].copy_from_slice(s);
 
-        if recovered_from != from {
-            return Err(InvalidTransaction::IncorrectFrom {
-                recovered: recovered_from,
-                tx: from,
+            let mut ecrecover_output = ArrayBuilder::default();
+            S::SystemFunctions::secp256k1_ec_recover(
+                ecrecover_input.as_slice(),
+                &mut ecrecover_output,
+                resources,
+                system.get_allocator(),
+            )?;
+
+            if ecrecover_output.is_empty() {
+                return Err(InvalidTransaction::IncorrectFrom {
+                    recovered: B160::ZERO,
+                    tx: from,
+                }
+                    .into());
             }
-            .into());
+
+            let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
+                .ok_or(InternalError("Invalid ecrecover return value"))?;
+
+            if recovered_from != from {
+                return Err(InvalidTransaction::IncorrectFrom {
+                    recovered: recovered_from,
+                    tx: from,
+                }
+                    .into());
+            }
         }
 
         let old_nonce = match system

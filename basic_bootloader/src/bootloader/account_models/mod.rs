@@ -19,6 +19,7 @@ use zk_ee::system::System;
 use zk_ee::system::*;
 
 use zk_ee::utils::Bytes32;
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 
 /// The execution step output
 #[derive(Debug)]
@@ -69,7 +70,7 @@ where
     S::IO: IOSubsystemExt,
 {
     /// Validate transaction
-    fn validate(
+    fn validate<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers,

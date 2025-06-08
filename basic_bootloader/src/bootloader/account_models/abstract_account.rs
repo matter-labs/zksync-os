@@ -12,6 +12,7 @@ use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::FatalError;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 
 pub enum AA<S> {
     EOA(PhantomData<S>),
@@ -67,7 +68,7 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn validate(
+    pub fn validate<Config: BasicBootloaderExecutionConfig>(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
@@ -81,7 +82,7 @@ where
         resources: &mut S::Resources,
     ) -> Result<(), TxError> {
         match self {
-            AA::EOA(_) => EOA::validate(
+            AA::EOA(_) => EOA::validate::<Config>(
                 system,
                 system_functions,
                 memories,
@@ -93,7 +94,7 @@ where
                 caller_nonce,
                 resources,
             ),
-            AA::Contract(_) => Contract::validate(
+            AA::Contract(_) => Contract::validate::<Config>(
                 system,
                 system_functions,
                 memories,
