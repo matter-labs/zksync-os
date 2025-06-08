@@ -63,7 +63,6 @@ pub const ERC20_ALLOWANCE_SELECTOR: &[u8] = &[0xdd, 0x62, 0xed, 0x3e];
 pub const ERC20_APPROVE_SELECTOR: &[u8] = &[0x09, 0x5e, 0xa7, 0xb3];
 
 // Value taken from system-contracts, to adjust.
-// TODO: make sure this covers cost for L1 log.
 pub const L1_TX_INTRINSIC_L2_GAS: usize = 11000;
 
 // Includes storing the l1 tx log.
