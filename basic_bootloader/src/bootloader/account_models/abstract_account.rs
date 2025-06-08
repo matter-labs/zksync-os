@@ -1,4 +1,5 @@
 use core::marker::PhantomData;
+use core::mem::MaybeUninit;
 
 use crate::bootloader::account_models::contract::Contract;
 use crate::bootloader::account_models::eoa::EOA;
@@ -10,7 +11,6 @@ use crate::bootloader::Bytes32;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::FatalError;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, MemorySubsystemExt, System};
 
@@ -73,7 +73,7 @@ where
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -116,7 +116,7 @@ where
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -179,7 +179,7 @@ where
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -218,7 +218,7 @@ where
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,

@@ -13,13 +13,13 @@ use crate::bootloader::supported_ees::{SupportedEEVMState, SystemBoundEVMInterpr
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use core::fmt::Write;
+use core::mem::MaybeUninit;
 use errors::FatalError;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::{
     errors::{InternalError, SystemError, UpdateQueryError},
@@ -63,7 +63,7 @@ where
     fn validate(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        _callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         _tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -172,7 +172,7 @@ where
     fn execute(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -184,8 +184,6 @@ where
         let from = transaction.from.read();
 
         let main_calldata = transaction.calldata();
-
-        assert!(callstack.len() == 0);
 
         // panic is not reachable, to is validated
         let to = transaction.to.read();
@@ -319,7 +317,7 @@ where
     fn pay_for_transaction(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        _callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -371,7 +369,7 @@ where
     fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -532,7 +530,7 @@ struct TxExecutionResult<S: SystemTypes> {
 fn process_deployment<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut SliceVec<SupportedEEVMState<S>>,
+    callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
     resources: &mut S::Resources,
     to_ee_type: ExecutionEnvironmentType,
     main_calldata: &[u8],
@@ -646,7 +644,7 @@ where
 fn erc20_allowance<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut SliceVec<SupportedEEVMState<S>>,
+    callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,
@@ -727,7 +725,7 @@ where
 fn erc20_approve<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut SliceVec<SupportedEEVMState<S>>,
+    callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,

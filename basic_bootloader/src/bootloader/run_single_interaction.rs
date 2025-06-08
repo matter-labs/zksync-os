@@ -1,7 +1,6 @@
 use crate::bootloader::runner::run_till_completion;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use system_hooks::HooksStorage;
-use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::CallModifier;
 use zk_ee::system::{EthereumLikeTypes, System};
@@ -55,7 +54,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub fn run_single_interaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        callstack: &mut [MaybeUninit<SupportedEEVMState<S>>],
         calldata: &[u8],
         caller: &B160,
         callee: &B160,
