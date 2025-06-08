@@ -1,3 +1,5 @@
+use zk_ee::system::errors::InternalError;
+
 /// TODO
 pub trait SnapshottableIo {
     type StateSnapshot;
@@ -5,5 +7,8 @@ pub trait SnapshottableIo {
     fn begin_new_tx(&mut self);
 
     fn start_frame(&mut self) -> Self::StateSnapshot;
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>);
+    fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&Self::StateSnapshot>,
+    ) -> Result<(), InternalError>;
 }

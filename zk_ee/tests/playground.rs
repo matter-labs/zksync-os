@@ -33,7 +33,7 @@ fn miri_rollback_reuse() {
     // Just for fun.
     map.snapshot();
 
-    map.rollback(ss);
+    map.rollback(ss).expect("Correct snapshot");
 
     let mut v = map.get_or_insert::<()>(&1, || Ok(5)).unwrap();
 

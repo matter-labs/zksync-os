@@ -62,9 +62,15 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
     }
 
     #[track_caller]
-    pub fn finish_frame(&mut self, rollback_handle: Option<&CacheSnapshotId>) {
+    #[must_use]
+    pub fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&CacheSnapshotId>,
+    ) -> Result<(), InternalError> {
         if let Some(x) = rollback_handle {
-            self.cache.rollback(*x);
+            self.cache.rollback(*x)
+        } else {
+            Ok(())
         }
     }
 
@@ -145,7 +151,9 @@ mod tests {
 
         assert_eq!(storage.net_pubdata_used(), 100);
 
-        storage.finish_frame(None);
+        storage
+            .finish_frame(None)
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 100);
     }
@@ -176,7 +184,9 @@ mod tests {
             )
             .expect("add_preimage should succeed");
 
-        storage.finish_frame(None);
+        storage
+            .finish_frame(None)
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 200);
     }
@@ -197,7 +207,9 @@ mod tests {
             )
             .expect("add_preimage should succeed");
 
-        storage.finish_frame(Some(&ss));
+        storage
+            .finish_frame(Some(&ss))
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 0);
     }
@@ -225,7 +237,9 @@ mod tests {
             )
             .expect("add_preimage should succeed");
 
-        storage.finish_frame(None);
+        storage
+            .finish_frame(None)
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 200);
     }
@@ -256,7 +270,9 @@ mod tests {
             )
             .expect("add_preimage should succeed");
 
-        storage.finish_frame(Some(&ss));
+        storage
+            .finish_frame(Some(&ss))
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 100);
     }
@@ -284,7 +300,9 @@ mod tests {
             )
             .expect("add_preimage should succeed");
 
-        storage.finish_frame(None);
+        storage
+            .finish_frame(None)
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 100);
     }
@@ -295,7 +313,9 @@ mod tests {
 
         storage.begin_new_tx();
         storage.start_frame();
-        storage.finish_frame(None);
+        storage
+            .finish_frame(None)
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 000);
     }

@@ -11,6 +11,7 @@ use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel
 use zk_ee::common_structs::cache_record::{Appearance, CacheRecord};
 use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::system::errors::InternalError;
 use zk_ee::{
     common_structs::{WarmStorageKey, WarmStorageValue},
     kv_markers::{StorageAddress, UsizeDeserializable},
@@ -140,12 +141,19 @@ where
     }
 
     #[track_caller]
-    pub fn finish_frame_impl(&mut self, rollback_handle: Option<&CacheSnapshotId>) {
+    #[must_use]
+    pub fn finish_frame_impl(
+        &mut self,
+        rollback_handle: Option<&CacheSnapshotId>,
+    ) -> Result<(), InternalError> {
         if let Some(x) = rollback_handle {
-            self.cache.rollback(*x);
+            self.cache.rollback(*x)
+        } else {
+            Ok(())
         }
     }
 
+    /// Read element and initialize it if needed
     fn materialize_element<'a>(
         cache: &'a mut HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
         resources_policy: &mut P,
@@ -159,10 +167,13 @@ where
     ) -> Result<(AddressItem<'a, K, V, A>, IsWarmRead), SystemError> {
         resources_policy.charge_warm_storage_read(ee_type, resources)?;
 
-        let mut cold_read_charged = false;
+        let mut initialized_element = false;
 
         cache
-            .get_or_insert( key, || {
+            .get_or_insert(key, || {
+                // Element doesn't exist in cache yet, initialize it
+                initialized_element = true;
+
                 let mut dst =
                     core::mem::MaybeUninit::<InitialStorageSlotData<EthereumIOTypesConfig>>::uninit(
                     );
@@ -179,21 +190,24 @@ where
                 // correctly.
                 let data_from_oracle = unsafe { dst.assume_init() } ;
 
-                resources_policy.charge_cold_storage_read_extra(ee_type, resources, data_from_oracle.is_new_storage_slot,is_access_list)?;
-                cold_read_charged = true;
+                resources_policy.charge_cold_storage_read_extra(ee_type, resources, data_from_oracle.is_new_storage_slot, is_access_list)?;
 
                 let appearance = match data_from_oracle.is_new_storage_slot {
                     true => Appearance::Unset,
                     false => Appearance::Retrieved,
                 };
+
+                // Note: we initialize it as cold, should be warmed up separately
+                // Since in case of revert it should become cold again and initial record can't be rolled back
                 Ok(CacheRecord::new(data_from_oracle.initial_value.into(), appearance))
             })
-            // We're adding a read snapshot for case when we're rollbacking the initial read.
             .and_then(|mut x| {
+                // Warm up element according to EVM rules if needed
                 let is_warm_read = x.current().metadata().considered_warm(current_tx_number);
                 if is_warm_read == false {
-                    if cold_read_charged == false {
-                        resources_policy.charge_cold_storage_read_extra(ee_type, resources,false,is_access_list)?;
+                    if initialized_element == false {
+                        // Element exists in cache, but wasn't touched in current tx yet
+                        resources_policy.charge_cold_storage_read_extra(ee_type, resources,false, is_access_list)?;
                     }
 
                     x.update(|cache_record| {
@@ -524,8 +538,11 @@ where
         self.0.start_frame()
     }
 
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
-        self.0.finish_frame_impl(rollback_handle);
+    fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&Self::StateSnapshot>,
+    ) -> Result<(), InternalError> {
+        self.0.finish_frame_impl(rollback_handle)
     }
 }
 
