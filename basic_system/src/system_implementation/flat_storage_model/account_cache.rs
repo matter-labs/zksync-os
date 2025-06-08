@@ -383,9 +383,15 @@ where
         self.cache.snapshot()
     }
 
-    pub fn finish_frame(&mut self, rollback_handle: Option<&CacheSnapshotId>) {
+    #[must_use]
+    pub fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&CacheSnapshotId>,
+    ) -> Result<(), InternalError> {
         if let Some(x) = rollback_handle {
-            self.cache.rollback(*x);
+            self.cache.rollback(*x)
+        } else {
+            Ok(())
         }
     }
 

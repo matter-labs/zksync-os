@@ -378,9 +378,9 @@ where
         &mut self,
         rollback_handle: Option<&FullIOStateSnapshot>,
     ) -> Result<(), InternalError> {
-        self.storage.finish_frame(rollback_handle.map(|x| &x.io));
+        self.storage.finish_frame(rollback_handle.map(|x| &x.io))?;
         self.transient_storage
-            .finish_frame(rollback_handle.map(|x| &x.transient));
+            .finish_frame(rollback_handle.map(|x| &x.transient))?;
         self.logs_storage
             .finish_frame(rollback_handle.map(|x| x.messages));
         self.events_storage

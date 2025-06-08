@@ -278,7 +278,10 @@ impl<R: Resources, A: Allocator + Clone> SnapshottableIo
         self.publication_storage.start_frame()
     }
 
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
-        self.publication_storage.finish_frame(rollback_handle);
+    fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&Self::StateSnapshot>,
+    ) -> Result<(), InternalError> {
+        self.publication_storage.finish_frame(rollback_handle)
     }
 }

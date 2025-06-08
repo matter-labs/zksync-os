@@ -4,7 +4,7 @@ use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
 use zk_ee::common_traits::key_like_with_bounds::KeyLikeWithBounds;
-use zk_ee::system::errors::SystemError;
+use zk_ee::system::errors::{InternalError, SystemError};
 use zk_ee::{
     common_structs::history_map::{CacheSnapshotId, HistoryMap},
     memory::stack_trait::{StackCtor, StackCtorConst},
@@ -93,9 +93,15 @@ where
     }
 
     #[track_caller]
-    pub fn finish_frame(&mut self, rollback_handle: Option<&CacheSnapshotId>) {
+    #[must_use]
+    pub fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&CacheSnapshotId>,
+    ) -> Result<(), InternalError> {
         if let Some(x) = rollback_handle {
-            self.cache.rollback(*x);
+            self.cache.rollback(*x)
+        } else {
+            Ok(())
         }
     }
 }

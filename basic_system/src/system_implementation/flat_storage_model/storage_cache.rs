@@ -11,6 +11,7 @@ use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel
 use zk_ee::common_structs::cache_record::{Appearance, CacheRecord};
 use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::system::errors::InternalError;
 use zk_ee::{
     common_structs::{WarmStorageKey, WarmStorageValue},
     kv_markers::{StorageAddress, UsizeDeserializable},
@@ -140,9 +141,15 @@ where
     }
 
     #[track_caller]
-    pub fn finish_frame_impl(&mut self, rollback_handle: Option<&CacheSnapshotId>) {
+    #[must_use]
+    pub fn finish_frame_impl(
+        &mut self,
+        rollback_handle: Option<&CacheSnapshotId>,
+    ) -> Result<(), InternalError> {
         if let Some(x) = rollback_handle {
-            self.cache.rollback(*x);
+            self.cache.rollback(*x)
+        } else {
+            Ok(())
         }
     }
 
@@ -524,8 +531,11 @@ where
         self.0.start_frame()
     }
 
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
-        self.0.finish_frame_impl(rollback_handle);
+    fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&Self::StateSnapshot>,
+    ) -> Result<(), InternalError> {
+        self.0.finish_frame_impl(rollback_handle)
     }
 }
 

@@ -477,12 +477,17 @@ where
         }
     }
 
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
+    fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&Self::StateSnapshot>,
+    ) -> Result<(), InternalError> {
         self.storage_cache
-            .finish_frame(rollback_handle.map(|x| &x.storage));
+            .finish_frame(rollback_handle.map(|x| &x.storage))?;
         self.preimages_cache
-            .finish_frame(rollback_handle.map(|x| &x.preimages));
+            .finish_frame(rollback_handle.map(|x| &x.preimages))?;
         self.account_data_cache
-            .finish_frame(rollback_handle.map(|x| &x.account_data));
+            .finish_frame(rollback_handle.map(|x| &x.account_data))?;
+
+        Ok(())
     }
 }

@@ -113,11 +113,17 @@ where
         snapshot_id
     }
 
+    #[must_use]
     /// Rollbacks the data to the state at the provided `snapshot_id`.
-    pub fn rollback(&mut self, snapshot_id: CacheSnapshotId) {
+    pub fn rollback(&mut self, snapshot_id: CacheSnapshotId) -> Result<(), InternalError> {
         if snapshot_id < self.state.frozen_snapshot_id {
-            // TODO: replace with internal error
-            panic!("Rolling below frozen snapshot is illegal and will cause UB.")
+            return Err(InternalError("History map: rollback below frozen snapshot"));
+        }
+
+        if snapshot_id >= self.state.next_snapshot_id {
+            return Err(InternalError(
+                "History map: rollback to non-existent snapshot",
+            ));
         }
 
         // Go over all elements changed since last `commit` and roll them back
@@ -145,6 +151,8 @@ where
                 }
             }
         }
+
+        Ok(())
     }
 
     /// Commits (freezes) changes up to this point and frees memory taken by snapshots that can't be
@@ -723,7 +731,7 @@ mod tests {
 
         map.snapshot();
 
-        map.rollback(ss);
+        map.rollback(ss).expect("Correct snapshot");
 
         map.for_total_diff_operands::<_, ()>(|l, r, k| {
             assert_eq!(1, *l);
@@ -764,7 +772,7 @@ mod tests {
         // Just for fun.
         map.snapshot();
 
-        map.rollback(ss);
+        map.rollback(ss).expect("Correct snapshot");
 
         let mut v = map.get_or_insert::<()>(&1, || Ok(5)).unwrap();
 
