@@ -663,7 +663,7 @@ where
         account_model.check_nonce_is_not_used(caller_nonce, tx_nonce)?;
 
         // AA validation
-        account_model.validate(
+        account_model.validate::<Config>(
             system,
             system_functions,
             callstack,

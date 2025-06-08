@@ -17,6 +17,7 @@ use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::{logger::Logger, *};
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 
 pub struct Contract;
 
@@ -25,7 +26,7 @@ where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
-    fn validate(
+    fn validate<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut SliceVec<SupportedEEVMState<S>>,
