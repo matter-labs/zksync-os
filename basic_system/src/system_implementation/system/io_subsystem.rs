@@ -16,6 +16,7 @@ use evm_interpreter::gas_constants::LOGTOPIC;
 use evm_interpreter::gas_constants::TLOAD;
 use evm_interpreter::gas_constants::TSTORE;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
+use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::BasicIOImplementerFSM;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
@@ -353,8 +354,10 @@ where
         )
     }
 
-    fn net_pubdata_used(&self) -> u64 {
-        self.storage.pubdata_used() as u64 + self.logs_storage.pubdata_used() as u64
+    // TODO: why u64
+    fn net_pubdata_used(&self) -> Result<u64, InternalError> {
+        Ok(self.storage.pubdata_used_by_tx() as u64
+            + self.logs_storage.calculate_pubdata_used_by_tx()? as u64)
     }
 
     fn start_io_frame(&mut self) -> Result<FullIOStateSnapshot, InternalError> {
@@ -734,6 +737,24 @@ where
         self.storage.finish_tx()
     }
 
+    fn storage_touch(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.storage.storage_touch(
+            ee_type,
+            resources,
+            address,
+            key,
+            &mut self.oracle,
+            is_access_list,
+        )
+    }
+
     fn read_nonce(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -760,6 +781,22 @@ where
     ) -> Result<u64, UpdateQueryError> {
         self.storage
             .increment_nonce(ee_type, resources, address, increment_by, &mut self.oracle)
+    }
+
+    fn touch_account(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.storage.touch_account(
+            ee_type,
+            resources,
+            address,
+            &mut self.oracle,
+            is_access_list,
+        )
     }
 
     fn read_account_properties<
