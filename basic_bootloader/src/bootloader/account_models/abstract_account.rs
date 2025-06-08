@@ -4,6 +4,7 @@ use crate::bootloader::account_models::contract::Contract;
 use crate::bootloader::account_models::eoa::EOA;
 use crate::bootloader::account_models::AccountModel;
 use crate::bootloader::account_models::{ExecutionResult, TxError};
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::Bytes32;
@@ -13,7 +14,6 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::FatalError;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, MemorySubsystemExt, System};
-use crate::bootloader::config::BasicBootloaderExecutionConfig;
 
 pub enum AA<S> {
     EOA(PhantomData<S>),

@@ -1,4 +1,5 @@
 use crate::bootloader::account_models::{AccountModel, ExecutionOutput, ExecutionResult};
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::ERC20_APPROVE_SELECTOR;
 use crate::bootloader::constants::PAYMASTER_APPROVAL_BASED_SELECTOR;
 use crate::bootloader::constants::PAYMASTER_GENERAL_SELECTOR;
@@ -27,7 +28,6 @@ use zk_ee::system::{
     EthereumLikeTypes, System, SystemTypes, *,
 };
 use zk_ee::utils::{b160_to_u256, u256_to_b160_checked};
-use crate::bootloader::config::BasicBootloaderExecutionConfig;
 
 macro_rules! require_or_revert {
     ($b:expr, $m:expr, $s:expr, $system:expr) => {
@@ -139,7 +139,7 @@ where
                     recovered: B160::ZERO,
                     tx: from,
                 }
-                    .into());
+                .into());
             }
 
             let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
@@ -150,7 +150,7 @@ where
                     recovered: recovered_from,
                     tx: from,
                 }
-                    .into());
+                .into());
             }
         }
 
