@@ -153,7 +153,7 @@ mod tests {
 
         storage
             .finish_frame(None)
-            .expect("Corrent finishing snapshot");
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 100);
     }
@@ -186,7 +186,7 @@ mod tests {
 
         storage
             .finish_frame(None)
-            .expect("Corrent finishing snapshot");
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 200);
     }
@@ -209,7 +209,7 @@ mod tests {
 
         storage
             .finish_frame(Some(&ss))
-            .expect("Corrent finishing snapshot");
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 0);
     }
@@ -239,7 +239,7 @@ mod tests {
 
         storage
             .finish_frame(None)
-            .expect("Corrent finishing snapshot");
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 200);
     }
@@ -272,7 +272,7 @@ mod tests {
 
         storage
             .finish_frame(Some(&ss))
-            .expect("Corrent finishing snapshot");
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 100);
     }
@@ -302,7 +302,7 @@ mod tests {
 
         storage
             .finish_frame(None)
-            .expect("Corrent finishing snapshot");
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 100);
     }
@@ -315,7 +315,7 @@ mod tests {
         storage.start_frame();
         storage
             .finish_frame(None)
-            .expect("Corrent finishing snapshot");
+            .expect("Correct finishing snapshot");
 
         assert_eq!(storage.net_pubdata_used(), 000);
     }

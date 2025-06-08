@@ -93,7 +93,6 @@ where
     }
 
     #[track_caller]
-    #[must_use]
     pub fn finish_frame(
         &mut self,
         rollback_handle: Option<&CacheSnapshotId>,
