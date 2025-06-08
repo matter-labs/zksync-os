@@ -191,7 +191,6 @@ where
                     }
                     r
                 }
-                // TODO: reconsider for L1 txs!
                 // Out of native is converted to a top-level revert and
                 // gas is exhausted.
                 Err(FatalError::OutOfNativeResources) => {
@@ -397,8 +396,6 @@ where
             } else {
                 execution_result
             };
-
-        // TODO: notify result?
 
         Ok(execution_result)
     }
