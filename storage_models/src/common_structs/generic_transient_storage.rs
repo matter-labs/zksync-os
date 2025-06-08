@@ -49,8 +49,8 @@ where
 
     pub fn begin_new_tx(&mut self) {
         // Just discard old history
-        // Note: it will reset snapshots counter
-        // Could be also done in separate finish_tx (to not reset for first tx), but it doesn't matter
+        // Note: it will reset snapshots counter, old snapshots handlers can't be used anymore
+        // Not: We will reset it redundantly for first tx
         self.cache = HistoryMap::new(self.alloc.clone());
         self.current_tx_number += 1;
     }
@@ -60,6 +60,7 @@ where
         self.cache.snapshot()
     }
 
+    /// Read element and initialize it if needed
     fn materialize_element<'a>(
         cache: &'a mut HistoryMap<K, V, A>,
         key: &'a K,

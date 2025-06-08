@@ -84,6 +84,7 @@ where
         }
     }
 
+    /// Read element and initialize it if needed
     fn materialize_element<const PROOF_ENV: bool>(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -111,10 +112,13 @@ where
         let native = R::Native::from_computational(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST);
         resources.charge(&R::from_ergs_and_native(ergs, native))?;
 
-        let mut cold_read_charged = false;
+        let mut initialized_element = false;
 
         self.cache
             .get_or_insert(address.into(), || {
+                // Element doesn't exist in cache yet, initialize it
+                initialized_element = true;
+
                 // - first get a hash of properties from storage
                 match ee_type {
                     ExecutionEnvironmentType::NoEE => {
@@ -140,8 +144,6 @@ where
                     }
                     _ => return Err(InternalError("Unsupported EE").into()),
                 }
-
-                cold_read_charged = true;
 
                 // to avoid divergence we read as-if infinite ergs
                 let hash = resources.with_infinite_ergs(|inf_resources| {
@@ -181,14 +183,15 @@ where
 
                 Ok(CacheRecord::new(acc_data.0, acc_data.1))
             })
-            // We're adding a read snapshot for case when we're rollbacking the initial read.
             .and_then(|mut x| {
+                // Warm up element according to EVM rules if needed
                 let is_warm = x
                     .current()
                     .metadata()
                     .considered_warm(self.current_tx_number);
                 if is_warm == false {
-                    if cold_read_charged == false {
+                    if initialized_element == false {
+                        // Element exists in cache, but wasn't touched in current tx yet
                         match ee_type {
                             ExecutionEnvironmentType::NoEE => {
                                 // Access list accesses are always done in NoEE.
@@ -216,6 +219,8 @@ where
                         }
                     }
 
+                    // We update warmness with additional history record even if element was just initialized
+                    // Since in case of revert it should become cold again and initial record can't be rolled back
                     x.update(|cache_record| {
                         cache_record.update_metadata(|m| {
                             m.last_touched_in_tx = Some(self.current_tx_number);
