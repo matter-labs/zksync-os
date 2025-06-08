@@ -1,4 +1,6 @@
 use crate::bootloader::account_models::{AccountModel, ExecutionOutput, ExecutionResult};
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::PREPARE_FOR_PAYMASTER_SELECTOR;
 use crate::bootloader::constants::{
     EXECUTE_SELECTOR, PAY_FOR_TRANSACTION_SELECTOR, VALIDATE_SELECTOR,
@@ -16,7 +18,6 @@ use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::stack_trait::Stack;
 use zk_ee::system::{logger::Logger, EthereumLikeTypes, System, SystemFrameSnapshot, *};
-use crate::bootloader::config::BasicBootloaderExecutionConfig;
 
 pub struct Contract;
 
@@ -25,7 +26,10 @@ where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
-    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>, Config: BasicBootloaderExecutionConfig>(
+    fn validate<
+        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
+        Config: BasicBootloaderExecutionConfig,
+    >(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut CS,

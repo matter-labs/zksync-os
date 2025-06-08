@@ -4,6 +4,7 @@ use crate::bootloader::account_models::contract::Contract;
 use crate::bootloader::account_models::eoa::EOA;
 use crate::bootloader::account_models::AccountModel;
 use crate::bootloader::account_models::{ExecutionResult, TxError};
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::Bytes32;
 use crate::bootloader::StackFrame;
@@ -15,7 +16,6 @@ use zk_ee::system::errors::FatalError;
 use zk_ee::system::{
     EthereumLikeTypes, IOSubsystemExt, MemorySubsystemExt, System, SystemFrameSnapshot,
 };
-use crate::bootloader::config::BasicBootloaderExecutionConfig;
 
 pub enum AA<S> {
     EOA(PhantomData<S>),
@@ -72,7 +72,10 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>, Config: BasicBootloaderExecutionConfig>(
+    pub fn validate<
+        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
+        Config: BasicBootloaderExecutionConfig,
+    >(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
