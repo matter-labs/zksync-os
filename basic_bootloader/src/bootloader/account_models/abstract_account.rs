@@ -4,6 +4,7 @@ use crate::bootloader::account_models::contract::Contract;
 use crate::bootloader::account_models::eoa::EOA;
 use crate::bootloader::account_models::AccountModel;
 use crate::bootloader::account_models::{ExecutionResult, TxError};
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::Bytes32;
@@ -69,7 +70,7 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn validate(
+    pub fn validate<Config: BasicBootloaderExecutionConfig>(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
@@ -83,7 +84,7 @@ where
         resources: &mut S::Resources,
     ) -> Result<(), TxError> {
         match self {
-            AA::EOA(_) => EOA::validate(
+            AA::EOA(_) => EOA::validate::<Config>(
                 system,
                 system_functions,
                 callstack,
@@ -95,7 +96,7 @@ where
                 caller_nonce,
                 resources,
             ),
-            AA::Contract(_) => Contract::validate(
+            AA::Contract(_) => Contract::validate::<Config>(
                 system,
                 system_functions,
                 callstack,
