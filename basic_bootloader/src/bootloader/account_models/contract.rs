@@ -16,6 +16,7 @@ use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::stack_trait::Stack;
 use zk_ee::system::{logger::Logger, EthereumLikeTypes, System, SystemFrameSnapshot, *};
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 
 pub struct Contract;
 
@@ -24,7 +25,7 @@ where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
-    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut CS,

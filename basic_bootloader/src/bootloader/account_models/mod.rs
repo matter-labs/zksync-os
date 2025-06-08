@@ -22,6 +22,7 @@ use zk_ee::system::SystemFrameSnapshot;
 use zk_ee::system::*;
 
 use zk_ee::utils::Bytes32;
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 
 use super::StackFrame;
 
@@ -123,7 +124,7 @@ where
     /// `callstack` expected to be empty at the beginning and at the end of this function execution.
     /// It's passed to reuse memory between transactions.
     ///
-    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut CS,

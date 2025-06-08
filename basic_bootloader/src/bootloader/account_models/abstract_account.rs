@@ -15,6 +15,7 @@ use zk_ee::system::errors::FatalError;
 use zk_ee::system::{
     EthereumLikeTypes, IOSubsystemExt, MemorySubsystemExt, System, SystemFrameSnapshot,
 };
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 
 pub enum AA<S> {
     EOA(PhantomData<S>),
@@ -71,7 +72,7 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>, Config: BasicBootloaderExecutionConfig>(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
@@ -85,7 +86,7 @@ where
         resources: &mut S::Resources,
     ) -> Result<(), TxError> {
         match self {
-            AA::EOA(_) => EOA::validate::<CS>(
+            AA::EOA(_) => EOA::validate::<CS, Config>(
                 system,
                 system_functions,
                 callstack,
@@ -97,7 +98,7 @@ where
                 caller_nonce,
                 resources,
             ),
-            AA::Contract(_) => Contract::validate::<CS>(
+            AA::Contract(_) => Contract::validate::<CS, Config>(
                 system,
                 system_functions,
                 callstack,
