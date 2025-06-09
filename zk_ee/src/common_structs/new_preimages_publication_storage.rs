@@ -121,7 +121,7 @@ mod tests {
         let mut pubdata_used = 0;
         storage
             .cache
-            .for_total_diff_operands::<_, ()>(|_, r, _| {
+            .apply_to_all_updated_elements::<_, ()>(|_, r, _| {
                 pubdata_used += r.value().value.publication_net_bytes;
                 Ok(())
             })

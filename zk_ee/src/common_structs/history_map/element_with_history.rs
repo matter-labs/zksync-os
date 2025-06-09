@@ -107,7 +107,7 @@ impl<V, A: Allocator + Clone> ElementWithHistory<V, A> {
     }
 
     /// Returns (initial_value, current_value) if any
-    pub fn diff_operands_total(&self) -> Option<(&V, &V)> {
+    pub fn get_initial_and_last_values(&self) -> Option<(&V, &V)> {
         let entry = unsafe { self.head.as_ref() };
         match entry.previous {
             None => None,

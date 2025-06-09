@@ -271,7 +271,6 @@ where {
 
         let val_current = addr_data.current().value();
 
-        // TODO: suboptimal, maybe can just keep pointers to values?
         // Try to get initial value at the beginning of the tx.
         let val_at_tx_start = match self.initial_values.entry(*key) {
             alloc::collections::btree_map::Entry::Vacant(vacant_entry) => {
@@ -281,7 +280,6 @@ where {
             }
             alloc::collections::btree_map::Entry::Occupied(occupied_entry) => {
                 let (value, tx_number) = occupied_entry.into_mut();
-                // TODO:
                 if *tx_number != self.current_tx_number {
                     *value = val_current.clone();
                     *tx_number = self.current_tx_number;
@@ -572,7 +570,6 @@ where
                 *item.key(),
                 // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
                 // not actually 'using' it.
-                // TODO: redundant data type
                 WarmStorageValue {
                     current_value: *current_record.value(),
                     is_new_storage_slot: initial_record.appearance() == Appearance::Unset,
@@ -606,8 +603,6 @@ where
     }
 
     pub fn calculate_pubdata_used_by_tx(&self) -> u32 {
-        // TODO: should be constant complexity
-
         let mut visited_elements = BTreeSet::new_in(self.0.alloc.clone());
 
         let mut pubdata_used = 0u32;

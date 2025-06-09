@@ -121,7 +121,7 @@ where
 
     fn pubdata_used_by_tx(&self) -> u32 {
         self.account_data_cache.calculate_pubdata_used_by_tx()
-            + self.storage_cache.calculate_pubdata_used_by_tx() // TODO: what about preimages cache?
+            + self.storage_cache.calculate_pubdata_used_by_tx()
     }
 
     fn finish(
@@ -165,7 +165,7 @@ where
         storage_cache
             .0
             .cache
-            .for_total_diff_operands::<_, ()>(|l, r, k| {
+            .apply_to_all_updated_elements::<_, ()>(|l, r, k| {
                 // TODO: use tree index instead of key for repeated writes
                 let derived_key = derive_flat_storage_key(&k.address, &k.key);
                 pubdata_hasher.update(derived_key.as_u8_ref());
@@ -180,7 +180,7 @@ where
                         .unwrap()
                         .into();
                     let cache_item = account_data_cache.cache.get(&account_address).ok_or(())?;
-                    let (l, r) = cache_item.diff_operands_total().ok_or(())?;
+                    let (l, r) = cache_item.get_initial_and_last_values().ok_or(())?;
                     AccountProperties::diff_compression::<PROOF_ENV, _, _>(
                         l.value(),
                         r.value(),
