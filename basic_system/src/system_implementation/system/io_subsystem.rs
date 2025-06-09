@@ -424,7 +424,7 @@ where
         mut logger: impl Logger,
     ) -> Self::FinalData {
         result_keeper.pubdata(current_block_hash.as_u8_ref());
-        // dump state pubdata and outputs
+        // dump pubdata and state diffs
         self.storage
             .finish(
                 &mut self.oracle,
@@ -445,6 +445,8 @@ where
     }
 }
 
+// In practice we will not use single block batches
+// This functionality is here only for the tests
 #[cfg(not(feature = "wrap-in-batch"))]
 impl<
         A: Allocator + Clone + Default,
@@ -472,6 +474,7 @@ where
                 .oracle
                 .create_oracle_access_iterator::<InitializeIOImplementerIterator>(())
                 .unwrap();
+            // TODO (EVM-989): read only state commitment
             let fsm_state =
                 <BasicIOImplementerFSM::<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
             assert_eq!(initialization_iterator.len(), 0);
@@ -533,7 +536,7 @@ where
             last_block_timestamp: 0,
         };
 
-        // other outputs to be opened on the l1
+        // other outputs to be opened on the settlement layer/aggregation program
         let block_output = BlocksOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
             first_block_timestamp: block_metadata.timestamp,
@@ -581,6 +584,7 @@ where
                 .oracle
                 .create_oracle_access_iterator::<InitializeIOImplementerIterator>(())
                 .unwrap();
+            // TODO (EVM-989): read only state commitment
             let fsm_state =
                 <BasicIOImplementerFSM::<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
             assert_eq!(initialization_iterator.len(), 0);
