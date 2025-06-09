@@ -1,14 +1,15 @@
-name: Check app.bin
+name: Update app.bin
 
 on:
-  push:
-    branches:
-      - main
+  pull_request:
+      types: [synchronize, opened]
+
 
 permissions:
-  contents: read
+  contents: write
   packages: read
   actions: read
+  pull-requests: write
 
 jobs:
   check_app_bin:
@@ -22,10 +23,14 @@ jobs:
 
       - name: Fail if any files were modified
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git status --porcelain
           git diff --name-only
           if [ -n "$(git diff --name-only)" ]; then
-            echo "❌ The following files were modified. Did you run zksync_os/reproduce/reproduce.sh ?:"
+            echo "❌ The following files were modified."
             git diff --name-only
+            git commit -a -m "chore: auto-update app.bin file"
+            git push origin HEAD:${{ github.head_ref }}
             exit 1
           fi
