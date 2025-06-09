@@ -21,7 +21,7 @@ jobs:
         run: |
           zksync_os/reproduce/reproduce.sh
 
-      - name: Fail if any files were modified
+      - name: Update PR if any files were modified
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -30,6 +30,11 @@ jobs:
           if [ -n "$(git diff --name-only)" ]; then
             echo "❌ The following files were modified."
             git diff --name-only
+
+            git stash push -m "local-changes"
+            git fetch origin ${{ github.head_ref }}
+            git checkout ${{ github.head_ref }}
+            git stash pop || echo "Nothing to pop"
             git commit -a -m "chore: auto-update app.bin file"
             git push origin HEAD:${{ github.head_ref }}
             exit 1
