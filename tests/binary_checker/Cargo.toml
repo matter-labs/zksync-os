@@ -1,5 +1,5 @@
 [package]
-name = "oracle_provider"
+name = "binary_checker"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,6 +10,4 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-zk_ee = { path = "../zk_ee", default-features = false }
-ringbuffer = "*"
-risc_v_simulator = { workspace = true }
+prover = { git = "https://github.com/matter-labs/zksync-airbender", features = ["prover"] }

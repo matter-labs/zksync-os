@@ -2,21 +2,18 @@ use crate::bootloader::EVM_EE_BYTE;
 use errors::FatalError;
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
-    system::{
-        errors::{InternalError, SystemError},
-        *,
-    },
+    system::{errors::InternalError, *},
 };
 
 #[allow(type_alias_bounds)]
-pub type SystemBoundEVMInterpreter<S: EthereumLikeTypes> = evm_interpreter::Interpreter<S>;
+pub type SystemBoundEVMInterpreter<'a, S: EthereumLikeTypes> = evm_interpreter::Interpreter<'a, S>;
 
 #[repr(u8)]
-pub enum SupportedEEVMState<S: EthereumLikeTypes> {
-    EVM(SystemBoundEVMInterpreter<S>) = EVM_EE_BYTE,
+pub enum SupportedEEVMState<'a, S: EthereumLikeTypes> {
+    EVM(SystemBoundEVMInterpreter<'a, S>) = EVM_EE_BYTE,
 }
 
-impl<S: EthereumLikeTypes> SupportedEEVMState<S> {
+impl<'calldata, S: EthereumLikeTypes> SupportedEEVMState<'calldata, S> {
     pub fn needs_scratch_space(&self) -> bool {
         match self {
             SupportedEEVMState::EVM(..) => SystemBoundEVMInterpreter::<S>::NEEDS_SCRATCH_SPACE,
@@ -39,7 +36,7 @@ impl<S: EthereumLikeTypes> SupportedEEVMState<S> {
         ee_version: ExecutionEnvironmentType,
         resources_available_in_caller_frame: &mut S::Resources,
         desired_ergs_to_pass: Ergs,
-    ) -> Result<S::Resources, SystemError> {
+    ) -> Result<S::Resources, FatalError> {
         match ee_version {
             ExecutionEnvironmentType::EVM => {
                 SystemBoundEVMInterpreter::<S>::clarify_and_take_passed_resources(
@@ -51,23 +48,23 @@ impl<S: EthereumLikeTypes> SupportedEEVMState<S> {
         }
     }
 
-    pub fn create_initial(
-        ee_version: u8,
-        system: &mut System<S>,
-    ) -> Result<SupportedEEVMState<S>, InternalError> {
+    pub fn create_initial(ee_version: u8, system: &mut System<S>) -> Result<Self, InternalError> {
         match ee_version {
-            a if a == EVM_EE_BYTE => SystemBoundEVMInterpreter::<S>::new(system).map(Self::EVM),
+            a if a == EVM_EE_BYTE => SystemBoundEVMInterpreter::new(system).map(Self::EVM),
             _ => Err(InternalError("Unknown EE")),
         }
     }
 
     /// Starts executing a new frame within the current EE.
     /// initial_state contains all the necessary information - calldata, environment settings and resources passed.
-    pub fn start_executing_frame(
+    pub fn start_executing_frame<'a>(
         &mut self,
         system: &mut System<S>,
-        initial_state: ExecutionEnvironmentLaunchParams<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+        initial_state: ExecutionEnvironmentLaunchParams<'a, S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>
+    where
+        'a: 'calldata,
+    {
         match self {
             Self::EVM(evm_frame) => evm_frame.start_executing_frame(system, initial_state),
         }
@@ -78,7 +75,7 @@ impl<S: EthereumLikeTypes> SupportedEEVMState<S> {
         system: &mut System<S>,
         returned_resources: S::Resources,
         call_result: CallResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         match self {
             Self::EVM(evm_frame) => {
                 evm_frame.continue_after_external_call(system, returned_resources, call_result)
@@ -91,7 +88,7 @@ impl<S: EthereumLikeTypes> SupportedEEVMState<S> {
         system: &mut System<S>,
         returned_resources: S::Resources,
         deployment_result: DeploymentResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         match self {
             Self::EVM(evm_frame) => {
                 evm_frame.continue_after_deployment(system, returned_resources, deployment_result)
@@ -99,11 +96,17 @@ impl<S: EthereumLikeTypes> SupportedEEVMState<S> {
         }
     }
 
-    pub fn prepare_for_deployment(
+    pub fn prepare_for_deployment<'a>(
         ee_version: ExecutionEnvironmentType,
         system: &mut System<S>,
-        deployment_parameters: DeploymentPreparationParameters<S>,
-    ) -> Result<(S::Resources, Option<ExecutionEnvironmentLaunchParams<S>>), FatalError>
+        deployment_parameters: DeploymentPreparationParameters<'a, S>,
+    ) -> Result<
+        (
+            S::Resources,
+            Option<ExecutionEnvironmentLaunchParams<'a, S>>,
+        ),
+        FatalError,
+    >
     where
         S::IO: IOSubsystemExt,
     {

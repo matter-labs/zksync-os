@@ -1,4 +1,4 @@
-use super::csr_io::*;
+use riscv_common::{csr_read_word, csr_write_word};
 
 #[derive(Default)]
 pub struct QuasiUART {
@@ -32,7 +32,7 @@ impl QuasiUART {
 
     #[inline(never)]
     pub fn read_word(&self) -> usize {
-        csr_read_word()
+        csr_read_word() as usize
     }
 
     #[inline(never)]

@@ -9,21 +9,19 @@ mod eoa;
 use core::ops::Deref;
 
 use crate::bootloader::errors::TxError;
+use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::transaction::ZkSyncTransaction;
 pub use abstract_account::AA;
 use errors::FatalError;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system::System;
-use zk_ee::system::SystemFrameSnapshot;
 use zk_ee::system::*;
 
 use zk_ee::utils::Bytes32;
-
-use super::StackFrame;
 
 ///
 /// The execution step output
@@ -123,13 +121,13 @@ where
     /// `callstack` expected to be empty at the beginning and at the end of this function execution.
     /// It's passed to reuse memory between transactions.
     ///
-    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn validate(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         caller_ee_type: ExecutionEnvironmentType,
         caller_is_code: bool,
         caller_nonce: u64,
@@ -142,13 +140,13 @@ where
     /// `callstack` expected to be empty at the beginning and at the end of this function execution.
     /// It's passed to reuse memory between transactions.
     ///
-    fn execute<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn execute(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
     ) -> Result<ExecutionResult<S>, FatalError>;
@@ -180,13 +178,13 @@ where
     ///
     /// Pay for the transaction's fees
     ///
-    fn pay_for_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pay_for_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
@@ -195,13 +193,13 @@ where
     ///
     /// Prepare for paymaster
     ///
-    fn pre_paymaster<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        callstack: &mut SliceVec<SupportedEEVMState<S>>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         paymaster: B160,
         caller_ee_type: ExecutionEnvironmentType,

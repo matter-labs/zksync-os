@@ -161,6 +161,8 @@ pub fn run_batch_from_oracle_dump<
 ///
 /// Simulate single transaction on top of given state.
 /// The validation step is skipped, fields that needed for validation can be empty(any).
+/// Note that, as the validation step is skipped, an internal error is returned
+/// if the sender does not have enough balance for the top-level call value transfer.
 ///
 /// Needed for `eth_call` and `eth_estimateGas`.
 ///
@@ -189,7 +191,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     CallSimulationBootloader::run_prepared::<BasicBootloaderCallSimulationConfig>(
         oracle,
         &mut result_keeper,
-    );
+    )?;
     let mut batch_output: BatchOutput = result_keeper.into();
     Ok(batch_output.tx_results.remove(0))
 }

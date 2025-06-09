@@ -33,6 +33,10 @@ pub trait Resource: 'static + Sized + Clone + core::fmt::Debug + PartialEq + Eq 
     /// Adds [to_reclaim] to a given resource.
     fn reclaim(&mut self, to_reclaim: Self);
 
+    /// Reclaims a withheld resource. Should be only used by the bootloader at the end
+    /// of a transaction.
+    fn reclaim_withheld(&mut self, to_reclaim: Self);
+
     /// Computes the absolute difference between [self] and [other].
     fn diff(&self, other: Self) -> Self;
 
@@ -101,6 +105,10 @@ impl Resource for Ergs {
     }
 
     fn reclaim(&mut self, to_reclaim: Self) {
+        self.0 += to_reclaim.0
+    }
+
+    fn reclaim_withheld(&mut self, to_reclaim: Self) {
         self.0 += to_reclaim.0
     }
 

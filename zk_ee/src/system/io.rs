@@ -119,7 +119,7 @@ pub trait IOSubsystem: Sized {
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
     ) -> Result<(), SystemError>;
 
-    fn net_pubdata_used(&self) -> u64;
+    fn net_pubdata_used(&self) -> Result<u64, InternalError>;
 
     /// Starts a new "local" frame that does not that memory (like `near_call` in the EraVM).
     /// Returns a snapshot to which the system can rollback to on frame finish.
@@ -289,6 +289,16 @@ pub trait IOSubsystemExt: IOSubsystem {
     /// selfdestruct.
     fn finish_tx(&mut self) -> Result<(), InternalError>;
 
+    /// Touch a slot (address, key) to make it warm.
+    fn storage_touch(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        is_access_list: bool,
+    ) -> Result<(), SystemError>;
+
     /// Read an account's nonce.
     fn read_nonce(
         &mut self,
@@ -316,6 +326,15 @@ pub trait IOSubsystemExt: IOSubsystem {
         to: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         amount: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
     ) -> Result<(), UpdateQueryError>;
+
+    /// Touch an account to make it warm.
+    fn touch_account(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        is_access_list: bool,
+    ) -> Result<(), SystemError>;
 
     /// Generic function to read some of an account's properties
     fn read_account_properties<
