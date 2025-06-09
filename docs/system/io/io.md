@@ -41,11 +41,11 @@ The basic [IO subsystem implementation](../../../basic_system/src/system_impleme
 
 - The main persistent storage slot-based storage, described later in this section.
 - The [transient storage](../../../storage_models/src/common_structs/generic_transient_storage.rs), a key-value map that is discarded after processing each transaction.
-- [Signal](../../../zk_ee/src/common_structs/messages_storage.rs) and [events](../../../zk_ee/src/common_structs/events_storage.rs) storages: two simple stack-based rollbackable storages. They are initialized empty for each block and dumped in full at block finalization into the block result.
+- [Logs](../../../zk_ee/src/common_structs/logs_storage.rs) and [events](../../../zk_ee/src/common_structs/events_storage.rs) storages: two simple rollbackable storages. They are initialized empty for each block and dumped in full at block finalization into the block result.
 
 The basic implementation consist mostly on handling those four storages. We'll focus on the main storage, as the rest are quite straightforward.
 
-The main storage, implemented by [`FlatTreeWithAccountsUnderHashesStorageModel`](../../../basic_system/src/system_implementation/io/mod.rs), is composed of a Merkle tree and 3 caches for its data. The Merkle tree uses 32-byte keys (hash of (address,key)) and 32-byte values, and is described in details in [its own page](./tree.md). Initial reads into this tree are provided by an oracle, and verified as a batch at the end of the system run. The three caches are for storage (general storage slots), account properties and preimages. The use of the last two will become clear after the next section.
+The main storage, implemented by [`FlatTreeWithAccountsUnderHashesStorageModel`](../../../basic_system/src/system_implementation/flat_storage_model/mod.rs), is composed of a Merkle tree and 3 caches for its data. The Merkle tree uses 32-byte keys (hash of (address,key)) and 32-byte values, and is described in details in [its own page](./tree.md). Initial reads into this tree are provided by an oracle, and verified as a batch at the end of the system run. The three caches are for storage (general storage slots), account properties and preimages. The use of the last two will become clear after the next section.
 
 ### Storage model for accounts
 
@@ -60,7 +60,7 @@ Each account has the following properties:
 - Artifact length (unused for now),
 - Observable bytecode length.
 
-The precise serialization layout for this information can be found in the [implementation](../../../basic_system/src/system_implementation/io/account_cache_entry.rs).
+The precise serialization layout for this information can be found in the [implementation](../../../basic_system/src/system_implementation/flat_storage_model/account_cache_entry.rs).
 For a given address, its **properties aren't stored directly into the tree**. Instead, a hash of the properties is stored under at slot (`ACCOUNT_PROPERTIES_STORAGE_ADDRESS`, address).
 The preimage of this hash (i.e. the encoded properties) is initially read from the `preimages_source`, which is part of the oracle. `ACCOUNT_PROPERTIES_STORAGE_ADDRESS` is the address `0x8003`, and is just used to store these special properties hashes.
 

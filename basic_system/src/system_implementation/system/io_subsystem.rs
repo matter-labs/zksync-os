@@ -188,8 +188,7 @@ where
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         data: &[u8],
     ) -> Result<Bytes32, SystemError> {
-        // TODO: we should charge gas for computation needed to emit: at least to hash log(L2_TO_L1_LOG_SERIALIZE_SIZE) and build tree(~32)
-        // TODO: consider adding COMPUTATIONAL_PRICE_FOR_PUBDATA as in Era
+        // TODO(EVM-1077): consider adding COMPUTATIONAL_PRICE_FOR_PUBDATA as in Era
 
         // We need to charge cost of hashing:
         // - keccak256_native_cost(L2_TO_L1_LOG_SERIALIZE_SIZE) and
@@ -214,7 +213,7 @@ where
         );
         resources.charge(&R::from_native(native))?;
 
-        // TODO: for Era backward compatibility we may need to add events for l2 to l1 log and l1 message
+        // TODO(EVM-1078): for Era backward compatibility we may need to add events for l2 to l1 log and l1 message
 
         let mut data_hash = ArrayBuilder::default();
         Keccak256Impl::execute(&data, &mut data_hash, resources, self.allocator.clone()).map_err(
@@ -253,7 +252,7 @@ where
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
     ) -> Result<&'static [u8], SystemError> {
-        // TODO: separate observable and usable better
+        // TODO(EVM-1079): separate observable and usable better
         self.storage
             .read_account_properties(
                 ee_type,
@@ -354,7 +353,6 @@ where
         )
     }
 
-    // TODO: why u64
     fn net_pubdata_used(&self) -> Result<u64, InternalError> {
         Ok(self.storage.pubdata_used_by_tx() as u64
             + self.logs_storage.calculate_pubdata_used_by_tx()? as u64)
@@ -378,9 +376,9 @@ where
         &mut self,
         rollback_handle: Option<&FullIOStateSnapshot>,
     ) -> Result<(), InternalError> {
-        self.storage.finish_frame(rollback_handle.map(|x| &x.io));
+        self.storage.finish_frame(rollback_handle.map(|x| &x.io))?;
         self.transient_storage
-            .finish_frame(rollback_handle.map(|x| &x.transient));
+            .finish_frame(rollback_handle.map(|x| &x.transient))?;
         self.logs_storage
             .finish_frame(rollback_handle.map(|x| x.messages));
         self.events_storage
@@ -494,7 +492,7 @@ where
             next_free_slot: state_commitment.next_free_slot,
             block_number: block_metadata.block_number - 1,
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
-            // TODO: we should set and validate that current block timestamp >= previous
+            // TODO(EVM-1080): we should set and validate that current block timestamp >= previous
             last_block_timestamp: 0,
         };
 
@@ -534,7 +532,7 @@ where
             next_free_slot: state_commitment.next_free_slot,
             block_number: block_metadata.block_number,
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
-            // TODO: we should set and validate that current block timestamp >= previous
+            // TODO(EVM-1080): we should set and validate that current block timestamp >= previous
             last_block_timestamp: 0,
         };
 

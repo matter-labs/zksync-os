@@ -17,17 +17,12 @@ The weaker version is meant to be passed to Execution environments, while the bo
 
 ### Resources and IO types configuration
 
-The system is generic over how it represents computational resources. The system provides a reference implementation for [basic resources](../../zk_ee/src/reference_implementations/mod.rs) that models resources as an amount of *ergs*, which are consumed as gas in Ethereum.
+The system is generic over how it represents computational resources. The system provides a reference implementation for [resources](../../zk_ee/src/reference_implementations/mod.rs) that models both EE resources (an amount of *ergs*, which are consumed as gas in Ethereum) and native resources (to cover proving). More details about resource accounting can be found in [Double resource accounting](../double_resource_accounting.md).
 
 It is also generic over what types are used for IO. These include addresses, storage keys and values, balances, etc. The system implements an [instance](../../zk_ee/src/types_config/mod.rs) for Ethereum-like systems with the expected Ethereum types.
 
 The system doesn't really have to be generic over these types because many parts of the codebase only work if the types are the `EthereumLikeTypes`. However, this way
 we can at least be sure that the places that don't require `EthereumLikeTypes` don't need to be edited if a type changes.
-
-```rust
-pub trait EthereumLikeTypes:
-    SystemTypes<IOTypes = EthereumIOTypesConfig, Resources = BaseResources> {}
-```
 
 ### System functions
 

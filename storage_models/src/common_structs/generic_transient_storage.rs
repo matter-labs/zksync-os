@@ -4,7 +4,7 @@ use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
 use zk_ee::common_traits::key_like_with_bounds::KeyLikeWithBounds;
-use zk_ee::system::errors::SystemError;
+use zk_ee::system::errors::{InternalError, SystemError};
 use zk_ee::{
     common_structs::history_map::{CacheSnapshotId, HistoryMap},
     memory::stack_trait::{StackCtor, StackCtorConst},
@@ -49,8 +49,8 @@ where
 
     pub fn begin_new_tx(&mut self) {
         // Just discard old history
-        // Note: it will reset snapshots counter
-        // Could be also done in separate finish_tx (to not reset for first tx), but it doesn't matter
+        // Note: it will reset snapshots counter, old snapshots handlers can't be used anymore
+        // Note: We will reset it redundantly for first tx
         self.cache = HistoryMap::new(self.alloc.clone());
         self.current_tx_number += 1;
     }
@@ -60,6 +60,7 @@ where
         self.cache.snapshot()
     }
 
+    /// Read element and initialize it if needed
     fn materialize_element<'a>(
         cache: &'a mut HistoryMap<K, V, A>,
         key: &'a K,
@@ -93,9 +94,14 @@ where
     }
 
     #[track_caller]
-    pub fn finish_frame(&mut self, rollback_handle: Option<&CacheSnapshotId>) {
+    pub fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&CacheSnapshotId>,
+    ) -> Result<(), InternalError> {
         if let Some(x) = rollback_handle {
-            self.cache.rollback(*x);
+            self.cache.rollback(*x)
+        } else {
+            Ok(())
         }
     }
 }
