@@ -67,3 +67,13 @@ The preimage of this hash (i.e. the encoded properties) is initially read from t
 During the execution of a block, accounts that are decommitted (i.e. read from the oracle verifying their hash) are cached in the account cache. At block finalization, the accounts in the account cache are hashed and inserted into the preimage cache. In turn, the preimages in the preimage cache (which include serialized accounts and bytecodes) are reported to the block's result and are included in the pubdata.
 
 The underlying implementation of the caches is described in the [Caches section](caches.md).
+
+### Finish method
+
+The finish method is the main method executed during block finalization.
+It has different implementations depending on whether it's a forward or proof run.
+
+For the forward run, we are just returning IO outputs(state diffs, events, messages) and pubdata to the caller(using result keeper).
+
+For the proof run we should validate reads, apply writes to the state commitment, and calculate pubdata commitment.
+Calculate and return public input using these and some other values.
