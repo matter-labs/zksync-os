@@ -18,18 +18,14 @@ jobs:
       - name: Setup
         run: |
           rustup set profile minimal
+          rustup target add riscv32i-unknown-none-elf
           rustup target add wasm32-unknown-unknown
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
       - name: Compile for RISC-V
         working-directory: ./zksync_os
-        run: |
-          rustup target add riscv32i-unknown-none-elf
-          cargo install cargo-binutils
-          rustup component add llvm-tools-preview
-          rustup component add rust-src
-          ./dump_bin.sh
+        run: ./dump_bin.sh
       - name: Build wasm contracts
         run: |
           for dir in ./tests/contracts_wasm/*; do
@@ -120,14 +116,14 @@ jobs:
       - name: Setup
         run: |
           rustup set profile minimal
-      - name: Compile for RISC-V
-        working-directory: ./zksync_os
-        run: |
           rustup target add riscv32i-unknown-none-elf
+          rustup target add wasm32-unknown-unknown
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
-          ./dump_bin.sh
+      - name: Compile for RISC-V
+        working-directory: ./zksync_os
+        run: ./dump_bin.sh
       - name: Run proving test
         # Runs with e2e_proving feature
         run: cargo test --release -p transactions --features e2e_proving run_base_system -- --nocapture

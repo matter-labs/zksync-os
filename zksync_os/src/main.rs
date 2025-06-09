@@ -6,6 +6,14 @@
 #![no_builtins]
 
 extern "C" {
+    // // Boundaries of the .bss section
+    // static mut _ebss: u32;
+    // static mut _sbss: u32;
+
+    // // Boundaries of the .data section
+    // static mut _edata: u32;
+    // static mut _sdata: u32;
+
     // Boundaries of the heap
     static mut _sheap: usize;
     static mut _eheap: usize;
@@ -13,11 +21,6 @@ extern "C" {
     // Boundaries of the stack
     static mut _sstack: usize;
     static mut _estack: usize;
-
-    // Boundaries of the .data section (and it's part in ROM)
-    static mut _sidata: usize;
-    static mut _sdata: usize;
-    static mut _edata: usize;
 }
 
 // core::arch::global_asm!(include_str!("asm/asm.S"));
