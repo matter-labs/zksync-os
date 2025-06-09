@@ -240,40 +240,70 @@ impl<'a> ZkSyncTransaction<'a> {
             _ => {}
         }
 
-        if tx_type == Self::EIP_712_TX_TYPE {
-            // just an address
-        } else {
-            // 0 address
+        // paymasters can be used only with EIP712 txs
+        if tx_type != Self::EIP_712_TX_TYPE {
             if self.paymaster.read() != B160::ZERO {
                 return Err(());
             }
         }
 
+        // reserverd[0] is EIP-155 flag for legacy txs,
+        // mint_value for l1 to l2 and upgrade txs,
+        // for other types should be zero
         if tx_type != Self::LEGACY_TX_TYPE
             && tx_type != Self::L1_L2_TX_TYPE
             && tx_type != Self::UPGRADE_TX_TYPE
-            && !self.reserved[0].read().is_zero()
         {
-            return Err(());
+            if !self.reserved[0].read().is_zero() {
+                return Err(());
+            }
         }
-        if tx_type != Self::L1_L2_TX_TYPE
-            && tx_type != Self::UPGRADE_TX_TYPE
-            && !self.reserved[1].read().is_zero()
-            && self.to.read() != B160::ZERO
-        {
+        // reserved[1] = refund recipient for l1 to l2 and upgrade txs,
+        // for Ethereum(legacy, 1559, 2930) types it's a "to == null" flag(deployment tx),
+        // for EIP712 txs should be zero
+        match tx_type {
+            Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {
+                // TODO: validate address?
+            }
+            Self::EIP_712_TX_TYPE => {
+                if !self.reserved[1].read().is_zero() {
+                    return Err(());
+                }
+            }
+            _ => {
+                if !self.reserved[1].read().is_zero() && self.to.read() != B160::ZERO {
+                    return Err(());
+                }
+            }
+        }
+
+        // reserved[2] and reserved[3] fields currently not used
+        if !self.reserved[2].read().is_zero() || !self.reserved[3].read().is_zero() {
             return Err(());
         }
 
-        if self.reserved[2].read().is_zero() == false || self.reserved[3].read().is_zero() == false
-        {
-            return Err(());
+        // TODO: with AA we should allow other signature length for EIP-712 txs
+        if tx_type != Self::L1_L2_TX_TYPE && tx_type != Self::UPGRADE_TX_TYPE {
+            if self.signature.range.len() != 65 {
+                return Err(());
+            }
         }
 
-        if self.signature.range.len() != 65
+        if tx_type != Self::EIP_712_TX_TYPE {
+            if !self.paymaster_input.range.is_empty() {
+                return Err(());
+            }
+        }
+
+        // we ignore factory deps, as deployments performed via bytecode,
+        // but we allowed them for backward compatability with some Era VM tests
+        if tx_type != Self::EIP_712_TX_TYPE
             && tx_type != Self::L1_L2_TX_TYPE
             && tx_type != Self::UPGRADE_TX_TYPE
         {
-            return Err(());
+            if !self.factory_deps.range.is_empty() {
+                return Err(());
+            }
         }
 
         Ok(())
@@ -294,9 +324,7 @@ impl<'a> ZkSyncTransaction<'a> {
         if self.is_eip_712() {
             U256::from(self.gas_per_pubdata_limit.read())
         } else {
-            use crate::bootloader::constants::DEFAULT_GAS_PER_PUBDATA;
-
-            DEFAULT_GAS_PER_PUBDATA
+            crate::bootloader::constants::DEFAULT_GAS_PER_PUBDATA
         }
     }
 
@@ -347,7 +375,9 @@ impl<'a> ZkSyncTransaction<'a> {
             Self::EIP_2930_TX_TYPE => self.eip2930_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_1559_TX_TYPE => self.eip1559_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_signed_hash(chain_id, resources),
-            _ => Err(InternalError("Type should be validated").into()),
+            _ => {
+                Err(InternalError("Invalid type for signed hash, most likely l1 or upgrade").into())
+            }
         }
     }
 

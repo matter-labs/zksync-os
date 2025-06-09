@@ -48,7 +48,6 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut SliceVec<SupportedEEVMState<S>>,
-        // TODO: we can get it from the system
         is_first_tx: bool,
     ) -> Result<TxProcessingResult<S>, TxError> {
         let transaction = ZkSyncTransaction::try_from_slice(initial_calldata_buffer)
