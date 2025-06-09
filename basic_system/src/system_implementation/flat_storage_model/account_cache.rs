@@ -529,7 +529,7 @@ where
                     Ok(res)
                 } else {
                     // can try to get preimage
-                    // TODO: compute preimage len using artifacts and bytecode len, and EE type in our model
+                    // TODO(EVM-1073): compute preimage len using artifacts and bytecode len, and EE type in our model
                     let preimage_type = PreimageRequest {
                         hash: full_data.bytecode_hash,
                         expected_preimage_len_in_bytes: full_data.bytecode_len,
@@ -703,7 +703,7 @@ where
 
         // save bytecode
 
-        // TODO: compute preimage len using bytecode and artifacts len, and EE type
+        // TODO(EVM-1073): compute preimage len using bytecode and artifacts len, and EE type
         let bytecode = preimages_cache.record_preimage::<PROOF_ENV>(
             from_ee,
             &(PreimageRequest {
