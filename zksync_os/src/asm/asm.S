@@ -15,13 +15,53 @@ _start:
     # lui ra, %hi(_abs_start)
     # jr %lo(_abs_start)(ra)
 
+    la a0, _machine_start_trap
+    csrw mtvec, a0
+
+    // previous mode is machine
+    li		t0, 0b11 << 11 | (1 << 13)
+	csrw	mstatus, t0
+
     la ra, _abs_start
     jr ra
 
 _abs_start:
     .cfi_startproc
     .cfi_undefined ra
-    
+
+    csrw mie, 0
+    csrw mip, 0
+
+    # li  x1, 0
+    # li  x2, 0
+    # li  x3, 0
+    # li  x4, 0
+    # li  x5, 0
+    # li  x6, 0
+    # li  x7, 0
+    # li  x8, 0
+    # li  x9, 0
+    # // a0..a2 (x10..x12) skipped
+    # li  x13,0
+    # li  x14,0
+    # li  x15,0
+    # li  x16,0
+    # li  x17,0
+    # li  x18,0
+    # li  x19,0
+    # li  x20,0
+    # li  x21,0
+    # li  x22,0
+    # li  x23,0
+    # li  x24,0
+    # li  x25,0
+    # li  x26,0
+    # li  x27,0
+    # li  x28,0
+    # li  x29,0
+    # li  x30,0
+    # li  x31,0
+
     .option push
     .option norelax
     la gp, __global_pointer$
@@ -56,6 +96,8 @@ _abs_start:
 .align 4
 machine_default_start_trap:
     // We assume that exception stack is always saved to MSCRATCH
+    // Copies all the register values into the exception stack, calls the rust trap handler, and then
+    // puts the values back into registers.
 
     // so we swap it with x31
 	csrrw x31, mscratch, x31
@@ -97,10 +139,15 @@ machine_default_start_trap:
     # sw x0, -128(x31)
 
     // move valid sp into a0,
+    // TODO: x31 holds exception stack now, not sp. So a0 now holds exception stack
     mv a0, x31
+    // now x31 holds sp (and mscratch holds 0)
     csrrw x31, mscratch, x0
+
+    // writes sp into the exception stack
     sw x31, -4(a0)
-    // restore sp
+
+    // restore sp (to point at exception stack)
     mv sp, a0
     // sp is valid now
     
@@ -108,6 +155,7 @@ machine_default_start_trap:
     // pass pointer as first argument
     add a0, sp, zero
 
+    // Call the rust trap handler
     jal ra, _machine_start_trap_rust
 
     // set return address into mepc
