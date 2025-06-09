@@ -32,7 +32,7 @@ It means that block public input should be optimized, and designed for future ag
 
 Please note, that aggregation itself is out of scope.
 
-### Block(pre aggregation) public input
+### Block (pre aggregation) public input
 
 In practice, we may want to have a few levels of aggregation, so this public input was designed to also present a range of blocks.
 By range, we mean a sequential set of blocks.
