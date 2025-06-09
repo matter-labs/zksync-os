@@ -166,7 +166,7 @@ where
             .0
             .cache
             .apply_to_all_updated_elements::<_, ()>(|l, r, k| {
-                // TODO: use tree index instead of key for repeated writes
+                // TODO(EVM-1074): use tree index instead of key for repeated writes
                 let derived_key = derive_flat_storage_key(&k.address, &k.key);
                 pubdata_hasher.update(derived_key.as_u8_ref());
                 result_keeper.pubdata(derived_key.as_u8_ref());

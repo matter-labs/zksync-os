@@ -395,7 +395,7 @@ where
         oracle: &mut impl IOOracle,
         is_access_list: bool,
     ) -> Result<(), SystemError> {
-        // TODO: use a different low-level function to avoid creating pubdata
+        // TODO(EVM-1076): use a different low-level function to avoid creating pubdata
         // and merkle proof obligations until we actually read the value
         let sa = StorageAddress {
             address: *address,
@@ -626,7 +626,7 @@ where
             let initial_value = element_history.initial().value();
 
             if initial_value != current_value {
-                // TODO: use tree index instead of key for repeated writes
+                // TODO(EVM-1074): use tree index instead of key for repeated writes
                 pubdata_used += 32; // key
                 pubdata_used += ValueDiffCompressionStrategy::optimal_compression_length(
                     initial_value,
