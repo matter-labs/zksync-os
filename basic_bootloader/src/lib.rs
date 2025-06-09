@@ -24,6 +24,5 @@
 #![allow(clippy::result_unit_err)]
 
 extern crate alloc;
-extern crate core;
 
 pub mod bootloader;
