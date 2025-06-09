@@ -311,6 +311,7 @@ where {
         Ok(old_value)
     }
 
+    /// Cleae state at specified address
     pub fn clear_state_impl(&mut self, address: impl AsRef<B160>) -> Result<(), SystemError>
     where
         K::Subspace: TyEq<B160>,
@@ -321,6 +322,10 @@ where {
         self.cache
             .for_each_range((Included(&lower_bound), Included(&upper_bound)), |mut x| {
                 x.update(|cache_record| {
+                    cache_record.update(|v, _| {
+                        *v = V::default();
+                        Ok(())
+                    })?;
                     cache_record.unset();
                     Ok(())
                 })
