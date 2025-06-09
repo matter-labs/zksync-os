@@ -4,7 +4,7 @@ use crate::cost_constants::P256_VERIFY_COST_ERGS;
 use zk_ee::system::errors::SystemFunctionError;
 use zk_ee::system::{errors::InternalError, SystemFunction};
 
-// TODO: think about error cases, as others follow evm specs
+// TODO(EVM-1072): think about error cases, as others follow evm specs
 /// p256 verify system function implementation.
 /// Returns the size in bytes of output.
 ///

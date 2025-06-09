@@ -271,7 +271,6 @@ where {
 
         let val_current = addr_data.current().value();
 
-        // TODO: suboptimal, maybe can just keep pointers to values?
         // Try to get initial value at the beginning of the tx.
         let val_at_tx_start = match self.initial_values.entry(*key) {
             alloc::collections::btree_map::Entry::Vacant(vacant_entry) => {
@@ -281,7 +280,6 @@ where {
             }
             alloc::collections::btree_map::Entry::Occupied(occupied_entry) => {
                 let (value, tx_number) = occupied_entry.into_mut();
-                // TODO:
                 if *tx_number != self.current_tx_number {
                     *value = val_current.clone();
                     *tx_number = self.current_tx_number;
@@ -397,7 +395,7 @@ where
         oracle: &mut impl IOOracle,
         is_access_list: bool,
     ) -> Result<(), SystemError> {
-        // TODO: use a different low-level function to avoid creating pubdata
+        // TODO(EVM-1076): use a different low-level function to avoid creating pubdata
         // and merkle proof obligations until we actually read the value
         let sa = StorageAddress {
             address: *address,
@@ -572,7 +570,6 @@ where
                 *item.key(),
                 // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
                 // not actually 'using' it.
-                // TODO: redundant data type
                 WarmStorageValue {
                     current_value: *current_record.value(),
                     is_new_storage_slot: initial_record.appearance() == Appearance::Unset,
@@ -606,8 +603,6 @@ where
     }
 
     pub fn calculate_pubdata_used_by_tx(&self) -> u32 {
-        // TODO: should be constant complexity
-
         let mut visited_elements = BTreeSet::new_in(self.0.alloc.clone());
 
         let mut pubdata_used = 0u32;
@@ -631,7 +626,7 @@ where
             let initial_value = element_history.initial().value();
 
             if initial_value != current_value {
-                // TODO: use tree index instead of key for repeated writes
+                // TODO(EVM-1074): use tree index instead of key for repeated writes
                 pubdata_used += 32; // key
                 pubdata_used += ValueDiffCompressionStrategy::optimal_compression_length(
                     initial_value,
