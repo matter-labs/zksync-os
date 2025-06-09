@@ -242,7 +242,7 @@ impl<'a> ZkSyncTransaction<'a> {
 
         // paymasters can be used only with EIP712 txs
         match tx_type {
-            Self::EIP_712_TX_TYPE => {},
+            Self::EIP_712_TX_TYPE => {}
             _ => {
                 if self.paymaster.read() != B160::ZERO {
                     return Err(());
@@ -254,9 +254,11 @@ impl<'a> ZkSyncTransaction<'a> {
         // mint_value for l1 to l2 and upgrade txs,
         // for other types should be zero
         match tx_type {
-            Self::LEGACY_TX_TYPE | Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {},
-            _ => if !self.reserved[0].read().is_zero() {
-                return Err(());
+            Self::LEGACY_TX_TYPE | Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {}
+            _ => {
+                if !self.reserved[0].read().is_zero() {
+                    return Err(());
+                }
             }
         }
         // reserved[1] = refund recipient for l1 to l2 and upgrade txs,
@@ -299,7 +301,7 @@ impl<'a> ZkSyncTransaction<'a> {
 
         // paymasters can be used only with EIP712 txs
         match tx_type {
-            Self::EIP_712_TX_TYPE => {},
+            Self::EIP_712_TX_TYPE => {}
             _ => {
                 if !self.paymaster_input.range.is_empty() {
                     return Err(());
@@ -311,8 +313,8 @@ impl<'a> ZkSyncTransaction<'a> {
         // we ignore factory deps, as deployments performed via bytecode,
         // but we allowed them for backward compatibility with some Era VM tests
         match tx_type {
-            Self::EIP_712_TX_TYPE | Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {},
-            _ => if !self.reserved[0].read().is_zero() {
+            Self::EIP_712_TX_TYPE | Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {}
+            _ => {
                 if !self.factory_deps.range.is_empty() {
                     return Err(());
                 }
