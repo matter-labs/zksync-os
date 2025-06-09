@@ -476,7 +476,7 @@ where
                 .oracle
                 .create_oracle_access_iterator::<InitializeIOImplementerIterator>(())
                 .unwrap();
-            // TODO(refactoring): read only state commitment
+            // TODO (EVM-989): read only state commitment
             let fsm_state =
                 <BasicIOImplementerFSM::<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
             assert_eq!(initialization_iterator.len(), 0);
@@ -586,7 +586,7 @@ where
                 .oracle
                 .create_oracle_access_iterator::<InitializeIOImplementerIterator>(())
                 .unwrap();
-            // TODO(refactoring): read only state commitment
+            // TODO (EVM-989): read only state commitment
             let fsm_state =
                 <BasicIOImplementerFSM::<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
             assert_eq!(initialization_iterator.len(), 0);
