@@ -3,6 +3,7 @@
 //! a bunch of methods needed for the validation.
 //!
 
+use core::fmt::Debug;
 use self::u256be_ptr::U256BEPtr;
 use crate::bootloader::rlp;
 use core::ops::Range;
@@ -241,20 +242,21 @@ impl<'a> ZkSyncTransaction<'a> {
         }
 
         // paymasters can be used only with EIP712 txs
-        if tx_type != Self::EIP_712_TX_TYPE {
-            if self.paymaster.read() != B160::ZERO {
-                return Err(());
+        match tx_type {
+            Self::EIP_712_TX_TYPE => {},
+            _ => {
+                if self.paymaster.read() != B160::ZERO {
+                    return Err(());
+                }
             }
         }
 
-        // reserverd[0] is EIP-155 flag for legacy txs,
+        // reserved[0] is EIP-155 flag for legacy txs,
         // mint_value for l1 to l2 and upgrade txs,
         // for other types should be zero
-        if tx_type != Self::LEGACY_TX_TYPE
-            && tx_type != Self::L1_L2_TX_TYPE
-            && tx_type != Self::UPGRADE_TX_TYPE
-        {
-            if !self.reserved[0].read().is_zero() {
+        match tx_type {
+            Self::LEGACY_TX_TYPE | Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {},
+            _ => if !self.reserved[0].read().is_zero() {
                 return Err(());
             }
         }
@@ -282,27 +284,39 @@ impl<'a> ZkSyncTransaction<'a> {
             return Err(());
         }
 
-        // TODO: with AA we should allow other signature length for EIP-712 txs
-        if tx_type != Self::L1_L2_TX_TYPE && tx_type != Self::UPGRADE_TX_TYPE {
-            if self.signature.range.len() != 65 {
-                return Err(());
+        match tx_type {
+            Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {
+                if !self.signature.range.is_empty() {
+                    return Err(());
+                }
+            }
+            // TODO: with AA we should allow other signature length for EIP-712 txs
+            _ => {
+                if self.signature.range.len() != 65 {
+                    return Err(());
+                }
             }
         }
 
-        if tx_type != Self::EIP_712_TX_TYPE {
-            if !self.paymaster_input.range.is_empty() {
-                return Err(());
+        // paymasters can be used only with EIP712 txs
+        match tx_type {
+            Self::EIP_712_TX_TYPE => {},
+            _ => {
+                if !self.paymaster_input.range.is_empty() {
+                    return Err(());
+                }
             }
         }
 
+        // factory deps allowed only for eip712, or l1 to l2/upgrade txs
         // we ignore factory deps, as deployments performed via bytecode,
-        // but we allowed them for backward compatability with some Era VM tests
-        if tx_type != Self::EIP_712_TX_TYPE
-            && tx_type != Self::L1_L2_TX_TYPE
-            && tx_type != Self::UPGRADE_TX_TYPE
-        {
-            if !self.factory_deps.range.is_empty() {
-                return Err(());
+        // but we allowed them for backward compatibility with some Era VM tests
+        match tx_type {
+            Self::EIP_712_TX_TYPE | Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {},
+            _ => if !self.reserved[0].read().is_zero() {
+                if !self.factory_deps.range.is_empty() {
+                    return Err(());
+                }
             }
         }
 

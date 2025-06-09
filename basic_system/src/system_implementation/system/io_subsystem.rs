@@ -448,7 +448,7 @@ where
 }
 
 // In practice we will not use single block batches
-// This funcionality is here only for the tests
+// This functionality is here only for the tests
 #[cfg(not(feature = "wrap-in-batch"))]
 impl<
         A: Allocator + Clone + Default,
