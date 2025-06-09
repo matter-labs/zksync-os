@@ -183,8 +183,6 @@ where
         // panic is not reachable, validated by the structure
         let from = transaction.from.read();
 
-        // TODO: setup metadata for next tx based on out convention and TX fields
-
         let main_calldata = transaction.calldata();
 
         assert!(callstack.len() == 0);

@@ -4,6 +4,7 @@ use super::*;
 use crate::bootloader::account_models::ExecutionResult;
 use crate::bootloader::account_models::AA;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
+use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
 use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidAA, InvalidTransaction, TxError};
 use crate::bootloader::supported_ees::SupportedEEVMState;
@@ -47,7 +48,6 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut SliceVec<SupportedEEVMState<S>>,
-        // TODO: we can get it from the system
         is_first_tx: bool,
     ) -> Result<TxProcessingResult<S>, TxError> {
         let transaction = ZkSyncTransaction::try_from_slice(initial_calldata_buffer)
@@ -108,12 +108,16 @@ where
 
         // For L1->L2 txs, we use a constant native price to avoid censorship.
         let native_price = L1_TX_NATIVE_PRICE;
-        let native_per_gas = U256::from(gas_price).div_ceil(native_price);
+        let native_per_gas = if is_priority_op {
+            U256::from(gas_price).div_ceil(native_price)
+        } else {
+            UPGRADE_TX_NATIVE_PER_GAS
+        };
         let native_per_pubdata = U256::from(gas_per_pubdata)
             .checked_mul(native_per_gas)
             .ok_or(InternalError("gpp*npg"))?;
 
-        let mut resources = get_resources_for_tx::<S>(
+        let (mut resources, withheld_resources) = get_resources_for_tx::<S>(
             gas_limit,
             native_per_pubdata,
             native_per_gas,
@@ -175,6 +179,7 @@ where
                 value,
                 native_per_pubdata,
                 &mut resources,
+                withheld_resources,
             ) {
                 Ok(r) => {
                     match r {
@@ -185,7 +190,6 @@ where
                     }
                     r
                 }
-                // TODO: reconsider for L1 txs!
                 // Out of native is converted to a top-level revert and
                 // gas is exhausted.
                 Err(FatalError::OutOfNativeResources) => {
@@ -307,17 +311,13 @@ where
         value: U256,
         native_per_pubdata: U256,
         resources: &mut S::Resources,
+        withheld_resources: S::Resources,
     ) -> Result<ExecutionResult<S>, FatalError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Executing L1 transaction\n"));
 
-        let gas_price = Self::get_gas_price(
-            system,
-            transaction.max_fee_per_gas.read(),
-            transaction.max_priority_fee_per_gas.read(),
-        )
-        .expect("gas price checks failed");
+        let gas_price = U256::from(transaction.max_fee_per_gas.read());
         system.set_tx_context(from, gas_price);
 
         // Start a frame, to revert minting of value if execution fails
@@ -381,6 +381,11 @@ where
             }
         };
 
+        // After the transaction is executed, we reclaim the withheld resources.
+        // This is needed to ensure correct "gas_used" calculation, also these
+        // resources could be spent for pubdata.
+        resources.reclaim_withheld(withheld_resources);
+
         let execution_result =
             if !check_enough_resources_for_pubdata(system, native_per_pubdata, resources, None)? {
                 let _ = system
@@ -390,8 +395,6 @@ where
             } else {
                 execution_result
             };
-
-        // TODO: notify result?
 
         Ok(execution_result)
     }
@@ -443,7 +446,7 @@ where
             .checked_mul(native_per_gas)
             .ok_or(InternalError("gpp*npg"))?;
 
-        let mut resources = get_resources_for_tx::<S>(
+        let (mut resources, withheld_resources) = get_resources_for_tx::<S>(
             gas_limit,
             native_per_pubdata,
             native_per_gas,
@@ -486,6 +489,12 @@ where
         system.set_tx_context(from, gas_price);
 
         let chain_id = system.get_chain_id();
+
+        // Process access list
+        // Note: this operation should be performed before the hashing of the
+        // transaction, as the latter assumes the transaction structure has
+        // already been validated.
+        transaction.parse_and_warm_up_access_list(system, &mut resources)?;
 
         let tx_hash: Bytes32 = transaction
             .calculate_hash(chain_id, &mut resources)
@@ -558,6 +567,11 @@ where
             }
             Err(FatalError::Internal(e)) => return Err(e.into()),
         };
+
+        // After the transaction is executed, we reclaim the withheld resources.
+        // This is needed to ensure correct "gas_used" calculation, also these
+        // resources could be spent for pubdata.
+        resources.reclaim_withheld(withheld_resources);
 
         let gas_used = if !Config::ONLY_SIMULATE {
             Self::refund_transaction::<Config>(
@@ -997,6 +1011,7 @@ where
     ) -> Result<(U256, u64), InternalError> {
         // Already checked
         resources.charge_unchecked(&to_charge_for_pubdata);
+
         let native_per_gas = u256_to_u64_saturated(&native_per_gas);
         let full_native_limit = gas_limit.saturating_mul(native_per_gas);
         let native_used = full_native_limit - resources.native().remaining().as_u64();

@@ -140,9 +140,6 @@ where
 
         *resources = resources_after_main_tx;
 
-        // TODO: when to purge memory?
-        // system.purge_return_memory();
-
         let res = if reverted {
             ExecutionResult::Revert {
                 output: returndata_region,

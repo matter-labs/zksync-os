@@ -568,8 +568,6 @@ where
         // Caller gave away all it's resources into deployment parameters, and in preparation function
         // we will charge for deployment, compute address and potentially increment nonce
 
-        // TODO frame was started here
-
         let ee_type = match &caller_vm {
             Some(vm) => vm.ee_type(),
             None => self.initial_ee_version,
@@ -877,7 +875,6 @@ where
     })
 }
 
-// TODO: all the gas computation in this function seems very EVM-specific.
 // It should be split into EVM and generic part.
 /// Run call preparation, which includes reading the callee parameters
 /// and charging for resources.
@@ -926,7 +923,6 @@ where
 
                 // Positive value cost and stipend
                 let stipend = if !is_delegate && !call_request.nominal_token_value.is_zero() {
-                    // TODO: add native cost
                     let positive_value_cost =
                         S::Resources::from_ergs(Ergs(CALLVALUE * ERGS_PER_GAS));
                     resources.charge(&positive_value_cost)?;

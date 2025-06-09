@@ -123,7 +123,7 @@ pub struct BatchOutput {
     pub first_block_timestamp: u64,
     /// Last block timestamp.
     pub last_block_timestamp: u64,
-    // TODO: in future should be commitment scheme
+    // TODO(EVM-1081): in future should be commitment scheme
     // pub pubdata_commitment_scheme: DACommitmentScheme,
     pub used_l2_da_validator_address: B160,
     /// Pubdata commitment.
