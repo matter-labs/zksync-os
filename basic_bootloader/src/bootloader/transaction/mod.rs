@@ -3,7 +3,6 @@
 //! a bunch of methods needed for the validation.
 //!
 
-use core::fmt::Debug;
 use self::u256be_ptr::U256BEPtr;
 use crate::bootloader::rlp;
 use core::ops::Range;
