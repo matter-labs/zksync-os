@@ -70,7 +70,7 @@ The underlying implementation of the caches is described in the [Caches section]
 
 ### Finish method
 
-The finish method is the main method executed during block finalization.
+The [finish method](../../../basic_system/src/system_implementation/system/io_subsystem.rs) is the main method executed during block finalization.
 It has different implementations depending on whether it's a forward or proof run.
 
 For the forward run, we are just returning IO outputs(state diffs, events, messages) and pubdata to the caller(using result keeper).
