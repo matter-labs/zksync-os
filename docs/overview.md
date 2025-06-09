@@ -22,7 +22,7 @@ ZKsyncOS is designed to support multiple VMs. This is needed to seamlessly migra
 
 The main components of ZKsyncOS are:
 
-- [**Bootloader**](./bootloader/bootloader.md): the entry point program. It initializes the system and then runs transactions using system and Interpreters.
+- [**Bootloader**](./bootloader/bootloader.md): the entry point program. It initializes the system and, runs transactions using system and interpreters and finishes block using system.
 - [**Execution Environments**](./execution_environments/execution_environments.md): regular interpreters that take bytecode, calldata, resources (similar to gas) and some other call context values as its input.
 Interpreters are instantiated (with some local state) to execute a frame. When an interpreter sees a call to another contract, return/revert from current frame, or contract creation it triggers special functionality to process it, as a potentially different interpreter should be run.
 - [**System**](./system/system.md): common for all environments and bootloader. Provides abstract interface for low-level handling of
@@ -47,3 +47,14 @@ In order to achieve that we want to have some way to configure the system, as me
 
 In ZKsyncOS we need a concept of "resources" to limit and charge for computation (mainly proving) and data.
 This is trickier that it may seem: ZKsyncOS is built to be EVM gas-equivalent, meaning that EVM code execution should follow the same gas schedule as Ethereum. The main issue with this is that for several reasons the EVM gas schedule doesn't correspond to the costs of proving it. The solution to this problem is to perform double accounting of both Execution Environment gas (think of EVM gas) and a "native" computational resource, the latter modeling the cost of proving. More details about this solution can be found in [Double resource accounting](./double_resource_accounting.md)
+
+## L1 integration
+
+ZKsyncOS will be used for ZK rollups/validiums, which means that state transition correctness should be verified on the settlement layer(we'll call it l1 for simplicity).
+More precisely, we will store some state commitment on the settlement layer, and for each block/batch, we are going to generate a proof that will prove that there are inputs to perform valid state transition from the state commitment saved on l1 to some other.
+It means that the state before and after transition should be a part of ZK proof public input(or part of preimage). But also public input should include other data for different purposes: messaging, DA validation, and inputs validation.
+
+Apart from that, we are going to implement a messaging mechanism, that allows to send trustless messages from the settlement layer to chain(l2) and back.
+This mechanism will be [Era VM compatible](https://docs.zksync.io/zksync-protocol/rollup/l1_l2_communication), it includes l1 -> l2 txs and l2 -> l1 messages.
+
+[L1 integration](l1_integration.md)

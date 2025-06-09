@@ -53,12 +53,12 @@ Each account has the following properties:
 
 - Versioning data (EE, code version, deployment status, aux bitmasks),
 - Nonce,
-- Observable bytecode hash,
+- Base token balance,
 - Bytecode hash,
-- Token balance,
 - Bytecode length,
-- Artifact length (unused for now),
-- Observable bytecode length.
+- Observable bytecode hash,
+- Observable bytecode length,
+- Artifacts length (unused for now).
 
 The precise serialization layout for this information can be found in the [implementation](../../../basic_system/src/system_implementation/io/account_cache_entry.rs).
 For a given address, its **properties aren't stored directly into the tree**. Instead, a hash of the properties is stored under at slot (`ACCOUNT_PROPERTIES_STORAGE_ADDRESS`, address).
