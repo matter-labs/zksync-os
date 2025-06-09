@@ -1,6 +1,6 @@
 # L1 integration
 
-ZKsyncOS will be used for ZK rollups/validiums, which means that state transition correctness should be verified on the settlement layer(we'll call it l1 for simplicity).
+ZKsyncOS will be used for ZK rollups/validiums, which means that state transition correctness should be verified on the settlement layer (we'll call it l1 for simplicity).
 More precisely, we will store some state commitment on the settlement layer, and for each block/batch, we are going to generate a proof that will prove that there are inputs to perform valid state transition from the state commitment saved on l1 to some other.
 It means that the state before and after transition should be a part of ZK proof public input(or part of preimage). But also public input should include other data for different purposes: messaging, DA validation, and inputs validation.
 
