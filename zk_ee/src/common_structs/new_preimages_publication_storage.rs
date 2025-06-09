@@ -106,25 +106,6 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
         Ok(())
     }
 
-    // TODO remove?
-    pub fn net_pubdata_used(&self) -> u64 {
-        // TODO pubdata counter
-        let mut size = 0;
-        self.cache
-            .for_total_diff_operands::<_, ()>(|_, r, _| {
-                match r.appearance() {
-                    Appearance::Unset | Appearance::Retrieved => {}
-                    Appearance::Deconstructed | Appearance::Updated => {
-                        size += r.value().value.publication_net_bytes
-                    }
-                };
-                Ok(())
-            })
-            .expect("We're returning ok.");
-
-        size as u64
-    }
-
     pub fn net_diffs_iter(
         &self,
     ) -> impl Iterator<Item = HistoryMapItemRef<Bytes32, CacheRecord<Elem, ()>, A>> {
@@ -135,6 +116,19 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn calculate_total_pubdata_used(storage: &NewPreimagesPublicationStorage) -> usize {
+        let mut pubdata_used = 0;
+        storage
+            .cache
+            .for_total_diff_operands::<_, ()>(|_, r, _| {
+                pubdata_used += r.value().value.publication_net_bytes;
+                Ok(())
+            })
+            .expect("We're returning ok.");
+
+        pubdata_used
+    }
 
     #[test]
     fn single_tx_single_frame_ok() {
@@ -149,13 +143,13 @@ mod tests {
             .add_preimage(&hash, preimage_publication_byte_len, PreimageType::Bytecode)
             .expect("add_preimage should succeed");
 
-        assert_eq!(storage.net_pubdata_used(), 100);
+        assert_eq!(calculate_total_pubdata_used(&storage), 100);
 
         storage
             .finish_frame(None)
             .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 100);
+        assert_eq!(calculate_total_pubdata_used(&storage), 100);
     }
 
     #[test]
@@ -188,7 +182,7 @@ mod tests {
             .finish_frame(None)
             .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 200);
+        assert_eq!(calculate_total_pubdata_used(&storage), 200);
     }
 
     #[test]
@@ -211,7 +205,7 @@ mod tests {
             .finish_frame(Some(&ss))
             .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 0);
+        assert_eq!(calculate_total_pubdata_used(&storage), 0);
     }
 
     #[test]
@@ -241,7 +235,7 @@ mod tests {
             .finish_frame(None)
             .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 200);
+        assert_eq!(calculate_total_pubdata_used(&storage), 200);
     }
 
     #[test]
@@ -274,7 +268,7 @@ mod tests {
             .finish_frame(Some(&ss))
             .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 100);
+        assert_eq!(calculate_total_pubdata_used(&storage), 100);
     }
 
     #[test]
@@ -304,7 +298,7 @@ mod tests {
             .finish_frame(None)
             .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 100);
+        assert_eq!(calculate_total_pubdata_used(&storage), 100);
     }
 
     #[test]
@@ -317,6 +311,6 @@ mod tests {
             .finish_frame(None)
             .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 000);
+        assert_eq!(calculate_total_pubdata_used(&storage), 000);
     }
 }
