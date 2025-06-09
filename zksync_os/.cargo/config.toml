@@ -6,7 +6,7 @@ rustflags = [
   "-C", "link-arg=-Tsrc/lds/link.x",
   "-C", "link-arg=--save-temps",
   "-C", "force-frame-pointers",
+  "--remap-path-prefix=@NIX_BUILD_TOP@=/",
+  "--remap-path-prefix=@BUILD_DIR@=/",
+  "--remap-path-prefix=@CARGO_DEPS_DIR@=/",
 ]
-
-
-
