@@ -87,7 +87,6 @@ where
         key: &'s K,
         spawn_v: impl FnOnce() -> Result<V, E>,
     ) -> Result<HistoryMapItemRefMut<'s, K, V, A>, E> {
-        // TODO: we clone key (32+ bytes in some cases) for every access
         let entry = self.btree.entry(key.clone());
 
         let v = match entry {
@@ -161,7 +160,6 @@ where
 
     /// Commits (freezes) changes up to this point and frees memory taken by snapshots that can't be
     /// rollbacked to.
-    /// TODO rename to reset or smth
     pub fn commit(&mut self) {
         self.state.frozen_snapshot_id = self.snapshot();
 
@@ -179,22 +177,20 @@ where
         self.state.pending_updated_elements = StackLinkedList::empty(self.state.alloc.clone());
     }
 
-    // TODO check usage
-    /// Applies callback `do_fn` to all pairs (initial_value, current_value)
-    pub fn for_total_diff_operands<F, E>(&self, mut do_fn: F) -> Result<(), E>
+    /// Applies callback `do_fn` to all pairs (initial_value, current_value) that have more than 1 (initial) record
+    pub fn apply_to_all_updated_elements<F, E>(&self, mut do_fn: F) -> Result<(), E>
     where
         F: FnMut(&V, &V, &K) -> Result<(), E>,
     {
         for (k, v) in &self.btree {
-            if let Some((l, r)) = v.diff_operands_total() {
-                do_fn(l, r, k)?;
+            if let Some((initial, last)) = v.get_initial_and_last_values() {
+                do_fn(initial, last, k)?;
             }
         }
 
         Ok(())
     }
 
-    // TODO used only to cleanup in storage (reset appearance)
     /// Applies callback `do_fn` to elements in range
     pub fn for_each_range<F>(
         &mut self,
@@ -216,14 +212,14 @@ where
         Ok(())
     }
 
-    // TODO used only for new preimages publication storage
+    /// Iterate over all elements in map
     pub fn iter(&self) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, A>> + Clone {
         self.btree
             .iter()
             .map(|(k, v)| HistoryMapItemRef { key: k, history: v })
     }
 
-    // TODO used only for account cache
+    /// Iterate over all elements that changed since last commit
     pub fn iter_altered_since_commit(
         &self,
     ) -> impl Iterator<Item = HistoryMapItemRef<'_, K, V, A>> {
@@ -264,8 +260,8 @@ where
     }
 
     /// Returns (initial_value, current_value) if any
-    pub fn diff_operands_total(&self) -> Option<(&V, &V)> {
-        self.history.diff_operands_total()
+    pub fn get_initial_and_last_values(&self) -> Option<(&V, &V)> {
+        self.history.get_initial_and_last_values()
     }
 }
 
@@ -293,8 +289,8 @@ where
 
     #[allow(dead_code)]
     /// Returns (initial_value, current_value) if any
-    pub fn diff_operands_total(&self) -> Option<(&V, &V)> {
-        self.history.diff_operands_total()
+    pub fn get_initial_and_last_values(&self) -> Option<(&V, &V)> {
+        self.history.get_initial_and_last_values()
     }
 
     #[must_use]
@@ -361,7 +357,7 @@ mod tests {
         })
         .unwrap();
 
-        let (l, r) = v.diff_operands_total().unwrap();
+        let (l, r) = v.get_initial_and_last_values().unwrap();
 
         assert_eq!(1, *l);
         assert_eq!(2, *r);
@@ -381,7 +377,7 @@ mod tests {
         })
         .unwrap();
 
-        map.for_total_diff_operands::<_, ()>(|l, r, k| {
+        map.apply_to_all_updated_elements::<_, ()>(|l, r, k| {
             assert_eq!(1, *l);
             assert_eq!(2, *r);
             assert_eq!(1, *k);
@@ -401,7 +397,7 @@ mod tests {
 
         map.commit();
 
-        map.for_total_diff_operands::<_, ()>(|_, _, _| {
+        map.apply_to_all_updated_elements::<_, ()>(|_, _, _| {
             panic!("No changes were made.");
         })
         .unwrap();
@@ -423,7 +419,7 @@ mod tests {
 
         map.commit();
 
-        map.for_total_diff_operands::<_, ()>(|l, r, k| {
+        map.apply_to_all_updated_elements::<_, ()>(|l, r, k| {
             assert_eq!(1, *l);
             assert_eq!(2, *r);
             assert_eq!(1, *k);
@@ -459,7 +455,7 @@ mod tests {
 
         map.commit();
 
-        map.for_total_diff_operands::<_, ()>(|l, r, k| {
+        map.apply_to_all_updated_elements::<_, ()>(|l, r, k| {
             assert_eq!(1, *l);
             assert_eq!(3, *r);
             assert_eq!(1, *k);
@@ -497,7 +493,7 @@ mod tests {
 
         map.rollback(ss).expect("Correct snapshot");
 
-        map.for_total_diff_operands::<_, ()>(|l, r, k| {
+        map.apply_to_all_updated_elements::<_, ()>(|l, r, k| {
             assert_eq!(1, *l);
             assert_eq!(2, *r);
             assert_eq!(1, *k);
@@ -547,7 +543,7 @@ mod tests {
         })
         .unwrap();
 
-        map.for_total_diff_operands::<_, ()>(|l, r, k| {
+        map.apply_to_all_updated_elements::<_, ()>(|l, r, k| {
             assert_eq!(1, *l);
             assert_eq!(6, *r);
             assert_eq!(1, *k);

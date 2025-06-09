@@ -44,7 +44,7 @@ fn miri_rollback_reuse() {
     })
     .unwrap();
 
-    map.for_total_diff_operands::<_, ()>(|l, r, k| {
+    map.apply_to_all_updated_elements::<_, ()>(|l, r, k| {
         assert_eq!(1, *l);
         assert_eq!(6, *r);
         assert_eq!(1, *k);
