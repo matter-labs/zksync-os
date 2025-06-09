@@ -14,12 +14,10 @@ The first one is `run_till_completion` from the [`runner`](../../basic_bootloade
 
 The runner's responsibility is to coordinate calls into the execution environments. For this, the runner keeps a callstack of execution environment states and will be responsible of starting and finishing system frames. Frames are used to take snapshots for storage and memory to which the system can revert to in case of a failure.
 
-The runner is implemented as an infinite loop that dispatches the preemption reasons returned by the execution environment. As a reminder, these are:
+The runner is implemented as an infinite loop that dispatches the spawn requests returned by the execution environment. As a reminder, these are:
 
-- External call request,
-- Deployment request,
-- External call completed, and
-- Deployment completed.
+- External call request and
+- Deployment request.
 
 The runner breaks out of the infinite loop after processing the completion of the initial request (when the callstack becomes empty).
 
@@ -34,39 +32,26 @@ For the external call request, the bootloader needs to:
 
 There's a special case in which the callee is a special address (for example, precompile or system contract). In this case the flow is similar, but there's no new EE. Instead, the [System Hooks](../system_hooks.md) are used.
 
+After the first call returns a preemption point, the runner will either recursively handle a new spawn request (for a nested call/deployment) or the completion of the original call.
+
 ### Deployment request
 
 For deployment request, the bootloader needs to:
 
-1. Start frame for deployment preparation.
-2. Call into EE to run deployment preparation. This will compute the deployed address, perform some checks and charge gas.
-3. Create new EE state for constructor using the output from the previous call and push it to the callstack.
-4. Start frame for constructor execution.
-5. Set nonce to 1 (see EIP-161).
-6. Perform token transfer.
-7. Call into the newly created EE to start executing the constructor frame.
+1. Call into EE to run deployment preparation. This will compute the deployed address, perform some checks and charge gas.
+2. Create new EE state for constructor using the output from the previous call.
+3. Start frame for constructor execution.
+4. Set nonce to 1 (see EIP-161).
+5. Perform token transfer.
+6. Call into the newly created EE to start executing the constructor frame.
 
-### Call completed
+After the constructor returns a preemption point, the runner will either recursively handle a new spawn request (for a nested call/deployment) or the completion of the constructor. In this last situation, the runner has to:
 
-When the EE returns with a completed call, the runner has to:
-
-1. Perform a selfdestruct if the execution ended up in that state.
-2. Pop the caller from the callstack.
-3. Finish callee frame, reverting if the execution ended in a reverting state.
-4. Copy return data into the return memory of the caller.
-5. Continue execution of the caller.
-
-### Deployment completed
-
-When the EE returns with a completed deployment, the runner has to:
-
-1. Perform a selfdestruct if the execution ended up in that state.
-2. If the constructor execution was successful, ask the system to actually deploy the code.
-3. Finish the constructor frame, reverting if the constructor ended in a revert state.
-4. Pop the deployer from the callstack.
-5. Finish the deployment preparation frame, reverting only if deployment preparations failed.
-6. Copy return data into the return memory of the deployer.
-7. Continue execution of the deployer.
+1. If the constructor execution was successful, ask the system to actually deploy the code.
+2. Finish the constructor frame, reverting if the constructor ended in a revert state.
+3. Pop the deployer from the callstack.
+4. Copy return data into the return memory of the deployer.
+5. Continue execution of the deployer.
 
 ## Flow diagram
 

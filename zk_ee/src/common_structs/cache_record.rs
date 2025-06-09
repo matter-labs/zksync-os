@@ -1,20 +1,24 @@
-use crate::system::errors::{InternalError, SystemError};
+//! Wraps values with additional metadata used by IO caches
 
+use crate::system::errors::{InternalError, SystemError};
 use core::fmt::Debug;
 
-// TODO move to some proper place
-
 #[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
+/// Encodes state of cache element
 pub enum Appearance {
     #[default]
+    /// Represent uninitialized IO element
     Unset,
+    /// Populated with some preexisted value
     Retrieved,
+    /// Cache value changed compared to initial value
     Updated,
+    /// Used for destructed accounts
     Deconstructed,
 }
 
 #[derive(Clone, Default)]
-/// A cache entry. User facing struct.
+/// A cache entry. Wraps actual value with some metadata used by caches.
 pub struct CacheRecord<V, M> {
     appearance: Appearance,
     value: V,
@@ -45,6 +49,7 @@ impl<V, M> CacheRecord<V, M> {
     }
 
     #[must_use]
+    /// Updates value and metadata using callback. Changes appearance to Updated.
     pub fn update<F>(&mut self, f: F) -> Result<(), InternalError>
     where
         F: FnOnce(&mut V, &mut M) -> Result<(), InternalError>,
@@ -73,5 +78,53 @@ impl<V, M> CacheRecord<V, M> {
     /// Sets appearance to unset. The value itself remains untouched.
     pub fn unset(&mut self) {
         self.appearance = Appearance::Unset;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Appearance, CacheRecord};
+
+    #[test]
+    fn update_works_and_changes_appearance() {
+        let mut cache_record: CacheRecord<i32, u32> = CacheRecord::new(5, Appearance::Retrieved);
+        cache_record
+            .update(|v, _| {
+                *v = 4;
+                Ok(())
+            })
+            .expect("Correct update");
+
+        assert_eq!(cache_record.value, 4);
+        assert_eq!(cache_record.appearance, Appearance::Updated);
+    }
+
+    #[test]
+    fn metadata_update_keeps_appearance() {
+        let mut cache_record: CacheRecord<i32, u32> = CacheRecord::new(5, Appearance::Retrieved);
+        cache_record
+            .update_metadata(|m| {
+                *m = 4;
+                Ok(())
+            })
+            .expect("Correct update");
+
+        assert_eq!(cache_record.appearance, Appearance::Retrieved);
+    }
+
+    #[test]
+    fn deconstruct_works() {
+        let mut cache_record: CacheRecord<i32, u32> = CacheRecord::new(5, Appearance::Retrieved);
+        cache_record.deconstruct();
+
+        assert_eq!(cache_record.appearance, Appearance::Deconstructed);
+    }
+
+    #[test]
+    fn unset_works() {
+        let mut cache_record: CacheRecord<i32, u32> = CacheRecord::new(5, Appearance::Retrieved);
+        cache_record.unset();
+
+        assert_eq!(cache_record.appearance, Appearance::Unset);
     }
 }

@@ -84,6 +84,7 @@ where
         }
     }
 
+    /// Read element and initialize it if needed
     fn materialize_element<const PROOF_ENV: bool>(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -111,10 +112,13 @@ where
         let native = R::Native::from_computational(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST);
         resources.charge(&R::from_ergs_and_native(ergs, native))?;
 
-        let mut cold_read_charged = false;
+        let mut initialized_element = false;
 
         self.cache
             .get_or_insert(address.into(), || {
+                // Element doesn't exist in cache yet, initialize it
+                initialized_element = true;
+
                 // - first get a hash of properties from storage
                 match ee_type {
                     ExecutionEnvironmentType::NoEE => {
@@ -140,8 +144,6 @@ where
                     }
                     _ => return Err(InternalError("Unsupported EE").into()),
                 }
-
-                cold_read_charged = true;
 
                 // to avoid divergence we read as-if infinite ergs
                 let hash = resources.with_infinite_ergs(|inf_resources| {
@@ -179,16 +181,19 @@ where
                     }
                 };
 
+                // Note: we initialize it as cold, should be warmed up separately
+                // Since in case of revert it should become cold again and initial record can't be rolled back
                 Ok(CacheRecord::new(acc_data.0, acc_data.1))
             })
-            // We're adding a read snapshot for case when we're rollbacking the initial read.
             .and_then(|mut x| {
+                // Warm up element according to EVM rules if needed
                 let is_warm = x
                     .current()
                     .metadata()
                     .considered_warm(self.current_tx_number);
                 if is_warm == false {
-                    if cold_read_charged == false {
+                    if initialized_element == false {
+                        // Element exists in cache, but wasn't touched in current tx yet
                         match ee_type {
                             ExecutionEnvironmentType::NoEE => {
                                 // Access list accesses are always done in NoEE.
@@ -312,7 +317,7 @@ where
         oracle: &mut impl IOOracle,
         _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
     ) -> Result<(), SystemError> {
-        self.cache.for_total_diff_operands(|l, r, addr| {
+        self.cache.apply_to_all_updated_elements(|l, r, addr| {
             if l.value() == r.value() {
                 return Ok(());
             }
@@ -347,8 +352,6 @@ where
     }
 
     pub fn calculate_pubdata_used_by_tx(&self) -> u32 {
-        // TODO: should be constant complexity
-
         let mut visited_elements = BTreeSet::new_in(self.alloc.clone());
 
         let mut pubdata_used = 0u32;
@@ -383,9 +386,15 @@ where
         self.cache.snapshot()
     }
 
-    pub fn finish_frame(&mut self, rollback_handle: Option<&CacheSnapshotId>) {
+    #[must_use]
+    pub fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&CacheSnapshotId>,
+    ) -> Result<(), InternalError> {
         if let Some(x) = rollback_handle {
-            self.cache.rollback(*x);
+            self.cache.rollback(*x)
+        } else {
+            Ok(())
         }
     }
 
@@ -520,7 +529,7 @@ where
                     Ok(res)
                 } else {
                     // can try to get preimage
-                    // TODO: compute preimage len using artifacts and bytecode len, and EE type in our model
+                    // TODO(EVM-1073): compute preimage len using artifacts and bytecode len, and EE type in our model
                     let preimage_type = PreimageRequest {
                         hash: full_data.bytecode_hash,
                         expected_preimage_len_in_bytes: full_data.bytecode_len,
@@ -694,7 +703,7 @@ where
 
         // save bytecode
 
-        // TODO: compute preimage len using bytecode and artifacts len, and EE type
+        // TODO(EVM-1073): compute preimage len using bytecode and artifacts len, and EE type
         let bytecode = preimages_cache.record_preimage::<PROOF_ENV>(
             from_ee,
             &(PreimageRequest {
@@ -787,7 +796,6 @@ where
                 UpdateQueryError::System(e) => e,
             })?
         } else if account_data.current().metadata().deployed_in_tx == cur_tx {
-            // TODO updating twice
             account_data.update(|cache_record| {
                 cache_record.update(|v, _| {
                     v.balance = U256::ZERO;
@@ -825,12 +833,11 @@ where
         Ok(())
     }
 
-    // Actually deconstruct accounts
-    // TODO move to io level?
     pub fn finish_tx(
         &mut self,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
     ) -> Result<(), InternalError> {
+        // Actually deconstructing accounts
         for i in self.cache.iter_altered_since_commit() {
             if i.current().appearance() == Appearance::Deconstructed {
                 storage
