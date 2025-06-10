@@ -47,6 +47,8 @@ pub trait Resource: 'static + Sized + Clone + core::fmt::Debug + PartialEq + Eq 
     /// Used to make a distinction between resource limits and resources
     /// to be charged.
     fn set_as_limit(&mut self);
+
+    fn override_limit(&mut self, _limit: u64) {}
 }
 
 ///

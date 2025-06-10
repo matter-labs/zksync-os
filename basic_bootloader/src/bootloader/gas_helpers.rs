@@ -64,6 +64,8 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
             S::Resources::from_native(withheld)
         };
 
+    let actual_native_limit = native_limit.saturating_sub(total_native_to_charge);
+
     let native_limit =
         <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
             native_limit,
@@ -92,6 +94,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
             .checked_mul(ERGS_PER_GAS)
             .ok_or(InternalError("glft*EPF"))?;
         let mut resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
+
         if resources
             .charge(&S::Resources::from_native(total_native_to_charge))
             .is_err()
@@ -104,6 +107,8 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         }
         resources.set_as_limit();
         withheld_resources.set_as_limit();
+        resources.override_limit(actual_native_limit);
+
         Ok((resources, withheld_resources))
     }
 }

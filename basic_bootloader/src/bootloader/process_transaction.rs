@@ -1034,6 +1034,10 @@ where
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Full native limit: {}\n", full_native_limit));
+        let _ = system.get_logger().write_fmt(format_args!(
+            "Remaining : {}\n",
+            resources.native().remaining().as_u64()
+        ));
         let native_used = full_native_limit - resources.native().remaining().as_u64();
         let _ = system
             .get_logger()

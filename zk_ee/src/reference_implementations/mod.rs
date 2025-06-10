@@ -133,6 +133,10 @@ impl Resource for IncreasingNative {
             count: remaining,
         }
     }
+
+    fn override_limit(&mut self, _limit: u64) {
+        self.limit = _limit
+    }
 }
 
 impl Computational for IncreasingNative {
@@ -218,6 +222,10 @@ impl<Native: Resource> Resource for BaseResources<Native> {
 
     fn set_as_limit(&mut self) {
         self.native.set_as_limit()
+    }
+
+    fn override_limit(&mut self, _limit: u64) {
+        self.native.override_limit(_limit)
     }
 }
 
