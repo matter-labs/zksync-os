@@ -71,18 +71,16 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn blockhash(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BLOCKHASH, BLOCKHASH_NATIVE_COST)?;
-        let stack_head = self.stack_peek()?;
-        let block_number = u256_to_u64_saturated(&stack_head);
-
-        *stack_head = system.get_blockhash(block_number);
+        let [block_number] = self.pop_values::<1>()?;
+        let block_number = u256_to_u64_saturated(&block_number);
+        self.push_values(&[system.get_blockhash(block_number)])?;
         Ok(())
     }
 
     pub fn blobhash(&mut self, _system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, 40)?;
-        let stack_head = self.stack_peek()?;
-        *stack_head = U256::ZERO;
-        Ok(())
+        let [_] = self.pop_values::<1>()?;
+        self.push_values(&[U256::ZERO])
     }
 
     pub fn blobbasefee(&mut self, _system: &mut System<S>) -> InstructionResult {
