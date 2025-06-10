@@ -117,6 +117,10 @@ where
             .checked_mul(native_per_gas)
             .ok_or(InternalError("gpp*npg"))?;
 
+        let _ = system
+            .get_logger()
+            .write_fmt(format_args!("Tx gas limit: {:?}\n", gas_limit));
+
         let (mut resources, withheld_resources) = get_resources_for_tx::<S>(
             gas_limit,
             native_per_pubdata,
@@ -1010,12 +1014,28 @@ where
         resources: &mut S::Resources,
     ) -> Result<(U256, u64), InternalError> {
         // Already checked
+        let _ = system
+            .get_logger()
+            .write_fmt(format_args!("Gas limit: {}\n", gas_limit));
+        let _ = system.get_logger().write_fmt(format_args!(
+            "Resources before pubdata charging: {:?}\n",
+            resources
+        ));
+
         resources.charge_unchecked(&to_charge_for_pubdata);
+
+        let _ = system.get_logger().write_fmt(format_args!(
+            "Resources after pubdata charging: {:?}\n",
+            resources
+        ));
 
         let native_per_gas = u256_to_u64_saturated(&native_per_gas);
         let full_native_limit = gas_limit.saturating_mul(native_per_gas);
         let native_used = full_native_limit - resources.native().remaining().as_u64();
         let mut gas_used = gas_limit - resources.ergs().0.div_floor(ERGS_PER_GAS);
+        let _ = system
+            .get_logger()
+            .write_fmt(format_args!("gas_used: {}\n", gas_used));
 
         let delta_gas = if native_per_gas != 0 {
             (native_used / native_per_gas) as i64 - (gas_used as i64)
