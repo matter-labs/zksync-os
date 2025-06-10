@@ -875,7 +875,7 @@ where
     })
 }
 
-// It should be split into EVM and generic part.
+// TODO: It should be split into EVM and generic part.
 /// Run call preparation, which includes reading the callee parameters
 /// and charging for resources.
 fn prepare_for_call<'a, S: EthereumLikeTypes>(
