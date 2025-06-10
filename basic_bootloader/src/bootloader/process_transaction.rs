@@ -1017,7 +1017,11 @@ where
         let native_used = full_native_limit - resources.native().remaining().as_u64();
         let mut gas_used = gas_limit - resources.ergs().0.div_floor(ERGS_PER_GAS);
 
-        let delta_gas = (native_used / native_per_gas) as i64 - (gas_used as i64);
+        let delta_gas = if native_per_gas != 0 {
+            (native_used / native_per_gas) as i64 - (gas_used as i64)
+        } else {
+            0
+        };
         resources.exhaust_ergs();
 
         if delta_gas > 0 {
