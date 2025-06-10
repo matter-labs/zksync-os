@@ -108,6 +108,18 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     #[inline(always)]
+    pub(crate) fn stack_peek(&mut self) -> Result<&mut U256, ExitCode> {
+        let len = self.stack.len();
+        if len < 1 {
+            return Err(ExitCode::StackUnderflow);
+        }
+        unsafe {
+            let idx = len - 1;
+            Ok(self.stack.get_unchecked_mut(idx))
+        }
+    }
+
+    #[inline(always)]
     pub(crate) fn stack_swap(&mut self, n: usize) -> Result<(), ExitCode> {
         unsafe {
             assume(self.stack.capacity() == STACK_SIZE);
@@ -172,11 +184,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     #[inline]
-    pub(crate) fn cast_to_usize(
-        &mut self,
-        src: &U256,
-        error_to_set: ExitCode,
-    ) -> Result<usize, ExitCode> {
+    pub(crate) fn cast_to_usize(src: &U256, error_to_set: ExitCode) -> Result<usize, ExitCode> {
         u256_try_to_usize(src).ok_or(error_to_set)
     }
 
@@ -191,8 +199,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         if len.is_zero() {
             Ok((0, 0))
         } else {
-            let offset = self.cast_to_usize(offset, error_to_set)?;
-            let len = self.cast_to_usize(len, error_to_set)?;
+            let offset = Self::cast_to_usize(offset, error_to_set)?;
+            let len = Self::cast_to_usize(len, error_to_set)?;
             Ok((offset, len))
         }
     }
