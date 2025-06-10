@@ -34,50 +34,43 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     let intrinsic_pubdata_overhead = u256_to_u64_saturated(&native_per_pubdata)
         .checked_mul(intrinsic_pubdata as u64)
         .ok_or(InternalError("npp*ip"))?;
-    let native_limit =
-        native_limit
-            .checked_sub(intrinsic_pubdata_overhead)
-            .ok_or(TxError::Validation(
-                errors::InvalidTransaction::AAValidationError(
-                    errors::InvalidAA::OutOfNativeResourcesDuringValidation,
-                ),
-            ))?;
+    let mut total_native_to_charge = intrinsic_pubdata_overhead;
 
     // EVM tester requires high native limits, so for it we never hold off resources.
     // But for the real world, we bound the available resources.
 
     let mut withheld_resources = S::Resources::from_ergs(Ergs(0));
 
-    #[cfg(not(feature = "resources_for_tester"))]
-    let (native_limit, mut withheld_resources) = if native_limit <= MAX_NATIVE_COMPUTATIONAL {
-        (native_limit, S::Resources::from_ergs(Ergs(0)))
-    } else {
-        let withheld =
-            <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
-                native_limit - MAX_NATIVE_COMPUTATIONAL,
-            );
-
-        (
-            MAX_NATIVE_COMPUTATIONAL,
-            S::Resources::from_native(withheld),
-        )
-    };
-
     // Charge for calldata and intrinsic native
     let (calldata_gas, calldata_native) = cost_for_calldata(calldata)?;
 
-    let native_limit = native_limit
-        .checked_sub(calldata_native)
-        .and_then(|native| native.checked_sub(intrinsic_native as u64))
-        .ok_or(TxError::Validation(
-            errors::InvalidTransaction::AAValidationError(
-                errors::InvalidAA::OutOfNativeResourcesDuringValidation,
-            ),
-        ))?;
+    total_native_to_charge += calldata_native;
+    total_native_to_charge += intrinsic_native as u64;
+
+    #[cfg(not(feature = "resources_for_tester"))]
+    let (mut withheld_resources) =
+        if native_limit <= MAX_NATIVE_COMPUTATIONAL + total_native_to_charge {
+            S::Resources::from_ergs(Ergs(0))
+        } else {
+            // In this case we'll use MAX_NATIVE_COMPUTATIONAL as limit,
+            // and keep the rest as withheld.
+            let withheld =
+            <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
+                native_limit - MAX_NATIVE_COMPUTATIONAL - total_native_to_charge,
+            );
+            // Once charge, will leave limit to max computational.
+            total_native_to_charge = native_limit - MAX_NATIVE_COMPUTATIONAL;
+
+            S::Resources::from_native(withheld)
+        };
 
     let native_limit =
         <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
             native_limit,
+        );
+    let total_native_to_charge =
+        <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
+            total_native_to_charge,
         );
 
     // Intrinsic overhead
@@ -99,6 +92,16 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
             .checked_mul(ERGS_PER_GAS)
             .ok_or(InternalError("glft*EPF"))?;
         let mut resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
+        if resources
+            .charge(&S::Resources::from_native(total_native_to_charge))
+            .is_err()
+        {
+            return Err(TxError::Validation(
+                errors::InvalidTransaction::AAValidationError(
+                    errors::InvalidAA::OutOfNativeResourcesDuringValidation,
+                ),
+            ));
+        }
         resources.set_as_limit();
         withheld_resources.set_as_limit();
         Ok((resources, withheld_resources))
