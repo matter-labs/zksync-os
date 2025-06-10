@@ -50,19 +50,19 @@ pub struct Interpreter<'a, S: EthereumLikeTypes> {
     pub instruction_pointer: usize,
     /// Generic resources
     pub resources: S::Resources,
-    /// Stack.
+    /// Stack
     pub stack: Vec<U256, <S::Memory as MemorySubsystem>::Allocator>,
     /// Caller address
     pub caller: <S::IOTypes as SystemIOTypesConfig>::Address,
-    /// Contract information and invoking data
+    /// Contract address
     pub address: <S::IOTypes as SystemIOTypesConfig>::Address,
-    /// calldata
+    /// Input data
     pub calldata: &'a [u8],
-    /// returndata is available from here if it exists
+    /// Returndata is available from here if it exists
     pub returndata: OSImmutableSlice<S>,
-    /// Heap that belongs to this interpreter, can be resided
+    /// Heap that belongs to this interpreter, can be resized
     pub heap: OSResizableSlice<S>,
-    /// returndata location serves to save range information at various points
+    /// Returndata location serves to save range information at various points
     pub returndata_location: Range<usize>,
     /// Bytecode
     pub bytecode: &'a [u8],
@@ -178,7 +178,7 @@ impl<S: SystemTypes> BitMap<S> {
     }
 }
 
-/// Analyzs bytecode to build a jump map.
+/// Analyzes bytecode to build a jump map.
 fn analyze<S: SystemTypes>(code: &[u8], system: &mut System<S>) -> Result<BitMap<S>, ()> {
     let code_len = code.len();
     let mut jumps = BitMap::<S>::allocate_for_bit_capacity(code_len, system);
@@ -250,23 +250,23 @@ pub enum ExitCode {
     StateChangeDuringStaticCall,
     InvalidFEOpcode,
     InvalidJump,
-    NotActivated,
+    NotActivated, // TODO unused
     StackUnderflow,
     StackOverflow,
     OutOfOffset,
-    CreateCollision,
-    OverflowPayment,
-    PrecompileError,
-    NonceOverflow,
-    /// Create init code size exceeds limit (runtime).
-    CreateContractSizeLimit,
+    CreateCollision, // TODO unused
+    OverflowPayment, // TODO unused
+    PrecompileError, // TODO unused
+    NonceOverflow,   // TODO unused
+    /// Create code size exceeds limit (runtime).
+    CreateContractSizeLimit, // TODO unused
     /// Error on created contract that begins with EF
-    CreateContractStartingWithEF,
+    CreateContractStartingWithEF, // TODO unused
     /// EIP-3860: Limit and meter initcode. Initcode size limit exceeded.
     CreateInitcodeSizeLimit,
 
     // Fatal external error. Returned by database.
-    FatalExternalError,
+    FatalExternalError, // TODO unused
 
     // Fatal internal error
     FatalError(FatalError),
@@ -292,7 +292,7 @@ impl ExitCode {
     fn is_error(&self) -> bool {
         matches!(
             self,
-            Self::OutOfGas
+            Self::OutOfGas // TODO: create separate Enum for errors?
                 | Self::MemoryOOG
                 | Self::MemoryLimitOOG
                 | Self::PrecompileOOG
