@@ -1031,24 +1031,39 @@ where
 
         let native_per_gas = u256_to_u64_saturated(&native_per_gas);
         let full_native_limit = gas_limit.saturating_mul(native_per_gas);
+        let _ = system
+            .get_logger()
+            .write_fmt(format_args!("Full native limit: {}\n", full_native_limit));
         let native_used = full_native_limit - resources.native().remaining().as_u64();
+        let _ = system
+            .get_logger()
+            .write_fmt(format_args!("native_used: {}\n", native_used));
         let mut gas_used = gas_limit - resources.ergs().0.div_floor(ERGS_PER_GAS);
         let _ = system
             .get_logger()
             .write_fmt(format_args!("gas_used: {}\n", gas_used));
 
+        let _ = system
+            .get_logger()
+            .write_fmt(format_args!("Native per gas: {}\n", native_per_gas));
         let delta_gas = if native_per_gas != 0 {
             (native_used / native_per_gas) as i64 - (gas_used as i64)
         } else {
             0
         };
         resources.exhaust_ergs();
+        let _ = system
+            .get_logger()
+            .write_fmt(format_args!("Delta gas: {}\n", delta_gas));
 
         if delta_gas > 0 {
             // In this case, the native resource consumption is more than the
             // gas consumption accounted for. Consume extra gas.
             gas_used += delta_gas as u64;
         }
+        let _ = system
+            .get_logger()
+            .write_fmt(format_args!("gas_used after adjustment: {}\n", gas_used));
         // TODO: return delta_gas to gas_used?
 
         let total_gas_refund = gas_limit - gas_used;
