@@ -366,6 +366,7 @@ where
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
+        in_constructor: bool,
     ) -> Result<(), SystemError> {
         self.account_data_cache
             .mark_for_deconstruction::<PROOF_ENV>(
@@ -376,6 +377,7 @@ where
                 &mut self.storage_cache,
                 &mut self.preimages_cache,
                 oracle,
+                in_constructor,
             )
     }
 

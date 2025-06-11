@@ -749,6 +749,7 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
+        in_constructor: bool,
     ) -> Result<(), SystemError> {
         let cur_tx = self.current_tx_number;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
@@ -768,7 +769,15 @@ where
         let same_address = at_address == nominal_token_beneficiary;
         let transfer_amount = account_data.current().value().balance;
 
-        if account_data.current().metadata().deployed_in_tx == cur_tx {
+        // We consider to cases: either deconstruction happens within the same
+        // tx as the address was deployed or it happens in constructor code.
+        // Note that the contract is only deployed after finalization of
+        // constructor, so in the second case `deployed_in_tx` won't be set
+        // yet.
+        let should_be_deconstructed =
+            account_data.current().metadata().deployed_in_tx == cur_tx || in_constructor;
+
+        if should_be_deconstructed {
             account_data.update::<_, SystemError>(|cache_record| {
                 cache_record.deconstruct();
                 Ok(())
@@ -795,7 +804,7 @@ where
                 }
                 UpdateQueryError::System(e) => e,
             })?
-        } else if account_data.current().metadata().deployed_in_tx == cur_tx {
+        } else if should_be_deconstructed {
             account_data.update(|cache_record| {
                 cache_record.update(|v, _| {
                     v.balance = U256::ZERO;
