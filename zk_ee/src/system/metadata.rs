@@ -75,8 +75,7 @@ impl UsizeDeserializable for BlockHashes {
 // those that define "block", like uniform fee for block,
 // block number, etc
 
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BlockMetadataFromOracle {
     // Chain id is temporarily also added here (so that it can be easily passed from the oracle)
     // long term, we have to decide whether we want to keep it here, or add a separate oracle
