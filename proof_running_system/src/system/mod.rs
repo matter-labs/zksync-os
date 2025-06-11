@@ -41,10 +41,6 @@ impl const StackCtorConst for LVStackCtor {
 
 pub struct ProofRunningSystemTypes<O, L>(O, L);
 
-#[cfg(feature = "unlimited_native")]
-type Native = zk_ee::reference_implementations::IncreasingNative;
-
-#[cfg(not(feature = "unlimited_native"))]
 type Native = zk_ee::reference_implementations::DecreasingNative;
 
 impl<O: IOOracle, L: Logger + Default> SystemTypes for ProofRunningSystemTypes<O, L> {

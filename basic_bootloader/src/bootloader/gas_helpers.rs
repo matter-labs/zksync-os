@@ -28,7 +28,11 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     // isn't computational.
     // We can consider in the future to keep two limits, so that pubdata
     // is not charged from computational resource.
-    let native_limit = gas_limit.saturating_mul(u256_to_u64_saturated(&native_per_gas));
+    let native_limit = if cfg!(feature = "unlimited_native") {
+        u64::MAX
+    } else {
+        gas_limit.saturating_mul(u256_to_u64_saturated(&native_per_gas))
+    };
 
     // Charge pubdata overhead
     let intrinsic_pubdata_overhead = u256_to_u64_saturated(&native_per_pubdata)
@@ -46,10 +50,10 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     // EVM tester requires high native limits, so for it we never hold off resources.
     // But for the real world, we bound the available resources.
 
-    let mut withheld_resources = S::Resources::from_ergs(Ergs(0));
+    let withheld_resources = S::Resources::from_ergs(Ergs(0));
 
     #[cfg(not(feature = "resources_for_tester"))]
-    let (native_limit, mut withheld_resources) = if native_limit <= MAX_NATIVE_COMPUTATIONAL {
+    let (native_limit, withheld_resources) = if native_limit <= MAX_NATIVE_COMPUTATIONAL {
         (native_limit, S::Resources::from_ergs(Ergs(0)))
     } else {
         let withheld =
@@ -98,9 +102,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         let ergs = gas_limit_for_tx
             .checked_mul(ERGS_PER_GAS)
             .ok_or(InternalError("glft*EPF"))?;
-        let mut resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
-        resources.set_as_limit();
-        withheld_resources.set_as_limit();
+        let resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
         Ok((resources, withheld_resources))
     }
 }
