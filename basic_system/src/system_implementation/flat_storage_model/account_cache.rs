@@ -19,7 +19,6 @@ use ruint::aliases::U256;
 use storage_models::common_structs::AccountAggregateDataHash;
 use storage_models::common_structs::PreimageCacheModel;
 use storage_models::common_structs::StorageCacheModel;
-use zk_ee::common_structs::cache_record;
 use zk_ee::common_structs::cache_record::Appearance;
 use zk_ee::common_structs::cache_record::CacheRecord;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
