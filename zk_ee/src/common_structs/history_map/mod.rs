@@ -237,7 +237,7 @@ where
     }
 
     /// Iterate over the head of each element altered since last commit
-    pub fn for_each_head_altered_since_commit<F>(
+    pub fn apply_to_last_record_of_pending_changes<F>(
         &mut self,
         mut do_fn: F,
     ) -> Result<(), InternalError>
