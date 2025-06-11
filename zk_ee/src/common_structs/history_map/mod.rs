@@ -3,6 +3,7 @@
 mod element_pool;
 pub mod element_with_history;
 
+use crate::common_structs::history_map::element_with_history::HistoryRecord;
 use crate::{system::errors::InternalError, utils::stack_linked_list::StackLinkedList};
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
@@ -233,6 +234,21 @@ where
                     .get(k)
                     .expect("We've updated this, so it must be present."),
             })
+    }
+
+    /// Iterate over the head of each element altered sin last commit
+    pub fn for_each_head_altered_since_commit<F>(
+        &mut self,
+        mut do_fn: F,
+    ) -> Result<(), InternalError>
+    where
+        F: FnMut(&K, &mut HistoryRecord<V>) -> Result<(), InternalError>,
+    {
+        for (k, _v) in self.state.pending_updated_elements.iter() {
+            do_fn(k, unsafe { self.btree.get_mut(&k).unwrap().head.as_mut() })?
+        }
+
+        Ok(())
     }
 }
 

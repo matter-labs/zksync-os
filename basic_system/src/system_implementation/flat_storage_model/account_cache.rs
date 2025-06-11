@@ -19,6 +19,7 @@ use ruint::aliases::U256;
 use storage_models::common_structs::AccountAggregateDataHash;
 use storage_models::common_structs::PreimageCacheModel;
 use storage_models::common_structs::StorageCacheModel;
+use zk_ee::common_structs::cache_record;
 use zk_ee::common_structs::cache_record::Appearance;
 use zk_ee::common_structs::cache_record::CacheRecord;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
@@ -847,14 +848,22 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
     ) -> Result<(), InternalError> {
         // Actually deconstructing accounts
-        for i in self.cache.iter_altered_since_commit() {
-            if i.current().appearance() == Appearance::Deconstructed {
-                storage
-                    .0
-                    .clear_state_impl(i.key())
-                    .expect("must clear state for code deconstruction in same TX");
-            }
-        }
+        self.cache
+            .for_each_head_altered_since_commit(|key, head_history_record| {
+                if head_history_record.value.appearance() == Appearance::Deconstructed {
+                    head_history_record.value.update(|x, _| {
+                        x.nonce = 0;
+                        x.balance = U256::ZERO;
+                        Ok(())
+                    })?;
+                    storage
+                        .0
+                        .clear_state_impl(key)
+                        .expect("must clear state for code deconstruction in same TX");
+                }
+                Ok(())
+            })?;
+
         Ok(())
     }
 }
