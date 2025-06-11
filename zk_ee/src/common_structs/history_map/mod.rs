@@ -236,7 +236,7 @@ where
             })
     }
 
-    /// Iterate over the head of each element altered sin last commit
+    /// Iterate over the head of each element altered since last commit
     pub fn for_each_head_altered_since_commit<F>(
         &mut self,
         mut do_fn: F,
