@@ -6,6 +6,10 @@ use zk_ee::system::{Computational, Resources};
 
 use super::*;
 
+/// Returns the resources for the transaction and the withheld resources.
+/// The withheld resources are the resources that are withheld from the transaction's
+/// execution to ensure that it does not use too many native computational resources.
+/// They are reclaimed at the end of the transaction and used to charge the pubdata.
 pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     gas_limit: u64,
     native_per_pubdata: U256,
@@ -13,7 +17,8 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     calldata: &[u8],
     intrinsic_gas: usize,
     intrinsic_pubdata: usize,
-) -> Result<S::Resources, TxError> {
+    intrinsic_native: usize,
+) -> Result<(S::Resources, S::Resources), TxError> {
     // TODO: operator trusted gas limit?
 
     // This is the real limit, which we later use to compute native_used.
@@ -38,15 +43,32 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
                 ),
             ))?;
 
-    // EVM tester requires high native limits
-    #[cfg(not(feature = "resources_for_tester"))]
-    let native_limit = native_limit.min(MAX_NATIVE_COMPUTATIONAL);
+    // EVM tester requires high native limits, so for it we never hold off resources.
+    // But for the real world, we bound the available resources.
 
-    // Charge for calldata
+    let mut withheld_resources = S::Resources::from_ergs(Ergs(0));
+
+    #[cfg(not(feature = "resources_for_tester"))]
+    let (native_limit, mut withheld_resources) = if native_limit <= MAX_NATIVE_COMPUTATIONAL {
+        (native_limit, S::Resources::from_ergs(Ergs(0)))
+    } else {
+        let withheld =
+            <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
+                native_limit - MAX_NATIVE_COMPUTATIONAL,
+            );
+
+        (
+            MAX_NATIVE_COMPUTATIONAL,
+            S::Resources::from_native(withheld),
+        )
+    };
+
+    // Charge for calldata and intrinsic native
     let (calldata_gas, calldata_native) = cost_for_calldata(calldata)?;
 
     let native_limit = native_limit
         .checked_sub(calldata_native)
+        .and_then(|native| native.checked_sub(intrinsic_native as u64))
         .ok_or(TxError::Validation(
             errors::InvalidTransaction::AAValidationError(
                 errors::InvalidAA::OutOfNativeResourcesDuringValidation,
@@ -78,7 +100,8 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
             .ok_or(InternalError("glft*EPF"))?;
         let mut resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
         resources.set_as_limit();
-        Ok(resources)
+        withheld_resources.set_as_limit();
+        Ok((resources, withheld_resources))
     }
 }
 ///
@@ -112,7 +135,7 @@ pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
     native_per_pubdata: U256,
     base_pubdata: Option<u64>,
 ) -> Result<(u64, S::Resources), InternalError> {
-    let current_pubdata_spent = system.net_pubdata_used() - base_pubdata.unwrap_or(0);
+    let current_pubdata_spent = system.net_pubdata_used()? - base_pubdata.unwrap_or(0);
     let native_per_pubdata = u256_to_u64_saturated(&native_per_pubdata);
     let native = current_pubdata_spent
         .checked_mul(native_per_pubdata)

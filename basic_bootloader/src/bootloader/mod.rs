@@ -1,13 +1,12 @@
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
-use evm_interpreter::ERGS_PER_GAS;
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
-use supported_ees::SupportedEEVMState;
-use system_hooks::addresses_constants::{
-    BOOTLOADER_FORMAL_ADDRESS, L2_INTEROP_ROOT_STORAGE_ADDRESS,
-};
+use system_hooks::addresses_constants::{BOOTLOADER_FORMAL_ADDRESS, L2_INTEROP_ROOT_STORAGE_ADDRESS};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::memory::slice_vec::SliceVec;
+use zk_ee::system::errors::InternalError;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
 pub mod run_single_interaction;
@@ -57,20 +56,6 @@ pub struct BasicBootloader<S: EthereumLikeTypes> {
 
 struct TxDataBuffer<A: Allocator> {
     buffer: Vec<u32, A>,
-}
-
-pub struct StackFrame<S: EthereumLikeTypes, R> {
-    pub vm: SupportedEEVMState<S>,
-    pub rollback_handle: Option<R>,
-}
-
-impl<S: EthereumLikeTypes, R> StackFrame<S, R> {
-    pub fn new(vm: SupportedEEVMState<S>, rollback_handle: Option<R>) -> Self {
-        Self {
-            vm,
-            rollback_handle,
-        }
-    }
 }
 
 impl<A: Allocator> TxDataBuffer<A> {
@@ -185,7 +170,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
         oracle: <S::IO as IOSubsystemExt>::IOOracle,
         result_keeper: &mut impl ResultKeeperExt,
-    ) -> <S::IO as IOSubsystemExt>::FinalData
+    ) -> Result<<S::IO as IOSubsystemExt>::FinalData, InternalError>
     where
         S::IO: IOSubsystemExt,
         S::Memory: MemorySubsystemExt,
@@ -198,7 +183,10 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let mut initial_calldata_buffer = TxDataBuffer::new(system.get_allocator());
 
         // TODO: extend stack trait to construct it or use a provided function to generate it
-        let mut callstack = Vec::with_capacity_in(MAX_CALLSTACK_DEPTH, system.get_allocator());
+
+        let mut callstack_memory =
+            Box::new_uninit_slice_in(MAX_CALLSTACK_DEPTH, system.get_allocator());
+        let mut callstack = SliceVec::new(&mut callstack_memory);
         let mut system_functions = HooksStorage::new_in(system.get_allocator());
 
         system_functions.add_precompiles();
@@ -248,11 +236,11 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                     )
                 };
 
-                let _ = Self::run_single_interaction::<_>(
+                let _ = Self::run_single_interaction(
                     &mut system,
                     &mut system_functions,
                     &mut callstack,
-                    calldata,
+                    &calldata,
                     &BOOTLOADER_FORMAL_ADDRESS,
                     &L2_INTEROP_ROOT_STORAGE_ADDRESS,
                     S::Resources::FORMAL_INFINITE,
@@ -287,13 +275,11 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
             let initial_calldata_buffer =
                 initial_calldata_buffer.as_tx_buffer(next_tx_data_len_bytes);
-            let initial_calldata_buffer_ref_mut: &'static mut [u8] =
-                unsafe { core::mem::transmute(initial_calldata_buffer) };
 
             // We will give the full buffer here, and internally we will use parts of it to give forward to EEs
             cycle_marker::start!("process_transaction");
-            let tx_result = Self::process_transaction::<_, Config>(
-                initial_calldata_buffer_ref_mut,
+            let tx_result = Self::process_transaction::<Config>(
+                initial_calldata_buffer,
                 &mut system,
                 &mut system_functions,
                 &mut callstack,
@@ -307,7 +293,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                         "Tx execution result: Internal error = {:?}\n",
                         err,
                     ));
-                    panic!("Internal error during tx execution {:?}", err)
+                    return Err(err);
                 }
                 Err(TxError::Validation(err)) => {
                     let _ = system.get_logger().write_fmt(format_args!(
@@ -355,6 +341,11 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 }
             }
 
+            let tx_stats = system.flush_tx();
+            let _ = system
+                .get_logger()
+                .write_fmt(format_args!("Tx stats = {:?}\n", tx_stats));
+
             first_tx = false;
 
             let mut logger = system.get_logger();
@@ -397,7 +388,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         // after consensus should be provided in the block metadata
         let consensus_random = Bytes32::zero();
         let base_fee_per_gas = system.get_eip1559_basefee();
-        // TODO: we need place for gas_per_pubdata
+        // TODO: add gas_per_pubdata and native price
         let block_header = BlockHeader::new(
             Bytes32::from(previous_block_hash.to_be_bytes::<32>()),
             beneficiary,
@@ -418,7 +409,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         cycle_marker::log_marker(
             format!(
                 "Spent ergs for [run_prepared]: {}",
-                result_keeper.get_gas_used() * ERGS_PER_GAS
+                result_keeper.get_gas_used() * evm_interpreter::ERGS_PER_GAS
             )
             .as_str(),
         );
@@ -441,6 +432,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         );
         cycle_marker::end!("run_prepared");
         #[allow(clippy::let_and_return)]
-        r
+        Ok(r)
     }
 }

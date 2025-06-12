@@ -22,11 +22,6 @@ jobs:
       - name: Setup and fetch PR branch
         run: |
           rustup set profile minimal
-          rustup target add riscv32i-unknown-none-elf
-          rustup target add wasm32-unknown-unknown
-          cargo install cargo-binutils
-          rustup component add llvm-tools-preview
-          rustup component add rust-src
           git remote add pr_repo ${{ github.event.pull_request.head.repo.clone_url }}
           git fetch pr_repo ${{ github.event.pull_request.head.ref }}
 
@@ -57,7 +52,12 @@ jobs:
 
       - name: Compile for RISC-V
         working-directory: ./zksync_os
-        run: bash dump_bin_with_markers.sh
+        run: |
+          rustup target add riscv32i-unknown-none-elf
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          rustup component add rust-src
+          bash dump_bin_with_markers.sh
 
       - name: run benchmarks on base branch
         shell: bash
@@ -71,7 +71,12 @@ jobs:
 
       - name: Recompile for RISC-V
         working-directory: ./zksync_os
-        run: bash dump_bin_with_markers.sh
+        run: |
+          rustup target add riscv32i-unknown-none-elf
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          rustup component add rust-src
+          bash dump_bin_with_markers.sh
 
       - name: run benchmarks on PR
         shell: bash

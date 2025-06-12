@@ -1,6 +1,6 @@
 //! Implementation of the IO subsystem.
-
 use super::*;
+use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_functions::keccak256::Keccak256Impl;
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
@@ -9,14 +9,17 @@ use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use crypto::blake2s::Blake2s256;
 use crypto::MiniDigest;
+use errors::SystemFunctionError;
 use evm_interpreter::gas_constants::LOG;
 use evm_interpreter::gas_constants::LOGDATA;
 use evm_interpreter::gas_constants::LOGTOPIC;
 use evm_interpreter::gas_constants::TLOAD;
 use evm_interpreter::gas_constants::TSTORE;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
+use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::BasicIOImplementerFSM;
+use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::{
     common_structs::{EventsStorage, LogsStorage},
@@ -185,14 +188,40 @@ where
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         data: &[u8],
     ) -> Result<Bytes32, SystemError> {
-        // TODO: we should charge gas for computation needed to emit: at least to hash log(L2_TO_L1_LOG_SERIALIZE_SIZE) and build tree(~32)
-        // also we may add COMPUTATIONAL_PRICE_FOR_PUBDATA as in Era
+        // TODO(EVM-1077): consider adding COMPUTATIONAL_PRICE_FOR_PUBDATA as in Era
 
-        // TODO: for Era backward compatibility we may need to add events for l2 to l1 log and l1 message
+        // We need to charge cost of hashing:
+        // - keccak256_native_cost(L2_TO_L1_LOG_SERIALIZE_SIZE) and
+        //   keccak256_native_cost(64) when reconstructing L2ToL1Log
+        // - keccak256_native_cost(64) + keccak256_native_cost(data.len())
+        //   when reconstructing Messages
+        // - at most 1 time keccak256_native_cost(64) when building the
+        //   Merkle tree (as merkle tree can contain ~2*N nodes, where the
+        //   first N nodes are leaves the hash of which is calculated on the
+        //   previous step).
+
+        let hashing_native_cost =
+            keccak256_native_cost::<Self::Resources>(L2_TO_L1_LOG_SERIALIZE_SIZE).as_u64()
+                + 3 * keccak256_native_cost::<Self::Resources>(64).as_u64()
+                + keccak256_native_cost::<Self::Resources>(data.len()).as_u64();
+
+        // We also charge some native resource for storing the log
+        let native = R::Native::from_computational(
+            hashing_native_cost
+                + EVENT_STORAGE_BASE_NATIVE_COST
+                + EVENT_DATA_PER_BYTE_COST * (data.len() as u64),
+        );
+        resources.charge(&R::from_native(native))?;
+
+        // TODO(EVM-1078): for Era backward compatibility we may need to add events for l2 to l1 log and l1 message
 
         let mut data_hash = ArrayBuilder::default();
-        Keccak256Impl::execute(&data, &mut data_hash, resources, self.allocator.clone())
-            .map_err(|_| InternalError("Keccak in create2 cannot fail"))?;
+        Keccak256Impl::execute(&data, &mut data_hash, resources, self.allocator.clone()).map_err(
+            |e| match e {
+                SystemFunctionError::InvalidInput => unreachable!(),
+                SystemFunctionError::System(e) => e,
+            },
+        )?;
         let data_hash = Bytes32::from_array(data_hash.build());
         let data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
         self.logs_storage
@@ -223,7 +252,7 @@ where
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
     ) -> Result<&'static [u8], SystemError> {
-        // TODO: separate observable and usable better
+        // TODO(EVM-1079): separate observable and usable better
         self.storage
             .read_account_properties(
                 ee_type,
@@ -314,6 +343,7 @@ where
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        in_constructor: bool,
     ) -> Result<(), SystemError> {
         self.storage.mark_for_deconstruction(
             from_ee,
@@ -321,11 +351,13 @@ where
             at_address,
             nominal_token_beneficiary,
             &mut self.oracle,
+            in_constructor,
         )
     }
 
-    fn net_pubdata_used(&self) -> u64 {
-        self.storage.pubdata_used() as u64 + self.logs_storage.pubdata_used() as u64
+    fn net_pubdata_used(&self) -> Result<u64, InternalError> {
+        Ok(self.storage.pubdata_used_by_tx() as u64
+            + self.logs_storage.calculate_pubdata_used_by_tx()? as u64)
     }
 
     fn start_io_frame(&mut self) -> Result<FullIOStateSnapshot, InternalError> {
@@ -346,9 +378,9 @@ where
         &mut self,
         rollback_handle: Option<&FullIOStateSnapshot>,
     ) -> Result<(), InternalError> {
-        self.storage.finish_frame(rollback_handle.map(|x| &x.io));
+        self.storage.finish_frame(rollback_handle.map(|x| &x.io))?;
         self.transient_storage
-            .finish_frame(rollback_handle.map(|x| &x.transient));
+            .finish_frame(rollback_handle.map(|x| &x.transient))?;
         self.logs_storage
             .finish_frame(rollback_handle.map(|x| x.messages));
         self.events_storage
@@ -396,7 +428,7 @@ where
         mut logger: impl Logger,
     ) -> Self::FinalData {
         result_keeper.pubdata(current_block_hash.as_u8_ref());
-        // dump state pubdata and outputs
+        // dump pubdata and state diffs
         self.storage
             .finish(
                 &mut self.oracle,
@@ -417,6 +449,8 @@ where
     }
 }
 
+// In practice we will not use single block batches
+// This functionality is here only for the tests
 #[cfg(not(feature = "wrap-in-batch"))]
 impl<
         A: Allocator + Clone + Default,
@@ -445,6 +479,7 @@ where
                 .oracle
                 .create_oracle_access_iterator::<InitializeIOImplementerIterator>(())
                 .unwrap();
+            // TODO (EVM-989): read only state commitment
             let fsm_state =
                 <BasicIOImplementerFSM::<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
             assert_eq!(initialization_iterator.len(), 0);
@@ -462,7 +497,7 @@ where
             next_free_slot: state_commitment.next_free_slot,
             block_number: block_metadata.block_number - 1,
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
-            // TODO: we should set and validate that current block timestamp >= previous
+            // TODO(EVM-1080): we should set and validate that current block timestamp >= previous
             last_block_timestamp: 0,
         };
 
@@ -502,11 +537,11 @@ where
             next_free_slot: state_commitment.next_free_slot,
             block_number: block_metadata.block_number,
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
-            // TODO: we should set and validate that current block timestamp >= previous
+            // TODO(EVM-1080): we should set and validate that current block timestamp >= previous
             last_block_timestamp: 0,
         };
 
-        // other outputs to be opened on the l1
+        // other outputs to be opened on the settlement layer/aggregation program
         let block_output = BlocksOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
             first_block_timestamp: block_metadata.timestamp,
@@ -555,6 +590,7 @@ where
                 .oracle
                 .create_oracle_access_iterator::<InitializeIOImplementerIterator>(())
                 .unwrap();
+            // TODO (EVM-989): read only state commitment
             let fsm_state =
                 <BasicIOImplementerFSM::<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
             assert_eq!(initialization_iterator.len(), 0);
@@ -563,6 +599,10 @@ where
 
         // chain state before
         // currently we generate simplified commitment(only to state) for tests.
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: state commitment before {:?}\n",
+            state_commitment
+        ));
         let mut chain_state_hasher = Blake2s256::new();
         chain_state_hasher.update(state_commitment.root.as_u8_ref());
         chain_state_hasher.update(state_commitment.next_free_slot.to_be_bytes());
@@ -586,13 +626,20 @@ where
             .apply_pubdata(&mut pubdata_hasher, result_keeper);
         result_keeper.logs(self.logs_storage.messages_ref_iter());
         result_keeper.events(self.events_storage.events_ref_iter());
-        let l2_to_l1_logs_tree_root = self.logs_storage.tree_root();
+        let mut full_root_hasher = crypto::sha3::Keccak256::new();
+        full_root_hasher.update(self.logs_storage.tree_root().as_u8_ref());
+        full_root_hasher.update([0u8; 32]); // aggregated root 0 for now
+        let full_l2_to_l1_logs_root = full_root_hasher.finalize();
         let l1_txs_commitment = self.logs_storage.l1_txs_commitment();
 
         let pubdata_hash = pubdata_hasher.finalize();
 
         // chain state after
         // currently we generate simplified commitment(only to state) for tests.
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: state commitment after {:?}\n",
+            state_commitment
+        ));
         let mut chain_state_hasher = Blake2s256::new();
         chain_state_hasher.update(state_commitment.root.as_u8_ref());
         chain_state_hasher.update(state_commitment.next_free_slot.to_be_bytes());
@@ -612,17 +659,30 @@ where
             pubdata_commitment: da_commitment.into(),
             number_of_layer_1_txs: U256::try_from(l1_txs_commitment.0).unwrap(),
             priority_operations_hash: l1_txs_commitment.1,
-            l2_logs_tree_root: l2_to_l1_logs_tree_root,
+            l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash,
         };
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: batch output {:?}\n",
+            batch_output,
+        ));
 
         let public_input = public_input::BatchPublicInput {
             state_before: chain_state_commitment_before.into(),
             state_after: chain_state_commitment_after.into(),
             batch_output: batch_output.hash().into(),
         };
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: final batch public input {:?}\n",
+            public_input,
+        ));
+        let public_input_hash = public_input.hash().into();
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: final batch public input hash {:?}\n",
+            public_input_hash,
+        ));
 
-        (self.oracle, public_input.hash().into())
+        (self.oracle, public_input_hash)
     }
 }
 
@@ -685,6 +745,24 @@ where
         self.storage.finish_tx()
     }
 
+    fn storage_touch(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.storage.storage_touch(
+            ee_type,
+            resources,
+            address,
+            key,
+            &mut self.oracle,
+            is_access_list,
+        )
+    }
+
     fn read_nonce(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -711,6 +789,22 @@ where
     ) -> Result<u64, UpdateQueryError> {
         self.storage
             .increment_nonce(ee_type, resources, address, increment_by, &mut self.oracle)
+    }
+
+    fn touch_account(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.storage.touch_account(
+            ee_type,
+            resources,
+            address,
+            &mut self.oracle,
+            is_access_list,
+        )
     }
 
     fn read_account_properties<
@@ -826,7 +920,7 @@ where
         tx_hash: Bytes32,
         success: bool,
     ) -> Result<(), SystemError> {
-        // TODO: charge for hashing the log (L2_TO_L1_LOG_SERIALIZE_SIZE) and build tree
+        // Resources for it charged as part of intrinsic
         self.logs_storage
             .push_l1_l2_tx_log(self.tx_number, tx_hash, success)
     }

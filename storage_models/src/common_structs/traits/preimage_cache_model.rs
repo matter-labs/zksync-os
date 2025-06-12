@@ -1,20 +1,12 @@
-use super::*;
+use super::{snapshottable_io::SnapshottableIo, *};
 
 ///
 /// Cache for preimages of hashes.
 /// Used for bytecode hashes and account hashes.
 ///
-pub trait PreimageCacheModel: Sized {
+pub trait PreimageCacheModel: Sized + SnapshottableIo {
     type Resources: Resources;
-    type TxStats;
     type PreimageRequest;
-    type StateSnapshot;
-
-    fn begin_new_tx(&mut self);
-    fn tx_stats(&self) -> Self::TxStats;
-
-    fn start_frame(&mut self) -> Self::StateSnapshot;
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>);
 
     fn get_preimage<const PROOF_ENV: bool>(
         &mut self,

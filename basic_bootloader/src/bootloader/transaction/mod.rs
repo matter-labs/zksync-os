@@ -8,16 +8,22 @@ use crate::bootloader::rlp;
 use core::ops::Range;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
+use errors::InvalidTransaction;
 use ruint::aliases::U256;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};
 
 mod abi_utils;
+pub mod access_list_parser;
+use self::access_list_parser::*;
 
 #[cfg(test)]
 mod tests;
 pub mod u256be_ptr;
 
-use super::*;
+use super::{
+    rlp::{apply_list_length_encoding_to_hash, estimate_length_encoding_len, ADDRESS_ENCODING_LEN},
+    *,
+};
 
 ///
 /// The generic transaction format. The structure fields are slices/references in fact.
@@ -68,9 +74,14 @@ pub struct ZkSyncTransaction<'a> {
     pub factory_deps: ParsedValue<()>,
     /// The input to the paymaster.
     pub paymaster_input: ParsedValue<()>,
-    /// Reserved dynamic type for the future use-case. Using it should be avoided,
-    /// But it is still here, just in case we want to enable some additional functionality.
-    pub reserved_dynamic: ParsedValue<()>,
+    /// Field used for extra functionality.
+    /// Currently, it's only used for the access list.
+    /// The field is encoded as the ABI encoding of a bytestring
+    /// containing the ABI encoding of `tuple(address, bytes32[])[][]`,
+    /// i.e. a list of lists of (address, keys) pairs.
+    /// We use the outer list to be able to extend the use of this field,
+    /// but for now it should only have 1 element.
+    pub reserved_dynamic: AccessListParser,
 }
 
 #[allow(dead_code)]
@@ -167,7 +178,12 @@ impl<'a> ZkSyncTransaction<'a> {
         if reserved_dynamic_offset.read() != (parser.offset - TX_OFFSET) as u32 {
             return Err(());
         }
-        let reserved_dynamic = parser.parse_bytes()?;
+
+        let reserved_dynamic = AccessListParser {
+            offset: reserved_dynamic_offset.value as usize,
+        };
+        // "Consume bytes"
+        parser.parse_bytes()?;
 
         if parser.slice().is_empty() == false {
             return Err(());
@@ -224,46 +240,85 @@ impl<'a> ZkSyncTransaction<'a> {
             _ => {}
         }
 
-        if tx_type == Self::EIP_712_TX_TYPE {
-            // just an address
-        } else {
-            // 0 address
-            if self.paymaster.read() != B160::ZERO {
-                return Err(());
+        // paymasters can be used only with EIP712 txs
+        match tx_type {
+            Self::EIP_712_TX_TYPE => {}
+            _ => {
+                if self.paymaster.read() != B160::ZERO {
+                    return Err(());
+                }
             }
         }
 
-        if tx_type != Self::LEGACY_TX_TYPE
-            && tx_type != Self::L1_L2_TX_TYPE
-            && tx_type != Self::UPGRADE_TX_TYPE
-            && !self.reserved[0].read().is_zero()
-        {
-            return Err(());
+        // reserved[0] is EIP-155 flag for legacy txs,
+        // mint_value for l1 to l2 and upgrade txs,
+        // for other types should be zero
+        match tx_type {
+            Self::LEGACY_TX_TYPE | Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {}
+            _ => {
+                if !self.reserved[0].read().is_zero() {
+                    return Err(());
+                }
+            }
         }
-        if tx_type != Self::L1_L2_TX_TYPE
-            && tx_type != Self::UPGRADE_TX_TYPE
-            && !self.reserved[1].read().is_zero()
-            && self.to.read() != B160::ZERO
-        {
+        // reserved[1] = refund recipient for l1 to l2 and upgrade txs,
+        // for Ethereum(legacy, 1559, 2930) types it's a "to == null" flag(deployment tx),
+        // for EIP712 txs should be zero
+        match tx_type {
+            Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {
+                // TODO: validate address?
+            }
+            Self::EIP_712_TX_TYPE => {
+                if !self.reserved[1].read().is_zero() {
+                    return Err(());
+                }
+            }
+            _ => {
+                if !self.reserved[1].read().is_zero() && self.to.read() != B160::ZERO {
+                    return Err(());
+                }
+            }
+        }
+
+        // reserved[2] and reserved[3] fields currently not used
+        if !self.reserved[2].read().is_zero() || !self.reserved[3].read().is_zero() {
             return Err(());
         }
 
-        if self.reserved[2].read().is_zero() == false || self.reserved[3].read().is_zero() == false
-        {
-            return Err(());
+        match tx_type {
+            Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {
+                if !self.signature.range.is_empty() {
+                    return Err(());
+                }
+            }
+            // TODO: with AA we should allow other signature length for EIP-712 txs
+            _ => {
+                if self.signature.range.len() != 65 {
+                    return Err(());
+                }
+            }
         }
 
-        if self.signature.range.len() != 65
-            && tx_type != Self::L1_L2_TX_TYPE
-            && tx_type != Self::UPGRADE_TX_TYPE
-        {
-            return Err(());
+        // paymasters can be used only with EIP712 txs
+        match tx_type {
+            Self::EIP_712_TX_TYPE => {}
+            _ => {
+                if !self.paymaster_input.range.is_empty() {
+                    return Err(());
+                }
+            }
         }
-        if self.factory_deps.range.len() != 0 {
-            return Err(());
-        }
-        if self.reserved_dynamic.range.len() != 0 {
-            return Err(());
+
+        // factory deps allowed only for eip712, or l1 to l2/upgrade txs
+        // we ignore factory deps, as deployments performed via bytecode,
+        // but we allowed them for backward compatibility with some Era VM tests
+        match tx_type {
+            Self::EIP_712_TX_TYPE | Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {}
+            _ => {
+                if !self.factory_deps.range.is_empty() {
+                    return Err(());
+                }
+            }
         }
 
         Ok(())
@@ -271,9 +326,9 @@ impl<'a> ZkSyncTransaction<'a> {
 
     // To be used only with field belonging to this transaction
     pub fn encoding<T: 'static + Clone + Copy + core::fmt::Debug>(
-        &'_ self,
+        &self,
         field: ParsedValue<T>,
-    ) -> &'_ [u8] {
+    ) -> &[u8] {
         unsafe { self.underlying_buffer.get_unchecked(field.range) }
     }
 
@@ -284,9 +339,7 @@ impl<'a> ZkSyncTransaction<'a> {
         if self.is_eip_712() {
             U256::from(self.gas_per_pubdata_limit.read())
         } else {
-            use crate::bootloader::constants::DEFAULT_GAS_PER_PUBDATA;
-
-            DEFAULT_GAS_PER_PUBDATA
+            crate::bootloader::constants::DEFAULT_GAS_PER_PUBDATA
         }
     }
 
@@ -298,28 +351,28 @@ impl<'a> ZkSyncTransaction<'a> {
         self.underlying_buffer
     }
 
-    pub fn calldata(&'_ self) -> &'_ [u8] {
+    pub fn calldata(&self) -> &[u8] {
         unsafe {
             self.underlying_buffer
                 .get_unchecked(self.data.range.clone())
         }
     }
 
-    pub fn signature(&'_ self) -> &'_ [u8] {
+    pub fn signature(&self) -> &[u8] {
         unsafe {
             self.underlying_buffer
                 .get_unchecked(self.signature.range.clone())
         }
     }
 
-    pub fn paymaster_input(&'_ self) -> &'_ [u8] {
+    pub fn paymaster_input(&self) -> &[u8] {
         unsafe {
             self.underlying_buffer
                 .get_unchecked(self.paymaster_input.range.clone())
         }
     }
 
-    pub fn pre_tx_buffer(&'_ mut self) -> &'_ mut [u8] {
+    pub fn pre_tx_buffer(&mut self) -> &mut [u8] {
         unsafe { self.underlying_buffer.get_unchecked_mut(0..TX_OFFSET) }
     }
     ///
@@ -337,7 +390,9 @@ impl<'a> ZkSyncTransaction<'a> {
             Self::EIP_2930_TX_TYPE => self.eip2930_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_1559_TX_TYPE => self.eip1559_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_signed_hash(chain_id, resources),
-            _ => Err(InternalError("Type should be validated").into()),
+            _ => {
+                Err(InternalError("Invalid type for signed hash, most likely l1 or upgrade").into())
+            }
         }
     }
 
@@ -483,13 +538,93 @@ impl<'a> ZkSyncTransaction<'a> {
     }
 
     ///
+    /// Estimates the length of the payload of the access list encoding
+    ///
+    fn estimate_access_list_raw_length(&self) -> Result<usize, ()> {
+        let iter = self.reserved_dynamic.into_iter(&self.underlying_buffer)?;
+        let mut sum = 0;
+        for res in iter {
+            let (_, keys) = res?;
+            let (item_length, _, _) = estimate_access_list_item_length(keys.count);
+            sum += item_length
+        }
+        Ok(sum)
+    }
+
+    ///
+    /// Applies hash of the access list
+    ///
+    fn apply_access_list_encoding_to_hash(
+        &self,
+        total_access_list_length: usize,
+        hasher: &mut Keccak256,
+    ) -> Result<(), ()> {
+        let iter = self.reserved_dynamic.into_iter(&self.underlying_buffer)?;
+        // Length of access list
+        apply_list_length_encoding_to_hash(total_access_list_length, hasher);
+        for res in iter {
+            let (address, keys) = res?;
+            let (_, item_raw_length, keys_raw_length) =
+                estimate_access_list_item_length(keys.count);
+            // Length of [address, [keys]]
+            apply_list_length_encoding_to_hash(item_raw_length, hasher);
+            // Address
+            rlp::apply_bytes_encoding_to_hash(&address.to_be_bytes::<{ B160::BYTES }>(), hasher);
+            // Length of [keys]
+            apply_list_length_encoding_to_hash(keys_raw_length, hasher);
+            // Keys
+            for key in keys {
+                let key = key?;
+                rlp::apply_bytes_encoding_to_hash(key.as_u8_ref(), hasher);
+            }
+        }
+        Ok(())
+    }
+
+    ///
+    /// Parse and validate access list, while warming up accounts and
+    /// storage slots.
+    ///
+    pub fn parse_and_warm_up_access_list<S: EthereumLikeTypes>(
+        &self,
+        system: &mut System<S>,
+        resources: &mut S::Resources,
+    ) -> Result<(), TxError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        let iter = self
+            .reserved_dynamic
+            .into_iter(&self.underlying_buffer)
+            .map_err(|()| InvalidTransaction::InvalidStructure)?;
+        for res in iter {
+            let (address, keys) = res.map_err(|()| InvalidTransaction::InvalidStructure)?;
+            system
+                .io
+                .touch_account(ExecutionEnvironmentType::NoEE, resources, &address, true)?;
+            for key in keys {
+                let key = key.map_err(|()| InvalidTransaction::InvalidStructure)?;
+                system.io.storage_touch(
+                    ExecutionEnvironmentType::NoEE,
+                    resources,
+                    &address,
+                    &key,
+                    true,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    ///
     /// If signed == `false` calculate tx hash with signature(to be used in the explorer):
     /// Keccak256(0x01 || RLP(chain_id, nonce, gas_price, gas_limit, destination, amount, data, access_list, r, s, v))
     ///
     /// If signed == `true` calculate signed tx hash(the one that should be signed by the sender):
     /// Keccak256(0x01 || RLP(chain_id, nonce, gas_price, gas_limit, destination, amount, data, access_list))
     ///
-    /// Note, that on zkSync access lists are not supported and should always be empty.
+    /// Note that this function assumes that if the transaction has an access list,
+    /// this field has been validated previously by [parse_and_warm_up_access_list].
     ///
     pub fn eip2930_tx_calculate_hash<R: Resources>(
         &self,
@@ -511,10 +646,15 @@ impl<'a> ZkSyncTransaction<'a> {
             total_list_len += rlp::estimate_bytes_encoding_len(&[]);
         }
 
+        let access_list_raw_length = self
+            .estimate_access_list_raw_length()
+            .map_err(|()| InternalError("Access list format must have been validated before"))?;
+
         total_list_len +=
             rlp::estimate_number_encoding_len(self.value.encoding(&self.underlying_buffer))
                 + rlp::estimate_bytes_encoding_len(self.data.encoding(&self.underlying_buffer))
-                + rlp::estimate_length_encoding_len(0); // empty access list
+                + rlp::estimate_length_encoding_len(access_list_raw_length)
+                + access_list_raw_length;
 
         // Add signature if not signed hash
         if !signed {
@@ -566,7 +706,8 @@ impl<'a> ZkSyncTransaction<'a> {
             &mut hasher,
         );
         rlp::apply_bytes_encoding_to_hash(self.data.encoding(&self.underlying_buffer), &mut hasher);
-        rlp::apply_list_length_encoding_to_hash(0, &mut hasher);
+        self.apply_access_list_encoding_to_hash(access_list_raw_length, &mut hasher)
+            .map_err(|()| InternalError("Access list format must have been validated before"))?;
 
         // Add signature if not signed hash
         if !signed {
@@ -597,7 +738,9 @@ impl<'a> ZkSyncTransaction<'a> {
     /// If signed == `true` calculate signed tx hash(the one that should be signed by the sender):
     /// Keccak256(0x02 || RLP(chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, destination, amount, data, access_list))
     ///
-    /// Note, that on zkSync access lists are not supported and should always be empty.
+    /// Note that this function assumes that if the transaction has an access list,
+    /// this field has been validated previously by
+    /// [parse_and_warm_up_access_list].
     ///
     pub fn eip1559_tx_calculate_hash<R: Resources>(
         &self,
@@ -623,10 +766,15 @@ impl<'a> ZkSyncTransaction<'a> {
             total_list_len += rlp::estimate_bytes_encoding_len(&[]);
         }
 
+        let access_list_raw_length = self
+            .estimate_access_list_raw_length()
+            .map_err(|()| InternalError("Access list format must have been validated before"))?;
+
         total_list_len +=
             rlp::estimate_number_encoding_len(self.value.encoding(&self.underlying_buffer))
                 + rlp::estimate_bytes_encoding_len(self.data.encoding(&self.underlying_buffer))
-                + rlp::estimate_length_encoding_len(0); // empty access list
+                + rlp::estimate_length_encoding_len(access_list_raw_length)
+                + access_list_raw_length;
 
         // Add signature if not signed hash
         if !signed {
@@ -683,8 +831,8 @@ impl<'a> ZkSyncTransaction<'a> {
             &mut hasher,
         );
         rlp::apply_bytes_encoding_to_hash(self.data.encoding(&self.underlying_buffer), &mut hasher);
-        rlp::apply_list_length_encoding_to_hash(0, &mut hasher);
-
+        self.apply_access_list_encoding_to_hash(access_list_raw_length, &mut hasher)
+            .map_err(|()| InternalError("Access list format must have been validated before"))?;
         // Add signature if not signed hash
         if !signed {
             // r
@@ -846,9 +994,9 @@ impl<'a> ZkSyncTransaction<'a> {
     ///
     fn l1_tx_calculate_hash<R: Resources>(
         &self,
-        _resources: &mut R,
+        resources: &mut R,
     ) -> Result<[u8; 32], FatalError> {
-        // TODO: should we charge here or intrinsic?
+        charge_keccak(32 + self.underlying_buffer[TX_OFFSET..].len(), resources)?;
         let mut hasher = Keccak256::new();
         // Note, that the correct ABI encoding of the Transaction structure starts with 0x20
         hasher.update(&U256::from(0x20).to_be_bytes::<32>());
@@ -1051,4 +1199,19 @@ fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), Fata
             SystemError::Internal(e) => FatalError::Internal(e),
             SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
         })
+}
+
+/// Returns (full_item_length, item_raw_length, keys_raw_length)
+fn estimate_access_list_item_length(nb_keys: usize) -> (usize, usize, usize) {
+    // 32 bytes for key + 1 byte for tag and length.
+    let single_key_length = 33;
+    let keys_raw_length = single_key_length * nb_keys;
+    let keys_length = estimate_length_encoding_len(keys_raw_length) + keys_raw_length;
+    let address_length = ADDRESS_ENCODING_LEN;
+    let item_raw_length = keys_length + address_length;
+    (
+        estimate_length_encoding_len(item_raw_length) + item_raw_length,
+        item_raw_length,
+        keys_raw_length,
+    )
 }

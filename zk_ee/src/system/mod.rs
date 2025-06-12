@@ -143,7 +143,7 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_level_metadata.timestamp
     }
 
-    pub fn storage_code_version_for_execution_environment<EE: ExecutionEnvironment<S>>(
+    pub fn storage_code_version_for_execution_environment<'a, EE: ExecutionEnvironment<'a, S>>(
         &self,
     ) -> Result<u8, InternalError> {
         // TODO
@@ -159,7 +159,7 @@ impl<S: SystemTypes> System<S> {
         self.metadata.tx_gas_price = tx_gas_price;
     }
 
-    pub fn net_pubdata_used(&self) -> u64 {
+    pub fn net_pubdata_used(&self) -> Result<u64, InternalError> {
         self.io.net_pubdata_used()
     }
 }

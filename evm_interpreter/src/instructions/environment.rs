@@ -1,7 +1,7 @@
 use super::*;
 use native_resource_constants::*;
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn chainid(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, CHAINID_NATIVE_COST)?;
         let result = U256::from(system.get_chain_id());
@@ -31,7 +31,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
 
     pub fn difficulty(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, DIFFICULTY_NATIVE_COST)?;
-        self.push_values(&[U256::ZERO])?;
+        self.push_values(&[U256::ONE])?;
         Ok(())
     }
 
