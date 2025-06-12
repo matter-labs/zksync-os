@@ -31,7 +31,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn difficulty(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, DIFFICULTY_NATIVE_COST)?;
-        self.push_values(&[U256::ZERO])?;
+        self.push_values(&[U256::ONE])?;
         Ok(())
     }
 
