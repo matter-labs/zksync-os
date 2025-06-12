@@ -3,6 +3,7 @@ use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::DEBUG_OUTPUT;
 use alloc::boxed::Box;
 use core::fmt::Write;
+use core::mem::MaybeUninit;
 use errors::FatalError;
 use evm_interpreter::gas_constants::CALLVALUE;
 use evm_interpreter::gas_constants::CALL_STIPEND;
@@ -23,18 +24,18 @@ use zk_ee::system::{
 
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
-pub fn run_till_completion<S: EthereumLikeTypes>(
-    callstack: &mut SliceVec<SupportedEEVMState<S>>,
+pub fn run_till_completion<'a, S: EthereumLikeTypes>(
+    memories: RunnerMemories<'a>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
     initial_request: ExecutionEnvironmentSpawnRequest<S>,
-) -> Result<TransactionEndPoint<S>, FatalError>
+) -> Result<TransactionEndPoint<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
-    assert!(callstack.is_empty());
+    let heap = SliceVec::new(memories.heaps);
 
     // NOTE: we do not need to make a new frame as we are in the root already
 
@@ -47,14 +48,19 @@ where
         hooks,
         initial_ee_version,
         callstack_height: 0,
+        return_memory: memories.return_data,
     };
 
     match initial_request {
         ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
-            let (resources_returned, call_result) =
-                run.handle_requested_external_call(None, external_call_request)?;
+            let (resources_returned, call_result) = run.handle_requested_external_call(
+                initial_ee_version,
+                true,
+                external_call_request,
+                heap,
+            )?;
             let (return_values, reverted) = match call_result {
-                CallResult::CallFailedToExecute => (ReturnValues::empty(system), true),
+                CallResult::CallFailedToExecute => (ReturnValues::empty(), true),
                 CallResult::Failed { return_values } => (return_values, true),
                 CallResult::Successful { return_values } => (return_values, false),
             };
@@ -68,12 +74,28 @@ where
         }
 
         ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => run
-            .handle_requested_deployment(None, deployment_parameters)
+            .handle_requested_deployment(initial_ee_version, true, deployment_parameters, heap)
             .map(TransactionEndPoint::CompletedDeployment),
     }
 }
 
-struct Run<'a, S: EthereumLikeTypes>
+pub struct RunnerMemories<'a> {
+    //callstack: &'a mut [MaybeUninit<SupportedEEVMState<'static, S>>],
+    pub heaps: &'a mut [MaybeUninit<u8>],
+    pub return_data: &'a mut [MaybeUninit<u8>],
+    //pub callstack: &'a mut [MaybeUninit<SupportedEEVMState<'a, S>>],
+}
+
+impl RunnerMemories<'_> {
+    /// This struct can't implement [Clone] because it contains mutable references.
+    /// This analogue of cloning holds onto self until the returned struct is dropped.
+    pub fn reborrow<'a>(&'a mut self) -> RunnerMemories<'a> {
+        let RunnerMemories { heaps, return_data } = self;
+        RunnerMemories { heaps, return_data }
+    }
+}
+
+struct Run<'a, 'm, S: EthereumLikeTypes>
 where
     S::Memory: MemorySubsystemExt,
 {
@@ -81,26 +103,34 @@ where
     hooks: &'a mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
     callstack_height: usize,
+
+    return_memory: &'m mut [MaybeUninit<u8>],
+}
+
+enum CallOrDeployResult<'a, S: EthereumLikeTypes> {
+    CallResult(CallResult<'a, S>),
+    DeploymentResult(DeploymentResult<'a, S>),
 }
 
 const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUND, 0, 0]);
 
-impl<S: EthereumLikeTypes> Run<'_, S>
+impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S>
 where
     S::Memory: MemorySubsystemExt,
 {
     #[inline(always)]
-    fn handle_spawn<'a>(
-        &mut self,
-        previous_vm: &mut SupportedEEVMState<'a, S>,
-        spawn: ExecutionEnvironmentSpawnRequest<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError>
+    fn handle_spawn<'s, 'a>(
+        &'s mut self,
+        ee_type: ExecutionEnvironmentType,
+        spawn: ExecutionEnvironmentSpawnRequest<'a, S>,
+        heap: SliceVec<'a, u8>,
+    ) -> Result<(S::Resources, CallOrDeployResult<'external, S>), FatalError>
     where
         S::IO: IOSubsystemExt,
         S::Memory: MemorySubsystemExt,
     {
         self.callstack_height += 1;
-        let result = self.handle_spawn_inner(previous_vm, spawn);
+        let result = self.handle_spawn_inner(ee_type, spawn, heap);
         self.callstack_height -= 1;
         result
     }
@@ -108,18 +138,22 @@ where
     #[inline(always)]
     fn handle_spawn_inner<'a>(
         &mut self,
-        previous_vm: &mut SupportedEEVMState<'a, S>,
-        spawn: ExecutionEnvironmentSpawnRequest<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError>
+        ee_type: ExecutionEnvironmentType,
+        spawn: ExecutionEnvironmentSpawnRequest<'a, S>,
+        heap: SliceVec<'a, u8>,
+    ) -> Result<(S::Resources, CallOrDeployResult<'external, S>), FatalError>
     where
         S::IO: IOSubsystemExt,
         S::Memory: MemorySubsystemExt,
     {
-        let preemption;
         match spawn {
             ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
-                let (resources, mut call_result) =
-                    self.handle_requested_external_call(Some(previous_vm), external_call_request)?;
+                let (resources, call_result) = self.handle_requested_external_call(
+                    ee_type,
+                    false,
+                    external_call_request,
+                    heap,
+                )?;
 
                 let success = matches!(call_result, CallResult::Successful { .. });
 
@@ -128,78 +162,54 @@ where
                     success
                 ));
 
-                match &mut call_result {
-                    CallResult::Successful { return_values }
-                    | CallResult::Failed { return_values } => {
-                        let returndata = self
-                            .system
-                            .memory
-                            .copy_into_return_memory(&return_values.returndata)?;
-                        let returndata = returndata.take_slice(0..returndata.len());
-                        return_values.returndata = returndata;
-
-                        let returndata_iter = return_values.returndata.iter().copied();
-                        let _ = self
-                            .system
-                            .get_logger()
-                            .write_fmt(format_args!("Returndata = "));
-                        let _ = self.system.get_logger().log_data(returndata_iter);
-                    }
-                    _ => {}
-                }
-
-                preemption = previous_vm.continue_after_external_call(
-                    self.system,
-                    resources,
-                    call_result,
-                )?;
+                Ok((resources, CallOrDeployResult::CallResult(call_result)))
             }
             ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => {
                 let CompletedDeployment {
                     resources_returned,
-                    mut deployment_result,
-                } = self.handle_requested_deployment(Some(previous_vm), deployment_parameters)?;
-
-                if let Some(returndata_region) = deployment_result.returndata() {
-                    let returndata_iter = returndata_region.iter().copied();
-                    let _ = self
-                        .system
-                        .get_logger()
-                        .write_fmt(format_args!("Returndata = "));
-                    let _ = self.system.get_logger().log_data(returndata_iter);
-                }
-
-                match &mut deployment_result {
-                    DeploymentResult::Successful { return_values, .. }
-                    | DeploymentResult::Failed { return_values, .. } => {
-                        let returndata = self
-                            .system
-                            .memory
-                            .copy_into_return_memory(&return_values.returndata)?;
-                        let returndata = returndata.take_slice(0..returndata.len());
-                        return_values.returndata = returndata;
-                    }
-                }
-
-                preemption = previous_vm.continue_after_deployment(
-                    self.system,
-                    resources_returned,
                     deployment_result,
-                )?;
+                } =
+                    self.handle_requested_deployment(ee_type, false, deployment_parameters, heap)?;
+
+                let returndata_region = deployment_result.returndata();
+                let returndata_iter = returndata_region.iter().copied();
+                let _ = self
+                    .system
+                    .get_logger()
+                    .write_fmt(format_args!("Returndata = "));
+                let _ = self.system.get_logger().log_data(returndata_iter);
+
+                Ok((
+                    resources_returned,
+                    CallOrDeployResult::DeploymentResult(deployment_result),
+                ))
             }
         }
+    }
 
-        Ok(preemption)
+    fn copy_into_return_memory<'a>(
+        &mut self,
+        return_values: ReturnValues<'a, S>,
+    ) -> ReturnValues<'external, S> {
+        let return_memory = core::mem::take(&mut self.return_memory);
+        let (output, rest) = return_memory.split_at_mut(return_values.returndata.len());
+        self.return_memory = rest;
+
+        ReturnValues {
+            returndata: output.write_copy_of_slice(return_values.returndata),
+            ..return_values
+        }
     }
 
     fn handle_requested_external_call(
         &mut self,
-        caller_vm: Option<&mut SupportedEEVMState<S>>,
+        ee_type: ExecutionEnvironmentType,
+        is_entry_frame: bool,
         call_request: ExternalCallRequest<S>,
-    ) -> Result<(S::Resources, CallResult<S>), FatalError>
+        heap: SliceVec<u8>,
+    ) -> Result<(S::Resources, CallResult<'external, S>), FatalError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         // TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
         #[cfg(not(target_arch = "riscv32"))]
@@ -239,14 +249,13 @@ where
 
         // The call is targeting the "system contract" space.
         if is_call_to_special_address {
-            return self
-                .handle_requested_external_call_to_special_address_space(caller_vm, call_request);
+            return self.handle_requested_external_call_to_special_address_space(
+                ee_type,
+                is_entry_frame,
+                call_request,
+                heap,
+            );
         }
-
-        let ee_type = match &caller_vm {
-            Some(vm) => vm.ee_type(),
-            None => self.initial_ee_version,
-        };
 
         // NOTE: on external call request caller doesn't spend resources,
         // but indicates how much he would want to pass at most. Here we can decide the rest
@@ -259,8 +268,14 @@ where
         // potential writes below, otherwise we will pass what's needed to caller
 
         // declaring these here rather than returning them reduces stack usage.
-        let (mut new_vm, mut preemption, rollback_handle);
-        match run_call_preparation(caller_vm, self.system, ee_type, &call_request) {
+        let (
+            mut new_vm,
+            new_ee_type,
+            resources_returned_from_preparation,
+            mut preemption,
+            rollback_handle,
+        );
+        match run_call_preparation(is_entry_frame, self.system, ee_type, &call_request) {
             Ok(CallPreparationResult::Success {
                 next_ee_version,
                 bytecode,
@@ -268,6 +283,7 @@ where
                 artifacts_len,
                 mut actual_resources_to_pass,
                 transfer_to_perform,
+                resources_returned,
             }) => {
                 // We create a new frame for callee, should include transfer and
                 // callee execution
@@ -283,8 +299,11 @@ where
                     let failure = !matches!(call_result, CallResult::Successful { .. });
                     self.system
                         .finish_global_frame(failure.then_some(&rollback_handle))?;
+                    actual_resources_to_pass.reclaim(resources_returned);
                     return Ok((actual_resources_to_pass, call_result));
                 }
+
+                resources_returned_from_preparation = resources_returned;
 
                 if DEBUG_OUTPUT {
                     let _ = self.system.get_logger().write_fmt(format_args!(
@@ -305,6 +324,7 @@ where
 
                 // now grow callstack and prepare initial state
                 new_vm = create_ee(next_ee_version, self.system)?;
+                new_ee_type = new_vm.ee_type();
 
                 preemption = new_vm.start_executing_frame(
                     self.system,
@@ -319,6 +339,7 @@ where
                             scratch_space_len: artifacts_len,
                         },
                     },
+                    heap,
                 )?;
             }
 
@@ -330,12 +351,24 @@ where
 
         loop {
             match preemption {
-                ExecutionEnvironmentPreemptionPoint::Spawn(spawn) => {
-                    preemption = self.handle_spawn(&mut new_vm, spawn)?
+                ExecutionEnvironmentPreemptionPoint::Spawn {
+                    ref mut request,
+                    ref mut heap,
+                } => {
+                    let heap = core::mem::take(heap);
+                    let request = core::mem::take(request);
+                    let (resources, result) = self.handle_spawn(new_ee_type, request, heap)?;
+                    drop(preemption);
+                    preemption = match result {
+                        CallOrDeployResult::CallResult(call_result) => new_vm
+                            .continue_after_external_call(self.system, resources, call_result)?,
+                        CallOrDeployResult::DeploymentResult(deployment_result) => new_vm
+                            .continue_after_deployment(self.system, resources, deployment_result)?,
+                    };
                 }
                 ExecutionEnvironmentPreemptionPoint::End(
                     TransactionEndPoint::CompletedExecution(CompletedExecution {
-                        resources_returned,
+                        mut resources_returned,
                         return_values,
                         reverted,
                     }),
@@ -343,7 +376,18 @@ where
                     self.system
                         .finish_global_frame(reverted.then_some(&rollback_handle))
                         .map_err(|_| InternalError("must finish execution frame"))?;
-                    break Ok((
+
+                    let returndata_iter = return_values.returndata.iter().copied();
+                    let _ = self
+                        .system
+                        .get_logger()
+                        .write_fmt(format_args!("Returndata = "));
+                    let _ = self.system.get_logger().log_data(returndata_iter);
+
+                    let return_values = self.copy_into_return_memory(return_values);
+
+                    resources_returned.reclaim(resources_returned_from_preparation);
+                    return Ok((
                         resources_returned,
                         if reverted {
                             CallResult::Failed { return_values }
@@ -364,14 +408,14 @@ where
     }
 
     #[inline(always)]
-    fn external_call_before_vm(
+    fn external_call_before_vm<'a>(
         &mut self,
         actual_resources_to_pass: &mut S::Resources,
         call_request: &ExternalCallRequest<S>,
         is_eoa: bool,
         transfer_to_perform: &Option<TransferInfo>,
         ee_type: ExecutionEnvironmentType,
-    ) -> Result<Option<CallResult<S>>, FatalError>
+    ) -> Result<Option<CallResult<'a, S>>, FatalError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -406,7 +450,7 @@ where
                             // Following EVM, a call with insufficient balance is not a revert,
                             // but rather a normal failing call.
                             return Ok(Some(CallResult::Failed {
-                                return_values: ReturnValues::empty(self.system),
+                                return_values: ReturnValues::empty(),
                             }));
                         }
                         _ => return Err(InternalError("Unsupported EE").into()),
@@ -418,13 +462,13 @@ where
         // Calls to EOAs succeed with empty return value
         if is_eoa {
             return Ok(Some(CallResult::Successful {
-                return_values: ReturnValues::empty(self.system),
+                return_values: ReturnValues::empty(),
             }));
         }
 
         if self.callstack_height > 1024 {
             return Ok(Some(CallResult::Failed {
-                return_values: ReturnValues::empty(self.system),
+                return_values: ReturnValues::empty(),
             }));
         }
 
@@ -434,9 +478,11 @@ where
     #[inline(always)]
     fn handle_requested_external_call_to_special_address_space(
         &mut self,
-        caller_vm: Option<&mut SupportedEEVMState<S>>,
+        ee_type: ExecutionEnvironmentType,
+        is_entry_frame: bool,
         call_request: ExternalCallRequest<S>,
-    ) -> Result<(S::Resources, CallResult<S>), FatalError>
+        mut scratch_space: SliceVec<u8>,
+    ) -> Result<(S::Resources, CallResult<'external, S>), FatalError>
     where
         S::IO: IOSubsystemExt,
         S::Memory: MemorySubsystemExt,
@@ -456,14 +502,9 @@ where
             .write_fmt(format_args!("Calldata = "));
         let _ = self.system.get_logger().log_data(calldata_iter);
 
-        let ee_type = match &caller_vm {
-            Some(vm) => vm.ee_type(),
-            None => self.initial_ee_version,
-        };
-
         let rollback_handle;
         let actual_resources_to_pass =
-            match run_call_preparation(caller_vm, self.system, ee_type, &call_request) {
+            match run_call_preparation(is_entry_frame, self.system, ee_type, &call_request) {
                 Ok(CallPreparationResult::Success {
                     mut actual_resources_to_pass,
                     transfer_to_perform,
@@ -502,6 +543,7 @@ where
             },
             ee_type as u8,
             self.system,
+            &mut scratch_space,
         )?;
         if let Some(system_hook_run_result) = res {
             let CompletedExecution {
@@ -516,13 +558,15 @@ where
                 !reverted
             ));
 
-            let returndata_slice = &return_values.returndata;
+            let returndata_slice = return_values.returndata;
             let returndata_iter = returndata_slice.iter().copied();
             let _ = self
                 .system
                 .get_logger()
                 .write_fmt(format_args!("Returndata = "));
             let _ = self.system.get_logger().log_data(returndata_iter);
+
+            let return_values = self.copy_into_return_memory(return_values);
 
             self.system
                 .finish_global_frame(if reverted {
@@ -550,30 +594,26 @@ where
             Ok((
                 actual_resources_to_pass,
                 CallResult::Successful {
-                    return_values: ReturnValues::empty(self.system),
+                    return_values: ReturnValues::empty(),
                 },
             ))
         }
     }
 
-    fn handle_requested_deployment<'a>(
+    fn handle_requested_deployment(
         &mut self,
-        caller_vm: Option<&mut SupportedEEVMState<S>>,
-        deployment_parameters: DeploymentPreparationParameters<'a, S>,
-    ) -> Result<CompletedDeployment<S>, FatalError>
+        ee_type: ExecutionEnvironmentType,
+        is_entry_frame: bool,
+        deployment_parameters: DeploymentPreparationParameters<S>,
+        heap: SliceVec<u8>,
+    ) -> Result<CompletedDeployment<'external, S>, FatalError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         // Caller gave away all it's resources into deployment parameters, and in preparation function
         // we will charge for deployment, compute address and potentially increment nonce
 
-        let ee_type = match &caller_vm {
-            Some(vm) => vm.ee_type(),
-            None => self.initial_ee_version,
-        };
-
-        let (resources_for_deployer, mut launch_params) =
+        let (mut resources_for_deployer, mut launch_params) =
             match SupportedEEVMState::prepare_for_deployment(
                 ee_type,
                 self.system,
@@ -584,7 +624,7 @@ where
                     return Ok(CompletedDeployment {
                         resources_returned: resources_for_deployer,
                         deployment_result: DeploymentResult::Failed {
-                            return_values: ReturnValues::empty(self.system),
+                            return_values: ReturnValues::empty(),
                             execution_reverted: false,
                         },
                     })
@@ -596,22 +636,21 @@ where
             };
 
         // resources returned back to caller
-        match caller_vm {
-            Some(vm) => vm.give_back_ergs(resources_for_deployer),
-            None => {
-                // resources returned back to caller do not make sense, so we join them back
-                launch_params
-                    .external_call
-                    .available_resources
-                    .reclaim(resources_for_deployer);
-            }
+        if is_entry_frame {
+            // resources returned back to caller do not make sense, so we join them back
+            launch_params
+                .external_call
+                .available_resources
+                .reclaim(resources_for_deployer);
+            resources_for_deployer = S::Resources::empty();
         }
 
         if self.callstack_height > 1024 {
+            resources_for_deployer.reclaim(launch_params.external_call.available_resources);
             return Ok(CompletedDeployment {
-                resources_returned: launch_params.external_call.available_resources,
+                resources_returned: resources_for_deployer,
                 deployment_result: DeploymentResult::Failed {
-                    return_values: ReturnValues::empty(self.system),
+                    return_values: ReturnValues::empty(),
                     execution_reverted: false,
                 },
             });
@@ -624,6 +663,7 @@ where
 
         // EE made all the preparations and we are in callee's frame already
         let mut constructor = create_ee(ee_type as u8, self.system)?;
+        let constructor_ee_type = constructor.ee_type();
 
         let nominal_token_value = launch_params.external_call.nominal_token_value;
 
@@ -673,15 +713,28 @@ where
                 })?;
         }
 
-        let mut preemption = constructor.start_executing_frame(self.system, launch_params)?;
+        let mut preemption = constructor.start_executing_frame(self.system, launch_params, heap)?;
 
         let CompletedDeployment {
             mut resources_returned,
             deployment_result,
         } = loop {
             match preemption {
-                ExecutionEnvironmentPreemptionPoint::Spawn(spawn) => {
-                    preemption = self.handle_spawn(&mut constructor, spawn)?
+                ExecutionEnvironmentPreemptionPoint::Spawn {
+                    ref mut request,
+                    ref mut heap,
+                } => {
+                    let heap = core::mem::take(heap);
+                    let request = core::mem::take(request);
+                    let (resources, result) =
+                        self.handle_spawn(constructor_ee_type, request, heap)?;
+                    drop(preemption);
+                    preemption = match result {
+                        CallOrDeployResult::CallResult(call_result) => constructor
+                            .continue_after_external_call(self.system, resources, call_result)?,
+                        CallOrDeployResult::DeploymentResult(deployment_result) => constructor
+                            .continue_after_deployment(self.system, resources, deployment_result)?,
+                    };
                 }
                 ExecutionEnvironmentPreemptionPoint::End(end) => {
                     break match end {
@@ -718,7 +771,7 @@ where
                             bytecode,
                             bytecode_len,
                             artifacts_len,
-                            return_values: ReturnValues::empty(self.system),
+                            return_values: ReturnValues::empty(),
                             deployed_at,
                         };
                         // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
@@ -731,7 +784,7 @@ where
                     }
                     Err(SystemError::OutOfErgs) => {
                         let deployment_result = DeploymentResult::Failed {
-                            return_values,
+                            return_values: self.copy_into_return_memory(return_values),
                             execution_reverted: false,
                         };
                         (false, deployment_result)
@@ -742,7 +795,16 @@ where
                     Err(SystemError::Internal(e)) => return Err(e.into()),
                 }
             }
-            a @ DeploymentResult::Failed { .. } => (false, a),
+            DeploymentResult::Failed {
+                return_values,
+                execution_reverted,
+            } => (
+                false,
+                DeploymentResult::Failed {
+                    return_values: self.copy_into_return_memory(return_values),
+                    execution_reverted,
+                },
+            ),
         };
 
         // Now finish constructor frame
@@ -754,6 +816,7 @@ where
             deployment_success
         ));
 
+        resources_returned.reclaim(resources_for_deployer);
         Ok(CompletedDeployment {
             resources_returned,
             deployment_result,
@@ -769,6 +832,7 @@ pub enum CallPreparationResult<'a, S: SystemTypes> {
         artifacts_len: u32,
         actual_resources_to_pass: S::Resources,
         transfer_to_perform: Option<TransferInfo>,
+        resources_returned: S::Resources,
     },
     Failure {
         resources_returned: S::Resources,
@@ -778,7 +842,7 @@ pub enum CallPreparationResult<'a, S: SystemTypes> {
 /// Reads callee account and runs call preparation function
 /// from the system. Additionally, does token transfer if needed.
 fn run_call_preparation<'a, S: EthereumLikeTypes>(
-    vm: Option<&mut SupportedEEVMState<S>>,
+    is_entry_frame: bool,
     system: &mut System<S>,
     ee_version: ExecutionEnvironmentType,
     call_request: &ExternalCallRequest<S>,
@@ -787,7 +851,6 @@ where
     S::IO: IOSubsystemExt,
     S::Memory: MemorySubsystemExt,
 {
-    let is_entry_frame = vm.is_none();
     let mut resources_available = call_request.available_resources.clone();
 
     let r = if is_entry_frame {
@@ -840,7 +903,7 @@ where
     let mut actual_resources_to_pass = if !is_entry_frame {
         // now we should ask current EE for observable resource behavior if needed
         {
-            let to_pass = match SupportedEEVMState::<S>::clarify_and_take_passed_resources(
+            match SupportedEEVMState::<S>::clarify_and_take_passed_resources(
                 ee_version,
                 &mut resources_available,
                 call_request.ergs_to_pass,
@@ -852,10 +915,7 @@ where
                 Err(FatalError::Internal(error)) => {
                     return Err(error.into());
                 }
-            };
-            // Give remaining ergs back to caller
-            vm.unwrap().give_back_ergs(resources_available);
-            to_pass
+            }
         }
     } else {
         resources_available.take()
@@ -872,6 +932,7 @@ where
         artifacts_len,
         actual_resources_to_pass,
         transfer_to_perform,
+        resources_returned: resources_available,
     })
 }
 
@@ -998,10 +1059,10 @@ where
 /// This needs to be a separate function so the stack memory
 /// that this (unfortunately) allocates gets cleaned up.
 #[inline(never)]
-fn create_ee<S: EthereumLikeTypes>(
+fn create_ee<'a, S: EthereumLikeTypes>(
     ee_type: u8,
     system: &mut System<S>,
-) -> Result<Box<SupportedEEVMState<'static, S>, S::Allocator>, InternalError> {
+) -> Result<Box<SupportedEEVMState<'a, S>, S::Allocator>, InternalError> {
     Ok(Box::new_in(
         SupportedEEVMState::create_initial(ee_type, system)?,
         system.get_allocator(),

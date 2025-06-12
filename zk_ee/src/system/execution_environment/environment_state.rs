@@ -1,6 +1,7 @@
 use core::fmt::Debug;
 
 use crate::{
+    memory::slice_vec::SliceVec,
     system::{system::SystemTypes, CallModifier, Ergs, MAX_SCRATCH_SPACE_USIZE_WORDS},
     types_config::SystemIOTypesConfig,
 };
@@ -17,8 +18,11 @@ pub struct ExecutionEnvironmentLaunchParams<'a, S: SystemTypes> {
 }
 
 pub enum ExecutionEnvironmentPreemptionPoint<'a, S: SystemTypes> {
-    Spawn(ExecutionEnvironmentSpawnRequest<'a, S>),
-    End(TransactionEndPoint<S>),
+    Spawn {
+        request: ExecutionEnvironmentSpawnRequest<'a, S>,
+        heap: SliceVec<'a, u8>,
+    },
+    End(TransactionEndPoint<'a, S>),
 }
 
 pub enum ExecutionEnvironmentSpawnRequest<'a, S: SystemTypes> {
@@ -26,9 +30,28 @@ pub enum ExecutionEnvironmentSpawnRequest<'a, S: SystemTypes> {
     RequestedDeployment(DeploymentPreparationParameters<'a, S>),
 }
 
-pub enum TransactionEndPoint<S: SystemTypes> {
-    CompletedExecution(CompletedExecution<S>),
-    CompletedDeployment(CompletedDeployment<S>),
+impl<S: SystemTypes> Default for ExecutionEnvironmentSpawnRequest<'_, S>
+where
+    S::Resources: Default,
+{
+    fn default() -> Self {
+        Self::RequestedExternalCall(ExternalCallRequest {
+            available_resources: S::Resources::default(),
+            ergs_to_pass: Ergs::default(),
+            caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
+            callee: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
+            callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
+            modifier: CallModifier::NoModifier,
+            calldata: &[],
+            nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue::default(),
+            call_scratch_space: None,
+        })
+    }
+}
+
+pub enum TransactionEndPoint<'a, S: SystemTypes> {
+    CompletedExecution(CompletedExecution<'a, S>),
+    CompletedDeployment(CompletedDeployment<'a, S>),
 }
 
 pub struct ExternalCallRequest<'a, S: SystemTypes> {
@@ -73,15 +96,15 @@ impl<S: SystemTypes> ExternalCallRequest<'_, S> {
     }
 }
 
-pub struct CompletedExecution<S: SystemTypes> {
+pub struct CompletedExecution<'a, S: SystemTypes> {
     pub resources_returned: S::Resources,
-    pub return_values: ReturnValues<S>,
+    pub return_values: ReturnValues<'a, S>,
     pub reverted: bool,
 }
 
-pub struct CompletedDeployment<S: SystemTypes> {
+pub struct CompletedDeployment<'a, S: SystemTypes> {
     pub resources_returned: S::Resources,
-    pub deployment_result: DeploymentResult<S>,
+    pub deployment_result: DeploymentResult<'a, S>,
 }
 
 impl<S: SystemTypes> Debug for ExternalCallRequest<'_, S> {

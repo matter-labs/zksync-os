@@ -56,7 +56,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
             self.cast_offset_and_len(&memory_offset, &len, ExitCode::InvalidOperandOOG)?;
 
         // resize memory to account for the destination memory required
-        self.resize_heap(memory_offset, len, system)?;
+        self.resize_heap(memory_offset, len)?;
 
         let bytecode =
             system
@@ -173,7 +173,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
         let (mem_offset, len) =
             self.cast_offset_and_len(&mem_offset, &len, ExitCode::InvalidOperandOOG)?;
 
-        self.resize_heap(mem_offset, len, system)?;
+        self.resize_heap(mem_offset, len)?;
         let data = &self.heap[mem_offset..mem_offset + len];
 
         system.io.emit_event(
@@ -210,7 +210,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
     pub fn create<const IS_CREATE2: bool>(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
+        external_call_dest: &mut Option<ExternalCall<S>>,
     ) -> InstructionResult {
         self.spend_gas_and_native(
             gas_constants::CREATE,
@@ -231,7 +231,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
         let (code_offset, len) =
             self.cast_offset_and_len(&code_offset, &len, ExitCode::InvalidOperandOOG)?;
 
-        self.resize_heap(code_offset, len, system)?;
+        self.resize_heap(code_offset, len)?;
 
         // Create code size is limited
         if len > MAX_INITCODE_SIZE {
@@ -257,8 +257,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
         };
 
         // TODO: not necessary once heaps get the same treatment as calldata
-        let deployment_code: &'calldata [u8] =
-            unsafe { core::mem::transmute(&self.heap[code_offset..end]) };
+        let deployment_code = code_offset..end;
 
         let ee_specific_data = alloc::boxed::Box::try_new_in(scheme, system.get_allocator())
             .expect("system allocator must be capable to allocate for EE deployment parameters");
@@ -266,17 +265,14 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
         // at this preemption point we give all resources for preparation
         let all_resources = self.resources.take();
 
-        let deployment_parameters = DeploymentPreparationParameters {
-            call_scratch_space: None,
+        let deployment_parameters = EVMDeploymentRequest {
             deployment_code,
             constructor_parameters,
             ee_specific_deployment_processing_data: Some(
                 ee_specific_data as alloc::boxed::Box<dyn core::any::Any, OSAllocator<S>>,
             ),
-            address_of_deployer: self.address,
             nominal_token_value: value,
             deployer_full_resources: all_resources,
-            deployer_nonce: None,
         };
 
         *external_call_dest = Some(ExternalCall::Create(deployment_parameters));
@@ -284,18 +280,13 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
         Err(ExitCode::ExternalCall)
     }
 
-    pub fn call(
-        &mut self,
-        system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
-    ) -> InstructionResult {
-        self.call_impl(system, CallScheme::Call, external_call_dest)
+    pub fn call(&mut self, external_call_dest: &mut Option<ExternalCall<S>>) -> InstructionResult {
+        self.call_impl(CallScheme::Call, external_call_dest)
     }
 
     pub fn call_code(
         &mut self,
-        _system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
+        external_call_dest: &mut Option<ExternalCall<S>>,
     ) -> InstructionResult {
         #[cfg(all(not(feature = "callcode"), not(miri)))]
         {
@@ -307,31 +298,28 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
 
         #[cfg(any(feature = "callcode", miri))]
         {
-            self.call_impl(_system, CallScheme::CallCode, external_call_dest)
+            self.call_impl(CallScheme::CallCode, external_call_dest)
         }
     }
 
     pub fn delegate_call(
         &mut self,
-        system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
+        external_call_dest: &mut Option<ExternalCall<S>>,
     ) -> InstructionResult {
-        self.call_impl(system, CallScheme::DelegateCall, external_call_dest)
+        self.call_impl(CallScheme::DelegateCall, external_call_dest)
     }
 
     pub fn static_call(
         &mut self,
-        system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
+        external_call_dest: &mut Option<ExternalCall<S>>,
     ) -> InstructionResult {
-        self.call_impl(system, CallScheme::StaticCall, external_call_dest)
+        self.call_impl(CallScheme::StaticCall, external_call_dest)
     }
 
     fn call_impl(
         &mut self,
-        system: &mut System<S>,
         scheme: CallScheme,
-        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
+        external_call_dest: &mut Option<ExternalCall<S>>,
     ) -> InstructionResult {
         self.spend_gas_and_native(0, native_resource_constants::CALL_NATIVE_COST)?;
         self.clear_last_returndata();
@@ -365,12 +353,11 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
         let (out_offset, out_len) =
             self.cast_offset_and_len(&out_offset, &out_len, ExitCode::InvalidOperandOOG)?;
 
-        self.resize_heap(in_offset, in_len, system)?;
-        self.resize_heap(out_offset, out_len, system)?;
+        self.resize_heap(in_offset, in_len)?;
+        self.resize_heap(out_offset, out_len)?;
 
         // TODO: not necessary once heaps get the calldata treatment
-        let calldata: &'calldata [u8] =
-            unsafe { core::mem::transmute(&self.heap[in_offset..(in_offset + in_len)]) };
+        let calldata = in_offset..(in_offset + in_len);
 
         // NOTE: we give to the system both what we have NOW, and what we WANT to pass,
         // and depending on warm/cold behavior it may charge more from the current frame,

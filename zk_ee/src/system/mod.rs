@@ -55,7 +55,7 @@ pub trait SystemTypes {
 
     // These are just shorthands. They are completely defined by the above types.
     type IOTypes: SystemIOTypesConfig;
-    type Resources: Resources;
+    type Resources: Resources + Default;
     type Allocator: Allocator + Clone + Default;
 }
 pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {}
@@ -269,10 +269,10 @@ where
         for_ee: ExecutionEnvironmentType,
         resources: &mut S::Resources,
         at_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
-        bytecode: OSImmutableSlice<S>,
+        bytecode: &[u8],
         bytecode_len: u32,
         artifacts_len: u32,
-    ) -> Result<OSImmutableSlice<S>, SystemError> {
+    ) -> Result<&'static [u8], SystemError> {
         // IO is fully responsible to to deploy
         // and at the end we just need to remap slice
         let bytecode = self.io.deploy_code(
@@ -283,10 +283,6 @@ where
             bytecode_len,
             artifacts_len,
         )?;
-        let bytecode = unsafe {
-            self.memory
-                .construct_immutable_slice_from_static_slice(bytecode)
-        };
 
         Ok(bytecode)
     }
