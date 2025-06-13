@@ -201,6 +201,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
             &mut self.resources,
             &self.address,
             &beneficiary,
+            self.is_constructor,
         )?;
 
         Err(ExitCode::SelfDestruct)

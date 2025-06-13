@@ -64,6 +64,15 @@ impl DiffTrace {
                     Some(initial) => *new_val != initial,
                 })
             }
+            if account.balance == prestate_cache.get_balance(address) {
+                account.balance = None
+            }
+            if account.nonce == prestate_cache.get_nonce(address) {
+                account.nonce = None
+            }
+            if account.code == prestate_cache.get_code(address) {
+                account.code = None
+            }
             !account.is_empty()
         });
 
@@ -137,14 +146,15 @@ impl DiffTrace {
         });
 
         // ZKsync OS => reference
-        zksync_os_diffs.iter().for_each(|(address, _)| {
+        zksync_os_diffs.iter().for_each(|(address, acc)| {
             // Just check that it's part of the reference diffs,
             // all else should be checked already
-            if address != &miner {
+            if address != &miner && !acc.is_empty() {
                 diffs.get(address).unwrap_or_else(|| {
                     panic!(
-                        "Reference must have write for account {}",
-                        hex::encode(address.to_be_bytes_vec())
+                        "Reference must have write for account {} {:?}",
+                        hex::encode(address.to_be_bytes_vec()),
+                        acc
                     )
                 });
             }
@@ -231,7 +241,12 @@ pub fn post_check(
                 )
             }
             // Logs check
-            assert_eq!(res.logs.len(), receipt.logs.len());
+            assert_eq!(
+                res.logs.len(),
+                receipt.logs.len(),
+                "Transaction {} has mismatch in number of logs",
+                receipt.transaction_index
+            );
             assert!(res.logs.iter().zip(receipt.logs.iter()).all(|(l, r)| {
                 let eq = r.is_equal_to_excluding_data(l);
                 if !eq {

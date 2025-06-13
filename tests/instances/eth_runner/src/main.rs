@@ -1,3 +1,5 @@
+#![feature(slice_as_array)]
+
 use clap::Parser;
 use post_check::post_check;
 use prestate::{populate_prestate, DiffTrace, PrestateTrace};
