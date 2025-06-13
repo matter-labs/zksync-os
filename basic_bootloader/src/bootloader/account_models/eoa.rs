@@ -8,7 +8,7 @@ use crate::bootloader::errors::InvalidTransaction::AAValidationError;
 use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
 use crate::bootloader::errors::{AAMethod, InvalidAA};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
-use crate::bootloader::runner::{run_till_completion, RunnerMemories};
+use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::{BasicBootloader, Bytes32};
@@ -61,7 +61,7 @@ where
     fn validate(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _memories: RunnerMemories,
+        _memories: RunnerMemoryBuffers,
         _tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -170,7 +170,7 @@ where
     fn execute<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        memories: RunnerMemories<'a>,
+        memories: RunnerMemoryBuffers<'a>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -315,7 +315,7 @@ where
     fn pay_for_transaction(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _memories: RunnerMemories,
+        _memories: RunnerMemoryBuffers,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -367,7 +367,7 @@ where
     fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        mut memories: RunnerMemories,
+        mut memories: RunnerMemoryBuffers,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -528,7 +528,7 @@ struct TxExecutionResult<'a, S: SystemTypes> {
 fn process_deployment<'a, S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    memories: RunnerMemories<'a>,
+    memories: RunnerMemoryBuffers<'a>,
     resources: &mut S::Resources,
     to_ee_type: ExecutionEnvironmentType,
     main_calldata: &[u8],
@@ -635,7 +635,7 @@ where
 fn erc20_allowance<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    memories: RunnerMemories,
+    memories: RunnerMemoryBuffers,
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,
@@ -715,7 +715,7 @@ where
 fn erc20_approve<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    memories: RunnerMemories,
+    memories: RunnerMemoryBuffers,
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,

@@ -7,7 +7,7 @@ use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
 use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidAA, InvalidTransaction, TxError};
-use crate::bootloader::runner::RunnerMemories;
+use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::{require, require_internal};
 use constants::L1_TX_INTRINSIC_NATIVE_COST;
 use constants::L1_TX_NATIVE_PRICE;
@@ -45,7 +45,7 @@ where
         initial_calldata_buffer: &mut [u8],
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        memories: RunnerMemories<'a>,
+        memories: RunnerMemoryBuffers<'a>,
         is_first_tx: bool,
     ) -> Result<TxProcessingResult<'a>, TxError> {
         let transaction = ZkSyncTransaction::try_from_slice(initial_calldata_buffer)
@@ -84,7 +84,7 @@ where
     fn process_l1_transaction<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        memories: RunnerMemories<'a>,
+        memories: RunnerMemoryBuffers<'a>,
         transaction: ZkSyncTransaction,
         is_priority_op: bool,
     ) -> Result<TxProcessingResult<'a>, TxError> {
@@ -297,7 +297,7 @@ where
     fn execute_l1_transaction_and_notify_result<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        memories: RunnerMemories<'a>,
+        memories: RunnerMemoryBuffers<'a>,
         transaction: &ZkSyncTransaction,
         from: B160,
         to: B160,
@@ -395,7 +395,7 @@ where
     fn process_l2_transaction<'a, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        mut memories: RunnerMemories<'a>,
+        mut memories: RunnerMemoryBuffers<'a>,
         mut transaction: ZkSyncTransaction,
     ) -> Result<TxProcessingResult<'a>, TxError> {
         let from = transaction.from.read();
@@ -614,7 +614,7 @@ where
     fn transaction_validation<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        mut memories: RunnerMemories,
+        mut memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -705,7 +705,7 @@ where
     fn transaction_execution<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        memories: RunnerMemories<'a>,
+        memories: RunnerMemoryBuffers<'a>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -756,7 +756,7 @@ where
     fn ensure_payment<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        mut memories: RunnerMemories,
+        mut memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,

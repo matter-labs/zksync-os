@@ -1,4 +1,4 @@
-use crate::bootloader::runner::{run_till_completion, RunnerMemories};
+use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use system_hooks::HooksStorage;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::CallModifier;
@@ -53,7 +53,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub fn run_single_interaction<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        memories: RunnerMemories<'a>,
+        memories: RunnerMemoryBuffers<'a>,
         calldata: &[u8],
         caller: &B160,
         callee: &B160,

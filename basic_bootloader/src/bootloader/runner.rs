@@ -25,7 +25,7 @@ use zk_ee::system::{
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
 pub fn run_till_completion<'a, S: EthereumLikeTypes>(
-    memories: RunnerMemories<'a>,
+    memories: RunnerMemoryBuffers<'a>,
     system: &mut System<S>,
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
@@ -78,19 +78,19 @@ where
     }
 }
 
-pub struct RunnerMemories<'a> {
+pub struct RunnerMemoryBuffers<'a> {
     //callstack: &'a mut [MaybeUninit<SupportedEEVMState<'static, S>>],
     pub heaps: &'a mut [MaybeUninit<u8>],
     pub return_data: &'a mut [MaybeUninit<u8>],
     //pub callstack: &'a mut [MaybeUninit<SupportedEEVMState<'a, S>>],
 }
 
-impl RunnerMemories<'_> {
+impl RunnerMemoryBuffers<'_> {
     /// This struct can't implement [Clone] because it contains mutable references.
     /// This analogue of cloning holds onto self until the returned struct is dropped.
-    pub fn reborrow<'a>(&'a mut self) -> RunnerMemories<'a> {
-        let RunnerMemories { heaps, return_data } = self;
-        RunnerMemories { heaps, return_data }
+    pub fn reborrow<'a>(&'a mut self) -> RunnerMemoryBuffers<'a> {
+        let RunnerMemoryBuffers { heaps, return_data } = self;
+        RunnerMemoryBuffers { heaps, return_data }
     }
 }
 

@@ -17,7 +17,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub(crate) fn validate_and_pay_for_paymaster_transaction<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        memories: RunnerMemories<'a>,
+        memories: RunnerMemoryBuffers<'a>,
         transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
@@ -324,7 +324,7 @@ where {
     pub fn call_account_method<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        memories: RunnerMemories<'a>,
+        memories: RunnerMemoryBuffers<'a>,
         transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,

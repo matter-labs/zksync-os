@@ -39,7 +39,7 @@ use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::TX_OFFSET;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::result_keeper::*;
-use crate::bootloader::runner::RunnerMemories;
+use crate::bootloader::runner::RunnerMemoryBuffers;
 use system_hooks::HooksStorage;
 use zk_ee::system::*;
 use zk_ee::utils::*;
@@ -190,7 +190,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             Box::new_uninit_slice_in(MAX_RETURN_BUFFER_SIZE, system.get_allocator());
         //let callstack = Box::new_uninit_slice_in(MAX_CALLSTACK_DEPTH, system.get_allocator());
 
-        let mut memories = RunnerMemories {
+        let mut memories = RunnerMemoryBuffers {
             heaps: &mut heaps,
             return_data: &mut return_data,
             //callstack: &mut callstack,
