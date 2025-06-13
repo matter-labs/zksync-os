@@ -15,9 +15,7 @@ use zk_ee::types_config::SystemIOTypesConfig;
 
 impl<S: SystemTypes> EEDeploymentExtraParameters<S> for CreateScheme {}
 
-impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
-    for Interpreter<'calldata, S>
-{
+impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee, S> {
     const NEEDS_SCRATCH_SPACE: bool = false;
 
     const EE_VERSION_BYTE: u8 = ExecutionEnvironmentType::EVM_EE_BYTE;
@@ -86,7 +84,7 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
         })
     }
 
-    fn start_executing_frame<'a, 'i: 'calldata, 'h: 'calldata>(
+    fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
@@ -211,7 +209,7 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
         self.execute_till_yield_point(system)
     }
 
-    fn continue_after_external_call<'a, 'res: 'calldata>(
+    fn continue_after_external_call<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
@@ -249,7 +247,7 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
         self.execute_till_yield_point(system)
     }
 
-    fn continue_after_deployment<'a, 'res: 'calldata>(
+    fn continue_after_deployment<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,

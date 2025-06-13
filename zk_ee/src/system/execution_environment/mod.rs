@@ -38,7 +38,7 @@ pub trait EEDeploymentExtraParameters<S: SystemTypes>: 'static + Sized + core::a
 ///
 /// Execution environment interface.
 ///
-pub trait ExecutionEnvironment<'calldata, S: SystemTypes>: Sized {
+pub trait ExecutionEnvironment<'ee, S: SystemTypes>: Sized {
     const NEEDS_SCRATCH_SPACE: bool;
 
     const EE_VERSION_BYTE: u8;
@@ -73,7 +73,7 @@ pub trait ExecutionEnvironment<'calldata, S: SystemTypes>: Sized {
     /// Start the execution of an EE frame in a given initial state.
     /// Returns a preemption point for the bootloader to handle.
     ///
-    fn start_executing_frame<'a, 'i: 'calldata, 'h: 'calldata>(
+    fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
@@ -81,7 +81,7 @@ pub trait ExecutionEnvironment<'calldata, S: SystemTypes>: Sized {
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError>;
 
     /// Continues after the bootloader handled a completed external call.
-    fn continue_after_external_call<'a, 'res: 'calldata>(
+    fn continue_after_external_call<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
@@ -89,7 +89,7 @@ pub trait ExecutionEnvironment<'calldata, S: SystemTypes>: Sized {
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError>;
 
     /// Continues after the bootloader handled a completed deployment.
-    fn continue_after_deployment<'a, 'res: 'calldata>(
+    fn continue_after_deployment<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,

@@ -8,7 +8,7 @@ use zk_ee::system::*;
 
 use super::*;
 
-impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
+impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn balance(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, BALANCE_NATIVE_COST)?;
         let [address] = self.pop_addresses::<1>()?;

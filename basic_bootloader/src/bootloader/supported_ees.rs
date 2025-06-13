@@ -14,7 +14,7 @@ pub enum SupportedEEVMState<'a, S: EthereumLikeTypes> {
     EVM(SystemBoundEVMInterpreter<'a, S>) = EVM_EE_BYTE,
 }
 
-impl<'calldata, S: EthereumLikeTypes> SupportedEEVMState<'calldata, S> {
+impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
     pub fn needs_scratch_space(&self) -> bool {
         match self {
             SupportedEEVMState::EVM(..) => SystemBoundEVMInterpreter::<S>::NEEDS_SCRATCH_SPACE,
@@ -58,7 +58,7 @@ impl<'calldata, S: EthereumLikeTypes> SupportedEEVMState<'calldata, S> {
 
     /// Starts executing a new frame within the current EE.
     /// initial_state contains all the necessary information - calldata, environment settings and resources passed.
-    pub fn start_executing_frame<'a, 'i: 'calldata, 'h: 'calldata>(
+    pub fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         initial_state: ExecutionEnvironmentLaunchParams<'i, S>,
@@ -69,7 +69,7 @@ impl<'calldata, S: EthereumLikeTypes> SupportedEEVMState<'calldata, S> {
         }
     }
 
-    pub fn continue_after_external_call<'a, 'res: 'calldata>(
+    pub fn continue_after_external_call<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
@@ -82,7 +82,7 @@ impl<'calldata, S: EthereumLikeTypes> SupportedEEVMState<'calldata, S> {
         }
     }
 
-    pub fn continue_after_deployment<'a, 'res: 'calldata>(
+    pub fn continue_after_deployment<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,

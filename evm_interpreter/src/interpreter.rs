@@ -10,7 +10,7 @@ use zk_ee::system::{
 use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, Resources, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
 
-impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
+impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     /// Keeps executing instructions (steps) from the system, until it hits a yield point -
     /// either due to some error, or return, or when trying to call a different contract
     /// or create one.
@@ -134,7 +134,7 @@ pub enum CreateScheme {
     },
 }
 
-impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
+impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub(crate) const PRINT_OPCODES: bool = false;
 
     #[allow(dead_code)]
@@ -428,7 +428,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
         }
     }
 
-    pub(crate) fn copy_returndata_to_heap(&mut self, returndata_region: &'calldata [u8]) {
+    pub(crate) fn copy_returndata_to_heap(&mut self, returndata_region: &'ee [u8]) {
         // NOTE: it's not "returndatacopy", but if there was a "call" that did set up non-empty buffer for returndata,
         // it'll be automatically copied there
         if !self.returndata_location.is_empty() {
