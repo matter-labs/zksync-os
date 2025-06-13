@@ -36,7 +36,10 @@ use alloc::collections::BTreeMap;
 use core::alloc::Allocator;
 use errors::FatalError;
 use precompiles::{pure_system_function_hook_impl, IdentityPrecompile};
-use zk_ee::system::{errors::InternalError, EthereumLikeTypes, System, SystemTypes, *};
+use zk_ee::{
+    memory::slice_vec::SliceVec,
+    system::{errors::InternalError, EthereumLikeTypes, System, SystemTypes, *},
+};
 
 pub mod addresses_constants;
 #[cfg(feature = "mock-unsupported-precompiles")]
@@ -60,26 +63,23 @@ mod precompiles;
 /// And output is execution result.
 ///
 pub struct SystemHook<S: SystemTypes>(
-    fn(ExternalCallRequest<S>, u8, &mut System<S>) -> Result<CompletedExecution<S>, FatalError>,
-)
-where
-    S::Memory: MemorySubsystemExt;
+    for<'a> fn(
+        ExternalCallRequest<S>,
+        u8,
+        &mut System<S>,
+        &'a mut SliceVec<u8>,
+    ) -> Result<CompletedExecution<'a, S>, FatalError>,
+);
 
 ///
 /// System hooks storage.
 /// Stores hooks implementations and processes calls to system addresses.
 ///
-pub struct HooksStorage<S: SystemTypes, A: Allocator + Clone>
-where
-    S::Memory: MemorySubsystemExt,
-{
+pub struct HooksStorage<S: SystemTypes, A: Allocator + Clone> {
     inner: BTreeMap<u16, SystemHook<S>, A>,
 }
 
-impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A>
-where
-    S::Memory: MemorySubsystemExt,
-{
+impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
     ///
     /// Creates empty hooks storage with a given allocator.
     ///
@@ -103,17 +103,18 @@ where
     /// Intercepts calls to low addresses (< 2^16) and executes hooks
     /// stored under that address. If no hook is stored there, return `Ok(None)`.
     ///
-    pub fn try_intercept(
+    pub fn try_intercept<'a>(
         &mut self,
         address_low: u16,
         request: ExternalCallRequest<S>,
         caller_ee: u8,
         system: &mut System<S>,
-    ) -> Result<Option<CompletedExecution<S>>, FatalError> {
+        return_memory: &'a mut SliceVec<u8>,
+    ) -> Result<Option<CompletedExecution<'a, S>>, FatalError> {
         let Some(hook) = self.inner.get(&address_low) else {
             return Ok(None);
         };
-        let res = hook.0(request, caller_ee, system)?;
+        let res = hook.0(request, caller_ee, system, return_memory)?;
 
         Ok(Some(res))
     }
@@ -128,7 +129,6 @@ where
 
 impl<S: EthereumLikeTypes, A: Allocator + Clone> HooksStorage<S, A>
 where
-    S::Memory: MemorySubsystemExt,
     S::IO: IOSubsystemExt,
 {
     ///
@@ -201,12 +201,11 @@ where
 ///
 /// Utility function to create empty revert state.
 ///
-fn make_error_return_state<S: SystemTypes>(
-    system: &mut System<S>,
+fn make_error_return_state<'a, S: SystemTypes>(
     remaining_resources: S::Resources,
-) -> CompletedExecution<S> {
+) -> CompletedExecution<'a, S> {
     CompletedExecution {
-        return_values: ReturnValues::empty(system),
+        return_values: ReturnValues::empty(),
         resources_returned: remaining_resources,
         reverted: true,
     }
@@ -216,9 +215,8 @@ fn make_error_return_state<S: SystemTypes>(
 /// Utility function to create return state with returndata region reference.
 ///
 fn make_return_state_from_returndata_region<S: SystemTypes>(
-    _system: &mut System<S>,
     remaining_resources: S::Resources,
-    returndata: OSImmutableSlice<S>,
+    returndata: &[u8],
 ) -> CompletedExecution<S> {
     let return_values = ReturnValues {
         returndata,

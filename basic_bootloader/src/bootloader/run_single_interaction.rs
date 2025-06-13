@@ -1,7 +1,5 @@
-use crate::bootloader::runner::run_till_completion;
-use crate::bootloader::supported_ees::SupportedEEVMState;
+use crate::bootloader::runner::{run_till_completion, RunnerMemories};
 use system_hooks::HooksStorage;
-use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::CallModifier;
 use zk_ee::system::{EthereumLikeTypes, System};
@@ -52,20 +50,19 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     /// assumes the caller's balance has been validated. It returns an
     /// internal error in case of balance underflow.
     ///
-    pub fn run_single_interaction(
+    pub fn run_single_interaction<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemories<'a>,
         calldata: &[u8],
         caller: &B160,
         callee: &B160,
         mut resources: S::Resources,
         nominal_token_value: &U256,
         should_make_frame: bool,
-    ) -> Result<CompletedExecution<S>, FatalError>
+    ) -> Result<CompletedExecution<'a, S>, FatalError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         if DEBUG_OUTPUT {
             let _ = system
@@ -119,16 +116,11 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 nominal_token_value: *nominal_token_value,
             });
 
-        let final_state = run_till_completion(
-            callstack,
-            system,
-            system_functions,
-            ee_type,
-            initial_request,
-        )?;
+        let final_state =
+            run_till_completion(memories, system, system_functions, ee_type, initial_request)?;
 
         let TransactionEndPoint::CompletedExecution(CompletedExecution {
-            mut return_values,
+            return_values,
             resources_returned,
             reverted,
         }) = final_state
@@ -140,11 +132,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             system
                 .finish_global_frame(reverted.then_some(rollback_handle))
                 .map_err(|_| InternalError("must finish execution frame"))?;
-            let returndata = system
-                .memory
-                .copy_into_return_memory(&return_values.returndata)?;
-            let returndata = returndata.take_slice(0..returndata.len());
-            return_values.returndata = returndata;
         }
         Ok(CompletedExecution {
             return_values,

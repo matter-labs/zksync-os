@@ -47,45 +47,32 @@ fn bn254_ecadd_as_system_function_inner<
         <R::Native as zk_ee::system::Computational>::from_computational(BN254_ECADD_NATIVE_COST),
     ))?;
 
-    let mut buffer = [0u8; 128];
-    for (dst, src) in buffer.iter_mut().zip(src.iter()) {
+    let mut coordinates = [[[0u8; 32], [0u8; 32]], [[0u8; 32], [0u8; 32]]];
+    for (dst, src) in coordinates.iter_mut().flatten().flatten().zip(src.iter()) {
         *dst = *src;
     }
 
-    let mut it = buffer.array_chunks::<32>();
-    let serialized_result = unsafe {
-        let x0 = it.next().unwrap_unchecked();
-        let y0 = it.next().unwrap_unchecked();
-        let x1 = it.next().unwrap_unchecked();
-        let y1 = it.next().unwrap_unchecked();
-
-        bn254_ecadd_inner(x0, y0, x1, y1).map_err(|_| SystemFunctionError::InvalidInput)?
-    };
+    let serialized_result =
+        bn254_ecadd_inner(coordinates).map_err(|_| SystemFunctionError::InvalidInput)?;
 
     dst.extend(serialized_result);
 
     Ok(())
 }
 
-pub fn bn254_ecadd_inner(
-    x0: &[u8; 32],
-    y0: &[u8; 32],
-    x1: &[u8; 32],
-    y1: &[u8; 32],
-) -> Result<[u8; 64], ()> {
+pub fn bn254_ecadd_inner(coordinates: [[[u8; 32]; 2]; 2]) -> Result<[u8; 64], ()> {
     use crypto::ark_ec::AffineRepr;
     use crypto::ark_ff::PrimeField;
     use crypto::ark_serialize::CanonicalDeserialize;
     use crypto::bn254::*;
 
     let mut points = [G1Affine::identity(); 2];
-    for (dst, [x, y]) in points.iter_mut().zip([[x0, y0], [x1, y1]].into_iter()) {
+    for (dst, [mut x, mut y]) in points.iter_mut().zip(coordinates.into_iter()) {
         let is_zero = x.iter().all(|el| *el == 0) && y.iter().all(|el| *el == 0);
         if is_zero {
             continue;
         }
-        let mut x = *x;
-        let mut y = *y;
+
         bytereverse(&mut x);
         bytereverse(&mut y);
         let x_bigint =

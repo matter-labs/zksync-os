@@ -7,7 +7,7 @@ use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
 use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidAA, InvalidTransaction, TxError};
-use crate::bootloader::supported_ees::SupportedEEVMState;
+use crate::bootloader::runner::RunnerMemories;
 use crate::{require, require_internal};
 use constants::L1_TX_INTRINSIC_NATIVE_COST;
 use constants::L1_TX_NATIVE_PRICE;
@@ -22,7 +22,6 @@ use gas_helpers::check_enough_resources_for_pubdata;
 use gas_helpers::get_resources_to_charge_for_pubdata;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
-use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::{EthereumLikeTypes, Resources};
 
@@ -35,7 +34,6 @@ struct ValidationResult {
 impl<S: EthereumLikeTypes> BasicBootloader<S>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     ///
     /// Process transaction.
@@ -43,13 +41,13 @@ where
     /// We are passing callstack from outside to reuse its memory space between different transactions.
     /// It's expected to be empty.
     ///
-    pub fn process_transaction<Config: BasicBootloaderExecutionConfig>(
+    pub fn process_transaction<'a, Config: BasicBootloaderExecutionConfig>(
         initial_calldata_buffer: &mut [u8],
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemories<'a>,
         is_first_tx: bool,
-    ) -> Result<TxProcessingResult<S>, TxError> {
+    ) -> Result<TxProcessingResult<'a>, TxError> {
         let transaction = ZkSyncTransaction::try_from_slice(initial_calldata_buffer)
             .map_err(|_| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
 
@@ -65,31 +63,31 @@ where
                     Self::process_l1_transaction(
                         system,
                         system_functions,
-                        callstack,
+                        memories,
                         transaction,
                         false,
                     )
                 }
             }
             ZkSyncTransaction::L1_L2_TX_TYPE => {
-                Self::process_l1_transaction(system, system_functions, callstack, transaction, true)
+                Self::process_l1_transaction(system, system_functions, memories, transaction, true)
             }
             _ => Self::process_l2_transaction::<Config>(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 transaction,
             ),
         }
     }
 
-    fn process_l1_transaction(
+    fn process_l1_transaction<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemories<'a>,
         transaction: ZkSyncTransaction,
         is_priority_op: bool,
-    ) -> Result<TxProcessingResult<S>, TxError> {
+    ) -> Result<TxProcessingResult<'a>, TxError> {
         // The work done by the bootloader (outside of EE or EOA specific
         // computation) is charged as part of the intrinsic gas cost.
         let gas_limit = transaction.gas_limit.read();
@@ -172,7 +170,7 @@ where
             match Self::execute_l1_transaction_and_notify_result(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 &transaction,
                 from,
                 to,
@@ -195,17 +193,12 @@ where
                 Err(FatalError::OutOfNativeResources) => {
                     resources.exhaust_ergs();
                     system.finish_global_frame(Some(&rollback_handle))?;
-                    callstack.clear();
-                    ExecutionResult::Revert {
-                        output: system.memory.empty_immutable_slice(),
-                    }
+                    ExecutionResult::Revert { output: &[] }
                 }
                 Err(FatalError::Internal(e)) => return Err(e.into()),
             }
         } else {
-            ExecutionResult::Revert {
-                output: system.memory.empty_immutable_slice(),
-            }
+            ExecutionResult::Revert { output: &[] }
         };
 
         // Compute gas to refund
@@ -301,10 +294,10 @@ where
         })
     }
 
-    fn execute_l1_transaction_and_notify_result(
+    fn execute_l1_transaction_and_notify_result<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemories<'a>,
         transaction: &ZkSyncTransaction,
         from: B160,
         to: B160,
@@ -312,7 +305,7 @@ where
         native_per_pubdata: U256,
         resources: &mut S::Resources,
         withheld_resources: S::Resources,
-    ) -> Result<ExecutionResult<S>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, FatalError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Executing L1 transaction\n"));
@@ -354,7 +347,7 @@ where
         } = BasicBootloader::run_single_interaction(
             system,
             system_functions,
-            callstack,
+            memories,
             calldata,
             &from,
             &to,
@@ -399,12 +392,12 @@ where
         Ok(execution_result)
     }
 
-    fn process_l2_transaction<Config: BasicBootloaderExecutionConfig>(
+    fn process_l2_transaction<'a, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        mut memories: RunnerMemories<'a>,
         mut transaction: ZkSyncTransaction,
-    ) -> Result<TxProcessingResult<S>, TxError> {
+    ) -> Result<TxProcessingResult<'a>, TxError> {
         let from = transaction.from.read();
         let gas_limit = transaction.gas_limit.read();
         let calldata = transaction.calldata();
@@ -509,7 +502,7 @@ where
             Self::transaction_validation::<Config>(
                 system,
                 system_functions,
-                callstack,
+                memories.reborrow(),
                 tx_hash,
                 suggested_signed_hash,
                 &mut transaction,
@@ -533,7 +526,7 @@ where
         let execution_result = match Self::transaction_execution(
             system,
             system_functions,
-            callstack,
+            memories,
             tx_hash,
             suggested_signed_hash,
             &mut transaction,
@@ -560,10 +553,7 @@ where
                     .write_fmt(format_args!("Transaction ran out of native resource\n"));
                 resources.exhaust_ergs();
                 system.finish_global_frame(Some(&rollback_handle))?;
-                callstack.clear();
-                ExecutionResult::Revert {
-                    output: system.memory.empty_immutable_slice(),
-                }
+                ExecutionResult::Revert { output: &[] }
             }
             Err(FatalError::Internal(e)) => return Err(e.into()),
         };
@@ -577,7 +567,6 @@ where
             Self::refund_transaction::<Config>(
                 system,
                 system_functions,
-                callstack,
                 tx_hash,
                 suggested_signed_hash,
                 &mut transaction,
@@ -625,7 +614,7 @@ where
     fn transaction_validation<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        mut memories: RunnerMemories,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -662,7 +651,7 @@ where
         account_model.validate(
             system,
             system_functions,
-            callstack,
+            memories.reborrow(),
             tx_hash,
             suggested_signed_hash,
             transaction,
@@ -689,7 +678,7 @@ where
         Self::ensure_payment::<Config>(
             system,
             system_functions,
-            callstack,
+            memories,
             tx_hash,
             suggested_signed_hash,
             transaction,
@@ -713,10 +702,10 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn transaction_execution(
+    fn transaction_execution<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemories<'a>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -725,7 +714,7 @@ where
         validation_pubdata: u64,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<S>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, FatalError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Start of execution\n"));
@@ -736,7 +725,7 @@ where
         let execution_result = account_model.execute(
             system,
             system_functions,
-            callstack,
+            memories,
             tx_hash,
             suggested_signed_hash,
             transaction,
@@ -767,7 +756,7 @@ where
     fn ensure_payment<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        mut memories: RunnerMemories,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -799,7 +788,7 @@ where
             account_model.pre_paymaster(
                 system,
                 system_functions,
-                callstack,
+                memories.reborrow(),
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -812,7 +801,7 @@ where
             let return_values = Self::validate_and_pay_for_paymaster_transaction(
                 system,
                 system_functions,
-                callstack,
+                memories.reborrow(),
                 transaction,
                 tx_hash,
                 suggested_signed_hash,
@@ -829,7 +818,7 @@ where
             account_model.pay_for_transaction(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -915,12 +904,11 @@ where
     fn refund_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
         from: B160,
-        execution_result: &ExecutionResult<S>,
+        execution_result: &ExecutionResult,
         gas_price: U256,
         native_per_gas: U256,
         native_per_pubdata: U256,

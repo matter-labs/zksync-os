@@ -3,7 +3,6 @@ use alloc::vec;
 use core::alloc::GlobalAlloc;
 use core::alloc::Layout;
 use ruint::aliases::B160;
-use std::time::Instant;
 use talc::ClaimOnOom;
 use talc::ErrOnOom;
 use talc::Span;
@@ -29,40 +28,6 @@ impl Ord for WarmStorageKey {
             a => a,
         }
     }
-}
-
-const B: usize = 6;
-pub const CAPACITY: usize = 2 * B - 1;
-
-type BoxedNode<K, V> = core::ptr::NonNull<LeafNode<K, V>>;
-
-#[repr(C)]
-// gdb_providers.py uses this type name for introspection.
-struct InternalNode<K, V> {
-    data: LeafNode<K, V>,
-
-    /// The pointers to the children of this node. `len + 1` of these are considered
-    /// initialized and valid, except that near the end, while the tree is held
-    /// through borrow type `Dying`, some of these pointers are dangling.
-    edges: [core::mem::MaybeUninit<BoxedNode<K, V>>; 2 * B],
-}
-
-struct LeafNode<K, V> {
-    /// We want to be covariant in `K` and `V`.
-    parent: Option<core::ptr::NonNull<InternalNode<K, V>>>,
-
-    /// This node's index into the parent node's `edges` array.
-    /// `*node.parent.edges[node.parent_idx]` should be the same thing as `node`.
-    /// This is only guaranteed to be initialized when `parent` is non-null.
-    parent_idx: core::mem::MaybeUninit<u16>,
-
-    /// The number of keys and values this node stores.
-    len: u16,
-
-    /// The arrays storing the actual data of the node. Only the first `len` elements of each
-    /// array are initialized and valid.
-    keys: [core::mem::MaybeUninit<K>; CAPACITY],
-    vals: [core::mem::MaybeUninit<V>; CAPACITY],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
@@ -92,120 +57,6 @@ fn test_talc_huge_allocation() {
         assert!(huge_vec.capacity() == 1 << 27);
         huge_vec.push(0);
     }
-}
-
-fn benchmark_allocator(allocator: &dyn GlobalAlloc, name: &str) {
-    const BENCH_DURATION: f64 = 5.0;
-
-    let mut active_allocations = Vec::new();
-
-    let mut alloc_ticks_vec = Vec::new();
-    let mut dealloc_ticks_vec = Vec::new();
-
-    for i in 1..10000 {
-        let layout = Layout::from_size_align(i * 8, 8).unwrap();
-        let ptr = unsafe { allocator.alloc(layout) };
-        assert!(!ptr.is_null());
-        unsafe {
-            let _ = ptr.read_volatile();
-        }
-        unsafe {
-            allocator.dealloc(ptr, layout);
-        }
-    }
-
-    let bench_timer = Instant::now();
-    for i in 0.. {
-        if i % 0x10000 == 0 && (Instant::now() - bench_timer).as_secs_f64() > BENCH_DURATION {
-            break;
-        }
-
-        let size = fastrand::usize(1..1 << 22);
-        let align = 8 << fastrand::u16(..).trailing_zeros() / 2;
-        let layout = Layout::from_size_align(size, align).unwrap();
-
-        let alloc_begin = Instant::now();
-        let alloc = unsafe { allocator.alloc(layout) };
-        let alloc_ticks = alloc_begin.elapsed();
-
-        if !alloc.is_null() {
-            alloc_ticks_vec.push(alloc_ticks);
-            active_allocations.push((alloc, layout));
-        } else {
-            for (ptr, layout) in active_allocations.drain(..) {
-                let dealloc_begin = Instant::now();
-                unsafe {
-                    allocator.dealloc(ptr, layout);
-                }
-                let dealloc_ticks = dealloc_begin.elapsed();
-                dealloc_ticks_vec.push(dealloc_ticks);
-            }
-            continue;
-        }
-
-        if active_allocations.len() > 10 && fastrand::usize(..10) == 0 {
-            for _ in 0..8 {
-                let index = fastrand::usize(..active_allocations.len());
-                let allocation = active_allocations.swap_remove(index);
-
-                let dealloc_begin = Instant::now();
-                unsafe {
-                    allocator.dealloc(allocation.0, allocation.1);
-                }
-                let dealloc_ticks = dealloc_begin.elapsed();
-                dealloc_ticks_vec.push(dealloc_ticks);
-            }
-        }
-    }
-
-    alloc_ticks_vec.sort_unstable();
-    dealloc_ticks_vec.sort_unstable();
-    let alloc_ticks = alloc_ticks_vec
-        .into_iter()
-        .map(|x| x.as_nanos() as f64)
-        .collect::<Vec<_>>();
-    let dealloc_ticks = dealloc_ticks_vec
-        .into_iter()
-        .map(|x| x.as_nanos() as f64)
-        .collect::<Vec<_>>();
-
-    let alloc_ticks = remove_outliers_sorted(&alloc_ticks);
-    let dealloc_ticks = remove_outliers_sorted(&dealloc_ticks);
-
-    println!(
-        "|{:>22} | {:>42} | {:>42} |",
-        name,
-        format!("{} ({})", mean(alloc_ticks), stddev(alloc_ticks)),
-        format!("{} ({})", mean(dealloc_ticks), stddev(dealloc_ticks))
-    );
-}
-
-fn mean(data: &[f64]) -> f64 {
-    data.iter().sum::<f64>() / data.len() as f64
-}
-
-fn var(data: &[f64]) -> f64 {
-    let mean = mean(data);
-    data.iter().map(|&x| (x - mean) * (x - mean)).sum::<f64>() / data.len() as f64
-}
-
-fn stddev(data: &[f64]) -> f64 {
-    var(data).sqrt()
-}
-
-fn remove_outliers_sorted(data: &[f64]) -> &[f64] {
-    // assert!(data.is_sorted());
-    let upper_bound = mean(data) + 50.0 * stddev(data);
-
-    let mut i = data.len();
-    while i > 0 {
-        i -= 1;
-        if data[i] < upper_bound {
-            return &data[..=i];
-        }
-    }
-
-    &data
 }
 
 #[test]

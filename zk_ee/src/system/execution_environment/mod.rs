@@ -19,29 +19,15 @@ use super::errors::InternalError;
 use super::system::System;
 use super::system::SystemTypes;
 use super::IOSubsystemExt;
-use super::MemorySubsystem;
+use crate::memory::slice_vec::SliceVec;
 use crate::system::CallModifier;
 use crate::system::Ergs;
-use crate::system::OSManagedRegion;
 use crate::types_config::*;
-
-#[allow(type_alias_bounds)]
-pub type OSResizableSlice<S: SystemTypes> = <S::Memory as MemorySubsystem>::ManagedRegion;
-#[allow(type_alias_bounds)]
-pub type OSImmutableSlice<S: SystemTypes> =
-    <<S::Memory as MemorySubsystem>::ManagedRegion as OSManagedRegion>::OSManagedImmutableSlice;
-// NOTE: even though it is not mandatory that bytecode resides in the same address space as managed
-// regions used by EEs, we make such alias for now. Later we can remove it and make as separate
-// associated type in MemorySubsystem
-#[allow(type_alias_bounds)]
-pub type OSAllocator<S: SystemTypes> = <S::Memory as MemorySubsystem>::Allocator;
 
 // we should consider some bound of amount of data that is deployment-specific,
 // for now it's arbitrary
 pub trait EEDeploymentExtraParameters<S: SystemTypes>: 'static + Sized + core::any::Any {
-    fn from_box_dyn(
-        src: alloc::boxed::Box<dyn Any, OSAllocator<S>>,
-    ) -> Result<Self, InternalError> {
+    fn from_box_dyn(src: alloc::boxed::Box<dyn Any, S::Allocator>) -> Result<Self, InternalError> {
         let box_self = src
             .downcast::<Self>()
             .map_err(|_| InternalError("from_box_dyn"))?;
@@ -87,33 +73,28 @@ pub trait ExecutionEnvironment<'calldata, S: SystemTypes>: Sized {
     /// Start the execution of an EE frame in a given initial state.
     /// Returns a preemption point for the bootloader to handle.
     ///
-    fn start_executing_frame<'a>(
-        &mut self,
+    fn start_executing_frame<'a, 'i: 'calldata, 'h: 'calldata>(
+        &'a mut self,
         system: &mut System<S>,
-        frame_state: ExecutionEnvironmentLaunchParams<'a, S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>
-    where
-        'a: 'calldata;
+        frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
+        heap: SliceVec<'h, u8>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError>;
 
-    ///
     /// Continues after the bootloader handled a completed external call.
-    ///
-    fn continue_after_external_call(
-        &mut self,
+    fn continue_after_external_call<'a, 'res: 'calldata>(
+        &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
-        call_result: CallResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>;
+        call_result: CallResult<'res, S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError>;
 
-    ///
     /// Continues after the bootloader handled a completed deployment.
-    ///
-    fn continue_after_deployment(
-        &mut self,
+    fn continue_after_deployment<'a, 'res: 'calldata>(
+        &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
-        deployment_result: DeploymentResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>;
+        deployment_result: DeploymentResult<'res, S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError>;
 
     type DeploymentExtraParameters: EEDeploymentExtraParameters<S>;
 

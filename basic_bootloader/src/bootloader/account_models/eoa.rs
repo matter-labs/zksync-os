@@ -8,8 +8,8 @@ use crate::bootloader::errors::InvalidTransaction::AAValidationError;
 use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
 use crate::bootloader::errors::{AAMethod, InvalidAA};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
-use crate::bootloader::runner::run_till_completion;
-use crate::bootloader::supported_ees::{SupportedEEVMState, SystemBoundEVMInterpreter};
+use crate::bootloader::runner::{run_till_completion, RunnerMemories};
+use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use core::fmt::Write;
@@ -19,7 +19,6 @@ use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::{
     errors::{InternalError, SystemError, UpdateQueryError},
@@ -58,12 +57,11 @@ pub struct EOA;
 impl<S: EthereumLikeTypes> AccountModel<S> for EOA
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     fn validate(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        _memories: RunnerMemories,
         _tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -169,23 +167,21 @@ where
         Ok(())
     }
 
-    fn execute(
+    fn execute<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemories<'a>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
         // This data is read before bumping nonce
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<S>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, FatalError> {
         // panic is not reachable, validated by the structure
         let from = transaction.from.read();
 
         let main_calldata = transaction.calldata();
-
-        assert!(callstack.len() == 0);
 
         // panic is not reachable, to is validated
         let to = transaction.to.read();
@@ -209,7 +205,7 @@ where
             Some(to_ee_type) => process_deployment(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 resources,
                 to_ee_type,
                 main_calldata,
@@ -221,7 +217,7 @@ where
                 let final_state = BasicBootloader::run_single_interaction(
                     system,
                     system_functions,
-                    callstack,
+                    memories,
                     main_calldata,
                     &from,
                     &to,
@@ -319,7 +315,7 @@ where
     fn pay_for_transaction(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        _memories: RunnerMemories,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -371,7 +367,7 @@ where
     fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        mut memories: RunnerMemories,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -421,7 +417,7 @@ where
             let current_allowance = erc20_allowance(
                 system,
                 system_functions,
-                callstack,
+                memories.reborrow(),
                 pre_tx_buffer,
                 from,
                 paymaster,
@@ -434,7 +430,7 @@ where
                 let success = erc20_approve(
                     system,
                     system_functions,
-                    callstack,
+                    memories.reborrow(),
                     pre_tx_buffer,
                     from,
                     paymaster,
@@ -451,7 +447,7 @@ where
                 let success = erc20_approve(
                     system,
                     system_functions,
-                    callstack,
+                    memories,
                     pre_tx_buffer,
                     from,
                     paymaster,
@@ -520,8 +516,8 @@ enum DeployedAddress {
     Address(B160),
 }
 
-struct TxExecutionResult<S: SystemTypes> {
-    return_values: ReturnValues<S>,
+struct TxExecutionResult<'a, S: SystemTypes> {
+    return_values: ReturnValues<'a, S>,
     resources_returned: S::Resources,
     reverted: bool,
     deployed_address: DeployedAddress,
@@ -529,20 +525,19 @@ struct TxExecutionResult<S: SystemTypes> {
 
 /// Run the deployment part of a contract creation tx
 /// The boolean in the return
-fn process_deployment<S: EthereumLikeTypes>(
+fn process_deployment<'a, S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut SliceVec<SupportedEEVMState<S>>,
+    memories: RunnerMemories<'a>,
     resources: &mut S::Resources,
     to_ee_type: ExecutionEnvironmentType,
     main_calldata: &[u8],
     from: B160,
     nominal_token_value: U256,
     existing_nonce: u64,
-) -> Result<TxExecutionResult<S>, FatalError>
+) -> Result<TxExecutionResult<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     // First, charge extra cost for deployment
     let extra_gas_cost = DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS as u64;
@@ -551,7 +546,7 @@ where
         Ok(_) => (),
         Err(SystemError::OutOfErgs) => {
             return Ok(TxExecutionResult {
-                return_values: ReturnValues::empty(system),
+                return_values: ReturnValues::empty(),
                 resources_returned: S::Resources::empty(),
                 reverted: true,
                 deployed_address: DeployedAddress::RevertedNoAddress,
@@ -563,7 +558,7 @@ where
     // Next check max initcode size
     if main_calldata.len() > MAX_INITCODE_SIZE {
         return Ok(TxExecutionResult {
-            return_values: ReturnValues::empty(system),
+            return_values: ReturnValues::empty(),
             resources_returned: resources.clone(),
             reverted: true,
             deployed_address: DeployedAddress::RevertedNoAddress,
@@ -576,11 +571,10 @@ where
         _ => return Err(InternalError("Unsupported EE").into()),
     };
 
-    let empty_region = system.memory.empty_immutable_slice();
     let deployment_parameters = DeploymentPreparationParameters {
         address_of_deployer: from,
         call_scratch_space: None,
-        constructor_parameters: empty_region, // no constructor parameters are supported as of yet
+        constructor_parameters: &[],
         nominal_token_value,
         deployment_code: main_calldata,
         ee_specific_deployment_processing_data,
@@ -590,7 +584,7 @@ where
     let rollback_handle = system.start_global_frame()?;
 
     let final_state = run_till_completion(
-        callstack,
+        memories,
         system,
         system_functions,
         to_ee_type,
@@ -604,7 +598,7 @@ where
         return Err(InternalError("attempt to deploy ended up in invalid state").into());
     };
 
-    let (deployment_success, reverted, mut return_values, at) = match deployment_result {
+    let (deployment_success, reverted, return_values, at) = match deployment_result {
         DeploymentResult::Successful {
             return_values,
             deployed_at,
@@ -614,11 +608,6 @@ where
     };
     // Do not forget to reassign it back after potential copy when finishing frame
     system.finish_global_frame(reverted.then_some(&rollback_handle))?;
-    let returndata = system
-        .memory
-        .copy_into_return_memory(&return_values.returndata)?;
-    let returndata = returndata.take_slice(0..returndata.len());
-    return_values.returndata = returndata;
 
     // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
     #[cfg(not(target_arch = "riscv32"))]
@@ -646,7 +635,7 @@ where
 fn erc20_allowance<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut SliceVec<SupportedEEVMState<S>>,
+    memories: RunnerMemories,
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,
@@ -655,7 +644,6 @@ fn erc20_allowance<S: EthereumLikeTypes>(
 ) -> Result<U256, TxError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     // Calldata:
     // selector (4)
@@ -690,7 +678,7 @@ where
     } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
-        callstack,
+        memories,
         calldata,
         &from,
         &token,
@@ -727,7 +715,7 @@ where
 fn erc20_approve<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut SliceVec<SupportedEEVMState<S>>,
+    memories: RunnerMemories,
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,
@@ -737,7 +725,6 @@ fn erc20_approve<S: EthereumLikeTypes>(
 ) -> Result<U256, TxError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     // Calldata:
     // selector (4)
@@ -771,7 +758,7 @@ where
     } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
-        callstack,
+        memories,
         calldata,
         &from,
         &token,
