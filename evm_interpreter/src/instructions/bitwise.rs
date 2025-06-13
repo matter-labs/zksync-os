@@ -70,19 +70,19 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn bitand(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, AND_NATIVE_COST)?;
         let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-        *op2 = op1.bitand(*op2);
+        *op2 = op1 & *op2;
         Ok(())
     }
     pub fn bitor(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, OR_NATIVE_COST)?;
         let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-        *op2 = op1.bitor(*op2);
+        *op2 = op1 | *op2;
         Ok(())
     }
     pub fn bitxor(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, XOR_NATIVE_COST)?;
         let ([op1], op2) = self.pop_values_and_peek::<1>()?;
-        *op2 = op1.bitxor(*op2);
+        *op2 = op1 ^ *op2;
         Ok(())
     }
 
