@@ -493,11 +493,12 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let _ = self.system.get_logger().log_data(calldata_iter);
 
         let rollback_handle;
-        let actual_resources_to_pass =
+        let (mut actual_resources_to_pass, resources_to_return_from_preparation) =
             match run_call_preparation(is_entry_frame, self.system, ee_type, &call_request) {
                 Ok(CallPreparationResult::Success {
                     mut actual_resources_to_pass,
                     transfer_to_perform,
+                    resources_returned,
                     ..
                 }) => {
                     // We create a new frame for callee, should include transfer and
@@ -514,10 +515,12 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         let failure = !matches!(call_result, CallResult::Successful { .. });
                         self.system
                             .finish_global_frame(failure.then_some(&rollback_handle))?;
+
+                        actual_resources_to_pass.reclaim(resources_returned);
                         return Ok((actual_resources_to_pass, call_result));
                     }
 
-                    actual_resources_to_pass
+                    (actual_resources_to_pass, resources_returned)
                 }
                 Ok(CallPreparationResult::Failure { resources_returned }) => {
                     return Ok((resources_returned, CallResult::CallFailedToExecute))
@@ -538,7 +541,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         if let Some(system_hook_run_result) = res {
             let CompletedExecution {
                 return_values,
-                resources_returned,
+                mut resources_returned,
                 reverted,
                 ..
             } = system_hook_run_result;
@@ -565,6 +568,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     None
                 })
                 .map_err(|_| InternalError("must finish execution frame"))?;
+
+            resources_returned.reclaim(resources_to_return_from_preparation);
             Ok((
                 resources_returned,
                 if reverted {
@@ -581,6 +586,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             self.system
                 .finish_global_frame(None)
                 .map_err(|_| InternalError("must finish execution frame"))?;
+
+            actual_resources_to_pass.reclaim(resources_to_return_from_preparation);
             Ok((
                 actual_resources_to_pass,
                 CallResult::Successful {
