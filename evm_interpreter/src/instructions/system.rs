@@ -29,7 +29,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             self.spend_gas(gas_constants::BASE)?;
             Self::EMPTY_SLICE_SHA3
         } else {
-            self.resize_heap(memory_offset, len, system)?;
+            self.resize_heap(memory_offset, len)?;
 
             let allocator = system.get_allocator();
             let input = &self.heap[memory_offset..(memory_offset + len)];
@@ -86,7 +86,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             return Ok(());
         }
         let memory_offset = self.cast_to_usize(&memory_offset, ExitCode::InvalidOperandOOG)?;
-        self.resize_heap(memory_offset, len, system)?;
+        self.resize_heap(memory_offset, len)?;
 
         // now follow logic of calldatacopy
         let source = u256_try_to_usize(&source_offset)
@@ -166,7 +166,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             return Ok(());
         }
         let memory_offset = self.cast_to_usize(&memory_offset, ExitCode::InvalidOperandOOG)?;
-        self.resize_heap(memory_offset, len, system)?;
+        self.resize_heap(memory_offset, len)?;
 
         let source = u256_try_to_usize(&source_offset)
             .and_then(|offset| self.calldata.get(offset..))
@@ -191,7 +191,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.stack_push_one(U256::from(returndata_len))
     }
 
-    pub fn returndatacopy(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn returndatacopy(&mut self) -> InstructionResult {
         let [memory_offset, source_offset, len] = self.pop_values::<3>()?;
         let len = self.cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
         let (gas_cost, native_cost) = self.very_low_copy_cost(len as u64)?;
@@ -208,7 +208,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         }
 
         let memory_offset = self.cast_to_usize(&memory_offset, ExitCode::InvalidOperandOOG)?;
-        self.resize_heap(memory_offset, len, system)?;
+        self.resize_heap(memory_offset, len)?;
 
         copy_and_zeropad_nonoverlapping(
             self.returndata.get(source_offset..).unwrap_or(&[]),

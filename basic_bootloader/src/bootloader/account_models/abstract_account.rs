@@ -4,15 +4,14 @@ use crate::bootloader::account_models::contract::Contract;
 use crate::bootloader::account_models::eoa::EOA;
 use crate::bootloader::account_models::AccountModel;
 use crate::bootloader::account_models::{ExecutionResult, TxError};
-use crate::bootloader::supported_ees::SupportedEEVMState;
+use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::Bytes32;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::FatalError;
-use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, MemorySubsystemExt, System};
+use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
 
 pub enum AA<S> {
     EOA(PhantomData<S>),
@@ -22,7 +21,6 @@ pub enum AA<S> {
 impl<S: EthereumLikeTypes> AA<S>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     pub fn account_model_for_account(
         tx: &ZkSyncTransaction,
@@ -73,7 +71,7 @@ where
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -86,7 +84,7 @@ where
             AA::EOA(_) => EOA::validate(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -98,7 +96,7 @@ where
             AA::Contract(_) => Contract::validate(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -112,22 +110,22 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn execute(
+    pub fn execute<'a>(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemoryBuffers<'a>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<S>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, FatalError> {
         match self {
             AA::EOA(_) => EOA::execute(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -137,7 +135,7 @@ where
             AA::Contract(_) => Contract::execute(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -179,7 +177,7 @@ where
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemoryBuffers<'_>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -191,7 +189,7 @@ where
             AA::EOA(_) => EOA::pay_for_transaction(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -202,7 +200,7 @@ where
             AA::Contract(_) => Contract::pay_for_transaction(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -218,7 +216,7 @@ where
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -231,7 +229,7 @@ where
             AA::EOA(_) => EOA::pre_paymaster(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -243,7 +241,7 @@ where
             AA::Contract(_) => Contract::pre_paymaster(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,

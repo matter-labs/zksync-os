@@ -2,6 +2,7 @@ use crate::bootloader::EVM_EE_BYTE;
 use errors::FatalError;
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
+    memory::slice_vec::SliceVec,
     system::{errors::InternalError, *},
 };
 
@@ -13,7 +14,7 @@ pub enum SupportedEEVMState<'a, S: EthereumLikeTypes> {
     EVM(SystemBoundEVMInterpreter<'a, S>) = EVM_EE_BYTE,
 }
 
-impl<'calldata, S: EthereumLikeTypes> SupportedEEVMState<'calldata, S> {
+impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
     pub fn needs_scratch_space(&self) -> bool {
         match self {
             SupportedEEVMState::EVM(..) => SystemBoundEVMInterpreter::<S>::NEEDS_SCRATCH_SPACE,
@@ -57,25 +58,23 @@ impl<'calldata, S: EthereumLikeTypes> SupportedEEVMState<'calldata, S> {
 
     /// Starts executing a new frame within the current EE.
     /// initial_state contains all the necessary information - calldata, environment settings and resources passed.
-    pub fn start_executing_frame<'a>(
-        &mut self,
+    pub fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
+        &'a mut self,
         system: &mut System<S>,
-        initial_state: ExecutionEnvironmentLaunchParams<'a, S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>
-    where
-        'a: 'calldata,
-    {
+        initial_state: ExecutionEnvironmentLaunchParams<'i, S>,
+        heap: SliceVec<'h, u8>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
         match self {
-            Self::EVM(evm_frame) => evm_frame.start_executing_frame(system, initial_state),
+            Self::EVM(evm_frame) => evm_frame.start_executing_frame(system, initial_state, heap),
         }
     }
 
-    pub fn continue_after_external_call(
-        &mut self,
+    pub fn continue_after_external_call<'a, 'res: 'ee>(
+        &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
-        call_result: CallResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
+        call_result: CallResult<'res, S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
         match self {
             Self::EVM(evm_frame) => {
                 evm_frame.continue_after_external_call(system, returned_resources, call_result)
@@ -83,12 +82,12 @@ impl<'calldata, S: EthereumLikeTypes> SupportedEEVMState<'calldata, S> {
         }
     }
 
-    pub fn continue_after_deployment(
-        &mut self,
+    pub fn continue_after_deployment<'a, 'res: 'ee>(
+        &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
-        deployment_result: DeploymentResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
+        deployment_result: DeploymentResult<'res, S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
         match self {
             Self::EVM(evm_frame) => {
                 evm_frame.continue_after_deployment(system, returned_resources, deployment_result)

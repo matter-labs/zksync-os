@@ -7,7 +7,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
         let [index] = self.pop_values::<1>()?;
         let index = self.cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
-        self.resize_heap(index, 32, system)?;
+        self.resize_heap(index, 32)?;
         let mut value = U256::ZERO;
         unsafe {
             let src = self.heap().as_ptr().add(index);
@@ -31,7 +31,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
         let [index, value] = self.pop_values::<2>()?;
         let index = self.cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
-        self.resize_heap(index, 32, system)?;
+        self.resize_heap(index, 32)?;
 
         unsafe {
             let mut le_value = value;
@@ -56,7 +56,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::VERYLOW, MSTORE8_NATIVE_COST)?;
         let [index, value] = self.pop_values::<2>()?;
         let index = self.cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
-        self.resize_heap(index, 1, system)?;
+        self.resize_heap(index, 1)?;
         let value = value.byte(0);
         self.heap()[index] = value;
 
@@ -78,7 +78,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.stack_push_one(U256::from(len))
     }
 
-    pub fn mcopy(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn mcopy(&mut self) -> InstructionResult {
         let [dst_offset, src_offset, len] = self.pop_values::<3>()?;
 
         let len = self.cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
@@ -91,7 +91,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
         let dst_offset = self.cast_to_usize(&dst_offset, ExitCode::InvalidOperandOOG)?;
         let src_offset = self.cast_to_usize(&src_offset, ExitCode::InvalidOperandOOG)?;
-        self.resize_heap(core::cmp::max(dst_offset, src_offset), len, system)?;
+        self.resize_heap(core::cmp::max(dst_offset, src_offset), len)?;
         unsafe {
             let src_ptr = self.heap().as_ptr().add(src_offset);
             let dst_ptr = self.heap().as_mut_ptr().add(dst_offset);

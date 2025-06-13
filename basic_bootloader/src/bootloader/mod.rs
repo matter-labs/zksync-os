@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::vec::Vec;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
 use result_keeper::ResultKeeperExt;
@@ -26,6 +25,7 @@ pub mod errors;
 pub mod result_keeper;
 mod rlp;
 
+use alloc::boxed::Box;
 use core::alloc::Allocator;
 use core::fmt::Write;
 use core::mem::MaybeUninit;
@@ -36,9 +36,10 @@ use zk_ee::oracle::*;
 use crate::bootloader::account_models::{ExecutionOutput, ExecutionResult, TxProcessingResult};
 use crate::bootloader::block_header::BlockHeader;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
-use crate::bootloader::constants::{MAX_CALLSTACK_DEPTH, TX_OFFSET};
+use crate::bootloader::constants::TX_OFFSET;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::result_keeper::*;
+use crate::bootloader::runner::RunnerMemoryBuffers;
 use system_hooks::HooksStorage;
 use zk_ee::system::*;
 use zk_ee::utils::*;
@@ -173,7 +174,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     ) -> Result<<S::IO as IOSubsystemExt>::FinalData, InternalError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         cycle_marker::start!("run_prepared");
         // we will model initial calldata buffer as just another "heap"
@@ -182,11 +182,20 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         let mut initial_calldata_buffer = TxDataBuffer::new(system.get_allocator());
 
-        // TODO: extend stack trait to construct it or use a provided function to generate it
+        pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
+        pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 27; // 128 MB
 
-        let mut callstack_memory =
-            Box::new_uninit_slice_in(MAX_CALLSTACK_DEPTH, system.get_allocator());
-        let mut callstack = SliceVec::new(&mut callstack_memory);
+        let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
+        let mut return_data =
+            Box::new_uninit_slice_in(MAX_RETURN_BUFFER_SIZE, system.get_allocator());
+        //let callstack = Box::new_uninit_slice_in(MAX_CALLSTACK_DEPTH, system.get_allocator());
+
+        let mut memories = RunnerMemoryBuffers {
+            heaps: &mut heaps,
+            return_data: &mut return_data,
+            //callstack: &mut callstack,
+        };
+
         let mut system_functions = HooksStorage::new_in(system.get_allocator());
 
         system_functions.add_precompiles();
@@ -231,7 +240,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 initial_calldata_buffer,
                 &mut system,
                 &mut system_functions,
-                &mut callstack,
+                memories.reborrow(),
                 first_tx,
             );
             cycle_marker::end!("process_transaction");

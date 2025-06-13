@@ -6,7 +6,7 @@ use crate::bootloader::constants::{
 use crate::bootloader::errors::{
     AAMethod, InvalidAA, InvalidTransaction::AAValidationError, TxError,
 };
-use crate::bootloader::supported_ees::SupportedEEVMState;
+use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use crate::require;
@@ -15,7 +15,6 @@ use errors::FatalError;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::{logger::Logger, *};
 
 pub struct Contract;
@@ -23,12 +22,11 @@ pub struct Contract;
 impl<S: EthereumLikeTypes> AccountModel<S> for Contract
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     fn validate(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -51,7 +49,7 @@ where
         } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
@@ -61,10 +59,8 @@ where
         )
         .map_err(TxError::oon_as_validation)?;
 
-        let returndata_region = return_values.returndata;
+        let returndata_slice = return_values.returndata;
         *resources = resources_returned;
-
-        let returndata_slice = &*returndata_region;
 
         let res: Result<(), TxError> = if reverted {
             Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
@@ -88,16 +84,16 @@ where
         res
     }
 
-    fn execute(
+    fn execute<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemoryBuffers<'a>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
         _current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<S>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, FatalError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("About to start AA execution\n"));
@@ -112,7 +108,7 @@ where
         } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
@@ -185,7 +181,7 @@ where
     fn pay_for_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -204,7 +200,7 @@ where
         } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
@@ -233,7 +229,7 @@ where
     fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -253,7 +249,7 @@ where
         } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
