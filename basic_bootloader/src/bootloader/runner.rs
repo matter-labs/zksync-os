@@ -33,7 +33,6 @@ pub fn run_till_completion<'a, S: EthereumLikeTypes>(
 ) -> Result<TransactionEndPoint<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     let heap = SliceVec::new(memories.heaps);
 
@@ -95,10 +94,7 @@ impl RunnerMemories<'_> {
     }
 }
 
-struct Run<'a, 'm, S: EthereumLikeTypes>
-where
-    S::Memory: MemorySubsystemExt,
-{
+struct Run<'a, 'm, S: EthereumLikeTypes> {
     system: &'a mut System<S>,
     hooks: &'a mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
@@ -114,10 +110,7 @@ enum CallOrDeployResult<'a, S: EthereumLikeTypes> {
 
 const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUND, 0, 0]);
 
-impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S>
-where
-    S::Memory: MemorySubsystemExt,
-{
+impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
     #[inline(always)]
     fn handle_spawn<'s, 'a>(
         &'s mut self,
@@ -127,7 +120,6 @@ where
     ) -> Result<(S::Resources, CallOrDeployResult<'external, S>), FatalError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         self.callstack_height += 1;
         let result = self.handle_spawn_inner(ee_type, spawn, heap);
@@ -144,7 +136,6 @@ where
     ) -> Result<(S::Resources, CallOrDeployResult<'external, S>), FatalError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         match spawn {
             ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
@@ -485,7 +476,6 @@ where
     ) -> Result<(S::Resources, CallResult<'external, S>), FatalError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         let callee = call_request.callee;
         let address_low = callee.as_limbs()[0] as u16;
@@ -849,7 +839,6 @@ fn run_call_preparation<'a, S: EthereumLikeTypes>(
 ) -> Result<CallPreparationResult<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     let mut resources_available = call_request.available_resources.clone();
 
@@ -948,7 +937,6 @@ fn prepare_for_call<'a, S: EthereumLikeTypes>(
 ) -> Result<CalleeParameters<'a>, SystemError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     // IO will follow the rules of the CALLER (`initial_ee_version`) here to charge for execution
     let account_properties = match system.io.read_account_properties(

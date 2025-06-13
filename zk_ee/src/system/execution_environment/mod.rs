@@ -19,30 +19,15 @@ use super::errors::InternalError;
 use super::system::System;
 use super::system::SystemTypes;
 use super::IOSubsystemExt;
-use super::MemorySubsystem;
 use crate::memory::slice_vec::SliceVec;
 use crate::system::CallModifier;
 use crate::system::Ergs;
-use crate::system::OSManagedRegion;
 use crate::types_config::*;
-
-#[allow(type_alias_bounds)]
-pub type OSResizableSlice<S: SystemTypes> = <S::Memory as MemorySubsystem>::ManagedRegion;
-#[allow(type_alias_bounds)]
-pub type OSImmutableSlice<S: SystemTypes> =
-    <<S::Memory as MemorySubsystem>::ManagedRegion as OSManagedRegion>::OSManagedImmutableSlice;
-// NOTE: even though it is not mandatory that bytecode resides in the same address space as managed
-// regions used by EEs, we make such alias for now. Later we can remove it and make as separate
-// associated type in MemorySubsystem
-#[allow(type_alias_bounds)]
-pub type OSAllocator<S: SystemTypes> = <S::Memory as MemorySubsystem>::Allocator;
 
 // we should consider some bound of amount of data that is deployment-specific,
 // for now it's arbitrary
 pub trait EEDeploymentExtraParameters<S: SystemTypes>: 'static + Sized + core::any::Any {
-    fn from_box_dyn(
-        src: alloc::boxed::Box<dyn Any, OSAllocator<S>>,
-    ) -> Result<Self, InternalError> {
+    fn from_box_dyn(src: alloc::boxed::Box<dyn Any, S::Allocator>) -> Result<Self, InternalError> {
         let box_self = src
             .downcast::<Self>()
             .map_err(|_| InternalError("from_box_dyn"))?;

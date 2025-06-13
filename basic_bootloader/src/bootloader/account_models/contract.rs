@@ -22,7 +22,6 @@ pub struct Contract;
 impl<S: EthereumLikeTypes> AccountModel<S> for Contract
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     fn validate(
         system: &mut System<S>,

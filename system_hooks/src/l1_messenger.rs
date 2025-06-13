@@ -10,7 +10,6 @@ use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     system::{
         errors::SystemError, logger::Logger, CallModifier, CompletedExecution, ExternalCallRequest,
-        MemorySubsystemExt,
     },
     utils::Bytes32,
 };
@@ -22,7 +21,6 @@ pub fn l1_messenger_hook<'a, S: EthereumLikeTypes>(
     return_memory: &'a mut SliceVec<u8>,
 ) -> Result<CompletedExecution<'a, S>, FatalError>
 where
-    S::Memory: MemorySubsystemExt,
 {
     let ExternalCallRequest {
         available_resources,
@@ -110,7 +108,6 @@ fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
     is_static: bool,
 ) -> Result<Result<Bytes32, &'static str>, SystemError>
 where
-    S::Memory: MemorySubsystemExt,
 {
     // TODO: charge native
     let step_cost: S::Resources = S::Resources::from_ergs(Ergs(10));

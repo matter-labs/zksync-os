@@ -1,9 +1,9 @@
 use crate::{
-    system::{system::SystemTypes, MemorySubsystem, MAX_SCRATCH_SPACE_USIZE_WORDS},
+    system::{system::SystemTypes, MAX_SCRATCH_SPACE_USIZE_WORDS},
     types_config::SystemIOTypesConfig,
 };
 
-use super::{OSImmutableSlice, ReturnValues};
+use super::ReturnValues;
 
 pub struct EnvironmentParameters<'a> {
     pub decommitted_bytecode: &'a [u8],
@@ -15,24 +15,18 @@ pub struct EnvironmentParameters<'a> {
 /// for deploying a contract.
 pub struct DeploymentPreparationParameters<'a, S: SystemTypes> {
     pub address_of_deployer: <S::IOTypes as SystemIOTypesConfig>::Address,
-    pub call_scratch_space: Option<
-        alloc::boxed::Box<
-            [usize; MAX_SCRATCH_SPACE_USIZE_WORDS],
-            <S::Memory as MemorySubsystem>::Allocator,
-        >,
-    >,
+    pub call_scratch_space:
+        Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], S::Allocator>>,
     pub deployment_code: &'a [u8],
-    pub constructor_parameters: OSImmutableSlice<S>,
+    pub constructor_parameters: &'a [u8],
     pub ee_specific_deployment_processing_data:
-        Option<alloc::boxed::Box<dyn core::any::Any, <S::Memory as MemorySubsystem>::Allocator>>,
+        Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
     pub deployer_full_resources: S::Resources,
     pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
     pub deployer_nonce: Option<u64>,
 }
 
-///
 /// Result of an attempted deployment.
-///
 pub enum DeploymentResult<'a, S: SystemTypes> {
     /// Deployment failed after preparation.
     Failed {

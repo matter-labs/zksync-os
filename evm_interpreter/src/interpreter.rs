@@ -5,7 +5,7 @@ use native_resource_constants::STEP_NATIVE_COST;
 use zk_ee::system::{
     logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
     DeploymentPreparationParameters, DeploymentResult, EthereumLikeTypes,
-    ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, OSImmutableSlice, ReturnValues,
+    ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
 };
 use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, Resources, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
@@ -57,7 +57,6 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
 
                     ExternalCall::Create(EVMDeploymentRequest {
                         deployment_code,
-                        constructor_parameters,
                         ee_specific_deployment_processing_data,
                         deployer_full_resources,
                         nominal_token_value,
@@ -66,7 +65,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
                             address_of_deployer: self.address,
                             call_scratch_space: None,
                             deployment_code: &current_heap[deployment_code],
-                            constructor_parameters,
+                            constructor_parameters: &[],
                             ee_specific_deployment_processing_data,
                             deployer_full_resources,
                             nominal_token_value,
@@ -104,9 +103,8 @@ pub struct EVMCallRequest<S: EthereumLikeTypes> {
 
 pub struct EVMDeploymentRequest<S: SystemTypes> {
     pub deployment_code: Range<usize>,
-    pub constructor_parameters: OSImmutableSlice<S>,
     pub ee_specific_deployment_processing_data:
-        Option<alloc::boxed::Box<dyn core::any::Any, <S::Memory as MemorySubsystem>::Allocator>>,
+        Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
     pub deployer_full_resources: S::Resources,
     pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
 }

@@ -174,7 +174,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     ) -> Result<<S::IO as IOSubsystemExt>::FinalData, InternalError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         cycle_marker::start!("run_prepared");
         // we will model initial calldata buffer as just another "heap"

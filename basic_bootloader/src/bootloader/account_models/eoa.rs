@@ -57,7 +57,6 @@ pub struct EOA;
 impl<S: EthereumLikeTypes> AccountModel<S> for EOA
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     fn validate(
         system: &mut System<S>,
@@ -539,7 +538,6 @@ fn process_deployment<'a, S: EthereumLikeTypes>(
 ) -> Result<TxExecutionResult<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     // First, charge extra cost for deployment
     let extra_gas_cost = DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS as u64;
@@ -573,11 +571,10 @@ where
         _ => return Err(InternalError("Unsupported EE").into()),
     };
 
-    let empty_region = system.memory.empty_immutable_slice();
     let deployment_parameters = DeploymentPreparationParameters {
         address_of_deployer: from,
         call_scratch_space: None,
-        constructor_parameters: empty_region, // no constructor parameters are supported as of yet
+        constructor_parameters: &[],
         nominal_token_value,
         deployment_code: main_calldata,
         ee_specific_deployment_processing_data,
@@ -647,7 +644,6 @@ fn erc20_allowance<S: EthereumLikeTypes>(
 ) -> Result<U256, TxError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     // Calldata:
     // selector (4)
@@ -729,7 +725,6 @@ fn erc20_approve<S: EthereumLikeTypes>(
 ) -> Result<U256, TxError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     // Calldata:
     // selector (4)

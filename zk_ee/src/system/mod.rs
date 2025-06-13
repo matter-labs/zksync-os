@@ -6,7 +6,6 @@ pub mod errors;
 mod execution_environment;
 mod io;
 pub mod logger;
-mod memory;
 pub mod metadata;
 pub mod resources;
 mod result_keeper;
@@ -17,7 +16,6 @@ pub use self::constants::*;
 pub use self::execution_environment::*;
 pub use self::io::*;
 pub use self::logger::NullLogger;
-pub use self::memory::*;
 
 pub use self::resources::*;
 pub use self::result_keeper::*;
@@ -46,8 +44,6 @@ pub trait SystemTypes {
     /// Handles all side effects and information from the outside world.
     type IO: IOSubsystem<IOTypes = Self::IOTypes, Resources = Self::Resources>;
 
-    type Memory: MemorySubsystem<Allocator = Self::Allocator>;
-
     /// Common system functions implementation(ecrecover, keccak256, ecadd, etc).
     type SystemFunctions: SystemFunctions<Self::Resources>;
 
@@ -62,17 +58,12 @@ pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {}
 
 pub struct System<S: SystemTypes> {
     pub io: S::IO,
-    pub memory: S::Memory,
     metadata: Metadata<S::IOTypes>,
     allocator: S::Allocator,
 }
 
-pub struct SystemFrameSnapshot<S: SystemTypes>
-where
-    S::Memory: MemorySubsystemExt,
-{
+pub struct SystemFrameSnapshot<S: SystemTypes> {
     io: <S::IO as IOSubsystem>::StateSnapshot,
-    memory: <S::Memory as MemorySubsystemExt>::Snapshot,
 }
 
 impl<S: SystemTypes> System<S> {
@@ -162,7 +153,6 @@ impl<S: SystemTypes> System<S> {
 impl<S: SystemTypes> System<S>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     /// Starts a new "global" frame(with separate memory frame).
     /// Returns the snapshot which the system can rollback to on finishing the frame.
@@ -171,9 +161,8 @@ where
         let mut logger = self.get_logger();
         let _ = logger.write_fmt(format_args!("Start global frame\n"));
         let io = self.io.start_io_frame()?;
-        let memory = self.memory.start_memory_frame();
 
-        Ok(SystemFrameSnapshot { io, memory })
+        Ok(SystemFrameSnapshot { io })
     }
 
     /// Finishes a global frame, reverts I/O writes in case of revert.
@@ -191,8 +180,6 @@ where
 
         // revert IO if needed, and copy memory
         self.io.finish_io_frame(rollback_handle.map(|x| &x.io))?;
-        self.memory
-            .finish_memory_frame(rollback_handle.map(|x| x.memory.clone()));
 
         Ok(())
     }
@@ -200,8 +187,6 @@ where
     /// Finishes current transaction executions, returns execution stats.
     pub fn flush_tx(&mut self) -> Result<u32, InternalError> {
         self.io.finish_tx()?;
-
-        self.memory.assert_no_frames_opened();
 
         Ok(0)
     }
@@ -212,7 +197,6 @@ where
         // get metadata for block
         let block_level_metadata: BlockMetadataFromOracle = oracle.get_block_level_metadata();
         let io = S::IO::init_from_oracle(oracle)?;
-        let memory = <S::Memory as MemorySubsystemExt>::new(S::Allocator::default());
 
         let metadata = Metadata {
             // For now, we're getting the chain id from the block level metadata.
@@ -224,7 +208,6 @@ where
         };
         let system = Self {
             io,
-            memory,
             metadata,
             allocator: S::Allocator::default(),
         };
@@ -259,7 +242,6 @@ where
         }
 
         self.io.begin_next_tx();
-        self.memory.begin_next_tx();
 
         Ok(Some(next_tx_len_bytes))
     }

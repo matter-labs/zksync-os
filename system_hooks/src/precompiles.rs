@@ -32,10 +32,7 @@ pub fn pure_system_function_hook_impl<'a, F: SystemFunction<S::Resources>, S: Et
     _caller_ee: u8,
     system: &mut System<S>,
     return_memory: &'a mut SliceVec<u8>,
-) -> Result<CompletedExecution<'a, S>, FatalError>
-where
-    S::Memory: MemorySubsystemExt,
-{
+) -> Result<CompletedExecution<'a, S>, FatalError> {
     let ExternalCallRequest {
         available_resources,
         calldata,

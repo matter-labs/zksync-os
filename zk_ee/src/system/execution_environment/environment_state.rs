@@ -7,8 +7,7 @@ use crate::{
 };
 
 use super::{
-    DeploymentPreparationParameters, DeploymentResult, EnvironmentParameters, OSAllocator,
-    ReturnValues,
+    DeploymentPreparationParameters, DeploymentResult, EnvironmentParameters, ReturnValues,
 };
 
 /// Everything an execution environment needs to know to start execution
@@ -65,7 +64,7 @@ pub struct ExternalCallRequest<'a, S: SystemTypes> {
     /// Base tokens attached to this call.
     pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
     pub call_scratch_space:
-        Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], OSAllocator<S>>>,
+        Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], S::Allocator>>,
 }
 
 impl<S: SystemTypes> ExternalCallRequest<'_, S> {

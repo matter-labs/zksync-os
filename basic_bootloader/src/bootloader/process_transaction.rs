@@ -34,7 +34,6 @@ struct ValidationResult {
 impl<S: EthereumLikeTypes> BasicBootloader<S>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     ///
     /// Process transaction.

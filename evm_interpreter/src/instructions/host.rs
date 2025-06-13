@@ -261,15 +261,13 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
 
         let ee_specific_data = alloc::boxed::Box::try_new_in(scheme, system.get_allocator())
             .expect("system allocator must be capable to allocate for EE deployment parameters");
-        let constructor_parameters = system.memory.empty_immutable_slice();
         // at this preemption point we give all resources for preparation
         let all_resources = self.resources.take();
 
         let deployment_parameters = EVMDeploymentRequest {
             deployment_code,
-            constructor_parameters,
             ee_specific_deployment_processing_data: Some(
-                ee_specific_data as alloc::boxed::Box<dyn core::any::Any, OSAllocator<S>>,
+                ee_specific_data as alloc::boxed::Box<dyn core::any::Any, S::Allocator>,
             ),
             nominal_token_value: value,
             deployer_full_resources: all_resources,

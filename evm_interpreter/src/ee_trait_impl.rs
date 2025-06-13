@@ -293,13 +293,10 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
 
     type DeploymentExtraParameters = CreateScheme;
 
-    fn default_ee_deployment_options(
-        system: &mut System<S>,
-    ) -> Option<Box<dyn Any, <<S as SystemTypes>::Memory as MemorySubsystem>::Allocator>> {
+    fn default_ee_deployment_options(system: &mut System<S>) -> Option<Box<dyn Any, S::Allocator>> {
         let allocator = system.get_allocator();
         let scheme = Box::new_in(CreateScheme::Create, allocator);
-        let scheme =
-            scheme as Box<dyn Any, <<S as SystemTypes>::Memory as MemorySubsystem>::Allocator>;
+        let scheme = scheme as Box<dyn Any, S::Allocator>;
         Some(scheme)
     }
 
@@ -350,7 +347,7 @@ impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
             mut deployer_full_resources,
             deployer_nonce,
         } = deployment_parameters;
-        assert!(constructor_parameters.len() == 0);
+        assert!(constructor_parameters.is_empty());
         assert!(call_scratch_space.is_none());
         let Some(ee_specific_deployment_processing_data) = ee_specific_deployment_processing_data
         else {

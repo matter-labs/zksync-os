@@ -27,7 +27,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     ) -> Result<ReturnValues<'a, S>, TxError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         let _ = system.get_logger().write_fmt(format_args!(
             "About to start call to validateAndPayForPaymasterTransaction\n"
@@ -174,9 +173,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         _validation_pubdata: u64,
         _resources: &mut S::Resources,
     ) -> Result<bool, FatalError>
-    where
-        S::Memory: MemorySubsystemExt,
-    {
+where {
         todo!();
 
         // let _ = system
@@ -337,7 +334,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     ) -> Result<CompletedExecution<'a, S>, FatalError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         let header_length = 4 + U256::BYTES * 3;
         let calldata_start = TX_OFFSET - header_length;

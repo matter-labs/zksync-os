@@ -17,7 +17,6 @@ pub fn contract_deployer_hook<'a, S: EthereumLikeTypes>(
     _return_memory: &'a mut SliceVec<u8>,
 ) -> Result<CompletedExecution<'a, S>, FatalError>
 where
-    S::Memory: MemorySubsystemExt,
     S::IO: IOSubsystemExt,
 {
     let ExternalCallRequest {

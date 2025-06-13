@@ -39,7 +39,7 @@ pub fn get_pieces_of_slice<const N: usize, T>(
 pub struct ReturnValues<'a, S: SystemTypes> {
     pub returndata: &'a [u8],
     pub return_scratch_space:
-        Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], OSAllocator<S>>>,
+        Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], S::Allocator>>,
 }
 
 impl<S: SystemTypes> core::fmt::Debug for ReturnValues<'_, S> {

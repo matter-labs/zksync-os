@@ -63,7 +63,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     ) -> Result<CompletedExecution<'a, S>, FatalError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         if DEBUG_OUTPUT {
             let _ = system

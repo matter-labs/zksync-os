@@ -11,7 +11,7 @@ use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::FatalError;
-use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, MemorySubsystemExt, System};
+use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
 
 pub enum AA<S> {
     EOA(PhantomData<S>),
@@ -21,7 +21,6 @@ pub enum AA<S> {
 impl<S: EthereumLikeTypes> AA<S>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     pub fn account_model_for_account(
         tx: &ZkSyncTransaction,

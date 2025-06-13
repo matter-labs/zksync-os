@@ -65,7 +65,6 @@ pub struct TxProcessingResult<'a> {
 pub trait AccountModel<S: EthereumLikeTypes>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     /// Validate transaction
     fn validate(

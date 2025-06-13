@@ -69,25 +69,17 @@ pub struct SystemHook<S: SystemTypes>(
         &mut System<S>,
         &'a mut SliceVec<u8>,
     ) -> Result<CompletedExecution<'a, S>, FatalError>,
-)
-where
-    S::Memory: MemorySubsystemExt;
+);
 
 ///
 /// System hooks storage.
 /// Stores hooks implementations and processes calls to system addresses.
 ///
-pub struct HooksStorage<S: SystemTypes, A: Allocator + Clone>
-where
-    S::Memory: MemorySubsystemExt,
-{
+pub struct HooksStorage<S: SystemTypes, A: Allocator + Clone> {
     inner: BTreeMap<u16, SystemHook<S>, A>,
 }
 
-impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A>
-where
-    S::Memory: MemorySubsystemExt,
-{
+impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
     ///
     /// Creates empty hooks storage with a given allocator.
     ///
@@ -137,7 +129,6 @@ where
 
 impl<S: EthereumLikeTypes, A: Allocator + Clone> HooksStorage<S, A>
 where
-    S::Memory: MemorySubsystemExt,
     S::IO: IOSubsystemExt,
 {
     ///
