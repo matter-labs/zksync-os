@@ -13,7 +13,6 @@
 #![feature(alloc_layout_extra)]
 #![feature(int_roundings)]
 #![feature(maybe_uninit_write_slice)]
-#![feature(ptr_as_uninit)]
 #![allow(clippy::type_complexity)]
 #![allow(clippy::new_without_default)]
 #![allow(clippy::needless_lifetimes)]
