@@ -36,7 +36,7 @@ use zk_ee::oracle::*;
 use crate::bootloader::account_models::{ExecutionOutput, ExecutionResult, TxProcessingResult};
 use crate::bootloader::block_header::BlockHeader;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
-use crate::bootloader::constants::{MAX_CALLSTACK_DEPTH, TX_OFFSET};
+use crate::bootloader::constants::TX_OFFSET;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::result_keeper::*;
 use crate::bootloader::runner::RunnerMemories;
