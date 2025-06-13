@@ -25,6 +25,7 @@ pub mod errors;
 pub mod result_keeper;
 mod rlp;
 
+use alloc::boxed::Box;
 use core::alloc::Allocator;
 use core::fmt::Write;
 use core::mem::MaybeUninit;
