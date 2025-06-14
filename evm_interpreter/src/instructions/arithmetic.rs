@@ -3,7 +3,7 @@ use crate::u256::*;
 use native_resource_constants::*;
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
-    pub fn wrapped_add(&mut self) -> InstructionResult {
+    pub fn wrapping_add(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, ADD_NATIVE_COST)?;
         let ([op1], op2) = self.pop_values_and_peek::<1>()?;
         *op2 = op1.wrapping_add(*op2);

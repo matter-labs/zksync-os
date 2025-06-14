@@ -27,6 +27,7 @@ pub fn bytereverse_u256(value: &mut U256) {
     }
 }
 
+/// TODO: unused
 pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
     use crypto::sha3::{Digest, Keccak256};
     let hash = Keccak256::digest(bytecode);
