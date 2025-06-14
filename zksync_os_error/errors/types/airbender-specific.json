@@ -1,0 +1,31 @@
+{
+  "types": [
+    {
+      "name": "H160",
+      "description": "160-bit hash",
+      "bindings": {
+        "rust": {
+          "expression": "Box<ruint::aliases::H160>"
+        }
+      }
+    },
+    {
+      "name": "H256",
+      "description": "256-bit hash",
+      "bindings": {
+        "rust": {
+          "expression": "Box<ruint::aliases::U256>"
+        }
+      }
+    },
+    {
+      "name": "U256",
+      "description": "256-bit unsigned integer",
+      "bindings": {
+        "rust": {
+          "expression": "Box<ruint::aliases::U256>"
+        }
+      }
+    }
+  ]
+}
