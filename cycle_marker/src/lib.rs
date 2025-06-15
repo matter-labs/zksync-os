@@ -42,10 +42,10 @@ fn init_marker_file() -> std::fs::File {
 #[allow(dead_code)]
 #[cfg(not(target_arch = "riscv32"))]
 pub fn log_marker(msg: &str) {
-    use std::io::Write;
-    MARKER_FILE.with(|f| {
-        writeln!(f.borrow_mut(), "{}", msg).unwrap();
-    });
+    // use std::io::Write;
+    // MARKER_FILE.with(|f| {
+    //     writeln!(f.borrow_mut(), "{}", msg).unwrap();
+    // });
 }
 
 /// Start a marker. For RISC-V this will use a special CSR to
