@@ -32,5 +32,5 @@ pub struct BasicBootloaderCallSimulationConfig;
 impl BasicBootloaderExecutionConfig for BasicBootloaderCallSimulationConfig {
     const ONLY_SIMULATE: bool = true;
     const AA_ENABLED: bool = true;
-    const VALIDATE_EOA_SIGNATURE: bool = false;
+    const VALIDATE_EOA_SIGNATURE: bool = true;
 }
