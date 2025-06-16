@@ -16,7 +16,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             system
                 .io
                 .get_nominal_token_balance(THIS_EE_TYPE, &mut self.resources, &address)?;
-        self.stack.push_one(value)
+        self.stack.push(value)
     }
 
     pub fn selfbalance(&mut self, system: &mut System<S>) -> InstructionResult {
@@ -24,7 +24,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value = system
             .io
             .get_selfbalance(THIS_EE_TYPE, &mut self.resources, &self.address)?;
-        self.stack.push_one(value)
+        self.stack.push(value)
     }
 
     pub fn extcodesize(&mut self, system: &mut System<S>) -> InstructionResult {
@@ -34,7 +34,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             system
                 .io
                 .get_observable_bytecode_size(THIS_EE_TYPE, &mut self.resources, &address)?;
-        self.stack.push_one(U256::from(value))
+        self.stack.push(U256::from(value))
     }
 
     pub fn extcodehash(&mut self, system: &mut System<S>) -> InstructionResult {
@@ -44,7 +44,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             system
                 .io
                 .get_observable_bytecode_hash(THIS_EE_TYPE, &mut self.resources, &address)?;
-        self.stack.push_one(value.into_u256_be())
+        self.stack.push(value.into_u256_be())
     }
 
     pub fn extcodecopy(&mut self, system: &mut System<S>) -> InstructionResult {
@@ -95,7 +95,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             &index,
         )?;
 
-        self.stack.push_one(value.into_u256_be())
+        self.stack.push(value.into_u256_be())
     }
 
     pub fn tload(&mut self, system: &mut System<S>) -> InstructionResult {
@@ -107,7 +107,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             &self.address,
             &index,
         )?;
-        self.stack.push_one(value.into_u256_be())
+        self.stack.push(value.into_u256_be())
     }
 
     pub fn sstore(&mut self, system: &mut System<S>) -> InstructionResult {

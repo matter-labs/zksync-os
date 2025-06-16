@@ -76,7 +76,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             return Err(ExitCode::OutOfGas);
         }
         op2 = op1.pow(op2);
-        self.stack.push_one(op2)
+        self.stack.push(op2)
     }
 
     pub fn sign_extend(&mut self) -> InstructionResult {
