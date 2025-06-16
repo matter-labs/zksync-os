@@ -4,6 +4,7 @@ use zk_ee::{
     utils::u256_to_b160,
 };
 
+use crate::Vec;
 use crate::{utils::assume, ExitCode, STACK_SIZE};
 
 pub struct EvmStack<S: EthereumLikeTypes> {
@@ -62,6 +63,17 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn peek_mut(&mut self) -> Result<&mut U256, ExitCode> {
+        let len = self.inner.len();
+        if len < 1 {
+            return Err(ExitCode::StackUnderflow);
+        }
+        unsafe {
+            let idx = len - 1;
+            Ok(self.inner.get_unchecked_mut(idx))
+        }
     }
 
     #[inline(always)]
