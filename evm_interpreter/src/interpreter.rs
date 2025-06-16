@@ -302,9 +302,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
                         #[cfg(feature = "selfdestruct")]
                         opcodes::SELFDESTRUCT => self.selfdestruct(system),
                         opcodes::CHAINID => self.chainid(system),
-                        #[cfg(feature = "mock-eip-4844")]
                         opcodes::BLOBHASH => self.blobhash(system),
-                        #[cfg(feature = "mock-eip-4844")]
                         opcodes::BLOBBASEFEE => self.blobbasefee(system),
                         _ => Err(ExitCode::OpcodeNotFound),
                     });
