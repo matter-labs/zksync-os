@@ -11,12 +11,12 @@ use super::*;
 impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn balance(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, BALANCE_NATIVE_COST)?;
-        let [address] = self.pop_addresses::<1>()?;
+        let [address] = self.stack.pop_addresses::<1>()?;
         let value =
             system
                 .io
                 .get_nominal_token_balance(THIS_EE_TYPE, &mut self.resources, &address)?;
-        self.stack_push_one(value)
+        self.stack.push_one(value)
     }
 
     pub fn selfbalance(&mut self, system: &mut System<S>) -> InstructionResult {
@@ -24,32 +24,32 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value = system
             .io
             .get_selfbalance(THIS_EE_TYPE, &mut self.resources, &self.address)?;
-        self.stack_push_one(value)
+        self.stack.push_one(value)
     }
 
     pub fn extcodesize(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, EXTCODESIZE_NATIVE_COST)?;
-        let [address] = self.pop_addresses::<1>()?;
+        let [address] = self.stack.pop_addresses::<1>()?;
         let value =
             system
                 .io
                 .get_observable_bytecode_size(THIS_EE_TYPE, &mut self.resources, &address)?;
-        self.stack_push_one(U256::from(value))
+        self.stack.push_one(U256::from(value))
     }
 
     pub fn extcodehash(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, EXTCODEHASH_NATIVE_COST)?;
-        let [address] = self.pop_addresses::<1>()?;
+        let [address] = self.stack.pop_addresses::<1>()?;
         let value =
             system
                 .io
                 .get_observable_bytecode_hash(THIS_EE_TYPE, &mut self.resources, &address)?;
-        self.stack_push_one(value.into_u256_be())
+        self.stack.push_one(value.into_u256_be())
     }
 
     pub fn extcodecopy(&mut self, system: &mut System<S>) -> InstructionResult {
-        let [address] = self.pop_addresses::<1>()?;
-        let [memory_offset, source_offset, len] = self.pop_values::<3>()?;
+        let [address] = self.stack.pop_addresses::<1>()?;
+        let [memory_offset, source_offset, len] = self.stack.pop_values::<3>()?;
 
         // first deal with locals memory
         let (memory_offset, len) =
@@ -87,7 +87,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
     pub fn sload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, SLOAD_NATIVE_COST)?;
-        let [index] = self.pop_values::<1>()?.map(Bytes32::from_u256_be);
+        let [index] = self.stack.pop_values::<1>()?.map(Bytes32::from_u256_be);
         let value = system.io.storage_read::<false>(
             THIS_EE_TYPE,
             &mut self.resources,
@@ -95,19 +95,19 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             &index,
         )?;
 
-        self.stack_push_one(value.into_u256_be())
+        self.stack.push_one(value.into_u256_be())
     }
 
     pub fn tload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, TLOAD_NATIVE_COST)?;
-        let [index] = self.pop_values::<1>()?.map(Bytes32::from_u256_be);
+        let [index] = self.stack.pop_values::<1>()?.map(Bytes32::from_u256_be);
         let value = system.io.storage_read::<true>(
             THIS_EE_TYPE,
             &mut self.resources,
             &self.address,
             &index,
         )?;
-        self.stack_push_one(value.into_u256_be())
+        self.stack.push_one(value.into_u256_be())
     }
 
     pub fn sstore(&mut self, system: &mut System<S>) -> InstructionResult {
@@ -118,7 +118,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         if self.gas_left() <= CALL_STIPEND {
             return Err(ExitCode::InvalidOperandOOG);
         }
-        let [index, value] = self.pop_values::<2>()?.map(Bytes32::from_u256_be);
+        let [index, value] = self.stack.pop_values::<2>()?.map(Bytes32::from_u256_be);
 
         system.io.storage_write::<false>(
             THIS_EE_TYPE,
@@ -145,7 +145,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         if self.is_static_frame() {
             return Err(ExitCode::StateChangeDuringStaticCall);
         }
-        let [index, value] = self.pop_values::<2>()?.map(Bytes32::from_u256_be);
+        let [index, value] = self.stack.pop_values::<2>()?.map(Bytes32::from_u256_be);
         system.io.storage_write::<true>(
             THIS_EE_TYPE,
             &mut self.resources,
@@ -165,9 +165,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             return Err(ExitCode::StateChangeDuringStaticCall);
         }
 
-        let [mem_offset, len] = self.pop_values::<2>()?;
+        let [mem_offset, len] = self.stack.pop_values::<2>()?;
         let topics: arrayvec::ArrayVec<Bytes32, 4> =
-            arrayvec::ArrayVec::from_iter(self.pop_values::<N>()?.map(Bytes32::from_u256_be));
+            arrayvec::ArrayVec::from_iter(self.stack.pop_values::<N>()?.map(Bytes32::from_u256_be));
 
         // resize memory
         let (mem_offset, len) =
@@ -194,7 +194,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             return Err(ExitCode::StateChangeDuringStaticCall);
         }
 
-        let [beneficiary] = self.pop_addresses::<1>()?;
+        let [beneficiary] = self.stack.pop_addresses::<1>()?;
 
         system.io.mark_for_deconstruction(
             THIS_EE_TYPE,
@@ -226,7 +226,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         }
         self.clear_last_returndata();
 
-        let [value, code_offset, len] = self.pop_values::<3>()?;
+        let [value, code_offset, len] = self.stack.pop_values::<3>()?;
 
         let (code_offset, len) =
             self.cast_offset_and_len(&code_offset, &len, ExitCode::InvalidOperandOOG)?;
@@ -250,7 +250,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         // we will charge for everything in the "should_continue..." function
         let scheme = if IS_CREATE2 {
-            let [salt] = self.pop_values::<1>()?;
+            let [salt] = self.stack.pop_values::<1>()?;
             CreateScheme::Create2 { salt }
         } else {
             CreateScheme::Create
@@ -311,18 +311,18 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.spend_gas_and_native(0, native_resource_constants::CALL_NATIVE_COST)?;
         self.clear_last_returndata();
 
-        let [local_gas_limit] = self.pop_values::<1>()?;
-        let [to] = self.pop_addresses::<1>()?;
+        let [local_gas_limit] = self.stack.pop_values::<1>()?;
+        let [to] = self.stack.pop_addresses::<1>()?;
 
         let local_gas_limit = u256_to_u64_saturated(&local_gas_limit);
 
         let value = match scheme {
             CallScheme::CallCode => {
-                let [value] = self.pop_values::<1>()?;
+                let [value] = self.stack.pop_values::<1>()?;
                 value
             }
             CallScheme::Call => {
-                let [value] = self.pop_values::<1>()?;
+                let [value] = self.stack.pop_values::<1>()?;
                 if self.is_static && value != U256::ZERO {
                     return Err(ExitCode::CallNotAllowedInsideStatic);
                 }
@@ -332,7 +332,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             CallScheme::StaticCall => U256::ZERO,
         };
 
-        let [in_offset, in_len, out_offset, out_len] = self.pop_values::<4>()?;
+        let [in_offset, in_len, out_offset, out_len] = self.stack.pop_values::<4>()?;
 
         let (in_offset, in_len) =
             self.cast_offset_and_len(&in_offset, &in_len, ExitCode::InvalidOperandOOG)?;

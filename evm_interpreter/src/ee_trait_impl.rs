@@ -46,7 +46,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
 
     fn new(system: &mut System<S>) -> Result<Self, InternalError> {
         let empty_resources = S::Resources::empty();
-        let stack_space = Vec::with_capacity_in(STACK_SIZE, system.get_allocator());
+        let stack_space = EvmStack::new(system.get_allocator());
         let empty_address = <S::IOTypes as SystemIOTypesConfig>::Address::default();
         let empty_preprocessing = BytecodePreprocessingData::<S>::empty(system);
 
@@ -196,13 +196,13 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 // continuing the execution
                 self.copy_returndata_to_heap(return_values.returndata);
                 self.stack
-                    .push_within_capacity(U256::ZERO)
+                    .raw_push_within_capacity(U256::ZERO)
                     .expect("must have enough space");
             }
             CallResult::Successful { return_values } => {
                 self.copy_returndata_to_heap(return_values.returndata);
                 self.stack
-                    .push_within_capacity(U256::from(1u64))
+                    .raw_push_within_capacity(U256::from(1u64))
                     .expect("must have enough space");
             }
         }
@@ -231,7 +231,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 }
                 self.returndata = return_values.returndata;
                 // we need to push 0 to stack
-                self.push_values(&[U256::ZERO])
+                self.stack
+                    .push_values(&[U256::ZERO])
                     .expect("must have enough space");
             }
             DeploymentResult::Successful {
@@ -244,7 +245,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 assert!(return_values.returndata.is_empty());
                 self.returndata = return_values.returndata;
                 // we need to push address to stack
-                self.push_values(&[b160_to_u256(deployed_at)])
+                self.stack
+                    .push_values(&[b160_to_u256(deployed_at)])
                     .expect("must have enough space");
             }
         }
