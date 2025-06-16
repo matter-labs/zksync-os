@@ -1,5 +1,6 @@
 #![feature(slice_as_array)]
 
+use block_hashes::BlockHashes;
 use clap::Parser;
 use post_check::post_check;
 use prestate::{populate_prestate, DiffTrace, PrestateTrace};
@@ -8,6 +9,7 @@ use std::fs::{self, File};
 use std::io::BufReader;
 
 mod block;
+mod block_hashes;
 mod post_check;
 mod prestate;
 mod receipts;
@@ -35,6 +37,10 @@ struct Args {
     #[arg(long)]
     receipts: String,
 
+    /// Path to the block hashes JSON file (optional)
+    #[arg(long)]
+    block_hashes: Option<String>,
+
     /// If set, the leaves of the tree are put in random
     /// positions to emulate real-world costs
     #[arg(long, action = clap::ArgAction::SetTrue)]
@@ -51,8 +57,13 @@ fn run<const RANDOMIZED: bool>(
     transactions: Vec<Vec<u8>>,
     receipts: Vec<receipts::TransactionReceipt>,
     diff_trace: DiffTrace,
+    block_hashes: Option<BlockHashes>,
 ) -> anyhow::Result<()> {
     chain.set_last_block_number(block_number - 1);
+
+    if let Some(block_hashes) = block_hashes {
+        chain.set_block_hashes(block_hashes.into_array(block_number))
+    }
 
     let prestate_cache = populate_prestate(&mut chain, ps_trace);
 
@@ -84,6 +95,10 @@ fn main() -> anyhow::Result<()> {
     let diff_file = File::open(&args.difftrace)?;
     let diff_reader = BufReader::new(diff_file);
     let diff_trace: DiffTrace = serde_json::from_reader(diff_reader)?;
+    let block_hashes: Option<BlockHashes> = args.block_hashes.map(|path| {
+        let hashes = fs::read_to_string(&path).expect("valid block hashes path");
+        serde_json::from_str(&hashes).expect("valid block hashes JSON")
+    });
 
     let block: block::Block = serde_json::from_str(&block).expect("valid block JSON");
     let block_number = block.result.header.number;
@@ -130,6 +145,7 @@ fn main() -> anyhow::Result<()> {
             transactions,
             receipts,
             diff_trace,
+            block_hashes,
         )
     } else {
         let chain = Chain::empty(Some(1));
@@ -142,6 +158,7 @@ fn main() -> anyhow::Result<()> {
             transactions,
             receipts,
             diff_trace,
+            block_hashes,
         )
     }
 }
