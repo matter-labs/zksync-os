@@ -35,8 +35,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn pc(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, PC_NATIVE_COST)?;
-        self.stack
-            .push_values(&[U256::from(self.instruction_pointer - 1)])?;
+        self.stack.push(U256::from(self.instruction_pointer - 1))?;
         Ok(())
     }
 
