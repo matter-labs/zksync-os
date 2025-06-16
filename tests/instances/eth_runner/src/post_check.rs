@@ -264,6 +264,14 @@ pub fn post_check(
                     receipt.transaction_index
                 )
             }
+            // Check gas used
+            if res.gas_used != zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used) {
+                println!(
+                    "Transaction {} has a gas mismatch: ZKsync OS used {}, reference: {}\n  Difference:{}",
+                    receipt.transaction_index, res.gas_used, receipt.gas_used,
+                    zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used).abs_diff(res.gas_used)
+                )
+            }
             // Logs check
             assert_eq!(
                 res.logs.len(),
