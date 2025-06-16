@@ -8,31 +8,31 @@ use crate::Vec;
 use crate::{utils::assume, ExitCode, STACK_SIZE};
 
 pub struct EvmStack<S: EthereumLikeTypes> {
-    inner: Vec<U256, <S::Memory as MemorySubsystem>::Allocator>,
+    data: Vec<U256, <S::Memory as MemorySubsystem>::Allocator>,
 }
 
 impl<S: EthereumLikeTypes> EvmStack<S> {
     #[inline(always)]
     pub fn new(alloc: <S::Memory as MemorySubsystem>::Allocator) -> Self {
         Self {
-            inner: Vec::with_capacity_in(STACK_SIZE, alloc),
+            data: Vec::with_capacity_in(STACK_SIZE, alloc),
         }
     }
 
     #[inline(always)]
     pub(crate) fn raw_push_within_capacity(&mut self, value: U256) -> Result<(), U256> {
-        self.inner.push_within_capacity(value)
+        self.data.push_within_capacity(value)
     }
 
     #[inline(always)]
     pub(crate) fn pop_addresses<const N: usize>(&mut self) -> Result<[B160; N], ExitCode> {
-        let len = self.inner.len();
+        let len = self.data.len();
         if len < N {
             return Err(ExitCode::StackUnderflow);
         }
         unsafe {
             let values =
-                core::array::from_fn(|_| u256_to_b160(self.inner.pop().unwrap_unchecked()));
+                core::array::from_fn(|_| u256_to_b160(self.data.pop().unwrap_unchecked()));
 
             Ok(values)
         }
@@ -43,47 +43,54 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
         &mut self,
         values: &[U256; N],
     ) -> Result<(), ExitCode> {
-        if self.inner.len() + N > STACK_SIZE {
+        if self.data.len() + N > STACK_SIZE {
             return Err(ExitCode::StackOverflow);
         }
         unsafe {
-            assume(self.inner.capacity() == STACK_SIZE);
+            assume(self.data.capacity() == STACK_SIZE);
         }
-        self.inner.extend_from_slice(values);
+        self.data.extend_from_slice(values);
         Ok(())
     }
 
     #[inline(always)]
     pub(crate) fn push(&mut self, value: U256) -> Result<(), ExitCode> {
         unsafe {
-            assume(self.inner.capacity() == STACK_SIZE);
+            assume(self.data.capacity() == STACK_SIZE);
         }
-        if self.inner.push_within_capacity(value).is_err() {
+        if self.data.push_within_capacity(value).is_err() {
             return Err(ExitCode::StackOverflow);
         }
 
         Ok(())
     }
 
-    pub(crate) fn peek_mut(&mut self) -> Result<&mut U256, ExitCode> {
-        let len = self.inner.len();
+    #[inline(always)]
+    pub(crate) fn top(&mut self) -> Result<&mut U256, ExitCode> {
+        let len = self.data.len();
         if len < 1 {
             return Err(ExitCode::StackUnderflow);
         }
         unsafe {
-            let idx = len - 1;
-            Ok(self.inner.get_unchecked_mut(idx))
+            Ok(self.top_unsafe())
         }
+    }
+
+    /// The caller is responsible for checking the length of the stack.
+    #[inline(always)]
+    pub unsafe fn top_unsafe(&mut self) -> &mut U256 {
+        let len = self.data.len();
+        self.data.get_unchecked_mut(len - 1)
     }
 
     #[inline(always)]
     pub(crate) fn pop_values<const N: usize>(&mut self) -> Result<[U256; N], ExitCode> {
-        let len = self.inner.len();
+        let len = self.data.len();
         if len < N {
             return Err(ExitCode::StackUnderflow);
         }
         unsafe {
-            let values = core::array::from_fn(|_| self.inner.pop().unwrap_unchecked());
+            let values = core::array::from_fn(|_| self.data.pop().unwrap_unchecked());
 
             Ok(values)
         }
@@ -93,23 +100,23 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
     pub(crate) fn pop_values_and_peek<const N: usize>(
         &mut self,
     ) -> Result<([U256; N], &mut U256), ExitCode> {
-        let len = self.inner.len();
+        let len = self.data.len();
         if len < N + 1 {
             return Err(ExitCode::StackUnderflow);
         }
         unsafe {
-            let values = core::array::from_fn(|_| self.inner.pop().unwrap_unchecked());
-            let idx = self.inner.len() - 1;
-            Ok((values, self.inner.get_unchecked_mut(idx)))
+            let values = core::array::from_fn(|_| self.data.pop().unwrap_unchecked());
+            let idx = self.data.len() - 1;
+            Ok((values, self.data.get_unchecked_mut(idx)))
         }
     }
 
     #[inline(always)]
     pub(crate) fn swap(&mut self, n: usize) -> Result<(), ExitCode> {
         unsafe {
-            assume(self.inner.capacity() == STACK_SIZE);
+            assume(self.data.capacity() == STACK_SIZE);
         }
-        let len = self.inner.len();
+        let len = self.data.len();
         let src_offset = if len == 0 {
             return Err(ExitCode::StackUnderflow);
         } else {
@@ -121,7 +128,7 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
             src_offset - n
         };
         unsafe {
-            self.inner.swap_unchecked(src_offset, dst_offset);
+            self.data.swap_unchecked(src_offset, dst_offset);
         }
 
         Ok(())
@@ -129,24 +136,24 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
 
     #[inline(always)]
     pub(crate) fn dup(&mut self, n: usize) -> Result<(), ExitCode> {
-        if self.inner.len() == STACK_SIZE {
+        if self.data.len() == STACK_SIZE {
             return Err(ExitCode::StackOverflow);
         }
         unsafe {
-            assume(self.inner.capacity() == STACK_SIZE);
+            assume(self.data.capacity() == STACK_SIZE);
         }
-        let len = self.inner.len();
+        let len = self.data.len();
         let offset = if n > len {
             return Err(ExitCode::StackUnderflow);
         } else {
             len - n
         };
 
-        let value = unsafe { *self.inner.get_unchecked(offset) };
+        let value = unsafe { *self.data.get_unchecked(offset) };
         unsafe {
-            assume(self.inner.len() < self.inner.capacity());
+            assume(self.data.len() < self.data.capacity());
         }
-        self.inner.push(value);
+        self.data.push(value);
 
         Ok(())
     }
@@ -154,14 +161,14 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
     #[inline(always)]
     pub(crate) fn reduce_one(&mut self) -> Result<(), ExitCode> {
         unsafe {
-            assume(self.inner.capacity() == STACK_SIZE);
+            assume(self.data.capacity() == STACK_SIZE);
         }
-        let len = self.inner.len();
+        let len = self.data.len();
         if len == 0 {
             Err(ExitCode::StackUnderflow)
         } else {
             unsafe {
-                self.inner.set_len(len - 1);
+                self.data.set_len(len - 1);
             }
 
             Ok(())
@@ -170,7 +177,7 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
 
     #[allow(dead_code)]
     pub(crate) fn debug_print(&self, mut logger: impl Logger) {
-        for el in self.inner.iter() {
+        for el in self.data.iter() {
             let _ = logger.write_fmt(format_args!("{:?}\n", el));
         }
     }
