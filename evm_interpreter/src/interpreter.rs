@@ -299,7 +299,6 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
                         opcodes::LOG2 => self.log::<2>(system),
                         opcodes::LOG3 => self.log::<3>(system),
                         opcodes::LOG4 => self.log::<4>(system),
-                        #[cfg(feature = "selfdestruct")]
                         opcodes::SELFDESTRUCT => self.selfdestruct(system),
                         opcodes::CHAINID => self.chainid(system),
                         opcodes::BLOBHASH => self.blobhash(system),
