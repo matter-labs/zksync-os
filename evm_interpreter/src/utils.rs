@@ -37,10 +37,7 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     #[inline]
-    pub(crate) fn cast_to_usize(
-        src: &U256,
-        error_to_set: ExitCode,
-    ) -> Result<usize, ExitCode> {
+    pub(crate) fn cast_to_usize(src: &U256, error_to_set: ExitCode) -> Result<usize, ExitCode> {
         u256_try_to_usize(src).ok_or(error_to_set)
     }
 

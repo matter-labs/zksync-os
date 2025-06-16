@@ -31,8 +31,7 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
             return Err(ExitCode::StackUnderflow);
         }
         unsafe {
-            let values =
-                core::array::from_fn(|_| u256_to_b160(self.data.pop().unwrap_unchecked()));
+            let values = core::array::from_fn(|_| u256_to_b160(self.data.pop().unwrap_unchecked()));
 
             Ok(values)
         }
@@ -71,9 +70,7 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
         if len < 1 {
             return Err(ExitCode::StackUnderflow);
         }
-        unsafe {
-            Ok(self.top_unsafe())
-        }
+        unsafe { Ok(self.top_unsafe()) }
     }
 
     /// The caller is responsible for checking the length of the stack.
