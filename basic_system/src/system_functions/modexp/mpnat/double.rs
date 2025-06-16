@@ -24,8 +24,6 @@ impl U512 {
         Self([U256::ZERO, U256::ZERO])
     }
 
-    // pub(crate) const ONE: Self = Self([U256::ONE, U256::ZERO]);
-
     pub(crate) fn low(&self) -> &U256 {
         &self.0[0]
     }
@@ -37,20 +35,6 @@ impl U512 {
     pub(crate) fn to_words(&self) -> (U256, U256) {
         match self.0 { [ref lo, ref hi] => (lo.clone(), hi.clone()) }
     }
-
-    // pub(crate) fn from_words(lo: U256, hi: U256) -> Self {
-    //     Self([lo, hi])
-    // }
-    //
-    // pub(crate) fn add_assign(&mut self, rhs: &Self) -> bool {
-    //     let mut carry = false;
-    //
-    //     for i in 0..2 {
-    //         carry = self.0[i].overflowing_add_assign_with_carry_propagation(&rhs.0[i], carry);
-    //     }
-    //
-    //     carry
-    // }
 
     pub(crate) fn add_assign_narrow(&mut self, rhs: &U256, one: &U256) -> bool {
         let carry = self.0[0].overflowing_add_assign(rhs);

@@ -1,5 +1,4 @@
-// Taken from https://github.com/aurora-is-near/aurora-engine, with changes
-// to explicitly pass around allocator.
+// Adopted from https://github.com/aurora-is-near/aurora-engine
 
 use zk_ee::system::logger::Logger;
 
@@ -11,7 +10,8 @@ static mut ZERO: Option<U256> = None;
 static mut ONE: Option<U256> = None;
 
 /// Computes `(x * y) mod 2^(WORD_BITS*out.len())`.
-pub fn big_wrapping_mul<L: Logger>(
+/// x and y can't reference RO memory.
+pub unsafe  fn big_wrapping_mul<L: Logger>(
     l: &mut L,
     x: &[U256],
     y: &[U256],
@@ -30,7 +30,7 @@ pub fn big_wrapping_mul<L: Logger>(
                 Some(x) => x,
                 None => &zero,
             };
-            shifted_carrying_mul(
+            unsafe { shifted_carrying_mul(
                 l, 
                 &out[i + j],
                 &x,
@@ -38,13 +38,12 @@ pub fn big_wrapping_mul<L: Logger>(
                 &c,
                 double,
                 one,
-            );
+            ) };
             c.clone_from(double.high());
             out[i + j].clone_from(double.low());
         }
     }
 }
-
 
 // Performs a += b, returning if there was overflow
 pub fn in_place_add(a: &mut [U256], b: &[U256]) -> bool {
@@ -59,13 +58,12 @@ pub fn in_place_add(a: &mut [U256], b: &[U256]) -> bool {
     c
 }
 
-
 /// Computes `a + xy + c` where any overflow is captured as the "carry",
 /// the second part of the output. The arithmetic in this function is
 /// guaranteed to never overflow because even when all 4 variables are
 /// equal to `Word::MAX` the output is smaller than `DoubleWord::MAX`.
 /// Safety: `x`,`y` can't be placed in RO memory.
-fn shifted_carrying_mul<L: Logger>(logger: &mut L, a: &U256, x: &U256, y: &U256, c: &U256, out: &mut U512, one: &U256) {
+unsafe fn shifted_carrying_mul<L: Logger>(logger: &mut L, a: &U256, x: &U256, y: &U256, c: &U256, out: &mut U512, one: &U256) {
 
     {
         let out = &mut out.0;

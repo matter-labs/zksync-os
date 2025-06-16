@@ -7,7 +7,6 @@ use alloc::vec::Vec;
 use zk_ee::system::logger::Logger;
 use zk_ee::system_io_oracle::{ArithmeticsParam, IOOracle};
 use core::alloc::Allocator;
-use core::cell::LazyCell;
 use core::marker::PhantomData;
 use zk_ee::system_io_oracle::Arithmetics;
 
@@ -16,13 +15,16 @@ use alloc::boxed::Box;
 pub(crate) static U256_ZERO: U256 = U256::ZERO;
 static mut ZERO: Option<U256> = None;
 
-static mut Q_U8_SCRATCH: *mut () = core::ptr::null_mut();
-static mut R_U8_SCRATCH: *mut () = core::ptr::null_mut();
+// static mut Q_U8_SCRATCH: *mut () = core::ptr::null_mut();
+// static mut R_U8_SCRATCH: *mut () = core::ptr::null_mut();
 static mut R_U256_SCRATCH: *mut () = core::ptr::null_mut();
 static mut RCHECK_U256_SCRATCH: *mut () = core::ptr::null_mut();
-static mut D_U256_SCRATCH: *mut () = core::ptr::null_mut();
+// static mut D_U256_SCRATCH: *mut () = core::ptr::null_mut();
 static mut Q_U256_SCRATCH: *mut () = core::ptr::null_mut();
 
+/// We're using `*mut ()` to store the buffer vectors, since we can't express them in this static
+/// context due to a generic allocator. This type mainly allows safely dropping existing objects and
+/// hides ptr <-> box conversions.
 struct OpaqueRef<'a, T, A: Allocator + Clone> {
     alloc: A,
     ptr: &'a mut *mut (),
@@ -34,11 +36,15 @@ impl<'a, T, A: Allocator + Clone> OpaqueRef<'a, T, A> {
         Self { ptr: r, alloc, phantom: PhantomData }
     }
 
-    fn as_mut(&mut self) -> Option<&mut T> {
+    /// Safety: If `self.ptr` isn't null, it must point to an initialized value of the provided
+    /// type.
+    unsafe fn as_mut(&mut self) -> Option<&mut T> {
         unsafe { self.ptr.cast::<T>().as_mut() }
     }
 
-    fn set<L: Logger>(&mut self, value: T, logger: &mut L) {
+    /// Safety: If `self.ptr` isn't null, it must point to an initialized value of the provided
+    /// type.
+    unsafe fn set<L: Logger>(&mut self, value: T, logger: &mut L) {
         self.drop_if_needed(logger);
 
         let boxed = Box::new_in(value, self.alloc.clone());
@@ -48,7 +54,9 @@ impl<'a, T, A: Allocator + Clone> OpaqueRef<'a, T, A> {
         *self.ptr = ptr as *mut ();
     }
 
-    fn drop_if_needed<L: Logger>(&mut self, logger: &mut L) {
+    /// Safety: If `self.ptr` isn't null, it must point to an initialized value of the provided
+    /// type.
+    unsafe fn drop_if_needed<L: Logger>(&mut self, logger: &mut L) {
         if self.ptr.is_null() == false {
             unsafe { Box::from_raw_in(self.ptr.cast::<T>(), self.alloc.clone()) };
             *self.ptr = core::ptr::null_mut();
@@ -57,7 +65,9 @@ impl<'a, T, A: Allocator + Clone> OpaqueRef<'a, T, A> {
 }
 
 impl<'a, T, A: Allocator + Clone> OpaqueRef<'a, Vec<T, A>, A> {
-    fn prepared<L: Logger>(&mut self, required_cap: usize, cap_factor: usize, logger: &mut L) -> &mut Vec<T, A> {
+    /// Safety: If `self.ptr` isn't null, it must point to an initialized value of the provided
+    /// type.
+    unsafe fn prepared<L: Logger>(&mut self, required_cap: usize, cap_factor: usize, logger: &mut L) -> &mut Vec<T, A> {
         let alloc = self.alloc.clone();
 
         match self.as_mut() {
@@ -134,122 +144,6 @@ impl<A: Allocator + Clone> MPNatU256<A> {
         Self { digits }
     }
 
-    pub fn from_little_endian_into<L: Logger>(bytes: &[u8], out: &mut Vec<U256, A>, logger: &mut L, allocator: A) {
-        if bytes.is_empty() {
-            out.clear();
-            return;
-        }
-
-        // Remainder on division by WORD_BYTES
-        let r = bytes.len() & (U256::BYTES - 1);
-        let (n_digits, full_digits) = if r == 0 {
-            let ws = bytes.len() / U256::BYTES;
-            (ws, ws)
-        } else {
-            // Need an extra digit for the remainder
-            let ws = bytes.len() / U256::BYTES;
-            (ws + 1, ws)
-        };
-
-        if out.capacity() < n_digits {
-            *out = Vec::with_capacity_in(n_digits, allocator.clone());
-        }
-
-        logger.write_fmt(format_args!("le cap {}", out.capacity()));
-        logger.write_fmt(format_args!("in len {}", bytes.len()));
-
-        let mut digits = out;
-
-        // buffer to hold Word-sized slices of the input bytes
-        let mut buf = [0u8; U256::BYTES];
-
-        let mut i_b = 0;
-        let mut i_w = 0;
-
-        logger.write_str("le 0");
-
-        loop {
-            if i_w == full_digits { break; }
-            let next = i_b + U256::BYTES;
-            buf.copy_from_slice(&bytes[i_b..next]);
-
-            digits.push(U256::from_le_bytes(&buf));
-
-            i_w += 1;
-            i_b = next;
-        }
-
-        logger.write_str("le 1");
-
-        if r != 0 {
-            buf[..r].copy_from_slice(&bytes[i_b..]);
-            buf[i_w + r..].iter_mut().for_each(|x| *x = 0);
-
-            digits.push(U256::from_le_bytes(&buf));
-        }
-        logger.write_str("le 2");
-    }
-
-    pub fn from_little_endian<L: Logger>(bytes: &[u8], logger: &mut L, allocator: A) -> Self {
-        if bytes.is_empty() {
-            let vec = Vec::with_capacity_in(0, allocator.clone());
-            return Self {
-                digits: vec,
-            };
-        }
-
-        // Remainder on division by WORD_BYTES
-        let r = bytes.len() & (U256::BYTES - 1);
-        let (n_digits, full_digits) = if r == 0 {
-            let ws = bytes.len() / U256::BYTES;
-            (ws, ws)
-        } else {
-            // Need an extra digit for the remainder
-            let ws = bytes.len() / U256::BYTES;
-            (ws + 1, ws)
-        };
-
-        let mut digits = Vec::with_capacity_in(n_digits, allocator.clone());
-
-        // buffer to hold Word-sized slices of the input bytes
-        let mut buf = [0u8; U256::BYTES];
-
-        let mut i_b = 0;
-        let mut i_w = 0;
-
-        loop {
-            if i_w == full_digits { break; }
-            let next = i_b + U256::BYTES;
-            buf.copy_from_slice(&bytes[i_b..next]);
-
-            digits.push(U256::from_le_bytes(&buf));
-
-            i_w += 1;
-            i_b = next;
-        }
-
-        if r != 0 {
-            buf[..r].copy_from_slice(&bytes[i_b..]);
-            buf[i_w + r..].iter_mut().for_each(|x| *x = 0);
-
-            digits.push(U256::from_le_bytes(&buf));
-        }
-
-        Self { digits }
-    }
-
-    pub fn eq(&self, rhs: &Self) -> bool {
-        let (a, b) = match self.digits.len() < rhs.digits.len() {
-            true => (self, rhs),
-            false => (rhs, self),
-        };
-
-        a.digits.iter()
-            .chain(core::iter::repeat(&U256::ZERO))
-            .zip(b.digits.iter())
-            .all(|(x, y)| x == y)
-    }
-    
     pub fn eq_digits(lhs: &[U256], rhs: &[U256]) -> bool {
         let (a, b) = match lhs.len() < rhs.len() {
             true => (lhs, rhs),
@@ -315,13 +209,6 @@ impl<A: Allocator + Clone> MPNatU256<A> {
             arg
         };
 
-        // let zero = match unsafe { &mut ZERO } {
-        //     Some(x) => x,
-        //     x @ None => {
-        //         *x = Some(U256::zero());
-        //         x.as_ref().unwrap()
-        //     },
-        // };
         let zero = unsafe { ZERO.get_or_insert_with(|| U256::ZERO) };
 
         let mut it = 
@@ -343,8 +230,10 @@ impl<A: Allocator + Clone> MPNatU256<A> {
             unsafe { &mut R_U256_SCRATCH },
             allocator.clone());
 
-        let q = q_ref.prepared(self.digits.len(), 1, logger);
-        let r = r_ref.prepared(rhs.digits.len(), 2, logger);
+        // Safety: the statics are accessed with `prepared` method only, which soundly handles the
+        // referenced ptr.
+        let q = unsafe { q_ref.prepared(self.digits.len(), 1, logger) };
+        let r = unsafe { r_ref.prepared(rhs.digits.len(), 2, logger) };
 
         { // Write q
             assert_eq!(0, q_len % 8);
@@ -412,7 +301,9 @@ impl<A: Allocator + Clone> MPNatU256<A> {
                 unsafe { &mut RCHECK_U256_SCRATCH },
                 allocator.clone());
 
-            let mut check = check_ref.prepared(q.len() + rhs.digits.len(), 2, logger);
+            // Safety: the static is accessed with `prepared` method only, which soundly handles the
+            // referenced ptr.
+            let mut check = unsafe { check_ref.prepared(q.len() + rhs.digits.len(), 2, logger) };
 
             { // Write check
                 check.clear();
@@ -427,12 +318,9 @@ impl<A: Allocator + Clone> MPNatU256<A> {
                 unsafe { check.set_len(r.len()) };
             }
 
-
-
             // r += q * d
-            // TODO: Instead of cloning `r` into `check`, send `r` inside and use it as carry for
-            // initial iteration.
-            big_wrapping_mul(logger, &q, &rhs.digits, &mut check);
+            // safety: `q` and `rhs` aren't referenving RO memory.
+            unsafe { big_wrapping_mul(logger, &q, &rhs.digits, &mut check) };
 
             assert!(Self::eq_digits(&check, self.digits.as_slice()));
         }
@@ -478,8 +366,6 @@ impl<A: Allocator + Clone> MPNatU256<A> {
             self.digits.clone()
         };
 
-        // let base = scratch_space.clone();
-
         scratch_space.fill(U256::ZERO); // zero-out the scratch space
         scratch_space.resize_with(modulus.digits.len() * 2, || U256::ZERO.clone());
 
@@ -505,10 +391,9 @@ impl<A: Allocator + Clone> MPNatU256<A> {
 
                 // result width: 2m
                 // scratch width: 2m
-                big_wrapping_mul(logger, &result.digits, &result.digits, &mut scratch_space);
+                // Safety: `result` isn't referencing an RO memory.
+                unsafe { big_wrapping_mul(logger, &result.digits, &result.digits, &mut scratch_space) };
                 result.digits.clone_from_slice(&scratch_space);
-
-
 
                 // `scratch_space` isn't used inside `div`, an is only used as the result
                 // dst, so not need to zero it out. For the next call `div` will write over the
@@ -526,7 +411,8 @@ impl<A: Allocator + Clone> MPNatU256<A> {
 
                 if b & mask != 0 {
                     inner += 1;
-                    big_wrapping_mul(logger, &result.digits, &base, &mut scratch_space);
+                    // Safety: `result` and `base` aren't referencing an RO memory.
+                    unsafe { big_wrapping_mul(logger, &result.digits, &base, &mut scratch_space) };
                     result.digits.clone_from_slice(&scratch_space);
 
                     result.div(modulus, &mut scratch_space, oracle, logger, allocator.clone());
