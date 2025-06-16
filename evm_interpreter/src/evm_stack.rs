@@ -103,8 +103,7 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
         }
         unsafe {
             let values = core::array::from_fn(|_| self.data.pop().unwrap_unchecked());
-            let idx = self.data.len() - 1;
-            Ok((values, self.data.get_unchecked_mut(idx)))
+            Ok((values, self.top_unsafe()))
         }
     }
 
