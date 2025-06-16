@@ -5,7 +5,7 @@ use zk_ee::system::System;
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
-        let [index] = self.pop_values::<1>()?;
+        let [index] = self.stack.pop_values::<1>()?;
         let index = self.cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
         self.resize_heap(index, 32)?;
         let mut value = U256::ZERO;
@@ -24,12 +24,12 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             ));
         }
 
-        self.stack_push_one(value)
+        self.stack.push_one(value)
     }
 
     pub fn mstore(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
-        let [index, value] = self.pop_values::<2>()?;
+        let [index, value] = self.stack.pop_values::<2>()?;
         let index = self.cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
         self.resize_heap(index, 32)?;
 
@@ -54,7 +54,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn mstore8(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, MSTORE8_NATIVE_COST)?;
-        let [index, value] = self.pop_values::<2>()?;
+        let [index, value] = self.stack.pop_values::<2>()?;
         let index = self.cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
         self.resize_heap(index, 1)?;
         let value = value.byte(0);
@@ -75,11 +75,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::BASE, MSIZE_NATIVE_COST)?;
         let len = self.memory_len();
         debug_assert!(len.next_multiple_of(32) == len);
-        self.stack_push_one(U256::from(len))
+        self.stack.push_one(U256::from(len))
     }
 
     pub fn mcopy(&mut self) -> InstructionResult {
-        let [dst_offset, src_offset, len] = self.pop_values::<3>()?;
+        let [dst_offset, src_offset, len] = self.stack.pop_values::<3>()?;
 
         let len = self.cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
         let (gas_cost, native_cost) = self.very_low_copy_cost(len as u64)?;

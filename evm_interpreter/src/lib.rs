@@ -19,6 +19,7 @@ extern crate alloc;
 
 use core::ops::Range;
 
+use evm_stack::EvmStack;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
@@ -30,6 +31,7 @@ use zk_ee::types_config::*;
 use zk_ee::utils::*;
 
 mod ee_trait_impl;
+mod evm_stack;
 pub mod gas_constants;
 pub mod i256;
 pub mod instructions;
@@ -49,7 +51,7 @@ pub struct Interpreter<'a, S: EthereumLikeTypes> {
     /// Generic resources
     pub resources: S::Resources,
     /// Stack.
-    pub stack: Vec<U256, S::Allocator>,
+    pub stack: EvmStack<S>,
     /// Caller address
     pub caller: <S::IOTypes as SystemIOTypesConfig>::Address,
     /// Contract information and invoking data

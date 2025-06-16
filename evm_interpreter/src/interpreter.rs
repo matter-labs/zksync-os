@@ -138,10 +138,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub(crate) const PRINT_OPCODES: bool = false;
 
     #[allow(dead_code)]
-    pub(crate) fn stack_debug_print(&self, mut logger: impl Logger) {
-        for el in self.stack.iter() {
-            let _ = logger.write_fmt(format_args!("{:?}\n", el));
-        }
+    pub(crate) fn stack_debug_print(&self, logger: impl Logger) {
+        self.stack.debug_print(logger);
     }
 
     #[inline]
