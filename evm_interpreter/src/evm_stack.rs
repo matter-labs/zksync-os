@@ -53,7 +53,7 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
     }
 
     #[inline(always)]
-    pub(crate) fn push_one(&mut self, value: U256) -> Result<(), ExitCode> {
+    pub(crate) fn push(&mut self, value: U256) -> Result<(), ExitCode> {
         unsafe {
             assume(self.inner.capacity() == STACK_SIZE);
         }

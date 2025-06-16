@@ -24,7 +24,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             ));
         }
 
-        self.stack.push_one(value)
+        self.stack.push(value)
     }
 
     pub fn mstore(&mut self, system: &mut System<S>) -> InstructionResult {
@@ -75,7 +75,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(gas_constants::BASE, MSIZE_NATIVE_COST)?;
         let len = self.memory_len();
         debug_assert!(len.next_multiple_of(32) == len);
-        self.stack.push_one(U256::from(len))
+        self.stack.push(U256::from(len))
     }
 
     pub fn mcopy(&mut self) -> InstructionResult {

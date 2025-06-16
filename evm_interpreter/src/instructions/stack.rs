@@ -11,7 +11,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn push0(&mut self) -> InstructionResult {
         // EIP-3855: PUSH0 instruction
         self.spend_gas_and_native(gas_constants::BASE, PUSH0_NATIVE_COST)?;
-        self.stack.push_one(U256::ZERO)
+        self.stack.push(U256::ZERO)
     }
 
     pub fn push<const N: usize>(&mut self) -> InstructionResult {
@@ -42,7 +42,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         }
 
         self.instruction_pointer += N;
-        self.stack.push_one(value)
+        self.stack.push(value)
     }
 
     pub fn dup<const N: usize>(&mut self) -> InstructionResult {
