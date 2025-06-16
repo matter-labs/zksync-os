@@ -15,7 +15,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     ]);
 
     pub fn sha3(&mut self, system: &mut System<S>) -> InstructionResult {
-        let ([memory_offset], len) = self.stack.pop_values_and_peek::<1>()?;
+        let [memory_offset, len] = self.stack.pop_values::<2>()?;
 
         let memory_offset = Self::cast_to_usize(&memory_offset, ExitCode::InvalidOperandOOG)?;
         let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
@@ -57,8 +57,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             hash
         };
 
-        unsafe { *self.stack.top_unsafe() = hash };
-        Ok(())
+        self.stack.push(hash)
     }
 
     pub fn address(&mut self) -> InstructionResult {
@@ -110,7 +109,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn calldataload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, CALLDATALOAD_NATIVE_COST)?;
-        let index = *self.stack.top()?;
+        let [index] = self.stack.pop_values::<1>()?;
         let value = match u256_try_to_usize(&index) {
             Some(index) => {
                 if index < self.calldata.len() {
@@ -143,7 +142,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             ));
         }
 
-        unsafe { *self.stack.top_unsafe() = value };
+        self.stack.push(value)?;
 
         Ok(())
     }
