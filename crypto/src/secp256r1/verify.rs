@@ -4,8 +4,7 @@ use super::{
     points::Affine,
     scalar::{Scalar, Signature},
     wnaf::Wnaf,
-    Secp256r1Err, ECMULT_TABLE_SIZE_A, WINDOW_A, WINDOW_G, WNAF_BITS,
-};
+    Secp256r1Err, ECMULT_TABLE_SIZE_A, WINDOW_A, WINDOW_G};
 use core::mem::MaybeUninit;
 
 type Jacobian = super::points::Jacobian<FieldElement>;

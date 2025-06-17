@@ -1,4 +1,4 @@
-use super::{Affine, Jacobian};
+use super::Affine;
 use crate::secp256r1::field::FieldElement;
 
 #[derive(Debug, Clone, Copy)]

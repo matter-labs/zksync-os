@@ -62,7 +62,7 @@ impl Scalar {
     }
 
     fn subtract_modulus(&mut self) {
-        let mut borrow = false;
+        let mut borrow;
         (self.0, borrow) = overflowing_sub(&self.0, &MODULUS);
 
         if borrow {
