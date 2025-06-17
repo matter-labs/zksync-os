@@ -3,10 +3,10 @@ use crate::{
     types_config::SystemIOTypesConfig,
 };
 
-use super::{BytecodeSource, OSImmutableSlice, ReturnValues};
+use super::{OSImmutableSlice, ReturnValues};
 
-pub struct EnvironmentParameters<S: SystemTypes> {
-    pub decommitted_bytecode: BytecodeSource<S>,
+pub struct EnvironmentParameters<'a> {
+    pub decommitted_bytecode: &'a [u8],
     pub bytecode_len: u32,
     pub scratch_space_len: u32,
 }
@@ -15,7 +15,7 @@ pub struct EnvironmentParameters<S: SystemTypes> {
 /// All needed information for the bootloader and EEs to prepare
 /// for deploying a contract.
 ///
-pub struct DeploymentPreparationParameters<S: SystemTypes> {
+pub struct DeploymentPreparationParameters<'a, S: SystemTypes> {
     pub address_of_deployer: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub call_scratch_space: Option<
         alloc::boxed::Box<
@@ -23,7 +23,7 @@ pub struct DeploymentPreparationParameters<S: SystemTypes> {
             <S::Memory as MemorySubsystem>::Allocator,
         >,
     >,
-    pub deployment_code: OSImmutableSlice<S>,
+    pub deployment_code: &'a [u8],
     pub constructor_parameters: OSImmutableSlice<S>,
     pub ee_specific_deployment_processing_data:
         Option<alloc::boxed::Box<dyn core::any::Any, <S::Memory as MemorySubsystem>::Allocator>>,
@@ -36,8 +36,6 @@ pub struct DeploymentPreparationParameters<S: SystemTypes> {
 /// Result of an attempted deployment.
 ///
 pub enum DeploymentResult<S: SystemTypes> {
-    /// Preparation for deployment failed.
-    DeploymentCallFailedToExecute,
     /// Deployment failed after preparation.
     Failed {
         return_values: ReturnValues<S>,
@@ -56,7 +54,6 @@ pub enum DeploymentResult<S: SystemTypes> {
 impl<S: SystemTypes> DeploymentResult<S> {
     pub fn has_scratch_space(&self) -> bool {
         match self {
-            DeploymentResult::DeploymentCallFailedToExecute => false,
             DeploymentResult::Failed { return_values, .. }
             | DeploymentResult::Successful { return_values, .. } => {
                 return_values.return_scratch_space.is_some()
@@ -66,7 +63,6 @@ impl<S: SystemTypes> DeploymentResult<S> {
 
     pub fn returndata(&self) -> Option<&OSImmutableSlice<S>> {
         match self {
-            DeploymentResult::DeploymentCallFailedToExecute => None,
             DeploymentResult::Failed { return_values, .. }
             | DeploymentResult::Successful { return_values, .. } => Some(&return_values.returndata),
         }

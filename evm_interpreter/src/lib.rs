@@ -23,7 +23,7 @@ use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};
 use zk_ee::system::{
-    BytecodeSource, EthereumLikeTypes, MemorySubsystem, OSImmutableSlice, OSResizableSlice, System,
+    EthereumLikeTypes, MemorySubsystem, OSImmutableSlice, OSResizableSlice, Resource, System,
     SystemTypes,
 };
 
@@ -45,7 +45,7 @@ pub(crate) const THIS_EE_TYPE: ExecutionEnvironmentType = ExecutionEnvironmentTy
 
 // this is the interpreter that can be found in Reth itself, modified for purposes of having abstract view
 // on memory and resources
-pub struct Interpreter<S: EthereumLikeTypes> {
+pub struct Interpreter<'a, S: EthereumLikeTypes> {
     /// Instruction pointer.
     pub instruction_pointer: usize,
     /// Generic resources
@@ -57,7 +57,7 @@ pub struct Interpreter<S: EthereumLikeTypes> {
     /// Contract information and invoking data
     pub address: <S::IOTypes as SystemIOTypesConfig>::Address,
     /// calldata
-    pub calldata: OSImmutableSlice<S>,
+    pub calldata: &'a [u8],
     /// returndata is available from here if it exists
     pub returndata: OSImmutableSlice<S>,
     /// Heap that belongs to this interpreter, can be resided
@@ -65,7 +65,7 @@ pub struct Interpreter<S: EthereumLikeTypes> {
     /// returndata location serves to save range information at various points
     pub returndata_location: Range<usize>,
     /// Bytecode
-    pub bytecode: BytecodeSource<S>,
+    pub bytecode: &'a [u8],
     /// Preprocessing result
     pub bytecode_preprocessing: BytecodePreprocessingData<S>,
     /// Call value
@@ -115,7 +115,22 @@ impl<S: SystemTypes> BytecodePreprocessingData<S> {
         padded_bytecode: &[u8],
         original_len: u32,
         system: &mut System<S>,
-    ) -> Result<Self, InternalError> {
+        resources: &mut S::Resources,
+    ) -> Result<Self, FatalError> {
+        use crate::native_resource_constants::BYTECODE_PREPROCESSING_BYTE_NATIVE_COST;
+        use zk_ee::system::{Computational, Resources};
+        let native_cost = <S::Resources as Resources>::Native::from_computational(
+            BYTECODE_PREPROCESSING_BYTE_NATIVE_COST.saturating_mul(padded_bytecode.len() as u64),
+        );
+        resources
+            .charge(&S::Resources::from_native(native_cost))
+            .map_err(|e| match e {
+                SystemError::Internal(e) => FatalError::Internal(e),
+                SystemError::OutOfErgs => {
+                    FatalError::Internal(InternalError("OOE when charging only native"))
+                }
+                SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+            })?;
         let jump_map = analyze::<S>(padded_bytecode, system)
             .map_err(|_| InternalError("Could not preprocess bytecode"))?;
         let new = Self {

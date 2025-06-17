@@ -15,7 +15,9 @@ use zk_ee::types_config::SystemIOTypesConfig;
 
 impl<S: SystemTypes> EEDeploymentExtraParameters<S> for CreateScheme {}
 
-impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
+impl<'calldata, S: EthereumLikeTypes> ExecutionEnvironment<'calldata, S>
+    for Interpreter<'calldata, S>
+{
     const NEEDS_SCRATCH_SPACE: bool = false;
 
     const EE_VERSION_BYTE: u8 = ExecutionEnvironmentType::EVM_EE_BYTE;
@@ -64,7 +66,6 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
         let stack_space = Vec::with_capacity_in(STACK_SIZE, system.get_allocator());
         let empty_address = <S::IOTypes as SystemIOTypesConfig>::Address::default();
         let empty_preprocessing = BytecodePreprocessingData::<S>::empty(system);
-        let empty_bytecode = system.memory.empty_immutable_slice();
 
         Ok(Self {
             instruction_pointer: 0,
@@ -74,10 +75,10 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
             is_static: false,
             caller: empty_address,
             address: empty_address,
-            calldata: system.memory.empty_immutable_slice(),
+            calldata: &[],
             heap: system.memory.empty_managed_region(),
             returndata_location: 0..0,
-            bytecode: empty_bytecode,
+            bytecode: &[],
             bytecode_preprocessing: empty_preprocessing,
             call_value: U256::ZERO,
             is_constructor: false,
@@ -85,16 +86,19 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
         })
     }
 
-    fn start_executing_frame(
+    fn start_executing_frame<'a>(
         &mut self,
         system: &mut System<S>,
-        frame_state: ExecutionEnvironmentLaunchParams<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+        frame_state: ExecutionEnvironmentLaunchParams<'a, S>,
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError>
+    where
+        'a: 'calldata,
+    {
         let ExecutionEnvironmentLaunchParams {
             external_call:
                 ExternalCallRequest {
                     ergs_to_pass: _,
-                    available_resources,
+                    mut available_resources,
                     caller,
                     callee,
                     callers_caller,
@@ -185,15 +189,14 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
             "for a fresh call resources of initial frame must be empty",
         );
 
-        let bytecode = decommitted_bytecode.as_ref();
-
         // we need to set bytecode, address of self and caller, static state
         // and calldata
         let original_bytecode_len = bytecode_len;
         let bytecode_preprocessing = BytecodePreprocessingData::<S>::from_raw_bytecode(
-            bytecode,
+            decommitted_bytecode,
             original_bytecode_len,
             system,
+            &mut available_resources,
         )?;
 
         self.resources = available_resources;
@@ -214,7 +217,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
         system: &mut System<S>,
         returned_resources: S::Resources,
         call_result: CallResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         assert!(!call_result.has_scratch_space());
         assert!(self.resources.native().as_u64() == 0);
         self.resources.reclaim(returned_resources);
@@ -252,19 +255,11 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
         system: &mut System<S>,
         returned_resources: S::Resources,
         deployment_result: DeploymentResult<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         assert!(!deployment_result.has_scratch_space());
         assert!(self.resources.native().as_u64() == 0);
         self.resources.reclaim(returned_resources);
         match deployment_result {
-            DeploymentResult::DeploymentCallFailedToExecute => {
-                let _ = system.get_logger().write_fmt(format_args!(
-                    "Deployment failed, out of gas. Available: {:?}\n",
-                    self.resources
-                ));
-                // we still didn't pass the control flow, so we bail as panic
-                return self.create_immediate_return_state(system, true, true, false);
-            }
             DeploymentResult::Failed {
                 return_values,
                 execution_reverted,
@@ -312,7 +307,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
     fn clarify_and_take_passed_resources(
         resources_available_in_caller_frame: &mut S::Resources,
         desired_ergs_to_pass: Ergs,
-    ) -> Result<S::Resources, SystemError> {
+    ) -> Result<S::Resources, FatalError> {
         // we just need to apply 63/64 rule, as System/IO is responsible for the rest
 
         let max_passable_ergs = apply_63_64_rule(resources_available_in_caller_frame.ergs());
@@ -320,7 +315,11 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
 
         // Charge caller frame
         let mut resources_to_pass = S::Resources::from_ergs(ergs_to_pass);
-        resources_available_in_caller_frame.charge(&resources_to_pass)?;
+
+        // This never panics because max_passable_ergs <= resources_available_in_caller_frame
+        resources_available_in_caller_frame
+            .charge(&resources_to_pass)
+            .unwrap();
         // Give native resource to the passed.
         resources_available_in_caller_frame.give_native_to(&mut resources_to_pass);
 
@@ -328,10 +327,16 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
     }
 
     // derive address and check other preconditions to deploy the bytecode
-    fn prepare_for_deployment(
+    fn prepare_for_deployment<'a>(
         system: &mut System<S>,
-        deployment_parameters: DeploymentPreparationParameters<S>,
-    ) -> Result<(S::Resources, Option<ExecutionEnvironmentLaunchParams<S>>), FatalError>
+        deployment_parameters: DeploymentPreparationParameters<'a, S>,
+    ) -> Result<
+        (
+            S::Resources,
+            Option<ExecutionEnvironmentLaunchParams<'a, S>>,
+        ),
+        FatalError,
+    >
     where
         S::IO: IOSubsystemExt,
     {
@@ -520,7 +525,7 @@ impl<S: EthereumLikeTypes> ExecutionEnvironment<S> for Interpreter<S> {
                 callee: deployed_address,
                 callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(), // Fine to use placeholder
                 modifier: CallModifier::Constructor,
-                calldata: system.memory.empty_immutable_slice(),
+                calldata: &[],
                 call_scratch_space: None,
                 nominal_token_value,
             },

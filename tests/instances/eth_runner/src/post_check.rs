@@ -6,7 +6,7 @@ use ruint::aliases::{B160, B256, U256};
 use std::collections::HashMap;
 
 impl DiffTrace {
-    fn collect_diffs(self, prestate_cache: Cache, miner: B160) -> HashMap<B160, AccountState> {
+    fn collect_diffs(self, prestate_cache: &Cache, miner: B160) -> HashMap<B160, AccountState> {
         let mut updates: HashMap<B160, AccountState> = HashMap::new();
         self.result.into_iter().for_each(|item| {
             item.result.post.into_iter().for_each(|(address, account)| {
@@ -64,6 +64,15 @@ impl DiffTrace {
                     Some(initial) => *new_val != initial,
                 })
             }
+            if account.balance == prestate_cache.get_balance(address) {
+                account.balance = None
+            }
+            if account.nonce == prestate_cache.get_nonce(address) {
+                account.nonce = None
+            }
+            if account.code == prestate_cache.get_code(address) {
+                account.code = None
+            }
             !account.is_empty()
         });
 
@@ -71,8 +80,8 @@ impl DiffTrace {
     }
 
     pub fn check_storage_writes(self, output: BatchOutput, prestate_cache: Cache, miner: B160) {
-        let diffs = self.collect_diffs(prestate_cache, miner);
-        let zksync_os_diffs = zksync_os_output_into_account_state(output);
+        let diffs = self.collect_diffs(&prestate_cache, miner);
+        let zksync_os_diffs = zksync_os_output_into_account_state(output, &prestate_cache);
 
         // Reference => ZKsync OS check:
         diffs.iter().for_each(|(address, account)| {
@@ -137,14 +146,15 @@ impl DiffTrace {
         });
 
         // ZKsync OS => reference
-        zksync_os_diffs.iter().for_each(|(address, _)| {
+        zksync_os_diffs.iter().for_each(|(address, acc)| {
             // Just check that it's part of the reference diffs,
             // all else should be checked already
-            if address != &miner {
+            if address != &miner && !acc.is_empty() {
                 diffs.get(address).unwrap_or_else(|| {
                     panic!(
-                        "Reference must have write for account {}",
-                        hex::encode(address.to_be_bytes_vec())
+                        "Reference must have write for account {} {:?}",
+                        hex::encode(address.to_be_bytes_vec()),
+                        acc
                     )
                 });
             }
@@ -152,7 +162,10 @@ impl DiffTrace {
     }
 }
 
-fn zksync_os_output_into_account_state(output: BatchOutput) -> HashMap<B160, AccountState> {
+fn zksync_os_output_into_account_state(
+    output: BatchOutput,
+    prestate_cache: &Cache,
+) -> HashMap<B160, AccountState> {
     use basic_system::system_implementation::flat_storage_model::AccountProperties;
     let mut updates: HashMap<B160, AccountState> = HashMap::new();
     let preimages: HashMap<[u8; 32], Vec<u8>> = HashMap::from_iter(
@@ -196,6 +209,27 @@ fn zksync_os_output_into_account_state(output: BatchOutput) -> HashMap<B160, Acc
             entry.storage.get_or_insert_default().insert(key, value);
         }
     }
+
+    // Filter out empty diffs
+    updates.retain(|address, account| {
+        if let Some(storage) = account.storage.as_mut() {
+            storage.retain(|key, new_val| match prestate_cache.get_slot(address, key) {
+                None => *new_val != B256::ZERO,
+                Some(initial) => *new_val != initial,
+            })
+        }
+        if account.balance == prestate_cache.get_balance(address) {
+            account.balance = None
+        }
+        if account.nonce == prestate_cache.get_nonce(address) {
+            account.nonce = None
+        }
+        if account.code == prestate_cache.get_code(address) {
+            account.code = None
+        }
+        !account.is_empty()
+    });
+
     updates
 }
 
@@ -230,8 +264,21 @@ pub fn post_check(
                     receipt.transaction_index
                 )
             }
+            // Check gas used
+            if res.gas_used != zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used) {
+                println!(
+                    "Transaction {} has a gas mismatch: ZKsync OS used {}, reference: {}\n  Difference:{}",
+                    receipt.transaction_index, res.gas_used, receipt.gas_used,
+                    zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used).abs_diff(res.gas_used)
+                )
+            }
             // Logs check
-            assert_eq!(res.logs.len(), receipt.logs.len());
+            assert_eq!(
+                res.logs.len(),
+                receipt.logs.len(),
+                "Transaction {} has mismatch in number of logs",
+                receipt.transaction_index
+            );
             assert!(res.logs.iter().zip(receipt.logs.iter()).all(|(l, r)| {
                 let eq = r.is_equal_to_excluding_data(l);
                 if !eq {

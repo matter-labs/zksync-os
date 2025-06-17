@@ -90,7 +90,18 @@ impl<T: Sized, const N: usize, A: Allocator + Clone> zk_ee::memory::stack_trait:
         }
     }
 
-    fn top(&mut self) -> Option<&mut T> {
+    fn top(&self) -> Option<&T> {
+        match self.0.iter().last() {
+            None => None,
+            Some(last_node) => {
+                // Safety: nodes are never empty, per invariant
+                let x = unsafe { last_node.last().unwrap_unchecked() };
+                Some(x)
+            }
+        }
+    }
+
+    fn top_mut(&mut self) -> Option<&mut T> {
         match self.0.iter_mut().last() {
             None => None,
             Some(last_node) => {

@@ -2,16 +2,11 @@
 pub const ADD_NATIVE_COST: u64 = 140;
 pub const MUL_NATIVE_COST: u64 = 400;
 pub const SUB_NATIVE_COST: u64 = 140;
-//TODO: mean,median are ~500, need more precise computation?
 pub const DIV_NATIVE_COST: u64 = 1500;
-//TODO: mean,median are ~600, need more precise computation?
 pub const SDIV_NATIVE_COST: u64 = 1000;
-//TODO: mean,median are ~600, need more precise computation?
 pub const MOD_NATIVE_COST: u64 = 1300;
 pub const SMOD_NATIVE_COST: u64 = 800;
-//TODO: mean,median are ~600, need more precise computation?
 pub const ADDMOD_NATIVE_COST: u64 = 1700;
-//TODO: mean,median are ~700, need more precise computation?
 pub const MULMOD_NATIVE_COST: u64 = 2300;
 pub const EXP_BASE_NATIVE_COST: u64 = 700;
 pub const EXP_PER_BYTE_NATIVE_COST: u64 = 5_000;
@@ -175,3 +170,6 @@ pub const SWAP_NATIVE_COST: u64 = 90;
 pub const LOG_NATIVE_COST: u64 = 50;
 
 pub const STEP_NATIVE_COST: u64 = 20;
+
+// Cost of bytecode preprocessing per byte
+pub const BYTECODE_PREPROCESSING_BYTE_NATIVE_COST: u64 = 6;

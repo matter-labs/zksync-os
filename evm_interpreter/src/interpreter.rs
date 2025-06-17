@@ -7,17 +7,17 @@ use zk_ee::system::{
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, OSImmutableSlice, OSManagedRegion,
     ReturnValues,
 };
-use zk_ee::system::{Ergs, Resources};
+use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, Resources, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
     /// Keeps executing instructions (steps) from the system, until it hits a yield point -
     /// either due to some error, or return, or when trying to call a different contract
     /// or create one.
     pub fn execute_till_yield_point(
         &mut self,
         system: &mut System<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         let mut external_call = None;
         let exit_code = self.run(system, &mut external_call)?;
 
@@ -27,7 +27,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
 
         if let Some(call) = external_call {
             assert!(exit_code == ExitCode::ExternalCall);
-            match call {
+            return Ok(ExecutionEnvironmentPreemptionPoint::Spawn(match call {
                 ExternalCall::Call(EVMCallRequest {
                     ergs_to_pass,
                     destination_address,
@@ -36,29 +36,23 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
                     call_value,
                 }) => {
                     let available_resources = self.resources.take();
-                    let final_state = ExecutionEnvironmentPreemptionPoint::RequestedExternalCall(
-                        ExternalCallRequest {
-                            calldata,
-                            call_scratch_space: None,
-                            nominal_token_value: call_value,
-                            callers_caller: self.caller,
-                            caller: self.address,
-                            callee: destination_address,
-                            modifier,
-                            ergs_to_pass,
-                            available_resources,
-                        },
-                    );
-
-                    return Ok(final_state);
+                    ExecutionEnvironmentSpawnRequest::RequestedExternalCall(ExternalCallRequest {
+                        calldata,
+                        call_scratch_space: None,
+                        nominal_token_value: call_value,
+                        callers_caller: self.caller,
+                        caller: self.address,
+                        callee: destination_address,
+                        modifier,
+                        ergs_to_pass,
+                        available_resources,
+                    })
                 }
 
                 ExternalCall::Create(request) => {
-                    return Ok(ExecutionEnvironmentPreemptionPoint::RequestedDeployment(
-                        request,
-                    ));
+                    ExecutionEnvironmentSpawnRequest::RequestedDeployment(request)
                 }
-            }
+            }));
         }
 
         let (empty_returndata, reverted) = match exit_code {
@@ -73,16 +67,16 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
     }
 }
 
-pub enum ExternalCall<S: EthereumLikeTypes> {
-    Call(EVMCallRequest<S>),
-    Create(DeploymentPreparationParameters<S>),
+pub enum ExternalCall<'a, S: EthereumLikeTypes> {
+    Call(EVMCallRequest<'a, S>),
+    Create(DeploymentPreparationParameters<'a, S>),
 }
 
-pub struct EVMCallRequest<S: EthereumLikeTypes> {
+pub struct EVMCallRequest<'a, S: EthereumLikeTypes> {
     pub(crate) ergs_to_pass: Ergs,
     pub(crate) call_value: U256,
     pub(crate) destination_address: <S::IOTypes as SystemIOTypesConfig>::Address,
-    pub(crate) calldata: OSImmutableSlice<S>,
+    pub(crate) calldata: &'a [u8],
     pub(crate) modifier: CallModifier,
 }
 
@@ -111,7 +105,7 @@ pub enum CreateScheme {
     },
 }
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
     pub(crate) const PRINT_OPCODES: bool = false;
 
     #[allow(dead_code)]
@@ -133,7 +127,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
     pub fn run(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> Result<ExitCode, FatalError> {
         let mut cycles = 0;
         let result = loop {
@@ -340,7 +334,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         empty_returndata: bool,
         reverted: bool,
         is_error: bool,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         if is_error {
             // Spend all remaining resources on error
             self.resources.exhaust_ergs();
@@ -356,12 +350,12 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         if self.is_constructor {
             self.create_deployment_result(system, return_values, reverted, resources)
         } else {
-            Ok(ExecutionEnvironmentPreemptionPoint::CompletedExecution(
-                CompletedExecution {
+            Ok(ExecutionEnvironmentPreemptionPoint::End(
+                TransactionEndPoint::CompletedExecution(CompletedExecution {
                     return_values,
                     resources_returned: resources,
                     reverted,
-                },
+                }),
             ))
         }
     }
@@ -373,7 +367,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         mut return_values: ReturnValues<S>,
         execution_reverted: bool,
         mut resources: S::Resources,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'calldata, S>, FatalError> {
         let deployment_result = if execution_reverted == false {
             let deployed_code_len = return_values.returndata.len() as u64;
             // EIP-3541: reject code starting with 0xEF.
@@ -411,11 +405,11 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
             }
         };
 
-        Ok(ExecutionEnvironmentPreemptionPoint::CompletedDeployment(
-            CompletedDeployment {
+        Ok(ExecutionEnvironmentPreemptionPoint::End(
+            TransactionEndPoint::CompletedDeployment(CompletedDeployment {
                 resources_returned: resources,
                 deployment_result,
-            },
+            }),
         ))
     }
 

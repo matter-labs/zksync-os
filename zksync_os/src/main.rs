@@ -6,14 +6,6 @@
 #![no_builtins]
 
 extern "C" {
-    // // Boundaries of the .bss section
-    // static mut _ebss: u32;
-    // static mut _sbss: u32;
-
-    // // Boundaries of the .data section
-    // static mut _edata: u32;
-    // static mut _sdata: u32;
-
     // Boundaries of the heap
     static mut _sheap: usize;
     static mut _eheap: usize;
@@ -21,6 +13,11 @@ extern "C" {
     // Boundaries of the stack
     static mut _sstack: usize;
     static mut _estack: usize;
+
+    // Boundaries of the .data section (and it's part in ROM)
+    static mut _sidata: usize;
+    static mut _sdata: usize;
+    static mut _edata: usize;
 }
 
 // core::arch::global_asm!(include_str!("asm/asm.S"));
@@ -31,7 +28,7 @@ pub mod helper_reg_utils;
 #[cfg(not(feature = "no_exception_handling"))]
 pub mod machine_trap;
 
-#[cfg(not(feature = "no_print"))]
+#[cfg(feature = "print_debug_info")]
 pub mod quasi_uart;
 
 pub mod trap_frame;
@@ -41,7 +38,7 @@ use riscv_common::zksync_os_finish_success;
 
 use self::trap_frame::MachineTrapFrame;
 
-#[cfg(not(feature = "no_print"))]
+#[cfg(feature = "print_debug_info")]
 #[macro_export]
 macro_rules! print
 {
@@ -51,7 +48,7 @@ macro_rules! print
 	});
 }
 
-#[cfg(not(feature = "no_print"))]
+#[cfg(feature = "print_debug_info")]
 #[macro_export]
 macro_rules! println
 {
@@ -71,7 +68,7 @@ extern "C" fn eh_personality() {}
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    #[cfg(not(feature = "no_print"))]
+    #[cfg(feature = "print_debug_info")]
     {
         print!("Aborting: ");
         if let Some(p) = _info.location() {
@@ -157,10 +154,10 @@ unsafe fn workload() -> ! {
     use proof_running_system::system::bootloader::init_allocator;
     init_allocator(heap_start, heap_end);
 
-    #[cfg(feature = "no_print")]
+    #[cfg(not(feature = "print_debug_info"))]
     type LoggerTy = proof_running_system::zk_ee::system::NullLogger;
 
-    #[cfg(not(feature = "no_print"))]
+    #[cfg(feature = "print_debug_info")]
     type LoggerTy = crate::quasi_uart::QuasiUART;
 
     use core::fmt::Write;

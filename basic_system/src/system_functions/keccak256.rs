@@ -27,20 +27,22 @@ impl<R: Resources> SystemFunction<R> for Keccak256Impl {
     }
 }
 
+pub fn keccak256_native_cost<R: Resources>(len: usize) -> R::Native {
+    use zk_ee::system::Computational;
+    let rounds = core::cmp::max(1, len.div_ceil(KECCAK256_CHUNK_SIZE));
+    let native_cost = (rounds as u64) * KECCAK256_ROUND_NATIVE_COST + KECCAK256_BASE_NATIVE_COST;
+    R::Native::from_computational(native_cost)
+}
+
 fn keccak256_as_system_function_inner<D: ?Sized + Extend<u8>, R: Resources>(
     src: &[u8],
     dst: &mut D,
     resources: &mut R,
 ) -> Result<(), SystemFunctionError> {
-    use zk_ee::system::Computational;
     let words = src.len().div_ceil(32);
     let ergs_cost = KECCAK256_STATIC_COST_ERGS + KECCAK256_PER_WORD_COST_ERGS.times(words as u64);
-    let rounds = core::cmp::max(1, src.len().div_ceil(KECCAK256_CHUNK_SIZE));
-    let native_cost = (rounds as u64) * KECCAK256_ROUND_NATIVE_COST + KECCAK256_BASE_NATIVE_COST;
-    resources.charge(&R::from_ergs_and_native(
-        ergs_cost,
-        R::Native::from_computational(native_cost),
-    ))?;
+    let native_cost = keccak256_native_cost::<R>(src.len());
+    resources.charge(&R::from_ergs_and_native(ergs_cost, native_cost))?;
 
     use crypto::sha3::*;
     let mut hasher = Keccak256::new();
