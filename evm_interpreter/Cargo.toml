@@ -12,12 +12,13 @@ categories.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+ruint = { version = "1.14", default-features = false, features = ["alloc"] }
 zk_ee = { path = "../zk_ee", default-features = false }
 crypto = { path = "../crypto", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
 either = { version = "*", default-features = false }
 cycle_marker = { path = "../cycle_marker" }
+u256 = { path = "../supporting_crates/u256" }
 
 [features]
 eip-7645 = []

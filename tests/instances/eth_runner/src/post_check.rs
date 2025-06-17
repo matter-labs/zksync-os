@@ -124,7 +124,11 @@ impl DiffTrace {
                                 hex::encode(address.to_be_bytes_vec())
                             )
                         });
-                    assert_eq!(value, zksync_os_value);
+                    assert_eq!(
+                        value, zksync_os_value,
+                        "unexpected value for address {:?}, slot {:x}",
+                        address, key
+                    );
                 }
 
                 zk_account
@@ -193,7 +197,7 @@ fn zksync_os_output_into_account_state(
                     AccountProperties::decode(&encoded.try_into().unwrap())
                 };
                 let entry = updates.entry(address).or_default();
-                entry.balance = Some(props.balance);
+                entry.balance = Some(props.balance.into());
                 entry.nonce = Some(props.nonce);
                 if let Some(bytecode) = preimages.get(&props.bytecode_hash.as_u8_array()) {
                     let owned = bytecode.clone();
@@ -279,16 +283,19 @@ pub fn post_check(
                 "Transaction {} has mismatch in number of logs",
                 receipt.transaction_index
             );
-            assert!(res.logs.iter().zip(receipt.logs.iter()).all(|(l, r)| {
+            let tx_number = receipt.transaction_index.as_limbs()[0];
+            assert!(res.logs.iter().zip(receipt.logs.iter()).enumerate().all(|(i, (l, r))| {
                 let eq = r.is_equal_to_excluding_data(l);
                 if !eq {
-                    println!("Not equal logs:\n {:#?} \nand\n {:?}", l, r)
+                    println!("Transaction {}, event {}: not equal logs:\n   returned address {:?}, logs {:?}\n   expected address {:?}, logs {:?}", tx_number, i, &l.address, &l.topics, &r.address, &r.topics)
                 }
                 if r.data.to_vec() != l.data {
                     // We allow data to be different, as it can sometimes depend on
                     // gas, which is not 100% equivalent (access lists)
                     println!(
-                        "Data is not equal: we got {}, expected {}",
+                        "Transaction {}, event {}: log data is not equal:\n   returned {}\n   expected {}",
+                        tx_number,
+                        i,
                         hex::encode(l.data.clone()),
                         hex::encode(r.data.clone())
                     );

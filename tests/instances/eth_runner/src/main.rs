@@ -80,9 +80,7 @@ fn run<const RANDOMIZED: bool>(
     Ok(())
 }
 
-fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
-
+fn run_from_args(args: Args) -> anyhow::Result<()> {
     let block = fs::read_to_string(&args.block)?;
     // TODO: ensure there are no calls to unsupported precompiles
     let _calltrace = fs::read_to_string(&args.calltrace)?;
@@ -161,4 +159,34 @@ fn main() -> anyhow::Result<()> {
             block_hashes,
         )
     }
+}
+
+fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    run_from_args(args)
+}
+
+#[cfg(test)]
+#[test]
+fn test_manual_invoke() {
+    // let args = Args {
+    //     block: "tests/instances/eth_runner/block.json".to_string(),
+    //     calltrace: "tests/instances/eth_runner/calltrace.json".to_string(),
+    //     prestatetrace: "tests/instances/eth_runner/prestatetrace.json".to_string(),
+    //     difftrace: "tests/instances/eth_runner/difftrace.json".to_string(),
+    //     receipts: "tests/instances/eth_runner/receipts.json".to_string(),
+    //     randomized: false,
+    // };
+
+    let args = Args {
+        block: "block.json".to_string(),
+        calltrace: "calltrace.json".to_string(),
+        prestatetrace: "prestatetrace.json".to_string(),
+        difftrace: "difftrace.json".to_string(),
+        receipts: "receipts.json".to_string(),
+        randomized: false,
+    };
+
+    run_from_args(args).unwrap()
 }

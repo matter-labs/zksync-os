@@ -105,7 +105,8 @@ mod csr {
     {
         #[inline(always)]
         fn csr_read_impl() -> usize {
-            core::hint::black_box(csr_read_word().try_into().unwrap())
+            csr_read_word()
+            // core::hint::black_box(csr_read_word().try_into().unwrap())
         }
         #[inline(always)]
         fn csr_write_impl(value: usize) {
@@ -169,6 +170,8 @@ unsafe fn workload() -> ! {
 
     #[cfg(any(feature = "delegation", feature = "proving"))]
     crypto::init_lib();
+    #[cfg(any(feature = "delegation", feature = "proving"))]
+    ::u256::init();
 
     // and crunch
     let output = proof_running_system::system::bootloader::run_proving::<

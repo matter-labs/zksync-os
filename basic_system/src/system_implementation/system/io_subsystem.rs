@@ -10,6 +10,7 @@ use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use crypto::blake2s::Blake2s256;
 use crypto::MiniDigest;
 use errors::SystemFunctionError;
+use ::u256::U256;
 use evm_interpreter::gas_constants::LOG;
 use evm_interpreter::gas_constants::LOGDATA;
 use evm_interpreter::gas_constants::LOGTOPIC;
@@ -298,7 +299,7 @@ where
                     Bytes32::ZERO
                 } else {
                     // EOA case:
-                    Bytes32::from_u256_be(U256::from_limbs([
+                    Bytes32::from_u256_be(&U256::from_limbs([
                         0x7bfad8045d85a470,
                         0xe500b653ca82273b,
                         0x927e7db2dcc703c0,
@@ -485,7 +486,7 @@ where
 
         let mut blocks_hasher = Blake2s256::new();
         for block_hash in block_metadata.block_hashes.0.iter() {
-            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+            blocks_hasher.update(&block_hash.to_be_bytes());
         }
 
         // chain state before
@@ -524,7 +525,7 @@ where
 
         blocks_hasher = Blake2s256::new();
         for block_hash in block_metadata.block_hashes.0.iter().skip(1) {
-            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+            blocks_hasher.update(&block_hash.to_be_bytes());
         }
         blocks_hasher.update(current_block_hash.as_u8_ref());
 
@@ -924,14 +925,21 @@ where
         ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-        diff: &ruint::aliases::U256,
+        diff: &U256,
         should_subtract: bool,
-    ) -> Result<ruint::aliases::U256, UpdateQueryError> {
-        let update_fn = move |old_value: &ruint::aliases::U256| {
-            let new_value = if should_subtract {
-                old_value.checked_sub(*diff)
+    //) -> Result<ruint::aliases::U256, UpdateQueryError> {
+    //    let update_fn = move |old_value: &ruint::aliases::U256| {
+    //        let new_value = if should_subtract {
+    //            old_value.checked_sub(*diff)
+    //        } else {
+    //            old_value.checked_add(*diff)
+    ) -> Result<U256, UpdateQueryError> {
+        let update_fn = move |old_value: &U256| {
+            let mut new_value = old_value.clone();
+            let of = if should_subtract {
+                new_value.overflowing_sub_assign(diff)
             } else {
-                old_value.checked_add(*diff)
+                new_value.overflowing_add_assign(diff)
             };
             new_value.ok_or(UpdateQueryError::NumericBoundsError)
         };

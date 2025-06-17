@@ -135,6 +135,13 @@ impl OracleIteratorTypeMarker for ExactIndexIterator {
     type Params = Bytes32;
 }
 
+pub struct Arithmetics;
+
+impl OracleIteratorTypeMarker for Arithmetics {
+    const ID: u32 = 0x101;
+    type Params = u32;
+}
+
 ///
 /// UART access query type.
 ///
@@ -191,6 +198,17 @@ impl<IOTypes: SystemIOTypesConfig> UsizeDeserializable for InitialStorageSlotDat
 
         Ok(new)
     }
+}
+
+#[repr(C)]
+pub struct ArithmeticsParam {
+    pub op: u32,
+    pub a_ptr: u32,
+    pub a_len: u32,
+    pub b_ptr: u32,
+    pub b_len: u32,
+    pub c_ptr: u32,
+    pub c_len: u32,
 }
 
 ///

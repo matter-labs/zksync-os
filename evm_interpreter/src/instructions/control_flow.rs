@@ -16,9 +16,9 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn jumpi(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::HIGH, JUMPI_NATIVE_COST)?;
-        let [dest, value] = self.pop_values::<2>()?;
+        let (dest, value) = self.stack.pop_2()?;
         if value != U256::ZERO {
-            let dest = self.cast_to_usize(&dest, ExitCode::InvalidJump)?;
+            let dest = Self::cast_to_usize(&dest, ExitCode::InvalidJump)?;
             if self.bytecode_preprocessing.is_valid_jumpdest(dest) {
                 self.instruction_pointer = dest;
             } else {
@@ -35,7 +35,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn pc(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, PC_NATIVE_COST)?;
-        self.push_values(&[U256::from(self.instruction_pointer - 1)])?;
+        self.stack
+            .push_1(&U256::from((self.instruction_pointer - 1) as u64))?;
         Ok(())
     }
 
@@ -46,7 +47,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         if len == 0 {
             self.returndata_location = 0..0;
         } else {
-            let offset = self.cast_to_usize(&offset, ExitCode::InvalidOperandOOG)?;
+            let offset = Self::cast_to_usize(&offset, ExitCode::InvalidOperandOOG)?;
             self.resize_heap(offset, len, system)?;
             let (end, of) = offset.overflowing_add(len);
             if of {
@@ -64,7 +65,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         if len == 0 {
             self.returndata_location = 0..0;
         } else {
-            let offset = self.cast_to_usize(&offset, ExitCode::InvalidOperandOOG)?;
+            let offset = Self::cast_to_usize(&offset, ExitCode::InvalidOperandOOG)?;
             self.resize_heap(offset, len, system)?;
             let (end, of) = offset.overflowing_add(len);
             if of {

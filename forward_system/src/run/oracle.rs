@@ -30,7 +30,7 @@ impl<T: ReadStorageTree + Clone, PS: PreimageSource + Clone, TS: TxSource + Clon
     fn clone(&self) -> Self {
         ForwardRunningOracleAux {
             storage_commitment: self.storage_commitment,
-            block_metadata: self.block_metadata,
+            block_metadata: self.block_metadata.clone(),
             tree: self.tree.clone(),
             tx_source: self.tx_source.clone(),
             preimage_source: self.preimage_source.clone(),
@@ -96,7 +96,7 @@ impl<T: ReadStorageTree + Clone, PS: PreimageSource + Clone, TS: TxSource + Clon
     fn clone(&self) -> Self {
         ForwardRunningOracle {
             io_implementer_init_data: self.io_implementer_init_data,
-            block_metadata: self.block_metadata,
+            block_metadata: self.block_metadata.clone(),
             tree: self.tree.clone(),
             tx_source: self.tx_source.clone(),
             preimage_source: self.preimage_source.clone(),
@@ -160,7 +160,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
                         .cast::<<BlockLevelMetadataIterator as OracleIteratorTypeMarker>::Params>()
                 };
                 // we do not use it for anything
-                let iterator = DynUsizeIterator::from_owned(self.block_metadata);
+                let iterator = DynUsizeIterator::from_owned(self.block_metadata.clone());
 
                 Ok(Box::new(iterator))
             }
@@ -242,6 +242,11 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
                 };
                 let prev_index = self.tree.prev_tree_index(flat_key);
                 let iterator = DynUsizeIterator::from_owned(prev_index);
+                Ok(Box::new(iterator))
+            }
+            a if a == core::any::TypeId::of::<Arithmetics>() => {
+                let iterator = DynUsizeIterator::from_owned(init_value);
+
                 Ok(Box::new(iterator))
             }
             _ => Err(InternalError("Invalid marker")),
@@ -328,7 +333,7 @@ impl<S: ReadStorage, PS: PreimageSource, TS: TxSource> CallSimulationOracle<S, P
                         .cast::<<BlockLevelMetadataIterator as OracleIteratorTypeMarker>::Params>()
                 };
                 // we do not use it for anything
-                let iterator = DynUsizeIterator::from_owned(self.block_metadata);
+                let iterator = DynUsizeIterator::from_owned(self.block_metadata.clone());
 
                 Ok(Box::new(iterator))
             }

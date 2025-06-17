@@ -23,24 +23,21 @@ use zk_ee::system::{
 struct QuasiVec<'a, S: SystemTypes> {
     buffer: OSResizableSlice<S>,
     offset: usize,
-    system: &'a mut System<S>,
+    memory: &'a mut S::Memory,
 }
 
 impl<'a, S: SystemTypes> QuasiVec<'a, S> {
     const INITIAL_LEN: usize = 32;
 
-    fn new(system: &'a mut System<S>) -> Self {
-        let buffer = system.memory.empty_managed_region();
-        let buffer = system
-            .memory
-            .grow_heap(buffer, Self::INITIAL_LEN)
-            .expect("must grow buffer for precompiles")
+    fn new(memory: &'a mut S::Memory) -> Self {
+        let buffer = MemorySubsystem::empty_managed_region(memory);
+        let buffer = MemorySubsystem::grow_heap(memory, buffer, Self::INITIAL_LEN)
             .expect("must grow buffer for precompiles");
 
         Self {
             buffer,
             offset: 0,
-            system,
+            memory,
         }
     }
 }
@@ -52,12 +49,11 @@ impl<'a, S: SystemTypes> Extend<u8> for QuasiVec<'a, S> {
                 // grow
                 let new_len = self.buffer.len() * 2;
                 let buffer =
-                    core::mem::replace(&mut self.buffer, self.system.memory.empty_managed_region());
-                self.buffer = self
-                    .system
-                    .memory
-                    .grow_heap(buffer, new_len)
-                    .expect("must grow buffer for precompiles")
+                    core::mem::replace(
+                        &mut self.buffer,
+                        MemorySubsystem::empty_managed_region(self.memory));
+                self.buffer = MemorySubsystem::grow_heap(
+                    self.memory, buffer, new_len)
                     .expect("must grow buffer for precompiles");
             }
             unsafe {
@@ -76,13 +72,14 @@ impl<'a, S: SystemTypes> Extend<u8> for QuasiVec<'a, S> {
 /// NOTE: "pure" here means that we do not expect to trigger any state changes (and calling with static flag is ok),
 /// so for all the purposes we remain in the callee frame in terms of memory for efficiency
 ///
-pub fn pure_system_function_hook_impl<F: SystemFunction<S::Resources>, S: EthereumLikeTypes>(
+pub fn pure_system_function_hook_impl<F: SystemFunctionInvocation<S>, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
     _caller_ee: u8,
     system: &mut System<S>,
 ) -> Result<CompletedExecution<S>, FatalError>
 where
     S::Memory: MemorySubsystemExt,
+    S::IO: IOSubsystemExt,
 {
     let ExternalCallRequest {
         available_resources,
@@ -104,18 +101,19 @@ where
     // TODO: use returndata region directly
 
     // cheat
-    let snapshot = system.memory.start_memory_frame();
-    let mut buffer = QuasiVec::new(system);
-    let result = F::execute(&calldata, &mut buffer, &mut resources, allocator);
+    let mut logger = system.get_logger();
+    let (mem, io) = (&mut system.memory, &mut system.io);
+    let snapshot = mem.start_memory_frame();
+    let mut buffer = QuasiVec::<S>::new(mem);
+    let result = F::invoke(io.oracle(), &mut logger, &calldata, &mut buffer, &mut resources, allocator);
     let returndata = if result.is_ok() {
         let QuasiVec {
             buffer,
             offset,
-            system,
+            memory,
         } = buffer;
         // copy it
-        system
-            .memory
+        memory
             .copy_into_return_memory(&buffer[..offset])
             .expect("must copy into returndata")
             .take_slice(0..offset)

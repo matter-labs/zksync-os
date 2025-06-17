@@ -130,11 +130,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
             block_number: self.block_number + 1,
-            block_hashes: BlockHashes(self.block_hashes),
+            block_hashes: BlockHashes(self.block_hashes.map(|el| el.into())),
             timestamp: block_context.timestamp,
-            eip1559_basefee: block_context.eip1559_basefee,
-            gas_per_pubdata: block_context.gas_per_pubdata,
-            native_price: block_context.native_price,
+            eip1559_basefee: block_context.eip1559_basefee.into(),
+            gas_per_pubdata: block_context.gas_per_pubdata.into(),
+            native_price: block_context.native_price.into(),
             coinbase: block_context.coinbase,
             gas_limit: MAX_BLOCK_GAS_LIMIT,
         };
@@ -198,6 +198,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let mut non_determinism_source = ZkEENonDeterminismSource::default();
         non_determinism_source.add_external_processor(oracle_wrapper);
+        non_determinism_source.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery{
+            marker: std::marker::PhantomData
+        });
 
         // We'll wrap the source, to collect all the reads.
         let copy_source = ReadWitnessSource::new(non_determinism_source);
@@ -304,7 +307,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 .insert(account_properties.bytecode_hash, bytecode);
         }
         if let Some(nominal_token_balance) = balance {
-            account_properties.balance = nominal_token_balance;
+            account_properties.balance = nominal_token_balance.into();
         }
         if let Some(nonce) = nonce {
             account_properties.nonce = nonce;
@@ -332,7 +335,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     /// Set a storage slot
     ///
     pub fn set_storage_slot(&mut self, address: B160, key: U256, value: B256) {
-        let key = Bytes32::from_u256_be(key);
+        let key = Bytes32::from_u256_be(&key.into());
         let flat_key = derive_flat_storage_key(&address, &key);
 
         let value = Bytes32::from_array(value.to_be_bytes());
@@ -348,7 +351,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ///
     pub fn set_balance(&mut self, address: B160, balance: U256) -> &mut Self {
         let mut account_properties = AccountProperties::TRIVIAL_VALUE;
-        account_properties.balance = balance;
+        account_properties.balance = balance.into();
         let encoding = account_properties.encoding();
         let properties_hash = account_properties.compute_hash();
 
@@ -421,12 +424,22 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 }
 
 // bunch of internal utility methods
+fn get_workspace_path() -> PathBuf {
+    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap_or_else(|_| {
+        match std::env::current_dir().unwrap().join("zk_os/app.bin").exists() {
+            true => "./".to_string(),
+            false => "../../../".to_string(),
+        }
+    }))
+}
 fn get_zksync_os_img_path() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap()).join("zksync_os/app.bin")
+    get_workspace_path()
+        .join("zksync_os/app.bin")
 }
 
 fn get_zksync_os_sym_path() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap()).join("zksync_os/app.elf")
+    get_workspace_path()
+        .join("zksync_os/app.elf")
 }
 
 pub fn is_account_properties_address(address: &B160) -> bool {
