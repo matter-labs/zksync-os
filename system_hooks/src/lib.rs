@@ -33,7 +33,7 @@ use crate::contract_deployer::contract_deployer_hook;
 use crate::l1_messenger::l1_messenger_hook;
 use crate::l2_base_token::l2_base_token_hook;
 use alloc::collections::BTreeMap;
-use core::alloc::Allocator;
+use core::{alloc::Allocator, mem::MaybeUninit};
 use errors::FatalError;
 use precompiles::{pure_system_function_hook_impl, IdentityPrecompile};
 use zk_ee::{
@@ -52,23 +52,20 @@ mod l1_messenger;
 mod l2_base_token;
 mod precompiles;
 
-///
 /// System hooks process the given call request.
 ///
 /// The inputs are:
 /// - call request
 /// - caller ee(logic may depend on it some cases)
 /// - system
-///
-/// And output is execution result.
-///
+/// - output buffer
 pub struct SystemHook<S: SystemTypes>(
     for<'a> fn(
         ExternalCallRequest<S>,
         u8,
         &mut System<S>,
-        &'a mut SliceVec<u8>,
-    ) -> Result<CompletedExecution<'a, S>, FatalError>,
+        &'a mut [MaybeUninit<u8>],
+    ) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>,
 );
 
 ///
@@ -109,8 +106,8 @@ impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
         request: ExternalCallRequest<S>,
         caller_ee: u8,
         system: &mut System<S>,
-        return_memory: &'a mut SliceVec<u8>,
-    ) -> Result<Option<CompletedExecution<'a, S>>, FatalError> {
+        return_memory: &'a mut [MaybeUninit<u8>],
+    ) -> Result<Option<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>])>, FatalError> {
         let Some(hook) = self.inner.get(&address_low) else {
             return Ok(None);
         };

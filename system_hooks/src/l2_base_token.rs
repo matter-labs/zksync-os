@@ -15,8 +15,8 @@ pub fn l2_base_token_hook<'a, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
     caller_ee: u8,
     system: &mut System<S>,
-    _return_memory: &'a mut SliceVec<u8>,
-) -> Result<CompletedExecution<'a, S>, FatalError>
+    return_memory: &'a mut [MaybeUninit<u8>],
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -53,7 +53,7 @@ where
     }
 
     if error {
-        return Ok(make_error_return_state(available_resources));
+        return Ok((make_error_return_state(available_resources), return_memory));
     }
 
     let mut resources = available_resources;
@@ -88,6 +88,7 @@ where
         Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
         Err(SystemError::Internal(e)) => Err(e.into()),
     }
+    .map(|x| (x, return_memory))
 }
 
 // withdraw(address) - 51cff8d9

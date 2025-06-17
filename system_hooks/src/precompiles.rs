@@ -31,8 +31,8 @@ pub fn pure_system_function_hook_impl<'a, F: SystemFunction<S::Resources>, S: Et
     request: ExternalCallRequest<S>,
     _caller_ee: u8,
     system: &mut System<S>,
-    return_memory: &'a mut SliceVec<u8>,
-) -> Result<CompletedExecution<'a, S>, FatalError> {
+    return_memory: &'a mut [MaybeUninit<u8>],
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError> {
     let ExternalCallRequest {
         available_resources,
         calldata,
@@ -49,20 +49,25 @@ pub fn pure_system_function_hook_impl<'a, F: SystemFunction<S::Resources>, S: Et
 
     let allocator = system.get_allocator();
 
-    let result = F::execute(&calldata, return_memory, &mut resources, allocator);
-    let returndata: &[u8] = if result.is_ok() { return_memory } else { &[] };
+    let mut return_vec = SliceVec::new(return_memory);
+    let result = F::execute(&calldata, &mut return_vec, &mut resources, allocator);
 
     match result {
-        Ok(()) => Ok(make_return_state_from_returndata_region(
-            resources, returndata,
-        )),
+        Ok(()) => {
+            let (returndata, rest) = return_vec.destruct();
+            Ok((
+                make_return_state_from_returndata_region(resources, returndata),
+                rest,
+            ))
+        }
         Err(SystemFunctionError::System(SystemError::OutOfErgs))
         | Err(SystemFunctionError::InvalidInput) => {
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Out of gas during system hook\n"));
             resources.exhaust_ergs();
-            Ok(make_error_return_state(resources))
+            let (_, rest) = return_vec.destruct();
+            Ok((make_error_return_state(resources), rest))
         }
         Err(SystemFunctionError::System(SystemError::OutOfNativeResources)) => {
             Err(FatalError::OutOfNativeResources)

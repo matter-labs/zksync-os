@@ -1,6 +1,6 @@
 use core::hint::assert_unchecked;
 use core::iter::Extend;
-use core::mem::MaybeUninit;
+use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 
 #[derive(Default)]
@@ -12,6 +12,16 @@ pub struct SliceVec<'a, T> {
 impl<'a, T> SliceVec<'a, T> {
     pub fn new(memory: &'a mut [MaybeUninit<T>]) -> Self {
         Self { memory, length: 0 }
+    }
+
+    pub fn destruct(self) -> (&'a mut [T], &'a mut [MaybeUninit<T>]) {
+        let me = ManuallyDrop::new(self);
+        unsafe {
+            let memory = core::ptr::read(&me.memory);
+            let (initialized, uninitialized) = memory.split_at_mut_unchecked(me.length);
+            let initialized = &mut *(initialized as *mut [MaybeUninit<T>] as *mut [T]);
+            (initialized, uninitialized)
+        }
     }
 
     /// Returns the current contents as a slice and a new empty `SliceVec` that uses the rest of the backing slice.

@@ -242,7 +242,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 ee_type,
                 is_entry_frame,
                 call_request,
-                heap,
             );
         }
 
@@ -470,7 +469,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         ee_type: ExecutionEnvironmentType,
         is_entry_frame: bool,
         call_request: ExternalCallRequest<S>,
-        mut scratch_space: SliceVec<u8>,
     ) -> Result<(S::Resources, CallResult<'external, S>), FatalError>
     where
         S::IO: IOSubsystemExt,
@@ -526,6 +524,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 Err(e) => return Err(e),
             };
 
+        let return_memory = core::mem::take(&mut self.return_memory);
         let res = self.hooks.try_intercept(
             address_low,
             ExternalCallRequest {
@@ -534,15 +533,17 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             },
             ee_type as u8,
             self.system,
-            &mut scratch_space,
+            return_memory,
         )?;
-        if let Some(system_hook_run_result) = res {
+        if let Some((system_hook_run_result, remaining_memory)) = res {
             let CompletedExecution {
                 return_values,
                 mut resources_returned,
                 reverted,
                 ..
             } = system_hook_run_result;
+
+            self.return_memory = remaining_memory;
 
             let _ = self.system.get_logger().write_fmt(format_args!(
                 "Call to special address returned, success = {}\n",

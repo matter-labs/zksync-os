@@ -14,8 +14,8 @@ pub fn contract_deployer_hook<'a, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
     caller_ee: u8,
     system: &mut System<S>,
-    _return_memory: &'a mut SliceVec<u8>,
-) -> Result<CompletedExecution<'a, S>, FatalError>
+    return_memory: &'a mut [MaybeUninit<u8>],
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -55,7 +55,7 @@ where
     }
 
     if error {
-        return Ok(make_error_return_state(available_resources));
+        return Ok((make_error_return_state(available_resources), return_memory));
     }
 
     let mut resources = available_resources;
@@ -69,26 +69,26 @@ where
         is_static,
     );
 
-    match result {
-        Ok(Ok(return_data)) => Ok(make_return_state_from_returndata_region(
-            resources,
-            return_data,
-        )),
-        Ok(Err(e)) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Revert: {:?}\n", e));
-            Ok(make_error_return_state(resources))
-        }
-        Err(SystemError::OutOfErgs) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Out of gas during system hook\n"));
-            Ok(make_error_return_state(resources))
-        }
-        Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
-        Err(SystemError::Internal(e)) => Err(e.into()),
-    }
+    Ok((
+        match result {
+            Ok(Ok(return_data)) => make_return_state_from_returndata_region(resources, return_data),
+            Ok(Err(e)) => {
+                let _ = system
+                    .get_logger()
+                    .write_fmt(format_args!("Revert: {:?}\n", e));
+                make_error_return_state(resources)
+            }
+            Err(SystemError::OutOfErgs) => {
+                let _ = system
+                    .get_logger()
+                    .write_fmt(format_args!("Out of gas during system hook\n"));
+                make_error_return_state(resources)
+            }
+            Err(SystemError::OutOfNativeResources) => return Err(FatalError::OutOfNativeResources),
+            Err(SystemError::Internal(e)) => return Err(e.into()),
+        },
+        return_memory,
+    ))
 }
 
 // setDeployedCodeEVM(address,bytes) - 1223adc7

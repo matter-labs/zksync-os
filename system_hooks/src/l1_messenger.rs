@@ -18,8 +18,8 @@ pub fn l1_messenger_hook<'a, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
     caller_ee: u8,
     system: &mut System<S>,
-    return_memory: &'a mut SliceVec<u8>,
-) -> Result<CompletedExecution<'a, S>, FatalError>
+    return_memory: &'a mut [MaybeUninit<u8>],
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
 where
 {
     let ExternalCallRequest {
@@ -57,7 +57,7 @@ where
     }
 
     if error {
-        return Ok(make_error_return_state(available_resources));
+        return Ok((make_error_return_state(available_resources), return_memory));
     }
 
     let mut resources = available_resources;
@@ -73,24 +73,26 @@ where
 
     match result {
         Ok(Ok(return_data)) => {
+            let mut return_memory = SliceVec::new(return_memory);
             // TODO: check endianness
             return_memory.extend(return_data.as_u8_ref().iter().copied());
-            Ok(make_return_state_from_returndata_region(
-                resources,
-                return_memory,
+            let (returndata, rest) = return_memory.destruct();
+            Ok((
+                make_return_state_from_returndata_region(resources, returndata),
+                rest,
             ))
         }
         Ok(Err(e)) => {
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Revert: {:?}\n", e));
-            Ok(make_error_return_state(resources))
+            Ok((make_error_return_state(resources), return_memory))
         }
         Err(SystemError::OutOfErgs) => {
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Out of gas during system hook\n"));
-            Ok(make_error_return_state(resources))
+            Ok((make_error_return_state(resources), return_memory))
         }
         Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
         Err(SystemError::Internal(e)) => Err(e.into()),
