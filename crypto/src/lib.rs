@@ -22,6 +22,7 @@ pub mod ripemd160;
 pub mod secp256k1;
 pub mod sha256;
 pub mod sha3;
+pub mod secp256r1;
 
 pub use blake2 as blake2_ext;
 
@@ -36,6 +37,7 @@ pub fn init_lib() {
         bls12_381::fields::init();
         secp256k1::init();
         bigint_delegation::init();
+        secp256r1::init();
     }
 }
 
