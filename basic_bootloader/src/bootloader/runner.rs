@@ -79,10 +79,8 @@ where
 }
 
 pub struct RunnerMemoryBuffers<'a> {
-    //callstack: &'a mut [MaybeUninit<SupportedEEVMState<'static, S>>],
     pub heaps: &'a mut [MaybeUninit<u8>],
     pub return_data: &'a mut [MaybeUninit<u8>],
-    //pub callstack: &'a mut [MaybeUninit<SupportedEEVMState<'a, S>>],
 }
 
 impl RunnerMemoryBuffers<'_> {
