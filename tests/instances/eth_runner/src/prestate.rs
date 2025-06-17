@@ -79,10 +79,10 @@ pub struct AccountState {
 
 impl AccountState {
     pub fn is_empty(&self) -> bool {
-        self.balance.is_none_or(|x| x.is_zero())
-            && self.nonce.is_none_or(|x| x == 0)
-            && self.code.as_ref().is_none_or(|s| s.is_empty())
-            && self.storage.as_ref().is_none_or(|s| s.is_empty())
+        self.balance.is_none()
+            && self.nonce.is_none()
+            && self.code.as_ref().is_none()
+            && self.storage.as_ref().is_none()
     }
 }
 
@@ -102,12 +102,13 @@ impl Cache {
 
     pub fn get_nonce(&self, address: &B160) -> Option<u64> {
         let el = self.0.get(address)?;
-        el.nonce
+        // Tracer omits nonce when it's 0, we need to fill it in
+        Some(el.nonce.unwrap_or(0))
     }
 
     pub fn get_code(&self, address: &B160) -> Option<alloy::primitives::Bytes> {
         let el = self.0.get(address)?;
-        el.code.clone()
+        Some(el.code.clone().unwrap_or_default())
     }
 
     fn filter_pre_account_state(
@@ -122,7 +123,8 @@ impl Cache {
         }
         if cache_el.nonce.is_none() {
             // Nonce not touched yet
-            cache_el.nonce = new_account_state.nonce;
+            // Tracer omits nonce when it's 0, we need to fill it in
+            cache_el.nonce = Some(new_account_state.nonce.unwrap_or(0));
         }
         if cache_el.code.is_none() {
             // Code not touched yet

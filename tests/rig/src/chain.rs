@@ -110,6 +110,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         self.block_number = prev
     }
 
+    pub fn set_block_hashes(&mut self, block_hashes: [U256; 256]) {
+        self.block_hashes = block_hashes
+    }
+
     ///
     /// Run block with given transactions and block context.
     /// If block context is `None` default testing values will be used.
