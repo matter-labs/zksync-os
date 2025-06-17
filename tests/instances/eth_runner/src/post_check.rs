@@ -6,7 +6,7 @@ use ruint::aliases::{B160, B256, U256};
 use std::collections::HashMap;
 
 impl DiffTrace {
-    fn collect_diffs(self, prestate_cache: Cache, miner: B160) -> HashMap<B160, AccountState> {
+    fn collect_diffs(self, prestate_cache: &Cache, miner: B160) -> HashMap<B160, AccountState> {
         let mut updates: HashMap<B160, AccountState> = HashMap::new();
         self.result.into_iter().for_each(|item| {
             item.result.post.into_iter().for_each(|(address, account)| {
@@ -80,8 +80,8 @@ impl DiffTrace {
     }
 
     pub fn check_storage_writes(self, output: BatchOutput, prestate_cache: Cache, miner: B160) {
-        let diffs = self.collect_diffs(prestate_cache, miner);
-        let zksync_os_diffs = zksync_os_output_into_account_state(output);
+        let diffs = self.collect_diffs(&prestate_cache, miner);
+        let zksync_os_diffs = zksync_os_output_into_account_state(output, &prestate_cache);
 
         // Reference => ZKsync OS check:
         diffs.iter().for_each(|(address, account)| {
@@ -166,7 +166,10 @@ impl DiffTrace {
     }
 }
 
-fn zksync_os_output_into_account_state(output: BatchOutput) -> HashMap<B160, AccountState> {
+fn zksync_os_output_into_account_state(
+    output: BatchOutput,
+    prestate_cache: &Cache,
+) -> HashMap<B160, AccountState> {
     use basic_system::system_implementation::flat_storage_model::AccountProperties;
     let mut updates: HashMap<B160, AccountState> = HashMap::new();
     let preimages: HashMap<[u8; 32], Vec<u8>> = HashMap::from_iter(
@@ -210,6 +213,27 @@ fn zksync_os_output_into_account_state(output: BatchOutput) -> HashMap<B160, Acc
             entry.storage.get_or_insert_default().insert(key, value);
         }
     }
+
+    // Filter out empty diffs
+    updates.retain(|address, account| {
+        if let Some(storage) = account.storage.as_mut() {
+            storage.retain(|key, new_val| match prestate_cache.get_slot(address, key) {
+                None => *new_val != B256::ZERO,
+                Some(initial) => *new_val != initial,
+            })
+        }
+        if account.balance == prestate_cache.get_balance(address) {
+            account.balance = None
+        }
+        if account.nonce == prestate_cache.get_nonce(address) {
+            account.nonce = None
+        }
+        if account.code == prestate_cache.get_code(address) {
+            account.code = None
+        }
+        !account.is_empty()
+    });
+
     updates
 }
 
@@ -242,6 +266,14 @@ pub fn post_check(
                     !res.is_success(),
                     "Transaction {} should have failed",
                     receipt.transaction_index
+                )
+            }
+            // Check gas used
+            if res.gas_used != zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used) {
+                println!(
+                    "Transaction {} has a gas mismatch: ZKsync OS used {}, reference: {}\n  Difference:{}",
+                    receipt.transaction_index, res.gas_used, receipt.gas_used,
+                    zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used).abs_diff(res.gas_used)
                 )
             }
             // Logs check
