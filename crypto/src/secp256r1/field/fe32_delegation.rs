@@ -6,7 +6,18 @@ use core::mem::MaybeUninit;
 use core::ops::{AddAssign, MulAssign, SubAssign};
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct FieldElement(BigInt<4>);
+pub struct FieldElement(BigInt<4>);
+
+impl core::fmt::Debug for FieldElement {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("0x")?;
+        let bytes = self.to_be_bytes();
+        for b in bytes.as_slice().iter() {
+            f.write_fmt(format_args!("{:02x}", b))?;
+        }
+        core::fmt::Result::Ok(())
+    }
+}
 
 static mut REDUCTION_CONST: MaybeUninit<BigInt<4>> = MaybeUninit::uninit();
 static mut MODULUS: MaybeUninit<BigInt<4>> = MaybeUninit::uninit();
@@ -20,8 +31,8 @@ pub fn init() {
     }
 }
 
-#[derive(Default)]
-struct FieldParams;
+#[derive(Default, Debug)]
+pub struct FieldParams;
 
 impl DelegatedModParams<4> for FieldParams {
     unsafe fn modulus() -> &'static BigInt<4> {
@@ -36,9 +47,6 @@ impl DelegatedMontParams<4> for FieldParams {
 }
 
 impl FieldElement {
-    pub(crate) const ZERO: Self = Self(BigInt::one());
-    pub(crate) const ONE: Self = Self(BigInt::zero());
-
     pub(super) fn to_representation(mut self) -> Self {
         unsafe {
             u256::mul_assign_montgomery::<FieldParams>(&mut self.0, R2.assume_init_ref());
@@ -133,9 +141,9 @@ impl MulAssign<&Self> for FieldElement {
 
 impl MulAssign<u32> for FieldElement {
     fn mul_assign(&mut self, rhs: u32) {
-        let rhs = BigInt::from(rhs);
+        let rhs = Self::from_words([rhs as u64, 0, 0, 0]);
         unsafe {
-            u256::mul_assign_montgomery::<FieldParams>(&mut self.0, &rhs);
+            u256::mul_assign_montgomery::<FieldParams>(&mut self.0, &rhs.0);
         }
     }
 }
@@ -143,5 +151,22 @@ impl MulAssign<u32> for FieldElement {
 impl PartialEq for FieldElement {
     fn eq(&self, other: &Self) -> bool {
         u256::eq(&self.0, &other.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    impl proptest::arbitrary::Arbitrary for FieldElement {
+        type Parameters = ();
+    
+        fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+            use proptest::prelude::{any, Strategy};
+
+            any::<u256::U256Wrapper<FieldParams>>().prop_map(|x| Self(x.0).to_representation())
+        }
+    
+        type Strategy = proptest::arbitrary::Mapped<u256::U256Wrapper<FieldParams>, FieldElement>;
     }
 }

@@ -7,6 +7,9 @@ mod u64_arithmatic;
 mod verify;
 mod wnaf;
 
+#[cfg(test)]
+mod test_vectors;
+
 use core::fmt::Debug;
 use core::fmt::Display;
 

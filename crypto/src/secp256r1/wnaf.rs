@@ -26,8 +26,7 @@ impl Wnaf {
         debug_assert!(WNAF_BITS <= 256);
         debug_assert!((2..=31).contains(&window));
 
-        let mut wnaf: [MaybeUninit<i32>; WNAF_BITS] =
-            unsafe { MaybeUninit::uninit().assume_init() };
+        let mut wnaf: [i32; WNAF_BITS] = [0; WNAF_BITS];
         let mut bits = -1;
         let mut sign = 1;
         let mut carry = 0;
@@ -54,7 +53,7 @@ impl Wnaf {
             carry = (word >> (window - 1)) & 1;
             word -= carry << window;
 
-            wnaf[bit].write(sign * word);
+            wnaf[bit] = sign * word;
             bits = bit as i32;
 
             bit += now;
@@ -72,7 +71,7 @@ impl Wnaf {
 
         bits += 1;
         Self {
-            wnaf: unsafe { core::mem::transmute(wnaf) },
+            wnaf,
             bits,
         }
     }

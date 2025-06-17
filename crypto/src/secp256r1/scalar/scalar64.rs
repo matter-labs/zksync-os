@@ -3,10 +3,13 @@ use crate::secp256r1::{u64_arithmatic::*, Secp256r1Err};
 
 use super::{MODULUS, MU};
 
-#[derive(Default, Clone, Copy)]
-pub(crate) struct Scalar([u64; 4]);
+#[derive(Default, Clone, Copy, Debug)]
+pub struct Scalar([u64; 4]);
 
 impl Scalar {
+    pub(crate) const ZERO: Self = Self([0, 0, 0, 0]);
+    pub(crate) const ONE: Self = Self([1, 0, 0, 0]);
+    
     pub(crate) fn reduce_be_bytes(bytes: &[u8; 32]) -> Self {
         let mut val = Self::from_be_bytes_unchecked(bytes);
         val.subtract_modulus();
@@ -33,7 +36,7 @@ impl Scalar {
         ])
     }
 
-    pub(super) fn from_be_bytes(bytes: &[u8; 32]) -> Result<Self, Secp256r1Err> {
+    pub(crate) fn from_be_bytes(bytes: &[u8; 32]) -> Result<Self, Secp256r1Err> {
         let val = Self::from_be_bytes_unchecked(bytes);
 
         if val.0 < MODULUS {
@@ -41,6 +44,10 @@ impl Scalar {
         } else {
             Err(Secp256r1Err::InvalidFieldBytes)
         }
+    }
+
+    pub(crate) fn from_words(words: [u64; 4]) -> Self {
+        Self(words)
     }
 
     pub(super) fn to_words(self) -> [u64; 4] {
@@ -293,4 +300,25 @@ const fn subtract_n_if_necessary(r0: u64, r1: u64, r2: u64, r3: u64, r4: u64) ->
     let (w4, _carry) = adc(w4, 0, carry);
 
     [w0, w1, w2, w3, w4]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Scalar;
+
+    impl proptest::arbitrary::Arbitrary for Scalar {
+        type Parameters = ();
+    
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            use proptest::prelude::{any, Strategy};
+
+            any::<[u64; 4]>().prop_map(|x| {
+                let mut res = Self(x);
+                res.subtract_modulus();
+                res
+            })
+        }
+    
+        type Strategy = proptest::arbitrary::Mapped<[u64; 4], Scalar>;
+    }
 }

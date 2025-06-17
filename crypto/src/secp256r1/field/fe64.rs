@@ -9,19 +9,27 @@ use crate::secp256r1::u64_arithmatic::*;
 use super::{MODULUS, R2};
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct FieldElement([u64; 4]);
+pub(crate) struct FieldElement(pub [u64; 4]);
+
+impl core::fmt::Debug for FieldElement {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("0x")?;
+        let bytes = self.to_be_bytes();
+        for b in bytes.as_slice().iter() {
+            f.write_fmt(format_args!("{:02x}", b))?;
+        }
+        core::fmt::Result::Ok(())
+    }
+}
 
 impl FieldElement {
-    pub(crate) const ZERO: Self = Self([0; 4]);
-    pub(crate) const ONE: Self = Self([1, 0, 0, 0]);
-
-    fn to_integer(self) -> Self {
+    pub(crate) fn to_integer(self) -> Self {
         FieldElement(montgomery_reduce(&[
             self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0,
         ]))
     }
 
-    pub(super) fn to_representation(self) -> Self {
+    pub(super) const fn to_representation(self) -> Self {
         FieldElement(fe_mul(&self.0, &R2))
     }
 
@@ -49,11 +57,12 @@ impl FieldElement {
         Self(words)
     }
 
-    pub(crate) fn from_words(words: [u64; 4]) -> Self {
+    pub(crate) const fn from_words(words: [u64; 4]) -> Self {
         Self::from_words_unchecked(words).to_representation()
     }
 
-    pub(crate) fn to_be_bytes(self) -> [u8; 32] {
+    pub(crate) fn to_be_bytes(mut self) -> [u8; 32] {
+        self = self.to_integer();
         let mut r: [MaybeUninit<u8>; 32] = unsafe { MaybeUninit::uninit().assume_init() };
 
         r[0..8].copy_from_slice(&self.0[3].to_be_bytes().map(MaybeUninit::new));
@@ -81,8 +90,8 @@ impl FieldElement {
     }
 
     pub(crate) const fn mul_int(&self, other: u32) -> Self {
-        let b = [other as u64, 0, 0, 0];
-        FieldElement(fe_mul(&self.0, &b))
+        let b = Self::from_words([other as u64, 0, 0, 0]);
+        FieldElement(fe_mul(&self.0, &b.0))
     }
 
     pub(crate) const fn mul(&self, other: &Self) -> Self {
@@ -98,11 +107,13 @@ impl FieldElement {
         *self = self.square();
     }
 
-    pub(crate) fn negate_assign(&mut self) {}
+    pub(crate) fn negate_assign(&mut self) {
+        *self = Self(fe_sub(&MODULUS, &self.0));
+    }
 
     pub(crate) fn double_assign(&mut self) {
         let other = *self;
-        self.add(&other);
+        self.add_assign(&other);
     }
 
     /// Computes `self = other - self`
@@ -283,4 +294,31 @@ const fn sub_inner(l: &[u64; 5], r: &[u64; 5]) -> [u64; 4] {
     let (w3, _) = adc(w3, MODULUS[3] & borrow, carry);
 
     [w0, w1, w2, w3]
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    impl proptest::arbitrary::Arbitrary for FieldElement {
+        type Parameters = ();
+    
+        fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+            use proptest::prelude::{any, Strategy};
+
+            any::<[u64; 4]>().prop_map(|limbs| {
+                if limbs < MODULUS {
+                    Self(limbs).to_representation()
+                } else {
+                    Self(sub_inner(
+                        &[limbs[0], limbs[1], limbs[2], limbs[3], 0], 
+                        &[MODULUS[0], MODULUS[1], MODULUS[2], MODULUS[3], 0]
+                    )).to_representation()
+                }
+            })
+        }
+    
+        type Strategy = proptest::arbitrary::Mapped<[u64; 4], FieldElement>;
+    }
 }

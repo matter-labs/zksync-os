@@ -16,8 +16,8 @@ pub(crate) fn init() {
     }
 }
 
-#[derive(Default)]
-struct ScalarParams;
+#[derive(Default, Debug)]
+pub struct ScalarParams;
 
 impl DelegatedModParams<4> for ScalarParams {
     unsafe fn modulus() -> &'static BigInt<4> {
@@ -31,7 +31,8 @@ impl DelegatedMontParams<4> for ScalarParams {
     }
 }
 
-pub(crate) struct Scalar(BigInt<4>);
+#[derive(Debug)]
+pub struct Scalar(BigInt<4>);
 
 impl Scalar {
     pub(super) fn to_repressentation(mut self) -> Self {
@@ -56,7 +57,7 @@ impl Scalar {
         Self(u256::from_bytes_unchecked(bytes))
     }
 
-    pub(super) fn from_be_bytes(bytes: &[u8; 32]) -> Result<Self, Secp256r1Err> {
+    pub(crate) fn from_be_bytes(bytes: &[u8; 32]) -> Result<Self, Secp256r1Err> {
         let val = Self::from_be_bytes_unchecked(bytes);
         let modulus = unsafe { ScalarParams::modulus() };
 
@@ -65,6 +66,10 @@ impl Scalar {
         } else {
             Err(Secp256r1Err::InvalidFieldBytes)
         }
+    }
+
+    pub(crate) fn from_words(words: [u64; 4]) -> Self {
+        Self(BigInt::<4>(words)).to_repressentation()
     }
 
     pub(super) fn to_words(self) -> [u64; 4] {
@@ -95,5 +100,22 @@ impl Scalar {
 
     pub(super) fn eq_inner(&self, other: &Self) -> bool {
         u256::eq(&self.0, &other.0)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::{u256, Scalar, ScalarParams};
+
+    impl proptest::arbitrary::Arbitrary for Scalar {
+        type Parameters = ();
+    
+        fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+            use proptest::prelude::{any, Strategy};
+            any::<u256::U256Wrapper<ScalarParams>>().prop_map(|x| Self(x.0).to_repressentation())
+        }
+    
+        type Strategy = proptest::arbitrary::Mapped<u256::U256Wrapper<ScalarParams>, Scalar>;
     }
 }

@@ -4,19 +4,28 @@ use core::{fmt::Debug, ops::Neg};
 
 #[derive(Default, Debug, Clone, Copy)]
 pub(crate) struct Jacobian<F: Default + Debug + Clone + Copy> {
-    pub(super) x: F,
-    pub(super) y: F,
-    pub(super) z: F,
+    pub(crate) x: F,
+    pub(crate) y: F,
+    pub(crate) z: F,
 }
 
 impl Jacobian<FieldElement> {
+    const INFINITY: Self = Self {
+        x: FieldElement::ZERO,
+        y: FieldElement::ZERO,
+        z: FieldElement::ZERO
+    };
+
     pub(crate) fn is_infinity(&self) -> bool {
         self.z.is_zero() || (self.y.is_zero() && self.x.is_zero())
     }
 
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2004-hmv
     pub(crate) fn double_assign(&mut self) {
-        let half = &FieldElement::HALF;
+        if self.is_infinity() {
+            *self = Jacobian::INFINITY;
+            return
+        }
         // T1 = Z1^2
         let mut t1 = self.z;
         t1.square_assign();
@@ -30,7 +39,7 @@ impl Jacobian<FieldElement> {
         // T2 = 3*T2
         t2 *= 3;
         // Y3 = 2*Y1
-        self.y *= 2;
+        self.y.double_assign();
         // Z3 = Y3*Z1
         self.z *= &self.y;
         // Y3 = Y3^2
@@ -41,14 +50,13 @@ impl Jacobian<FieldElement> {
         // Y3 = Y3^2
         self.y.square_assign();
         // Y3 = half*Y3
-        self.y *= half;
+        self.y *= &FieldElement::HALF;
         // X3 = T2^2
         self.x = t2;
         self.x.square_assign();
         // T1 = 2*T3
         t1 = t3;
-        t1 *= &t3;
-        t1 *= 3;
+        t1.double_assign();
         // X3 = X3-T1
         self.x -= &t1;
         // T1 = T3-X3
@@ -57,95 +65,149 @@ impl Jacobian<FieldElement> {
         // T1 = T1*T2
         t1 *= &t2;
         // Y3 = T1-Y3
-        self.y.negate_assign();
-        self.y += &t1;
+        self.y.sub_and_negate_assign(&t1);
     }
 
-    // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#addition-add-1998-hnm
+    // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#addition-add-2007-bl
     pub(crate) fn add_assign(&mut self, other: &Self) {
-        let half = &FieldElement::HALF;
+        if self.is_infinity() {
+            *self = *other;
+            return;
+        }
 
-        let r1 = &mut self.x;
-        let r2 = &mut self.y;
-        let r3 = &mut self.z;
-        let r4 = &other.x;
-        let r5 = &other.y;
-        let r6 = &other.z;
+        if other.is_infinity() {
+            return;
+        }
+        
+        let mut z1z1 = self.z;
+        z1z1.square_assign();
 
-        let mut r7 = *r6;
-        let mut r8 = *r4;
+        let mut z2z2 = other.z;
+        z2z2.square_assign();
 
-        r7.square_assign();
-        *r1 *= &r7;
-        r7 *= r6;
-        *r2 *= &r7;
+        let mut u1 = z2z2;
+        u1 *= &self.x;
 
-        r7 = *r3;
-        r7.square_assign();
+        let mut u2 = z1z1;
+        u2 *= &other.x;
 
-        r8 *= &r7;
-        r7 *= &*r3;
-        r7 *= r5;
-        *r2 -= &r7;
-        r7.double_assign();
-        r7 += &*r2;
-        *r1 -= &r8;
-        r8.double_assign();
-        r8 += &*r1;
-        *r3 *= r6;
-        *r3 *= &*r1;
-        r7 *= &*r1;
-        r1.square_assign();
-        r8 *= &*r1;
-        r7 *= &*r1;
+        let mut s1 = z2z2;
+        s1 *= &other.z;
+        s1 *= &self.y;
 
-        *r1 = *r2;
-        r1.square_assign();
+        let mut s2 = z1z1;
+        s2 *= &self.z;
+        s2 *= &other.y;
 
-        *r1 -= &r8;
-        r8 -= &*r1;
-        r8 -= &*r1;
-        r8 *= &*r2;
+        let mut h = u2;
+        h -= &u1;
 
-        *r2 = r8;
-        *r2 -= &r7;
-        *r2 *= half;
+        let mut r = s2;
+        r -= &s1;
+
+        // if self == other
+        if h.is_zero() && r.is_zero() {
+            self.double_assign();
+            return;
+        }
+
+        r.double_assign();
+
+        let mut i = h;
+        i.double_assign();
+        i.square_assign();
+
+        let mut j = h; 
+        j *= &i;
+
+        let mut v = u1;
+        v *= &i;
+
+        self.x = r;
+        self.x.square_assign();
+        self.x -= &j;
+        self.x -= &v;
+        self.x -= &v;
+
+        self.y = v;
+        self.y -= &self.x;
+        self.y *= &r;
+        
+        s1 *= &j;
+        s1.double_assign();
+
+        self.y -= &s1;
+
+        self.z *= &other.z;
+        self.z.double_assign();
+        self.z *= &h;
+
     }
 
-    // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#addition-madd-2008-g
+    // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#addition-madd-2007-bl
     pub(crate) fn add_ge_assign(&mut self, other: &Affine) {
-        let mut t1 = self.z;
-        t1.square_assign();
+        if self.is_infinity() {
+            *self = other.to_jacobian();
+            return;
+        }
 
-        let mut t2 = self.z;
-        t2 *= &t1;
+        if other.is_infinity() {
+            return;
+        }
 
-        t1 *= &other.x;
-        t2 *= &other.y;
+        let mut z1z1 = self.z;
+        z1z1.square_assign();
 
-        t1.sub_and_negate_assign(&self.x);
-        t2 -= &t1;
-        self.z *= &t1;
+        let mut u2 = z1z1;
+        u2 *= &other.x;
 
-        let mut t4 = t1;
-        t4.square_assign();
+        let mut s2 = z1z1;
+        s2 *= &self.z;
+        s2 *= &other.y;
 
-        t1 += &t4;
-        t4 *= &self.x;
+        let mut h = u2; 
+        h -= &self.x;
 
-        self.x = t2;
+        let mut r = s2;
+        r -= &self.y;
+
+        if h.is_zero() && r.is_zero() {
+            self.double_assign();
+            return;
+        }
+
+        r.double_assign();
+
+        let mut hh = h;
+        hh.square_assign();
+
+        let mut i = hh;
+        i *= 4;
+
+        let mut j = h;
+        j *= &i;
+
+        let mut v = i; 
+        v *= &self.x;
+
+        self.x = r;
         self.x.square_assign();
+        self.x -= &j;
+        self.x -= &v;
+        self.x -= &v;
 
-        self.x += &t1;
-        self.y *= &t1;
+        self.y *= &j;
+        self.y.double_assign();
 
-        t1 = t4;
-        t1.double_assign();
+        v -= &self.x;
+        v *= &r;
 
-        self.x -= &t1;
-        t4.sub_and_negate_assign(&self.x);
-        t4 += &t2;
-        self.y.sub_and_negate_assign(&t4);
+        self.y.sub_and_negate_assign(&v);
+
+        self.z *=& h;
+        self.z.double_assign();
+
+
     }
 
     pub(crate) fn to_affine(mut self) -> Affine {
@@ -182,6 +244,7 @@ impl Jacobian<FieldElementConst> {
         self.z.is_zero() || (self.x.is_zero() || self.y.is_zero())
     }
 
+    // coordinates are in montgomerry form
     pub(crate) const GENERATOR: Self = Self {
         x: FieldElementConst::from_words_unchecked([
             8784043285714375740,
@@ -200,6 +263,9 @@ impl Jacobian<FieldElementConst> {
 
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2001-b
     pub(crate) const fn double(&self) -> Self {
+        if self.is_infinity_const() {
+            return  Jacobian::INFINITY;
+        }
         let delta = self.z.square();
         let gamma = self.y.square();
         let beta = self.x.mul(&gamma);
@@ -212,7 +278,7 @@ impl Jacobian<FieldElementConst> {
         let z = self.y.add(&self.z).square().sub(&gamma).sub(&delta);
         // Y3 = alpha*(4*beta-X3)-8*gamma2
         let y = alpha
-            .mul(&beta.mul_int(3).sub(&x))
+            .mul(&beta.mul_int(4).sub(&x))
             .sub(&gamma.square().mul_int(8));
 
         Self { x, y, z }
@@ -220,6 +286,12 @@ impl Jacobian<FieldElementConst> {
 
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#addition-add-2007-bl
     pub(crate) const fn add(&self, rhs: &Self) -> Self {
+        if self.is_infinity_const() {
+            return *rhs;
+        }
+        if rhs.is_infinity_const() {
+            return *self;
+        }
         let z1z1 = self.z.square();
         let z2z2 = rhs.z.square();
         let u1 = self.x.mul(&z2z2);
@@ -227,9 +299,14 @@ impl Jacobian<FieldElementConst> {
         let s1 = self.y.mul(&rhs.z).mul(&z2z2);
         let s2 = rhs.y.mul(&self.z).mul(&z1z1);
         let h = u2.sub(&u1);
+        let r = s2.sub(&s1).mul_int(2);
+        
+        if h.is_zero() && r.is_zero() {
+            return self.double();
+        }
+
         let i = h.mul_int(2).square();
         let j = h.mul(&i);
-        let r = s2.sub(&s1).mul_int(2);
         let v = u1.mul(&i);
 
         let x = r.square().sub(&j).sub(&v.mul_int(2));
@@ -250,6 +327,56 @@ impl Jacobian<FieldElementConst> {
         Storage {
             x: x.to_fe(),
             y: y.to_fe(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::secp256r1::{field::FieldElement, points::{Affine, Jacobian}, test_vectors::ADD_TEST_VECTORS};
+
+    #[test]
+    fn compare_double() {
+        let mut g = Jacobian::GENERATOR;
+        let mut g_const = Jacobian::GENERATOR;
+        for _ in 0..100 {
+            g_const = g_const.double();
+            g.double_assign();
+            assert_eq!(g_const.to_affine(), g.to_affine())
+        }
+    }
+
+    #[test]
+    fn compare_add() {
+        let mut a = Jacobian::GENERATOR;
+        let mut b = Jacobian::GENERATOR;
+        let mut c = Jacobian::GENERATOR;
+
+        let ge = Jacobian::GENERATOR.to_affine();
+
+        for _ in 0..100 {
+            a.add_assign(&Jacobian::GENERATOR);
+            c.add_ge_assign(&ge);
+            b = b.add(&Jacobian::GENERATOR);
+
+            assert_eq!(a.to_affine(), b.to_affine());
+            assert_eq!(a.to_affine(), c.to_affine());
+        }
+    }
+    
+    #[test]
+    fn test_add() {
+        let mut g = Jacobian::GENERATOR;
+
+        for (x_bytes, y_bytes) in ADD_TEST_VECTORS {
+            let expected = Affine {
+                x: FieldElement::from_be_bytes(x_bytes).unwrap(),
+                y: FieldElement::from_be_bytes(y_bytes).unwrap(),
+                infinity: false
+            };
+
+            assert_eq!(g.to_affine(), expected);
+            g.add_assign(&Jacobian::GENERATOR);
         }
     }
 }

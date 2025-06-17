@@ -48,115 +48,47 @@ const R2: [u64; 4] = [
 ];
 
 impl Scalar {
-    // https://www.briansmith.org/ecc-inversion-addition-chains-01#p256_scalar_inversion
+    // https://github.com/RustCrypto/elliptic-curves/blob/master/p256/src/arithmetic/scalar.rs#L132
     pub(super) fn invert_assign(&mut self) {
-        let t_1 = *self;
-
-        let mut t_10 = t_1;
-        t_10.square_assign();
-
-        self.mul_assign(&t_10);
-        let t_11 = *self;
-
-        self.mul_assign(&t_10);
-        let t_101 = *self;
-
-        let mut t_111 = t_101;
-        t_111.mul_assign(&t_10);
-
-        self.square_assign();
-        let t_1010 = *self;
-
-        let mut t_1111 = t_1010;
-        t_1111.mul_assign(&t_101);
-
-        self.square_assign();
-        self.mul_assign(&t_1);
-        let t_10101 = *self;
-
-        self.square_assign();
-        let t_101010 = *self;
-
-        let mut t_101111 = t_101010;
-        t_101111.mul_assign(&t_101);
-
-        self.mul_assign(&t_10101);
-
-        self.pow2k_assign(2);
-        self.mul_assign(&t_11);
-        let x8 = *self;
-
-        self.pow2k_assign(8);
-        self.mul_assign(&x8);
-        let x16 = *self;
-
-        self.pow2k_assign(16);
-        self.mul_assign(&x16);
-        let x32 = *self;
-
-        self.pow2k_assign(64);
-        self.mul_assign(&x32);
-        self.pow2k_assign(32);
-        self.mul_assign(&x32);
-        self.pow2k_assign(6);
-        self.mul_assign(&t_101111);
-        self.pow2k_assign(5);
-        self.mul_assign(&t_111);
-        self.pow2k_assign(4);
-        self.mul_assign(&t_11);
-        self.pow2k_assign(5);
-        self.mul_assign(&t_1111);
-        self.pow2k_assign(5);
-        self.mul_assign(&t_10101);
-        self.pow2k_assign(4);
-        self.mul_assign(&t_101);
-        self.pow2k_assign(3);
-        self.mul_assign(&t_101);
-        self.pow2k_assign(3);
-        self.mul_assign(&t_101);
-        self.pow2k_assign(5);
-        self.mul_assign(&t_111);
-        self.pow2k_assign(9);
-        self.mul_assign(&t_101111);
-        self.pow2k_assign(8);
-        self.mul_assign(&t_1111);
-        self.pow2k_assign(2);
-        self.mul_assign(&t_1);
-        self.pow2k_assign(5);
-        self.mul_assign(&t_1);
-        self.pow2k_assign(6);
-        self.mul_assign(&t_1111);
-        self.pow2k_assign(5);
-        self.mul_assign(&t_111);
-        self.pow2k_assign(4);
-        self.mul_assign(&t_111);
-        self.pow2k_assign(5);
-        self.mul_assign(&t_111);
-        self.pow2k_assign(5);
-        self.mul_assign(&t_101);
-        self.pow2k_assign(3);
-        self.mul_assign(&t_11);
-        self.pow2k_assign(10);
-        self.mul_assign(&t_101111);
-        self.pow2k_assign(2);
-        self.mul_assign(&t_11);
-        self.pow2k_assign(5);
-        self.mul_assign(&t_11);
-        self.pow2k_assign(5);
-        self.mul_assign(&t_11);
-        self.pow2k_assign(3);
-        self.mul_assign(&t_1);
-        self.pow2k_assign(7);
-        self.mul_assign(&t_10101);
-        self.pow2k_assign(6);
-        self.mul_assign(&t_1111);
+        // We need to find b such that b * a ≡ 1 mod p. As we are in a prime
+        // field, we can apply Fermat's Little Theorem:
+        //
+        //    a^p         ≡ a mod p
+        //    a^(p-1)     ≡ 1 mod p
+        //    a^(p-2) * a ≡ 1 mod p
+        //
+        // Thus inversion can be implemented with a single exponentiation.
+        //
+        // This is `n - 2`, so the top right two digits are `4f` instead of `51`.
+        *self = self.pow_vartime(&[
+            0xf3b9_cac2_fc63_254f,
+            0xbce6_faad_a717_9e84,
+            0xffff_ffff_ffff_ffff,
+            0xffff_ffff_0000_0000,
+        ])
     }
 
     #[inline(always)]
-    fn pow2k_assign(&mut self, k: usize) {
-        for _ in 0..k {
-            self.square_assign();
+    // https://github.com/RustCrypto/elliptic-curves/blob/master/p256/src/arithmetic/scalar.rs#L153
+    pub fn pow_vartime(&self, exp: &[u64]) -> Self {
+        let mut res = Self::ONE;
+
+        let mut i = exp.len();
+        while i > 0 {
+            i -= 1;
+
+            let mut j = 64;
+            while j > 0 {
+                j -= 1;
+                res.square_assign();
+
+                if ((exp[i] >> j) & 1) == 1 {
+                    res.mul_assign(&self);
+                }
+            }
         }
+
+        res
     }
 }
 
@@ -223,5 +155,52 @@ impl Signature {
         } else {
             Ok(Self { r, s })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::{prop_assert, prop_assert_eq, proptest};
+
+    use super::*;
+
+    #[cfg(feature = "bigint_ops")]
+    fn init() {
+        crate::secp256r1::init();
+        crate::bigint_delegation::init();
+    }
+
+    #[test]
+    fn test_mul() {
+        #[cfg(feature = "bigint_ops")]
+        init();
+
+        proptest!(|(x: Scalar, y: Scalar, z: Scalar)| {
+            prop_assert_eq!(x * &Scalar::ONE, x);
+            prop_assert_eq  !(x * &Scalar::ZERO, Scalar::ZERO);
+            prop_assert_eq!(x * &y, y * &x);
+            prop_assert_eq!((x * &y) * &z, x * &(y * &z))
+        })
+    }
+
+    #[test]
+    fn test_invert() {
+        #[cfg(feature = "bigint_ops")]
+        init();
+
+        proptest!(|(s: Scalar)| {
+            let mut a = s;
+            a.invert_assign();
+            a.invert_assign();
+            prop_assert_eq!(a, s);
+
+            a.invert_assign();
+            a.mul_assign(&s);
+            if s.is_zero() {
+                prop_assert!(a.is_zero())
+            } else {
+                prop_assert_eq!(a, Scalar::ONE);
+            }
+        })
     }
 }
