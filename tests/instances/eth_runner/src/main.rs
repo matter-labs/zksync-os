@@ -4,6 +4,7 @@ use block_hashes::BlockHashes;
 use clap::Parser;
 use post_check::post_check;
 use prestate::{populate_prestate, DiffTrace, PrestateTrace};
+use rig::log::info;
 use rig::*;
 use std::fs::{self, File};
 use std::io::BufReader;
@@ -81,6 +82,7 @@ fn run<const RANDOMIZED: bool>(
 }
 
 fn main() -> anyhow::Result<()> {
+    rig::init_logger();
     let args = Args::parse();
 
     let block = fs::read_to_string(&args.block)?;
@@ -102,7 +104,8 @@ fn main() -> anyhow::Result<()> {
 
     let block: block::Block = serde_json::from_str(&block).expect("valid block JSON");
     let block_number = block.result.header.number;
-    println!("Block gas used: {}", block.result.header.gas_used);
+    info!("Running block: {}", block_number);
+    info!("Block gas used: {}", block.result.header.gas_used);
     // assert!(block.result.header.gas_used <= 11_000_000);
     let miner = block.result.header.miner;
 
