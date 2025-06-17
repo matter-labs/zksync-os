@@ -144,9 +144,12 @@ impl UsizeSerializable for InteropRoot {
         + <u64 as UsizeSerializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        super::kv_markers::ExactSizeChainN::<_, _, 100>::new(
-            core::iter::empty::<usize>(),
-            core::array::from_fn(|i| Some(self.root[i].iter())),
+        ExactSizeChain::new(
+            ExactSizeChain::new(
+                UsizeSerializable::iter(&self.root[0]),
+                UsizeSerializable::iter(&self.block_number),
+            ),
+            UsizeSerializable::iter(&self.chain_id),
         )
     }
 }
@@ -214,7 +217,8 @@ impl BlockMetadataFromOracle {
 impl UsizeSerializable for BlockMetadataFromOracle {
     const USIZE_LEN: usize = <U256 as UsizeSerializable>::USIZE_LEN * (3 + 256)
         + <u64 as UsizeSerializable>::USIZE_LEN * 4
-        + <B160 as UsizeDeserializable>::USIZE_LEN;
+        + <B160 as UsizeDeserializable>::USIZE_LEN
+        + <InteropRoots as UsizeDeserializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
         ExactSizeChain::new(
@@ -225,22 +229,25 @@ impl UsizeSerializable for BlockMetadataFromOracle {
                             ExactSizeChain::new(
                                 ExactSizeChain::new(
                                     ExactSizeChain::new(
-                                        UsizeSerializable::iter(&self.eip1559_basefee),
-                                        UsizeSerializable::iter(&self.gas_per_pubdata),
+                                        ExactSizeChain::new(
+                                            UsizeSerializable::iter(&self.eip1559_basefee),
+                                            UsizeSerializable::iter(&self.gas_per_pubdata),
+                                        ),
+                                        UsizeSerializable::iter(&self.native_price),
                                     ),
-                                    UsizeSerializable::iter(&self.native_price),
+                                    UsizeSerializable::iter(&self.block_number),
                                 ),
-                                UsizeSerializable::iter(&self.block_number),
+                                UsizeSerializable::iter(&self.timestamp),
                             ),
-                            UsizeSerializable::iter(&self.timestamp),
+                            UsizeSerializable::iter(&self.chain_id),
                         ),
-                        UsizeSerializable::iter(&self.chain_id),
+                        UsizeSerializable::iter(&self.gas_limit),
                     ),
-                    UsizeSerializable::iter(&self.gas_limit),
+                    UsizeSerializable::iter(&self.coinbase),
                 ),
-                UsizeSerializable::iter(&self.coinbase),
+                UsizeSerializable::iter(&self.block_hashes),
             ),
-            UsizeSerializable::iter(&self.block_hashes),
+            UsizeSerializable::iter(&self.interop_roots),
         )
     }
 }
@@ -270,7 +277,7 @@ impl UsizeDeserializable for BlockMetadataFromOracle {
             gas_limit,
             coinbase,
             block_hashes,
-            interop_roots
+            interop_roots,
         };
 
         Ok(new)
