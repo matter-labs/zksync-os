@@ -87,27 +87,30 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
     pub fn sload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, SLOAD_NATIVE_COST)?;
-        let [index] = self.stack.pop_values::<1>()?.map(Bytes32::from_u256_be);
+        let stack_head = self.stack.top()?;
         let value = system.io.storage_read::<false>(
             THIS_EE_TYPE,
             &mut self.resources,
             &self.address,
-            &index,
+            &Bytes32::from_u256_be(*stack_head),
         )?;
 
-        self.stack.push(value.into_u256_be())
+        *stack_head = value.into_u256_be();
+        Ok(())
     }
 
     pub fn tload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, TLOAD_NATIVE_COST)?;
-        let [index] = self.stack.pop_values::<1>()?.map(Bytes32::from_u256_be);
+        let stack_head = self.stack.top()?;
         let value = system.io.storage_read::<true>(
             THIS_EE_TYPE,
             &mut self.resources,
             &self.address,
-            &index,
+            &Bytes32::from_u256_be(*stack_head),
         )?;
-        self.stack.push(value.into_u256_be())
+
+        *stack_head = value.into_u256_be();
+        Ok(())
     }
 
     pub fn sstore(&mut self, system: &mut System<S>) -> InstructionResult {
