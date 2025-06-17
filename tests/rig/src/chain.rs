@@ -17,7 +17,7 @@ use forward_system::run::{
     io_implementer_init_data, BatchOutput, ForwardRunningOracle, ForwardRunningOracleAux,
 };
 use forward_system::system::bootloader::run_forward;
-use log::info;
+use log::{debug, info, trace};
 use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
 use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
 use ruint::aliases::{B160, B256, U256};
@@ -178,7 +178,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         );
 
         let block_output: BatchOutput = result_keeper.into();
-        info!(
+        trace!(
             "{}Block output:{} \n{:#?}",
             colors::MAGENTA,
             colors::RESET,
@@ -237,20 +237,20 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             for num in items.borrow().iter() {
                 write!(file, "{:08X}", num).expect("Failed to write to file");
             }
-            info!(
+            debug!(
                 "Successfully wrote {} u32 csr reads elements to file: {}",
                 items.borrow().len(),
                 output_csr
             );
         }
 
-        info!(
+        debug!(
             "{}Proof running output{} = 0x",
             colors::GREEN,
             colors::RESET
         );
         for word in proof_output.into_iter() {
-            info!("{:08x}", word);
+            debug!("{:08x}", word);
         }
 
         // Ensure that proof running didn't fail: check that output is not zero

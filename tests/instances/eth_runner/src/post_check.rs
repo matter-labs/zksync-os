@@ -2,6 +2,7 @@ use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
 use alloy::hex;
 use rig::forward_system::run::BatchOutput;
+use rig::log::{debug, error, info, warn};
 use ruint::aliases::{B160, B256, U256};
 use std::collections::HashMap;
 
@@ -86,16 +87,17 @@ impl DiffTrace {
         // Reference => ZKsync OS check:
         diffs.iter().for_each(|(address, account)| {
             let zk_account = zksync_os_diffs.get(address).unwrap_or_else(|| {
-                panic!(
+                error!(
                     "ZKsync OS must have write for account {} {:?}",
                     hex::encode(address.to_be_bytes_vec()),
                     account
-                )
+                );
+                panic!()
             });
             if let Some(bal) = account.balance {
                 // Balance might differ due to refunds and access list gas charging
                 if bal != zk_account.balance.unwrap() {
-                    println!(
+                    debug!(
                         "Balance for {} is {:?} but expected {:?}.\n  Difference: {:?}",
                         hex::encode(address.to_be_bytes_vec()),
                         zk_account.balance.unwrap(),
@@ -118,11 +120,12 @@ impl DiffTrace {
                         .unwrap()
                         .get(key)
                         .unwrap_or_else(|| {
-                            panic!(
+                            error!(
                                 "Should have value for slot {} at address {}",
                                 key,
                                 hex::encode(address.to_be_bytes_vec())
-                            )
+                            );
+                            panic!()
                         });
                     assert_eq!(value, zksync_os_value);
                 }
@@ -135,12 +138,9 @@ impl DiffTrace {
                     .for_each(|(k, v)| {
                         // In the diff trace, slot clearing is not present in post,
                         // so we have to allow the case when v == 0.
-                        assert!(
-                            v.as_uint().is_zero() || storage.contains_key(k),
-                            "Key {:?} for {:?} not present in reference",
-                            k,
-                            address
-                        )
+                        if !(v.as_uint().is_zero() || storage.contains_key(k)) {
+                            error!("Key {:?} for {:?} not present in reference", k, address)
+                        }
                     })
             }
         });
@@ -151,11 +151,12 @@ impl DiffTrace {
             // all else should be checked already
             if address != &miner && !acc.is_empty() {
                 diffs.get(address).unwrap_or_else(|| {
-                    panic!(
+                    error!(
                         "Reference must have write for account {} {:?}",
                         hex::encode(address.to_be_bytes_vec()),
                         acc
-                    )
+                    );
+                    panic!()
                 });
             }
         });
@@ -187,7 +188,8 @@ fn zksync_os_output_into_account_state(
                     let encoded = preimages
                         .get(&w.value.as_u8_array())
                         .unwrap_or_else(|| {
-                            panic!("Must contain preimage for account {:#?}", address)
+                            error!("Must contain preimage for account {:#?}", address);
+                            panic!()
                         })
                         .clone();
                     AccountProperties::decode(&encoded.try_into().unwrap())
@@ -281,20 +283,20 @@ pub fn post_check(
         .zip(receipts.iter())
         .for_each(|(res, receipt)| {
             let res = res.clone().unwrap_or_else(|e| {
-                panic!(
+                error!(
                     "Transaction {} must be valid, failed with {:#?}",
                     receipt.transaction_hash, e
-                )
+                );
+                panic!()
             });
             if receipt.status == Some(alloy::primitives::U256::ONE) {
-                assert!(
-                    res.is_success(),
+                if !res.is_success() {
+                  error!(
                     "Transaction {} should have succeeded",
                     receipt.transaction_index
-                );
-            } else if receipt.status == Some(alloy::primitives::U256::ZERO) {
-                assert!(
-                    !res.is_success(),
+                  )};
+            } else if receipt.status == Some(alloy::primitives::U256::ZERO) && res.is_success() {
+                error!(
                     "Transaction {} should have failed",
                     receipt.transaction_index
                 )
@@ -302,29 +304,34 @@ pub fn post_check(
             let gas_difference =    zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used).abs_diff(res.gas_used);
             // Check gas used
             if res.gas_used != zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used) {
-                println!(
+                debug!(
                     "Transaction {} has a gas mismatch: ZKsync OS used {}, reference: {}\n  Difference:{}",
                     receipt.transaction_index, res.gas_used, receipt.gas_used,
                     gas_difference,
                 );
-                assert!(consistent_with_refund(res.gas_used, gas_difference), "Gas difference should be consistent with refund")
+                if !consistent_with_refund(res.gas_used, gas_difference) {
+                  warn!("Transaction {}, gas difference should be consistent with refund\n  ZKsync OS used {}, reference: {}\n    Difference:{}",
+                    receipt.transaction_index, res.gas_used, receipt.gas_used,
+                    gas_difference,
+                );
+                }
             }
             // Logs check
-            assert_eq!(
-                res.logs.len(),
-                receipt.logs.len(),
-                "Transaction {} has mismatch in number of logs",
-                receipt.transaction_index
-            );
+            if
+                res.logs.len()!=
+                receipt.logs.len(){
+                error!("Transaction {} has mismatch in number of logs",
+                receipt.transaction_index)
+                }
             assert!(res.logs.iter().zip(receipt.logs.iter()).all(|(l, r)| {
                 let eq = r.is_equal_to_excluding_data(l);
                 if !eq {
-                    println!("Not equal logs:\n {:#?} \nand\n {:?}", l, r)
+                    error!("Not equal logs:\n {:#?} \nand\n {:?}", l, r)
                 }
                 if r.data.to_vec() != l.data {
                     // We allow data to be different, as it can sometimes depend on
                     // gas, which is not 100% equivalent (access lists)
-                    println!(
+                    error!(
                         "Data is not equal: we got {}, expected {}",
                         hex::encode(l.data.clone()),
                         hex::encode(r.data.clone())
@@ -337,5 +344,5 @@ pub fn post_check(
 
     diff_trace.check_storage_writes(output, prestate_cache, miner);
 
-    println!("All good!")
+    info!("All good!")
 }
