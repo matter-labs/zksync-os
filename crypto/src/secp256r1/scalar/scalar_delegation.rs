@@ -6,7 +6,7 @@ use crate::secp256r1::Secp256r1Err;
 
 static mut MODULUS: MaybeUninit<BigInt<4>> = MaybeUninit::uninit();
 static mut REDUCTION_CONST: MaybeUninit<BigInt<4>> = MaybeUninit::uninit();
-static mut R2: MaybeUninit<BigInt<4>> = MaybeUninit::uninit(); 
+static mut R2: MaybeUninit<BigInt<4>> = MaybeUninit::uninit();
 
 pub(crate) fn init() {
     unsafe {
@@ -68,7 +68,7 @@ impl Scalar {
     }
 
     pub(super) fn to_words(self) -> [u64; 4] {
-        self.to_integer().0.0
+        self.to_integer().0 .0
     }
 
     pub(crate) fn is_zero(&self) -> bool {
@@ -97,4 +97,3 @@ impl Scalar {
         u256::eq(&self.0, &other.0)
     }
 }
-

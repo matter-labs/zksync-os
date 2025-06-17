@@ -1,4 +1,4 @@
-#[cfg(any(all(target_arch = "riscv32", feature ="bigint_ops"), test))]
+#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 mod scalar_delegation;
 
 #[cfg(any(target_pointer_width = "64"))]
@@ -6,19 +6,24 @@ mod scalar64;
 
 use core::ops::{Mul, Neg};
 
-#[cfg(all(target_arch = "riscv32", feature ="bigint_ops"))]
+#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
 pub(crate) use scalar_delegation::Scalar;
 
 #[cfg(any(target_pointer_width = "64"))]
 pub(crate) use scalar64::Scalar;
 
-#[cfg(any(all(target_arch = "riscv32", feature ="bigint_ops"), test))]
+#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 pub(super) use scalar_delegation::init;
 
 use super::{wnaf::ToWnaf, Secp256r1Err};
 
 // Curve order
-const MODULUS: [u64; 4] = [17562291160714782033, 13611842547513532036, 18446744073709551615, 18446744069414584320];
+const MODULUS: [u64; 4] = [
+    17562291160714782033,
+    13611842547513532036,
+    18446744073709551615,
+    18446744069414584320,
+];
 
 /// MU = floor(2^512 / n)
 const MU: [u64; 5] = [
@@ -29,15 +34,24 @@ const MU: [u64; 5] = [
     0x0000_0000_0000_0001,
 ];
 
-const REDUCTION_CONST: [u64; 4] = [14758798090332847183, 5244798044304888548, 5836234025928804086, 6976188194875648028];
-const R2: [u64; 4] = [9449762124159643298, 5087230966250696614, 2901921493521525849, 7413256579398063648];
+const REDUCTION_CONST: [u64; 4] = [
+    14758798090332847183,
+    5244798044304888548,
+    5836234025928804086,
+    6976188194875648028,
+];
+const R2: [u64; 4] = [
+    9449762124159643298,
+    5087230966250696614,
+    2901921493521525849,
+    7413256579398063648,
+];
 
 impl Scalar {
-
     // https://www.briansmith.org/ecc-inversion-addition-chains-01#p256_scalar_inversion
     pub(super) fn invert_assign(&mut self) {
         let t_1 = *self;
-        
+
         let mut t_10 = t_1;
         t_10.square_assign();
 
@@ -172,10 +186,10 @@ impl PartialEq for Scalar {
 
 impl ToWnaf for Scalar {
     fn bits(&self, offset: usize, count: usize) -> u32 {
-         // check requested bits must be from the same limb
-         debug_assert!((offset + count - 1) >> 6 == offset >> 6);
-         let limbs = self.to_words();
-         ((limbs[offset >> 6] >> (offset & 0x3F)) & ((1 << count) - 1)) as u32
+        // check requested bits must be from the same limb
+        debug_assert!((offset + count - 1) >> 6 == offset >> 6);
+        let limbs = self.to_words();
+        ((limbs[offset >> 6] >> (offset & 0x3F)) & ((1 << count) - 1)) as u32
     }
 
     fn bits_var(&self, offset: usize, count: usize) -> u32 {
@@ -196,7 +210,7 @@ impl ToWnaf for Scalar {
 
 pub(super) struct Signature {
     pub(super) r: Scalar,
-    pub(super) s: Scalar
+    pub(super) s: Scalar,
 }
 
 impl Signature {
@@ -207,9 +221,7 @@ impl Signature {
         if r.is_zero() || s.is_zero() {
             Err(Secp256r1Err::InvalidSignature)
         } else {
-            Ok(Self {r, s})
+            Ok(Self { r, s })
         }
-    }   
+    }
 }
-
-

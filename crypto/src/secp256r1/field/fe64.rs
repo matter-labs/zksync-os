@@ -1,5 +1,8 @@
 // based on https://github.com/RustCrypto/elliptic-curves/blob/master/p256/src/arithmetic/field/field64.rs
-use core::{mem::MaybeUninit, ops::{AddAssign, MulAssign, SubAssign}};
+use core::{
+    mem::MaybeUninit,
+    ops::{AddAssign, MulAssign, SubAssign},
+};
 
 use crate::secp256r1::u64_arithmatic::*;
 
@@ -13,7 +16,9 @@ impl FieldElement {
     pub(crate) const ONE: Self = Self([1, 0, 0, 0]);
 
     fn to_integer(self) -> Self {
-        FieldElement(montgomery_reduce(&[self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0]))
+        FieldElement(montgomery_reduce(&[
+            self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0,
+        ]))
     }
 
     pub(super) fn to_representation(self) -> Self {
@@ -23,13 +28,16 @@ impl FieldElement {
     pub(crate) const fn from_be_bytes_unchecked(bytes: &[u8; 32]) -> Self {
         Self([
             u64::from_le_bytes([
-                bytes[31], bytes[30], bytes[29], bytes[28], bytes[27], bytes[26], bytes[25], bytes[24],
+                bytes[31], bytes[30], bytes[29], bytes[28], bytes[27], bytes[26], bytes[25],
+                bytes[24],
             ]),
             u64::from_le_bytes([
-                bytes[23], bytes[22], bytes[21], bytes[20], bytes[19], bytes[18], bytes[17], bytes[16],
+                bytes[23], bytes[22], bytes[21], bytes[20], bytes[19], bytes[18], bytes[17],
+                bytes[16],
             ]),
             u64::from_le_bytes([
-                bytes[15], bytes[14], bytes[13], bytes[12], bytes[11], bytes[10], bytes[9], bytes[8],
+                bytes[15], bytes[14], bytes[13], bytes[12], bytes[11], bytes[10], bytes[9],
+                bytes[8],
             ]),
             u64::from_le_bytes([
                 bytes[7], bytes[6], bytes[5], bytes[4], bytes[3], bytes[2], bytes[1], bytes[0],
@@ -47,22 +55,17 @@ impl FieldElement {
 
     pub(crate) fn to_be_bytes(self) -> [u8; 32] {
         let mut r: [MaybeUninit<u8>; 32] = unsafe { MaybeUninit::uninit().assume_init() };
-        
+
         r[0..8].copy_from_slice(&self.0[3].to_be_bytes().map(MaybeUninit::new));
         r[8..16].copy_from_slice(&self.0[2].to_be_bytes().map(MaybeUninit::new));
         r[16..24].copy_from_slice(&self.0[1].to_be_bytes().map(MaybeUninit::new));
         r[24..32].copy_from_slice(&self.0[0].to_be_bytes().map(MaybeUninit::new));
-        
-        unsafe {
-            core::mem::transmute(r)
-        }
+
+        unsafe { core::mem::transmute(r) }
     }
 
     pub(crate) const fn is_zero(&self) -> bool {
-        self.0[0] == 0
-            && self.0[1] == 0
-            && self.0[2] == 0
-            && self.0[3] == 0
+        self.0[0] == 0 && self.0[1] == 0 && self.0[2] == 0 && self.0[3] == 0
     }
 
     pub(crate) fn overflow(&self) -> bool {
@@ -95,8 +98,7 @@ impl FieldElement {
         *self = self.square();
     }
 
-    pub(crate) fn negate_assign(&mut self) {
-    }
+    pub(crate) fn negate_assign(&mut self) {}
 
     pub(crate) fn double_assign(&mut self) {
         let other = *self;

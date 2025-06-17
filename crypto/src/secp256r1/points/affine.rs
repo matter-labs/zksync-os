@@ -1,22 +1,21 @@
 use core::ops::Neg;
 
-use crate::secp256r1::{Secp256r1Err, field::FieldElement};
+use crate::secp256r1::{field::FieldElement, Secp256r1Err};
 
 use super::Jacobian;
-
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Affine {
     pub(crate) x: FieldElement,
     pub(crate) y: FieldElement,
-    pub(crate) infinity: bool
+    pub(crate) infinity: bool,
 }
 
 impl Affine {
-    pub(super) const INFINITY: Self  = Self {
+    pub(super) const INFINITY: Self = Self {
         x: FieldElement::ZERO,
         y: FieldElement::ZERO,
-        infinity: true
+        infinity: true,
     };
 
     pub(crate) fn is_infinity(&self) -> bool {
@@ -37,8 +36,8 @@ impl Affine {
 
         let mut rhs = x;
         rhs.square_assign();
-        rhs *= &x; 
-        
+        rhs *= &x;
+
         let mut a = x;
         a += &FieldElement::EQUATION_A;
 
@@ -46,7 +45,7 @@ impl Affine {
         rhs += &FieldElement::EQUATION_B;
 
         if rhs == lhs {
-            Ok(Affine {x, y, infinity})
+            Ok(Affine { x, y, infinity })
         } else {
             Err(Secp256r1Err::InvalidCoordinates)
         }
@@ -64,7 +63,7 @@ impl Affine {
         Jacobian {
             x: self.x,
             y: self.y,
-            z: FieldElement::ONE
+            z: FieldElement::ONE,
         }
     }
 }

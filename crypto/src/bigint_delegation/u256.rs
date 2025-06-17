@@ -203,7 +203,7 @@ pub unsafe fn neg_mod_assign<T: DelegatedModParams<4>>(a: &mut U256) {
 
 #[inline(always)]
 pub fn eq(a: &U256, b: &U256) -> bool {
-    let temp  = unsafe { COPY_PLACE_0.assume_init_mut() };
+    let temp = unsafe { COPY_PLACE_0.assume_init_mut() };
     delegation::memcpy(temp, a);
     let b = delegation::copy_if_needed(b);
 

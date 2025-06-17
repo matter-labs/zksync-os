@@ -16,13 +16,16 @@ impl Scalar {
     pub(super) fn from_be_bytes_unchecked(bytes: &[u8; 32]) -> Self {
         Self([
             u64::from_le_bytes([
-                bytes[31], bytes[30], bytes[29], bytes[28], bytes[27], bytes[26], bytes[25], bytes[24],
+                bytes[31], bytes[30], bytes[29], bytes[28], bytes[27], bytes[26], bytes[25],
+                bytes[24],
             ]),
             u64::from_le_bytes([
-                bytes[23], bytes[22], bytes[21], bytes[20], bytes[19], bytes[18], bytes[17], bytes[16],
+                bytes[23], bytes[22], bytes[21], bytes[20], bytes[19], bytes[18], bytes[17],
+                bytes[16],
             ]),
             u64::from_le_bytes([
-                bytes[15], bytes[14], bytes[13], bytes[12], bytes[11], bytes[10], bytes[9], bytes[8],
+                bytes[15], bytes[14], bytes[13], bytes[12], bytes[11], bytes[10], bytes[9],
+                bytes[8],
             ]),
             u64::from_le_bytes([
                 bytes[7], bytes[6], bytes[5], bytes[4], bytes[3], bytes[2], bytes[1], bytes[0],
@@ -71,7 +74,7 @@ impl Scalar {
         let rhs = *self;
         self.mul_assign(&rhs);
     }
-    
+
     pub(super) fn mul_assign(&mut self, rhs: &Self) {
         let mut i = 0;
         let mut lo = [0u64; 4];
@@ -86,8 +89,8 @@ impl Scalar {
                 let k = i + j;
 
                 if k >= 4 {
-                    let (n, c) = mac(hi[k -4], self.0[i], rhs.0[j], carry);
-                    hi[k-4] = n;
+                    let (n, c) = mac(hi[k - 4], self.0[i], rhs.0[j], carry);
+                    hi[k - 4] = n;
                     carry = c;
                 } else {
                     let (n, c) = mac(lo[k], self.0[i], rhs.0[j], carry);
@@ -98,10 +101,10 @@ impl Scalar {
                 j += 1;
             }
 
-            if i+j >= 4 {
-                hi[i+j - 4] = carry;
+            if i + j >= 4 {
+                hi[i + j - 4] = carry;
             } else {
-                lo[i+j] = carry;
+                lo[i + j] = carry;
             }
             i += 1;
         }
@@ -139,7 +142,7 @@ fn overflowing_add(lhs: &[u64; 4], rhs: &[u64; 4]) -> ([u64; 4], bool) {
         };
         i += 1;
     }
-    
+
     (res, carry)
 }
 

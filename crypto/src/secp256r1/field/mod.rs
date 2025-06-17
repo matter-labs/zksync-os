@@ -1,17 +1,17 @@
-#[cfg(any(all(target_arch = "riscv32", feature="bigint_ops"), test))]
+#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 mod fe32_delegation;
 
 mod fe64;
 
 use core::fmt::Debug;
 
+#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
+pub(super) use fe32_delegation::FieldElement;
 #[cfg(target_pointer_width = "64")]
 pub(super) use fe64::FieldElement;
-#[cfg(all(target_arch = "riscv32", feature="bigint_ops"))]
-pub(super) use fe32_delegation::FieldElement;
 pub(super) use fe64::FieldElement as FieldElementConst;
 
-#[cfg(any(all(target_arch = "riscv32", feature ="bigint_ops"), test))]
+#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 pub use fe32_delegation::init;
 
 use super::Secp256r1Err;
@@ -21,12 +21,18 @@ const R2: [u64; 4] = [3, 18446744056529682431, 18446744073709551614, 21474836477
 const REDUCTION_CONST: [u64; 4] = [1, 4294967296, 0, 18446744069414584322];
 
 impl FieldElement {
-    // montgomerry form 
+    // montgomerry form
     pub(super) const HALF: Self = Self::from_words_unchecked([0, 0, 0, 9223372036854775808]);
     // montgomerry form
-    pub(super) const EQUATION_A: Self = Self::from_words_unchecked([18446744073709551612, 17179869183, 0, 18446744056529682436]);
+    pub(super) const EQUATION_A: Self =
+        Self::from_words_unchecked([18446744073709551612, 17179869183, 0, 18446744056529682436]);
     // montgomerry form
-    pub(super) const EQUATION_B: Self = Self::from_words_unchecked([15608596021259845087, 12461466548982526096, 16546823903870267094, 15866188208926050356]);
+    pub(super) const EQUATION_B: Self = Self::from_words_unchecked([
+        15608596021259845087,
+        12461466548982526096,
+        16546823903870267094,
+        15866188208926050356,
+    ]);
 
     pub(super) fn from_be_bytes(bytes: &[u8; 32]) -> Result<Self, Secp256r1Err> {
         let val = Self::from_be_bytes_unchecked(bytes);
@@ -37,7 +43,7 @@ impl FieldElement {
             Ok(val.to_representation())
         }
     }
-    
+
     // https://github.com/RustCrypto/elliptic-curves/blob/master/p256/src/arithmetic/field.rs#L118
     pub(super) fn invert_assign(&mut self) {
         let mut t111 = *self;
@@ -124,8 +130,8 @@ impl FieldElementConst {
             .mul(self)
     }
 
-     /// Returns self^(2^n) mod p
-     const fn sqn(&self, n: usize) -> Self {
+    /// Returns self^(2^n) mod p
+    const fn sqn(&self, n: usize) -> Self {
         let mut x = *self;
         let mut i = 0;
         while i < n {
@@ -140,7 +146,7 @@ impl FieldElementConst {
         self
     }
 
-    #[cfg(all(target_arch = "riscv32", feature="bigint_ops"))]
+    #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
     pub(super) const fn to_fe(self) -> FieldElement {
         use crate::ark_ff_delegation::BigInt;
 

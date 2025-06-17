@@ -1,13 +1,12 @@
-use core::{fmt::Debug, ops::Neg};
-use crate::secp256r1::field::{FieldElement, FieldElementConst};
 use super::{Affine, Storage};
-
+use crate::secp256r1::field::{FieldElement, FieldElementConst};
+use core::{fmt::Debug, ops::Neg};
 
 #[derive(Default, Debug, Clone, Copy)]
 pub(crate) struct Jacobian<F: Default + Debug + Clone + Copy> {
     pub(super) x: F,
     pub(super) y: F,
-    pub(super) z: F
+    pub(super) z: F,
 }
 
 impl Jacobian<FieldElement> {
@@ -61,7 +60,7 @@ impl Jacobian<FieldElement> {
         self.y.negate_assign();
         self.y += &t1;
     }
-    
+
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#addition-add-1998-hnm
     pub(crate) fn add_assign(&mut self, other: &Self) {
         let half = &FieldElement::HALF;
@@ -102,12 +101,12 @@ impl Jacobian<FieldElement> {
 
         *r1 = *r2;
         r1.square_assign();
-        
+
         *r1 -= &r8;
         r8 -= &*r1;
         r8 -= &*r1;
         r8 *= &*r2;
-        
+
         *r2 = r8;
         *r2 -= &r7;
         *r2 *= half;
@@ -123,7 +122,7 @@ impl Jacobian<FieldElement> {
 
         t1 *= &other.x;
         t2 *= &other.y;
-        
+
         t1.sub_and_negate_assign(&self.x);
         t2 -= &t1;
         self.z *= &t1;
@@ -136,7 +135,7 @@ impl Jacobian<FieldElement> {
 
         self.x = t2;
         self.x.square_assign();
-        
+
         self.x += &t1;
         self.y *= &t1;
 
@@ -162,7 +161,7 @@ impl Jacobian<FieldElement> {
             Affine {
                 x: self.x,
                 y: self.y,
-                infinity: false
+                infinity: false,
             }
         }
     }
@@ -184,9 +183,19 @@ impl Jacobian<FieldElementConst> {
     }
 
     pub(crate) const GENERATOR: Self = Self {
-        x: FieldElementConst::from_words_unchecked([8784043285714375740, 8483257759279461889, 8789745728267363600, 1770019616739251654]),
-        y: FieldElementConst::from_words_unchecked([15992936863339206154, 10037038012062884956, 15197544864945402661, 9615747158586711429]),
-        z: FieldElementConst::ONE
+        x: FieldElementConst::from_words_unchecked([
+            8784043285714375740,
+            8483257759279461889,
+            8789745728267363600,
+            1770019616739251654,
+        ]),
+        y: FieldElementConst::from_words_unchecked([
+            15992936863339206154,
+            10037038012062884956,
+            15197544864945402661,
+            9615747158586711429,
+        ]),
+        z: FieldElementConst::ONE,
     };
 
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2001-b
@@ -202,8 +211,10 @@ impl Jacobian<FieldElementConst> {
         // Z3 = (Y1+Z1)2-gamma-delta
         let z = self.y.add(&self.z).square().sub(&gamma).sub(&delta);
         // Y3 = alpha*(4*beta-X3)-8*gamma2
-        let y = alpha.mul(&beta.mul_int(3).sub(&x)).sub(&gamma.square().mul_int(8));
-        
+        let y = alpha
+            .mul(&beta.mul_int(3).sub(&x))
+            .sub(&gamma.square().mul_int(8));
+
         Self { x, y, z }
     }
 
@@ -225,7 +236,7 @@ impl Jacobian<FieldElementConst> {
         let y = r.mul(&v.sub(&x)).sub(&s1.mul(&j).mul_int(2));
         let z = self.z.add(&rhs.z).square().sub(&z1z1).sub(&z2z2).mul(&h);
 
-        Self { x, y, z}
+        Self { x, y, z }
     }
 
     pub(crate) const fn to_storage(&self) -> Storage {
@@ -236,6 +247,9 @@ impl Jacobian<FieldElementConst> {
         let x = self.x.mul(&zi2);
         let y = self.y.mul(&zi2).mul(&zi);
 
-        Storage { x: x.to_fe(), y: y.to_fe() }
+        Storage {
+            x: x.to_fe(),
+            y: y.to_fe(),
+        }
     }
 }

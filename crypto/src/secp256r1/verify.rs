@@ -1,8 +1,14 @@
+use super::{
+    context::{GeneratorMultiplesTable, TABLE_G},
+    field::FieldElement,
+    points::Affine,
+    scalar::{Scalar, Signature},
+    wnaf::Wnaf,
+    Secp256r1Err, ECMULT_TABLE_SIZE_A, WINDOW_A, WINDOW_G, WNAF_BITS,
+};
 use core::mem::MaybeUninit;
-use super::{context::{GeneratorMultiplesTable, TABLE_G}, field::FieldElement, points::Affine, scalar::{Scalar, Signature}, wnaf::Wnaf, Secp256r1Err, ECMULT_TABLE_SIZE_A, WINDOW_A, WINDOW_G, WNAF_BITS};
 
 type Jacobian = super::points::Jacobian<FieldElement>;
-
 
 pub fn verify(
     digest: &[u8; 32],
@@ -11,31 +17,25 @@ pub fn verify(
     x: &[u8; 32],
     y: &[u8; 32],
 ) -> Result<bool, Secp256r1Err> {
-    let Signature {
-        r,
-        s
-    } = Signature::from_scalars(r, s)?;
+    let Signature { r, s } = Signature::from_scalars(r, s)?;
     let pk = Affine::from_be_bytes(x, y)?
         .reject_identity()?
         .to_jacobian();
     let z = Scalar::reduce_be_bytes(digest);
     let mut s_inv = s;
     s_inv.invert_assign();
-    
+
     let u1 = z * &s_inv;
     let u2 = r * &s_inv;
 
-    let x = ecmult(pk, u2,u1, &TABLE_G).to_affine().x;
+    let x = ecmult(pk, u2, u1, &TABLE_G).to_affine().x;
 
     Ok(r == Scalar::reduce_be_bytes(&x.to_be_bytes()))
 }
 
 fn ecmult(a: Jacobian, na: Scalar, ng: Scalar, table_g: &GeneratorMultiplesTable) -> Jacobian {
     let (wnaf_a, table_a) = if !na.is_zero() && !a.is_infinity() {
-        (
-            Wnaf::new(na, WINDOW_A),
-            OddMultiplesTable::from(&a)
-        )
+        (Wnaf::new(na, WINDOW_A), OddMultiplesTable::from(&a))
     } else {
         (Wnaf::default(), OddMultiplesTable::default())
     };
@@ -83,16 +83,14 @@ impl OddMultiplesTable {
             table[i].write(p);
         }
 
-        Self(unsafe {
-            core::mem::transmute(table)
-        })
+        Self(unsafe { core::mem::transmute(table) })
     }
 
     fn get(&self, n: i32) -> Jacobian {
         if n > 0 {
             self.0[(n - 1) as usize / 2]
         } else {
-            -self.0[(-n-1) as usize / 2]
+            -self.0[(-n - 1) as usize / 2]
         }
     }
 }

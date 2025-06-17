@@ -4,7 +4,7 @@ use crate::secp256r1::field::FieldElement;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Storage {
     pub(super) x: FieldElement,
-    pub(super) y: FieldElement
+    pub(super) y: FieldElement,
 }
 
 impl Storage {
@@ -12,7 +12,7 @@ impl Storage {
         Affine {
             x: self.x,
             y: self.y,
-            infinity: false
+            infinity: false,
         }
     }
 }

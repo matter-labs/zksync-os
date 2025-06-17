@@ -2,21 +2,21 @@ use core::{mem::MaybeUninit, ops::Neg};
 
 use super::WNAF_BITS;
 
-pub(super) trait ToWnaf: Neg<Output =  Self> {
+pub(super) trait ToWnaf: Neg<Output = Self> {
     fn bits(&self, offset: usize, count: usize) -> u32;
     fn bits_var(&self, offset: usize, count: usize) -> u32;
 }
 
 pub(super) struct Wnaf {
     wnaf: [i32; WNAF_BITS],
-    bits: i32
+    bits: i32,
 }
 
 impl Default for Wnaf {
     fn default() -> Self {
         Self {
             wnaf: [0; WNAF_BITS],
-            bits: -1
+            bits: -1,
         }
     }
 }
@@ -26,7 +26,8 @@ impl Wnaf {
         debug_assert!(WNAF_BITS <= 256);
         debug_assert!((2..=31).contains(&window));
 
-        let mut wnaf: [MaybeUninit<i32>; WNAF_BITS] = unsafe { MaybeUninit::uninit().assume_init() };
+        let mut wnaf: [MaybeUninit<i32>; WNAF_BITS] =
+            unsafe { MaybeUninit::uninit().assume_init() };
         let mut bits = -1;
         let mut sign = 1;
         let mut carry = 0;
@@ -39,7 +40,7 @@ impl Wnaf {
 
         while bit < WNAF_BITS {
             if s.bits(bit, 1) == carry as u32 {
-                bit +=1;
+                bit += 1;
                 continue;
             }
 
@@ -47,7 +48,6 @@ impl Wnaf {
             if now > WNAF_BITS - bit {
                 now = WNAF_BITS - bit;
             }
-
 
             let mut word = (s.bits_var(bit, now) as i32) + carry;
 
@@ -73,7 +73,7 @@ impl Wnaf {
         bits += 1;
         Self {
             wnaf: unsafe { core::mem::transmute(wnaf) },
-            bits
+            bits,
         }
     }
 

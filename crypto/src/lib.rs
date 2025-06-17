@@ -20,9 +20,9 @@ pub mod modexp;
 pub mod p256;
 pub mod ripemd160;
 pub mod secp256k1;
+pub mod secp256r1;
 pub mod sha256;
 pub mod sha3;
-pub mod secp256r1;
 
 pub use blake2 as blake2_ext;
 
