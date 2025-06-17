@@ -159,7 +159,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
                         opcodes::DELEGATECALL => self.delegate_call(system, external_call_dest),
                         opcodes::STATICCALL => self.static_call(system, external_call_dest),
                         opcodes::STOP => Err(ExitCode::Stop),
-                        opcodes::ADD => self.wrapped_add(),
+                        opcodes::ADD => self.wrapping_add(),
                         opcodes::MUL => self.wrapping_mul(),
                         opcodes::SUB => self.wrapping_sub(),
                         opcodes::DIV => self.div(),
