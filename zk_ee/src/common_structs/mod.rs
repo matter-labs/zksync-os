@@ -1,6 +1,7 @@
 pub mod cache_record;
 pub mod callee_account_properties;
 pub mod events_storage;
+pub mod history_counter;
 pub mod history_list;
 pub mod history_map;
 pub mod logs_storage;
