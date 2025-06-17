@@ -136,7 +136,8 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
 }
 
 pub type ExtraCheck<SCC: const StackCtorConst, A: Allocator> =
-    [[[[[[[(); SCC::extra_const_param::<(EventContent<MAX_EVENT_TOPICS, A>, ()), A>()];
+    [[[[[[[[(); SCC::extra_const_param::<(u32, ()), A>()];
+        SCC::extra_const_param::<(EventContent<MAX_EVENT_TOPICS, A>, ()), A>()];
         SCC::extra_const_param::<(LogContent<A>, u32), A>()];
         SCC::extra_const_param::<usize, A>()]; SCC::extra_const_param::<(usize, i32), A>()];
         SCC::extra_const_param::<CacheSnapshotId, A>()];
