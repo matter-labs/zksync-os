@@ -233,6 +233,41 @@ fn zksync_os_output_into_account_state(
     updates
 }
 
+// EVM refunds are only done in SSTORE, and they
+// can be of only 3 different values: 19900, 2800 and 4800.
+// However, gas refunds are capped at 20% of the total gas used.
+// Therefore, we use the following heuristic to check if a difference
+// in gas used is a refund:
+//  (∃a,b,c s.t. gas_difference = a * 19900 + b * 2800 + c * 4800) ∨
+//   zk_sync_os_gas_used / 5 = gas_difference
+pub fn consistent_with_refund(zksync_os_gas_used: u64, gas_difference: u64) -> bool {
+    fn has_refund_decomposition(x: u64) -> bool {
+        if x % 100 != 0 {
+            return false;
+        }
+
+        let x = x / 100; // reduce the equation: 199a + 28b + 48c = x
+        for a in 0..=x / 199 {
+            let rem = x - 199 * a;
+            if rem % 4 != 0 {
+                continue;
+            }
+
+            let r = rem / 4; // now checking 7b + 12c = r
+
+            // Try all possible c values (small loop)
+            for c in 0..=r / 12 {
+                let rem2 = r - 12 * c;
+                if rem2 % 7 == 0 {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    has_refund_decomposition(gas_difference) || zksync_os_gas_used / 5 == gas_difference
+}
+
 pub fn post_check(
     output: BatchOutput,
     receipts: Vec<TransactionReceipt>,
@@ -264,13 +299,15 @@ pub fn post_check(
                     receipt.transaction_index
                 )
             }
+            let gas_difference =    zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used).abs_diff(res.gas_used);
             // Check gas used
             if res.gas_used != zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used) {
                 println!(
                     "Transaction {} has a gas mismatch: ZKsync OS used {}, reference: {}\n  Difference:{}",
                     receipt.transaction_index, res.gas_used, receipt.gas_used,
-                    zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used).abs_diff(res.gas_used)
-                )
+                    gas_difference,
+                );
+                assert!(consistent_with_refund(res.gas_used, gas_difference), "Gas difference should be consistent with refund")
             }
             // Logs check
             assert_eq!(
