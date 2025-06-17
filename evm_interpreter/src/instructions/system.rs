@@ -109,7 +109,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn calldataload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, CALLDATALOAD_NATIVE_COST)?;
-        let [index] = self.stack.pop_values::<1>()?;
+        let index = *self.stack.top()?;
         let value = match u256_try_to_usize(&index) {
             Some(index) => {
                 if index < self.calldata.len() {
@@ -142,7 +142,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             ));
         }
 
-        self.stack.push(value)?;
+        unsafe { *self.stack.top_unsafe() = value }
 
         Ok(())
     }
