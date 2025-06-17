@@ -105,7 +105,7 @@ pub fn run(
 
     // our convention is to return 32 bytes placed into registers x10-x17
 
-    // TODO: move to new simulator
+    // TODO(EVM-1085): move to new simulator
     #[allow(deprecated)]
     final_state.registers[10..18].try_into().unwrap()
 }
