@@ -33,5 +33,5 @@ bincode = "1.3"
 testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "basic_bootloader/testing", "hex"]
 default = ["testing"]
 no_print = []
-unlimited_native = []
+unlimited_native = ["basic_bootloader/unlimited_native"]
 evm-compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-compatibility","evm_interpreter/evm-compatibility"]
