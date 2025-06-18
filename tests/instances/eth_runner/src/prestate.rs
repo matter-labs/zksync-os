@@ -37,12 +37,12 @@ impl<const BITS: usize, const LIMBS: usize> From<&Bits<BITS, LIMBS>> for &BitsOr
 
 pub type BitsOrd160 = BitsOrd<{ B160::BITS }, { B160::LIMBS }>;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PrestateTrace {
     pub result: Vec<PrestateItem>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PrestateItem {
     pub result: BTreeMap<BitsOrd160, AccountState>,
 }
@@ -52,24 +52,24 @@ pub struct PrestateItem {
 // This means that we cannot construct an initial state only from
 // the pre side of the diff trace.
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DiffTrace {
     pub result: Vec<DiffItem>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DiffItem {
     pub result: StateDiff,
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct StateDiff {
     pub pre: BTreeMap<BitsOrd160, AccountState>,
     pub post: BTreeMap<BitsOrd160, AccountState>,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct AccountState {
     pub balance: Option<U256>,
     pub nonce: Option<u64>,
