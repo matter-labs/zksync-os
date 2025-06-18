@@ -1,167 +1,97 @@
 #![feature(slice_as_array)]
 
-use block_hashes::BlockHashes;
-use clap::Parser;
-use post_check::post_check;
-use prestate::{populate_prestate, DiffTrace, PrestateTrace};
-use rig::log::info;
-use rig::*;
-use std::fs::{self, File};
-use std::io::BufReader;
-
+use clap::{Parser, Subcommand};
 mod block;
 mod block_hashes;
+mod live_run;
 mod post_check;
 mod prestate;
 mod receipts;
+mod single_run;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
-struct Args {
-    /// Path to the block JSON file
-    #[arg(long)]
-    block: String,
+struct Args {}
 
-    /// Path to the call trace JSON file
-    #[arg(long)]
-    calltrace: String,
-
-    /// Path to the prestate trace JSON file
-    #[arg(long)]
-    prestatetrace: String,
-
-    /// PAth to the diff trace JSON file
-    #[arg(long)]
-    difftrace: String,
-
-    /// Path to the block receipts trace JSON file
-    #[arg(long)]
-    receipts: String,
-
-    /// Path to the block hashes JSON file (optional)
-    #[arg(long)]
-    block_hashes: Option<String>,
-
-    /// If set, the leaves of the tree are put in random
-    /// positions to emulate real-world costs
-    #[arg(long, action = clap::ArgAction::SetTrue)]
-    randomized: bool,
+#[derive(Parser, Debug)]
+#[command(author, version, about)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn run<const RANDOMIZED: bool>(
-    mut chain: Chain<RANDOMIZED>,
-    block_context: BlockContext,
-    block_number: u64,
-    miner: alloy::primitives::Address,
-    ps_trace: PrestateTrace,
-    transactions: Vec<Vec<u8>>,
-    receipts: Vec<receipts::TransactionReceipt>,
-    diff_trace: DiffTrace,
-    block_hashes: Option<BlockHashes>,
-) -> anyhow::Result<()> {
-    chain.set_last_block_number(block_number - 1);
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Run a range of blocks live from RPC
+    LiveRun {
+        #[arg(long)]
+        start_block: u64,
+        #[arg(long)]
+        end_block: u64,
+        #[arg(long)]
+        endpoint: String,
+        #[arg(long)]
+        db: String,
+    },
+    // Run a single block from JSON files
+    SingleRun {
+        /// Path to the block JSON file
+        #[arg(long)]
+        block: String,
 
-    if let Some(block_hashes) = block_hashes {
-        chain.set_block_hashes(block_hashes.into_array(block_number))
-    }
+        /// Path to the call trace JSON file
+        #[arg(long)]
+        calltrace: String,
 
-    let prestate_cache = populate_prestate(&mut chain, ps_trace);
+        /// Path to the prestate trace JSON file
+        #[arg(long)]
+        prestatetrace: String,
 
-    let output = chain.run_block(transactions, Some(block_context), None);
+        /// PAth to the diff trace JSON file
+        #[arg(long)]
+        difftrace: String,
 
-    post_check(
-        output,
-        receipts,
-        diff_trace,
-        prestate_cache,
-        ruint::aliases::B160::from_be_bytes(miner.into()),
-    );
+        /// Path to the block receipts trace JSON file
+        #[arg(long)]
+        receipts: String,
 
-    Ok(())
+        /// Path to the block hashes JSON file (optional)
+        #[arg(long)]
+        block_hashes: Option<String>,
+
+        /// If set, the leaves of the tree are put in random
+        /// positions to emulate real-world costs
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        randomized: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
     rig::init_logger();
-    let args = Args::parse();
-
-    let block = fs::read_to_string(&args.block)?;
-    // TODO: ensure there are no calls to unsupported precompiles
-    let _calltrace = fs::read_to_string(&args.calltrace)?;
-    let receipts = fs::read_to_string(&args.receipts)?;
-    let ps_file = File::open(&args.prestatetrace)?;
-    let ps_reader = BufReader::new(ps_file);
-    let ps_trace: PrestateTrace = serde_json::from_reader(ps_reader)?;
-    let receipts: receipts::BlockReceipts =
-        serde_json::from_str(&receipts).expect("valid receipts JSON");
-    let diff_file = File::open(&args.difftrace)?;
-    let diff_reader = BufReader::new(diff_file);
-    let diff_trace: DiffTrace = serde_json::from_reader(diff_reader)?;
-    let block_hashes: Option<BlockHashes> = args.block_hashes.map(|path| {
-        let hashes = fs::read_to_string(&path).expect("valid block hashes path");
-        serde_json::from_str(&hashes).expect("valid block hashes JSON")
-    });
-
-    let block: block::Block = serde_json::from_str(&block).expect("valid block JSON");
-    let block_number = block.result.header.number;
-    info!("Running block: {}", block_number);
-    info!("Block gas used: {}", block.result.header.gas_used);
-    // assert!(block.result.header.gas_used <= 11_000_000);
-    let miner = block.result.header.miner;
-
-    let block_context = block.get_block_context();
-    let (transactions, skipped) = block.get_transactions();
-
-    let receipts = receipts
-        .result
-        .into_iter()
-        .enumerate()
-        .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
-        .collect();
-
-    let ps_trace = PrestateTrace {
-        result: ps_trace
-            .result
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
-            .collect(),
-    };
-
-    let diff_trace = DiffTrace {
-        result: diff_trace
-            .result
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
-            .collect(),
-    };
-
-    if args.randomized {
-        let chain = Chain::empty_randomized(Some(1));
-        run(
-            chain,
-            block_context,
-            block_number,
-            miner,
-            ps_trace,
-            transactions,
+    let cli = Cli::parse();
+    match cli.command {
+        Command::SingleRun {
+            block,
+            calltrace,
+            prestatetrace,
+            difftrace,
             receipts,
-            diff_trace,
             block_hashes,
-        )
-    } else {
-        let chain = Chain::empty(Some(1));
-        run(
-            chain,
-            block_context,
-            block_number,
-            miner,
-            ps_trace,
-            transactions,
+            randomized,
+        } => crate::single_run::single_run(
+            block,
+            calltrace,
             receipts,
-            diff_trace,
+            prestatetrace,
+            difftrace,
             block_hashes,
-        )
+            randomized,
+        ),
+        Command::LiveRun {
+            start_block,
+            end_block,
+            endpoint,
+            db,
+        } => live_run::live_run(start_block, end_block, endpoint, db),
     }
 }
