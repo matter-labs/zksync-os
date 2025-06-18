@@ -1,0 +1,36 @@
+{
+  "types": [],
+  "domains": [
+    {
+      "domain_name": "ExecutionEnvironment",
+      "domain_code": 100,
+      "identifier_encoding": "exec_env",
+      "components": [
+        {
+          "component_name": "Common",
+          "component_code": 1,
+          "identifier_encoding": "common",
+          "errors": []
+        },
+        {
+          "component_name": "Native",
+          "component_code": 2,
+          "identifier_encoding": "native",
+          "errors": []
+        },
+        {
+          "component_name": "EVM",
+          "component_code": 3,
+          "identifier_encoding": "evm",
+          "errors": []
+        },
+        {
+          "component_name": "WASM",
+          "component_code": 4,
+          "identifier_encoding": "wasm",
+          "errors": []
+        }
+      ]
+    }
+  ]
+}

@@ -13,6 +13,7 @@ members = [
     "proof_running_system",
     "storage_models",
     "zk_ee",
+    "zksync_os_error",
     "zksync_os_runner",
     "system_hooks",
     "supporting_crates/modexp",

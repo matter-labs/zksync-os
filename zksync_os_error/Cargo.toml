@@ -1,0 +1,38 @@
+[package]
+name = "zksync_os_error"
+authors.workspace = true
+categories.workspace = true
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[lib]
+doctest = false
+
+[features]
+default = ["std", "use_anyhow", "use_serde"]
+std = [ "serde/std", "lazy_static/spin_no_std", "anyhow?/std", "strum/std"]
+use_anyhow = ["dep:anyhow"]
+use_serde = ["dep:serde"]
+runtime_documentation = ["dep:serde", "dep:serde_json"]
+serialized_errors = ["dep:serde", "dep:serde_json"]
+packed_errors = ["use_serde"]
+
+[dependencies]
+lazy_static = { version = "1.5.0", default-features = false, optional = true }
+serde = { version = "1.0.210", features = [ "derive", "alloc" ], default-features = false, optional = true }
+serde_json = { version = "1.0.128", optional = true }
+strum = { version = "0.26.3", default-features = false, features = ["derive"] }
+strum_macros = { version = "0.26.4", default-features = false }
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+
+[dependencies.anyhow]
+version = "1.0"
+optional = true
+default-features = false
+
+[build-dependencies]
+zksync-error-codegen = { git = "https://github.com/matter-labs/zksync-error", rev = "20b4c1cf93261e59c17cbf2c5d6060a9ffa1533a", default-features = true }
