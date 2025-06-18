@@ -2,9 +2,9 @@ use std::collections::HashSet;
 
 use rig::utils::encode_alloy_rpc_tx;
 use ruint::aliases::{B160, U256};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Block {
     pub result: alloy::rpc::types::Block<alloy::rpc::types::Transaction, alloy::rpc::types::Header>,
 }

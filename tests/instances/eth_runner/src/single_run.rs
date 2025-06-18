@@ -36,7 +36,8 @@ fn run<const RANDOMIZED: bool>(
         diff_trace,
         prestate_cache,
         ruint::aliases::B160::from_be_bytes(miner.into()),
-    );
+    )
+    .unwrap();
 
     Ok(())
 }
