@@ -142,6 +142,7 @@ pub struct BatchOutput {
     pub l2_logs_tree_root: Bytes32,
     /// Protocol upgrade tx hash (0 if there wasn't)
     pub upgrade_tx_hash: Bytes32,
+    pub dependency_roots_rolling_hash: Bytes32,
 }
 
 impl BatchOutput {

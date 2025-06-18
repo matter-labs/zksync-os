@@ -265,7 +265,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 data[24..32].copy_from_slice(&interop_root.chain_id.to_be_bytes());
                 data[56..64].copy_from_slice(&interop_root.block_number.to_be_bytes());
                 data[92..96].copy_from_slice(&32u32.to_be_bytes());
-                data[124..128].copy_from_slice(&0u32.to_be_bytes());
+                data[124..128].copy_from_slice(&1u32.to_be_bytes());
                 data[128..160].copy_from_slice(&interop_root.root[0].as_u8_ref());
                 interop_root_hasher.update(&data);
 
