@@ -27,6 +27,8 @@ pub fn init() {
     scalar::init();
 }
 
+pub use verify::verify;
+
 #[derive(Debug)]
 pub enum Secp256r1Err {
     InvalidSignature,

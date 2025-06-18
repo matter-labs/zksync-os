@@ -6,7 +6,7 @@ use core::mem::MaybeUninit;
 use core::ops::{AddAssign, MulAssign, SubAssign};
 
 #[derive(Clone, Copy, Default)]
-pub struct FieldElement(BigInt<4>);
+pub struct FieldElement(pub(super) BigInt<4>);
 
 impl core::fmt::Debug for FieldElement {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -47,6 +47,10 @@ impl DelegatedMontParams<4> for FieldParams {
 }
 
 impl FieldElement {
+    pub(crate) const ZERO: Self = Self::from_words_unchecked([0; 4]);
+    // montgomerry form
+    pub(crate) const ONE: Self = Self::from_words_unchecked([1, 18446744069414584320, 18446744073709551615, 4294967294]);
+    
     pub(super) fn to_representation(mut self) -> Self {
         unsafe {
             u256::mul_assign_montgomery::<FieldParams>(&mut self.0, R2.assume_init_ref());

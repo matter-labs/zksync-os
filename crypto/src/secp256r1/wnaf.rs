@@ -1,4 +1,4 @@
-use core::{mem::MaybeUninit, ops::Neg};
+use core::ops::Neg;
 
 use super::WNAF_BITS;
 

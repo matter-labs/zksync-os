@@ -10,12 +10,6 @@ pub(crate) struct Jacobian<F: Default + Debug + Clone + Copy> {
 }
 
 impl Jacobian<FieldElement> {
-    const INFINITY: Self = Self {
-        x: FieldElement::ZERO,
-        y: FieldElement::ZERO,
-        z: FieldElement::ZERO
-    };
-
     pub(crate) fn is_infinity(&self) -> bool {
         self.z.is_zero() || (self.y.is_zero() && self.x.is_zero())
     }
@@ -23,7 +17,7 @@ impl Jacobian<FieldElement> {
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2004-hmv
     pub(crate) fn double_assign(&mut self) {
         if self.is_infinity() {
-            *self = Jacobian::INFINITY;
+            *self = Self::default();
             return
         }
         // T1 = Z1^2
@@ -240,9 +234,11 @@ impl Neg for Jacobian<FieldElement> {
 
 // only used for contexxt generation
 impl Jacobian<FieldElementConst> {
-    pub(crate) const fn is_infinity_const(&self) -> bool {
-        self.z.is_zero() || (self.x.is_zero() || self.y.is_zero())
-    }
+    const INFINITY: Self = Self {
+        x: FieldElementConst::ZERO,
+        y: FieldElementConst::ZERO,
+        z: FieldElementConst::ZERO
+    };
 
     // coordinates are in montgomerry form
     pub(crate) const GENERATOR: Self = Self {
@@ -261,10 +257,14 @@ impl Jacobian<FieldElementConst> {
         z: FieldElementConst::ONE,
     };
 
+    pub(crate) const fn is_infinity_const(&self) -> bool {
+        self.z.is_zero() || (self.x.is_zero() || self.y.is_zero())
+    }
+
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2001-b
     pub(crate) const fn double(&self) -> Self {
         if self.is_infinity_const() {
-            return  Jacobian::INFINITY;
+            return  Self::INFINITY;
         }
         let delta = self.z.square();
         let gamma = self.y.square();
@@ -335,6 +335,12 @@ impl Jacobian<FieldElementConst> {
 mod tests {
     use crate::secp256r1::{field::FieldElement, points::{Affine, Jacobian}, test_vectors::ADD_TEST_VECTORS};
 
+    #[cfg(feature = "bigint_ops")]
+    fn init() {
+        crate::secp256r1::init();
+        crate::bigint_delegation::init();
+    }
+
     #[test]
     fn compare_double() {
         let mut g = Jacobian::GENERATOR;
@@ -366,6 +372,9 @@ mod tests {
     
     #[test]
     fn test_add() {
+        #[cfg(feature = "bigint_ops")]
+        init();
+
         let mut g = Jacobian::GENERATOR;
 
         for (x_bytes, y_bytes) in ADD_TEST_VECTORS {

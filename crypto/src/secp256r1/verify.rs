@@ -100,6 +100,12 @@ mod test {
 
     use crate::secp256r1::{context::TABLE_G, field::FieldElement, points::Jacobian, test_vectors::MUL_TEST_VECTORS};
 
+    #[cfg(feature = "bigint_ops")]
+    fn init() {
+        crate::secp256r1::init();
+        crate::bigint_delegation::init();
+    }
+
     #[test]
     fn test_ecmult_basic() {
         assert_eq!(
@@ -170,6 +176,9 @@ mod test {
 
     #[test]
     fn test_ecmult() {
+        #[cfg(feature = "bigint_ops")]
+        init();
+
         for (i, (k_bytes, x_bytes, y_bytes)) in MUL_TEST_VECTORS.iter().enumerate() {
             let k = Scalar::reduce_be_bytes(k_bytes);
             let expected = Jacobian {

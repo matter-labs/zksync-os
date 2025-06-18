@@ -31,10 +31,14 @@ impl DelegatedMontParams<4> for ScalarParams {
     }
 }
 
-#[derive(Debug)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct Scalar(BigInt<4>);
 
 impl Scalar {
+    pub(crate) const ZERO: Self = Self(BigInt::zero());
+    // montgomerry form
+    pub(crate) const ONE: Self = Self(BigInt::<4>([884452912994769583, 4834901526196019579, 0, 4294967295]));
+
     pub(super) fn to_repressentation(mut self) -> Self {
         unsafe {
             u256::mul_assign_montgomery::<ScalarParams>(&mut self.0, R2.assume_init_ref());
@@ -49,7 +53,7 @@ impl Scalar {
         self
     }
 
-    pub(super) fn reduce_be_bytes(bytes: &[u8; 32]) -> Self {
+    pub(crate) fn reduce_be_bytes(bytes: &[u8; 32]) -> Self {
         Self::from_be_bytes_unchecked(bytes).to_repressentation()
     }
 

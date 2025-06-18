@@ -21,9 +21,6 @@ const R2: [u64; 4] = [3, 18446744056529682431, 18446744073709551614, 21474836477
 const REDUCTION_CONST: [u64; 4] = [1, 4294967296, 0, 18446744069414584322];
 
 impl FieldElement {
-    pub(super) const ZERO: Self = Self::from_words_unchecked([0; 4]);
-    // montgomerry form
-    pub(super) const ONE: Self = Self::from_words_unchecked([1, 18446744069414584320, 18446744073709551615, 4294967294]);
     // montgomerry form
     pub(super) const HALF: Self = Self::from_words_unchecked([0, 0, 0, 9223372036854775808]);
     // montgomerry form
