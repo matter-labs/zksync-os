@@ -12,26 +12,8 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::result_unit_err)]
-#![allow(clippy::double_must_use)]
 #![allow(clippy::explicit_auto_deref)]
 
 extern crate alloc;
 
 pub mod common_structs;
-pub mod diffable;
-pub mod storage_model;
-
-/// Helper trait until type equalities on methods are available
-pub trait TyEq<T> {
-    fn rw(self) -> T;
-    fn rwi(x: T) -> Self;
-}
-
-impl<T> TyEq<T> for T {
-    fn rw(self) -> T {
-        self
-    }
-    fn rwi(x: T) -> Self {
-        x
-    }
-}

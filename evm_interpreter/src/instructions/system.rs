@@ -6,7 +6,7 @@ use zk_ee::memory::U256Builder;
 use zk_ee::system::errors::SystemFunctionError;
 use zk_ee::system::{EthereumLikeTypes, SystemFunctions};
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     const EMPTY_SLICE_SHA3: U256 = U256::from_limbs([
         0x7bfad8045d85a470,
         0xe500b653ca82273b,
@@ -26,10 +26,10 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         self.spend_gas_and_native(0, KECCAK256_NATIVE_COST)?;
 
         let hash = if len == 0 {
-            self.spend_gas(gas_constants::BASE)?;
+            self.spend_gas(gas_constants::SHA3)?;
             Self::EMPTY_SLICE_SHA3
         } else {
-            self.resize_heap(memory_offset, len, system)?;
+            self.resize_heap(memory_offset, len)?;
 
             let allocator = system.get_allocator();
             let input = &self.heap[memory_offset..(memory_offset + len)];
@@ -92,7 +92,8 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         }
 
         let memory_offset = maybe_memory_offset?;
-        self.resize_heap(memory_offset, len, system)?;
+        self.resize_heap(memory_offset, len)?;
+        self.resize_heap(memory_offset, len)?;
 
         // now follow logic of calldatacopy
         let source = maybe_src_offset
@@ -183,7 +184,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
             return Ok(());
         }
         let memory_offset = maybe_memory_offset?;
-        self.resize_heap(memory_offset, len, system)?;
+        self.resize_heap(memory_offset, len)?;
 
         let source = maybe_src_offset
             .and_then(|offset| self.calldata.get(offset..))
@@ -210,7 +211,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         self.stack.push_1(&U256::from(returndata_len as u64))
     }
 
-    pub fn returndatacopy(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn returndatacopy(&mut self) -> InstructionResult {
         let (memory_offset, source_offset, len) = self.stack.pop_3()?;
         let len = Self::cast_to_usize(len, ExitCode::InvalidOperandOOG)?;
         let maybe_memory_offset = Self::cast_to_usize(memory_offset, ExitCode::InvalidOperandOOG);
@@ -230,7 +231,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         }
 
         let memory_offset = maybe_memory_offset?;
-        self.resize_heap(memory_offset, len, system)?;
+        self.resize_heap(memory_offset, len)?;
 
         copy_and_zeropad_nonoverlapping(
             self.returndata.get(source_offset..).unwrap_or(&[]),

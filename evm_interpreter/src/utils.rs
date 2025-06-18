@@ -1,12 +1,11 @@
-use core::ops::Deref;
 use core::ops::DerefMut;
 
 use crate::*;
 use ruint::aliases::B160;
 use zk_ee::kv_markers::ExactSizeChain;
 use zk_ee::system::Ergs;
+use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system::Resources;
-use zk_ee::system::{EthereumLikeTypes, System};
 
 pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
     use crypto::sha3::{Digest, Keccak256};
@@ -17,7 +16,7 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
     result
 }
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     #[inline(always)]
     pub(crate) fn pop_address(&mut self) -> Result<B160, ExitCode> {
         let popped = self.stack.pop_1()?;
@@ -204,24 +203,18 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
     }
 
     pub(crate) fn calldata(&'_ self) -> &'_ [u8] {
-        self.calldata.deref()
+        self.calldata
     }
 
     pub(crate) fn heap(&'_ mut self) -> &'_ mut [u8] {
         self.heap.deref_mut()
     }
 
-    #[allow(dead_code)]
     pub(crate) fn returndata(&'_ self) -> &'_ [u8] {
-        self.returndata.deref()
+        self.returndata
     }
 
-    pub(crate) fn resize_heap(
-        &mut self,
-        offset: usize,
-        len: usize,
-        system: &mut System<S>,
-    ) -> Result<(), ExitCode> {
+    pub(crate) fn resize_heap(&mut self, offset: usize, len: usize) -> Result<(), ExitCode> {
         use native_resource_constants::*;
         let max_offset = offset.saturating_add(len);
         let multiple_of_32 = if max_offset > ((u32::MAX - 31) as usize) {
@@ -244,19 +237,9 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
             self.spend_gas_and_native(net_cost_gas, net_cost_native)?;
             self.gas_paid_for_heap_growth = end_cost;
 
-            // do the resize
-            // TODO: compiler is dumb here
-            let memory_subsystem = &mut system.memory;
-            let existing_heap = core::mem::replace(
-                &mut self.heap,
-                MemorySubsystem::empty_managed_region(memory_subsystem),
-            );
-            let Some(new_heap) =
-                MemorySubsystem::grow_heap(memory_subsystem, existing_heap, multiple_of_32)?
-            else {
-                return Err(ExitCode::MemoryOOG);
-            };
-            self.heap = new_heap;
+            self.heap
+                .resize(multiple_of_32, 0)
+                .map_err(|_| ExitCode::MemoryOOG)?;
         }
 
         Ok(())

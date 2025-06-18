@@ -1,5 +1,5 @@
 use crate::run::{LeafProof, ReadStorage, ReadStorageTree};
-use basic_system::system_implementation::io::TestingTree;
+use basic_system::system_implementation::flat_storage_model::TestingTree;
 use std::alloc::Global;
 use std::collections::HashMap;
 use zk_ee::utils::Bytes32;

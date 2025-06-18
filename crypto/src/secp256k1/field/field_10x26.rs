@@ -7,9 +7,6 @@ use super::mod_inv32::{ModInfo, Signed30};
 
 const MOD_INFO: ModInfo = ModInfo::new([-0x3D1, -4, 0, 0, 0, 0, 0, 0, 65536], 0x2DDACACF);
 
-#[cfg(all(target_pointer_width = "32", feature = "bigint_ops"))]
-use super::field_8x32::FieldElement8x32;
-
 #[derive(Clone, Copy)]
 pub struct FieldElement10x26(pub(super) [u32; 10]);
 

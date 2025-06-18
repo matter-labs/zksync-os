@@ -41,11 +41,11 @@ The basic [IO subsystem implementation](../../../basic_system/src/system_impleme
 
 - The main persistent storage slot-based storage, described later in this section.
 - The [transient storage](../../../storage_models/src/common_structs/generic_transient_storage.rs), a key-value map that is discarded after processing each transaction.
-- [Signal](../../../zk_ee/src/common_structs/messages_storage.rs) and [events](../../../zk_ee/src/common_structs/events_storage.rs) storages: two simple stack-based rollbackable storages. They are initialized empty for each block and dumped in full at block finalization into the block result.
+- [Logs](../../../zk_ee/src/common_structs/logs_storage.rs) and [events](../../../zk_ee/src/common_structs/events_storage.rs) storages: two simple rollbackable storages. They are initialized empty for each block and dumped in full at block finalization into the block result.
 
 The basic implementation consist mostly on handling those four storages. We'll focus on the main storage, as the rest are quite straightforward.
 
-The main storage, implemented by [`FlatTreeWithAccountsUnderHashesStorageModel`](../../../basic_system/src/system_implementation/io/mod.rs), is composed of a Merkle tree and 3 caches for its data. The Merkle tree uses 32-byte keys (hash of (address,key)) and 32-byte values, and is described in details in [its own page](./tree.md). Initial reads into this tree are provided by an oracle, and verified as a batch at the end of the system run. The three caches are for storage (general storage slots), account properties and preimages. The use of the last two will become clear after the next section.
+The main storage, implemented by [`FlatTreeWithAccountsUnderHashesStorageModel`](../../../basic_system/src/system_implementation/flat_storage_model/mod.rs), is composed of a Merkle tree and 3 caches for its data. The Merkle tree uses 32-byte keys (hash of (address,key)) and 32-byte values, and is described in details in [its own page](./tree.md). Initial reads into this tree are provided by an oracle, and verified as a batch at the end of the system run. The three caches are for storage (general storage slots), account properties and preimages. The use of the last two will become clear after the next section.
 
 ### Storage model for accounts
 
@@ -53,17 +53,27 @@ Each account has the following properties:
 
 - Versioning data (EE, code version, deployment status, aux bitmasks),
 - Nonce,
-- Observable bytecode hash,
+- Base token balance,
 - Bytecode hash,
-- Token balance,
 - Bytecode length,
-- Artifact length (unused for now),
-- Observable bytecode length.
+- Observable bytecode hash,
+- Observable bytecode length,
+- Artifacts length (unused for now).
 
-The precise serialization layout for this information can be found in the [implementation](../../../basic_system/src/system_implementation/io/account_cache_entry.rs).
+The precise serialization layout for this information can be found in the [implementation](../../../basic_system/src/system_implementation/flat_storage_model/account_cache_entry.rs).
 For a given address, its **properties aren't stored directly into the tree**. Instead, a hash of the properties is stored under at slot (`ACCOUNT_PROPERTIES_STORAGE_ADDRESS`, address).
 The preimage of this hash (i.e. the encoded properties) is initially read from the `preimages_source`, which is part of the oracle. `ACCOUNT_PROPERTIES_STORAGE_ADDRESS` is the address `0x8003`, and is just used to store these special properties hashes.
 
 During the execution of a block, accounts that are decommitted (i.e. read from the oracle verifying their hash) are cached in the account cache. At block finalization, the accounts in the account cache are hashed and inserted into the preimage cache. In turn, the preimages in the preimage cache (which include serialized accounts and bytecodes) are reported to the block's result and are included in the pubdata.
 
 The underlying implementation of the caches is described in the [Caches section](caches.md).
+
+### Finish method
+
+The [finish method](../../../basic_system/src/system_implementation/system/io_subsystem.rs) is the main method executed during block finalization.
+It has different implementations depending on whether it's a forward or proof run.
+
+For the forward run, we are just returning IO outputs(state diffs, events, messages) and pubdata to the caller(using result keeper).
+
+For the proof run we should validate reads, apply writes to the state commitment, and calculate pubdata commitment.
+Calculate and return public input using these and some other values.

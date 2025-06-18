@@ -1,5 +1,3 @@
-use super::Ergs;
-
 ///
 /// Possible errors raised by the system.
 ///
@@ -37,6 +35,16 @@ impl From<FatalError> for SystemError {
 impl From<InternalError> for FatalError {
     fn from(e: InternalError) -> Self {
         Self::Internal(e)
+    }
+}
+
+impl SystemError {
+    pub fn into_fatal(self) -> FatalError {
+        match self {
+            SystemError::Internal(e) => FatalError::Internal(e),
+            SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+            SystemError::OutOfErgs => unreachable!(),
+        }
     }
 }
 
@@ -95,29 +103,5 @@ impl From<InternalError> for UpdateQueryError {
 impl From<InternalError> for SystemFunctionError {
     fn from(e: InternalError) -> Self {
         SystemError::Internal(e).into()
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum CallPreparationError {
-    System(SystemError),
-    /// Call preparation failed because the caller doesn't have
-    /// enough resources for nominal token value transfer.
-    /// In EVM this is just a normal failing call, so we might
-    /// have to return the stipend back to the caller.
-    InsufficientBalance {
-        stipend: Option<Ergs>,
-    },
-}
-
-impl From<SystemError> for CallPreparationError {
-    fn from(e: SystemError) -> Self {
-        Self::System(e)
-    }
-}
-
-impl From<InternalError> for CallPreparationError {
-    fn from(e: InternalError) -> Self {
-        Self::System(e.into())
     }
 }

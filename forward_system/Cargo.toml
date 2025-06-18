@@ -12,6 +12,9 @@ categories.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# temporary for witgen
+zksync_os_runner = {path = "../zksync_os_runner"}
+oracle_provider = { path = "../oracle_provider" }
 zk_ee = { path = "../zk_ee", default-features = false }
 evm_interpreter = { path = "../evm_interpreter", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
@@ -31,5 +34,5 @@ bincode = "1.3"
 testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "basic_bootloader/testing", "hex"]
 default = ["testing"]
 no_print = []
-unlimited_native = []
-
+unlimited_native = ["basic_bootloader/unlimited_native"]
+evm-compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-compatibility"]

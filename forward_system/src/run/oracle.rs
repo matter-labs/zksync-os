@@ -1,5 +1,5 @@
 use crate::run::{NextTxResponse, PreimageSource, ReadStorageTree, TxSource};
-use basic_system::system_implementation::io::*;
+use basic_system::system_implementation::flat_storage_model::*;
 use serde::{Deserialize, Serialize};
 use zk_ee::common_structs::derive_flat_storage_key;
 use zk_ee::common_structs::BasicIOImplementerFSM;

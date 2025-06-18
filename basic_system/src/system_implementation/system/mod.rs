@@ -1,10 +1,9 @@
 //! Implementation of the system interface.
-use crate::system_implementation::io::FlatTreeWithAccountsUnderHashesStorageModel;
-use crate::system_implementation::io::*;
+use crate::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
+use crate::system_implementation::flat_storage_model::*;
 use crate::system_implementation::system::public_input::{
     BlocksOutput, BlocksPublicInput, ChainStateCommitment,
 };
-use crate::system_implementation::NopHasher;
 use core::alloc::Allocator;
 use errors::SystemError;
 use evm_interpreter::gas_constants::COLD_SLOAD_COST;
@@ -12,14 +11,13 @@ use evm_interpreter::gas_constants::SSTORE_RESET_EXTRA;
 use evm_interpreter::gas_constants::SSTORE_SET_EXTRA;
 use evm_interpreter::gas_constants::WARM_STORAGE_READ_COST;
 use evm_interpreter::ERGS_PER_GAS;
-use storage_models::common_structs::GenericPlainStorageRollbackData;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::EventContent;
 use zk_ee::common_structs::LogContent;
-use zk_ee::common_structs::TransientStorageValue;
 use zk_ee::common_structs::WarmStorageKey;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::utils::Bytes32;
+use zk_ee::utils::NopHasher;
 use zk_ee::{
     kv_markers::MAX_EVENT_TOPICS,
     memory::stack_trait::{StackCtor, StackCtorConst},
@@ -31,6 +29,8 @@ mod io_subsystem;
 mod public_input;
 
 pub use self::io_subsystem::*;
+pub use self::public_input::BatchOutput;
+pub use self::public_input::BatchPublicInput;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EthereumLikeStorageAccessCostModel;
@@ -40,14 +40,23 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         &self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
+        is_access_list: bool,
     ) -> Result<(), SystemError> {
         let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
+            ExecutionEnvironmentType::NoEE => {
+                // For access lists, EVM charges the full cost as many
+                // times as a slot is in the list.
+                if is_access_list {
+                    Ergs(1900 * ERGS_PER_GAS)
+                } else {
+                    Ergs::empty()
+                }
+            }
             ExecutionEnvironmentType::EVM => Ergs(WARM_STORAGE_READ_COST * ERGS_PER_GAS),
             _ => return Err(InternalError("Unsupported EE").into()),
         };
         let native = R::Native::from_computational(
-            crate::system_implementation::io::cost_constants::WARM_STORAGE_READ_NATIVE_COST,
+            crate::system_implementation::flat_storage_model::cost_constants::WARM_STORAGE_READ_NATIVE_COST,
         );
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }
@@ -67,11 +76,11 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         };
         let native = if is_new_slot {
             R::Native::from_computational(
-                crate::system_implementation::io::cost_constants::COLD_NEW_STORAGE_READ_NATIVE_COST,
+                crate::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_READ_NATIVE_COST,
             )
         } else {
             R::Native::from_computational(
-            crate::system_implementation::io::cost_constants::COLD_EXISTING_STORAGE_READ_NATIVE_COST,)
+            crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_READ_NATIVE_COST,)
         };
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }
@@ -114,23 +123,19 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         };
         let native = if is_new_slot {
             R::Native::from_computational(
-                crate::system_implementation::io::cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST,
+                crate::system_implementation::flat_storage_model::cost_constants::COLD_NEW_STORAGE_WRITE_EXTRA_NATIVE_COST,
             )
         } else {
             R::Native::from_computational(
-          crate::system_implementation::io::cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST,)
+          crate::system_implementation::flat_storage_model::cost_constants::COLD_EXISTING_STORAGE_WRITE_EXTRA_NATIVE_COST,)
         };
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }
 }
 
 pub type ExtraCheck<SCC: const StackCtorConst, A: Allocator> =
-    [[[[[[[[(); SCC::extra_const_param::<(EventContent<MAX_EVENT_TOPICS, A>, ()), A>()];
+    [[[[[[[(); SCC::extra_const_param::<(EventContent<MAX_EVENT_TOPICS, A>, ()), A>()];
         SCC::extra_const_param::<(LogContent<A>, u32), A>()];
-        SCC::extra_const_param::<
-            GenericPlainStorageRollbackData<WarmStorageKey, TransientStorageValue>,
-            A,
-        >()]; SCC::extra_const_param::<usize, A>()];
-        SCC::extra_const_param::<(usize, i32), A>()];
+        SCC::extra_const_param::<usize, A>()]; SCC::extra_const_param::<(usize, i32), A>()];
         SCC::extra_const_param::<CacheSnapshotId, A>()];
         SCC::extra_const_param::<Bytes32, A>()]; SCC::extra_const_param::<BitsOrd160, A>()];

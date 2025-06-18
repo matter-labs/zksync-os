@@ -29,6 +29,7 @@ pub use preimage_source::PreimageSource;
 
 use std::fs::File;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 pub use tx_result_callback::TxResultCallback;
 pub use tx_source::NextTxResponse;
 pub use tx_source::TxSource;
@@ -42,7 +43,8 @@ pub use self::output::TxOutput;
 use crate::run::output::TxResult;
 use crate::run::test_impl::{NoopTxCallback, TxListSource};
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;
-use basic_system::system_implementation::io::*;
+use basic_system::system_implementation::flat_storage_model::*;
+use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
 use zk_ee::system::errors::InternalError;
 pub use zk_ee::system::metadata::BlockMetadataFromOracle as BatchContext;
 
@@ -70,6 +72,36 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     Ok(result_keeper.into())
 }
 
+// TODO: we should run it on native arch and it should return pubdata and other outputs via result keeper
+pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
+    zk_os_program_path: PathBuf,
+    batch_context: BatchContext,
+    storage_commitment: StorageCommitment,
+    tree: T,
+    preimage_source: PS,
+    tx_source: TS,
+) -> Result<Vec<u32>, InternalError> {
+    let oracle = ForwardRunningOracle {
+        io_implementer_init_data: Some(io_implementer_init_data(Some(storage_commitment))),
+        block_metadata: batch_context,
+        tree,
+        preimage_source,
+        tx_source,
+        next_tx: None,
+    };
+    let oracle_wrapper = BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle);
+
+    let mut non_determinism_source = ZkEENonDeterminismSource::default();
+    non_determinism_source.add_external_processor(oracle_wrapper);
+
+    // We'll wrap the source, to collect all the reads.
+    let copy_source = ReadWitnessSource::new(non_determinism_source);
+    let items = copy_source.get_read_items();
+
+    let _proof_output = zksync_os_runner::run(zk_os_program_path, None, 1 << 30, copy_source);
+
+    Ok(std::rc::Rc::try_unwrap(items).unwrap().into_inner())
+}
 pub fn run_batch_with_oracle_dump<
     T: ReadStorageTree + Clone + serde::Serialize,
     PS: PreimageSource + Clone + serde::Serialize,
@@ -129,6 +161,8 @@ pub fn run_batch_from_oracle_dump<
 ///
 /// Simulate single transaction on top of given state.
 /// The validation step is skipped, fields that needed for validation can be empty(any).
+/// Note that, as the validation step is skipped, an internal error is returned
+/// if the sender does not have enough balance for the top-level call value transfer.
 ///
 /// Needed for `eth_call` and `eth_estimateGas`.
 ///
@@ -157,7 +191,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     CallSimulationBootloader::run_prepared::<BasicBootloaderCallSimulationConfig>(
         oracle,
         &mut result_keeper,
-    );
+    )?;
     let mut batch_output: BatchOutput = result_keeper.into();
     Ok(batch_output.tx_results.remove(0))
 }

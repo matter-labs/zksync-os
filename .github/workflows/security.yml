@@ -10,27 +10,25 @@ name: Check dependencies for security issues
 on:
   schedule:
     - cron: "0 0 * * *" # run at midnight
+permissions: read-all
 jobs:
-  audit:
-    runs-on: [matterlabs-ci-runner]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          rustflags: ""
-      - name: Setup dependencies
-        run: |
-          rustup set profile minimal
-          git config --global --add url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/".insteadOf https://github.com/
-          git config --global url."https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}@github.com".insteadOf ssh://git@github.com
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile
-      - name: Cargo audit check
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}
+  # TODO: requires token
+  # audit:
+  #   runs-on: [matterlabs-ci-runner]
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #     - name: Install Rust
+  #       uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         rustflags: ""
+  #     - name: Setup dependencies
+  #       run: |
+  #         rustup set profile minimal
+  #     - name: Generate Cargo.lock
+  #       run: cargo generate-lockfile
+  #     - name: Cargo audit check
+  #       uses: rustsec/audit-check@v2
   deny:
     runs-on: [matterlabs-ci-runner]
     steps:
@@ -41,4 +39,3 @@ jobs:
         with:
           log-level: error
           command: check bans licenses sources
-          credentials: https://${{ secrets.ZKSYNC_ADMIN_BOT_ORG_REPO_WRITE }}:x-oauth-basic@github.com/

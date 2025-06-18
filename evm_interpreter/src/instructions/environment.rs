@@ -1,7 +1,7 @@
 use super::*;
 use native_resource_constants::*;
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn chainid(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, CHAINID_NATIVE_COST)?;
         let result = U256::from(system.get_chain_id());
@@ -31,7 +31,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
 
     pub fn difficulty(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, DIFFICULTY_NATIVE_COST)?;
-        self.stack.push_1(&U256::zero())?;
+        self.stack.push_1(&U256::one())?;
         Ok(())
     }
 
@@ -78,8 +78,6 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         Ok(())
     }
 
-    #[cfg(feature = "mock-eip-4844")]
-    // Mocked for tests
     pub fn blobhash(&mut self, _system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, 40)?;
         self.stack.stack_reduce_one()?;
@@ -88,8 +86,6 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         Ok(())
     }
 
-    #[cfg(feature = "mock-eip-4844")]
-    // Mocked for tests
     pub fn blobbasefee(&mut self, _system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, 40)?;
         self.stack.push_1(&U256::one())

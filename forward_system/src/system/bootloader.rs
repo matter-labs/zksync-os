@@ -19,6 +19,8 @@ pub fn run_forward<
 ) {
     crypto::init_lib();
     ::u256::init();
-
-    let _oracle = ForwardBootloader::run_prepared::<Config>(oracle, result_keeper);
+    
+    if let Err(err) = ForwardBootloader::run_prepared::<Config>(oracle, result_keeper) {
+        panic!("Forward run failed with: {:?}", err)
+    };
 }

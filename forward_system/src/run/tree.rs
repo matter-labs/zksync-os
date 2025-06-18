@@ -1,5 +1,5 @@
-use basic_system::system_implementation::io::LeafProof as GenericLeafProof;
-use basic_system::system_implementation::io::*;
+use basic_system::system_implementation::flat_storage_model::LeafProof as GenericLeafProof;
+use basic_system::system_implementation::flat_storage_model::*;
 use zk_ee::utils::Bytes32;
 
 pub type LeafProof = GenericLeafProof<TREE_HEIGHT, Blake2sStorageHasher>;

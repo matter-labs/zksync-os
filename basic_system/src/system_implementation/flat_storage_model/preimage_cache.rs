@@ -1,7 +1,6 @@
 use alloc::{alloc::Global, collections::BTreeMap};
 use core::{alloc::Allocator, marker::PhantomData};
-use crypto::MiniDigest;
-use storage_models::common_structs::PreimageCacheModel;
+use storage_models::common_structs::{snapshottable_io::SnapshottableIo, PreimageCacheModel};
 use zk_ee::{
     common_structs::{history_map::CacheSnapshotId, NewPreimagesPublicationStorage, PreimageType},
     execution_environment_type::ExecutionEnvironmentType,
@@ -14,7 +13,7 @@ use zk_ee::{
     utils::{Bytes32, UsizeAlignedByteBox},
 };
 
-use crate::system_implementation::io::cost_constants::{
+use crate::system_implementation::flat_storage_model::cost_constants::{
     BLAKE2S_BASE_NATIVE_COST, BLAKE2S_CHUNK_SIZE, BLAKE2S_ROUND_NATIVE_COST,
 };
 
@@ -47,27 +46,9 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
     }
 
     pub fn report_new_preimages(
-        self,
+        &self,
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
-        pubdata_hasher: &mut impl MiniDigest,
     ) -> Result<(), InternalError> {
-        // pubdata
-        // TODO: compressed (especially for accounts preaimages)
-        let encdoded_count =
-            (self.publication_storage.net_diffs_iter().count() as u32).to_be_bytes();
-        pubdata_hasher.update(&encdoded_count);
-        result_keeper.pubdata(&encdoded_count);
-        for x in self.publication_storage.net_diffs_iter() {
-            let preimage = self
-                .storage
-                .get(x.key())
-                .expect("preimage from publication storage must be known");
-
-            pubdata_hasher.update(preimage.as_slice());
-            result_keeper.pubdata(preimage.as_slice());
-        }
-
-        // preimages separately for sequencer
         result_keeper.new_preimages(self.publication_storage.net_diffs_iter().map(|x| {
             let preimage = self
                 .storage
@@ -77,7 +58,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             (
                 x.key(),
                 preimage.as_slice(),
-                x.current().value.preimage_type,
+                x.current().value().preimage_type,
             )
         }));
 
@@ -230,20 +211,6 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
 {
     type Resources = R;
     type PreimageRequest = PreimageRequest;
-    type TxStats = i32;
-    type StateSnapshot = CacheSnapshotId;
-
-    fn begin_new_tx(&mut self) {
-        self.publication_storage.begin_new_tx();
-    }
-
-    fn start_frame(&mut self) -> Self::StateSnapshot {
-        self.publication_storage.start_frame()
-    }
-
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
-        self.publication_storage.finish_frame(rollback_handle);
-    }
 
     fn get_preimage<const PROOF_ENV: bool>(
         &mut self,
@@ -278,7 +245,7 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
         resources: &mut Self::Resources,
         preimage: &[u8],
     ) -> Result<&'static [u8], SystemError> {
-        use crate::system_implementation::io::cost_constants::PREIMAGE_CACHE_SET_NATIVE_COST;
+        use crate::system_implementation::flat_storage_model::cost_constants::PREIMAGE_CACHE_SET_NATIVE_COST;
         use zk_ee::system::Computational;
         // we will NOT charge ergs for preimages in here, but instead higher-level model should do it
         resources.charge(&R::from_native(R::Native::from_computational(
@@ -296,8 +263,25 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
         assert_eq!(*expected_preimage_len_in_bytes, preimage.len() as u32);
         self.insert_verified_preimage(*preimage_type, hash, boxed_data)
     }
+}
 
-    fn tx_stats(&self) -> Self::TxStats {
-        todo!()
+impl<R: Resources, A: Allocator + Clone> SnapshottableIo
+    for BytecodeAndAccountDataPreimagesStorage<R, A>
+{
+    type StateSnapshot = CacheSnapshotId;
+
+    fn begin_new_tx(&mut self) {
+        self.publication_storage.begin_new_tx();
+    }
+
+    fn start_frame(&mut self) -> Self::StateSnapshot {
+        self.publication_storage.start_frame()
+    }
+
+    fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&Self::StateSnapshot>,
+    ) -> Result<(), InternalError> {
+        self.publication_storage.finish_frame(rollback_handle)
     }
 }

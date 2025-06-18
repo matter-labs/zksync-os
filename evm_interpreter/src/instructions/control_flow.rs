@@ -1,7 +1,7 @@
 use super::*;
 use native_resource_constants::*;
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn jump(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::MID, JUMP_NATIVE_COST)?;
         let dest = self.stack.pop_1()?;
@@ -40,7 +40,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         Ok(())
     }
 
-    pub fn ret(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn ret(&mut self) -> InstructionResult {
         self.spend_gas_and_native(0, RETURN_NATIVE_COST)?;
         let (offset, len) = self.stack.pop_2()?;
         let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
@@ -48,7 +48,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
             self.returndata_location = 0..0;
         } else {
             let offset = Self::cast_to_usize(&offset, ExitCode::InvalidOperandOOG)?;
-            self.resize_heap(offset, len, system)?;
+            self.resize_heap(offset, len)?;
             let (end, of) = offset.overflowing_add(len);
             if of {
                 return Err(ExitCode::InvalidOperandOOG);
@@ -58,7 +58,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         Err(ExitCode::Return)
     }
 
-    pub fn revert(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn revert(&mut self) -> InstructionResult {
         self.spend_gas_and_native(0, REVERT_NATIVE_COST)?;
         let (offset, len) = self.stack.pop_2()?;
         let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
@@ -66,7 +66,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
             self.returndata_location = 0..0;
         } else {
             let offset = Self::cast_to_usize(&offset, ExitCode::InvalidOperandOOG)?;
-            self.resize_heap(offset, len, system)?;
+            self.resize_heap(offset, len)?;
             let (end, of) = offset.overflowing_add(len);
             if of {
                 return Err(ExitCode::InvalidOperandOOG);

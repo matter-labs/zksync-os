@@ -2,7 +2,7 @@ use super::*;
 use crate::u256::*;
 use native_resource_constants::*;
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn wrapped_add(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, ADD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
