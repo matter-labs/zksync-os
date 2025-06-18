@@ -2,6 +2,7 @@ use core::hint::assert_unchecked;
 use core::iter::Extend;
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ops::{Deref, DerefMut};
+use core::ptr;
 
 #[derive(Default)]
 pub struct SliceVec<'a, T> {
@@ -85,9 +86,7 @@ impl<T: Clone> SliceVec<'_, T> {
         if new_length < self.length {
             unsafe {
                 assert_unchecked(self.length <= self.memory.len());
-                for x in &mut self.memory[new_length..self.length] {
-                    x.assume_init_drop();
-                }
+                ptr::drop_in_place(&mut self.memory[new_length..self.length]);
             }
         }
         self.length = new_length;
