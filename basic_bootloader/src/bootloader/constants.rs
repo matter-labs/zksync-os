@@ -1,5 +1,6 @@
+use ::u256::U256;
 use evm_interpreter::ERGS_PER_GAS;
-use ruint::aliases::{B160, U256};
+use ruint::aliases::B160;
 
 pub const SPECIAL_ADDRESS_SPACE_BOUND: u64 = 0x010000;
 pub const SPECIAL_ADDRESS_TO_WASM_DEPLOY: B160 = B160::from_limbs([0x9000, 0, 0]);

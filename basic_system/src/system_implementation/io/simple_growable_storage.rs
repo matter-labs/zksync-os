@@ -1843,7 +1843,7 @@ mod test {
     }
 
     fn to_be_bytes(value: u64) -> Bytes32 {
-        Bytes32::from_u256_be(U256::try_from(value).unwrap())
+        Bytes32::from_ruint_u256_be(&U256::from(value))
     }
 
     #[test]

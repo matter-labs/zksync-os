@@ -17,5 +17,8 @@ pub fn run_forward<
     oracle: ForwardRunningOracle<T, PS, TS>,
     result_keeper: &mut impl ResultKeeperExt,
 ) {
+    crypto::init_lib();
+    ::u256::init();
+
     let _oracle = ForwardBootloader::run_prepared::<Config>(oracle, result_keeper);
 }

@@ -8,25 +8,6 @@ use zk_ee::system::Ergs;
 use zk_ee::system::Resources;
 use zk_ee::system::{EthereumLikeTypes, System};
 
-#[inline(always)]
-unsafe fn assume(cond: bool) {
-    if !cond {
-        core::hint::unreachable_unchecked()
-    }
-}
-
-pub fn bytereverse_u256(value: &mut U256) {
-    // assuming LE
-    unsafe {
-        let limbs = value.as_limbs_mut();
-        core::ptr::swap(&mut limbs[0] as *mut u64, &mut limbs[3] as *mut u64);
-        core::ptr::swap(&mut limbs[1] as *mut u64, &mut limbs[2] as *mut u64);
-        for limb in limbs.iter_mut() {
-            *limb = limb.to_be();
-        }
-    }
-}
-
 pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
     use crypto::sha3::{Digest, Keccak256};
     let hash = Keccak256::digest(bytecode);
@@ -38,151 +19,153 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
 
 impl<S: EthereumLikeTypes> Interpreter<S> {
     #[inline(always)]
-    pub(crate) fn pop_addresses<const N: usize>(&mut self) -> Result<[B160; N], ExitCode> {
-        let len = self.stack.len();
-        if len < N {
-            return Err(ExitCode::StackUnderflow);
-        }
-        unsafe {
-            let values =
-                core::array::from_fn(|_| u256_to_b160(self.stack.pop().unwrap_unchecked()));
+    pub(crate) fn pop_address(&mut self) -> Result<B160, ExitCode> {
+        let popped = self.stack.pop_1()?;
 
-            Ok(values)
-        }
+        Ok(u256_limbs_to_b160(popped.as_limbs()))
     }
+
+    // #[inline(always)]
+    // pub(crate) fn pop_addresses<const N: usize>(&mut self) -> Result<[B160; N], ExitCode> {
+    //     let len = self.stack.len();
+    //     if len < N {
+    //         return Err(ExitCode::StackUnderflow);
+    //     }
+    //     unsafe {
+    //         let values =
+    //             core::array::from_fn(|_| u256_to_b160(self.stack.pop().unwrap_unchecked()));
+
+    //         Ok(values)
+    //     }
+    // }
+
+    // #[inline(always)]
+    // pub(crate) fn push_values<const N: usize>(
+    //     &mut self,
+    //     values: &[U256; N],
+    // ) -> Result<(), ExitCode> {
+    //     if self.stack.len() + N > STACK_SIZE {
+    //         return Err(ExitCode::StackOverflow);
+    //     }
+    //     unsafe {
+    //         assume(self.stack.capacity() == STACK_SIZE);
+    //     }
+    //     self.stack.extend_from_slice(values);
+    //     Ok(())
+    // }
+
+    // #[inline(always)]
+    // pub(crate) fn stack_push_one(&mut self, value: U256) -> Result<(), ExitCode> {
+    //     unsafe {
+    //         assume(self.stack.capacity() == STACK_SIZE);
+    //     }
+    //     if self.stack.push_within_capacity(value).is_err() {
+    //         return Err(ExitCode::StackOverflow);
+    //     }
+
+    //     Ok(())
+    // }
+
+    // #[inline(always)]
+    // pub(crate) fn pop_values<const N: usize>(&mut self) -> Result<[U256; N], ExitCode> {
+    //     let len = self.stack.len();
+    //     if len < N {
+    //         return Err(ExitCode::StackUnderflow);
+    //     }
+    //     unsafe {
+    //         let values = core::array::from_fn(|_| self.stack.pop().unwrap_unchecked());
+
+    //         Ok(values)
+    //     }
+    // }
+
+    // #[inline(always)]
+    // pub(crate) fn pop_values_and_peek<const N: usize>(
+    //     &mut self,
+    // ) -> Result<([U256; N], &mut U256), ExitCode> {
+    //     let len = self.stack.len();
+    //     if len < N + 1 {
+    //         return Err(ExitCode::StackUnderflow);
+    //     }
+    //     unsafe {
+    //         let values = core::array::from_fn(|_| self.stack.pop().unwrap_unchecked());
+    //         let idx = self.stack.len() - 1;
+    //         Ok((values, self.stack.get_unchecked_mut(idx)))
+    //     }
+    // }
+
+    // #[inline(always)]
+    // pub(crate) fn stack_swap(&mut self, n: usize) -> Result<(), ExitCode> {
+    //     unsafe {
+    //         assume(self.stack.capacity() == STACK_SIZE);
+    //     }
+    //     let len = self.stack.len();
+    //     let src_offset = if len == 0 {
+    //         return Err(ExitCode::StackUnderflow);
+    //     } else {
+    //         len - 1
+    //     };
+    //     let dst_offset = if n > src_offset {
+    //         return Err(ExitCode::StackUnderflow);
+    //     } else {
+    //         src_offset - n
+    //     };
+    //     unsafe {
+    //         self.stack.swap_unchecked(src_offset, dst_offset);
+    //     }
+
+    //     Ok(())
+    // }
+
+    // #[inline(always)]
+    // pub(crate) fn stack_dup(&mut self, n: usize) -> Result<(), ExitCode> {
+    //     if self.stack.len() == STACK_SIZE {
+    //         return Err(ExitCode::StackOverflow);
+    //     }
+    //     unsafe {
+    //         assume(self.stack.capacity() == STACK_SIZE);
+    //     }
+    //     let len = self.stack.len();
+    //     let offset = if n > len {
+    //         return Err(ExitCode::StackUnderflow);
+    //     } else {
+    //         len - n
+    //     };
+
+    //     let value = unsafe { *self.stack.get_unchecked(offset) };
+    //     unsafe {
+    //         assume(self.stack.len() < self.stack.capacity());
+    //     }
+    //     self.stack.push(value);
+
+    //     Ok(())
+    // }
+
+    // #[inline(always)]
+    // pub(crate) fn stack_reduce_one(&mut self) -> Result<(), ExitCode> {
+    //     unsafe {
+    //         assume(self.stack.capacity() == STACK_SIZE);
+    //     }
+    //     let len = self.stack.len();
+    //     if len == 0 {
+    //         Err(ExitCode::StackUnderflow)
+    //     } else {
+    //         unsafe {
+    //             self.stack.set_len(len - 1);
+    //         }
+
+    //         Ok(())
+    //     }
+    // }
 
     #[inline(always)]
-    pub(crate) fn push_values<const N: usize>(
-        &mut self,
-        values: &[U256; N],
-    ) -> Result<(), ExitCode> {
-        if self.stack.len() + N > STACK_SIZE {
-            return Err(ExitCode::StackOverflow);
-        }
-        unsafe {
-            assume(self.stack.capacity() == STACK_SIZE);
-        }
-        self.stack.extend_from_slice(values);
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn stack_push_one(&mut self, value: U256) -> Result<(), ExitCode> {
-        unsafe {
-            assume(self.stack.capacity() == STACK_SIZE);
-        }
-        if self.stack.push_within_capacity(value).is_err() {
-            return Err(ExitCode::StackOverflow);
-        }
-
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn pop_values<const N: usize>(&mut self) -> Result<[U256; N], ExitCode> {
-        let len = self.stack.len();
-        if len < N {
-            return Err(ExitCode::StackUnderflow);
-        }
-        unsafe {
-            let values = core::array::from_fn(|_| self.stack.pop().unwrap_unchecked());
-
-            Ok(values)
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn pop_values_and_peek<const N: usize>(
-        &mut self,
-    ) -> Result<([U256; N], &mut U256), ExitCode> {
-        let len = self.stack.len();
-        if len < N + 1 {
-            return Err(ExitCode::StackUnderflow);
-        }
-        unsafe {
-            let values = core::array::from_fn(|_| self.stack.pop().unwrap_unchecked());
-            let idx = self.stack.len() - 1;
-            Ok((values, self.stack.get_unchecked_mut(idx)))
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn stack_swap(&mut self, n: usize) -> Result<(), ExitCode> {
-        unsafe {
-            assume(self.stack.capacity() == STACK_SIZE);
-        }
-        let len = self.stack.len();
-        let src_offset = if len == 0 {
-            return Err(ExitCode::StackUnderflow);
-        } else {
-            len - 1
-        };
-        let dst_offset = if n > src_offset {
-            return Err(ExitCode::StackUnderflow);
-        } else {
-            src_offset - n
-        };
-        unsafe {
-            self.stack.swap_unchecked(src_offset, dst_offset);
-        }
-
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn stack_dup(&mut self, n: usize) -> Result<(), ExitCode> {
-        if self.stack.len() == STACK_SIZE {
-            return Err(ExitCode::StackOverflow);
-        }
-        unsafe {
-            assume(self.stack.capacity() == STACK_SIZE);
-        }
-        let len = self.stack.len();
-        let offset = if n > len {
-            return Err(ExitCode::StackUnderflow);
-        } else {
-            len - n
-        };
-
-        let value = unsafe { *self.stack.get_unchecked(offset) };
-        unsafe {
-            assume(self.stack.len() < self.stack.capacity());
-        }
-        self.stack.push(value);
-
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn stack_reduce_one(&mut self) -> Result<(), ExitCode> {
-        unsafe {
-            assume(self.stack.capacity() == STACK_SIZE);
-        }
-        let len = self.stack.len();
-        if len == 0 {
-            Err(ExitCode::StackUnderflow)
-        } else {
-            unsafe {
-                self.stack.set_len(len - 1);
-            }
-
-            Ok(())
-        }
-    }
-
-    #[inline]
-    pub(crate) fn cast_to_usize(
-        &mut self,
-        src: &U256,
-        error_to_set: ExitCode,
-    ) -> Result<usize, ExitCode> {
+    pub(crate) fn cast_to_usize(src: &U256, error_to_set: ExitCode) -> Result<usize, ExitCode> {
         u256_try_to_usize(src).ok_or(error_to_set)
     }
 
     /// Helper for casting memory offset and length.
     /// If len is zero, offset is ignored.
     pub(crate) fn cast_offset_and_len(
-        &mut self,
         offset: &U256,
         len: &U256,
         error_to_set: ExitCode,
@@ -190,8 +173,8 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         if len.is_zero() {
             Ok((0, 0))
         } else {
-            let offset = self.cast_to_usize(offset, error_to_set)?;
-            let len = self.cast_to_usize(len, error_to_set)?;
+            let offset = Self::cast_to_usize(offset, error_to_set)?;
+            let len = Self::cast_to_usize(len, error_to_set)?;
             Ok((offset, len))
         }
     }

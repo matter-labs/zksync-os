@@ -329,7 +329,8 @@ fn encode_tx(
     // we are using aa abi just for easier encoding implementation
     let path = format!(
         "{}tests/contracts_sol/c_aa/out/IAccount.abi.json",
-        PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
+        PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap_or("../../../".to_string()))
+            // PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
             .as_os_str()
             .to_str()
             .unwrap()

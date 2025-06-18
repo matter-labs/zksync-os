@@ -4,21 +4,21 @@ use native_resource_constants::*;
 impl<S: EthereumLikeTypes> Interpreter<S> {
     pub fn pop(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, POP_NATIVE_COST)?;
-        self.stack_reduce_one()
+        self.stack.stack_reduce_one()
     }
 
     /// Introduce a new instruction which pushes the constant value 0 onto the stack
     pub fn push0(&mut self) -> InstructionResult {
         // EIP-3855: PUSH0 instruction
         self.spend_gas_and_native(gas_constants::BASE, PUSH0_NATIVE_COST)?;
-        self.stack_push_one(U256::ZERO)
+        self.stack.push_zero()
     }
 
     pub fn push<const N: usize>(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
         let start = self.instruction_pointer;
 
-        let mut value = U256::ZERO;
+        let mut value = U256::zero();
 
         match self.bytecode.as_ref().get(start) {
             Some(src) => {
@@ -32,8 +32,8 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
                         to_copy,
                     );
                 }
-                crate::utils::bytereverse_u256(&mut value);
-                value >>= (32 - N) * 8;
+                value.bytereverse();
+                core::ops::ShrAssign::shr_assign(&mut value, ((32 - N) * 8) as u32);
             }
             None => {
                 // start is out of bounds of the bytecode buffer,
@@ -42,16 +42,16 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         }
 
         self.instruction_pointer += N;
-        self.stack_push_one(value)
+        self.stack.push_1(&value)
     }
 
     pub fn dup<const N: usize>(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, DUP_NATIVE_COST)?;
-        self.stack_dup(N)
+        self.stack.stack_dup(N)
     }
 
     pub fn swap<const N: usize>(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, SWAP_NATIVE_COST)?;
-        self.stack_swap(N)
+        self.stack.stack_swap(N)
     }
 }

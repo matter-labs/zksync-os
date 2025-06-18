@@ -21,8 +21,8 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut CS,
         transaction: &mut ZkSyncTransaction<'static>,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
+        tx_hash: &Bytes32,
+        suggested_signed_hash: &Bytes32,
         paymaster: B160,
         _caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
@@ -151,12 +151,12 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         // Ok(())
     }
 
-    #[allow(dead_code)]
-    fn length_rounded_by_words(len: U256) -> Option<U256> {
-        let c32 = U256::from(32);
-        let needed_words = len.overflowing_add(U256::from(31)).0.wrapping_div(c32);
-        needed_words.checked_mul(c32)
-    }
+    // #[allow(dead_code)]
+    // fn length_rounded_by_words(mut len: U256) -> Option<U256> {
+    //     let c32 = U256::from(32);
+    //     let needed_words = len.overflowing_add(U256::from(31)).0.wrapping_div(c32);
+    //     needed_words.checked_mul(c32)
+    // }
 
     /// Returns if the transaction succeeded.
     #[allow(clippy::too_many_arguments)]
@@ -169,12 +169,12 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _callstack: &mut CS,
         _transaction: &mut ZkSyncTransaction<'static>,
-        _tx_hash: Bytes32,
-        _suggested_signed_hash: Bytes32,
+        _tx_hash: &Bytes32,
+        _suggested_signed_hash: &Bytes32,
         _success: bool,
         _max_refunded_gas: u64,
         _paymaster: B160,
-        _gas_per_pubdata: U256,
+        _gas_per_pubdata: &U256,
         _validation_pubdata: u64,
         _resources: &mut S::Resources,
     ) -> Result<bool, FatalError>
@@ -301,8 +301,8 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         pre_tx_buffer: &mut [u8],
         calldata_start: usize,
         selector: &[u8],
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
+        tx_hash: &Bytes32,
+        suggested_signed_hash: &Bytes32,
     ) {
         // Write selector
         pre_tx_buffer[calldata_start..(calldata_start + 4)].copy_from_slice(selector);
@@ -317,7 +317,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         // Write offset
         let offset_start = signed_start + U256::BYTES;
         pre_tx_buffer[offset_start..(offset_start + U256::BYTES)]
-            .copy_from_slice(U256::to_be_bytes::<32>(&U256::from(TX_CALLDATA_OFFSET)).as_ref());
+            .copy_from_slice(U256::to_be_bytes(&U256::from(TX_CALLDATA_OFFSET as u64)).as_ref());
     }
 
     /// Used to call a method with the following signature;
@@ -333,8 +333,8 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         system_functions: &mut HooksStorage<S, S::Allocator>,
         callstack: &mut CS,
         transaction: &mut ZkSyncTransaction<'static>,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
+        tx_hash: &Bytes32,
+        suggested_signed_hash: &Bytes32,
         from: B160,
         selector: &[u8],
         resources: &mut S::Resources,

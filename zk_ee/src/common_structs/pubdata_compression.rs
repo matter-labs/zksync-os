@@ -2,7 +2,7 @@ use crate::utils::*;
 use ruint::aliases::B160;
 
 // we can empty 2 compression strategies
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CompressionStrategy {
     Add,
     Sub,
@@ -16,9 +16,8 @@ impl CompressionStrategy {
     pub fn output_num_bytes(&self, initial_value: &Bytes32, final_value: &Bytes32) -> u8 {
         match self {
             Self::Add => {
-                let (result, of) = initial_value
-                    .into_u256_be()
-                    .overflowing_add(final_value.into_u256_be());
+                let mut result = initial_value.into_u256_be();
+                let of = result.overflowing_add_assign(&final_value.into_u256_be());
                 if of {
                     32
                 } else {
@@ -26,9 +25,8 @@ impl CompressionStrategy {
                 }
             }
             Self::Sub => {
-                let (result, of) = initial_value
-                    .into_u256_be()
-                    .overflowing_sub(final_value.into_u256_be());
+                let mut result = initial_value.into_u256_be();
+                let of = result.overflowing_sub_assign(&final_value.into_u256_be());
                 if of {
                     32
                 } else {

@@ -1,8 +1,9 @@
+use ::u256::U256;
 use alloc::vec::Vec;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
 use evm_interpreter::ERGS_PER_GAS;
 use result_keeper::ResultKeeperExt;
-use ruint::aliases::*;
+use ruint::aliases::B160;
 use supported_ees::SupportedEEVMState;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -375,7 +376,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let base_fee_per_gas = system.get_eip1559_basefee();
         // TODO: we need place for gas_per_pubdata
         let block_header = BlockHeader::new(
-            Bytes32::from(previous_block_hash.to_be_bytes::<32>()),
+            Bytes32::from(previous_block_hash.to_be_bytes()),
             beneficiary,
             tx_rolling_hash.into(),
             block_number,

@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 #![feature(array_chunks)]
 #![allow(static_mut_refs)]
+#![feature(ptr_as_ref_unchecked)]
 #![allow(clippy::uninit_assumed_init)]
 #![allow(clippy::new_without_default)]
 
@@ -29,6 +30,8 @@ pub use ark_ec;
 pub use ark_ff;
 pub use ark_serialize;
 
+pub mod bigint_riscv;
+
 pub fn init_lib() {
     #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
     {
@@ -36,6 +39,7 @@ pub fn init_lib() {
         bls12_381::fields::init();
         secp256k1::init();
         bigint_delegation::init();
+        bigint_riscv::init(); // TODO merge with bigint_delegation
     }
 }
 

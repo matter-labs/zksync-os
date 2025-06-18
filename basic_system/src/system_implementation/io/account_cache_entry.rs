@@ -1,5 +1,5 @@
+use ::u256::U256;
 use core::mem::MaybeUninit;
-use ruint::aliases::U256;
 use zk_ee::common_structs::history_map::{Appearance, CacheSnapshot};
 use zk_ee::common_structs::CompressionStrategy;
 use zk_ee::system::errors::InternalError;
@@ -115,8 +115,7 @@ impl AccountPropertiesMetadata {
 ///
 /// *
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(C)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AccountProperties {
     pub versioning_data: VersioningData<DEFAULT_ADDRESS_SPECIFIC_IMMUTABLE_DATA_VERSION>,
     pub nonce: u64,
@@ -179,6 +178,16 @@ impl AccountProperties {
         }
     }
 
+    // We define the following stable order of encoding sequence:
+    // - versioning_data
+    // - nonce
+    // - observable_bytecode_hash
+    // - bytecode_hash
+    // - nominal_token_balance
+    // - bytecode_len
+    // - artifacts_len
+    // - observable_bytecode_len
+
     pub fn decode(input: [u8; Self::ENCODED_SIZE]) -> Result<Self, InternalError> {
         // TODO: check invariants if needed
         // TODO: just walk over ptr
@@ -220,7 +229,7 @@ impl AccountProperties {
         copy(self.observable_bytecode_hash.as_u8_ref(), &mut buffer);
         copy(self.bytecode_hash.as_u8_ref(), &mut buffer);
         copy(
-            Bytes32::from_u256_be(self.nominal_token_balance).as_u8_ref(),
+            Bytes32::from_u256_be(&self.nominal_token_balance).as_u8_ref(),
             &mut buffer,
         );
         copy(&self.bytecode_len.to_le_bytes(), &mut buffer);
@@ -237,16 +246,23 @@ type Snapshot = CacheSnapshot<AccountProperties, AccountPropertiesMetadata>;
 
 pub(crate) fn diff(left: &Snapshot, right: &Snapshot) -> AddressDataDiff {
     fn balance_diff(left: &Snapshot, right: &Snapshot) -> Option<AddressDataDiffBalance> {
-        let lv = left.value.nominal_token_balance;
-        let rv = right.value.nominal_token_balance;
+        let lv = &left.value.nominal_token_balance;
+        let rv = &right.value.nominal_token_balance;
 
-        let (diff, op) = match lv.cmp(&rv) {
-            core::cmp::Ordering::Less => (rv - lv, CompressionStrategy::Add),
-            core::cmp::Ordering::Greater => (lv - rv, CompressionStrategy::Sub),
-            core::cmp::Ordering::Equal => (U256::ZERO, CompressionStrategy::Add),
-        };
+        let op;
+        let mut diff = lv.clone();
+        let uf = diff.overflowing_sub_assign(rv);
+        if uf == false {
+            // no underflow
+            op = CompressionStrategy::Sub;
+        } else {
+            Clone::clone_from(&mut diff, rv);
+            let uf = diff.overflowing_sub_assign(lv);
+            assert!(uf == false);
+            op = CompressionStrategy::Add;
+        }
 
-        if diff == U256::ZERO {
+        if diff.is_zero() {
             return None;
         }
 

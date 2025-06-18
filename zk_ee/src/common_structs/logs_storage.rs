@@ -13,7 +13,7 @@ use alloc::alloc::Global;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
-use ruint::aliases::U256;
+use u256::U256;
 
 use super::history_list::HistoryList;
 
@@ -134,7 +134,7 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
                 success: l.success,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
-                address: *m.address,
+                address: m.address.clone(),
                 data: UsizeAlignedByteBox::from_slice_in(m.data, allocator),
                 data_hash: *m.data_hash,
             }),
@@ -352,12 +352,19 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
                 address.into(),
                 data_hash,
             ),
-            GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => (
-                // TODO: move into const
-                B160::from_limbs([0x8001, 0, 0]),
-                tx_hash,
-                Bytes32::from_u256_be(if success { U256::from(1) } else { U256::ZERO }),
-            ),
+            GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => {
+                let value = if success {
+                    &U256::from(1u64)
+                } else {
+                    &U256::zero()
+                };
+                (
+                    // TODO: move into const
+                    B160::from_limbs([0x8001, 0, 0]),
+                    tx_hash,
+                    Bytes32::from_u256_be(value),
+                )
+            }
         };
         Self {
             l2_shard_id: 0,

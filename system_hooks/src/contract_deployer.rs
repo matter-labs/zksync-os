@@ -6,7 +6,8 @@
 use super::*;
 use core::fmt::Write;
 use evm_interpreter::MAX_CODE_SIZE;
-use ruint::aliases::{B160, U256};
+use ruint::aliases::B160;
+use u256::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::SystemError;
 
@@ -34,7 +35,7 @@ where
     debug_assert_eq!(callee, CONTRACT_DEPLOYER_ADDRESS);
 
     // There is no "payable" methods
-    let mut error = nominal_token_value != U256::ZERO;
+    let mut error = nominal_token_value != U256::zero();
     let mut is_static = false;
     match modifier {
         CallModifier::Constructor => {
@@ -157,7 +158,10 @@ where
                 SystemError::Internal(InternalError("Failed to create B160 from 20 byte array")),
             )?;
 
-            let bytecode_offset: usize = match U256::from_be_slice(&calldata[32..64]).try_into() {
+            let bytecode_offset: usize = match U256::try_from_be_slice(&calldata[32..64])
+                .expect("Should convert slice to U256")
+                .try_into()
+            {
                 Ok(offset) => offset,
                 Err(_) => return Ok(Err(
                     "Contract deployer failure: setDeployedCodeEVM called with invalid calldata",
@@ -170,9 +174,10 @@ where
                     "Contract deployer failure: setDeployedCodeEVM called with invalid calldata",
                 )),
             };
-            let bytecode_length: usize = match U256::from_be_slice(
+            let bytecode_length: usize = match U256::try_from_be_slice(
                 &calldata[bytecode_length_encoding_end - 32..bytecode_length_encoding_end],
             )
+            .expect("Should convert slice to U256")
             .try_into()
             {
                 Ok(length) => length,

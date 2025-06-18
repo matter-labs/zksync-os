@@ -1,6 +1,7 @@
 use crate::bootloader::constants::SPECIAL_ADDRESS_SPACE_BOUND;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::DEBUG_OUTPUT;
+use ::u256::U256;
 use core::fmt::Write;
 use either::Either;
 use either::Either::Left;
@@ -12,7 +13,6 @@ use evm_interpreter::gas_constants::CALL_STIPEND;
 use evm_interpreter::gas_constants::NEWACCOUNT;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
-use ruint::aliases::U256;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::*;
 use zk_ee::common_structs::CalleeParameters;
@@ -348,7 +348,7 @@ where
             .write_fmt(format_args!("External call to {:?}\n", call_request.callee));
 
         let _ = system.get_logger().write_fmt(format_args!(
-            "External call with parameters:\n{:?}",
+            "External call with parameters:\n{:?}\n",
             &call_request,
         ));
     }
@@ -555,7 +555,7 @@ where
     let positive_value = !call_request.nominal_token_value.is_zero();
 
     if !transfer_allowed {
-        call_request.nominal_token_value = U256::ZERO;
+        U256::write_zero(&mut call_request.nominal_token_value);
     }
 
     let ee_type = match callstack.top() {
@@ -1083,7 +1083,7 @@ where
                 }
             }
 
-            let nominal_token_value = new_frame.external_call.nominal_token_value;
+            let nominal_token_value = &new_frame.external_call.nominal_token_value;
 
             // EIP-161: contracts should be initialized with nonce 1
             // Note: this has to be done before we actually deploy the bytecode,
@@ -1108,7 +1108,7 @@ where
                     _ => InternalError("Failed to set deployed nonce to 1").into(),
                 })?;
 
-            if nominal_token_value != U256::ZERO {
+            if nominal_token_value.is_zero() == false {
                 new_frame
                     .external_call
                     .available_resources
