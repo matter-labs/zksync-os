@@ -1,6 +1,9 @@
 use crypto::secp256r1::verify;
 use p256::{
-    ecdsa::{signature::{Signer, Verifier}, Signature, SigningKey, VerifyingKey},
+    ecdsa::{
+        signature::{Signer, Verifier},
+        Signature, SigningKey, VerifyingKey,
+    },
     elliptic_curve::{rand_core::OsRng, sec1::ToEncodedPoint, FieldBytesEncoding},
 };
 use proptest::prelude::*;
@@ -21,24 +24,24 @@ fn split_public_key(pk: &VerifyingKey) -> Option<([u8; 32], [u8; 32])> {
             let y = *y;
             Some((x.into(), y.into()))
         }
-        _ => None
+        _ => None,
     }
 }
 
 #[test]
 fn selftest() {
     proptest!(|(digest: [u8; 32])| {
-        let signing_key = SigningKey::random(&mut OsRng);
-        let verify_key = signing_key.verifying_key();
-        let sig: Signature = signing_key.sign(&digest);
+            let signing_key = SigningKey::random(&mut OsRng);
+            let verify_key = signing_key.verifying_key();
+            let sig: Signature = signing_key.sign(&digest);
 
-        prop_assert!(verify_key.verify(&digest, &sig).is_ok());
+            prop_assert!(verify_key.verify(&digest, &sig).is_ok());
 
-        let (r_bytes, s_bytes) = split_signature(&sig);
-        let (x_bytes, y_bytes) = split_public_key(&verify_key).unwrap();
+            let (r_bytes, s_bytes) = split_signature(&sig);
+            let (x_bytes, y_bytes) = split_public_key(&verify_key).unwrap();
 
-        let result = verify(&digest, &r_bytes, &s_bytes, &x_bytes, &y_bytes);
+            let result = verify(&digest, &r_bytes, &s_bytes, &x_bytes, &y_bytes);
 
-        prop_assert!(result.unwrap());
-})
+            prop_assert!(result.unwrap());
+    })
 }
