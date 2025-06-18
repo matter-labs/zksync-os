@@ -86,7 +86,10 @@ impl<T: Clone> SliceVec<'_, T> {
         if new_length < self.length {
             unsafe {
                 assert_unchecked(self.length <= self.memory.len());
-                ptr::drop_in_place(&mut self.memory[new_length..self.length]);
+                ptr::drop_in_place(
+                    &mut self.memory[new_length..self.length] as *mut [MaybeUninit<T>]
+                        as *mut [T],
+                );
             }
         }
         self.length = new_length;
