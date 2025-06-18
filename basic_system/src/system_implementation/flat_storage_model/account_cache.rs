@@ -802,8 +802,7 @@ where
         } else if should_be_deconstructed {
             account_data.update(|cache_record| {
                 cache_record.update(|v, _| {
-                    v.balance = U256::ZERO;
-                    U256::write_zero(v);
+                    U256::write_zero(&mut v.balance);
                     Ok(())
                 })
             })?;

@@ -1,6 +1,7 @@
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
-use ruint::aliases::{B160, U256};
+use ruint::aliases::B160;
+use u256::U256;
 use zk_ee::utils::Bytes32;
 
 ///
@@ -71,7 +72,7 @@ impl BlocksOutput {
     ///
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = crypto::blake2s::Blake2s256::new();
-        hasher.update(&self.chain_id.to_be_bytes::<32>());
+        hasher.update(&self.chain_id.to_be_bytes());
         hasher.update(&self.first_block_timestamp.to_be_bytes());
         hasher.update(&self.last_block_timestamp.to_be_bytes());
         hasher.update(self.pubdata_hash.as_u8_ref());
@@ -147,12 +148,12 @@ impl BatchOutput {
     ///
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
-        hasher.update(self.chain_id.to_be_bytes::<32>());
+        hasher.update(self.chain_id.to_be_bytes());
         hasher.update(&self.first_block_timestamp.to_be_bytes());
         hasher.update(&self.last_block_timestamp.to_be_bytes());
         hasher.update(self.used_l2_da_validator_address.to_be_bytes::<20>());
         hasher.update(self.pubdata_commitment.as_u8_ref());
-        hasher.update(self.number_of_layer_1_txs.to_be_bytes::<32>());
+        hasher.update(self.number_of_layer_1_txs.to_be_bytes());
         hasher.update(self.priority_operations_hash.as_u8_ref());
         hasher.update(self.l2_logs_tree_root.as_u8_ref());
         hasher.update(self.upgrade_tx_hash.as_u8_ref());

@@ -661,7 +661,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let mut constructor = create_ee(ee_type as u8, self.system)?;
         let constructor_ee_type = constructor.ee_type();
 
-        let nominal_token_value = launch_params.external_call.nominal_token_value;
+        let nominal_token_value = launch_params.external_call.nominal_token_value.clone();
 
         // EIP-161: contracts should be initialized with nonce 1
         // Note: this has to be done before we actually deploy the bytecode,
@@ -1023,7 +1023,7 @@ where
                 _ => call_request.callee,
             };
             Some(TransferInfo {
-                value: call_request.nominal_token_value,
+                value: call_request.nominal_token_value.clone(),
                 target,
             })
         } else {

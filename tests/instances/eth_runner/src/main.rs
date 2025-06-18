@@ -185,6 +185,7 @@ fn test_manual_invoke() {
         prestatetrace: "prestatetrace.json".to_string(),
         difftrace: "difftrace.json".to_string(),
         receipts: "receipts.json".to_string(),
+        block_hashes: None,
         randomized: false,
     };
 

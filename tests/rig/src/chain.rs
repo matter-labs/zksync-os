@@ -347,7 +347,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     /// **Note, that other account fields will be zeroed out(nonce, code).**
     ///
     pub fn set_balance(&mut self, address: B160, balance: U256) -> &mut Self {
-        let mut account_properties = AccountProperties::TRIVIAL_VALUE;
+        let mut account_properties = AccountProperties::default();
         account_properties.balance = balance.into();
         let encoding = account_properties.encoding();
         let properties_hash = account_properties.compute_hash();
