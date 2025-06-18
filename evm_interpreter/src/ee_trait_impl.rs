@@ -21,30 +21,15 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
     const EE_VERSION_BYTE: u8 = ExecutionEnvironmentType::EVM_EE_BYTE;
 
     fn is_modifier_supported(modifier: &CallModifier) -> bool {
-        #[cfg(not(feature = "callcode"))]
-        {
-            matches!(
-                modifier,
-                CallModifier::NoModifier
-                    | CallModifier::Constructor
-                    | CallModifier::Static
-                    | CallModifier::Delegate
-                    | CallModifier::DelegateStatic
-            )
-        }
-
-        #[cfg(feature = "callcode")]
-        {
-            matches!(
-                modifier,
-                CallModifier::NoModifier
-                    | CallModifier::Constructor
-                    | CallModifier::Static
-                    | CallModifier::Delegate
-                    | CallModifier::DelegateStatic
-                    | CallModifier::EVMCallcode
-            )
-        }
+        matches!(
+            modifier,
+            CallModifier::NoModifier
+                | CallModifier::Constructor
+                | CallModifier::Static
+                | CallModifier::Delegate
+                | CallModifier::DelegateStatic
+                | CallModifier::EVMCallcode
+        )
     }
 
     fn self_address(&self) -> &<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
@@ -143,37 +128,15 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 is_constructor = true
             }
             CallModifier::EVMCallcode => {
-                #[cfg(not(feature = "callcode"))]
-                {
-                    panic!(
-                        "modifier {:?} is not supported without feature `callcode`",
-                        CallModifier::EVMCallcode
-                    );
-                }
-
-                #[cfg(feature = "callcode")]
-                {
-                    // This strange modifier doesn't preserve caller and value,
-                    // but we still need to substitute "this" to the caller
-                    this_address = caller;
-                }
+                // This strange modifier doesn't preserve caller and value,
+                // but we still need to substitute "this" to the caller
+                this_address = caller;
             }
             CallModifier::EVMCallcodeStatic => {
-                #[cfg(not(feature = "callcode"))]
-                {
-                    panic!(
-                        "modifier {:?} is not supported without feature `callcode`",
-                        CallModifier::EVMCallcodeStatic
-                    );
-                }
-
-                #[cfg(feature = "callcode")]
-                {
-                    // This strange modifier doesn't preserve caller and value,
-                    // but we still need to substitute "this" to the caller
-                    this_address = caller;
-                    is_static = true;
-                }
+                // This strange modifier doesn't preserve caller and value,
+                // but we still need to substitute "this" to the caller
+                this_address = caller;
+                is_static = true;
             }
             a => {
                 panic!("modifier {:?} is not expected", a);

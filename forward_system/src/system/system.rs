@@ -20,10 +20,6 @@ type Logger = zk_ee::system::NullLogger;
 
 pub struct ForwardSystemTypes<O>(O);
 
-#[cfg(feature = "unlimited_native")]
-type Native = zk_ee::reference_implementations::IncreasingNative;
-
-#[cfg(not(feature = "unlimited_native"))]
 type Native = zk_ee::reference_implementations::DecreasingNative;
 
 impl<O: IOOracle> SystemTypes for ForwardSystemTypes<O> {

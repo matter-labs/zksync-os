@@ -1000,20 +1000,29 @@ where
         // Already checked
         resources.charge_unchecked(&to_charge_for_pubdata);
 
-        let native_per_gas = u256_to_u64_saturated(&native_per_gas);
-        let full_native_limit = gas_limit.saturating_mul(native_per_gas);
-        let native_used = full_native_limit - resources.native().remaining().as_u64();
         let mut gas_used = gas_limit - resources.ergs().0.div_floor(ERGS_PER_GAS);
-
-        let delta_gas = (native_used / native_per_gas) as i64 - (gas_used as i64);
         resources.exhaust_ergs();
 
-        if delta_gas > 0 {
-            // In this case, the native resource consumption is more than the
-            // gas consumption accounted for. Consume extra gas.
-            gas_used += delta_gas as u64;
+        #[cfg(not(feature = "unlimited_native"))]
+        {
+            // Adjust gas_used with difference with used native
+            let native_per_gas = u256_to_u64_saturated(&native_per_gas);
+            let full_native_limit = gas_limit.saturating_mul(native_per_gas);
+            let native_used = full_native_limit - resources.native().remaining().as_u64();
+
+            let delta_gas = if native_per_gas == 0 {
+                0
+            } else {
+                (native_used / native_per_gas) as i64 - (gas_used as i64)
+            };
+
+            if delta_gas > 0 {
+                // In this case, the native resource consumption is more than the
+                // gas consumption accounted for. Consume extra gas.
+                gas_used += delta_gas as u64;
+            }
+            // TODO: return delta_gas to gas_used?
         }
-        // TODO: return delta_gas to gas_used?
 
         let total_gas_refund = gas_limit - gas_used;
         let _ = system
