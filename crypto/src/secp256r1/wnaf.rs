@@ -23,7 +23,6 @@ impl Default for Wnaf {
 
 impl Wnaf {
     pub(super) fn new(mut s: impl ToWnaf, window: usize) -> Self {
-        debug_assert!(WNAF_BITS <= 256);
         debug_assert!((2..=31).contains(&window));
 
         let mut wnaf: [i32; WNAF_BITS] = [0; WNAF_BITS];
@@ -75,10 +74,6 @@ impl Wnaf {
 
     pub(super) fn bits(&self) -> i32 {
         self.bits
-    }
-
-    pub(super) fn wnaf(&self) -> &[i32; WNAF_BITS] {
-        &self.wnaf
     }
 
     pub(super) fn get_digit(&self, i: i32) -> Option<i32> {

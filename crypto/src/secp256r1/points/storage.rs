@@ -8,7 +8,7 @@ pub(crate) struct Storage {
 }
 
 impl Storage {
-    pub(crate) fn to_affine(&self) -> Affine {
+    pub(crate) fn to_affine(self) -> Affine {
         Affine {
             x: self.x,
             y: self.y,

@@ -16,7 +16,12 @@ impl GeneratorMultiplesTable {
 
         odd_multiples(&mut pre_g, &g);
 
-        unsafe { Self(core::mem::transmute(pre_g)) }
+        unsafe {
+            Self(core::mem::transmute::<
+                [MaybeUninit<Storage>; ECMULT_TABLE_SIZE_G],
+                [Storage; ECMULT_TABLE_SIZE_G],
+            >(pre_g))
+        }
     }
 
     pub(super) fn get_ge(&self, n: i32) -> Affine {

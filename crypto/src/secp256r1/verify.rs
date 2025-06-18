@@ -78,12 +78,17 @@ impl OddMultiplesTable {
         let mut p_double = p;
         p_double.double_assign();
 
-        for i in 1..ECMULT_TABLE_SIZE_A {
+        for x in table.iter_mut().skip(1) {
             p.add_assign(&p_double);
-            table[i].write(p);
+            x.write(p);
         }
 
-        Self(unsafe { core::mem::transmute(table) })
+        Self(unsafe {
+            core::mem::transmute::<
+                [MaybeUninit<Jacobian>; ECMULT_TABLE_SIZE_A],
+                [Jacobian; ECMULT_TABLE_SIZE_A],
+            >(table)
+        })
     }
 
     fn get(&self, n: i32) -> Jacobian {

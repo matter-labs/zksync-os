@@ -313,7 +313,7 @@ impl Jacobian<FieldElementConst> {
         Self { x, y, z }
     }
 
-    pub(crate) const fn to_storage(&self) -> Storage {
+    pub(crate) const fn to_storage(self) -> Storage {
         assert!(!self.is_infinity_const());
 
         let zi = self.z.invert();

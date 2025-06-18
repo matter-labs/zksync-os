@@ -34,12 +34,14 @@ const MU: [u64; 5] = [
     0x0000_0000_0000_0001,
 ];
 
+#[allow(dead_code)]
 const REDUCTION_CONST: [u64; 4] = [
     14758798090332847183,
     5244798044304888548,
     5836234025928804086,
     6976188194875648028,
 ];
+#[allow(dead_code)]
 const R2: [u64; 4] = [
     9449762124159643298,
     5087230966250696614,
@@ -83,7 +85,7 @@ impl Scalar {
                 res.square_assign();
 
                 if ((exp[i] >> j) & 1) == 1 {
-                    res.mul_assign(&self);
+                    res.mul_assign(self);
                 }
             }
         }

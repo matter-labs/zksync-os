@@ -7,6 +7,7 @@ use super::{MODULUS, MU};
 pub struct Scalar([u64; 4]);
 
 impl Scalar {
+    #[cfg(test)]
     pub(crate) const ZERO: Self = Self([0, 0, 0, 0]);
     pub(crate) const ONE: Self = Self([1, 0, 0, 0]);
 
@@ -46,6 +47,7 @@ impl Scalar {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn from_words(words: [u64; 4]) -> Self {
         Self(words)
     }
@@ -69,7 +71,7 @@ impl Scalar {
     }
 
     fn subtract_modulus(&mut self) {
-        let mut borrow;
+        let borrow;
         (self.0, borrow) = overflowing_sub(&self.0, &MODULUS);
 
         if borrow {
