@@ -26,7 +26,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.spend_gas_and_native(0, KECCAK256_NATIVE_COST)?;
 
         let hash = if len == 0 {
-            self.spend_gas(gas_constants::BASE)?;
+            self.spend_gas(gas_constants::SHA3)?;
             Self::EMPTY_SLICE_SHA3
         } else {
             self.resize_heap(memory_offset, len)?;
