@@ -37,7 +37,12 @@ pub struct Scalar(BigInt<4>);
 impl Scalar {
     pub(crate) const ZERO: Self = Self(BigInt::zero());
     // montgomerry form
-    pub(crate) const ONE: Self = Self(BigInt::<4>([884452912994769583, 4834901526196019579, 0, 4294967295]));
+    pub(crate) const ONE: Self = Self(BigInt::<4>([
+        884452912994769583,
+        4834901526196019579,
+        0,
+        4294967295,
+    ]));
 
     pub(super) fn to_repressentation(mut self) -> Self {
         unsafe {
@@ -107,19 +112,18 @@ impl Scalar {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::{u256, Scalar, ScalarParams};
 
     impl proptest::arbitrary::Arbitrary for Scalar {
         type Parameters = ();
-    
+
         fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
             use proptest::prelude::{any, Strategy};
             any::<u256::U256Wrapper<ScalarParams>>().prop_map(|x| Self(x.0).to_repressentation())
         }
-    
+
         type Strategy = proptest::arbitrary::Mapped<u256::U256Wrapper<ScalarParams>, Scalar>;
     }
 }

@@ -49,8 +49,9 @@ impl DelegatedMontParams<4> for FieldParams {
 impl FieldElement {
     pub(crate) const ZERO: Self = Self::from_words_unchecked([0; 4]);
     // montgomerry form
-    pub(crate) const ONE: Self = Self::from_words_unchecked([1, 18446744069414584320, 18446744073709551615, 4294967294]);
-    
+    pub(crate) const ONE: Self =
+        Self::from_words_unchecked([1, 18446744069414584320, 18446744073709551615, 4294967294]);
+
     pub(super) fn to_representation(mut self) -> Self {
         unsafe {
             u256::mul_assign_montgomery::<FieldParams>(&mut self.0, R2.assume_init_ref());
@@ -164,13 +165,13 @@ mod tests {
 
     impl proptest::arbitrary::Arbitrary for FieldElement {
         type Parameters = ();
-    
+
         fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
             use proptest::prelude::{any, Strategy};
 
             any::<u256::U256Wrapper<FieldParams>>().prop_map(|x| Self(x.0).to_representation())
         }
-    
+
         type Strategy = proptest::arbitrary::Mapped<u256::U256Wrapper<FieldParams>, FieldElement>;
     }
 }

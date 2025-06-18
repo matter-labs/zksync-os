@@ -70,10 +70,7 @@ impl Wnaf {
         });
 
         bits += 1;
-        Self {
-            wnaf,
-            bits,
-        }
+        Self { wnaf, bits }
     }
 
     pub(super) fn bits(&self) -> i32 {

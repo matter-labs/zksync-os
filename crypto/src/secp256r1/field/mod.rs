@@ -143,13 +143,12 @@ impl FieldElementConst {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use core::ops::{AddAssign, MulAssign};
 
     use super::{FieldElement, FieldElementConst};
-    use proptest::{proptest, prop_assert_eq};
+    use proptest::{prop_assert_eq, proptest};
 
     #[cfg(feature = "bigint_ops")]
     fn init() {
@@ -253,7 +252,6 @@ mod tests {
             a += &y;
             prop_assert_eq!(a, x);
         })
-
     }
 
     #[test]
@@ -302,7 +300,7 @@ mod tests {
     fn test_double() {
         #[cfg(feature = "bigint_ops")]
         init();
-        
+
         let two = FieldElement::from_words([2, 0, 0, 0]);
         proptest!(|(x: FieldElement)| {
             let mut a = x;

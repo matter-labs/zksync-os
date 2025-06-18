@@ -18,7 +18,7 @@ impl Jacobian<FieldElement> {
     pub(crate) fn double_assign(&mut self) {
         if self.is_infinity() {
             *self = Self::default();
-            return
+            return;
         }
         // T1 = Z1^2
         let mut t1 = self.z;
@@ -72,7 +72,7 @@ impl Jacobian<FieldElement> {
         if other.is_infinity() {
             return;
         }
-        
+
         let mut z1z1 = self.z;
         z1z1.square_assign();
 
@@ -111,7 +111,7 @@ impl Jacobian<FieldElement> {
         i.double_assign();
         i.square_assign();
 
-        let mut j = h; 
+        let mut j = h;
         j *= &i;
 
         let mut v = u1;
@@ -126,7 +126,7 @@ impl Jacobian<FieldElement> {
         self.y = v;
         self.y -= &self.x;
         self.y *= &r;
-        
+
         s1 *= &j;
         s1.double_assign();
 
@@ -135,7 +135,6 @@ impl Jacobian<FieldElement> {
         self.z *= &other.z;
         self.z.double_assign();
         self.z *= &h;
-
     }
 
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#addition-madd-2007-bl
@@ -159,7 +158,7 @@ impl Jacobian<FieldElement> {
         s2 *= &self.z;
         s2 *= &other.y;
 
-        let mut h = u2; 
+        let mut h = u2;
         h -= &self.x;
 
         let mut r = s2;
@@ -181,7 +180,7 @@ impl Jacobian<FieldElement> {
         let mut j = h;
         j *= &i;
 
-        let mut v = i; 
+        let mut v = i;
         v *= &self.x;
 
         self.x = r;
@@ -198,10 +197,8 @@ impl Jacobian<FieldElement> {
 
         self.y.sub_and_negate_assign(&v);
 
-        self.z *=& h;
+        self.z *= &h;
         self.z.double_assign();
-
-
     }
 
     pub(crate) fn to_affine(mut self) -> Affine {
@@ -237,7 +234,7 @@ impl Jacobian<FieldElementConst> {
     const INFINITY: Self = Self {
         x: FieldElementConst::ZERO,
         y: FieldElementConst::ZERO,
-        z: FieldElementConst::ZERO
+        z: FieldElementConst::ZERO,
     };
 
     // coordinates are in montgomerry form
@@ -264,7 +261,7 @@ impl Jacobian<FieldElementConst> {
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2001-b
     pub(crate) const fn double(&self) -> Self {
         if self.is_infinity_const() {
-            return  Self::INFINITY;
+            return Self::INFINITY;
         }
         let delta = self.z.square();
         let gamma = self.y.square();
@@ -300,7 +297,7 @@ impl Jacobian<FieldElementConst> {
         let s2 = rhs.y.mul(&self.z).mul(&z1z1);
         let h = u2.sub(&u1);
         let r = s2.sub(&s1).mul_int(2);
-        
+
         if h.is_zero() && r.is_zero() {
             return self.double();
         }
@@ -333,7 +330,11 @@ impl Jacobian<FieldElementConst> {
 
 #[cfg(test)]
 mod tests {
-    use crate::secp256r1::{field::FieldElement, points::{Affine, Jacobian}, test_vectors::ADD_TEST_VECTORS};
+    use crate::secp256r1::{
+        field::FieldElement,
+        points::{Affine, Jacobian},
+        test_vectors::ADD_TEST_VECTORS,
+    };
 
     #[cfg(feature = "bigint_ops")]
     fn init() {
@@ -369,7 +370,7 @@ mod tests {
             assert_eq!(a.to_affine(), c.to_affine());
         }
     }
-    
+
     #[test]
     fn test_add() {
         #[cfg(feature = "bigint_ops")]
@@ -381,7 +382,7 @@ mod tests {
             let expected = Affine {
                 x: FieldElement::from_be_bytes(x_bytes).unwrap(),
                 y: FieldElement::from_be_bytes(y_bytes).unwrap(),
-                infinity: false
+                infinity: false,
             };
 
             assert_eq!(g.to_affine(), expected);

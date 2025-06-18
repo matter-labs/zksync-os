@@ -9,7 +9,7 @@ pub struct Scalar([u64; 4]);
 impl Scalar {
     pub(crate) const ZERO: Self = Self([0, 0, 0, 0]);
     pub(crate) const ONE: Self = Self([1, 0, 0, 0]);
-    
+
     pub(crate) fn reduce_be_bytes(bytes: &[u8; 32]) -> Self {
         let mut val = Self::from_be_bytes_unchecked(bytes);
         val.subtract_modulus();
@@ -308,7 +308,7 @@ mod tests {
 
     impl proptest::arbitrary::Arbitrary for Scalar {
         type Parameters = ();
-    
+
         fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
             use proptest::prelude::{any, Strategy};
 
@@ -318,7 +318,7 @@ mod tests {
                 res
             })
         }
-    
+
         type Strategy = proptest::arbitrary::Mapped<[u64; 4], Scalar>;
     }
 }

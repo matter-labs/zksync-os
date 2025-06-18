@@ -25,7 +25,8 @@ impl core::fmt::Debug for FieldElement {
 impl FieldElement {
     pub(crate) const ZERO: Self = Self::from_words_unchecked([0; 4]);
     // montgomerry form
-    pub(crate) const ONE: Self = Self::from_words_unchecked([1, 18446744069414584320, 18446744073709551615, 4294967294]);
+    pub(crate) const ONE: Self =
+        Self::from_words_unchecked([1, 18446744069414584320, 18446744073709551615, 4294967294]);
 
     pub(crate) fn to_integer(self) -> Self {
         FieldElement(montgomery_reduce(&[
@@ -300,14 +301,13 @@ const fn sub_inner(l: &[u64; 5], r: &[u64; 5]) -> [u64; 4] {
     [w0, w1, w2, w3]
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     impl proptest::arbitrary::Arbitrary for FieldElement {
         type Parameters = ();
-    
+
         fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
             use proptest::prelude::{any, Strategy};
 
@@ -316,13 +316,14 @@ mod tests {
                     Self(limbs).to_representation()
                 } else {
                     Self(sub_inner(
-                        &[limbs[0], limbs[1], limbs[2], limbs[3], 0], 
-                        &[MODULUS[0], MODULUS[1], MODULUS[2], MODULUS[3], 0]
-                    )).to_representation()
+                        &[limbs[0], limbs[1], limbs[2], limbs[3], 0],
+                        &[MODULUS[0], MODULUS[1], MODULUS[2], MODULUS[3], 0],
+                    ))
+                    .to_representation()
                 }
             })
         }
-    
+
         type Strategy = proptest::arbitrary::Mapped<[u64; 4], FieldElement>;
     }
 }
