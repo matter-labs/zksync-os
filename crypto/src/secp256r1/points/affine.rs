@@ -39,7 +39,7 @@ impl Affine {
         rhs *= &x;
 
         let mut a = x;
-        a += &FieldElement::EQUATION_A;
+        a *= &FieldElement::EQUATION_A;
 
         rhs += &a;
         rhs += &FieldElement::EQUATION_B;
