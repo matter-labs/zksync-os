@@ -120,8 +120,7 @@ impl ValueDiffCompressionStrategy {
                     hasher.update([metadata_byte]);
                     hasher.update(&final_value.to_be_bytes()[32usize - length as usize..]);
                     result_keeper.pubdata(&[metadata_byte]);
-                    result_keeper
-                        .pubdata(&final_value.to_be_bytes()[32usize - length as usize..]);
+                    result_keeper.pubdata(&final_value.to_be_bytes()[32usize - length as usize..]);
 
                     Ok(())
                 }

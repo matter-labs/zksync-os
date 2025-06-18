@@ -207,7 +207,10 @@ fn zksync_os_output_into_account_state(
             let key = U256::from_be_bytes(&w.account_key.as_u8_array());
             let entry = updates.entry(address).or_default();
             let value = B256::from_be_bytes(w.value.as_u8_array());
-            entry.storage.get_or_insert_default().insert(key.into(), value);
+            entry
+                .storage
+                .get_or_insert_default()
+                .insert(key.into(), value);
         }
     }
 

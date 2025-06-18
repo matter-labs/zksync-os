@@ -146,7 +146,6 @@ impl Default for AccountProperties {
     }
 }
 
-
 impl AccountProperties {
     pub const ENCODED_SIZE: usize = 124;
 
@@ -412,9 +411,9 @@ mod tests {
     use crypto::blake2s::Blake2s256;
     use crypto::sha3::Keccak256;
     use crypto::MiniDigest;
-    use u256::U256;
     use std::alloc::Global;
     use storage_models::common_structs::PreimageCacheModel;
+    use u256::U256;
     use zk_ee::common_structs::PreimageType;
     use zk_ee::execution_environment_type::ExecutionEnvironmentType;
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
