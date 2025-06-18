@@ -12,6 +12,7 @@ categories.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+zksync_os_error = { path = "../zksync_os_error", default-features = false }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 zk_ee = { path = "../zk_ee", default-features = false }
 crypto = { path = "../crypto", default-features = false }
