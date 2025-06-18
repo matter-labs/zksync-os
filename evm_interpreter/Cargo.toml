@@ -21,10 +21,6 @@ cycle_marker = { path = "../cycle_marker" }
 
 [features]
 eip-7645 = []
-callcode = []
-mock-eip-4844 = []
-selfdestruct = []
-evm-compatibility = ["callcode", "mock-eip-4844", "selfdestruct"]
-default = ["evm-compatibility"]
+default = []
 testing = ["zk_ee/testing"]
 cycle_marker = []

@@ -97,7 +97,15 @@ where
         is_access_list: bool,
     ) -> Result<AddressItem<A>, SystemError> {
         let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
+            ExecutionEnvironmentType::NoEE => {
+                if is_access_list {
+                    // For access lists, EVM charges the full cost as many
+                    // times as an account is in the list.
+                    Ergs(2400 * ERGS_PER_GAS)
+                } else {
+                    Ergs::empty()
+                }
+            }
             ExecutionEnvironmentType::EVM =>
             // For selfdestruct, there's no warm access cost
             {
@@ -121,14 +129,7 @@ where
 
                 // - first get a hash of properties from storage
                 match ee_type {
-                    ExecutionEnvironmentType::NoEE => {
-                        // Access list accesses are always done in NoEE.
-                        // Note that, for that reason, the warm cost isn't charged,
-                        // so here we charge full cold cost.
-                        if is_access_list {
-                            resources.charge(&R::from_ergs(Ergs(2400 * ERGS_PER_GAS)))?
-                        }
-                    }
+                    ExecutionEnvironmentType::NoEE => {}
                     ExecutionEnvironmentType::EVM => {
                         let mut cost: R = if evm_interpreter::utils::is_precompile(&address) {
                             R::empty() // We've charged the access already.
@@ -195,14 +196,7 @@ where
                     if initialized_element == false {
                         // Element exists in cache, but wasn't touched in current tx yet
                         match ee_type {
-                            ExecutionEnvironmentType::NoEE => {
-                                // Access list accesses are always done in NoEE.
-                                // Note that, for that reason, the warm cost isn't charged,
-                                // so here we charge full cold cost.
-                                if is_access_list {
-                                    resources.charge(&R::from_ergs(Ergs(2400 * ERGS_PER_GAS)))?
-                                }
-                            }
+                            ExecutionEnvironmentType::NoEE => {}
                             ExecutionEnvironmentType::EVM => {
                                 let mut cost: R = if evm_interpreter::utils::is_precompile(&address)
                                 {

@@ -10,13 +10,13 @@ use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::SystemError;
 
-pub fn contract_deployer_hook<S: EthereumLikeTypes>(
+pub fn contract_deployer_hook<'a, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
     caller_ee: u8,
     system: &mut System<S>,
-) -> Result<CompletedExecution<S>, FatalError>
+    return_memory: &'a mut [MaybeUninit<u8>],
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
 where
-    S::Memory: MemorySubsystemExt,
     S::IO: IOSubsystemExt,
 {
     let ExternalCallRequest {
@@ -55,7 +55,7 @@ where
     }
 
     if error {
-        return Ok(make_error_return_state(system, available_resources));
+        return Ok((make_error_return_state(available_resources), return_memory));
     }
 
     let mut resources = available_resources;
@@ -69,27 +69,26 @@ where
         is_static,
     );
 
-    match result {
-        Ok(Ok(return_data)) => Ok(make_return_state_from_returndata_region(
-            system,
-            resources,
-            return_data,
-        )),
-        Ok(Err(e)) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Revert: {:?}\n", e));
-            Ok(make_error_return_state(system, resources))
-        }
-        Err(SystemError::OutOfErgs) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Out of gas during system hook\n"));
-            Ok(make_error_return_state(system, resources))
-        }
-        Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
-        Err(SystemError::Internal(e)) => Err(e.into()),
-    }
+    Ok((
+        match result {
+            Ok(Ok(return_data)) => make_return_state_from_returndata_region(resources, return_data),
+            Ok(Err(e)) => {
+                let _ = system
+                    .get_logger()
+                    .write_fmt(format_args!("Revert: {:?}\n", e));
+                make_error_return_state(resources)
+            }
+            Err(SystemError::OutOfErgs) => {
+                let _ = system
+                    .get_logger()
+                    .write_fmt(format_args!("Out of gas during system hook\n"));
+                make_error_return_state(resources)
+            }
+            Err(SystemError::OutOfNativeResources) => return Err(FatalError::OutOfNativeResources),
+            Err(SystemError::Internal(e)) => return Err(e.into()),
+        },
+        return_memory,
+    ))
 }
 
 // setDeployedCodeEVM(address,bytes) - 1223adc7
@@ -103,13 +102,7 @@ fn contract_deployer_hook_inner<S: EthereumLikeTypes>(
     caller: B160,
     _caller_ee: u8,
     is_static: bool,
-) -> Result<
-    Result<
-        <<S::Memory as MemorySubsystem>::ManagedRegion as OSManagedRegion>::OSManagedImmutableSlice,
-        &'static str,
-    >,
-    SystemError,
->
+) -> Result<Result<&'static [u8], &'static str>, SystemError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -209,8 +202,7 @@ where
                 0,
             )?;
 
-            let return_data = system.memory.empty_immutable_slice();
-            Ok(Ok(return_data))
+            Ok(Ok(&[]))
         }
         _ => Ok(Err("Contract deployer hook: unknown selector")),
     }

@@ -42,11 +42,6 @@ pub trait Resource: 'static + Sized + Clone + core::fmt::Debug + PartialEq + Eq 
 
     // Returns the remaining part of the resource.
     fn remaining(&self) -> Self;
-
-    /// To be called when initially setting a resource limit.
-    /// Used to make a distinction between resource limits and resources
-    /// to be charged.
-    fn set_as_limit(&mut self);
 }
 
 ///
@@ -60,7 +55,7 @@ pub trait Computational: 'static + Sized + Clone + core::fmt::Debug + PartialEq 
 ///
 /// Ergs, the resource for EEs.
 ///
-#[derive(Clone, Copy, core::fmt::Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, core::fmt::Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Ergs(pub u64);
 
 impl core::ops::Add for Ergs {
@@ -119,8 +114,6 @@ impl Resource for Ergs {
     fn remaining(&self) -> Self {
         *self
     }
-
-    fn set_as_limit(&mut self) {}
 }
 
 ///
