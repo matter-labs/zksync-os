@@ -297,18 +297,7 @@ impl<'calldata, S: EthereumLikeTypes> Interpreter<'calldata, S> {
         _system: &mut System<S>,
         external_call_dest: &mut Option<ExternalCall<'calldata, S>>,
     ) -> InstructionResult {
-        #[cfg(all(not(feature = "callcode"), not(miri)))]
-        {
-            // we will not support CALLCODE and it's broken
-            self.return_invalid();
-
-            None
-        }
-
-        #[cfg(any(feature = "callcode", miri))]
-        {
-            self.call_impl(_system, CallScheme::CallCode, external_call_dest)
-        }
+        self.call_impl(_system, CallScheme::CallCode, external_call_dest)
     }
 
     pub fn delegate_call(
