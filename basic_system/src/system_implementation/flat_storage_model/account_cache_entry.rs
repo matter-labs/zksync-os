@@ -99,6 +99,10 @@ pub struct AccountPropertiesMetadata {
     /// Transaction where this account was last accessed.
     /// Considered warm if equal to Some(current_tx)
     pub last_touched_in_tx: Option<u32>,
+    /// Special flag that allows to avoid publishing bytecode for deployed account.
+    /// In practice, it can be set to `true` only during special protocol upgrade txs.
+    /// For protocol upgrades it's ensured by governance that bytecodes are already published separately.
+    pub not_publish_bytecode: bool,
 }
 
 impl AccountPropertiesMetadata {
@@ -205,7 +209,7 @@ impl AccountProperties {
     /// Estimate account properties diff compression length.
     /// For more details about compression, see the `diff_compression` method(below).
     ///
-    pub fn diff_compression_length(initial: &Self, r#final: &Self) -> Result<u32, InternalError> {
+    pub fn diff_compression_length(initial: &Self, r#final: &Self, not_publish_bytecode: bool) -> Result<u32, InternalError> {
         match (
             initial.versioning_data.is_deployed(),
             r#final.versioning_data.is_deployed(),
@@ -214,16 +218,37 @@ impl AccountProperties {
                 "Account destructed at the end of the tx/block",
             )),
             (false, true) => {
-                Ok(
+                Ok(if not_publish_bytecode {
+                    let mut length = 1u32; // metadata byte
+                    if initial.nonce != r#final.nonce {
+                        length += ValueDiffCompressionStrategy::optimal_compression_length_u256(
+                            initial
+                                .nonce
+                                .try_into()
+                                .map_err(|_| InternalError("u64 into U256"))?,
+                            r#final
+                                .nonce
+                                .try_into()
+                                .map_err(|_| InternalError("u64 into U256"))?,
+                        ) as u32; // nonce diff
+                    }
+                    if initial.balance != r#final.balance {
+                        length += ValueDiffCompressionStrategy::optimal_compression_length_u256(
+                            initial.balance,
+                            r#final.balance,
+                        ) as u32; // balance diff
+                    };
+                    length
+                } else {
                     1u32 // metadata byte
-                    + 8 // versioning data
-                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?) as u32 // nonce diff
-                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
-                    + 4 // bytecode len
-                    + r#final.bytecode_len // bytecode
-                    + 4 // artifacts len
-                    + 4, // observable bytecode len
-                )
+                        + 8 // versioning data
+                        + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?) as u32 // nonce diff
+                        + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
+                        + 4 // bytecode len
+                        + r#final.bytecode_len // bytecode
+                        + 4 // artifacts len
+                        + 4 // observable bytecode len
+                })
             }
             (_, _) => {
                 // if deployment status didn't change, only balance and nonce can be changed
@@ -285,6 +310,7 @@ impl AccountProperties {
     pub fn diff_compression<const PROOF_ENV: bool, R: Resources, A: Allocator + Clone>(
         initial: &Self,
         r#final: &Self,
+        not_publish_bytecode: bool,
         hasher: &mut impl MiniDigest,
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
@@ -298,6 +324,40 @@ impl AccountProperties {
                 "Account destructed at the end of the tx/block",
             )),
             (false, true) => {
+                if not_publish_bytecode {
+                    let mut metadata_byte = 4u8;
+                    if initial.nonce != r#final.nonce {
+                        metadata_byte |= 1 << 3;
+                    }
+                    if initial.balance != r#final.balance {
+                        metadata_byte |= 2 << 3;
+                    }
+                    hasher.update([metadata_byte]);
+                    result_keeper.pubdata(&[metadata_byte]);
+                    if initial.nonce != r#final.nonce {
+                        ValueDiffCompressionStrategy::optimal_compression_u256(
+                            initial
+                                .nonce
+                                .try_into()
+                                .map_err(|_| InternalError("u64 into U256"))?,
+                            r#final
+                                .nonce
+                                .try_into()
+                                .map_err(|_| InternalError("u64 into U256"))?,
+                            hasher,
+                            result_keeper,
+                        );
+                    }
+                    if initial.balance != r#final.balance {
+                        ValueDiffCompressionStrategy::optimal_compression_u256(
+                            initial.balance,
+                            r#final.balance,
+                            hasher,
+                            result_keeper,
+                        );
+                    }
+                    return Ok(());
+                }
                 let metadata_byte = 4u8;
                 hasher.update([metadata_byte]);
                 result_keeper.pubdata(&[metadata_byte]);
@@ -367,6 +427,7 @@ impl AccountProperties {
                 debug_assert_eq!(initial.artifacts_len, r#final.artifacts_len);
 
                 if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
+                    // TODO: can be called in such case?
                     return Ok(());
                 }
                 let mut metadata_byte = 4u8;
