@@ -582,7 +582,7 @@ where
         current_block_hash: Bytes32,
         _l1_to_l2_txs_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
-        _interop_root_rolling_hash: Bytes32,
+        interop_root_rolling_hash: Bytes32,
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
@@ -662,6 +662,7 @@ where
             priority_operations_hash: l1_txs_commitment.1,
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash,
+            dependency_roots_rolling_hash:interop_root_rolling_hash,
         };
         let _ = logger.write_fmt(format_args!(
             "PI calculation: batch output {:?}\n",
