@@ -55,8 +55,8 @@ jobs:
           path: zksync-os
       - uses: actions/checkout@v4
         with:
-          repository: matter-labs/era-evm-tester 
-          ref: zk-ee
+          repository: matter-labs/era-evm-tester
+          ref: alocascio-zk-ee
           path: era-evm-tester
       - name: Use local ZKsync OS version
         working-directory: ./era-evm-tester/evm_tester
@@ -109,7 +109,7 @@ jobs:
         run: ./dump_bin.sh
       - name: Run binary checker
         run: cargo test -p binary_checker -- --nocapture
-      
+
   e2e_prove:
     name: e2e_prove
     runs-on: [matterlabs-ci-runner-highmem]
@@ -178,7 +178,7 @@ jobs:
         with:
           components: clippy
       - name: Run Clippy
-        run: | 
+        run: |
           cargo clippy --all -- -D warnings
 
   typos:
