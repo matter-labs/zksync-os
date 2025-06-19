@@ -310,7 +310,7 @@ where
             bytecode_len,
             artifacts_len,
             observable_bytecode_hash,
-            observable_bytecode_len
+            observable_bytecode_len,
         )
     }
 

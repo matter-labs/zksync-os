@@ -209,7 +209,11 @@ impl AccountProperties {
     /// Estimate account properties diff compression length.
     /// For more details about compression, see the `diff_compression` method(below).
     ///
-    pub fn diff_compression_length(initial: &Self, r#final: &Self, not_publish_bytecode: bool) -> Result<u32, InternalError> {
+    pub fn diff_compression_length(
+        initial: &Self,
+        r#final: &Self,
+        not_publish_bytecode: bool,
+    ) -> Result<u32, InternalError> {
         match (
             initial.versioning_data.is_deployed(),
             r#final.versioning_data.is_deployed(),

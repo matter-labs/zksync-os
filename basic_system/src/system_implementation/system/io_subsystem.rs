@@ -885,7 +885,17 @@ where
         )
     }
 
-    fn set_bytecode_details(&mut self, resources: &mut Self::Resources, at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address, ee: ExecutionEnvironmentType, bytecode_hash: Bytes32, bytecode_len: u32, artifacts_len: u32, observable_bytecode_hash: Bytes32, observable_bytecode_len: u32) -> Result<(), SystemError> {
+    fn set_bytecode_details(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        ee: ExecutionEnvironmentType,
+        bytecode_hash: Bytes32,
+        bytecode_len: u32,
+        artifacts_len: u32,
+        observable_bytecode_hash: Bytes32,
+        observable_bytecode_len: u32,
+    ) -> Result<(), SystemError> {
         self.storage.set_bytecode_details(
             resources,
             at_address,
@@ -895,7 +905,7 @@ where
             artifacts_len,
             observable_bytecode_hash,
             observable_bytecode_len,
-            &mut self.oracle
+            &mut self.oracle,
         )
     }
 

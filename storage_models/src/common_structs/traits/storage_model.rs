@@ -1,5 +1,7 @@
+use super::snapshottable_io::SnapshottableIo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system_io_oracle::IOOracle;
+use zk_ee::utils::Bytes32;
 use zk_ee::{
     system::{
         errors::{InternalError, SystemError, UpdateQueryError},
@@ -8,8 +10,6 @@ use zk_ee::{
     },
     types_config::SystemIOTypesConfig,
 };
-use zk_ee::utils::Bytes32;
-use super::snapshottable_io::SnapshottableIo;
 
 ///
 /// Storage model trait needed to allow using different storage models in the system.
