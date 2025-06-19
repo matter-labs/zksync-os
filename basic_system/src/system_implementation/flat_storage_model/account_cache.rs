@@ -360,17 +360,18 @@ where
 
             let element_key = element_history.key();
 
+            // TODO: shouldn't be reachable?
             // Skip if already calculated pubdata for this element
             if visited_elements.contains(element_key) {
                 continue;
             }
             visited_elements.insert(element_key);
 
-            let current_value = element_history.current().value();
-            let initial_value = element_history.initial().value();
+            let current = element_history.current();
+            let initial = element_history.initial();
 
             pubdata_used +=
-                AccountProperties::diff_compression_length(initial_value, current_value).unwrap();
+                AccountProperties::diff_compression_length(initial.value(), current.value(), current.metadata().not_publish_bytecode).unwrap();
         }
 
         pubdata_used
@@ -732,12 +733,70 @@ where
                     .set_code_version(DEFAULT_CODE_VERSION_BYTE);
 
                 m.deployed_in_tx = cur_tx;
+                // This is unlikely to happen, this case shouldn't be reachable by higher level logic
+                // but just in case if force deployed contract was redeployed with regular deployment we want to publish it
+                m.not_publish_bytecode = false;
 
                 Ok(())
             })
         })?;
 
         Ok(bytecode)
+    }
+
+    pub fn set_bytecode_details<const PROOF_ENV: bool>(
+        &mut self,
+        resources: &mut R,
+        at_address: &B160,
+        ee: ExecutionEnvironmentType,
+        bytecode_hash: Bytes32,
+        bytecode_len: u32,
+        artifacts_len: u32,
+        observable_bytecode_hash: Bytes32,
+        observable_bytecode_len: u32,
+        storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
+        preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
+        oracle: &mut impl IOOracle,
+    ) -> Result<(), SystemError> {
+        let cur_tx = self.current_tx_number;
+
+        let mut account_data = resources.with_infinite_ergs(|inf_resources| {
+            self.materialize_element::<PROOF_ENV>(
+                ExecutionEnvironmentType::NoEE,
+                inf_resources,
+                at_address,
+                storage,
+                preimages_cache,
+                oracle,
+                false,
+                false,
+            )
+        })?;
+
+        resources.charge(&R::from_native(R::Native::from_computational(
+            WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
+        )))?;
+
+        account_data.update(|cache_record| {
+            cache_record.update(|v, m| {
+                v.observable_bytecode_hash = observable_bytecode_hash;
+                v.observable_bytecode_len = observable_bytecode_len;
+                v.bytecode_hash = bytecode_hash;
+                v.bytecode_len = bytecode_len;
+                v.artifacts_len = artifacts_len;
+                v.versioning_data.set_as_deployed();
+                v.versioning_data.set_ee_version(ee as u8);
+                v.versioning_data
+                    .set_code_version(DEFAULT_CODE_VERSION_BYTE);
+
+                m.deployed_in_tx = cur_tx;
+                m.not_publish_bytecode = true;
+
+                Ok(())
+            })
+        })?;
+
+        Ok(())
     }
 
     pub fn mark_for_deconstruction<const PROOF_ENV: bool>(

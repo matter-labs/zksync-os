@@ -8,7 +8,7 @@ use zk_ee::{
     },
     types_config::SystemIOTypesConfig,
 };
-
+use zk_ee::utils::Bytes32;
 use super::snapshottable_io::SnapshottableIo;
 
 ///
@@ -163,6 +163,19 @@ pub trait StorageModel: Sized + SnapshottableIo {
         artifacts_len: u32,
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError>;
+
+    fn set_bytecode_details(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        ee: ExecutionEnvironmentType,
+        bytecode_hash: Bytes32,
+        bytecode_len: u32,
+        artifacts_len: u32,
+        observable_bytecode_hash: Bytes32,
+        observable_bytecode_len: u32,
+        oracle: &mut impl IOOracle,
+    ) -> Result<(), SystemError>;
 
     fn mark_for_deconstruction(
         &mut self,
