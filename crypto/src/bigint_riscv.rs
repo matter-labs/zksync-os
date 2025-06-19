@@ -48,6 +48,8 @@ pub fn init() {
     }
 }
 
+/// # Safety
+/// TODO: document safety
 #[inline(always)]
 // #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 pub unsafe fn is_zero(operand: *const AlignedPrecompileSpace) -> bool {
@@ -66,6 +68,8 @@ pub unsafe fn is_zero(operand: *const AlignedPrecompileSpace) -> bool {
 //     unimplemented!()
 // }
 
+/// # Safety
+/// TODO: document safety
 #[inline(always)]
 // #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 pub unsafe fn is_zero_mut(operand: *mut AlignedPrecompileSpace) -> bool {
@@ -80,6 +84,8 @@ pub unsafe fn is_zero_mut(operand: *mut AlignedPrecompileSpace) -> bool {
 //     unimplemented!()
 // }
 
+/// # Safety
+/// TODO: document safety
 #[inline(always)]
 // #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 pub unsafe fn is_one(operand: *const AlignedPrecompileSpace) -> bool {
@@ -97,6 +103,8 @@ pub unsafe fn is_one(operand: *const AlignedPrecompileSpace) -> bool {
 //     unimplemented!()
 // }
 
+/// # Safety
+/// TODO: document safety
 #[inline(always)]
 // #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 pub unsafe fn is_one_mut(operand: *mut AlignedPrecompileSpace) -> bool {
@@ -111,6 +119,8 @@ pub unsafe fn is_one_mut(operand: *mut AlignedPrecompileSpace) -> bool {
 //     unimplemented!()
 // }
 
+/// # Safety
+/// TODO: document safety
 #[inline(always)]
 pub unsafe fn copy_to_scratch(
     operand: *const AlignedPrecompileSpace,
@@ -137,6 +147,8 @@ pub unsafe fn copy_to_scratch(
     }
 }
 
+/// # Safety
+/// TODO: document safety
 #[inline(always)]
 pub unsafe fn aligned_copy_if_needed(
     operand: *const AlignedPrecompileSpace,
@@ -157,6 +169,8 @@ pub unsafe fn aligned_copy_if_needed(
     }
 }
 
+/// # Safety
+/// TODO: document safety
 #[inline(always)]
 pub unsafe fn aligned_copy_if_needed_2(
     operand: *const AlignedPrecompileSpace,
@@ -177,6 +191,7 @@ pub unsafe fn aligned_copy_if_needed_2(
     }
 }
 
+#[allow(dead_code)]
 #[inline(always)]
 pub(crate) fn copy_if_needed(operand: *const [u32; 8]) -> *const [u32; 8] {
     #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
@@ -198,8 +213,10 @@ pub(crate) fn copy_if_needed(operand: *const [u32; 8]) -> *const [u32; 8] {
     }
 }
 
+/// # Safety
+/// TODO: document safety
 #[inline(always)]
-pub fn write_zero_into(operand: *mut AlignedPrecompileSpace) {
+pub unsafe fn write_zero_into(operand: *mut AlignedPrecompileSpace) {
     #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
     unsafe {
         let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand.cast(), ZERO_REPR.as_ptr().cast());
@@ -211,8 +228,10 @@ pub fn write_zero_into(operand: *mut AlignedPrecompileSpace) {
     }
 }
 
+/// # Safety
+/// TODO: document safety
 #[inline(always)]
-pub fn write_one_into(operand: *mut AlignedPrecompileSpace) {
+pub unsafe fn write_one_into(operand: *mut AlignedPrecompileSpace) {
     #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
     unsafe {
         let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand.cast(), ONE_REPR.as_ptr().cast());
