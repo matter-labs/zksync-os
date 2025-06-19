@@ -210,16 +210,17 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         });
 
         let now = std::time::Instant::now();
-        let proof_output = zksync_os_runner::run(
+        let (proof_output, block_effective) = zksync_os_runner::run_and_get_effective_cycles(
             get_zksync_os_img_path(),
             diagnostics_config,
             1 << 30,
             copy_source,
         );
-        println!(
+        info!(
             "Simulator without witness tracing executed over {:?}",
             now.elapsed()
         );
+        info!("Executed {block_effective:?} effective cycles");
 
         #[cfg(feature = "simulate_witness_gen")]
         {
