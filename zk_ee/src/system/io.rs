@@ -15,7 +15,7 @@ use crate::system_io_oracle::IOOracle;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
 use crate::utils::Bytes32;
 use arrayvec::ArrayVec;
-use ruint::aliases::U256;
+use u256::U256;
 
 ///
 /// User facing IO trait.

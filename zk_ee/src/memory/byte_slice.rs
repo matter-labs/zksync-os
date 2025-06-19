@@ -1,4 +1,4 @@
-use ruint::aliases::U256;
+use u256::U256;
 
 pub trait MinimalByteAddressableSlice {
     fn len(&self) -> usize;
@@ -63,7 +63,7 @@ impl Default for U256Builder {
 impl U256Builder {
     pub fn build(self) -> U256 {
         assert!(self.previously_written == 0);
-        U256::from_le_bytes(self.bytes)
+        U256::from_le_bytes(&self.bytes)
     }
 }
 

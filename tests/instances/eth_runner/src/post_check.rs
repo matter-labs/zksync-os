@@ -2,8 +2,9 @@ use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
 use alloy::hex;
 use rig::forward_system::run::BatchOutput;
-use ruint::aliases::{B160, B256, U256};
+use ruint::aliases::{B160, B256};
 use std::collections::HashMap;
+use u256::U256;
 
 impl DiffTrace {
     fn collect_diffs(self, prestate_cache: &Cache, miner: B160) -> HashMap<B160, AccountState> {
@@ -193,7 +194,7 @@ fn zksync_os_output_into_account_state(
                     AccountProperties::decode(&encoded.try_into().unwrap())
                 };
                 let entry = updates.entry(address).or_default();
-                entry.balance = Some(props.balance);
+                entry.balance = Some(props.balance.into());
                 entry.nonce = Some(props.nonce);
                 if let Some(bytecode) = preimages.get(&props.bytecode_hash.as_u8_array()) {
                     let owned = bytecode.clone();
@@ -203,10 +204,13 @@ fn zksync_os_output_into_account_state(
         } else {
             // populate slot
             let address = w.account;
-            let key = U256::from_be_bytes(w.account_key.as_u8_array());
+            let key = U256::from_be_bytes(&w.account_key.as_u8_array());
             let entry = updates.entry(address).or_default();
             let value = B256::from_be_bytes(w.value.as_u8_array());
-            entry.storage.get_or_insert_default().insert(key, value);
+            entry
+                .storage
+                .get_or_insert_default()
+                .insert(key.into(), value);
         }
     }
 
@@ -265,11 +269,12 @@ pub fn post_check(
                 )
             }
             // Check gas used
-            if res.gas_used != zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used) {
+            let gas_used = U256::from_be_bytes(&receipt.gas_used.to_be_bytes());
+            if res.gas_used != zk_ee::utils::u256_to_u64_saturated(&gas_used) {
                 println!(
                     "Transaction {} has a gas mismatch: ZKsync OS used {}, reference: {}\n  Difference:{}",
                     receipt.transaction_index, res.gas_used, receipt.gas_used,
-                    zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used).abs_diff(res.gas_used)
+                    zk_ee::utils::u256_to_u64_saturated(&gas_used).abs_diff(res.gas_used)
                 )
             }
             // Logs check

@@ -1,7 +1,8 @@
 use ruint::{
-    aliases::{B160, B256, U256},
+    aliases::{B160, B256},
     Bits,
 };
+use u256::U256;
 
 #[repr(transparent)]
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
@@ -47,8 +48,8 @@ pub fn u256_to_u8_checked(src: U256) -> u8 {
 }
 
 #[inline(always)]
-pub fn b256_to_u256(src: B256) -> U256 {
-    U256::from_be_bytes(src.to_be_bytes::<{ B256::BYTES }>())
+pub fn b256_to_u256(src: &B256) -> U256 {
+    U256::from_be_bytes(&src.to_be_bytes::<32>())
 }
 
 #[inline(always)]
@@ -72,6 +73,25 @@ pub fn u256_try_to_u64(src: &U256) -> Option<u64> {
 }
 
 #[inline(always)]
+pub fn u256_try_to_byte_index(src: &U256) -> Option<usize> {
+    u256_try_to_usize_capped::<32>(src)
+}
+
+#[inline(always)]
+pub fn u256_try_to_usize_capped<const CAP: usize>(src: &U256) -> Option<usize> {
+    let limbs = src.as_limbs();
+    if limbs[3] != 0 || limbs[2] != 0 || limbs[1] != 0 {
+        None
+    } else {
+        if limbs[0] >= CAP as u64 {
+            None
+        } else {
+            Some(limbs[0] as usize)
+        }
+    }
+}
+
+#[inline(always)]
 pub fn u256_to_usize_saturated(src: &U256) -> usize {
     u256_to_u64_saturated(src) as usize
 }
@@ -87,7 +107,7 @@ pub fn u256_try_to_usize(src: &U256) -> Option<usize> {
 }
 
 #[inline(always)]
-pub fn u256_to_b160(src: U256) -> B160 {
+pub fn u256_to_b160(src: &U256) -> B160 {
     let mut result = B160::ZERO;
     unsafe {
         result.as_limbs_mut()[0] = src.as_limbs()[0];
@@ -99,13 +119,23 @@ pub fn u256_to_b160(src: U256) -> B160 {
 }
 
 #[inline(always)]
-pub fn b160_to_u256(src: B160) -> U256 {
-    let mut result = U256::ZERO;
+pub fn u256_limbs_to_b160(src: &[u64; 4]) -> B160 {
+    let mut result = B160::ZERO;
     unsafe {
-        result.as_limbs_mut()[0] = src.as_limbs()[0];
-        result.as_limbs_mut()[1] = src.as_limbs()[1];
-        result.as_limbs_mut()[2] = src.as_limbs()[2];
+        result.as_limbs_mut()[0] = src[0];
+        result.as_limbs_mut()[1] = src[1];
+        result.as_limbs_mut()[2] = src[2] & 0x00000000ffffffff;
     }
+
+    result
+}
+
+#[inline(always)]
+pub fn b160_to_u256(src: B160) -> U256 {
+    let mut result = U256::zero();
+    result.as_limbs_mut()[0] = src.as_limbs()[0];
+    result.as_limbs_mut()[1] = src.as_limbs()[1];
+    result.as_limbs_mut()[2] = src.as_limbs()[2];
 
     result
 }

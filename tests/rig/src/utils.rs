@@ -429,7 +429,7 @@ pub fn evm_bytecode_into_account_properties(bytecode: &[u8]) -> AccountPropertie
 
     let observable_bytecode_hash = Bytes32::from_array(Keccak256::digest(bytecode));
     let bytecode_hash = Bytes32::from_array(Blake2s256::digest(bytecode));
-    let mut result = AccountProperties::TRIVIAL_VALUE;
+    let mut result = AccountProperties::default();
     result.observable_bytecode_hash = observable_bytecode_hash;
     result.bytecode_hash = bytecode_hash;
     result.versioning_data.set_as_deployed();

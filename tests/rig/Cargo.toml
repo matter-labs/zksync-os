@@ -27,7 +27,7 @@ prover_examples = { workspace = true, optional=true}
 ethers = "2.0.0" # ethers 2.0.0 is required due to dependency conflict TODO: replace with alloy
 futures = "0.3.30"
 hex = "*"
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+ruint = { version = "1.14", default-features = false, features = ["alloc"] }
 tokio = { version = "1.40.0", features = ["rt-multi-thread"] }
 env_logger = "0.11.6"
 log = "0.4.22" # tokio with `rt-multi-thread` feature needed to build ethers 2.0.0

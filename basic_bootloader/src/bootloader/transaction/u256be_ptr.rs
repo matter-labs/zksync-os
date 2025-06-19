@@ -1,4 +1,5 @@
-use ruint::aliases::{B160, U256};
+use ::u256::U256;
+use ruint::aliases::B160;
 
 ///
 /// Reference to a BE encoded U256.
@@ -29,7 +30,7 @@ impl<'a> U256BEPtr<'a> {
     /// Read into U256 value.
     ///
     pub fn read(&self) -> U256 {
-        U256::from_be_bytes(*self.encoding)
+        U256::from_be_bytes(self.encoding)
     }
 
     ///

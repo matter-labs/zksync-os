@@ -10,7 +10,7 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [dependencies]
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+ruint = { version = "1.14", default-features = false, features = ["alloc"] }
 zk_ee = { path = "../zk_ee", default-features = false }
 crypto = { path = "../crypto", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }

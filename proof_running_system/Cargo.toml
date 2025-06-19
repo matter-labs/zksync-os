@@ -17,7 +17,7 @@ evm_interpreter = { path = "../evm_interpreter", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+ruint = { version = "1.14", default-features = false, features = ["alloc"] }
 crypto = { path = "../crypto", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
 cfg-if = "*"

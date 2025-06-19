@@ -1,4 +1,5 @@
-use ruint::aliases::{B160, U256};
+use ::u256::U256;
+use ruint::aliases::B160;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, SystemFunctionError};
 
 // Taken from revm, contains changes

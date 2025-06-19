@@ -46,7 +46,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
 
     fn new(system: &mut System<S>) -> Result<Self, InternalError> {
         let empty_resources = S::Resources::empty();
-        let stack_space = Vec::with_capacity_in(STACK_SIZE, system.get_allocator());
+        let stack_space = crate::stack::EVMStack::new_in(system.get_allocator());
         let empty_address = <S::IOTypes as SystemIOTypesConfig>::Address::default();
         let empty_preprocessing = BytecodePreprocessingData::<S>::empty(system);
 
@@ -63,7 +63,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
             returndata_location: 0..0,
             bytecode: &[],
             bytecode_preprocessing: empty_preprocessing,
-            call_value: U256::ZERO,
+            call_value: U256::zero(),
             is_constructor: false,
             gas_paid_for_heap_growth: 0u64,
         })
@@ -195,15 +195,15 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 // follow some not-true resource policy, it can make adjustments here before
                 // continuing the execution
                 self.copy_returndata_to_heap(return_values.returndata);
-                self.stack
-                    .push_within_capacity(U256::ZERO)
-                    .expect("must have enough space");
+                unsafe {
+                    self.stack.push_zero().unwrap_unchecked();
+                }
             }
             CallResult::Successful { return_values } => {
                 self.copy_returndata_to_heap(return_values.returndata);
-                self.stack
-                    .push_within_capacity(U256::from(1u64))
-                    .expect("must have enough space");
+                unsafe {
+                    self.stack.push_one().unwrap_unchecked();
+                }
             }
         }
 
@@ -231,8 +231,9 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 }
                 self.returndata = return_values.returndata;
                 // we need to push 0 to stack
-                self.push_values(&[U256::ZERO])
-                    .expect("must have enough space");
+                unsafe {
+                    self.stack.push_zero().unwrap_unchecked();
+                }
             }
             DeploymentResult::Successful {
                 return_values,
@@ -244,8 +245,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 assert!(return_values.returndata.is_empty());
                 self.returndata = return_values.returndata;
                 // we need to push address to stack
-                self.push_values(&[b160_to_u256(deployed_at)])
-                    .expect("must have enough space");
+                self.stack.push_unchecked(&b160_to_u256(deployed_at));
             }
         }
 
@@ -415,8 +415,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 let mut create2_buffer = [0xffu8; 1 + 20 + 32 + 32];
                 create2_buffer[1..(1 + 20)]
                     .copy_from_slice(&address_of_deployer.to_be_bytes::<{ B160::BYTES }>());
-                create2_buffer[(1 + 20)..(1 + 20 + 32)]
-                    .copy_from_slice(&salt.to_be_bytes::<{ U256::BYTES }>());
+                create2_buffer[(1 + 20)..(1 + 20 + 32)].copy_from_slice(&salt.to_be_bytes());
                 create2_buffer[(1 + 20 + 32)..(1 + 20 + 32 + 32)]
                     .copy_from_slice(initcode_hash.as_u8_array_ref());
 

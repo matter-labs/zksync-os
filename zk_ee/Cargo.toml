@@ -12,17 +12,17 @@ categories.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+ruint = { version = "1.14", default-features = false, features = ["alloc"] }
 cfg-if = "*"
 crypto = { path = "../crypto", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
 bitflags = { version = "2.6.0", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
+u256 = { path = "../supporting_crates/u256" }
 cycle_marker = { path = "../cycle_marker" }
 
-
 [features]
-testing = ["serde", "ruint/serde"]
+testing = ["serde", "ruint/serde", "u256/serde"]
 default = ["testing"]
 cycle_marker = []
 

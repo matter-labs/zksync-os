@@ -1,5 +1,6 @@
 use core::{mem::MaybeUninit, ptr::addr_of_mut};
-use ruint::aliases::{B160, U256};
+use ruint::aliases::B160;
+use u256::U256;
 
 #[cfg(target_pointer_width = "32")]
 pub const BYTES32_USIZE_SIZE: usize = 8;
@@ -185,23 +186,31 @@ impl Bytes32 {
     }
 
     pub fn into_u256_be(self) -> U256 {
-        U256::from_be_bytes(self.as_u8_array())
+        U256::from_be_bytes(&self.as_u8_array())
     }
 
-    pub fn from_u256_le(value: U256) -> Self {
+    pub fn from_u256_le(value: &U256) -> Self {
         cfg_if::cfg_if!(
             if #[cfg(target_endian = "big")] {
                 compile_error!("unsupported architecture: big endian arch is not supported")
             } else {
                 unsafe {
                     #[allow(clippy::missing_transmute_annotations)]
-                    return core::mem::transmute(value);
+                    return core::mem::transmute_copy(value);
                 }
             }
         );
     }
 
-    pub fn from_u256_be(value: U256) -> Self {
+    pub fn from_u256_be(value: &U256) -> Self {
+        let mut new = Self::uninit();
+        unsafe {
+            *new.assume_init_mut().as_u8_array_mut() = value.to_be_bytes();
+            new.assume_init()
+        }
+    }
+
+    pub fn from_ruint_u256_be(value: &ruint::aliases::U256) -> Self {
         let mut new = Self::uninit();
         unsafe {
             *new.assume_init_mut().as_u8_array_mut() = value.to_be_bytes();
