@@ -15,7 +15,7 @@ use crate::system_io_oracle::IOOracle;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
 use crate::utils::Bytes32;
 use arrayvec::ArrayVec;
-use ruint::aliases::U256;
+use ruint::aliases::{B160, U256};
 
 ///
 /// User facing IO trait.
@@ -390,6 +390,21 @@ pub trait IOSubsystemExt: IOSubsystem {
         bytecode_len: u32,
         artifacts_len: u32,
     ) -> Result<&'static [u8], SystemError>;
+
+    /// Special method that allows to set bytecode under address by hash.
+    /// Also, pubdata for such bytecode will not be published.
+    /// This method can be only triggered during special protocol upgrade txs.
+    fn set_bytecode_details(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        ee: ExecutionEnvironmentType,
+        bytecode_hash: Bytes32,
+        bytecode_len: u32,
+        artifacts_len: u32,
+        observable_bytecode_hash: Bytes32,
+        observable_bytecode_len: u32,
+    ) -> Result<(), SystemError>;
 
     fn finish(
         self,
