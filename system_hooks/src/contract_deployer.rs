@@ -93,7 +93,6 @@ where
     }
 }
 
-
 // setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
 const SET_EVM_BYTECODE_DETAILS: &[u8] = &[0xf6, 0xec, 0xa0, 0xb0];
 const L2_GENESIS_UPGRADE_ADDRESS: B160 = B160::from_limbs([0x10001, 0, 0]);
@@ -160,25 +159,18 @@ where
                 SystemError::Internal(InternalError("Failed to create B160 from 20 byte array")),
             )?;
 
-            let bytecode_hash = Bytes32::from_array(
-                calldata[32..64].try_into().expect("Always valid")
-            );
+            let bytecode_hash =
+                Bytes32::from_array(calldata[32..64].try_into().expect("Always valid"));
 
-            let bytecode_length: u32 = match U256::from_be_slice(
-                &calldata[64..96],
-            )
-                .try_into()
-            {
+            let bytecode_length: u32 = match U256::from_be_slice(&calldata[64..96]).try_into() {
                 Ok(length) => length,
                 Err(_) => return Ok(Err(
                     "Contract deployer failure: setBytecodeDetailsEVM called with invalid calldata",
                 )),
             };
 
-
-            let observable_bytecode_hash = Bytes32::from_array(
-                calldata[96..128].try_into().expect("Always valid")
-            );
+            let observable_bytecode_hash =
+                Bytes32::from_array(calldata[96..128].try_into().expect("Always valid"));
 
             // Although this can be called as a part of protocol upgrade,
             // we are checking the next invariants, just in case
@@ -198,7 +190,7 @@ where
                 bytecode_length,
                 0,
                 observable_bytecode_hash,
-                bytecode_length
+                bytecode_length,
             )?;
 
             let return_data = system.memory.empty_immutable_slice();
