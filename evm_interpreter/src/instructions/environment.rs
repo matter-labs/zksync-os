@@ -31,7 +31,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub fn difficulty(&mut self) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, DIFFICULTY_NATIVE_COST)?;
-        self.push_values(&[U256::ZERO])?;
+        self.push_values(&[U256::ONE])?;
         Ok(())
     }
 
@@ -77,16 +77,12 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         Ok(())
     }
 
-    #[cfg(feature = "mock-eip-4844")]
-    // Mocked for tests
     pub fn blobhash(&mut self, _system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::VERYLOW, 40)?;
         let [_] = self.pop_values::<1>()?;
         self.push_values(&[U256::ZERO])
     }
 
-    #[cfg(feature = "mock-eip-4844")]
-    // Mocked for tests
     pub fn blobbasefee(&mut self, _system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(gas_constants::BASE, 40)?;
         self.push_values(&[U256::from(1)])

@@ -343,6 +343,7 @@ where
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        in_constructor: bool,
     ) -> Result<(), SystemError> {
         self.storage.mark_for_deconstruction(
             from_ee,
@@ -350,6 +351,7 @@ where
             at_address,
             nominal_token_beneficiary,
             &mut self.oracle,
+            in_constructor,
         )
     }
 

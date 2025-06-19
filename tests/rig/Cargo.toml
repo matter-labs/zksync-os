@@ -10,10 +10,10 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-basic_bootloader = { path = "../../basic_bootloader", features = ["evm-compatibility"] }
+basic_bootloader = { path = "../../basic_bootloader" }
 risc_v_simulator = { workspace = true , features = ["delegation"] }
-basic_system = { path = "../../basic_system", features = ["evm-compatibility"] }
-evm_interpreter = { path = "../../evm_interpreter", features = ["evm-compatibility"] }
+basic_system = { path = "../../basic_system" }
+evm_interpreter = { path = "../../evm_interpreter" }
 forward_system = { path = "../../forward_system" }
 oracle_provider = { path = "../../oracle_provider" }
 zk_ee = { path = "../../zk_ee" }

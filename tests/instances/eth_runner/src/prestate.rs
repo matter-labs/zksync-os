@@ -81,27 +81,34 @@ impl AccountState {
     pub fn is_empty(&self) -> bool {
         self.balance.is_none()
             && self.nonce.is_none()
-            && self.code.is_none()
-            && self.storage.as_ref().is_none_or(|s| s.is_empty())
+            && self.code.as_ref().is_none()
+            && self.storage.as_ref().is_none()
     }
 }
 
-// True  when already touched
 #[derive(Default)]
-pub struct CacheElement {
-    balance: bool,
-    nonce: bool,
-    code: bool,
-    storage: HashMap<U256, B256>,
-}
-
-#[derive(Default)]
-pub struct Cache(HashMap<B160, CacheElement>);
+pub struct Cache(pub HashMap<B160, AccountState>);
 
 impl Cache {
     pub fn get_slot(&self, address: &B160, slot: &U256) -> Option<B256> {
         let el = self.0.get(address)?;
-        el.storage.get(slot).cloned()
+        el.storage.as_ref().and_then(|s| s.get(slot).cloned())
+    }
+
+    pub fn get_balance(&self, address: &B160) -> Option<U256> {
+        let el = self.0.get(address)?;
+        el.balance
+    }
+
+    pub fn get_nonce(&self, address: &B160) -> Option<u64> {
+        let el = self.0.get(address)?;
+        // Tracer omits nonce when it's 0, we need to fill it in
+        Some(el.nonce.unwrap_or(0))
+    }
+
+    pub fn get_code(&self, address: &B160) -> Option<alloy::primitives::Bytes> {
+        let el = self.0.get(address)?;
+        Some(el.code.clone().unwrap_or_default())
     }
 
     fn filter_pre_account_state(
@@ -110,48 +117,29 @@ impl Cache {
         new_account_state: AccountState,
     ) -> AccountState {
         let cache_el = self.0.entry(address).or_default();
-        let balance = if !cache_el.balance {
+        if cache_el.balance.is_none() {
             // Balance not touched yet
-            cache_el.balance = true;
-            new_account_state.balance
-        } else {
-            None
-        };
-        let nonce = if !cache_el.nonce {
+            cache_el.balance = new_account_state.balance;
+        }
+        if cache_el.nonce.is_none() {
             // Nonce not touched yet
-            cache_el.nonce = true;
-            new_account_state.nonce
-        } else {
-            None
-        };
-        let code = if !cache_el.code {
+            // Tracer omits nonce when it's 0, we need to fill it in
+            cache_el.nonce = Some(new_account_state.nonce.unwrap_or(0));
+        }
+        if cache_el.code.is_none() {
             // Code not touched yet
-            cache_el.code = true;
-            new_account_state.code
-        } else {
-            None
-        };
-        let mut storage = BTreeMap::<U256, B256>::new();
+            cache_el.code = new_account_state.code;
+        }
         if let Some(new_storage) = new_account_state.storage {
             new_storage.into_iter().for_each(|(key, value)| {
-                if let std::collections::hash_map::Entry::Vacant(e) = cache_el.storage.entry(key) {
+                let storage = cache_el.storage.get_or_insert_default();
+                if let std::collections::btree_map::Entry::Vacant(e) = storage.entry(key) {
                     // Slot not touched yet
                     e.insert(value);
-                    storage.insert(key, value);
                 }
             })
         }
-        let storage = if storage.is_empty() {
-            None
-        } else {
-            Some(storage)
-        };
-        AccountState {
-            balance,
-            nonce,
-            code,
-            storage,
-        }
+        cache_el.clone()
     }
 }
 
