@@ -94,7 +94,7 @@ where
 
 // setDeployedCodeEVM(address,bytes) - 1223adc7
 const SET_DEPLOYED_CODE_EVM_SELECTOR: &[u8] = &[0x12, 0x23, 0xad, 0xc7];
-const L2_GENESIS_UPGRADE_ADDRESS: B160 = B160::from_limbs([0x10001, 0, 0]);
+const L2_COMPLEX_UPGRADER_ADDRESS: B160 = B160::from_limbs([0x800f, 0, 0]);
 
 fn contract_deployer_hook_inner<S: EthereumLikeTypes>(
     mut calldata: &[u8],
@@ -133,7 +133,7 @@ where
                 ));
             }
             // in future we need to handle regular(not genesis) protocol upgrades
-            if caller != L2_GENESIS_UPGRADE_ADDRESS {
+            if caller != L2_COMPLEX_UPGRADER_ADDRESS {
                 return Ok(Err(
                     "Contract deployer failure: unauthorized caller for setDeployedCodeEVM",
                 ));
