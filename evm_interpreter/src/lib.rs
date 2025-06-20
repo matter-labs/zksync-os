@@ -20,6 +20,7 @@ extern crate alloc;
 use core::ops::Range;
 
 use evm_stack::EvmStack;
+use gas::Gas;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
@@ -32,6 +33,7 @@ use zk_ee::utils::*;
 
 mod ee_trait_impl;
 mod evm_stack;
+mod gas;
 pub mod gas_constants;
 pub mod i256;
 pub mod instructions;
@@ -48,8 +50,8 @@ pub(crate) const THIS_EE_TYPE: ExecutionEnvironmentType = ExecutionEnvironmentTy
 pub struct Interpreter<'a, S: EthereumLikeTypes> {
     /// Instruction pointer.
     pub instruction_pointer: usize,
-    /// Generic resources
-    pub resources: S::Resources,
+    /// TODO
+    pub gas: Gas<S>,
     /// Stack.
     pub stack: EvmStack<S::Allocator>,
     /// Caller address
@@ -74,8 +76,6 @@ pub struct Interpreter<'a, S: EthereumLikeTypes> {
     pub is_static: bool,
     /// Is interpreter call executing construction code.
     pub is_constructor: bool,
-    /// Keep track of gas spent on heap resizes
-    pub gas_paid_for_heap_growth: u64,
 }
 
 pub const STACK_SIZE: usize = 1024;

@@ -59,21 +59,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     #[inline(always)]
-    pub(crate) fn spend_gas(&mut self, to_spend: u64) -> Result<(), ExitCode> {
-        spend_gas_from_resources(&mut self.resources, to_spend)
-    }
-
-    #[inline(always)]
-    pub(crate) fn spend_gas_and_native(&mut self, gas: u64, native: u64) -> Result<(), ExitCode> {
-        spend_gas_and_native_from_resources(&mut self.resources, gas, native)
-    }
-
-    #[inline(always)]
-    pub(crate) fn gas_left(&self) -> u64 {
-        self.resources.ergs().0 / ERGS_PER_GAS
-    }
-
-    #[inline(always)]
     pub(crate) fn memory_len(&self) -> usize {
         self.heap.len()
     }
@@ -110,12 +95,13 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             let end_cost = crate::gas_constants::MEMORY
                 .saturating_mul(new_heap_size_words)
                 .saturating_add(new_heap_size_words.saturating_mul(new_heap_size_words) / 512);
-            let net_cost_gas = end_cost - self.gas_paid_for_heap_growth;
+            let net_cost_gas = end_cost - self.gas.gas_paid_for_heap_growth;
             let net_cost_native = HEAP_EXPANSION_BASE_NATIVE_COST.saturating_add(
                 HEAP_EXPANSION_PER_BYTE_NATIVE_COST.saturating_mul(net_byte_increase as u64),
             );
-            self.spend_gas_and_native(net_cost_gas, net_cost_native)?;
-            self.gas_paid_for_heap_growth = end_cost;
+            self.gas
+                .spend_gas_and_native(net_cost_gas, net_cost_native)?;
+            self.gas.gas_paid_for_heap_growth = end_cost;
 
             self.heap
                 .resize(multiple_of_32, 0)

@@ -36,8 +36,9 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         &self.address
     }
 
+    /// TODO not needed?
     fn resources_mut(&mut self) -> &mut <S as SystemTypes>::Resources {
-        &mut self.resources
+        &mut self.gas.resources
     }
 
     fn is_static_context(&self) -> bool {
@@ -45,14 +46,14 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
     }
 
     fn new(system: &mut System<S>) -> Result<Self, InternalError> {
-        let empty_resources = S::Resources::empty();
+        let gas = Gas::new();
         let stack_space = EvmStack::new_in(system.get_allocator());
         let empty_address = <S::IOTypes as SystemIOTypesConfig>::Address::default();
         let empty_preprocessing = BytecodePreprocessingData::<S>::empty(system);
 
         Ok(Self {
             instruction_pointer: 0,
-            resources: empty_resources,
+            gas,
             stack: stack_space,
             returndata: &[],
             is_static: false,
@@ -65,7 +66,6 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
             bytecode_preprocessing: empty_preprocessing,
             call_value: U256::ZERO,
             is_constructor: false,
-            gas_paid_for_heap_growth: 0u64,
         })
     }
 
@@ -144,7 +144,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         }
 
         assert!(
-            self.resources == S::Resources::empty(),
+            self.gas.resources == S::Resources::empty(),
             "for a fresh call resources of initial frame must be empty",
         );
 
@@ -158,7 +158,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
             &mut available_resources,
         )?;
 
-        self.resources = available_resources;
+        self.gas.resources = available_resources;
         self.bytecode = decommitted_bytecode;
         self.bytecode_preprocessing = bytecode_preprocessing;
         self.address = this_address;
@@ -179,8 +179,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         call_result: CallResult<'res, S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
         assert!(!call_result.has_scratch_space());
-        assert!(self.resources.native().as_u64() == 0);
-        self.resources.reclaim(returned_resources);
+        assert!(self.gas.resources.native().as_u64() == 0);
+        self.gas.resources.reclaim(returned_resources);
         match call_result {
             CallResult::CallFailedToExecute => {
                 let _ = system
@@ -215,8 +215,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         deployment_result: DeploymentResult<'res, S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
         assert!(!deployment_result.has_scratch_space());
-        assert!(self.resources.native().as_u64() == 0);
-        self.resources.reclaim(returned_resources);
+        assert!(self.gas.resources.native().as_u64() == 0);
+        self.gas.resources.reclaim(returned_resources);
         match deployment_result {
             DeploymentResult::Failed {
                 return_values,

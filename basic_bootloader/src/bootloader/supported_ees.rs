@@ -123,7 +123,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
     pub fn give_back_ergs(&mut self, resources: S::Resources) {
         assert!(resources.native().as_u64() == 0);
         match self {
-            Self::EVM(evm_frame) => evm_frame.resources.reclaim(resources),
+            Self::EVM(evm_frame) => evm_frame.gas.resources.reclaim(resources),
         }
     }
 }
