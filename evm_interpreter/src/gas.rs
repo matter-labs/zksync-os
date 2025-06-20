@@ -1,7 +1,9 @@
-use zk_ee::system::{Computational, EthereumLikeTypes, Resource, Resources};
+use zk_ee::system::{Computational, Ergs, EthereumLikeTypes, Resource, Resources};
 
 use crate::{
-    utils::{spend_gas_and_native_from_resources, spend_gas_from_resources},
+    native_resource_constants::{
+        HEAP_EXPANSION_BASE_NATIVE_COST, HEAP_EXPANSION_PER_BYTE_NATIVE_COST,
+    },
     ExitCode, ERGS_PER_GAS,
 };
 
@@ -20,38 +22,124 @@ impl<S: EthereumLikeTypes> Gas<S> {
         }
     }
 
+    #[inline(always)]
     pub(crate) fn native(&mut self) -> u64 {
         self.resources.native().as_u64()
     }
 
+    #[inline(always)]
+    pub(crate) fn gas_left(&self) -> u64 {
+        self.resources.ergs().0 / ERGS_PER_GAS
+    }
+
+    #[inline(always)]
     pub(crate) fn resources_mut(&mut self) -> &mut S::Resources {
         &mut self.resources
     }
 
+    #[inline(always)]
     pub(crate) fn take_resources(&mut self) -> S::Resources {
         self.resources.take()
     }
 
+    #[inline(always)]
     pub fn reclaim_resources(&mut self, resources: S::Resources) {
         self.resources.reclaim(resources);
     }
 
+    #[inline(always)]
     pub(crate) fn consume_all_gas(&mut self) {
         self.resources.exhaust_ergs();
     }
 
     #[inline(always)]
     pub(crate) fn spend_gas(&mut self, to_spend: u64) -> Result<(), ExitCode> {
-        spend_gas_from_resources(&mut self.resources, to_spend)
+        let Some(ergs_cost) = to_spend.checked_mul(ERGS_PER_GAS) else {
+            return Err(ExitCode::OutOfGas);
+        };
+        let resource_cost = S::Resources::from_ergs(Ergs(ergs_cost));
+        self.resources.charge(&resource_cost)?;
+        Ok(())
     }
 
     #[inline(always)]
     pub(crate) fn spend_gas_and_native(&mut self, gas: u64, native: u64) -> Result<(), ExitCode> {
-        spend_gas_and_native_from_resources(&mut self.resources, gas, native)
+        use zk_ee::system::Computational;
+        let Some(ergs_cost) = gas.checked_mul(ERGS_PER_GAS) else {
+            return Err(ExitCode::OutOfGas);
+        };
+        let resource_cost = S::Resources::from_ergs_and_native(
+            Ergs(ergs_cost),
+            Computational::from_computational(native),
+        );
+        self.resources.charge(&resource_cost)?;
+        Ok(())
     }
 
     #[inline(always)]
-    pub(crate) fn gas_left(&self) -> u64 {
-        self.resources.ergs().0 / ERGS_PER_GAS
+    /// current_msize is expected to be divisible by 32
+    pub(crate) fn pay_for_memory_growth(
+        &mut self,
+        current_msize: usize,
+        new_msize: usize,
+    ) -> Result<(), ExitCode> {
+        let net_byte_increase = new_msize - current_msize;
+        let new_heap_size_words = new_msize as u64 / 32;
+
+        let end_cost = crate::gas_constants::MEMORY
+            .saturating_mul(new_heap_size_words)
+            .saturating_add(new_heap_size_words.saturating_mul(new_heap_size_words) / 512);
+        let net_cost_gas = end_cost - self.gas_paid_for_heap_growth;
+        let net_cost_native = HEAP_EXPANSION_BASE_NATIVE_COST.saturating_add(
+            HEAP_EXPANSION_PER_BYTE_NATIVE_COST.saturating_mul(net_byte_increase as u64),
+        );
+        self.spend_gas_and_native(net_cost_gas, net_cost_native)?;
+
+        self.gas_paid_for_heap_growth = end_cost;
+
+        Ok(())
+    }
+}
+
+pub mod gas_utils {
+    use zk_ee::system::Ergs;
+
+    use crate::{ExitCode, ERGS_PER_GAS};
+
+    #[inline]
+    pub(crate) fn copy_cost(len: u64) -> Result<(u64, u64), ExitCode> {
+        let get_cost = |len: u64| -> Option<(u64, u64)> {
+            let num_words = len.checked_next_multiple_of(32)? / 32;
+            let gas = crate::gas_constants::COPY.checked_mul(num_words)?;
+            let native = crate::native_resource_constants::COPY_BYTE_NATIVE_COST
+                .checked_mul(len)?
+                .checked_add(crate::native_resource_constants::COPY_BASE_NATIVE_COST)?;
+            Some((gas, native))
+        };
+        get_cost(len).ok_or(ExitCode::OutOfGas)
+    }
+
+    #[inline]
+    // TODO name is confusing
+    pub(crate) fn very_low_copy_cost(len: u64) -> Result<(u64, u64), ExitCode> {
+        let get_cost = |len: u64| -> Option<(u64, u64)> {
+            let num_words = len.checked_next_multiple_of(32)? / 32;
+            let gas = crate::gas_constants::VERYLOW
+                .checked_add(crate::gas_constants::COPY.checked_mul(num_words)?)?;
+            let native = crate::native_resource_constants::COPY_BASE_NATIVE_COST // TODO: should it be COPY_BYTE_NATIVE_COST?
+                .checked_mul(len)?
+                .checked_add(crate::native_resource_constants::COPY_BASE_NATIVE_COST)?;
+            Some((gas, native))
+        };
+        get_cost(len).ok_or(ExitCode::OutOfGas)
+    }
+
+    // Returns the result of subtracting 1/64th gas from
+    // some resources.
+    #[inline(always)]
+    pub(crate) fn apply_63_64_rule(ergs: Ergs) -> Ergs {
+        // We need to apply the rule over gas, not ergs
+        let gas = ergs.0 / ERGS_PER_GAS;
+        Ergs(ergs.0 - (gas / 64) * ERGS_PER_GAS)
     }
 }

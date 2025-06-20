@@ -1,3 +1,5 @@
+use crate::gas::gas_utils;
+
 use super::*;
 use native_resource_constants::*;
 use zk_ee::system::System;
@@ -83,7 +85,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let [dst_offset, src_offset, len] = self.stack.pop_values::<3>()?;
 
         let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
-        let (gas_cost, native_cost) = self.very_low_copy_cost(len as u64)?;
+        let (gas_cost, native_cost) = gas_utils::very_low_copy_cost(len as u64)?;
         self.gas.spend_gas_and_native(gas_cost, native_cost)?;
 
         if len == 0 {

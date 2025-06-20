@@ -1,6 +1,6 @@
 use super::*;
+use crate::gas::gas_utils;
 use crate::interpreter::CreateScheme;
-use crate::utils::apply_63_64_rule;
 use alloc::boxed::Box;
 use core::any::Any;
 use core::fmt::Write;
@@ -265,7 +265,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
     ) -> Result<S::Resources, FatalError> {
         // we just need to apply 63/64 rule, as System/IO is responsible for the rest
 
-        let max_passable_ergs = apply_63_64_rule(resources_available_in_caller_frame.ergs());
+        let max_passable_ergs =
+            gas_utils::apply_63_64_rule(resources_available_in_caller_frame.ergs());
         let ergs_to_pass = core::cmp::min(desired_ergs_to_pass, max_passable_ergs);
 
         // Charge caller frame
@@ -323,7 +324,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         };
 
         // Constructor gets 63/64 of available resources
-        let ergs_for_constructor = apply_63_64_rule(deployer_full_resources.ergs());
+        let ergs_for_constructor = gas_utils::apply_63_64_rule(deployer_full_resources.ergs());
 
         // We only charge after succeeding the following checks:
         // - Deployer has enough balance for token transfer

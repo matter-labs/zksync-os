@@ -1,5 +1,7 @@
 // Adapted from https://github.com/bluealloy/revm/blob/main/crates/interpreter/src/instructions/system.rs
 
+use crate::gas::gas_utils;
+
 use super::*;
 use native_resource_constants::*;
 use zk_ee::memory::U256Builder;
@@ -80,7 +82,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn codecopy(&mut self, system: &mut System<S>) -> InstructionResult {
         let [memory_offset, source_offset, len] = self.stack.pop_values::<3>()?;
         let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
-        let (gas_cost, native_cost) = self.very_low_copy_cost(len as u64)?;
+        let (gas_cost, native_cost) = gas_utils::very_low_copy_cost(len as u64)?;
         self.gas
             .spend_gas_and_native(gas_cost, native_cost + CODECOPY_NATIVE_COST)?;
         if len == 0 {
@@ -163,7 +165,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn calldatacopy(&mut self, system: &mut System<S>) -> InstructionResult {
         let [memory_offset, source_offset, len] = self.stack.pop_values::<3>()?;
         let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
-        let (gas_cost, native_cost) = self.very_low_copy_cost(len as u64)?;
+        let (gas_cost, native_cost) = gas_utils::very_low_copy_cost(len as u64)?;
         self.gas
             .spend_gas_and_native(gas_cost, CALLDATACOPY_NATIVE_COST + native_cost)?;
         if len == 0 {
@@ -199,7 +201,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn returndatacopy(&mut self) -> InstructionResult {
         let [memory_offset, source_offset, len] = self.stack.pop_values::<3>()?;
         let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
-        let (gas_cost, native_cost) = self.very_low_copy_cost(len as u64)?;
+        let (gas_cost, native_cost) = gas_utils::very_low_copy_cost(len as u64)?;
         self.gas.spend_gas_and_native(gas_cost, RETURNDATACOPY_NATIVE_COST + native_cost)?;
         let source_offset = Self::cast_to_usize(&source_offset, ExitCode::InvalidOperandOOG)?;
         let (end, of) = source_offset.overflowing_add(len);

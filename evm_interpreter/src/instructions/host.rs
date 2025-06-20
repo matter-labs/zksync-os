@@ -1,3 +1,4 @@
+use crate::gas::gas_utils;
 use crate::interpreter::*;
 use core::hint::unreachable_unchecked;
 use gas_constants::{CALL_STIPEND, INITCODE_WORD_COST, SHA3WORD};
@@ -75,7 +76,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             .unwrap_or(&[]);
 
         // Charge for copy cost
-        let (gas_cost, native_cost) = self.copy_cost(len as u64)?;
+        let (gas_cost, native_cost) = gas_utils::copy_cost(len as u64)?;
         self.gas
             .spend_gas_and_native(gas_cost, native_cost + EXTCODECOPY_NATIVE_COST)?;
 
