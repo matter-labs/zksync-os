@@ -105,6 +105,12 @@ impl Chain<true> {
     }
 }
 
+#[derive(Debug)]
+pub struct BlockExtraStats {
+    pub native_used: Option<u64>,
+    pub effective_used: Option<u64>,
+}
+
 impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     pub fn set_last_block_number(&mut self, prev: u64) {
         self.block_number = prev
@@ -126,6 +132,16 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
     ) -> BatchOutput {
+        self.run_block_with_extra_stats(transactions, block_context, profiler_config)
+            .0
+    }
+
+    pub fn run_block_with_extra_stats(
+        &mut self,
+        transactions: Vec<Vec<u8>>,
+        block_context: Option<BlockContext>,
+        profiler_config: Option<ProfilerConfig>,
+    ) -> (BatchOutput, BlockExtraStats) {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
@@ -184,6 +200,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             colors::RESET,
             block_output.tx_results
         );
+        #[allow(unused_mut)]
+        let mut stats = BlockExtraStats {
+            native_used: None,
+            effective_used: None,
+        };
 
         #[cfg(feature = "report_native")]
         {
@@ -196,7 +217,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                         .unwrap_or_default()
                 })
                 .sum::<u64>();
-            info!("Native used: {native_used}")
+            stats.native_used = Some(native_used);
         }
 
         // proof run
@@ -234,7 +255,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             "Simulator without witness tracing executed over {:?}",
             now.elapsed()
         );
-        info!("Executed {block_effective:?} effective cycles");
+        stats.effective_used = block_effective;
 
         #[cfg(feature = "simulate_witness_gen")]
         {
@@ -275,7 +296,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         run_prover(items.borrow().as_slice());
         // TODO: we also need to update state if we want to execute next block on top
 
-        block_output
+        (block_output, stats)
     }
 
     fn get_account_properties(&mut self, address: &B160) -> AccountProperties {

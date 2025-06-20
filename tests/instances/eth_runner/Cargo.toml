@@ -29,3 +29,4 @@ serde_with = "3.13.0"
 
 [features]
 simulate_witness_gen = ["rig/simulate_witness_gen"]
+default = ["rig/cycle_marker", "rig/report_native"]
