@@ -248,7 +248,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let (proof_output, block_effective) = zksync_os_runner::run_and_get_effective_cycles(
             get_zksync_os_img_path(),
             diagnostics_config,
-            1 << 30,
+            1 << 36,
             copy_source,
         );
         info!(
