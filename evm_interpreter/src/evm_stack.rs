@@ -38,11 +38,6 @@ impl<A: Allocator> EvmStack<A> {
     }
 
     #[inline(always)]
-    pub(crate) fn raw_push_within_capacity(&mut self, value: U256) -> Result<(), U256> {
-        self.data.push_within_capacity(value)
-    }
-
-    #[inline(always)]
     pub(crate) fn push(&mut self, value: U256) -> Result<(), ExitCode> {
         unsafe {
             assume(self.data.capacity() == STACK_SIZE);
