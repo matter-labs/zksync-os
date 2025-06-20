@@ -31,7 +31,7 @@ use zk_ee::types_config::*;
 use zk_ee::utils::*;
 
 mod ee_trait_impl;
-mod gas;
+pub mod gas;
 pub mod gas_constants;
 pub mod i256;
 pub mod instructions;
