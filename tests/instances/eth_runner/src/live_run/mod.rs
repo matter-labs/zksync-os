@@ -137,9 +137,10 @@ fn run_block(block_number: u64, db: &Database, endpoint: &str) -> Result<()> {
     let (output, stats) = chain.run_block_with_extra_stats(transactions, Some(block_context), None);
 
     let ratio = compute_ratio(stats);
+    db.set_block_ratio(block_number, ratio)?;
+
     match post_check(
         output,
-        stats,
         receipts,
         diff_trace,
         prestate_cache,
@@ -171,4 +172,32 @@ pub fn live_run(start_block: u64, end_block: u64, endpoint: String, db_path: Str
         run_block(n, &db, &endpoint)?
     }
     Ok(())
+}
+
+///
+/// Export native/effective cycles ratios to csv file.
+///
+pub fn export_block_ratios(db: String, path: Option<String>) -> Result<()> {
+    let db = Database::init(db)?;
+    let path = path.unwrap_or("ratios.csv".to_string());
+    db.export_block_ratios_to_csv(&path)?;
+    Ok(())
+}
+
+///
+/// Show failed blocks, if any.
+///
+pub fn show_status(db: String) -> Result<()> {
+    let db = Database::init(db)?;
+    let failures = db.iter_failed_block_statuses()?;
+    if failures.is_empty() {
+        println!("✅ All blocks succeeded.");
+        Ok(())
+    } else {
+        println!("❌ Failed blocks:");
+        for (block_number, status) in failures {
+            println!("Block {:<8} => {:?}", block_number, status);
+        }
+        Ok(())
+    }
 }

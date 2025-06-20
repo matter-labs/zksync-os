@@ -48,7 +48,7 @@ enum Command {
         #[arg(long)]
         prestatetrace: String,
 
-        /// PAth to the diff trace JSON file
+        /// Path to the diff trace JSON file
         #[arg(long)]
         difftrace: String,
 
@@ -64,6 +64,18 @@ enum Command {
         /// positions to emulate real-world costs
         #[arg(long, action = clap::ArgAction::SetTrue)]
         randomized: bool,
+    },
+    // Export block ratios from DB
+    ExportRatios {
+        #[arg(long)]
+        db: String,
+        #[arg(long)]
+        path: Option<String>,
+    },
+    // Show failed blocks
+    ShowStatus {
+        #[arg(long)]
+        db: String,
     },
 }
 
@@ -94,5 +106,7 @@ fn main() -> anyhow::Result<()> {
             endpoint,
             db,
         } => live_run::live_run(start_block, end_block, endpoint, db),
+        Command::ExportRatios { db, path } => live_run::export_block_ratios(db, path),
+        Command::ShowStatus { db } => live_run::show_status(db),
     }
 }
