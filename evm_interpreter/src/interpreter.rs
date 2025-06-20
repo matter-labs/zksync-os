@@ -7,7 +7,7 @@ use zk_ee::system::{
     DeploymentPreparationParameters, DeploymentResult, EthereumLikeTypes,
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
 };
-use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, Resources, TransactionEndPoint};
+use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
 
 impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
@@ -33,12 +33,13 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 heap: next_heap,
                 request: match call {
                     ExternalCall::Call(EVMCallRequest {
-                        ergs_to_pass,
+                        gas_to_pass,
                         destination_address,
                         calldata,
                         modifier,
                         call_value,
                     }) => {
+                        let ergs_to_pass = Ergs(gas_to_pass.saturating_mul(ERGS_PER_GAS));
                         let available_resources = self.gas.take_resources();
                         ExecutionEnvironmentSpawnRequest::RequestedExternalCall(
                             ExternalCallRequest {
@@ -94,7 +95,7 @@ pub enum ExternalCall<S: EthereumLikeTypes> {
 }
 
 pub struct EVMCallRequest<S: EthereumLikeTypes> {
-    pub(crate) ergs_to_pass: Ergs,
+    pub(crate) gas_to_pass: u64,
     pub(crate) call_value: U256,
     pub(crate) destination_address: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub(crate) calldata: Range<usize>,
@@ -363,7 +364,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             // Spend all remaining resources on error
             self.gas.consume_all_gas();
         };
-        let mut resources = self.gas.take_resources();
         let mut return_values = ReturnValues::empty();
         if empty_returndata == false {
             return_values.returndata = &self.heap[self.returndata_location.clone()];
@@ -379,7 +379,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     || return_values.returndata.len() > MAX_CODE_SIZE
                 {
                     // Spend all remaining resources
-                    resources.exhaust_ergs();
+                    self.gas.consume_all_gas();
                     DeploymentResult::Failed {
                         return_values,
                         execution_reverted,
@@ -409,7 +409,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
             Ok(ExecutionEnvironmentPreemptionPoint::End(
                 TransactionEndPoint::CompletedDeployment(CompletedDeployment {
-                    resources_returned: resources,
+                    resources_returned: self.gas.take_resources(),
                     deployment_result,
                 }),
             ))
@@ -417,7 +417,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             Ok(ExecutionEnvironmentPreemptionPoint::End(
                 TransactionEndPoint::CompletedExecution(CompletedExecution {
                     return_values,
-                    resources_returned: resources,
+                    resources_returned: self.gas.take_resources(),
                     reverted: execution_reverted,
                 }),
             ))
