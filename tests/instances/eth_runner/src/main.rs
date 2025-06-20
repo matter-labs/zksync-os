@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 mod block;
 mod block_hashes;
 mod live_run;
+mod native_model;
 mod post_check;
 mod prestate;
 mod receipts;

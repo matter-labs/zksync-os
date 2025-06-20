@@ -6,6 +6,7 @@ mod rpc;
 use rig::log::{debug, info};
 use rig::Chain;
 
+use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
 use crate::prestate::populate_prestate;
 use crate::{
@@ -133,10 +134,12 @@ fn run_block(block_number: u64, db: &Database, endpoint: &str) -> Result<()> {
 
     let prestate_cache = populate_prestate(&mut chain, ps_trace);
 
-    let output = chain.run_block(transactions, Some(block_context), None);
+    let (output, stats) = chain.run_block_with_extra_stats(transactions, Some(block_context), None);
 
+    let ratio = compute_ratio(stats);
     match post_check(
         output,
+        stats,
         receipts,
         diff_trace,
         prestate_cache,

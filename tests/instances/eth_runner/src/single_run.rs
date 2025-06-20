@@ -1,5 +1,6 @@
 use crate::block::Block;
 use crate::block_hashes::BlockHashes;
+use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
 use crate::prestate::{populate_prestate, DiffTrace, PrestateTrace};
 use crate::receipts::{BlockReceipts, TransactionReceipt};
@@ -28,7 +29,9 @@ fn run<const RANDOMIZED: bool>(
 
     let prestate_cache = populate_prestate(&mut chain, ps_trace);
 
-    let output = chain.run_block(transactions, Some(block_context), None);
+    let (output, stats) = chain.run_block_with_extra_stats(transactions, Some(block_context), None);
+
+    let _ratio = compute_ratio(stats);
 
     post_check(
         output,

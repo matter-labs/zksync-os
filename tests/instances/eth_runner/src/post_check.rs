@@ -373,8 +373,6 @@ pub fn post_check(
                 });
             }
             if r.data.to_vec() != l.data {
-                // We allow data to be different, as it can sometimes depend on
-                // gas, which is not 100% equivalent (access lists)
                 error!(
                     "Data is not equal: we got {}, expected {}",
                     hex::encode(l.data.clone()),
