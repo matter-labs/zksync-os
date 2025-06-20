@@ -35,7 +35,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             let input = &self.heap[memory_offset..(memory_offset + len)];
 
             let mut dst = U256Builder::default();
-            S::SystemFunctions::keccak256(&input, &mut dst, &mut self.gas.resources, allocator)
+            S::SystemFunctions::keccak256(&input, &mut dst, self.gas.resources_mut(), allocator)
                 .map_err(|e| match e {
                     SystemFunctionError::InvalidInput => todo!(),
                     SystemFunctionError::System(e) => e,

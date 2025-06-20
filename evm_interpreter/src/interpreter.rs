@@ -39,7 +39,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                         modifier,
                         call_value,
                     }) => {
-                        let available_resources = self.gas.resources.take();
+                        let available_resources = self.gas.take_resources();
                         ExecutionEnvironmentSpawnRequest::RequestedExternalCall(
                             ExternalCallRequest {
                                 calldata: &current_heap[calldata],
@@ -361,9 +361,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
         if is_error {
             // Spend all remaining resources on error
-            self.gas.resources.exhaust_ergs();
+            self.gas.consume_all_gas();
         };
-        let mut resources = self.gas.resources.take();
+        let mut resources = self.gas.take_resources();
         let mut return_values = ReturnValues::empty();
         if empty_returndata == false {
             return_values.returndata = &self.heap[self.returndata_location.clone()];

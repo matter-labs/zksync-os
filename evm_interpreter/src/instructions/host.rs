@@ -16,7 +16,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value =
             system
                 .io
-                .get_nominal_token_balance(THIS_EE_TYPE, &mut self.gas.resources, &address)?;
+                .get_nominal_token_balance(THIS_EE_TYPE, self.gas.resources_mut(), &address)?;
         *stack_top = value;
         Ok(())
     }
@@ -25,7 +25,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.gas.spend_gas_and_native(0, SELFBALANCE_NATIVE_COST)?;
         let value = system
             .io
-            .get_selfbalance(THIS_EE_TYPE, &mut self.gas.resources, &self.address)?;
+            .get_selfbalance(THIS_EE_TYPE, self.gas.resources_mut(), &self.address)?;
         self.stack.push(value)
     }
 
@@ -36,7 +36,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value =
             system
                 .io
-                .get_observable_bytecode_size(THIS_EE_TYPE, &mut self.gas.resources, &address)?;
+                .get_observable_bytecode_size(THIS_EE_TYPE, self.gas.resources_mut(), &address)?;
         *stack_top = U256::from(value);
         Ok(())
     }
@@ -48,7 +48,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value =
             system
                 .io
-                .get_observable_bytecode_hash(THIS_EE_TYPE, &mut self.gas.resources, &address)?;
+                .get_observable_bytecode_hash(THIS_EE_TYPE, self.gas.resources_mut(), &address)?;
 
         *stack_top = value.into_u256_be();
         Ok(())
@@ -67,7 +67,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let bytecode =
             system
                 .io
-                .get_observable_bytecode(THIS_EE_TYPE, &mut self.gas.resources, &address)?;
+                .get_observable_bytecode(THIS_EE_TYPE, self.gas.resources_mut(), &address)?;
 
         // now follow logic of calldatacopy
         let source = u256_try_to_usize(&source_offset)
@@ -97,7 +97,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let stack_head = self.stack.top_mut()?;
         let value = system.io.storage_read::<false>(
             THIS_EE_TYPE,
-            &mut self.gas.resources,
+            self.gas.resources_mut(),
             &self.address,
             &Bytes32::from_u256_be(*stack_head),
         )?;
@@ -111,7 +111,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let stack_head = self.stack.top_mut()?;
         let value = system.io.storage_read::<true>(
             THIS_EE_TYPE,
-            &mut self.gas.resources,
+            self.gas.resources_mut(),
             &self.address,
             &Bytes32::from_u256_be(*stack_head),
         )?;
@@ -132,7 +132,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         system.io.storage_write::<false>(
             THIS_EE_TYPE,
-            &mut self.gas.resources,
+            self.gas.resources_mut(),
             &self.address,
             &index,
             &value,
@@ -158,7 +158,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let [index, value] = self.stack.pop_values::<2>()?.map(Bytes32::from_u256_be);
         system.io.storage_write::<true>(
             THIS_EE_TYPE,
-            &mut self.gas.resources,
+            self.gas.resources_mut(),
             &self.address,
             &index,
             &value,
@@ -188,7 +188,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         system.io.emit_event(
             ExecutionEnvironmentType::EVM,
-            &mut self.gas.resources,
+            self.gas.resources_mut(),
             &self.address,
             &topics,
             data,
@@ -209,7 +209,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         system.io.mark_for_deconstruction(
             THIS_EE_TYPE,
-            &mut self.gas.resources,
+            self.gas.resources_mut(),
             &self.address,
             &beneficiary,
             self.is_constructor,
@@ -273,7 +273,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let ee_specific_data = alloc::boxed::Box::try_new_in(scheme, system.get_allocator())
             .expect("system allocator must be capable to allocate for EE deployment parameters");
         // at this preemption point we give all resources for preparation
-        let all_resources = self.gas.resources.take();
+        let all_resources = self.gas.take_resources();
 
         let deployment_parameters = EVMDeploymentRequest {
             deployment_code,

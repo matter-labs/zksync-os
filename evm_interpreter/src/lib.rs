@@ -33,7 +33,7 @@ use zk_ee::utils::*;
 
 mod ee_trait_impl;
 mod evm_stack;
-mod gas;
+pub mod gas;
 pub mod gas_constants;
 pub mod i256;
 pub mod instructions;

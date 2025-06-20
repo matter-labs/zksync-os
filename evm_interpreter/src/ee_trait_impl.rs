@@ -38,7 +38,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
 
     /// TODO not needed?
     fn resources_mut(&mut self) -> &mut <S as SystemTypes>::Resources {
-        &mut self.gas.resources
+        self.gas.resources_mut()
     }
 
     fn is_static_context(&self) -> bool {
@@ -144,7 +144,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         }
 
         assert!(
-            self.gas.resources == S::Resources::empty(),
+            *self.gas.resources_mut() == S::Resources::empty(),
             "for a fresh call resources of initial frame must be empty",
         );
 
@@ -158,7 +158,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
             &mut available_resources,
         )?;
 
-        self.gas.resources = available_resources;
+        *self.gas.resources_mut() = available_resources;
         self.bytecode = decommitted_bytecode;
         self.bytecode_preprocessing = bytecode_preprocessing;
         self.address = this_address;
@@ -179,8 +179,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         call_result: CallResult<'res, S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
         assert!(!call_result.has_scratch_space());
-        assert!(self.gas.resources.native().as_u64() == 0);
-        self.gas.resources.reclaim(returned_resources);
+        assert!(self.gas.native() == 0);
+        self.gas.reclaim_resources(returned_resources);
         match call_result {
             CallResult::CallFailedToExecute => {
                 let _ = system
@@ -215,8 +215,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         deployment_result: DeploymentResult<'res, S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
         assert!(!deployment_result.has_scratch_space());
-        assert!(self.gas.resources.native().as_u64() == 0);
-        self.gas.resources.reclaim(returned_resources);
+        assert!(self.gas.native() == 0);
+        self.gas.reclaim_resources(returned_resources);
         match deployment_result {
             DeploymentResult::Failed {
                 return_values,
