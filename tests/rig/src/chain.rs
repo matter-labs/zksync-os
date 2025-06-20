@@ -185,6 +185,20 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             block_output.tx_results
         );
 
+        #[cfg(feature = "report_native")]
+        {
+            let native_used: u64 = block_output
+                .tx_results
+                .iter()
+                .map(|res| {
+                    res.as_ref()
+                        .map(|tx_out| tx_out.native_used)
+                        .unwrap_or_default()
+                })
+                .sum::<u64>();
+            info!("Native used: {native_used}")
+        }
+
         // proof run
         let oracle_wrapper = BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle);
 

@@ -205,6 +205,7 @@ where
         // TODO: consider operator refund
         let (_pubdata_spent, to_charge_for_pubdata) =
             get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
+        #[allow(unused_variables)]
         let (_, gas_used) = Self::compute_gas_refund(
             system,
             to_charge_for_pubdata,
@@ -291,6 +292,8 @@ where
             is_upgrade_tx: !is_priority_op,
             gas_used,
             gas_refunded: 0,
+            #[cfg(feature = "report_native")]
+            native_used: 0,
         })
     }
 
@@ -558,6 +561,7 @@ where
             Err(FatalError::Internal(e)) => return Err(e.into()),
         };
 
+        let resources_before_refund = resources.clone();
         // After the transaction is executed, we reclaim the withheld resources.
         // This is needed to ensure correct "gas_used" calculation, also these
         // resources could be spent for pubdata.
@@ -595,7 +599,11 @@ where
         cycle_marker::log_marker(
             format!(
                 "Spent native for [process_transaction]: {}",
-                resources.diff(initial_resources).native().as_u64()
+                resources_before_refund
+                    .clone()
+                    .diff(initial_resources.clone())
+                    .native()
+                    .as_u64()
             )
             .as_str(),
         );
@@ -607,6 +615,11 @@ where
             is_upgrade_tx: false,
             gas_used,
             gas_refunded: 0,
+            #[cfg(feature = "report_native")]
+            native_used: resources_before_refund
+                .diff(initial_resources)
+                .native()
+                .as_u64(),
         })
     }
 
