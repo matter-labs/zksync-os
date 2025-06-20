@@ -29,8 +29,7 @@ impl<A: Allocator> EvmStack<A> {
     #[allow(dead_code)]
     pub(crate) fn print_stack_content(&self, logger: &mut impl Logger) {
         let _ = logger.write_fmt(format_args!("DEPTH MAX\n"));
-        for el in self.data.iter().rev()
-        {
+        for el in self.data.iter().rev() {
             let _ = logger.write_fmt(format_args!("{:x}\n", el));
         }
         let _ = logger.write_fmt(format_args!("DEPTH 0\n"));
