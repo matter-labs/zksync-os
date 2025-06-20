@@ -6,8 +6,10 @@ use alloy::primitives::U256;
 use anyhow::{Context, Result};
 use bincode::config::standard;
 use bincode::serde::{decode_from_slice, encode_to_vec};
+use csv::Writer;
 use serde::{Deserialize, Serialize};
 use sled::{Db, Tree};
+use std::fs::File;
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -16,6 +18,7 @@ pub struct Database {
     block_hashes: Tree,
     block_traces: Tree,
     block_status: Tree,
+    block_ratios: Tree,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -65,12 +68,14 @@ impl Database {
         let block_hashes = db.open_tree("block_hashes")?;
         let block_traces = db.open_tree("block_traces")?;
         let block_status = db.open_tree("block_status")?;
+        let block_ratios = db.open_tree("block_ratios")?;
 
         Ok(Self {
             db,
             block_hashes,
             block_traces,
             block_status,
+            block_ratios,
         })
     }
 
@@ -123,5 +128,43 @@ impl Database {
             .insert(block_number.to_be_bytes(), bytes)?;
         self.block_status.flush()?;
         Ok(())
+    }
+
+    pub fn set_block_ratio(&self, block_number: u64, ratio: f64) -> Result<()> {
+        let bytes = encode_to_vec(ratio, standard()).context("Failed to encode block ratio")?;
+        self.block_ratios
+            .insert(block_number.to_be_bytes(), bytes)?;
+        self.block_ratios.flush()?;
+        Ok(())
+    }
+
+    pub fn export_block_ratios_to_csv(self, path: &str) -> Result<()> {
+        let mut writer = Writer::from_writer(File::create(path)?);
+        writer.write_record(["block_number", "ratio"])?;
+
+        for entry in self.block_ratios.iter() {
+            let (key, value) = entry?;
+            let block_number = u64::from_be_bytes(key.as_ref().try_into().unwrap());
+            let ratio: f64 =
+                bincode::serde::decode_from_slice(&value, bincode::config::standard())?.0;
+            writer.write_record(&[block_number.to_string(), format!("{:?}", ratio)])?;
+        }
+
+        writer.flush()?;
+        Ok(())
+    }
+
+    pub fn iter_failed_block_statuses(&self) -> Result<Vec<(u64, BlockStatus)>> {
+        let mut entries = vec![];
+        for item in self.block_status.iter() {
+            let (k, v) = item?;
+            let block_number = u64::from_be_bytes(k.as_ref().try_into()?);
+            let status: BlockStatus =
+                bincode::serde::decode_from_slice(&v, bincode::config::standard())?.0;
+            if status != BlockStatus::Success {
+                entries.push((block_number, status));
+            }
+        }
+        Ok(entries)
     }
 }
