@@ -360,7 +360,6 @@ where
 
             let element_key = element_history.key();
 
-            // TODO: shouldn't be reachable?
             // Skip if already calculated pubdata for this element
             if visited_elements.contains(element_key) {
                 continue;
