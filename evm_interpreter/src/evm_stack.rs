@@ -1,6 +1,6 @@
 use core::alloc::Allocator;
-use ruint::aliases::{B160, U256};
-use zk_ee::{system::logger::Logger, utils::u256_to_b160};
+use ruint::aliases::U256;
+use zk_ee::system::logger::Logger;
 
 use crate::Vec;
 use crate::{utils::assume, ExitCode, STACK_SIZE};
@@ -40,19 +40,6 @@ impl<A: Allocator> EvmStack<A> {
     #[inline(always)]
     pub(crate) fn raw_push_within_capacity(&mut self, value: U256) -> Result<(), U256> {
         self.data.push_within_capacity(value)
-    }
-
-    #[inline(always)]
-    pub(crate) fn pop_addresses<const N: usize>(&mut self) -> Result<[B160; N], ExitCode> {
-        let len = self.data.len();
-        if len < N {
-            return Err(ExitCode::StackUnderflow);
-        }
-        unsafe {
-            let values = core::array::from_fn(|_| u256_to_b160(self.data.pop().unwrap_unchecked()));
-
-            Ok(values)
-        }
     }
 
     #[inline(always)]
