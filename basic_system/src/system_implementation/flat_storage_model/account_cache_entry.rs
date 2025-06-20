@@ -516,7 +516,7 @@ mod tests {
         r#final.nonce = 22;
 
         let optimal_length =
-            AccountProperties::diff_compression_length(&initial, &r#final).unwrap();
+            AccountProperties::diff_compression_length(&initial, &r#final, false).unwrap();
 
         let mut nop_hasher = NopHasher::new();
         let mut result_keeper = TestResultKeeper { pubdata: vec![] };
@@ -528,6 +528,7 @@ mod tests {
         AccountProperties::diff_compression::<false, _, _>(
             &initial,
             &r#final,
+            false,
             &mut nop_hasher,
             &mut result_keeper,
             &mut preimages_cache,
@@ -562,7 +563,7 @@ mod tests {
         r#final.observable_bytecode_hash = keccak.into();
 
         let optimal_length =
-            AccountProperties::diff_compression_length(&initial, &r#final).unwrap();
+            AccountProperties::diff_compression_length(&initial, &r#final, false).unwrap();
 
         let mut nop_hasher = NopHasher::new();
         let mut result_keeper = TestResultKeeper { pubdata: vec![] };
@@ -587,6 +588,7 @@ mod tests {
         AccountProperties::diff_compression::<false, _, _>(
             &initial,
             &r#final,
+            false,
             &mut nop_hasher,
             &mut result_keeper,
             &mut preimages_cache,
