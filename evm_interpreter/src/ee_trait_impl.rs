@@ -231,9 +231,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 }
                 self.returndata = return_values.returndata;
                 // we need to push 0 to stack
-                self.stack
-                    .push_values(&[U256::ZERO])
-                    .expect("must have enough space");
+                self.stack.push(U256::ZERO).expect("must have enough space");
             }
             DeploymentResult::Successful {
                 return_values,
@@ -246,7 +244,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 self.returndata = return_values.returndata;
                 // we need to push address to stack
                 self.stack
-                    .push_values(&[b160_to_u256(deployed_at)])
+                    .push(b160_to_u256(deployed_at))
                     .expect("must have enough space");
             }
         }

@@ -56,21 +56,6 @@ impl<A: Allocator> EvmStack<A> {
     }
 
     #[inline(always)]
-    pub(crate) fn push_values<const N: usize>(
-        &mut self,
-        values: &[U256; N],
-    ) -> Result<(), ExitCode> {
-        if self.data.len() + N > STACK_SIZE {
-            return Err(ExitCode::StackOverflow);
-        }
-        unsafe {
-            assume(self.data.capacity() == STACK_SIZE);
-        }
-        self.data.extend_from_slice(values);
-        Ok(())
-    }
-
-    #[inline(always)]
     pub(crate) fn push(&mut self, value: U256) -> Result<(), ExitCode> {
         unsafe {
             assume(self.data.capacity() == STACK_SIZE);
