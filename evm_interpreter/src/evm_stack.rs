@@ -30,7 +30,6 @@ impl<A: Allocator> EvmStack<A> {
     pub(crate) fn print_stack_content(&self, logger: &mut impl Logger) {
         let _ = logger.write_fmt(format_args!("DEPTH MAX\n"));
         for el in self.data.iter().rev()
-        // TODO rev?
         {
             let _ = logger.write_fmt(format_args!("{:x}\n", el));
         }
