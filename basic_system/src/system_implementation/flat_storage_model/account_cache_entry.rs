@@ -422,7 +422,7 @@ impl AccountProperties {
 
                 if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
                     return Err(InternalError(
-                        "Account propertires diff compression shouldn't be called for same values",
+                        "Account properties diff compression shouldn't be called for same values",
                     ));
                 }
                 let mut metadata_byte = 4u8;
