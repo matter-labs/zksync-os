@@ -1,22 +1,40 @@
+use core::alloc::Allocator;
 use ruint::aliases::{B160, U256};
-use zk_ee::{
-    system::{logger::Logger, EthereumLikeTypes},
-    utils::u256_to_b160,
-};
+use zk_ee::{system::logger::Logger, utils::u256_to_b160};
 
 use crate::Vec;
 use crate::{utils::assume, ExitCode, STACK_SIZE};
 
-pub struct EvmStack<S: EthereumLikeTypes> {
-    data: Vec<U256, S::Allocator>,
+pub struct EvmStack<A: Allocator> {
+    data: Vec<U256, A>,
 }
 
-impl<S: EthereumLikeTypes> EvmStack<S> {
+impl<A: Allocator> EvmStack<A> {
     #[inline(always)]
-    pub fn new(alloc: S::Allocator) -> Self {
+    pub fn new_in(alloc: A) -> Self {
         Self {
             data: Vec::with_capacity_in(STACK_SIZE, alloc),
         }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn print_stack_top(&self, logger: &mut impl Logger) {
+        if let Some(el) = self.data.last() {
+            let _ = logger.write_fmt(format_args!("Stack top = 0x{:x}\n", el));
+        } else {
+            let _ = logger.write_str("Stack top = empty\n");
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn print_stack_content(&self, logger: &mut impl Logger) {
+        let _ = logger.write_fmt(format_args!("DEPTH MAX\n"));
+        for el in self.data.iter().rev()
+        // TODO rev?
+        {
+            let _ = logger.write_fmt(format_args!("{:x}\n", el));
+        }
+        let _ = logger.write_fmt(format_args!("DEPTH 0\n"));
     }
 
     #[inline(always)]
@@ -65,7 +83,7 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
     }
 
     #[inline(always)]
-    pub(crate) fn top(&mut self) -> Result<&mut U256, ExitCode> {
+    pub(crate) fn top_mut(&mut self) -> Result<&mut U256, ExitCode> {
         let len = self.data.len();
         if len < 1 {
             return Err(ExitCode::StackUnderflow);
@@ -169,13 +187,6 @@ impl<S: EthereumLikeTypes> EvmStack<S> {
             }
 
             Ok(())
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn debug_print(&self, mut logger: impl Logger) {
-        for el in self.data.iter() {
-            let _ = logger.write_fmt(format_args!("{:?}\n", el));
         }
     }
 }

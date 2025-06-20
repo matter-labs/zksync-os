@@ -51,7 +51,7 @@ pub struct Interpreter<'a, S: EthereumLikeTypes> {
     /// Generic resources
     pub resources: S::Resources,
     /// Stack.
-    pub stack: EvmStack<S>,
+    pub stack: EvmStack<S::Allocator>,
     /// Caller address
     pub caller: <S::IOTypes as SystemIOTypesConfig>::Address,
     /// Contract information and invoking data

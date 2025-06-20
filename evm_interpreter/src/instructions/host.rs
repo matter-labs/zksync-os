@@ -87,7 +87,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
     pub fn sload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, SLOAD_NATIVE_COST)?;
-        let stack_head = self.stack.top()?;
+        let stack_head = self.stack.top_mut()?;
         let value = system.io.storage_read::<false>(
             THIS_EE_TYPE,
             &mut self.resources,
@@ -101,7 +101,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
     pub fn tload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.spend_gas_and_native(0, TLOAD_NATIVE_COST)?;
-        let stack_head = self.stack.top()?;
+        let stack_head = self.stack.top_mut()?;
         let value = system.io.storage_read::<true>(
             THIS_EE_TYPE,
             &mut self.resources,
