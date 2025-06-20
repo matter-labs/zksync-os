@@ -1,9 +1,9 @@
 use alloy::primitives::U256;
 use anyhow::{anyhow, Context, Ok, Result};
-use db::{BlockTraces, Database};
+use db::{BlockStatus, BlockTraces, Database};
 mod db;
 mod rpc;
-use rig::log::{debug, info};
+use rig::log::{debug, error, info};
 use rig::Chain;
 
 use crate::native_model::compute_ratio;
@@ -15,6 +15,7 @@ use crate::{
 };
 
 const N_PREV_BLOCKS: usize = 256;
+const MAX_FAILURES: usize = 100;
 
 // Fetches hashes for the N_PREV_BLOCKS previous to [start_block].
 // Persists them in DB.
@@ -82,7 +83,7 @@ fn fetch_block_traces(block_number: u64, db: &Database, endpoint: &str) -> Resul
     }
 }
 
-fn run_block(block_number: u64, db: &Database, endpoint: &str) -> Result<()> {
+fn run_block(block_number: u64, db: &Database, endpoint: &str) -> Result<BlockStatus> {
     let block_traces = fetch_block_traces(block_number, db, endpoint)?;
     let traces_clone = block_traces.clone();
 
@@ -147,18 +148,18 @@ fn run_block(block_number: u64, db: &Database, endpoint: &str) -> Result<()> {
         ruint::aliases::B160::from_be_bytes(miner.into()),
     ) {
         core::result::Result::Ok(()) => {
-            db.set_block_status(block_number, db::BlockStatus::Success)?
+            db.set_block_status(block_number, db::BlockStatus::Success)?;
+            Ok(db::BlockStatus::Success)
         }
         Err(e) => {
-            db.set_block_status(block_number, db::BlockStatus::Error(e))?;
+            db.set_block_status(block_number, db::BlockStatus::Error(e.clone()))?;
             // Always save of them for now, even when already cached.
             // TODO: avoid persisting when read from cache.
             db.set_block_traces(block_number, &traces_clone)?;
             debug!("Saved block traces for block {}", block_number);
+            Ok(db::BlockStatus::Error(e))
         }
     }
-
-    Ok(())
 }
 
 ///
@@ -168,8 +169,15 @@ pub fn live_run(start_block: u64, end_block: u64, endpoint: String, db_path: Str
     let db = Database::init(db_path)?;
     assert!(start_block <= end_block);
     fetch_block_hashes(start_block, &db, &endpoint)?;
+    let mut failures = 0;
     for n in start_block..=end_block {
-        run_block(n, &db, &endpoint)?
+        if let BlockStatus::Error(_) = run_block(n, &db, &endpoint)? {
+            failures += 1;
+            if failures == MAX_FAILURES {
+                error!("Reached max number of failures");
+                panic!()
+            }
+        }
     }
     Ok(())
 }
