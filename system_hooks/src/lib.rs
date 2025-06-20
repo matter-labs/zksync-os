@@ -99,6 +99,7 @@ impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
     ///
     /// Intercepts calls to low addresses (< 2^16) and executes hooks
     /// stored under that address. If no hook is stored there, return `Ok(None)`.
+    /// Always return unused return_memory.
     ///
     pub fn try_intercept<'a>(
         &mut self,
@@ -107,13 +108,13 @@ impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
         caller_ee: u8,
         system: &mut System<S>,
         return_memory: &'a mut [MaybeUninit<u8>],
-    ) -> Result<Option<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>])>, FatalError> {
+    ) -> Result<(Option<CompletedExecution<'a, S>>, &'a mut [MaybeUninit<u8>]), FatalError> {
         let Some(hook) = self.inner.get(&address_low) else {
-            return Ok(None);
+            return Ok((None, return_memory));
         };
-        let res = hook.0(request, caller_ee, system, return_memory)?;
+        let (res, remaining_memory) = hook.0(request, caller_ee, system, return_memory)?;
 
-        Ok(Some(res))
+        Ok((Some(res), remaining_memory))
     }
 
     ///
