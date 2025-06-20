@@ -154,7 +154,7 @@ macro_rules! wrap_with_resources {
 }
 
 #[cfg(all(feature = "use_risc_v_simulator", not(target_arch = "riscv32")))]
-pub fn print_cycle_markers() {
+pub fn print_cycle_markers() -> Option<u64> {
     use risc_v_simulator::cycle::state::*;
     let cm = take_cycle_marker();
     let labels = LABELS.with(|l| std::mem::take(&mut *l.borrow_mut()));
@@ -196,15 +196,25 @@ pub fn print_cycle_markers() {
         .collect();
     markers.sort_by_key(|(_, (start, _))| start.cycles);
 
+    let mut block_effective: Option<u64> = None;
+
     for (label, (start, end)) in markers {
         let diff = end.diff(&start);
         log_marker(&format!(
             "{}: net cycles: {}, net delegations: {:?}",
             label, diff.cycles, diff.delegations
-        ))
+        ));
+        if label == "run_prepared" {
+            block_effective = Some(
+                diff.cycles
+                    + 16 * diff.delegations.get(&1991u32).cloned().unwrap_or_default()
+                    + 4 * diff.delegations.get(&1994u32).cloned().unwrap_or_default(),
+            )
+        }
     }
     log_marker(&format!(
         "Total delegations: {:?}\n==================",
         cm.delegation_counter
-    ))
+    ));
+    block_effective
 }

@@ -9,7 +9,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-risc_v_simulator = { workspace = true, features = ["opcode_stats", "delegation", "cycle_marker"], optional = true }
+risc_v_simulator = { workspace = true, features = ["delegation", "cycle_marker"], optional = true }
 
 [features]
 use_risc_v_simulator = ["risc_v_simulator"]

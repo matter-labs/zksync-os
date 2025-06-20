@@ -17,7 +17,7 @@ use forward_system::run::{
     io_implementer_init_data, BatchOutput, ForwardRunningOracle, ForwardRunningOracleAux,
 };
 use forward_system::system::bootloader::run_forward;
-use log::info;
+use log::{debug, info, trace};
 use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
 use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
 use ruint::aliases::{B160, B256, U256};
@@ -105,6 +105,12 @@ impl Chain<true> {
     }
 }
 
+#[derive(Debug)]
+pub struct BlockExtraStats {
+    pub native_used: Option<u64>,
+    pub effective_used: Option<u64>,
+}
+
 impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     pub fn set_last_block_number(&mut self, prev: u64) {
         self.block_number = prev
@@ -126,6 +132,16 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
     ) -> BatchOutput {
+        self.run_block_with_extra_stats(transactions, block_context, profiler_config)
+            .0
+    }
+
+    pub fn run_block_with_extra_stats(
+        &mut self,
+        transactions: Vec<Vec<u8>>,
+        block_context: Option<BlockContext>,
+        profiler_config: Option<ProfilerConfig>,
+    ) -> (BatchOutput, BlockExtraStats) {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
@@ -178,12 +194,31 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         );
 
         let block_output: BatchOutput = result_keeper.into();
-        info!(
+        trace!(
             "{}Block output:{} \n{:#?}",
             colors::MAGENTA,
             colors::RESET,
             block_output.tx_results
         );
+        #[allow(unused_mut)]
+        let mut stats = BlockExtraStats {
+            native_used: None,
+            effective_used: None,
+        };
+
+        #[cfg(feature = "report_native")]
+        {
+            let native_used: u64 = block_output
+                .tx_results
+                .iter()
+                .map(|res| {
+                    res.as_ref()
+                        .map(|tx_out| tx_out.native_used)
+                        .unwrap_or_default()
+                })
+                .sum::<u64>();
+            stats.native_used = Some(native_used);
+        }
 
         // proof run
         let oracle_wrapper = BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle);
@@ -210,16 +245,17 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         });
 
         let now = std::time::Instant::now();
-        let proof_output = zksync_os_runner::run(
+        let (proof_output, block_effective) = zksync_os_runner::run_and_get_effective_cycles(
             get_zksync_os_img_path(),
             diagnostics_config,
-            1 << 30,
+            1 << 36,
             copy_source,
         );
-        println!(
+        info!(
             "Simulator without witness tracing executed over {:?}",
             now.elapsed()
         );
+        stats.effective_used = block_effective;
 
         #[cfg(feature = "simulate_witness_gen")]
         {
@@ -237,20 +273,20 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             for num in items.borrow().iter() {
                 write!(file, "{:08X}", num).expect("Failed to write to file");
             }
-            info!(
+            debug!(
                 "Successfully wrote {} u32 csr reads elements to file: {}",
                 items.borrow().len(),
                 output_csr
             );
         }
 
-        info!(
+        debug!(
             "{}Proof running output{} = 0x",
             colors::GREEN,
             colors::RESET
         );
         for word in proof_output.into_iter() {
-            info!("{:08x}", word);
+            debug!("{:08x}", word);
         }
 
         // Ensure that proof running didn't fail: check that output is not zero
@@ -260,7 +296,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         run_prover(items.borrow().as_slice());
         // TODO: we also need to update state if we want to execute next block on top
 
-        block_output
+        (block_output, stats)
     }
 
     fn get_account_properties(&mut self, address: &B160) -> AccountProperties {

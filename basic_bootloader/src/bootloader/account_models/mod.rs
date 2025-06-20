@@ -60,6 +60,8 @@ pub struct TxProcessingResult<'a> {
     pub is_upgrade_tx: bool,
     pub gas_used: u64,
     pub gas_refunded: u64,
+    #[cfg(feature = "report_native")]
+    pub native_used: u64,
 }
 
 pub trait AccountModel<S: EthereumLikeTypes>

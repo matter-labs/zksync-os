@@ -18,6 +18,8 @@ pub struct TxProcessingOutput<'a> {
     pub contract_address: Option<B160>,
     pub gas_used: u64,
     pub gas_refunded: u64,
+    #[cfg(feature = "report_native")]
+    pub native_used: u64,
 }
 
 pub trait ResultKeeperExt: IOResultKeeper<EthereumIOTypesConfig> {
