@@ -319,10 +319,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             .spend_gas_and_native(0, native_resource_constants::CALL_NATIVE_COST)?;
         self.clear_last_returndata();
 
-        let [local_gas_limit] = self.pop_values::<1>()?;
+        let [gas_to_pass] = self.pop_values::<1>()?;
         let [to] = self.pop_addresses::<1>()?;
 
-        let local_gas_limit = u256_to_u64_saturated(&local_gas_limit);
+        let gas_to_pass = u256_to_u64_saturated(&gas_to_pass);
 
         let value = match scheme {
             CallScheme::CallCode => {
@@ -354,11 +354,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // TODO: not necessary once heaps get the calldata treatment
         let calldata = in_offset..(in_offset + in_len);
 
+        // TODO clarify gas model here
         // NOTE: we give to the system both what we have NOW, and what we WANT to pass,
         // and depending on warm/cold behavior it may charge more from the current frame,
         // and pass less.
-
-        let ergs_to_pass = Ergs(local_gas_limit.saturating_mul(ERGS_PER_GAS));
 
         let is_static = matches!(scheme, CallScheme::StaticCall) || self.is_static;
         let call_modifier = if is_static {
@@ -383,7 +382,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             destination_address: to,
             calldata,
             modifier: call_modifier,
-            ergs_to_pass,
+            gas_to_pass,
             call_value: value,
         };
 
