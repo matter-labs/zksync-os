@@ -1,6 +1,6 @@
 use ruint::aliases::{B160, U256};
 use zk_ee::{
-    system::{logger::Logger, EthereumLikeTypes, MemorySubsystem},
+    system::{logger::Logger, EthereumLikeTypes},
     utils::u256_to_b160,
 };
 
@@ -8,12 +8,12 @@ use crate::Vec;
 use crate::{utils::assume, ExitCode, STACK_SIZE};
 
 pub struct EvmStack<S: EthereumLikeTypes> {
-    data: Vec<U256, <S::Memory as MemorySubsystem>::Allocator>,
+    data: Vec<U256, S::Allocator>,
 }
 
 impl<S: EthereumLikeTypes> EvmStack<S> {
     #[inline(always)]
-    pub fn new(alloc: <S::Memory as MemorySubsystem>::Allocator) -> Self {
+    pub fn new(alloc: S::Allocator) -> Self {
         Self {
             data: Vec::with_capacity_in(STACK_SIZE, alloc),
         }
