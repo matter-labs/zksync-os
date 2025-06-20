@@ -46,7 +46,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
 
     fn new(system: &mut System<S>) -> Result<Self, InternalError> {
         let empty_resources = S::Resources::empty();
-        let stack_space = EvmStack::new(system.get_allocator());
+        let stack_space = EvmStack::new_in(system.get_allocator());
         let empty_address = <S::IOTypes as SystemIOTypesConfig>::Address::default();
         let empty_preprocessing = BytecodePreprocessingData::<S>::empty(system);
 
