@@ -184,6 +184,7 @@ where
                     AccountProperties::diff_compression::<PROOF_ENV, _, _>(
                         l.value(),
                         r.value(),
+                        r.metadata().not_publish_bytecode,
                         pubdata_hasher,
                         result_keeper,
                         &mut preimages_cache,
@@ -353,6 +354,33 @@ where
             bytecode,
             bytecode_len,
             artifacts_len,
+            &mut self.storage_cache,
+            &mut self.preimages_cache,
+            oracle,
+        )
+    }
+
+    fn set_bytecode_details(
+        &mut self,
+        resources: &mut R,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        ee: ExecutionEnvironmentType,
+        bytecode_hash: Bytes32,
+        bytecode_len: u32,
+        artifacts_len: u32,
+        observable_bytecode_hash: Bytes32,
+        observable_bytecode_len: u32,
+        oracle: &mut impl IOOracle,
+    ) -> Result<(), SystemError> {
+        self.account_data_cache.set_bytecode_details::<PROOF_ENV>(
+            resources,
+            at_address,
+            ee,
+            bytecode_hash,
+            bytecode_len,
+            artifacts_len,
+            observable_bytecode_hash,
+            observable_bytecode_len,
             &mut self.storage_cache,
             &mut self.preimages_cache,
             oracle,

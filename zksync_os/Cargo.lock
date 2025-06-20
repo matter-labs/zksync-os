@@ -225,7 +225,7 @@ dependencies = [
 [[package]]
 name = "blake2s_u32"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=0.1.0#ea0a0d030dd4645cd6f2ab0691a2d05d89d43771"
+source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=0.2.0#30635bd7d9bb2aedf9c67450d8a7e1a7ff3c7ee3"
 dependencies = [
  "unroll",
 ]
@@ -796,7 +796,7 @@ dependencies = [
 [[package]]
 name = "riscv_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=0.1.0#ea0a0d030dd4645cd6f2ab0691a2d05d89d43771"
+source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=0.2.0#30635bd7d9bb2aedf9c67450d8a7e1a7ff3c7ee3"
 
 [[package]]
 name = "ruint"

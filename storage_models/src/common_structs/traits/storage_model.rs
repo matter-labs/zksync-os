@@ -1,5 +1,7 @@
+use super::snapshottable_io::SnapshottableIo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system_io_oracle::IOOracle;
+use zk_ee::utils::Bytes32;
 use zk_ee::{
     system::{
         errors::{InternalError, SystemError, UpdateQueryError},
@@ -8,8 +10,6 @@ use zk_ee::{
     },
     types_config::SystemIOTypesConfig,
 };
-
-use super::snapshottable_io::SnapshottableIo;
 
 ///
 /// Storage model trait needed to allow using different storage models in the system.
@@ -163,6 +163,19 @@ pub trait StorageModel: Sized + SnapshottableIo {
         artifacts_len: u32,
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError>;
+
+    fn set_bytecode_details(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        ee: ExecutionEnvironmentType,
+        bytecode_hash: Bytes32,
+        bytecode_len: u32,
+        artifacts_len: u32,
+        observable_bytecode_hash: Bytes32,
+        observable_bytecode_len: u32,
+        oracle: &mut impl IOOracle,
+    ) -> Result<(), SystemError>;
 
     fn mark_for_deconstruction(
         &mut self,
