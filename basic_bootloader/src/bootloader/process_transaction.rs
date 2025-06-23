@@ -17,11 +17,13 @@ use constants::{
     L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_PUBDATA, L2_TX_INTRINSIC_GAS, L2_TX_INTRINSIC_PUBDATA,
     MAX_BLOCK_GAS_LIMIT,
 };
+use errors::BootloaderSubsystemError;
 use evm_interpreter::ERGS_PER_GAS;
 use gas_helpers::check_enough_resources_for_pubdata;
 use gas_helpers::get_resources_to_charge_for_pubdata;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
+use zk_ee::system::errors::RuntimeError;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::{EthereumLikeTypes, Resources};
 
@@ -190,12 +192,14 @@ where
                 }
                 // Out of native is converted to a top-level revert and
                 // gas is exhausted.
-                Err(FatalError::OutOfNativeResources) => {
+                Err(BootloaderSubsystemError::Runtime(
+                    zk_ee::system::errors::RuntimeError::OutOfNativeResources,
+                )) => {
                     resources.exhaust_ergs();
                     system.finish_global_frame(Some(&rollback_handle))?;
                     ExecutionResult::Revert { output: &[] }
                 }
-                Err(FatalError::Internal(e)) => return Err(e.into()),
+                Err(e) => return Err(e.into()),
             }
         } else {
             ExecutionResult::Revert { output: &[] }
@@ -305,7 +309,7 @@ where
         native_per_pubdata: U256,
         resources: &mut S::Resources,
         withheld_resources: S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Executing L1 transaction\n"));
@@ -412,11 +416,12 @@ where
             system
         )?;
         let tx_gas_limit = transaction.gas_limit.read();
-        require!(
-            tx_gas_limit <= block_gas_limit,
-            InvalidTransaction::CallerGasLimitMoreThanBlock,
-            system
-        )?;
+        // FIXME: temporary hack: can't deploy unless this is commented
+        // require!(
+        //     tx_gas_limit <= block_gas_limit,
+        //     InvalidTransaction::CallerGasLimitMoreThanBlock,
+        //     system
+        // )?;
 
         let gas_per_pubdata = system.get_gas_per_pubdata();
         let native_price = system.get_native_price();
@@ -547,7 +552,7 @@ where
             }
             // Out of native is converted to a top-level revert and
             // gas is exhausted.
-            Err(FatalError::OutOfNativeResources) => {
+            Err(BootloaderSubsystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
                 let _ = system
                     .get_logger()
                     .write_fmt(format_args!("Transaction ran out of native resource\n"));
@@ -555,7 +560,7 @@ where
                 system.finish_global_frame(Some(&rollback_handle))?;
                 ExecutionResult::Revert { output: &[] }
             }
-            Err(FatalError::Internal(e)) => return Err(e.into()),
+            Err(e) => return Err(e.into()),
         };
 
         // After the transaction is executed, we reclaim the withheld resources.
@@ -714,7 +719,7 @@ where
         validation_pubdata: u64,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Start of execution\n"));

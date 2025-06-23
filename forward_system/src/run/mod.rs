@@ -1,4 +1,5 @@
 pub(crate) mod oracle;
+pub mod error;
 pub mod output;
 mod preimage_source;
 mod tree;
@@ -14,6 +15,7 @@ use crate::system::system::CallSimulationBootloader;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
 };
+use error::ForwardSubsystemError;
 use oracle::CallSimulationOracle;
 pub use oracle::ForwardRunningOracle;
 pub use oracle::ForwardRunningOracleAux;
@@ -56,7 +58,7 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     preimage_source: PS,
     tx_source: TS,
     tx_result_callback: TR,
-) -> Result<BatchOutput, InternalError> {
+) -> Result<BatchOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
         io_implementer_init_data: None,
         block_metadata: batch_context,
@@ -172,7 +174,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     batch_context: BatchContext,
     storage: S,
     preimage_source: PS,
-) -> Result<TxResult, InternalError> {
+) -> Result<TxResult, ForwardSubsystemError> {
     let tx_source = TxListSource {
         transactions: vec![transaction].into(),
     };
@@ -191,7 +193,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     CallSimulationBootloader::run_prepared::<BasicBootloaderCallSimulationConfig>(
         oracle,
         &mut result_keeper,
-    )?;
+    ).map_err(|e| e.wrap())?;
     let mut batch_output: BatchOutput = result_keeper.into();
     Ok(batch_output.tx_results.remove(0))
 }

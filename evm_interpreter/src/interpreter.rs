@@ -1,6 +1,7 @@
 use super::*;
 use core::fmt::Write;
 use core::ops::Range;
+use error::EvmSubsystemError;
 use native_resource_constants::STEP_NATIVE_COST;
 use zk_ee::system::{
     logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
@@ -9,6 +10,7 @@ use zk_ee::system::{
 };
 use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, Resources, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
+use zksync_os_error::exec_env::evm::EVMError;
 
 impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     /// Keeps executing instructions (steps) from the system, until it hits a yield point -
@@ -17,12 +19,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn execute_till_yield_point<'a>(
         &'a mut self,
         system: &mut System<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
         let mut external_call = None;
         let exit_code = self.run(system, &mut external_call)?;
 
         if let ExitCode::FatalError(e) = exit_code {
-            return Err(e);
+            return Err(e.into())
         }
 
         if let Some(call) = external_call {
@@ -157,7 +159,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         &mut self,
         system: &mut System<S>,
         external_call_dest: &mut Option<ExternalCall<S>>,
-    ) -> Result<ExitCode, FatalError> {
+    ) -> Result<ExitCode, EvmSubsystemError> {
         let mut cycles = 0;
         let result = loop {
             let opcode = self.get_bytecode_unchecked(self.instruction_pointer);
@@ -346,11 +348,21 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             }
         };
 
+
+
         let _ = system.get_logger().write_fmt(format_args!(
             "Instructions executed = {}\nFinal instruction result = {:?}\n",
             cycles, &result
         ));
 
+        // TODO: zksync-error injection here, and the users should treat some of
+        // errors not in a fatal way
+        // if let Some(err) = convert_exit_code_to_error(result) {
+        //     Err(err)
+        // }
+        // else {
+        //     Ok(result)
+        // }
         Ok(result)
     }
 
@@ -359,7 +371,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         empty_returndata: bool,
         execution_reverted: bool,
         is_error: bool,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
         if is_error {
             // Spend all remaining resources on error
             self.resources.exhaust_ergs();
@@ -441,3 +453,58 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.returndata = returndata_region;
     }
 }
+
+
+// TODO --- move away
+/// Converts an EVM `ExitCode` into a structured `ExecutionEnvironmentError`.
+pub fn convert_exit_code_to_error(exit_code: ExitCode) -> Option<EvmSubsystemError> {
+    todo!()
+    // if let
+    //     ExitCode::FatalError(e) = exit_code {
+    //         Some(EvmSubsystemError::from(e).into())
+    //     }
+    // else {
+    //     let public_error = match exit_code {
+    //         // Revert codes
+    //         ExitCode::Revert => EVMError::Revert,
+    //         ExitCode::CallTooDeep => EVMError::CallTooDeep,
+    //         ExitCode::OutOfFund => EVMError::OutOfFund,
+
+    //         // Error codes
+    //         ExitCode::OutOfGas => EVMError::OutOfGas,
+    //         ExitCode::MemoryOOG => EVMError::MemoryOOG,
+    //         ExitCode::MemoryLimitOOG => EVMError::MemoryLimitOOG,
+    //         ExitCode::PrecompileOOG => EVMError::PrecompileOOG,
+    //         ExitCode::InvalidOperandOOG => EVMError::InvalidOperandOOG,
+    //         ExitCode::OpcodeNotFound => EVMError::OpcodeNotFound,
+    //         ExitCode::CallNotAllowedInsideStatic => EVMError::CallNotAllowedInsideStatic,
+    //         ExitCode::StateChangeDuringStaticCall => EVMError::StateChangeDuringStaticCall,
+    //         ExitCode::InvalidFEOpcode => EVMError::InvalidFEOpcode,
+    //         ExitCode::InvalidJump => EVMError::InvalidJump,
+    //         ExitCode::NotActivated => EVMError::NotActivated,
+    //         ExitCode::StackUnderflow => EVMError::StackUnderflow,
+    //         ExitCode::StackOverflow => EVMError::StackOverflow,
+    //         ExitCode::OutOfOffset => EVMError::OutOfOffset,
+    //         ExitCode::CreateCollision => EVMError::CreateCollision,
+    //         ExitCode::OverflowPayment => EVMError::OverflowPayment,
+    //         ExitCode::PrecompileError => EVMError::PrecompileError,
+    //         ExitCode::NonceOverflow => EVMError::NonceOverflow,
+    //         ExitCode::CreateContractSizeLimit => EVMError::CreateContractSizeLimit,
+    //         ExitCode::CreateContractStartingWithEF => EVMError::CreateContractStartingWithEF,
+    //         ExitCode::CreateInitcodeSizeLimit => EVMError::CreateInitcodeSizeLimit,
+
+    //         // Fatal errors
+    //         ExitCode::FatalExternalError => EVMError::FatalExternalError,
+    //         // The inner `FatalError` data is discarded in this mapping, as the
+    //         // destination `EVMError::FatalError` is a unit variant.
+    //         _ => return None
+    //     };
+    //     Some(EvmSubsystemError(public_error))
+    //}
+}
+//
+//
+//
+//
+//
+// -----

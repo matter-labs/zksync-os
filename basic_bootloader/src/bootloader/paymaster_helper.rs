@@ -4,6 +4,7 @@ use crate::bootloader::errors::InvalidTransaction::AAValidationError;
 use crate::bootloader::errors::{InvalidAA, TxError};
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use constants::{PAYMASTER_VALIDATE_AND_PAY_SELECTOR, TX_CALLDATA_OFFSET};
+use errors::BootloaderSubsystemError;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::system::errors::{FatalError, InternalError};
@@ -48,7 +49,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             PAYMASTER_VALIDATE_AND_PAY_SELECTOR,
             resources,
         )
-        .map_err(TxError::oon_as_validation)?;
+        .map_err(TxError::stub_oon_as_validation)?;
 
         *resources = resources_returned;
         // Return memory isn't flushed, as it's read by
@@ -331,7 +332,7 @@ where {
         from: B160,
         selector: &[u8],
         resources: &mut S::Resources,
-    ) -> Result<CompletedExecution<'a, S>, FatalError>
+    ) -> Result<CompletedExecution<'a, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -365,6 +366,7 @@ where {
             resources_for_tx,
             &U256::ZERO,
             true,
-        )
+        );
+        panic!("paymaster will be cut")
     }
 }

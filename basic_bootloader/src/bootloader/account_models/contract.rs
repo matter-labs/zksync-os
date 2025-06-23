@@ -3,6 +3,7 @@ use crate::bootloader::constants::PREPARE_FOR_PAYMASTER_SELECTOR;
 use crate::bootloader::constants::{
     EXECUTE_SELECTOR, PAY_FOR_TRANSACTION_SELECTOR, VALIDATE_SELECTOR,
 };
+use crate::bootloader::errors::BootloaderSubsystemError;
 use crate::bootloader::errors::{
     AAMethod, InvalidAA, InvalidTransaction::AAValidationError, TxError,
 };
@@ -57,7 +58,7 @@ where
             VALIDATE_SELECTOR,
             resources,
         )
-        .map_err(TxError::oon_as_validation)?;
+        .map_err(TxError::stub_oon_as_validation)?;
 
         let returndata_slice = return_values.returndata;
         *resources = resources_returned;
@@ -93,7 +94,7 @@ where
         transaction: &mut ZkSyncTransaction,
         _current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("About to start AA execution\n"));
@@ -208,7 +209,7 @@ where
             PAY_FOR_TRANSACTION_SELECTOR,
             resources,
         )
-        .map_err(TxError::oon_as_validation)?;
+        .map_err(TxError::stub_oon_as_validation)?;
 
         *resources = resources_returned;
 
@@ -257,7 +258,7 @@ where
             PREPARE_FOR_PAYMASTER_SELECTOR,
             resources,
         )
-        .map_err(TxError::oon_as_validation)?;
+        .map_err(TxError::stub_oon_as_validation)?;
         *resources = resources_returned;
 
         let res: Result<(), TxError> = if reverted {

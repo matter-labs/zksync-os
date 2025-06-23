@@ -14,6 +14,8 @@ use crate::error::definitions::CommonCode;
 use crate::error::definitions::EVMCode;
 use crate::error::definitions::EraVM;
 use crate::error::definitions::EraVMCode;
+use crate::error::definitions::ExecutionEnvironments;
+use crate::error::definitions::ExecutionEnvironmentsCode;
 use crate::error::definitions::ExecutionPlatform;
 use crate::error::definitions::ExecutionPlatformCode;
 use crate::error::definitions::FoundryUpstream;
@@ -174,6 +176,9 @@ impl ZksyncError {
             ZksyncError::Hardhat(Hardhat::HardhatZksync(_)) => {
                 Kind::Hardhat(HardhatCode::HardhatZksync)
             }
+            ZksyncError::Os(Os::ExecutionEnvironments(_)) => {
+                Kind::Os(OsCode::ExecutionEnvironments)
+            }
             ZksyncError::Os(Os::Storage(_)) => Kind::Os(OsCode::Storage),
             ZksyncError::Os(Os::System(_)) => Kind::Os(OsCode::System),
             ZksyncError::Os(Os::SystemEnvironment(_)) => Kind::Os(OsCode::SystemEnvironment),
@@ -250,6 +255,9 @@ impl ZksyncError {
             }
             ZksyncError::Hardhat(Hardhat::HardhatZksync(error)) => {
                 Into::<HardhatZksyncCode>::into(error) as u32
+            }
+            ZksyncError::Os(Os::ExecutionEnvironments(error)) => {
+                Into::<ExecutionEnvironmentsCode>::into(error) as u32
             }
             ZksyncError::Os(Os::Storage(error)) => Into::<StorageCode>::into(error) as u32,
             ZksyncError::Os(Os::System(error)) => Into::<SystemCode>::into(error) as u32,
@@ -881,6 +889,7 @@ impl core::error::Error for Hardhat {}
 )]
 #[strum_discriminants(vis(pub))]
 pub enum Os {
+    ExecutionEnvironments(ExecutionEnvironments),
     Storage(Storage),
     System(System),
     SystemEnvironment(SystemEnvironment),
@@ -888,6 +897,16 @@ pub enum Os {
 impl Os {
     pub fn get_name(&self) -> &str {
         self.as_ref()
+    }
+}
+impl ICustomError<ZksyncError, ZksyncError> for ExecutionEnvironments {
+    fn to_unified(&self) -> ZksyncError {
+        Os::ExecutionEnvironments(self.clone()).to_unified()
+    }
+}
+impl From<ExecutionEnvironments> for Os {
+    fn from(val: ExecutionEnvironments) -> Self {
+        Os::ExecutionEnvironments(val)
     }
 }
 impl ICustomError<ZksyncError, ZksyncError> for Storage {
@@ -937,6 +956,7 @@ impl crate::documentation::Documented for Os {
         &self,
     ) -> Result<Option<Self::Documentation>, crate::documentation::DocumentationError> {
         match self {
+            Os::ExecutionEnvironments(error) => error.get_documentation(),
             Os::Storage(error) => error.get_documentation(),
             Os::System(error) => error.get_documentation(),
             Os::SystemEnvironment(error) => error.get_documentation(),
@@ -946,6 +966,7 @@ impl crate::documentation::Documented for Os {
 impl fmt::Display for Os {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Os::ExecutionEnvironments(component) => component.fmt(f),
             Os::Storage(component) => component.fmt(f),
             Os::System(component) => component.fmt(f),
             Os::SystemEnvironment(component) => component.fmt(f),

@@ -1,4 +1,5 @@
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
+use errors::BootloaderSubsystemError;
 use system_hooks::HooksStorage;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::CallModifier;
@@ -60,7 +61,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         mut resources: S::Resources,
         nominal_token_value: &U256,
         should_make_frame: bool,
-    ) -> Result<CompletedExecution<'a, S>, FatalError>
+    ) -> Result<CompletedExecution<'a, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {

@@ -22,7 +22,370 @@
           "component_name": "EVM",
           "component_code": 3,
           "identifier_encoding": "evm",
-          "errors": []
+          "errors": [
+            {
+              "name": "Stop",
+              "code": 1,
+              "message": "Execution stopped successfully.",
+              "fields": [],
+              "doc": {
+                "summary": "Execution stopped successfully.",
+                "description": [
+                  "The machine execution has halted gracefully."
+                ]
+              }
+            },
+            {
+              "name": "Return",
+              "code": 2,
+              "message": "Execution returned successfully.",
+              "fields": [],
+              "doc": {
+                "summary": "Execution returned successfully with output data.",
+                "description": [
+                  "The machine execution has finished and returned data."
+                ]
+              }
+            },
+            {
+              "name": "SelfDestruct",
+              "code": 3,
+              "message": "Contract self-destructed.",
+              "fields": [],
+              "doc": {
+                "summary": "Contract initiated a self-destruct.",
+                "description": [
+                  "The contract has been marked for deletion, and its funds will be transferred."
+                ]
+              }
+            },
+            {
+              "name": "ExternalCall",
+              "code": 4,
+              "message": "An external call has been initiated.",
+              "fields": [],
+              "doc": {
+                "summary": "Initiating an external call.",
+                "description": [
+                  "This code indicates that the current execution context is pausing to make a call to another contract or address."
+                ]
+              }
+            },
+            {
+              "name": "Revert",
+              "code": 32,
+              "message": "Execution reverted.",
+              "fields": [],
+              "doc": {
+                "summary": "Execution reverted.",
+                "description": [
+                  "The execution was halted by a REVERT opcode. State changes are rolled back, but remaining gas is returned."
+                ]
+              }
+            },
+            {
+              "name": "CallTooDeep",
+              "code": 33,
+              "message": "Call stack depth exceeded.",
+              "fields": [],
+              "doc": {
+                "summary": "Call stack has reached its maximum depth.",
+                "description": [
+                  "The execution was halted because the call stack depth limit (usually 1024) was reached."
+                ]
+              }
+            },
+            {
+              "name": "OutOfFund",
+              "code": 34,
+              "message": "Insufficient funds for transfer.",
+              "fields": [],
+              "doc": {
+                "summary": "The sending account has insufficient funds for the value transfer.",
+                "description": [
+                  "An attempt was made to transfer a value greater than the account's balance."
+                ]
+              }
+            },
+            {
+              "name": "OutOfGas",
+              "code": 80,
+              "message": "Execution ran out of gas.",
+              "fields": [],
+              "doc": {
+                "summary": "Out of gas.",
+                "description": [
+                  "The execution consumed all the gas provided, resulting in an exceptional halt."
+                ]
+              }
+            },
+            {
+              "name": "MemoryOOG",
+              "code": 81,
+              "message": "Out of gas during memory expansion.",
+              "fields": [],
+              "doc": {
+                "summary": "Out of gas (memory).",
+                "description": [
+                  "Not enough gas to pay for the expansion of memory."
+                ]
+              }
+            },
+            {
+              "name": "MemoryLimitOOG",
+              "code": 82,
+              "message": "Memory limit exceeded.",
+              "fields": [],
+              "doc": {
+                "summary": "Memory limit exceeded.",
+                "description": [
+                  "The execution required more memory than the allowed limit."
+                ]
+              }
+            },
+            {
+              "name": "PrecompileOOG",
+              "code": 83,
+              "message": "Out of gas in a precompile.",
+              "fields": [],
+              "doc": {
+                "summary": "Out of gas (precompile).",
+                "description": [
+                  "A precompiled contract ran out of gas during its execution."
+                ]
+              }
+            },
+            {
+              "name": "InvalidOperandOOG",
+              "code": 84,
+              "message": "Out of gas due to an invalid operand.",
+              "fields": [],
+              "doc": {
+                "summary": "Out of gas (invalid operand).",
+                "description": [
+                  "Gas was consumed for an operation that was subsequently found to have an invalid operand."
+                ]
+              }
+            },
+            {
+              "name": "OpcodeNotFound",
+              "code": 85,
+              "message": "Opcode not found.",
+              "fields": [],
+              "doc": {
+                "summary": "Opcode not found.",
+                "description": [
+                  "The execution encountered an undefined or invalid opcode."
+                ]
+              }
+            },
+            {
+              "name": "CallNotAllowedInsideStatic",
+              "code": 86,
+              "message": "Call not allowed inside a static call.",
+              "fields": [],
+              "doc": {
+                "summary": "Call not allowed inside a static call.",
+                "description": [
+                  "A state-changing operation was attempted within a `STATICCALL` context."
+                ]
+              }
+            },
+            {
+              "name": "StateChangeDuringStaticCall",
+              "code": 87,
+              "message": "State change attempted during a static call.",
+              "fields": [],
+              "doc": {
+                "summary": "State change during a static call.",
+                "description": [
+                  "An explicit attempt to modify the state (e.g., `SSTORE`) occurred within a `STATICCALL` context."
+                ]
+              }
+            },
+            {
+              "name": "InvalidFEOpcode",
+              "code": 88,
+              "message": "Invalid opcode in FE (functional encoding) context.",
+              "fields": [],
+              "doc": {
+                "summary": "Invalid FE opcode.",
+                "description": [
+                  "An opcode that is not valid within a specific functional encoding context was executed."
+                ]
+              }
+            },
+            {
+              "name": "InvalidJump",
+              "code": 89,
+              "message": "Invalid jump destination.",
+              "fields": [],
+              "doc": {
+                "summary": "Invalid jump destination.",
+                "description": [
+                  "A `JUMP` or `JUMPI` operation targeted a destination that was not a valid `JUMPDEST` opcode."
+                ]
+              }
+            },
+            {
+              "name": "NotActivated",
+              "code": 90,
+              "message": "Feature or opcode not activated.",
+              "fields": [],
+              "doc": {
+                "summary": "Not activated.",
+                "description": [
+                  "An attempt was made to use an opcode or feature that is not yet activated in the current hardfork."
+                ]
+              }
+            },
+            {
+              "name": "StackUnderflow",
+              "code": 91,
+              "message": "Stack underflow.",
+              "fields": [],
+              "doc": {
+                "summary": "Stack underflow.",
+                "description": [
+                  "An operation required more items on the stack than were available."
+                ]
+              }
+            },
+            {
+              "name": "StackOverflow",
+              "code": 92,
+              "message": "Stack overflow.",
+              "fields": [],
+              "doc": {
+                "summary": "Stack overflow.",
+                "description": [
+                  "A `PUSH` operation exceeded the maximum stack size of 1024 items."
+                ]
+              }
+            },
+            {
+              "name": "OutOfOffset",
+              "code": 93,
+              "message": "Memory or code access is out of offset.",
+              "fields": [],
+              "doc": {
+                "summary": "Out of offset.",
+                "description": [
+                  "An attempt was made to read memory, calldata, or code beyond its valid bounds."
+                ]
+              }
+            },
+            {
+              "name": "CreateCollision",
+              "code": 94,
+              "message": "Address collision during contract creation.",
+              "fields": [],
+              "doc": {
+                "summary": "Create collision.",
+                "description": [
+                  "A contract creation resulted in an address that is already occupied by an existing account with a non-empty nonce or code."
+                ]
+              }
+            },
+            {
+              "name": "OverflowPayment",
+              "code": 95,
+              "message": "Overflow in payment calculation.",
+              "fields": [],
+              "doc": {
+                "summary": "Overflow payment.",
+                "description": [
+                  "An arithmetic overflow occurred during a value transfer calculation."
+                ]
+              }
+            },
+            {
+              "name": "PrecompileError",
+              "code": 96,
+              "message": "Error in precompiled contract.",
+              "fields": [],
+              "doc": {
+                "summary": "Precompile error.",
+                "description": [
+                  "A precompiled contract returned an error during its execution."
+                ]
+              }
+            },
+            {
+              "name": "NonceOverflow",
+              "code": 97,
+              "message": "Account nonce has overflowed.",
+              "fields": [],
+              "doc": {
+                "summary": "Nonce overflow.",
+                "description": [
+                  "The nonce of an account has reached its maximum value and cannot be incremented further."
+                ]
+              }
+            },
+            {
+              "name": "CreateContractSizeLimit",
+              "code": 98,
+              "message": "Created contract size exceeds the limit (runtime).",
+              "fields": [],
+              "doc": {
+                "summary": "Create init code size exceeds limit (runtime).",
+                "description": [
+                  "The size of the code of the contract being created exceeds the maximum allowable contract size (EIP-170)."
+                ]
+              }
+            },
+            {
+              "name": "CreateContractStartingWithEF",
+              "code": 99,
+              "message": "Cannot create a contract with code that starts with the 0xEF byte.",
+              "fields": [],
+              "doc": {
+                "summary": "Error on created contract that begins with EF.",
+                "description": [
+                  "Contract code cannot start with the 0xEF byte, as this is reserved for future EVM functionality (EIP-3541)."
+                ]
+              }
+            },
+            {
+              "name": "CreateInitcodeSizeLimit",
+              "code": 100,
+              "message": "Initcode size limit exceeded (EIP-3860).",
+              "fields": [],
+              "doc": {
+                "summary": "EIP-3860: Limit and meter initcode. Initcode size limit exceeded.",
+                "description": [
+                  "The size of the contract's initialization code exceeds the limit defined in EIP-3860."
+                ]
+              }
+            },
+            {
+              "name": "FatalExternalError",
+              "code": 101,
+              "message": "Fatal external error.",
+              "fields": [],
+              "doc": {
+                "summary": "Fatal external error.",
+                "description": [
+                  "A fatal error occurred in an external component, such as the database, that prevents execution from continuing."
+                ]
+              }
+            },
+            {
+              "name": "FatalError",
+              "code": 102,
+              "message": "Fatal internal error.",
+              "fields": [
+
+              ],
+              "doc": {
+                "summary": "Fatal internal error.",
+                "description": [
+                  "An unrecoverable internal error occurred within the EVM."
+                ]
+              }
+            }
+          ]
         },
         {
           "component_name": "WASM",

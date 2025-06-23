@@ -20,6 +20,8 @@ use zk_ee::system::*;
 
 use zk_ee::utils::Bytes32;
 
+use super::errors::BootloaderSubsystemError;
+
 /// The execution step output
 #[derive(Debug)]
 pub enum ExecutionOutput<'a> {
@@ -90,7 +92,7 @@ where
         transaction: &mut ZkSyncTransaction,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError>;
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError>;
 
     ///
     /// Charge any additional intrinsic gas.

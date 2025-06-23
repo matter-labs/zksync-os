@@ -129,7 +129,11 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_level_metadata.timestamp
     }
 
-    pub fn storage_code_version_for_execution_environment<'a, EE: ExecutionEnvironment<'a, S>>(
+    pub fn storage_code_version_for_execution_environment<
+        'a,
+        E: errors::SubsystemErrorTypes,
+        EE: ExecutionEnvironment<'a, S, E>,
+    >(
         &self,
     ) -> Result<u8, InternalError> {
         // TODO

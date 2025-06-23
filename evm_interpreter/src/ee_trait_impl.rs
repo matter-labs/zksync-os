@@ -2,9 +2,10 @@ use super::*;
 use crate::interpreter::CreateScheme;
 use crate::utils::apply_63_64_rule;
 use alloc::boxed::Box;
+use error::{EvmSubsystemError, EvmSubsystemErrors};
 use core::any::Any;
 use core::fmt::Write;
-use errors::SystemFunctionError;
+use errors::{RuntimeError, SystemFunctionError};
 use ruint::aliases::B160;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::{
@@ -15,14 +16,15 @@ use zk_ee::types_config::SystemIOTypesConfig;
 
 impl<S: SystemTypes> EEDeploymentExtraParameters<S> for CreateScheme {}
 
-impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee, S> {
+impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmSubsystemErrors> for Interpreter<'ee, S> {
     const NEEDS_SCRATCH_SPACE: bool = false;
 
     const EE_VERSION_BYTE: u8 = ExecutionEnvironmentType::EVM_EE_BYTE;
 
     fn is_modifier_supported(modifier: &CallModifier) -> bool {
         matches!(
-            modifier,
+            modifier
+,
             CallModifier::NoModifier
                 | CallModifier::Constructor
                 | CallModifier::Static
@@ -74,7 +76,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         system: &mut System<S>,
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError> {
         let ExecutionEnvironmentLaunchParams {
             external_call:
                 ExternalCallRequest {
@@ -168,8 +170,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         self.calldata = calldata;
         self.heap = heap;
         self.call_value = nominal_token_value;
-
-        self.execute_till_yield_point(system)
+        Ok(self.execute_till_yield_point(system)?)
     }
 
     fn continue_after_external_call<'a, 'res: 'ee>(
@@ -177,7 +178,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         system: &mut System<S>,
         returned_resources: S::Resources,
         call_result: CallResult<'res, S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
+    ) -> Result<zk_ee::system::ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
         assert!(!call_result.has_scratch_space());
         assert!(self.resources.native().as_u64() == 0);
         self.resources.reclaim(returned_resources);
@@ -187,7 +188,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                     .get_logger()
                     .write_fmt(format_args!("Call failed, out of gas\n"));
                 // we fail because it's caller's failure
-                return self.create_immediate_return_state(true, true, false);
+                return Ok(self.create_immediate_return_state(true, true, false)?);
             }
             CallResult::Failed { return_values } => {
                 // NOTE: EE is ALLOWED to spend resources from caller's frame before
@@ -207,7 +208,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
             }
         }
 
-        self.execute_till_yield_point(system)
+        Ok(self.execute_till_yield_point(system)?)
     }
 
     fn continue_after_deployment<'a, 'res: 'ee>(
@@ -215,7 +216,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         system: &mut System<S>,
         returned_resources: S::Resources,
         deployment_result: DeploymentResult<'res, S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
         assert!(!deployment_result.has_scratch_space());
         assert!(self.resources.native().as_u64() == 0);
         self.resources.reclaim(returned_resources);
@@ -249,7 +250,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
             }
         }
 
-        self.execute_till_yield_point(system)
+        Ok(self.execute_till_yield_point(system)?)
     }
 
     type DeploymentExtraParameters = CreateScheme;
@@ -264,7 +265,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
     fn clarify_and_take_passed_resources(
         resources_available_in_caller_frame: &mut S::Resources,
         desired_ergs_to_pass: Ergs,
-    ) -> Result<S::Resources, FatalError> {
+    ) -> Result<S::Resources, Self::SubsystemError> {
         // we just need to apply 63/64 rule, as System/IO is responsible for the rest
 
         let max_passable_ergs = apply_63_64_rule(resources_available_in_caller_frame.ergs());
@@ -292,7 +293,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
             S::Resources,
             Option<ExecutionEnvironmentLaunchParams<'a, S>>,
         ),
-        FatalError,
+        Self::SubsystemError,
     >
     where
         S::IO: IOSubsystemExt,
@@ -312,16 +313,18 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         assert!(call_scratch_space.is_none());
         let Some(ee_specific_deployment_processing_data) = ee_specific_deployment_processing_data
         else {
-            return Err(FatalError::Internal(InternalError(
-                "We need deployment scheme!",
-            )));
+            return Err(
+                Self::SubsystemError::Usage(
+                    error::InterfaceError::NoDeploymentScheme
+            ));
         };
         let Ok(scheme) = <CreateScheme as EEDeploymentExtraParameters<S>>::from_box_dyn(
             ee_specific_deployment_processing_data,
         ) else {
-            return Err(FatalError::Internal(InternalError(
-                "Unknown EE specific deployment data",
-            )));
+            return Err(
+                Self::SubsystemError::Usage(
+                    error::InterfaceError::UnknownDeploymentData
+                ));
         };
 
         // Constructor gets 63/64 of available resources
@@ -358,7 +361,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
 
         // Nonce overflow check
         let old_deployer_nonce = match deployer_nonce {
-            Some(old_nonce) => Ok::<u64, FatalError>(old_nonce),
+            Some(old_nonce) => Ok::<u64, Self::SubsystemError>(old_nonce),
             None => {
                 match deployer_full_resources.with_infinite_ergs(|inf_resources| {
                     system.io.increment_nonce(
@@ -369,7 +372,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                     )
                 }) {
                     Ok(nonce) => Ok(nonce),
-                    Err(UpdateQueryError::System(e)) => return Err(e.into_fatal()),
+                    Err(UpdateQueryError::System(e)) => return Err(e.into_fatal().into()),
                     Err(UpdateQueryError::NumericBoundsError) => {
                         return Ok((deployer_full_resources, None))
                     }
@@ -406,7 +409,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                     })
                     .map_err(|e| match e {
                         SystemFunctionError::System(SystemError::OutOfNativeResources) => {
-                            FatalError::OutOfNativeResources
+                            Self::SubsystemError::Runtime(RuntimeError::OutOfNativeResources)
                         }
                         _ => InternalError("Keccak in create2 cannot fail").into(),
                     })?;

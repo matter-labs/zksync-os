@@ -26,6 +26,12 @@
           "component_code": 3,
           "identifier_encoding": "storage",
           "errors": []
+        },
+        {
+          "component_name": "ExecutionEnvironments",
+          "component_code": 4,
+          "identifier_encoding": "ee",
+          "errors": []
         }
       ]
     }
