@@ -94,6 +94,7 @@ impl IError<ZksyncError> for ZksyncError {
             ZksyncError::Foundry(Foundry::FoundryZksync(error)) => error.get_message(),
             ZksyncError::Hardhat(Hardhat::HardhatUpstream(error)) => error.get_message(),
             ZksyncError::Hardhat(Hardhat::HardhatZksync(error)) => error.get_message(),
+            ZksyncError::Os(Os::ExecutionEnvironments(error)) => error.get_message(),
             ZksyncError::Os(Os::Storage(error)) => error.get_message(),
             ZksyncError::Os(Os::System(error)) => error.get_message(),
             ZksyncError::Os(Os::SystemEnvironment(error)) => error.get_message(),

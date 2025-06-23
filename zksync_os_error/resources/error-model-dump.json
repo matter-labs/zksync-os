@@ -128,6 +128,17 @@
           }
         }
       },
+      "ExecutionEnvironments": {
+        "name": "ExecutionEnvironments",
+        "meta": {
+          "description": ""
+        },
+        "bindings": {
+          "rust": {
+            "expression": "Box<ExecutionEnvironments>"
+          }
+        }
+      },
       "ExecutionPlatform": {
         "name": "ExecutionPlatform",
         "meta": {
@@ -636,6 +647,7 @@
         "name": "OS",
         "code": 10,
         "components": [
+          "ExecutionEnvironments",
           "Storage",
           "System",
           "SystemEnvironment"
@@ -748,6 +760,20 @@
         "description": "Errors in EraVM virtual machine executing contracts.",
         "origins": [
           "<embedded: zksync-root.json>"
+        ]
+      },
+      "ExecutionEnvironments": {
+        "name": "ExecutionEnvironments",
+        "code": 4,
+        "domain_name": "OS",
+        "bindings": {
+          "rust": "ExecutionEnvironments",
+          "typescript": "ExecutionEnvironments"
+        },
+        "identifier": "ee",
+        "description": "",
+        "origins": [
+          "errors/zksync-os.json"
         ]
       },
       "ExecutionPlatform": {
@@ -3880,6 +3906,756 @@
         },
         "origins": []
       },
+      "[exec_env-evm-100]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "CreateInitcodeSizeLimit",
+        "code": 100,
+        "identifier": "[exec_env-evm-100]",
+        "message": "Initcode size limit exceeded (EIP-3860).",
+        "fields": [],
+        "documentation": {
+          "description": "The size of the contract's initialization code exceeds the limit defined in EIP-3860.",
+          "summary": "EIP-3860: Limit and meter initcode. Initcode size limit exceeded.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "CreateInitcodeSizeLimit"
+          },
+          "typescript": {
+            "expression": "CreateInitcodeSizeLimit"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-101]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "FatalExternalError",
+        "code": 101,
+        "identifier": "[exec_env-evm-101]",
+        "message": "Fatal external error.",
+        "fields": [],
+        "documentation": {
+          "description": "A fatal error occurred in an external component, such as the database, that prevents execution from continuing.",
+          "summary": "Fatal external error.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "FatalExternalError"
+          },
+          "typescript": {
+            "expression": "FatalExternalError"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-102]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "FatalError",
+        "code": 102,
+        "identifier": "[exec_env-evm-102]",
+        "message": "Fatal internal error.",
+        "fields": [],
+        "documentation": {
+          "description": "An unrecoverable internal error occurred within the EVM.",
+          "summary": "Fatal internal error.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "FatalError"
+          },
+          "typescript": {
+            "expression": "FatalError"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-1]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "Stop",
+        "code": 1,
+        "identifier": "[exec_env-evm-1]",
+        "message": "Execution stopped successfully.",
+        "fields": [],
+        "documentation": {
+          "description": "The machine execution has halted gracefully.",
+          "summary": "Execution stopped successfully.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "Stop"
+          },
+          "typescript": {
+            "expression": "Stop"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-2]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "Return",
+        "code": 2,
+        "identifier": "[exec_env-evm-2]",
+        "message": "Execution returned successfully.",
+        "fields": [],
+        "documentation": {
+          "description": "The machine execution has finished and returned data.",
+          "summary": "Execution returned successfully with output data.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "Return"
+          },
+          "typescript": {
+            "expression": "Return"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-32]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "Revert",
+        "code": 32,
+        "identifier": "[exec_env-evm-32]",
+        "message": "Execution reverted.",
+        "fields": [],
+        "documentation": {
+          "description": "The execution was halted by a REVERT opcode. State changes are rolled back, but remaining gas is returned.",
+          "summary": "Execution reverted.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "Revert"
+          },
+          "typescript": {
+            "expression": "Revert"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-33]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "CallTooDeep",
+        "code": 33,
+        "identifier": "[exec_env-evm-33]",
+        "message": "Call stack depth exceeded.",
+        "fields": [],
+        "documentation": {
+          "description": "The execution was halted because the call stack depth limit (usually 1024) was reached.",
+          "summary": "Call stack has reached its maximum depth.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "CallTooDeep"
+          },
+          "typescript": {
+            "expression": "CallTooDeep"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-34]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "OutOfFund",
+        "code": 34,
+        "identifier": "[exec_env-evm-34]",
+        "message": "Insufficient funds for transfer.",
+        "fields": [],
+        "documentation": {
+          "description": "An attempt was made to transfer a value greater than the account's balance.",
+          "summary": "The sending account has insufficient funds for the value transfer.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "OutOfFund"
+          },
+          "typescript": {
+            "expression": "OutOfFund"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-3]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "SelfDestruct",
+        "code": 3,
+        "identifier": "[exec_env-evm-3]",
+        "message": "Contract self-destructed.",
+        "fields": [],
+        "documentation": {
+          "description": "The contract has been marked for deletion, and its funds will be transferred.",
+          "summary": "Contract initiated a self-destruct.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "SelfDestruct"
+          },
+          "typescript": {
+            "expression": "SelfDestruct"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-4]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "ExternalCall",
+        "code": 4,
+        "identifier": "[exec_env-evm-4]",
+        "message": "An external call has been initiated.",
+        "fields": [],
+        "documentation": {
+          "description": "This code indicates that the current execution context is pausing to make a call to another contract or address.",
+          "summary": "Initiating an external call.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "ExternalCall"
+          },
+          "typescript": {
+            "expression": "ExternalCall"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-80]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "OutOfGas",
+        "code": 80,
+        "identifier": "[exec_env-evm-80]",
+        "message": "Execution ran out of gas.",
+        "fields": [],
+        "documentation": {
+          "description": "The execution consumed all the gas provided, resulting in an exceptional halt.",
+          "summary": "Out of gas.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "OutOfGas"
+          },
+          "typescript": {
+            "expression": "OutOfGas"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-81]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "MemoryOOG",
+        "code": 81,
+        "identifier": "[exec_env-evm-81]",
+        "message": "Out of gas during memory expansion.",
+        "fields": [],
+        "documentation": {
+          "description": "Not enough gas to pay for the expansion of memory.",
+          "summary": "Out of gas (memory).",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "MemoryOOG"
+          },
+          "typescript": {
+            "expression": "MemoryOOG"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-82]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "MemoryLimitOOG",
+        "code": 82,
+        "identifier": "[exec_env-evm-82]",
+        "message": "Memory limit exceeded.",
+        "fields": [],
+        "documentation": {
+          "description": "The execution required more memory than the allowed limit.",
+          "summary": "Memory limit exceeded.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "MemoryLimitOOG"
+          },
+          "typescript": {
+            "expression": "MemoryLimitOOG"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-83]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "PrecompileOOG",
+        "code": 83,
+        "identifier": "[exec_env-evm-83]",
+        "message": "Out of gas in a precompile.",
+        "fields": [],
+        "documentation": {
+          "description": "A precompiled contract ran out of gas during its execution.",
+          "summary": "Out of gas (precompile).",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "PrecompileOOG"
+          },
+          "typescript": {
+            "expression": "PrecompileOOG"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-84]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "InvalidOperandOOG",
+        "code": 84,
+        "identifier": "[exec_env-evm-84]",
+        "message": "Out of gas due to an invalid operand.",
+        "fields": [],
+        "documentation": {
+          "description": "Gas was consumed for an operation that was subsequently found to have an invalid operand.",
+          "summary": "Out of gas (invalid operand).",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "InvalidOperandOOG"
+          },
+          "typescript": {
+            "expression": "InvalidOperandOOG"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-85]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "OpcodeNotFound",
+        "code": 85,
+        "identifier": "[exec_env-evm-85]",
+        "message": "Opcode not found.",
+        "fields": [],
+        "documentation": {
+          "description": "The execution encountered an undefined or invalid opcode.",
+          "summary": "Opcode not found.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "OpcodeNotFound"
+          },
+          "typescript": {
+            "expression": "OpcodeNotFound"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-86]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "CallNotAllowedInsideStatic",
+        "code": 86,
+        "identifier": "[exec_env-evm-86]",
+        "message": "Call not allowed inside a static call.",
+        "fields": [],
+        "documentation": {
+          "description": "A state-changing operation was attempted within a `STATICCALL` context.",
+          "summary": "Call not allowed inside a static call.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "CallNotAllowedInsideStatic"
+          },
+          "typescript": {
+            "expression": "CallNotAllowedInsideStatic"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-87]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "StateChangeDuringStaticCall",
+        "code": 87,
+        "identifier": "[exec_env-evm-87]",
+        "message": "State change attempted during a static call.",
+        "fields": [],
+        "documentation": {
+          "description": "An explicit attempt to modify the state (e.g., `SSTORE`) occurred within a `STATICCALL` context.",
+          "summary": "State change during a static call.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "StateChangeDuringStaticCall"
+          },
+          "typescript": {
+            "expression": "StateChangeDuringStaticCall"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-88]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "InvalidFEOpcode",
+        "code": 88,
+        "identifier": "[exec_env-evm-88]",
+        "message": "Invalid opcode in FE (functional encoding) context.",
+        "fields": [],
+        "documentation": {
+          "description": "An opcode that is not valid within a specific functional encoding context was executed.",
+          "summary": "Invalid FE opcode.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "InvalidFEOpcode"
+          },
+          "typescript": {
+            "expression": "InvalidFEOpcode"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-89]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "InvalidJump",
+        "code": 89,
+        "identifier": "[exec_env-evm-89]",
+        "message": "Invalid jump destination.",
+        "fields": [],
+        "documentation": {
+          "description": "A `JUMP` or `JUMPI` operation targeted a destination that was not a valid `JUMPDEST` opcode.",
+          "summary": "Invalid jump destination.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "InvalidJump"
+          },
+          "typescript": {
+            "expression": "InvalidJump"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-90]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "NotActivated",
+        "code": 90,
+        "identifier": "[exec_env-evm-90]",
+        "message": "Feature or opcode not activated.",
+        "fields": [],
+        "documentation": {
+          "description": "An attempt was made to use an opcode or feature that is not yet activated in the current hardfork.",
+          "summary": "Not activated.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "NotActivated"
+          },
+          "typescript": {
+            "expression": "NotActivated"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-91]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "StackUnderflow",
+        "code": 91,
+        "identifier": "[exec_env-evm-91]",
+        "message": "Stack underflow.",
+        "fields": [],
+        "documentation": {
+          "description": "An operation required more items on the stack than were available.",
+          "summary": "Stack underflow.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "StackUnderflow"
+          },
+          "typescript": {
+            "expression": "StackUnderflow"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-92]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "StackOverflow",
+        "code": 92,
+        "identifier": "[exec_env-evm-92]",
+        "message": "Stack overflow.",
+        "fields": [],
+        "documentation": {
+          "description": "A `PUSH` operation exceeded the maximum stack size of 1024 items.",
+          "summary": "Stack overflow.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "StackOverflow"
+          },
+          "typescript": {
+            "expression": "StackOverflow"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-93]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "OutOfOffset",
+        "code": 93,
+        "identifier": "[exec_env-evm-93]",
+        "message": "Memory or code access is out of offset.",
+        "fields": [],
+        "documentation": {
+          "description": "An attempt was made to read memory, calldata, or code beyond its valid bounds.",
+          "summary": "Out of offset.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "OutOfOffset"
+          },
+          "typescript": {
+            "expression": "OutOfOffset"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-94]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "CreateCollision",
+        "code": 94,
+        "identifier": "[exec_env-evm-94]",
+        "message": "Address collision during contract creation.",
+        "fields": [],
+        "documentation": {
+          "description": "A contract creation resulted in an address that is already occupied by an existing account with a non-empty nonce or code.",
+          "summary": "Create collision.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "CreateCollision"
+          },
+          "typescript": {
+            "expression": "CreateCollision"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-95]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "OverflowPayment",
+        "code": 95,
+        "identifier": "[exec_env-evm-95]",
+        "message": "Overflow in payment calculation.",
+        "fields": [],
+        "documentation": {
+          "description": "An arithmetic overflow occurred during a value transfer calculation.",
+          "summary": "Overflow payment.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "OverflowPayment"
+          },
+          "typescript": {
+            "expression": "OverflowPayment"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-96]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "PrecompileError",
+        "code": 96,
+        "identifier": "[exec_env-evm-96]",
+        "message": "Error in precompiled contract.",
+        "fields": [],
+        "documentation": {
+          "description": "A precompiled contract returned an error during its execution.",
+          "summary": "Precompile error.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "PrecompileError"
+          },
+          "typescript": {
+            "expression": "PrecompileError"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-97]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "NonceOverflow",
+        "code": 97,
+        "identifier": "[exec_env-evm-97]",
+        "message": "Account nonce has overflowed.",
+        "fields": [],
+        "documentation": {
+          "description": "The nonce of an account has reached its maximum value and cannot be incremented further.",
+          "summary": "Nonce overflow.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "NonceOverflow"
+          },
+          "typescript": {
+            "expression": "NonceOverflow"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-98]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "CreateContractSizeLimit",
+        "code": 98,
+        "identifier": "[exec_env-evm-98]",
+        "message": "Created contract size exceeds the limit (runtime).",
+        "fields": [],
+        "documentation": {
+          "description": "The size of the code of the contract being created exceeds the maximum allowable contract size (EIP-170).",
+          "summary": "Create init code size exceeds limit (runtime).",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "CreateContractSizeLimit"
+          },
+          "typescript": {
+            "expression": "CreateContractSizeLimit"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
+      "[exec_env-evm-99]": {
+        "domain": "ExecutionEnvironment",
+        "component": "EVM",
+        "name": "CreateContractStartingWithEF",
+        "code": 99,
+        "identifier": "[exec_env-evm-99]",
+        "message": "Cannot create a contract with code that starts with the 0xEF byte.",
+        "fields": [],
+        "documentation": {
+          "description": "Contract code cannot start with the 0xEF byte, as this is reserved for future EVM functionality (EIP-3541).",
+          "summary": "Error on created contract that begins with EF.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "CreateContractStartingWithEF"
+          },
+          "typescript": {
+            "expression": "CreateContractStartingWithEF"
+          }
+        },
+        "origins": [
+          "errors/evm.json"
+        ]
+      },
       "[exec_env-native-0]": {
         "domain": "ExecutionEnvironment",
         "component": "Native",
@@ -4006,6 +4782,30 @@
         "name": "GenericError",
         "code": 0,
         "identifier": "[hardhat-zksync-0]",
+        "message": "Generic error: {message}",
+        "fields": [
+          {
+            "name": "message",
+            "type": "string"
+          }
+        ],
+        "documentation": null,
+        "bindings": {
+          "rust": {
+            "expression": "GenericError"
+          },
+          "typescript": {
+            "expression": "GenericError"
+          }
+        },
+        "origins": []
+      },
+      "[os-ee-0]": {
+        "domain": "OS",
+        "component": "ExecutionEnvironments",
+        "name": "GenericError",
+        "code": 0,
+        "identifier": "[os-ee-0]",
         "message": "Generic error: {message}",
         "fields": [
           {

@@ -2131,7 +2131,189 @@ impl CustomErrorMessage for Common {
 #[strum_discriminants(derive(AsRefStr, FromRepr))]
 #[non_exhaustive]
 pub enum EVM {
-    GenericError { message: String } = 0u32,
+    #[doc = "# Summary "]
+    #[doc = "Execution stopped successfully."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The machine execution has halted gracefully."]
+    Stop = 1u32,
+    #[doc = "# Summary "]
+    #[doc = "Execution returned successfully with output data."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The machine execution has finished and returned data."]
+    Return = 2u32,
+    #[doc = "# Summary "]
+    #[doc = "Contract initiated a self-destruct."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The contract has been marked for deletion, and its funds will be transferred."]
+    SelfDestruct = 3u32,
+    #[doc = "# Summary "]
+    #[doc = "Initiating an external call."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "This code indicates that the current execution context is pausing to make a call to another contract or address."]
+    ExternalCall = 4u32,
+    #[doc = "# Summary "]
+    #[doc = "Execution reverted."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The execution was halted by a REVERT opcode. State changes are rolled back, but remaining gas is returned."]
+    Revert = 32u32,
+    #[doc = "# Summary "]
+    #[doc = "Call stack has reached its maximum depth."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The execution was halted because the call stack depth limit (usually 1024) was reached."]
+    CallTooDeep = 33u32,
+    #[doc = "# Summary "]
+    #[doc = "The sending account has insufficient funds for the value transfer."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "An attempt was made to transfer a value greater than the account's balance."]
+    OutOfFund = 34u32,
+    #[doc = "# Summary "]
+    #[doc = "Out of gas."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The execution consumed all the gas provided, resulting in an exceptional halt."]
+    OutOfGas = 80u32,
+    #[doc = "# Summary "]
+    #[doc = "Out of gas (memory)."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "Not enough gas to pay for the expansion of memory."]
+    MemoryOOG = 81u32,
+    #[doc = "# Summary "]
+    #[doc = "Memory limit exceeded."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The execution required more memory than the allowed limit."]
+    MemoryLimitOOG = 82u32,
+    #[doc = "# Summary "]
+    #[doc = "Out of gas (precompile)."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "A precompiled contract ran out of gas during its execution."]
+    PrecompileOOG = 83u32,
+    #[doc = "# Summary "]
+    #[doc = "Out of gas (invalid operand)."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "Gas was consumed for an operation that was subsequently found to have an invalid operand."]
+    InvalidOperandOOG = 84u32,
+    #[doc = "# Summary "]
+    #[doc = "Opcode not found."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The execution encountered an undefined or invalid opcode."]
+    OpcodeNotFound = 85u32,
+    #[doc = "# Summary "]
+    #[doc = "Call not allowed inside a static call."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "A state-changing operation was attempted within a `STATICCALL` context."]
+    CallNotAllowedInsideStatic = 86u32,
+    #[doc = "# Summary "]
+    #[doc = "State change during a static call."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "An explicit attempt to modify the state (e.g., `SSTORE`) occurred within a `STATICCALL` context."]
+    StateChangeDuringStaticCall = 87u32,
+    #[doc = "# Summary "]
+    #[doc = "Invalid FE opcode."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "An opcode that is not valid within a specific functional encoding context was executed."]
+    InvalidFEOpcode = 88u32,
+    #[doc = "# Summary "]
+    #[doc = "Invalid jump destination."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "A `JUMP` or `JUMPI` operation targeted a destination that was not a valid `JUMPDEST` opcode."]
+    InvalidJump = 89u32,
+    #[doc = "# Summary "]
+    #[doc = "Not activated."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "An attempt was made to use an opcode or feature that is not yet activated in the current hardfork."]
+    NotActivated = 90u32,
+    #[doc = "# Summary "]
+    #[doc = "Stack underflow."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "An operation required more items on the stack than were available."]
+    StackUnderflow = 91u32,
+    #[doc = "# Summary "]
+    #[doc = "Stack overflow."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "A `PUSH` operation exceeded the maximum stack size of 1024 items."]
+    StackOverflow = 92u32,
+    #[doc = "# Summary "]
+    #[doc = "Out of offset."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "An attempt was made to read memory, calldata, or code beyond its valid bounds."]
+    OutOfOffset = 93u32,
+    #[doc = "# Summary "]
+    #[doc = "Create collision."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "A contract creation resulted in an address that is already occupied by an existing account with a non-empty nonce or code."]
+    CreateCollision = 94u32,
+    #[doc = "# Summary "]
+    #[doc = "Overflow payment."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "An arithmetic overflow occurred during a value transfer calculation."]
+    OverflowPayment = 95u32,
+    #[doc = "# Summary "]
+    #[doc = "Precompile error."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "A precompiled contract returned an error during its execution."]
+    PrecompileError = 96u32,
+    #[doc = "# Summary "]
+    #[doc = "Nonce overflow."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The nonce of an account has reached its maximum value and cannot be incremented further."]
+    NonceOverflow = 97u32,
+    #[doc = "# Summary "]
+    #[doc = "Create init code size exceeds limit (runtime)."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The size of the code of the contract being created exceeds the maximum allowable contract size (EIP-170)."]
+    CreateContractSizeLimit = 98u32,
+    #[doc = "# Summary "]
+    #[doc = "Error on created contract that begins with EF."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "Contract code cannot start with the 0xEF byte, as this is reserved for future EVM functionality (EIP-3541)."]
+    CreateContractStartingWithEF = 99u32,
+    #[doc = "# Summary "]
+    #[doc = "EIP-3860: Limit and meter initcode. Initcode size limit exceeded."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The size of the contract's initialization code exceeds the limit defined in EIP-3860."]
+    CreateInitcodeSizeLimit = 100u32,
+    #[doc = "# Summary "]
+    #[doc = "Fatal external error."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "A fatal error occurred in an external component, such as the database, that prevents execution from continuing."]
+    FatalExternalError = 101u32,
+    #[doc = "# Summary "]
+    #[doc = "Fatal internal error."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "An unrecoverable internal error occurred within the EVM."]
+    FatalError = 102u32,
+    GenericError {
+        message: String,
+    } = 0u32,
 }
 impl core::error::Error for EVM {}
 impl NamedError for EVM {
@@ -2186,6 +2368,96 @@ impl From<EVM> for crate::serialized::SerializedError {
 impl CustomErrorMessage for EVM {
     fn get_message(&self) -> String {
         match self {
+            EVM::Stop => {
+                format!("[exec_env-evm-1] Execution stopped successfully.")
+            }
+            EVM::Return => {
+                format!("[exec_env-evm-2] Execution returned successfully.")
+            }
+            EVM::SelfDestruct => {
+                format!("[exec_env-evm-3] Contract self-destructed.")
+            }
+            EVM::ExternalCall => {
+                format!("[exec_env-evm-4] An external call has been initiated.")
+            }
+            EVM::Revert => {
+                format!("[exec_env-evm-32] Execution reverted.")
+            }
+            EVM::CallTooDeep => {
+                format!("[exec_env-evm-33] Call stack depth exceeded.")
+            }
+            EVM::OutOfFund => {
+                format!("[exec_env-evm-34] Insufficient funds for transfer.")
+            }
+            EVM::OutOfGas => {
+                format!("[exec_env-evm-80] Execution ran out of gas.")
+            }
+            EVM::MemoryOOG => {
+                format!("[exec_env-evm-81] Out of gas during memory expansion.")
+            }
+            EVM::MemoryLimitOOG => {
+                format!("[exec_env-evm-82] Memory limit exceeded.")
+            }
+            EVM::PrecompileOOG => {
+                format!("[exec_env-evm-83] Out of gas in a precompile.")
+            }
+            EVM::InvalidOperandOOG => {
+                format!("[exec_env-evm-84] Out of gas due to an invalid operand.")
+            }
+            EVM::OpcodeNotFound => {
+                format!("[exec_env-evm-85] Opcode not found.")
+            }
+            EVM::CallNotAllowedInsideStatic => {
+                format!("[exec_env-evm-86] Call not allowed inside a static call.")
+            }
+            EVM::StateChangeDuringStaticCall => {
+                format!("[exec_env-evm-87] State change attempted during a static call.")
+            }
+            EVM::InvalidFEOpcode => {
+                format!("[exec_env-evm-88] Invalid opcode in FE (functional encoding) context.")
+            }
+            EVM::InvalidJump => {
+                format!("[exec_env-evm-89] Invalid jump destination.")
+            }
+            EVM::NotActivated => {
+                format!("[exec_env-evm-90] Feature or opcode not activated.")
+            }
+            EVM::StackUnderflow => {
+                format!("[exec_env-evm-91] Stack underflow.")
+            }
+            EVM::StackOverflow => {
+                format!("[exec_env-evm-92] Stack overflow.")
+            }
+            EVM::OutOfOffset => {
+                format!("[exec_env-evm-93] Memory or code access is out of offset.")
+            }
+            EVM::CreateCollision => {
+                format!("[exec_env-evm-94] Address collision during contract creation.")
+            }
+            EVM::OverflowPayment => {
+                format!("[exec_env-evm-95] Overflow in payment calculation.")
+            }
+            EVM::PrecompileError => {
+                format!("[exec_env-evm-96] Error in precompiled contract.")
+            }
+            EVM::NonceOverflow => {
+                format!("[exec_env-evm-97] Account nonce has overflowed.")
+            }
+            EVM::CreateContractSizeLimit => {
+                format!("[exec_env-evm-98] Created contract size exceeds the limit (runtime).")
+            }
+            EVM::CreateContractStartingWithEF => {
+                format ! ("[exec_env-evm-99] Cannot create a contract with code that starts with the 0xEF byte.")
+            }
+            EVM::CreateInitcodeSizeLimit => {
+                format!("[exec_env-evm-100] Initcode size limit exceeded (EIP-3860).")
+            }
+            EVM::FatalExternalError => {
+                format!("[exec_env-evm-101] Fatal external error.")
+            }
+            EVM::FatalError => {
+                format!("[exec_env-evm-102] Fatal internal error.")
+            }
             EVM::GenericError { message } => {
                 format!("[exec_env-evm-0] Generic error: {message}")
             }
@@ -2626,6 +2898,81 @@ impl CustomErrorMessage for HardhatZksync {
         match self {
             HardhatZksync::GenericError { message } => {
                 format!("[hardhat-zksync-0] Generic error: {message}")
+            }
+        }
+    }
+}
+#[doc = ""]
+#[doc = ""]
+#[doc = "Domain: OS"]
+#[repr(u32)]
+#[derive(AsRefStr, Clone, Debug, Eq, EnumDiscriminants, PartialEq)]
+#[cfg_attr(feature = "use_serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "use_serde", derive(serde::Deserialize))]
+#[strum_discriminants(name(ExecutionEnvironmentsCode))]
+#[strum_discriminants(vis(pub))]
+#[strum_discriminants(derive(AsRefStr, FromRepr))]
+#[non_exhaustive]
+pub enum ExecutionEnvironments {
+    GenericError { message: String } = 0u32,
+}
+impl core::error::Error for ExecutionEnvironments {}
+impl NamedError for ExecutionEnvironments {
+    fn get_error_name(&self) -> String {
+        self.as_ref().to_owned()
+    }
+}
+impl NamedError for ExecutionEnvironmentsCode {
+    fn get_error_name(&self) -> String {
+        self.as_ref().to_owned()
+    }
+}
+impl From<ExecutionEnvironments> for crate::ZksyncError {
+    fn from(val: ExecutionEnvironments) -> Self {
+        val.to_unified()
+    }
+}
+impl fmt::Display for ExecutionEnvironments {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.get_message())
+    }
+}
+#[cfg(feature = "runtime_documentation")]
+impl Documented for ExecutionEnvironments {
+    type Documentation = &'static zksync_error_description::ErrorDocumentation;
+    fn get_documentation(
+        &self,
+    ) -> Result<Option<Self::Documentation>, crate::documentation::DocumentationError> {
+        self.to_unified().get_identifier().get_documentation()
+    }
+}
+#[cfg(feature = "use_anyhow")]
+impl From<anyhow::Error> for ExecutionEnvironments {
+    fn from(value: anyhow::Error) -> Self {
+        let message = format!("{value:#?}");
+        ExecutionEnvironments::GenericError { message }
+    }
+}
+#[cfg(feature = "packed_errors")]
+impl From<ExecutionEnvironments>
+    for crate::packed::PackedError<crate::error::domains::ZksyncError>
+{
+    fn from(value: ExecutionEnvironments) -> Self {
+        crate::packed::pack(value)
+    }
+}
+#[cfg(feature = "serialized_errors")]
+impl From<ExecutionEnvironments> for crate::serialized::SerializedError {
+    fn from(value: ExecutionEnvironments) -> Self {
+        let packed = crate::packed::pack(value);
+        crate::serialized::serialize(packed).expect("Internal serialization error.")
+    }
+}
+impl CustomErrorMessage for ExecutionEnvironments {
+    fn get_message(&self) -> String {
+        match self {
+            ExecutionEnvironments::GenericError { message } => {
+                format!("[os-ee-0] Generic error: {message}")
             }
         }
     }

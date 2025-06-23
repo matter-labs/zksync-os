@@ -113,6 +113,7 @@ impl Identifying for Kind {
             Kind::Foundry(FoundryCode::FoundryZksync) => "foundry-zksync",
             Kind::Hardhat(HardhatCode::HardhatUpstream) => "hardhat-upstream",
             Kind::Hardhat(HardhatCode::HardhatZksync) => "hardhat-zksync",
+            Kind::Os(OsCode::ExecutionEnvironments) => "os-ee",
             Kind::Os(OsCode::Storage) => "os-storage",
             Kind::Os(OsCode::System) => "os-sys",
             Kind::Os(OsCode::SystemEnvironment) => "os-env",
@@ -248,6 +249,11 @@ impl NamedError for Identifier {
             }
             Kind::Hardhat(HardhatCode::HardhatZksync) => {
                 crate::error::definitions::HardhatZksyncCode::from_repr(self.code)
+                    .expect("Internal error")
+                    .get_error_name()
+            }
+            Kind::Os(OsCode::ExecutionEnvironments) => {
+                crate::error::definitions::ExecutionEnvironmentsCode::from_repr(self.code)
                     .expect("Internal error")
                     .get_error_name()
             }

@@ -1,5 +1,7 @@
 use ruint::aliases::{B160, U256};
-use zk_ee::system::errors::{FatalError, InternalError, SystemError, SystemFunctionError};
+use zk_ee::system::errors::{
+    FatalError, InternalError, Fault, SystemError, SystemFunctionError,
+};
 
 // Taken from revm, contains changes
 ///
@@ -130,7 +132,13 @@ pub enum TxError {
     /// shouldn't terminate the block execution
     Validation(InvalidTransaction),
     /// Internal error.
-    Internal(InternalError),
+    BootloaderSubsystemError(BootloaderSubsystemError),
+}
+
+impl From<BootloaderSubsystemError> for TxError {
+    fn from(v: BootloaderSubsystemError) -> Self {
+        Self::BootloaderSubsystemError(v)
+    }
 }
 
 impl From<InvalidTransaction> for TxError {
@@ -141,7 +149,7 @@ impl From<InvalidTransaction> for TxError {
 
 impl From<InternalError> for TxError {
     fn from(e: InternalError) -> Self {
-        TxError::Internal(e)
+        TxError::BootloaderSubsystemError(BootloaderSubsystemError::Defect(e))
     }
 }
 
@@ -149,14 +157,20 @@ impl TxError {
     /// Do not implement From to avoid accidentally wrapping
     /// an out of native during Tx execution as a validation error.
     pub fn oon_as_validation(e: FatalError) -> Self {
-        match e {
-            FatalError::Internal(e) => Self::Internal(e),
-            FatalError::OutOfNativeResources => {
-                Self::Validation(InvalidTransaction::AAValidationError(
-                    InvalidAA::OutOfNativeResourcesDuringValidation,
-                ))
-            }
-        }
+        todo!()
+        // match e {
+        //     FatalError::Internal(e) => Self::Internal(e),
+        //     FatalError::OutOfNativeResources => {
+        //         Self::Validation(InvalidTransaction::AAValidationError(
+        //             InvalidAA::OutOfNativeResourcesDuringValidation,
+        //         ))
+        //     }
+        // }
+    }
+
+    //FIXME: temporary hack
+    pub fn stub_oon_as_validation(e: BootloaderSubsystemError) -> Self {
+        panic!("Paymaster will be cut")
     }
 }
 
@@ -171,7 +185,7 @@ impl From<SystemError> for TxError {
                     InvalidAA::OutOfNativeResourcesDuringValidation,
                 ))
             }
-            SystemError::Internal(e) => TxError::Internal(e),
+            SystemError::Internal(e) => TxError::BootloaderSubsystemError(e.into()),
         }
     }
 }
@@ -180,7 +194,7 @@ impl From<SystemFunctionError> for TxError {
     fn from(e: SystemFunctionError) -> Self {
         match e {
             SystemFunctionError::InvalidInput => {
-                TxError::Internal(InternalError("Invalid system function input"))
+                TxError::BootloaderSubsystemError(InternalError("Invalid system function input").into())
             }
             SystemFunctionError::System(e) => e.into(),
         }
@@ -246,3 +260,49 @@ macro_rules! require_internal {
         }
     };
 }
+
+// TODO should be extracted to a different file -----
+// as bootloader is recognized as a subsystem.
+
+use zk_ee::system::errors::SubsystemErrors;
+
+use crate::bootloader::supported_ees::EESubsystemError;
+use zk_ee::system::errors::Error;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ErrorsDescription;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PublicError {
+    EEError(EESubsystemError),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WrappedError {
+    EEError(Error<crate::bootloader::supported_ees::ErrorsDescription>),
+}
+
+impl From<Error<crate::bootloader::supported_ees::ErrorsDescription>> for WrappedError {
+    fn from(v: Error<crate::bootloader::supported_ees::ErrorsDescription>) -> Self {
+        Self::EEError(v)
+    }
+}
+
+impl SubsystemErrors for ErrorsDescription {
+    type Public = PublicError;
+    type Interface = InterfaceError;
+    type Wrapped = WrappedError;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InterfaceError {
+    EvmInterfaceError(evm_interpreter::error::InterfaceError),
+    UnsupportedExecutionEnvironment,
+}
+
+pub type BootloaderSubsystemError = Fault<ErrorsDescription>;
+
+pub fn propagate(error: EESubsystemError) -> Fault<ErrorsDescription> {
+    Fault::Cascaded(WrappedError::EEError(error.into()))
+}
+// -----

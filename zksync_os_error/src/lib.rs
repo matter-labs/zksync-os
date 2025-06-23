@@ -499,7 +499,37 @@ pub mod exec_env {
         pub use crate::error::definitions::EVM as EVMError;
         pub type EVMResult<T> = core::result::Result<T, EVMError>;
         pub use crate::error::definitions::EVMCode as ErrorCode;
+        pub use crate::error::definitions::EVM::CallNotAllowedInsideStatic;
+        pub use crate::error::definitions::EVM::CallTooDeep;
+        pub use crate::error::definitions::EVM::CreateCollision;
+        pub use crate::error::definitions::EVM::CreateContractSizeLimit;
+        pub use crate::error::definitions::EVM::CreateContractStartingWithEF;
+        pub use crate::error::definitions::EVM::CreateInitcodeSizeLimit;
+        pub use crate::error::definitions::EVM::ExternalCall;
+        pub use crate::error::definitions::EVM::FatalError;
+        pub use crate::error::definitions::EVM::FatalExternalError;
         pub use crate::error::definitions::EVM::GenericError;
+        pub use crate::error::definitions::EVM::InvalidFEOpcode;
+        pub use crate::error::definitions::EVM::InvalidJump;
+        pub use crate::error::definitions::EVM::InvalidOperandOOG;
+        pub use crate::error::definitions::EVM::MemoryLimitOOG;
+        pub use crate::error::definitions::EVM::MemoryOOG;
+        pub use crate::error::definitions::EVM::NonceOverflow;
+        pub use crate::error::definitions::EVM::NotActivated;
+        pub use crate::error::definitions::EVM::OpcodeNotFound;
+        pub use crate::error::definitions::EVM::OutOfFund;
+        pub use crate::error::definitions::EVM::OutOfGas;
+        pub use crate::error::definitions::EVM::OutOfOffset;
+        pub use crate::error::definitions::EVM::OverflowPayment;
+        pub use crate::error::definitions::EVM::PrecompileError;
+        pub use crate::error::definitions::EVM::PrecompileOOG;
+        pub use crate::error::definitions::EVM::Return;
+        pub use crate::error::definitions::EVM::Revert;
+        pub use crate::error::definitions::EVM::SelfDestruct;
+        pub use crate::error::definitions::EVM::StackOverflow;
+        pub use crate::error::definitions::EVM::StackUnderflow;
+        pub use crate::error::definitions::EVM::StateChangeDuringStaticCall;
+        pub use crate::error::definitions::EVM::Stop;
         #[cfg(not(feature = "std"))]
         use alloc::format;
         #[macro_export]
@@ -654,6 +684,28 @@ pub mod hardhat {
 pub mod os {
     pub use crate::error::domains::Os as OsError;
     pub use crate::error::domains::OsCode;
+    pub mod ee {
+        pub use crate::error::definitions::ExecutionEnvironments as ExecutionEnvironmentsError;
+        pub type ExecutionEnvironmentsResult<T> =
+            core::result::Result<T, ExecutionEnvironmentsError>;
+        pub use crate::error::definitions::ExecutionEnvironments::GenericError;
+        pub use crate::error::definitions::ExecutionEnvironmentsCode as ErrorCode;
+        #[cfg(not(feature = "std"))]
+        use alloc::format;
+        #[macro_export]
+        macro_rules ! os_ee_generic_error { ($ ($ arg : tt) *) => { zksync_error :: os :: ee :: ExecutionEnvironmentsError :: GenericError { message : format ! ($ ($ arg) *) } } ; }
+        pub use crate::os_ee_generic_error as generic_error;
+        pub fn to_generic<T: core::fmt::Display>(err: T) -> ExecutionEnvironmentsError {
+            GenericError {
+                message: format!("{}", err),
+            }
+        }
+        pub fn to_domain<T: core::fmt::Display>(err: T) -> super::OsError {
+            super::OsError::ExecutionEnvironments(GenericError {
+                message: format!("{}", err),
+            })
+        }
+    }
     pub mod storage {
         pub use crate::error::definitions::Storage as StorageError;
         pub type StorageResult<T> = core::result::Result<T, StorageError>;
