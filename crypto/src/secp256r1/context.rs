@@ -1,6 +1,6 @@
 use super::{
     field::FieldElementConst,
-    points::{Affine, Jacobian, Storage},
+    points::{Affine, JacobianConst, Storage},
     ECMULT_TABLE_SIZE_G,
 };
 use core::mem::MaybeUninit;
@@ -12,7 +12,7 @@ pub(super) const TABLE_G: GeneratorMultiplesTable = GeneratorMultiplesTable::new
 impl GeneratorMultiplesTable {
     const fn new() -> Self {
         let mut pre_g = [const { MaybeUninit::uninit() }; ECMULT_TABLE_SIZE_G];
-        let g = Jacobian::<FieldElementConst>::GENERATOR;
+        let g = JacobianConst::GENERATOR;
 
         odd_multiples(&mut pre_g, &g);
 
@@ -35,7 +35,7 @@ impl GeneratorMultiplesTable {
 
 const fn odd_multiples(
     table: &mut [MaybeUninit<Storage>; ECMULT_TABLE_SIZE_G],
-    gen: &Jacobian<FieldElementConst>,
+    gen: &JacobianConst,
 ) {
     use const_for::const_for;
     let mut gj = *gen;

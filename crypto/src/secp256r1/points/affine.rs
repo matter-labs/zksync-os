@@ -59,7 +59,7 @@ impl Affine {
         }
     }
 
-    pub(crate) fn to_jacobian(self) -> Jacobian<FieldElement> {
+    pub(crate) fn to_jacobian(self) -> Jacobian {
         Jacobian {
             x: self.x,
             y: self.y,

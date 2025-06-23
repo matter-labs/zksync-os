@@ -1,6 +1,5 @@
 use super::{
     context::{GeneratorMultiplesTable, TABLE_G},
-    field::FieldElement,
     points::Affine,
     scalar::{Scalar, Signature},
     wnaf::Wnaf,
@@ -8,7 +7,7 @@ use super::{
 };
 use core::mem::MaybeUninit;
 
-type Jacobian = super::points::Jacobian<FieldElement>;
+type Jacobian = super::points::Jacobian;
 
 pub fn verify(
     digest: &[u8; 32],
@@ -108,7 +107,7 @@ mod test {
     use super::{ecmult, Scalar};
 
     use crate::secp256r1::{
-        context::TABLE_G, field::FieldElement, points::Jacobian, test_vectors::MUL_TEST_VECTORS,
+        context::TABLE_G, field::FieldElement, points::{Jacobian, JacobianConst}, test_vectors::MUL_TEST_VECTORS,
     };
 
     #[cfg(feature = "bigint_ops")]
@@ -119,15 +118,18 @@ mod test {
 
     #[test]
     fn test_ecmult_mix() {
+        #[cfg(feature = "bigint_ops")]
+        init();
+
         assert_eq!(
-            Jacobian::GENERATOR.double().to_affine(),
+            JacobianConst::GENERATOR.double().to_affine(),
             ecmult(Jacobian::GENERATOR, Scalar::ONE, Scalar::ONE, &TABLE_G).to_affine()
         );
 
         assert_eq!(
-            Jacobian::GENERATOR
+            JacobianConst::GENERATOR
                 .double()
-                .add(&Jacobian::GENERATOR)
+                .add(&JacobianConst::GENERATOR)
                 .to_affine(),
             ecmult(
                 Jacobian::GENERATOR,
@@ -139,9 +141,9 @@ mod test {
         );
 
         assert_eq!(
-            Jacobian::GENERATOR
+            JacobianConst::GENERATOR
                 .double()
-                .add(&Jacobian::GENERATOR)
+                .add(&JacobianConst::GENERATOR)
                 .to_affine(),
             ecmult(
                 Jacobian::GENERATOR,
@@ -153,7 +155,7 @@ mod test {
         );
 
         assert_eq!(
-            Jacobian::GENERATOR.double().double().to_affine(),
+            JacobianConst::GENERATOR.double().double().to_affine(),
             ecmult(
                 Jacobian::GENERATOR,
                 Scalar::from_words([2, 0, 0, 0]),
@@ -164,7 +166,7 @@ mod test {
         );
 
         assert_eq!(
-            Jacobian::GENERATOR.double().double().to_affine(),
+            JacobianConst::GENERATOR.double().double().to_affine(),
             ecmult(
                 Jacobian::GENERATOR,
                 Scalar::from_words([3, 0, 0, 0]),
@@ -175,7 +177,7 @@ mod test {
         );
 
         assert_eq!(
-            Jacobian::GENERATOR.double().double().to_affine(),
+            JacobianConst::GENERATOR.double().double().to_affine(),
             ecmult(
                 Jacobian::GENERATOR,
                 Scalar::ONE,

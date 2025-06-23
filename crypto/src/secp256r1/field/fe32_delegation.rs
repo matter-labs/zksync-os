@@ -59,7 +59,7 @@ impl FieldElement {
         self
     }
 
-    fn to_integer(mut self) -> Self {
+    pub(super) fn to_integer(mut self) -> Self {
         unsafe {
             u256::mul_assign_montgomery::<FieldParams>(&mut self.0, &BigInt::one());
         }

@@ -282,7 +282,7 @@ mod tests {
     fn test_const_invert() {
         proptest!(|(x: FieldElementConst)| {
             prop_assert_eq!(x.invert().invert(), x);
-            prop_assert_eq!(x.invert().mul(&x), FieldElement::ONE);
+            prop_assert_eq!(x.invert().mul(&x), FieldElementConst::ONE);
         })
     }
 

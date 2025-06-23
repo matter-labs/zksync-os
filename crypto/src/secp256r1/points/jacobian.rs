@@ -3,13 +3,30 @@ use crate::secp256r1::field::{FieldElement, FieldElementConst};
 use core::{fmt::Debug, ops::Neg};
 
 #[derive(Default, Debug, Clone, Copy)]
-pub(crate) struct Jacobian<F: Default + Debug + Clone + Copy> {
-    pub(crate) x: F,
-    pub(crate) y: F,
-    pub(crate) z: F,
+pub(crate) struct Jacobian {
+    pub(crate) x: FieldElement,
+    pub(crate) y: FieldElement,
+    pub(crate) z: FieldElement,
 }
 
-impl Jacobian<FieldElement> {
+impl Jacobian {
+    // coordinates are in montgomerry form
+    pub(crate) const GENERATOR: Self = Self {
+        x: FieldElement::from_words_unchecked([
+            8784043285714375740,
+            8483257759279461889,
+            8789745728267363600,
+            1770019616739251654,
+        ]),
+        y: FieldElement::from_words_unchecked([
+            15992936863339206154,
+            10037038012062884956,
+            15197544864945402661,
+            9615747158586711429,
+        ]),
+        z: FieldElement::ONE,
+    };
+
     pub(crate) fn is_infinity(&self) -> bool {
         self.z.is_zero() || (self.y.is_zero() && self.x.is_zero())
     }
@@ -220,7 +237,7 @@ impl Jacobian<FieldElement> {
     }
 }
 
-impl Neg for Jacobian<FieldElement> {
+impl Neg for Jacobian {
     type Output = Self;
 
     fn neg(mut self) -> Self::Output {
@@ -229,8 +246,15 @@ impl Neg for Jacobian<FieldElement> {
     }
 }
 
+#[derive(Default, Debug, Clone, Copy)]
+pub(crate) struct JacobianConst {
+    pub(crate) x: FieldElementConst,
+    pub(crate) y: FieldElementConst,
+    pub(crate) z: FieldElementConst
+}
+
 // only used for contexxt generation
-impl Jacobian<FieldElementConst> {
+impl JacobianConst {
     const INFINITY: Self = Self {
         x: FieldElementConst::ZERO,
         y: FieldElementConst::ZERO,
@@ -256,6 +280,15 @@ impl Jacobian<FieldElementConst> {
 
     pub(crate) const fn is_infinity_const(&self) -> bool {
         self.z.is_zero() || (self.x.is_zero() || self.y.is_zero())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn to_affine(self) -> Affine {
+        let x = FieldElement::from_be_bytes(&self.x.to_be_bytes()).unwrap();
+        let y = FieldElement::from_be_bytes(&self.y.to_be_bytes()).unwrap();
+        let z = FieldElement::from_be_bytes(&self.z.to_be_bytes()).unwrap();
+
+        Jacobian { x, y, z}.to_affine()
     }
 
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2001-b
@@ -332,7 +365,7 @@ impl Jacobian<FieldElementConst> {
 mod tests {
     use crate::secp256r1::{
         field::FieldElement,
-        points::{Affine, Jacobian},
+        points::{Affine, Jacobian, JacobianConst},
         test_vectors::ADD_TEST_VECTORS,
     };
 
@@ -344,8 +377,11 @@ mod tests {
 
     #[test]
     fn compare_double() {
+        #[cfg(feature = "bigint_ops")]
+        init();
+
         let mut g = Jacobian::GENERATOR;
-        let mut g_const = Jacobian::GENERATOR;
+        let mut g_const = JacobianConst::GENERATOR;
         for _ in 0..100 {
             g_const = g_const.double();
             g.double_assign();
@@ -355,8 +391,11 @@ mod tests {
 
     #[test]
     fn compare_add() {
+        #[cfg(feature = "bigint_ops")]
+        init();
+
         let mut a = Jacobian::GENERATOR;
-        let mut b = Jacobian::GENERATOR;
+        let mut b = JacobianConst::GENERATOR;
         let mut c = Jacobian::GENERATOR;
 
         let ge = Jacobian::GENERATOR.to_affine();
@@ -364,7 +403,7 @@ mod tests {
         for _ in 0..100 {
             a.add_assign(&Jacobian::GENERATOR);
             c.add_ge_assign(&ge);
-            b = b.add(&Jacobian::GENERATOR);
+            b = b.add(&JacobianConst::GENERATOR);
 
             assert_eq!(a.to_affine(), b.to_affine());
             assert_eq!(a.to_affine(), c.to_affine());

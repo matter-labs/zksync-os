@@ -1,16 +1,11 @@
 use crypto::{
     p256::{
         ecdsa::{
-            signature::{
-                hazmat::{PrehashSigner, PrehashVerifier},
-                Signer,
-            },
+            signature::hazmat::{PrehashSigner, PrehashVerifier},
             Signature, SigningKey, VerifyingKey,
         },
         elliptic_curve::{rand_core::OsRng, sec1::ToEncodedPoint},
-    },
-    secp256r1::verify,
-    sha3::{Digest, Keccak256},
+    }, secp256r1::verify, sha3::{Digest, Keccak256}
 };
 use proptest::prelude::*;
 
