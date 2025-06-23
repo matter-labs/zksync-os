@@ -19,14 +19,12 @@ On a high-level, this tool works in the following way:
 
 The tool has two modes: `single-run` and `live-run`. The former takes as argument the block data in JSON format. The second one just takes an RPC endpoint for an archive node with the debug section enabled and fetches the traces directly. The latter also can run a given range of blocks.
 
-First of all, you need to follow the instructions in the main project's README and also run `sh dump_bin_with_markers_unlimited_native.sh` from the `zksync-os` directory.
-
 ### Single run
 
 From the root of the project, run:
 
 ```raw
-RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_print,rig/unlimited_native,rig/report_native,rig/cycle_marker -- single-run --block-dir tests/instances/eth_runner --randomized
+RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_print,rig/unlimited_native -- single-run --block-dir tests/instances/eth_runner --randomized
 ```
 
 This will run the example block committed to the repo (22244135). Some more example blocks can be found in https://github.com/antoniolocascio/ethereum-block-examples.
@@ -36,7 +34,7 @@ This will run the example block committed to the repo (22244135). Some more exam
 From the root of the projects, run:
 
 ```raw
-RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_print,rig/unlimited_native,rig/cycle_marker  -- live-run --start-block 19299000 --end-block 19299005 --endpoint ENDPOINT --db ../db
+RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_print,rig/unlimited_native  -- live-run --start-block 19299000 --end-block 19299005 --endpoint ENDPOINT --db ../db
 ```
 
 This command will fetch blocks in the range [19299000, 19299005] from the Ethereum archive node `ENDPOINT`. It creates a local database to cache some RPC information.

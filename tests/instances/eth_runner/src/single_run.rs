@@ -36,8 +36,13 @@ fn run<const RANDOMIZED: bool>(
         std::path::Path::new(&dir).join(suffix)
     });
 
-    let (output, stats) =
-        chain.run_block_with_extra_stats(transactions, Some(block_context), None, output_path);
+    let (output, stats) = chain.run_block_with_extra_stats(
+        transactions,
+        Some(block_context),
+        None,
+        output_path,
+        Some("evm_replay".to_string()),
+    );
 
     let _ratio = compute_ratio(stats);
 

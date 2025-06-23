@@ -24,12 +24,6 @@ enum Label {
     End(&'static str),
 }
 
-const BLAKE_DELEGATION_ID: u32 = 1991;
-const BIGINT_DELEGATION_ID: u32 = 1994;
-const BLAKE_DELEGATION_COEFF: u64 = 16;
-const BIGINT_DELEGATION_COEFF: u64 = 4;
-const BLOCK_WIDE_LABEL: &str = "run_prepared";
-
 #[cfg(not(target_arch = "riscv32"))]
 thread_local! {
   /// Forward run collects the labels, so that we don't incur in more RISC-V cycles
@@ -161,6 +155,11 @@ macro_rules! wrap_with_resources {
 
 #[cfg(all(feature = "use_risc_v_simulator", not(target_arch = "riscv32")))]
 pub fn print_cycle_markers() -> Option<u64> {
+    const BLAKE_DELEGATION_ID: u32 = 1991;
+    const BIGINT_DELEGATION_ID: u32 = 1994;
+    const BLAKE_DELEGATION_COEFF: u64 = 16;
+    const BIGINT_DELEGATION_COEFF: u64 = 4;
+    const BLOCK_WIDE_LABEL: &str = "run_prepared";
     use risc_v_simulator::cycle::state::*;
     let cm = take_cycle_marker();
     let labels = LABELS.with(|l| std::mem::take(&mut *l.borrow_mut()));
