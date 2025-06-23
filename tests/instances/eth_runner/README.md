@@ -29,7 +29,7 @@ From the root of the project, run:
 RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_print,rig/unlimited_native,rig/report_native,rig/cycle_marker -- single-run --block-dir tests/instances/eth_runner --randomized
 ```
 
-This will run the example block committed to the repo (22244135).
+This will run the example block committed to the repo (22244135). Some more example blocks can be found in https://github.com/antoniolocascio/ethereum-block-examples.
 
 ### Live run
 
