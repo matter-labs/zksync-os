@@ -35,7 +35,7 @@ You can verify it on http://fri-verifier.vercel.app
 
 ### Getting blocks
 
-The command above takes the block infor from `tests/instances/eth_runner`
+The command above takes the block information from `tests/instances/eth_runner`
 
 We've put some additional blocks in https://github.com/antoniolocascio/ethereum-block-examples/tree/main/blocks.
 
