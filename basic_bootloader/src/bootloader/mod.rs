@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
+use errors::BootloaderSubsystemError;
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
@@ -171,7 +172,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
         oracle: <S::IO as IOSubsystemExt>::IOOracle,
         result_keeper: &mut impl ResultKeeperExt,
-    ) -> Result<<S::IO as IOSubsystemExt>::FinalData, InternalError>
+    ) -> Result<<S::IO as IOSubsystemExt>::FinalData, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -246,12 +247,12 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             cycle_marker::end!("process_transaction");
 
             match tx_result {
-                Err(TxError::Internal(err)) => {
+                Err(TxError::BootloaderSubsystemError(err)) => {
                     let _ = system.get_logger().write_fmt(format_args!(
                         "Tx execution result: Internal error = {:?}\n",
                         err,
                     ));
-                    return Err(err);
+                    return Err(err.into());
                 }
                 Err(TxError::Validation(err)) => {
                     let _ = system.get_logger().write_fmt(format_args!(

@@ -105,3 +105,158 @@ impl From<InternalError> for SystemFunctionError {
         SystemError::Internal(e).into()
     }
 }
+
+// ---- TODO find a better place for these definitions
+
+///
+/// Errors common for all subsystems.
+///
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RuntimeError {
+    OutOfNativeResources,
+}
+
+/// # Types of errors occurring in a subsystem
+///
+/// ## Semantics
+/// - PublicError: Propagated outside OS
+/// - InterfaceError: Misuse of this subsystem; violation of the interface's
+///   contract. Some other subsystem did not respect the protocol of interaction
+///   with this subsystem. Originates on the subsystem boundary.
+/// - InvariantViolation: There is a bug in this subsystem, independent of its usage.
+/// - GenericRuntimeError: Resources exhaustion, and errors common to all subsystems
+/// - PropagatedError: Inherits semantics from wrapped error
+///
+/// ## Stakeholders
+/// - PublicError: server and humans
+/// - InterfaceError: developers of this subsystem and other subsystems (which triggered it).
+/// - InvariantViolation: developers of this subsystem
+/// - GenericRuntimeError: developers of this subsystem and other subsystems, server and humans
+/// - PropagatedError: Inherits semantics from wrapped error
+///
+/// ## Error handling contract:
+/// - PublicError: Transaction rejected, error propagated outside OS
+/// - InterfaceError: Transaction rejected, system restart required
+/// - InvariantViolation: Transaction rejected, system restart required
+/// - GenericRuntimeError: Transaction rejected, system restart required
+/// - PropagatedError: Inherits semantics from wrapped error
+///
+pub trait SubsystemErrors {
+    type Public : Clone + core::fmt::Debug + Eq + Sized;
+    type Interface : Clone + core::fmt::Debug + Eq + Sized;
+
+    /// Errors this subsystem can wrap from its children
+    /// Implement a enum with a variant for each child subsystem
+    type Wrapped: Clone + core::fmt::Debug + Eq + Sized;
+}
+
+#[derive(Debug)]
+pub struct AsPublic<E>(pub E);
+
+#[derive(Debug)]
+pub struct AsInterface<E>(pub E);
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Error<S: SubsystemErrors> {
+    /// Crosses OS boundary
+    /// Reaches human stakeholders and supersystems (ZKsync server, contract devs, users)
+    External(S::Public),
+    /// Stays within OS
+    /// Stakeholders are developers of the subsystem S, or other subsystems
+    Internal(Fault<S>),
+}
+
+impl<S: SubsystemErrors> From<Fault<S>> for Error<S> {
+    fn from(v: Fault<S>) -> Self {
+        Self::Internal(v)
+    }
+}
+
+// Temporary converter
+impl<S: SubsystemErrors> From<InternalError> for Error<S> {
+    fn from(v: InternalError) -> Self {
+        Self::Internal(v.into())
+    }
+}
+// Temporary converter
+impl<S: SubsystemErrors> From<FatalError> for Error<S> {
+    fn from(v: FatalError) -> Self {
+        Self::Internal(v.into())
+    }
+}
+///
+/// Error on a subsystem boundary
+///
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Fault<S: SubsystemErrors> {
+    /// Meaning of an interface error comes from the subsystem misuse:
+    /// - the contract of the subsystem's interface is violated, or
+    /// - the protocol or interaction with the subsystem is violated
+    /// Fixing it usually requires changing the context of the call.
+    Usage(S::Interface),
+
+    /// Internal error, a bug that does not depend on how the subsystem was
+    /// used.
+    /// Fixing it will probably require changing the code inside the subsystem.
+    /// Triggers system restart and the transaction is ignored.
+    Defect(InternalError),
+
+    /// Common errors for all subsystems, like `OutOfNativeResources`
+    Runtime(RuntimeError),
+
+    /// Error propagated from another subsystem
+    Cascaded(S::Wrapped),
+}
+
+impl<F: SubsystemErrors> Fault<F> {
+    pub fn wrap<T:SubsystemErrors<Wrapped : From<Fault<F>>>>(self) -> Fault<T>
+    {
+        Fault::Cascaded(self.into())
+    }
+}
+
+impl<F: SubsystemErrors> Error<F> {
+    pub fn wrap<T:SubsystemErrors<Wrapped : From<Error<F>>>>(self) -> Fault<T>
+    {
+        Fault::Cascaded(self.into())
+    }
+}
+
+impl<S: SubsystemErrors> From<RuntimeError> for Fault<S> {
+    fn from(v: RuntimeError) -> Self {
+        Self::Runtime(v)
+    }
+}
+
+impl<S: SubsystemErrors> From<InternalError> for Fault<S> {
+    fn from(v: InternalError) -> Self {
+        Self::Defect(v)
+    }
+}
+
+impl<S: SubsystemErrors> From<AsInterface<S::Interface>> for Fault<S> {
+    fn from(v: AsInterface<S::Interface>) -> Self {
+        Self::Usage(v.0)
+    }
+}
+
+impl<S: SubsystemErrors> From<FatalError> for Fault<S> {
+    fn from(value: FatalError) -> Self {
+        match value {
+            FatalError::OutOfNativeResources => RuntimeError::OutOfNativeResources.into(),
+            FatalError::Internal(internal_error) => internal_error.into(),
+        }
+    }
+}
+
+macro_rules! invariant_violation {
+    ($msg:expr) => {
+        // The concatenation happens at compile time.
+        // The result is a single &'static str.
+        SystemWideError::from(SubsystemError::InvariantViolation(
+            concat!(file!(), ":", line!(), ": ", $msg)
+        ))
+    };
+}
+
+// ----

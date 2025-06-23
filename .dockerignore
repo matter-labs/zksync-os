@@ -11,6 +11,7 @@
 !supporting_crates
 !system_hooks
 !zk_ee
+!zksync_os_error
 
 !zksync_os
 zksync_os/target
