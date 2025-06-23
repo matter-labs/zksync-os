@@ -68,13 +68,7 @@ impl Scalar {
 
     pub(crate) fn from_be_bytes(bytes: &[u8; 32]) -> Result<Self, Secp256r1Err> {
         let val = Self::from_be_bytes_unchecked(bytes);
-        let modulus = unsafe { ScalarParams::modulus() };
-
-        if u256::lt(&val.0, modulus) {
-            Ok(val.to_repressentation())
-        } else {
-            Err(Secp256r1Err::InvalidFieldBytes)
-        }
+        Ok(val.to_repressentation())
     }
 
     pub(crate) fn from_words(words: [u64; 4]) -> Self {
