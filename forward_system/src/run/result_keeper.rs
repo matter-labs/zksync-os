@@ -19,6 +19,8 @@ pub struct TxProcessingOutputOwned {
     pub contract_address: Option<B160>,
     pub gas_used: u64,
     pub gas_refunded: u64,
+    #[cfg(feature = "report_native")]
+    pub native_used: u64,
 }
 
 pub struct ForwardRunningResultKeeper<TR: TxResultCallback> {
@@ -110,6 +112,8 @@ impl<TR: TxResultCallback> ResultKeeperExt for ForwardRunningResultKeeper<TR> {
             contract_address: output.contract_address,
             gas_used: output.gas_used,
             gas_refunded: output.gas_refunded,
+            #[cfg(feature = "report_native")]
+            native_used: output.native_used,
         });
         self.tx_result_callback.tx_executed(owned_result.clone());
         self.tx_results.push(owned_result);

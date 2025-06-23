@@ -4,7 +4,6 @@ use crate::run::oracle::CallSimulationOracle;
 use crate::run::oracle::ForwardRunningOracle;
 use basic_bootloader::bootloader::BasicBootloader;
 use basic_system::system_functions::NoStdSystemFunctions;
-use basic_system::system_implementation::memory::basic_memory::MemoryImpl;
 use basic_system::system_implementation::system::EthereumLikeStorageAccessCostModel;
 use basic_system::system_implementation::system::FullIO;
 use zk_ee::memory::stack_trait::VecStackCtor;
@@ -35,7 +34,6 @@ impl<O: IOOracle> SystemTypes for ForwardSystemTypes<O> {
         O,
         false,
     >;
-    type Memory = MemoryImpl<Self::Allocator>;
     type SystemFunctions = NoStdSystemFunctions;
     type Allocator = Global;
     type Logger = Logger;

@@ -7,7 +7,7 @@
 use crate::system::{errors::SystemError, Computational, Ergs, Resource, Resources};
 
 /// Native resource that counts down, as done for ergs.
-#[derive(Clone, core::fmt::Debug, PartialEq, Eq)]
+#[derive(Clone, core::fmt::Debug, Default, PartialEq, Eq)]
 pub struct DecreasingNative(u64);
 
 impl Resource for DecreasingNative {
@@ -67,7 +67,7 @@ impl Computational for DecreasingNative {
     }
 }
 
-#[derive(Clone, core::fmt::Debug, PartialEq, Eq)]
+#[derive(Clone, core::fmt::Debug, PartialEq, Eq, Default)]
 pub struct BaseResources<Native: Resource> {
     ergs: Ergs,
     native: Native,

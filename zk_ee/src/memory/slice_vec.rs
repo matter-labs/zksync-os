@@ -1,8 +1,10 @@
 use core::hint::assert_unchecked;
 use core::iter::Extend;
-use core::mem::MaybeUninit;
+use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ops::{Deref, DerefMut};
+use core::ptr;
 
+#[derive(Default)]
 pub struct SliceVec<'a, T> {
     memory: &'a mut [MaybeUninit<T>],
     length: usize,
@@ -11,6 +13,16 @@ pub struct SliceVec<'a, T> {
 impl<'a, T> SliceVec<'a, T> {
     pub fn new(memory: &'a mut [MaybeUninit<T>]) -> Self {
         Self { memory, length: 0 }
+    }
+
+    pub fn destruct(self) -> (&'a mut [T], &'a mut [MaybeUninit<T>]) {
+        let me = ManuallyDrop::new(self);
+        unsafe {
+            let memory = core::ptr::read(&me.memory);
+            let (initialized, uninitialized) = memory.split_at_mut_unchecked(me.length);
+            let initialized = &mut *(initialized as *mut [MaybeUninit<T>] as *mut [T]);
+            (initialized, uninitialized)
+        }
     }
 
     /// Returns the current contents as a slice and a new empty `SliceVec` that uses the rest of the backing slice.
@@ -61,8 +73,10 @@ impl<'a, T> SliceVec<'a, T> {
 impl<T: Clone> SliceVec<'_, T> {
     /// Resizes the `SliceVec` to the requested length.
     /// Adds copies of `padding` to the end if the size increases.
-    pub fn resize(&mut self, new_length: usize, padding: T) {
-        assert!(new_length < self.memory.len());
+    pub fn resize(&mut self, new_length: usize, padding: T) -> Result<(), ()> {
+        if new_length >= self.memory.len() {
+            return Err(());
+        }
 
         if new_length > self.length {
             for x in &mut self.memory[self.length..new_length] {
@@ -72,12 +86,15 @@ impl<T: Clone> SliceVec<'_, T> {
         if new_length < self.length {
             unsafe {
                 assert_unchecked(self.length <= self.memory.len());
-                for x in &mut self.memory[new_length..self.length] {
-                    x.assume_init_drop();
-                }
+                ptr::drop_in_place(
+                    &mut self.memory[new_length..self.length] as *mut [MaybeUninit<T>]
+                        as *mut [T],
+                );
             }
         }
         self.length = new_length;
+
+        Ok(())
     }
 }
 
@@ -130,9 +147,9 @@ mod test {
 
         slice_vec.extend(0..5);
         assert_eq!(*slice_vec, [0, 1, 2, 3, 4]);
-        slice_vec.resize(3, 0);
+        slice_vec.resize(3, 0).unwrap();
         assert_eq!(*slice_vec, [0, 1, 2]);
-        slice_vec.resize(5, 0);
+        slice_vec.resize(5, 0).unwrap();
         assert_eq!(*slice_vec, [0, 1, 2, 0, 0]);
 
         let (slice, mut slice_vec) = slice_vec.freeze();
@@ -152,7 +169,7 @@ mod test {
 
     fn r(mut s: SliceVec<u8>, n: u8, prev: &[u8]) {
         if n > 0 {
-            s.resize(1, n);
+            s.resize(1, n).unwrap();
 
             let (mine, next) = s.freeze();
             r(next, n - 1, &mine);

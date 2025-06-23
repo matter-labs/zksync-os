@@ -19,19 +19,19 @@ extern crate alloc;
 
 use core::ops::Range;
 
+use evm_stack::EvmStack;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};
-use zk_ee::system::{
-    EthereumLikeTypes, MemorySubsystem, OSImmutableSlice, OSResizableSlice, Resource, System,
-    SystemTypes,
-};
+use zk_ee::system::{EthereumLikeTypes, Resource, System, SystemTypes};
 
 use alloc::vec::Vec;
 use zk_ee::types_config::*;
 use zk_ee::utils::*;
 
 mod ee_trait_impl;
+mod evm_stack;
 pub mod gas_constants;
 pub mod i256;
 pub mod instructions;
@@ -51,7 +51,7 @@ pub struct Interpreter<'a, S: EthereumLikeTypes> {
     /// Generic resources
     pub resources: S::Resources,
     /// Stack.
-    pub stack: Vec<U256, <S::Memory as MemorySubsystem>::Allocator>,
+    pub stack: EvmStack<S::Allocator>,
     /// Caller address
     pub caller: <S::IOTypes as SystemIOTypesConfig>::Address,
     /// Contract information and invoking data
@@ -59,9 +59,9 @@ pub struct Interpreter<'a, S: EthereumLikeTypes> {
     /// calldata
     pub calldata: &'a [u8],
     /// returndata is available from here if it exists
-    pub returndata: OSImmutableSlice<S>,
+    pub returndata: &'a [u8],
     /// Heap that belongs to this interpreter, can be resided
-    pub heap: OSResizableSlice<S>,
+    pub heap: SliceVec<'a, u8>,
     /// returndata location serves to save range information at various points
     pub returndata_location: Range<usize>,
     /// Bytecode
@@ -143,7 +143,7 @@ impl<S: SystemTypes> BytecodePreprocessingData<S> {
 }
 
 pub struct BitMap<S: SystemTypes> {
-    inner: Vec<usize, <S::Memory as MemorySubsystem>::Allocator>,
+    inner: Vec<usize, S::Allocator>,
 }
 
 impl<S: SystemTypes> BitMap<S> {

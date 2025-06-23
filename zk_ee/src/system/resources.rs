@@ -55,7 +55,7 @@ pub trait Computational: 'static + Sized + Clone + core::fmt::Debug + PartialEq 
 ///
 /// Ergs, the resource for EEs.
 ///
-#[derive(Clone, Copy, core::fmt::Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, core::fmt::Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Ergs(pub u64);
 
 impl core::ops::Add for Ergs {
