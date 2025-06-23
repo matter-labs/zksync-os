@@ -129,6 +129,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             InMemoryPreimageSource,
             TxListSource,
         >,
+        app: &Option<String>,
     ) -> Vec<u32> {
         let oracle_wrapper =
             BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle.clone());
@@ -139,7 +140,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let copy_source = ReadWitnessSource::new(non_determinism_source);
         let items = copy_source.get_read_items();
         // By default - enable diagnostics is false (which makes the test run faster).
-        let path = get_zksync_os_img_path();
+        let path = get_zksync_os_img_path(app);
         let output = zksync_os_runner::run(path, None, 1 << 36, copy_source);
 
         // We return 0s in case of failure.
@@ -161,7 +162,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
     ) -> BatchOutput {
-        self.run_block_with_extra_stats(transactions, block_context, profiler_config, None)
+        self.run_block_with_extra_stats(transactions, block_context, profiler_config, None, None)
             .0
     }
 
@@ -171,6 +172,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
         witness_output_file: Option<PathBuf>,
+        app: Option<String>,
     ) -> (BatchOutput, BlockExtraStats) {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
@@ -251,7 +253,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         }
 
         if let Some(path) = witness_output_file {
-            let result = Self::run_batch_generate_witness(oracle.clone());
+            let result = Self::run_batch_generate_witness(oracle.clone(), &app);
             let mut file = File::create(&path).expect("should create file");
             let witness: Vec<u8> = result.iter().flat_map(|x| x.to_be_bytes()).collect();
             let hex = hex::encode(witness);
@@ -276,14 +278,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let items = copy_source.get_read_items();
 
             let diagnostics_config = profiler_config.map(|cfg| {
-                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path());
+                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(&app));
                 diagnostics_cfg.profiler_config = Some(cfg);
                 diagnostics_cfg
             });
 
             let now = std::time::Instant::now();
             let (proof_output, block_effective) = zksync_os_runner::run_and_get_effective_cycles(
-                get_zksync_os_img_path(),
+                get_zksync_os_img_path(&app),
                 diagnostics_config,
                 1 << 36,
                 copy_source,
@@ -494,12 +496,20 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 }
 
 // bunch of internal utility methods
-fn get_zksync_os_img_path() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap()).join("zksync_os/app.bin")
+fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
+    let app = app_name.as_deref().unwrap_or("app");
+    let filename = format!("{}.{}", app, extension);
+    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
+        .join("zksync_os")
+        .join(filename)
 }
 
-fn get_zksync_os_sym_path() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap()).join("zksync_os/app.elf")
+fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {
+    get_zksync_os_path(app_name, "bin")
+}
+
+fn get_zksync_os_sym_path(app_name: &Option<String>) -> PathBuf {
+    get_zksync_os_path(app_name, "elf")
 }
 
 pub fn is_account_properties_address(address: &B160) -> bool {
@@ -512,7 +522,7 @@ fn run_prover(csr_reads: &[u32]) {
     use std::alloc::Global;
     use std::io::Read;
 
-    let mut file = File::open(get_zksync_os_img_path()).expect("must open provided file");
+    let mut file = File::open(get_zksync_os_img_path(&None)).expect("must open provided file");
     let mut buffer = vec![];
     file.read_to_end(&mut buffer).expect("must read the file");
     let mut binary = vec![];
