@@ -5,7 +5,9 @@ use crypto::{
             Signature, SigningKey, VerifyingKey,
         },
         elliptic_curve::{rand_core::OsRng, sec1::ToEncodedPoint},
-    }, secp256r1::verify, sha3::{Digest, Keccak256}
+    },
+    secp256r1::verify,
+    sha3::{Digest, Keccak256},
 };
 use proptest::prelude::*;
 

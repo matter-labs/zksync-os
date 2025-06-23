@@ -250,7 +250,7 @@ impl Neg for Jacobian {
 pub(crate) struct JacobianConst {
     pub(crate) x: FieldElementConst,
     pub(crate) y: FieldElementConst,
-    pub(crate) z: FieldElementConst
+    pub(crate) z: FieldElementConst,
 }
 
 // only used for contexxt generation
@@ -288,7 +288,7 @@ impl JacobianConst {
         let y = FieldElement::from_be_bytes(&self.y.to_be_bytes()).unwrap();
         let z = FieldElement::from_be_bytes(&self.z.to_be_bytes()).unwrap();
 
-        Jacobian { x, y, z}.to_affine()
+        Jacobian { x, y, z }.to_affine()
     }
 
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2001-b

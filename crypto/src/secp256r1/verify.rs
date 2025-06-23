@@ -107,7 +107,10 @@ mod test {
     use super::{ecmult, Scalar};
 
     use crate::secp256r1::{
-        context::TABLE_G, field::FieldElement, points::{Jacobian, JacobianConst}, test_vectors::MUL_TEST_VECTORS,
+        context::TABLE_G,
+        field::FieldElement,
+        points::{Jacobian, JacobianConst},
+        test_vectors::MUL_TEST_VECTORS,
     };
 
     #[cfg(feature = "bigint_ops")]
