@@ -162,22 +162,30 @@ impl U256 {
 
     #[inline(always)]
     pub fn write_zero(into: &mut Self) {
-        crypto::bigint_riscv::write_zero_into(into.0.as_mut_ptr().cast());
+        unsafe {
+            crypto::bigint_riscv::write_zero_into(into.0.as_mut_ptr().cast());
+        }
     }
 
     #[inline(always)]
     pub fn write_one(into: &mut Self) {
-        crypto::bigint_riscv::write_one_into(into.0.as_mut_ptr().cast());
+        unsafe {
+            crypto::bigint_riscv::write_one_into(into.0.as_mut_ptr().cast());
+        }
     }
 
     #[inline(always)]
     pub unsafe fn write_zero_into_ptr(into: *mut Self) {
-        crypto::bigint_riscv::write_zero_into(into.cast());
+        unsafe {
+            crypto::bigint_riscv::write_zero_into(into.cast());
+        }
     }
 
     #[inline(always)]
     pub unsafe fn write_one_into_ptr(into: *mut Self) {
-        crypto::bigint_riscv::write_one_into(into.cast());
+        unsafe {
+            crypto::bigint_riscv::write_one_into(into.cast());
+        }
     }
 
     #[inline(always)]
