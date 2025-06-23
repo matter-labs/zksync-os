@@ -117,16 +117,14 @@ impl Cache {
         new_account_state: AccountState,
     ) -> AccountState {
         let cache_el = self.0.entry(address).or_default();
-        if cache_el.balance.is_none() {
+        if cache_el.balance.is_none() && cache_el.nonce.is_none() && cache_el.code.is_none() {
             // Balance not touched yet
             cache_el.balance = new_account_state.balance;
-        }
-        if cache_el.nonce.is_none() {
+
             // Nonce not touched yet
             // Tracer omits nonce when it's 0, we need to fill it in
             cache_el.nonce = Some(new_account_state.nonce.unwrap_or(0));
-        }
-        if cache_el.code.is_none() {
+
             // Code not touched yet
             cache_el.code = new_account_state.code;
         }
