@@ -369,8 +369,7 @@ impl<A: Allocator> EvmStack<A> {
 
     #[inline(always)]
     pub fn push_zero(&mut self) -> Result<(), ExitCode> {
-        let new_len = self.len + 1;
-        if new_len >= STACK_SIZE {
+        if self.len == STACK_SIZE {
             return Err(ExitCode::StackOverflow);
         }
         unsafe {
@@ -384,8 +383,7 @@ impl<A: Allocator> EvmStack<A> {
 
     #[inline(always)]
     pub fn push_one(&mut self) -> Result<(), ExitCode> {
-        let new_len = self.len + 1;
-        if new_len >= STACK_SIZE {
+        if self.len == STACK_SIZE {
             return Err(ExitCode::StackOverflow);
         }
         unsafe {
@@ -399,8 +397,7 @@ impl<A: Allocator> EvmStack<A> {
 
     #[inline(always)]
     pub fn push_1(&mut self, value: &U256) -> Result<(), ExitCode> {
-        let new_len = self.len + 1;
-        if new_len >= STACK_SIZE {
+        if self.len == STACK_SIZE {
             return Err(ExitCode::StackOverflow);
         }
         unsafe {
@@ -414,8 +411,7 @@ impl<A: Allocator> EvmStack<A> {
 
     #[inline(always)]
     pub fn push_2(&mut self, val0: &U256, val1: &U256) -> Result<(), ExitCode> {
-        let new_len = self.len + 2;
-        if new_len >= STACK_SIZE {
+        if self.len == STACK_SIZE {
             return Err(ExitCode::StackOverflow);
         }
         unsafe {
