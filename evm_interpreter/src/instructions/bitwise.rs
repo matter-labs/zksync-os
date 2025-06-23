@@ -137,7 +137,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
                     op2.as_limbs_mut()[3 - i] = u64::MAX;
                 }
                 if bits != 0 {
-                    op2.as_limbs_mut()[words] |= u64::MAX << (64 - bits);
+                    op2.as_limbs_mut()[3 - words] |= u64::MAX << (64 - bits);
                 }
             }
         } else {
