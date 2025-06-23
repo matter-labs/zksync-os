@@ -308,7 +308,7 @@ mod tests {
     impl proptest::arbitrary::Arbitrary for FieldElement {
         type Parameters = ();
 
-        fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             use proptest::prelude::{any, Strategy};
 
             any::<[u64; 4]>().prop_map(|limbs| {

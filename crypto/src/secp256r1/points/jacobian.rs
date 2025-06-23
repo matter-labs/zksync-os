@@ -10,6 +10,7 @@ pub(crate) struct Jacobian {
 }
 
 impl Jacobian {
+    #[cfg(test)]
     // coordinates are in montgomerry form
     pub(crate) const GENERATOR: Self = Self {
         x: FieldElement::from_words_unchecked([

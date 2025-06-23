@@ -1,5 +1,4 @@
 use super::{
-    field::FieldElementConst,
     points::{Affine, JacobianConst, Storage},
     ECMULT_TABLE_SIZE_G,
 };
