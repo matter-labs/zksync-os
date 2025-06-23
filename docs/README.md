@@ -8,3 +8,4 @@ This directory contains documentation of ZKsync OS:
 - [Bootloader](./bootloader/)
 - [Execution environments](./execution_environments/)
 - [System](./system/)
+- [Proving ethereum](./proving_ethereum.md)
