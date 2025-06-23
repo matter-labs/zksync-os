@@ -328,26 +328,19 @@ pub fn post_check(
         };
         if receipt.status == Some(alloy::primitives::U256::ONE) {
             if !res.is_success() {
-                error!(
-                    "Transaction {} should have succeeded",
-                    transaction_index
-                );
+                error!("Transaction {} should have succeeded", transaction_index);
                 return Err(PostCheckError::InvalidTx {
                     id: TxId::Index(u256_to_usize_saturated(&transaction_index)),
                 });
             };
         } else if receipt.status == Some(alloy::primitives::U256::ZERO) && res.is_success() {
-            error!(
-                "Transaction {} should have failed",
-                transaction_index
-            );
+            error!("Transaction {} should have failed", transaction_index);
             return Err(PostCheckError::TxShouldHaveFailed {
                 id: TxId::Index(u256_to_usize_saturated(&transaction_index)),
             });
         }
         let gas_used = U256::from_be_bytes(&receipt.gas_used.to_be_bytes());
-        let gas_difference =
-            zk_ee::utils::u256_to_u64_saturated(&gas_used).abs_diff(res.gas_used);
+        let gas_difference = zk_ee::utils::u256_to_u64_saturated(&gas_used).abs_diff(res.gas_used);
         // Check gas used
         if res.gas_used != zk_ee::utils::u256_to_u64_saturated(&gas_used) {
             debug!(
