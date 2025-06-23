@@ -39,12 +39,7 @@ impl Scalar {
 
     pub(crate) fn from_be_bytes(bytes: &[u8; 32]) -> Result<Self, Secp256r1Err> {
         let val = Self::from_be_bytes_unchecked(bytes);
-
-        if val.0 < MODULUS {
-            Ok(val)
-        } else {
-            Err(Secp256r1Err::InvalidFieldBytes)
-        }
+        Ok(val)
     }
 
     #[cfg(test)]

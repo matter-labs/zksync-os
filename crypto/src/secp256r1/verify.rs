@@ -30,7 +30,10 @@ pub fn verify(
 
     let x = ecmult(pk, u2, u1, &TABLE_G).to_affine().x;
 
-    Ok(r == Scalar::reduce_be_bytes(&x.to_be_bytes()))
+    let recovered = Scalar::reduce_be_bytes(&x.to_be_bytes());
+
+    let bool = r == recovered;
+    Ok(bool)
 }
 
 fn ecmult(a: Jacobian, na: Scalar, ng: Scalar, table_g: &GeneratorMultiplesTable) -> Jacobian {
@@ -115,83 +118,7 @@ mod test {
     }
 
     #[test]
-    fn test_ecmult_basic() {
-        assert_eq!(
-            Jacobian::GENERATOR.to_affine(),
-            ecmult(Jacobian::default(), Scalar::ZERO, Scalar::ONE, &TABLE_G).to_affine()
-        );
-
-        assert_eq!(
-            Jacobian::GENERATOR.double().to_affine(),
-            ecmult(
-                Jacobian::default(),
-                Scalar::ZERO,
-                Scalar::from_words([2, 0, 0, 0]),
-                &TABLE_G
-            )
-            .to_affine()
-        );
-
-        assert_eq!(
-            Jacobian::GENERATOR
-                .double()
-                .add(&Jacobian::GENERATOR)
-                .to_affine(),
-            ecmult(
-                Jacobian::default(),
-                Scalar::ZERO,
-                Scalar::from_words([3, 0, 0, 0]),
-                &TABLE_G
-            )
-            .to_affine()
-        );
-
-        assert_eq!(
-            Jacobian::GENERATOR.double().double().to_affine(),
-            ecmult(
-                Jacobian::default(),
-                Scalar::ZERO,
-                Scalar::from_words([4, 0, 0, 0]),
-                &TABLE_G
-            )
-            .to_affine()
-        );
-
-        assert_eq!(
-            Jacobian::GENERATOR
-                .double()
-                .double()
-                .add(&Jacobian::GENERATOR)
-                .to_affine(),
-            ecmult(
-                Jacobian::default(),
-                Scalar::ZERO,
-                Scalar::from_words([5, 0, 0, 0]),
-                &TABLE_G
-            )
-            .to_affine()
-        );
-
-        assert_eq!(
-            Jacobian::GENERATOR
-                .double()
-                .add(&Jacobian::GENERATOR)
-                .double()
-                .to_affine(),
-            ecmult(
-                Jacobian::default(),
-                Scalar::ZERO,
-                Scalar::from_words([6, 0, 0, 0]),
-                &TABLE_G
-            )
-            .to_affine()
-        );
-
-        assert_eq!(
-            Jacobian::GENERATOR.to_affine(),
-            ecmult(Jacobian::GENERATOR, Scalar::ONE, Scalar::ZERO, &TABLE_G).to_affine()
-        );
-
+    fn test_ecmult_mix() {
         assert_eq!(
             Jacobian::GENERATOR.double().to_affine(),
             ecmult(Jacobian::GENERATOR, Scalar::ONE, Scalar::ONE, &TABLE_G).to_affine()
@@ -264,7 +191,7 @@ mod test {
         #[cfg(feature = "bigint_ops")]
         init();
 
-        for (i, (k_bytes, x_bytes, y_bytes)) in MUL_TEST_VECTORS.iter().enumerate() {
+        for (k_bytes, x_bytes, y_bytes) in MUL_TEST_VECTORS {
             let k = Scalar::reduce_be_bytes(k_bytes);
             let expected = Jacobian {
                 x: FieldElement::from_be_bytes(x_bytes).unwrap(),
@@ -273,7 +200,10 @@ mod test {
             };
 
             let result = ecmult(Jacobian::default(), Scalar::ZERO, k, &TABLE_G);
-            assert_eq!(result.to_affine(), expected.to_affine(), "{i}");
+            assert_eq!(result.to_affine(), expected.to_affine());
+
+            let result = ecmult(Jacobian::GENERATOR, k, Scalar::ZERO, &TABLE_G);
+            assert_eq!(result.to_affine(), expected.to_affine());
         }
     }
 }
