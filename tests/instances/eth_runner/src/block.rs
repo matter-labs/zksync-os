@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use rig::log::warn;
 use rig::utils::encode_alloy_rpc_tx;
 use ruint::aliases::{B160, U256};
 use serde::{Deserialize, Serialize};
@@ -29,12 +30,13 @@ impl Block {
                 .into_transactions()
                 .enumerate()
                 .filter_map(|(i, tx)| {
-                    // Useful to keep [if] to select a given tx while debugging
-                    if true {
-                        Some(encode_alloy_rpc_tx(tx))
-                    } else {
+                    // Skip blob and 7702 txs
+                    if tx.transaction_type == Some(3u8) || tx.transaction_type == Some(4u8) {
+                        warn!("Skipping unsupported transaction");
                         skipped.insert(i);
                         None
+                    } else {
+                        Some(encode_alloy_rpc_tx(tx))
                     }
                 })
                 .collect(),
