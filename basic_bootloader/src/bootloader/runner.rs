@@ -525,7 +525,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             };
 
         let return_memory = core::mem::take(&mut self.return_memory);
-        let res = self.hooks.try_intercept(
+        let (res, remaining_memory) = self.hooks.try_intercept(
             address_low,
             ExternalCallRequest {
                 available_resources: actual_resources_to_pass.clone(),
@@ -535,15 +535,16 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             self.system,
             return_memory,
         )?;
-        if let Some((system_hook_run_result, remaining_memory)) = res {
+        // Reclaim unused return memory
+        self.return_memory = remaining_memory;
+
+        if let Some(system_hook_run_result) = res {
             let CompletedExecution {
                 return_values,
                 mut resources_returned,
                 reverted,
                 ..
             } = system_hook_run_result;
-
-            self.return_memory = remaining_memory;
 
             let _ = self.system.get_logger().write_fmt(format_args!(
                 "Call to special address returned, success = {}\n",

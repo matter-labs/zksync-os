@@ -21,6 +21,7 @@ extern crate alloc;
 use core::ops::Range;
 
 use ::u256::U256;
+use evm_stack::EvmStack;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};
@@ -31,13 +32,13 @@ use zk_ee::types_config::*;
 use zk_ee::utils::*;
 
 mod ee_trait_impl;
+mod evm_stack;
 pub mod gas_constants;
 pub mod i256;
 pub mod instructions;
 pub mod interpreter;
 pub mod native_resource_constants;
 pub mod opcodes;
-pub(crate) mod stack;
 pub mod u256;
 pub mod utils;
 
@@ -51,7 +52,7 @@ pub struct Interpreter<'a, S: EthereumLikeTypes> {
     /// Generic resources
     pub resources: S::Resources,
     /// Stack.
-    pub stack: self::stack::EVMStack<S::Allocator>,
+    pub stack: EvmStack<S::Allocator>,
     /// Caller address
     pub caller: <S::IOTypes as SystemIOTypesConfig>::Address,
     /// Contract information and invoking data

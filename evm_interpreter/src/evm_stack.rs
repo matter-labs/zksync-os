@@ -8,14 +8,14 @@ use core::{alloc::Allocator, mem::MaybeUninit};
 use u256::U256;
 use zk_ee::system::logger::Logger;
 
-pub struct EVMStack<A: Allocator> {
+pub struct EvmStack<A: Allocator> {
     buffer: Box<[MaybeUninit<U256>; STACK_SIZE], A>,
     // our length both indicates how many elements are there, and
     // at least how many of them are initialized
     len: usize,
 }
 
-impl<A: Allocator> EVMStack<A> {
+impl<A: Allocator> EvmStack<A> {
     pub(crate) fn new_in(allocator: A) -> Self {
         Self {
             buffer: Box::new_in([const { MaybeUninit::uninit() }; STACK_SIZE], allocator),
