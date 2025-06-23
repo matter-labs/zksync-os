@@ -38,28 +38,10 @@ enum Command {
     SingleRun {
         /// Path to the block JSON file
         #[arg(long)]
-        block: String,
-
-        /// Path to the call trace JSON file
-        #[arg(long)]
-        calltrace: String,
-
-        /// Path to the prestate trace JSON file
-        #[arg(long)]
-        prestatetrace: String,
-
-        /// Path to the diff trace JSON file
-        #[arg(long)]
-        difftrace: String,
-
-        /// Path to the block receipts trace JSON file
-        #[arg(long)]
-        receipts: String,
-
+        block_dir: String,
         /// Path to the block hashes JSON file (optional)
         #[arg(long)]
         block_hashes: Option<String>,
-
         /// If set, the leaves of the tree are put in random
         /// positions to emulate real-world costs
         #[arg(long, action = clap::ArgAction::SetTrue)]
@@ -84,22 +66,10 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::SingleRun {
-            block,
-            calltrace,
-            prestatetrace,
-            difftrace,
-            receipts,
+            block_dir,
             block_hashes,
             randomized,
-        } => crate::single_run::single_run(
-            block,
-            calltrace,
-            receipts,
-            prestatetrace,
-            difftrace,
-            block_hashes,
-            randomized,
-        ),
+        } => crate::single_run::single_run(block_dir, block_hashes, randomized),
         Command::LiveRun {
             start_block,
             end_block,

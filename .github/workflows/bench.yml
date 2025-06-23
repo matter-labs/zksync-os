@@ -62,7 +62,7 @@ jobs:
       - name: run benchmarks on base branch
         shell: bash
         run: |
-          MARKER_PATH=$(pwd)/base_block.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker -- single-run --block tests/instances/eth_runner/block.json --calltrace tests/instances/eth_runner/calltrace.json --prestatetrace tests/instances/eth_runner/prestatetrace.json --difftrace tests/instances/eth_runner/difftrace.json --receipts tests/instances/eth_runner/receipts.json > base_block.out
+          MARKER_PATH=$(pwd)/base_block.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker -- single-run --block-dir tests/instances/eth_runner > base_block.out
           MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker -p precompiles -- test_precompiles
 
       - name: checkout PR
@@ -82,7 +82,7 @@ jobs:
         shell: bash
         id: comparison
         run: |
-          MARKER_PATH=$(pwd)/head_block.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker -- single-run --block tests/instances/eth_runner/block.json --calltrace tests/instances/eth_runner/calltrace.json --prestatetrace tests/instances/eth_runner/prestatetrace.json --difftrace tests/instances/eth_runner/difftrace.json --receipts tests/instances/eth_runner/receipts.json > head_block.out
+          MARKER_PATH=$(pwd)/head_block.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker -- single-run --block-dir tests/instances/eth_runner  > head_block.out
           MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker -p precompiles -- test_precompiles
           # Output all lines from the benchmark result starting from the "## ..." comparison header.
           # Since the output spans multiple lines, we use a heredoc declaration.

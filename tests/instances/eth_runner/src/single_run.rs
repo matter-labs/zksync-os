@@ -46,23 +46,21 @@ fn run<const RANDOMIZED: bool>(
 }
 
 pub fn single_run(
-    block: String,
-    calltrace: String,
-    receipts: String,
-    prestatetrace: String,
-    difftrace: String,
+    block_dir: String,
     block_hashes: Option<String>,
     randomized: bool,
 ) -> anyhow::Result<()> {
-    let block = fs::read_to_string(block)?;
+    use std::path::Path;
+    let dir = Path::new(&block_dir);
+    let block = fs::read_to_string(dir.join("block.json"))?;
     // TODO: ensure there are no calls to unsupported precompiles
-    let _calltrace = fs::read_to_string(&calltrace)?;
-    let receipts = fs::read_to_string(&receipts)?;
-    let ps_file = File::open(&prestatetrace)?;
+    let _calltrace = fs::read_to_string(dir.join("calltrace.json"))?;
+    let receipts = fs::read_to_string(dir.join("receipts.json"))?;
+    let ps_file = File::open(dir.join("prestatetrace.json"))?;
     let ps_reader = BufReader::new(ps_file);
     let ps_trace: PrestateTrace = serde_json::from_reader(ps_reader)?;
     let receipts: BlockReceipts = serde_json::from_str(&receipts).expect("valid receipts JSON");
-    let diff_file = File::open(&difftrace)?;
+    let diff_file = File::open(dir.join("difftrace.json"))?;
     let diff_reader = BufReader::new(diff_file);
     let diff_trace: DiffTrace = serde_json::from_reader(diff_reader)?;
     let block_hashes: Option<BlockHashes> = block_hashes.map(|path| {
