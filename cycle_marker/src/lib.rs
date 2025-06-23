@@ -24,6 +24,12 @@ enum Label {
     End(&'static str),
 }
 
+const BLAKE_DELEGATION_ID: u32 = 1991;
+const BIGINT_DELEGATION_ID: u32 = 1994;
+const BLAKE_DELEGATION_COEFF: u64 = 16;
+const BIGINT_DELEGATION_COEFF: u64 = 4;
+const BLOCK_WIDE_LABEL: &str = "run_prepared";
+
 #[cfg(not(target_arch = "riscv32"))]
 thread_local! {
   /// Forward run collects the labels, so that we don't incur in more RISC-V cycles
@@ -204,11 +210,25 @@ pub fn print_cycle_markers() -> Option<u64> {
             "{}: net cycles: {}, net delegations: {:?}",
             label, diff.cycles, diff.delegations
         ));
-        if label == "run_prepared" {
+        if label == BLOCK_WIDE_LABEL {
+            // We compute effective cycles for the block execution.
+            // That is: raw cycles plus the delegation counts, weighted by
+            // the delegation coefficients (derived from the circuits
+            // geometry)
             block_effective = Some(
                 diff.cycles
-                    + 16 * diff.delegations.get(&1991u32).cloned().unwrap_or_default()
-                    + 4 * diff.delegations.get(&1994u32).cloned().unwrap_or_default(),
+                    + BLAKE_DELEGATION_COEFF
+                        * diff
+                            .delegations
+                            .get(&BLAKE_DELEGATION_ID)
+                            .cloned()
+                            .unwrap_or_default()
+                    + BIGINT_DELEGATION_COEFF
+                        * diff
+                            .delegations
+                            .get(&BIGINT_DELEGATION_ID)
+                            .cloned()
+                            .unwrap_or_default(),
             )
         }
     }
