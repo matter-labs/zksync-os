@@ -215,8 +215,8 @@ impl U256 {
         unsafe { core::mem::transmute(self.0.as_limbs()) }
     }
 
-    pub fn add_mod(a_or_result: &mut Self, b: &mut Self, modulus: &Self) {
-        a_or_result.0 = ruint::aliases::U256::add_mod(a_or_result.0, b.0, modulus.0);
+    pub fn add_mod(a: &mut Self, b: &mut Self, modulus_or_result: &mut Self) {
+        modulus_or_result.0 = ruint::aliases::U256::add_mod(a.0, b.0, modulus_or_result.0);
     }
 
     pub fn mul_mod(a: &mut Self, b: &mut Self, modulus_or_result: &mut Self) {
