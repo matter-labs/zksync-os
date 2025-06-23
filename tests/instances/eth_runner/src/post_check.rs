@@ -84,6 +84,9 @@ impl DiffTrace {
                     Some(initial) => *new_val != initial,
                 })
             }
+            if account.storage.as_ref().is_some_and(|s| s.is_empty()) {
+                account.storage = None
+            }
             if account.balance == prestate_cache.get_balance(address) {
                 account.balance = None
             }
@@ -244,6 +247,9 @@ fn zksync_os_output_into_account_state(
                 None => *new_val != B256::ZERO,
                 Some(initial) => *new_val != initial,
             })
+        }
+        if account.storage.as_ref().is_some_and(|s| s.is_empty()) {
+            account.storage = None
         }
         if account.balance == prestate_cache.get_balance(address) {
             account.balance = None
