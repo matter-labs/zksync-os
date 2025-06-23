@@ -20,6 +20,7 @@ fn run<const RANDOMIZED: bool>(
     receipts: Vec<TransactionReceipt>,
     diff_trace: DiffTrace,
     block_hashes: Option<BlockHashes>,
+    witness_output_dir: Option<String>,
 ) -> anyhow::Result<()> {
     chain.set_last_block_number(block_number - 1);
 
@@ -29,7 +30,14 @@ fn run<const RANDOMIZED: bool>(
 
     let prestate_cache = populate_prestate(&mut chain, ps_trace);
 
-    let (output, stats) = chain.run_block_with_extra_stats(transactions, Some(block_context), None);
+    let output_path = witness_output_dir.map(|dir| {
+        let mut suffix = block_number.to_string();
+        suffix.push_str("_witness");
+        std::path::Path::new(&dir).join(suffix)
+    });
+
+    let (output, stats) =
+        chain.run_block_with_extra_stats(transactions, Some(block_context), None, output_path);
 
     let _ratio = compute_ratio(stats);
 
@@ -49,6 +57,7 @@ pub fn single_run(
     block_dir: String,
     block_hashes: Option<String>,
     randomized: bool,
+    witness_output_dir: Option<String>,
 ) -> anyhow::Result<()> {
     use std::path::Path;
     let dir = Path::new(&block_dir);
@@ -115,6 +124,7 @@ pub fn single_run(
             receipts,
             diff_trace,
             block_hashes,
+            witness_output_dir,
         )
     } else {
         let chain = Chain::empty(Some(1));
@@ -128,6 +138,7 @@ pub fn single_run(
             receipts,
             diff_trace,
             block_hashes,
+            witness_output_dir,
         )
     }
 }

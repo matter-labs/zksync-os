@@ -33,6 +33,8 @@ enum Command {
         endpoint: String,
         #[arg(long)]
         db: String,
+        #[arg(long)]
+        witness_output_dir: Option<String>,
     },
     // Run a single block from JSON files
     SingleRun {
@@ -46,6 +48,10 @@ enum Command {
         /// positions to emulate real-world costs
         #[arg(long, action = clap::ArgAction::SetTrue)]
         randomized: bool,
+        /// If set, will run prover input generation and dump it
+        /// to the desired path.
+        #[arg(long)]
+        witness_output_dir: Option<String>,
     },
     // Export block ratios from DB
     ExportRatios {
@@ -69,13 +75,15 @@ fn main() -> anyhow::Result<()> {
             block_dir,
             block_hashes,
             randomized,
-        } => crate::single_run::single_run(block_dir, block_hashes, randomized),
+            witness_output_dir,
+        } => crate::single_run::single_run(block_dir, block_hashes, randomized, witness_output_dir),
         Command::LiveRun {
             start_block,
             end_block,
             endpoint,
             db,
-        } => live_run::live_run(start_block, end_block, endpoint, db),
+            witness_output_dir,
+        } => live_run::live_run(start_block, end_block, endpoint, db, witness_output_dir),
         Command::ExportRatios { db, path } => live_run::export_block_ratios(db, path),
         Command::ShowStatus { db } => live_run::show_status(db),
     }

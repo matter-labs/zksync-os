@@ -83,7 +83,12 @@ fn fetch_block_traces(block_number: u64, db: &Database, endpoint: &str) -> Resul
     }
 }
 
-fn run_block(block_number: u64, db: &Database, endpoint: &str) -> Result<BlockStatus> {
+fn run_block(
+    block_number: u64,
+    db: &Database,
+    endpoint: &str,
+    witness_output_dir: Option<String>,
+) -> Result<BlockStatus> {
     let block_traces = fetch_block_traces(block_number, db, endpoint)?;
     let traces_clone = block_traces.clone();
 
@@ -135,10 +140,17 @@ fn run_block(block_number: u64, db: &Database, endpoint: &str) -> Result<BlockSt
 
     let prestate_cache = populate_prestate(&mut chain, ps_trace);
 
-    let (output, stats) = chain.run_block_with_extra_stats(transactions, Some(block_context), None);
+    let output_path = witness_output_dir.map(|dir| {
+        let mut suffix = block_number.to_string();
+        suffix.push_str("_witness");
+        std::path::Path::new(&dir).join(suffix)
+    });
+    let (output, stats) =
+        chain.run_block_with_extra_stats(transactions, Some(block_context), None, output_path);
 
-    let ratio = compute_ratio(stats);
-    db.set_block_ratio(block_number, ratio)?;
+    if let Some(ratio) = compute_ratio(stats) {
+        db.set_block_ratio(block_number, ratio)?;
+    }
 
     match post_check(
         output,
@@ -165,13 +177,19 @@ fn run_block(block_number: u64, db: &Database, endpoint: &str) -> Result<BlockSt
 ///
 /// Run blocks from [start_block] to [end_block].
 ///
-pub fn live_run(start_block: u64, end_block: u64, endpoint: String, db_path: String) -> Result<()> {
+pub fn live_run(
+    start_block: u64,
+    end_block: u64,
+    endpoint: String,
+    db_path: String,
+    witness_output_dir: Option<String>,
+) -> Result<()> {
     let db = Database::init(db_path)?;
     assert!(start_block <= end_block);
     fetch_block_hashes(start_block, &db, &endpoint)?;
     let mut failures = 0;
     for n in start_block..=end_block {
-        if let BlockStatus::Error(_) = run_block(n, &db, &endpoint)? {
+        if let BlockStatus::Error(_) = run_block(n, &db, &endpoint, witness_output_dir.clone())? {
             failures += 1;
             if failures == MAX_FAILURES {
                 error!("Reached max number of failures");

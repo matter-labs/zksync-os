@@ -19,6 +19,8 @@ On a high-level, this tool works in the following way:
 
 The tool has two modes: `single-run` and `live-run`. The former takes as argument the block data in JSON format. The second one just takes an RPC endpoint for an archive node with the debug section enabled and fetches the traces directly. The latter also can run a given range of blocks.
 
+First of all, you need to follow the instructions in the main project's README and also run `sh dump_bin_with_markers_unlimited_native.sh` from the `zksync-os` directory.
+
 ### Single run
 
 From the root of the project, run:
@@ -38,3 +40,7 @@ RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_pri
 ```
 
 This command will fetch blocks in the range [19299000, 19299005] from the Ethereum archive node `ENDPOINT`. It creates a local database to cache some RPC information.
+
+### Prover input generation
+
+Both subcommands have an optional parameter `--witness-output-dir` that expects a directory to dump the witness for the block
