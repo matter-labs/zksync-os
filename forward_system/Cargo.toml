@@ -35,3 +35,5 @@ default = ["testing"]
 no_print = []
 unlimited_native = ["basic_bootloader/unlimited_native"]
 evm-compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-compatibility"]
+# Adds a field with native resource used to the block output
+report_native = ["basic_bootloader/report_native"]
