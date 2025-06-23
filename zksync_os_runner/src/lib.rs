@@ -107,7 +107,7 @@ pub fn run_and_get_effective_cycles(
 
     risc_v_simulator::cycle::state::output_opcode_stats();
 
-    #[allow(unused_mut)]
+    #[allow(unused_mut, unused_assignments)]
     let mut block_effective = None;
 
     #[cfg(feature = "cycle_marker")]
