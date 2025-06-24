@@ -177,18 +177,47 @@ impl DiffTrace {
                 match diffs.get(address) {
                     Some(_) => (),
                     None => {
-                        error!(
-                            "Reference must have write for account {} {:?}",
-                            hex::encode(address.to_be_bytes_vec()),
-                            acc
-                        );
-                        return Err(PostCheckError::Internal);
+                        // For some reason, selfdestruct is not correctly reported in the
+                        // traces. We could use calltrace, but for now we just check that
+                        // the ZKsync OS diff is consistent with selfdestruct.
+                        if !zksync_os_diff_consistent_with_selfdestruct(
+                            address,
+                            acc,
+                            &prestate_cache,
+                        ) {
+                            error!(
+                                "Reference must have write for account {} {:?}",
+                                hex::encode(address.to_be_bytes_vec()),
+                                acc
+                            );
+                            return Err(PostCheckError::Internal);
+                        }
                     }
                 }
             }
         }
         Ok(())
     }
+}
+
+fn zksync_os_diff_consistent_with_selfdestruct(
+    address: &B160,
+    acc: &AccountState,
+    prestate_cache: &Cache,
+) -> bool {
+    let diff_is_empty = acc.balance.is_none_or(|b| b.is_zero())
+        && acc.nonce.is_none_or(|n| n == 0)
+        && acc.code.as_ref().is_none_or(|c| c.is_empty())
+        && acc.storage.as_ref().is_none_or(|s| s.is_empty());
+    let pre = prestate_cache.0.get(address);
+    let prestate_can_be_deployed = || {
+        pre.is_none_or(|pre| {
+            pre.storage.as_ref().is_none_or(|s| s.is_empty())
+                && pre.code.as_ref().is_none_or(|c| c.is_empty())
+                && pre.nonce.is_none_or(|n| n == 0)
+        })
+    };
+    diff_is_empty && prestate_can_be_deployed()
 }
 
 fn zksync_os_output_into_account_state(
