@@ -78,14 +78,14 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn eval_exp(&mut self) -> InstructionResult {
-        let [op1, mut op2] = self.stack.pop_values::<2>()?;
+        let ([op1], op2) = self.stack.pop_values_and_peek::<1>()?;
         if let Some((gas_cost, native_cost)) = exp_cost(&op2) {
             self.gas.spend_gas_and_native(gas_cost, native_cost)?;
         } else {
             return Err(ExitCode::OutOfGas);
         }
-        op2 = op1.pow(op2);
-        self.stack.push(op2)
+        *op2 = op1.pow(*op2);
+        Ok(())
     }
 
     pub fn sign_extend(&mut self) -> InstructionResult {

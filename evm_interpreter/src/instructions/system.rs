@@ -116,15 +116,15 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn calldataload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, CALLDATALOAD_NATIVE_COST)?;
-        let index = *self.stack.top_mut()?;
-        let value = match u256_try_to_usize(&index) {
+        let stack_top = self.stack.top_mut()?;
+        let value = match u256_try_to_usize(stack_top) {
             Some(index) => {
                 if index < self.calldata.len() {
                     let have_bytes = 32.min(self.calldata.len() - index);
                     let mut bytes = Bytes32::ZERO;
                     unsafe {
                         core::ptr::copy_nonoverlapping(
-                            self.calldata().as_ptr().add(index),
+                            self.calldata.as_ptr().add(index),
                             bytes.as_u8_array_mut().as_mut_ptr(),
                             have_bytes,
                         )
@@ -145,11 +145,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
                 " offset: {}, read value: 0x{:0x}",
-                index, value
+                *stack_top, value
             ));
         }
 
-        unsafe { *self.stack.top_unsafe() = value }
+        *stack_top = value;
 
         Ok(())
     }

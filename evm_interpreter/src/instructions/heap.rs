@@ -2,17 +2,19 @@ use crate::gas::gas_utils;
 
 use super::*;
 use native_resource_constants::*;
+use std::ops::DerefMut;
 use zk_ee::system::System;
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
-        let index = Self::cast_to_usize(self.stack.top_mut()?, ExitCode::InvalidOperandOOG)?;
-        self.resize_heap(index, 32)?;
-        let mut value = U256::ZERO;
+        let stack_top = self.stack.top_mut()?;
+        let index = Self::cast_to_usize(stack_top, ExitCode::InvalidOperandOOG)?;
+        Self::resize_heap_implementation(&mut self.heap, &mut self.gas, index, 32)?;
+        let mut value: ruint::Uint<256, 4> = U256::ZERO;
         unsafe {
-            let src = self.heap().as_ptr().add(index);
+            let src = self.heap.deref_mut().as_ptr().add(index);
             let dst = value.as_le_slice_mut().as_mut_ptr();
             core::ptr::copy_nonoverlapping(src, dst, 32);
             crate::utils::bytereverse_u256(&mut value);
@@ -26,7 +28,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             ));
         }
 
-        unsafe { *self.stack.top_unsafe() = value };
+        *stack_top = value;
         Ok(())
     }
 

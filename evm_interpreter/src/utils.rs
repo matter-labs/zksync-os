@@ -78,19 +78,26 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub(crate) fn resize_heap(&mut self, offset: usize, len: usize) -> Result<(), ExitCode> {
+        Self::resize_heap_implementation(&mut self.heap, &mut self.gas, offset, len)
+    }
+
+    pub(crate) fn resize_heap_implementation<'a>(
+        heap: &mut SliceVec<'a, u8>,
+        gas: &mut Gas<S>,
+        offset: usize,
+        len: usize,
+    ) -> Result<(), ExitCode> {
         let max_offset = offset.saturating_add(len);
         let new_heap_size = if max_offset > ((u32::MAX - 31) as usize) {
             return Err(ExitCode::MemoryLimitOOG);
         } else {
             max_offset.next_multiple_of(32)
         };
-        let current_heap_size = self.memory_len();
+        let current_heap_size = heap.len();
         if new_heap_size > current_heap_size {
-            self.gas
-                .pay_for_memory_growth(current_heap_size, new_heap_size)?;
+            gas.pay_for_memory_growth(current_heap_size, new_heap_size)?;
 
-            self.heap
-                .resize(new_heap_size, 0)
+            heap.resize(new_heap_size, 0)
                 .map_err(|_| ExitCode::MemoryOOG)?;
         }
 
