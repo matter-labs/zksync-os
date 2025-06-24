@@ -20,23 +20,31 @@ mkdir /tmp/witness
 cargo run -p eth_runner --release --features rig/no_print,rig/unlimited_native -- single-run --block-dir tests/instances/eth_runner --randomized --witness-output-dir /tmp/witness
 ```
 
-Now, from zksync-airbender's directory (suggested version v0.3.0) run the prover with GPU or with CPU using the following:
+Now, clone [zksync-airbender](https://github.com/matter-labs/zksync-airbender/tree/main) (suggested version v0.3.0).
+From Airbender's [tools/cli directory](https://github.com/matter-labs/zksync-airbender/tree/main/tools/cli) run the prover with GPU or CPU as follows:
 
-With GPU (GPU requires at least 22GB of VRAM):
+### With GPU (requires at least 22GB of device RAM):
+```shell
+mkdir /tmp/output
+CUDA_VISIBLE_DEVICES=0 cargo run -p cli --release --features gpu prove --bin ../zksync-os/zksync_os/evm_replay.bin --input-file /tmp/witness/22244135_witness --until final-recursion --output-dir /tmp/output --gpu --cycles 400000000
+```
+
+To hide latency, Airbender uses an asynchronous allocator and internal pipelining (e.g. overlapping cpu<->gpu transfers with computations). The pipelining requires dedicated allocations.
+If you encounter an error, it may be because you ran out of memory. You can reduce the necessary high-water mark by running the GPU in synchronous mode with CUDA_LAUNCH_BLOCKING=1:
 ```shell
 mkdir /tmp/output
 CUDA_LAUNCH_BLOCKING=1 CUDA_VISIBLE_DEVICES=0 cargo run -p cli --release --features gpu prove --bin ../zksync-os/zksync_os/evm_replay.bin --input-file /tmp/witness/22244135_witness --until final-recursion --output-dir /tmp/output --gpu --cycles 400000000
 ```
 
-With CPU:
+### With CPU:
 ```shell
 mkdir /tmp/output
 cargo run -p cli --release prove --bin ../zksync-os/zksync_os/evm_replay.bin --input-file /tmp/witness/22244135_witness --until final-recursion --output-dir /tmp/output --cycles 400000000
 ```
 
-Then you will have the final proof in /tmp/output/recursion_program_proof.json
+The final proof will appear in /tmp/output/recursion_program_proof.json.
 
-You can verify it on http://fri-verifier.vercel.app
+You can verify it on [http://fri-verifier.vercel.app](http://fri-verifier.vercel.app).
 
 
 ## Detailed info
