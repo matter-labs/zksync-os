@@ -50,7 +50,7 @@ pub(crate) const THIS_EE_TYPE: ExecutionEnvironmentType = ExecutionEnvironmentTy
 pub struct Interpreter<'a, S: EthereumLikeTypes> {
     /// Instruction pointer.
     pub instruction_pointer: usize,
-    /// TODO
+    /// Implementation of gas accounting on top of system resources.
     pub gas: Gas<S>,
     /// Stack.
     pub stack: EvmStack<S::Allocator>,

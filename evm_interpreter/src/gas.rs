@@ -1,3 +1,9 @@
+//! Contains internal implementation of gas accounting
+//!
+//! Note: EVM gas accounting is implemented on top of the underlying ZKsync OS system resources,
+//! including the "native" (proving) resource, which reflects the actual cost of proving.
+//! As a result, there is an element of double accounting.
+
 use zk_ee::system::{Computational, Ergs, EthereumLikeTypes, Resource, Resources};
 
 use crate::{
@@ -7,8 +13,9 @@ use crate::{
     ExitCode, ERGS_PER_GAS,
 };
 
+/// Wraps underlying system resources and implements gas accounting on top of it
 pub struct Gas<S: EthereumLikeTypes> {
-    /// Generic resources
+    /// Underlying system resources
     resources: S::Resources,
     /// Keep track of gas spent on heap resizes
     pub gas_paid_for_heap_growth: u64,
@@ -23,11 +30,13 @@ impl<S: EthereumLikeTypes> Gas<S> {
     }
 
     #[inline(always)]
+    /// Returns remaining "native" (proving) resource
     pub(crate) fn native(&mut self) -> u64 {
         self.resources.native().as_u64()
     }
 
     #[inline(always)]
+    /// Returns remaining EVM gas
     pub(crate) fn gas_left(&self) -> u64 {
         self.resources.ergs().0 / ERGS_PER_GAS
     }
@@ -38,6 +47,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
     }
 
     #[inline(always)]
+    /// Moves underlying resources out of this struct. Leads to 0 gas (empty system resources).
     pub(crate) fn take_resources(&mut self) -> S::Resources {
         self.resources.take()
     }
@@ -63,6 +73,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
     }
 
     #[inline(always)]
+    /// Spend gas and "native" (proving) resource. This double accounting approach is used to keep track of actual proving cost
     pub(crate) fn spend_gas_and_native(&mut self, gas: u64, native: u64) -> Result<(), ExitCode> {
         use zk_ee::system::Computational;
         let Some(ergs_cost) = gas.checked_mul(ERGS_PER_GAS) else {
@@ -85,6 +96,8 @@ impl<S: EthereumLikeTypes> Gas<S> {
     ) -> Result<(), ExitCode> {
         let net_byte_increase = new_msize - current_msize;
         let new_heap_size_words = new_msize as u64 / 32;
+
+        debug_assert_eq!(new_heap_size_words * 32, new_msize as u64);
 
         let end_cost = crate::gas_constants::MEMORY
             .saturating_mul(new_heap_size_words)
@@ -131,8 +144,8 @@ pub mod gas_utils {
         }
     }
 
-    // Returns the result of subtracting 1/64th gas from
-    // some resources.
+    /// Returns the result of subtracting 1/64th of EVM gas.
+    /// Note: it works with ergs, making conversions inside.
     #[inline(always)]
     pub(crate) fn apply_63_64_rule(ergs: Ergs) -> Ergs {
         // We need to apply the rule over gas, not ergs
