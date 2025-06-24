@@ -349,8 +349,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let (out_offset, out_len) =
             self.cast_offset_and_len(&out_offset, &out_len, ExitCode::InvalidOperandOOG)?;
 
-        self.resize_heap(in_offset, in_len)?;
-        self.resize_heap(out_offset, out_len)?;
+        if in_offset.saturating_add(in_len) >= out_offset.saturating_add(out_len) {
+            self.resize_heap(in_offset, in_len)?;
+        } else {
+            self.resize_heap(out_offset, out_len)?;
+        }
 
         // TODO: not necessary once heaps get the calldata treatment
         let calldata = in_offset..(in_offset + in_len);
