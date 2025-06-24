@@ -107,6 +107,7 @@ pub mod gas_utils {
     use crate::{ExitCode, ERGS_PER_GAS};
 
     #[inline]
+    /// Returns gas and natve cost of copying 'len' bytes
     pub(crate) fn copy_cost(len: u64) -> Result<(u64, u64), ExitCode> {
         let get_cost = |len: u64| -> Option<(u64, u64)> {
             let num_words = len.checked_next_multiple_of(32)? / 32;
@@ -120,18 +121,14 @@ pub mod gas_utils {
     }
 
     #[inline]
-    // TODO name is confusing
-    pub(crate) fn very_low_copy_cost(len: u64) -> Result<(u64, u64), ExitCode> {
-        let get_cost = |len: u64| -> Option<(u64, u64)> {
-            let num_words = len.checked_next_multiple_of(32)? / 32;
-            let gas = crate::gas_constants::VERYLOW
-                .checked_add(crate::gas_constants::COPY.checked_mul(num_words)?)?;
-            let native = crate::native_resource_constants::COPY_BASE_NATIVE_COST // TODO: should it be COPY_BYTE_NATIVE_COST?
-                .checked_mul(len)?
-                .checked_add(crate::native_resource_constants::COPY_BASE_NATIVE_COST)?;
-            Some((gas, native))
-        };
-        get_cost(len).ok_or(ExitCode::OutOfGas)
+    /// Returns gas and natve cost of copying 'len' bytes. Gas is additionally increased by VERYLOW - often used by EVM opcodes
+    pub(crate) fn copy_cost_plus_very_low_gas(len: u64) -> Result<(u64, u64), ExitCode> {
+        let (gas_cost, native_cost) = copy_cost(len)?;
+        if let Some(gas_cost) = gas_cost.checked_add(crate::gas_constants::VERYLOW) {
+            Ok((gas_cost, native_cost))
+        } else {
+            Err(ExitCode::OutOfGas)
+        }
     }
 
     // Returns the result of subtracting 1/64th gas from
