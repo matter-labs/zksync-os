@@ -4,14 +4,15 @@
 //!
 use super::*;
 use core::fmt::Write;
+use arrayvec::ArrayVec;
+use crypto::sha3::digest::KeyInit;
 use errors::FatalError;
 use ruint::aliases::{B160, U256};
 use zk_ee::{
-    execution_environment_type::ExecutionEnvironmentType,
-    system::{
+    execution_environment_type::ExecutionEnvironmentType, kv_markers::MAX_EVENT_TOPICS, system::{
         errors::SystemError, logger::Logger, CallModifier, CompletedExecution, ExternalCallRequest,
         MemorySubsystem, MemorySubsystemExt, OSManagedRegion,
-    },
+    }, utils::{b160_to_u256, Bytes32}
 };
 
 pub fn l1_messenger_hook<S: EthereumLikeTypes>(
@@ -96,6 +97,14 @@ where
 // sendToL1(bytes) - 62f84b24
 const SEND_TO_L1_SELECTOR: &[u8] = &[0x62, 0xf8, 0x4b, 0x24];
 
+const L1_MESSAGE_SENT_TOPIC: [u8; 32] = [
+    0x3a, 0x36, 0xe4, 0x72, 0x91, 0xf4, 0x20, 0x1f,
+    0xaf, 0x13, 0x7f, 0xab, 0x08, 0x1d, 0x92, 0x29,
+    0x5b, 0xce, 0x2d, 0x53, 0xbe, 0x2c, 0x6c, 0xa6,
+    0x8b, 0xa8, 0x2c, 0x7f, 0xaa, 0x9c, 0xe2, 0x41,
+];
+
+
 fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
     calldata: &[u8],
     resources: &mut S::Resources,
@@ -150,6 +159,9 @@ where
                     ))
                 }
             };
+            if message_offset != 32 {
+                return Ok(Err("L1 messenger failure: sendToL1 expects standard message offset"));
+            }
             // length located at 4+message_offset..4+message_offset+32
             // we want to check that 4+message_offset+32 will not overflow usize
             let length_encoding_end = match message_offset.checked_add(36) {
@@ -190,6 +202,11 @@ where
                     "L1 messenger failure: sendToL1 called with invalid calldata",
                 ));
             }
+
+            if (calldata.len() - 4) % 32 != 0 {
+                return Ok(Err("Calldata is not well formed"));
+            }
+
             let message = &calldata[length_encoding_end..message_end];
             let message_hash = system.io.emit_l1_message(
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
@@ -198,6 +215,22 @@ where
                 &caller,
                 message,
             )?;
+
+            let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
+            topics.push(Bytes32::from_array(L1_MESSAGE_SENT_TOPIC));
+            topics.push(Bytes32::from_u256_be(b160_to_u256(caller)));
+            topics.push(message_hash);
+
+            system.io.emit_event(
+                ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
+                    .map_err(SystemError::Internal)?, 
+                    resources,
+                    &L1_MESSENGER_ADDRESS, 
+                    &topics, 
+                    // We are lucky that the encoding of the event is exactly same as encoding of the bytes in the calldata
+                    &calldata[4..]
+            )?;
+
             // TODO: check endianness
             let return_data = system
                 .memory

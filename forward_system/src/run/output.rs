@@ -195,7 +195,8 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
                         l2_to_l1_logs: logs
                             .iter()
                             .filter_map(|m| {
-                                if m.tx_number == tx_number as u32 + 1 {
+                                // TODO: why +1 was presetn here before?
+                                if m.tx_number == tx_number as u32 {
                                     Some(m.into())
                                 } else {
                                     None
