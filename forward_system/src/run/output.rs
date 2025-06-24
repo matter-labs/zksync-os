@@ -189,7 +189,7 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
                         logs: events
                             .iter()
                             .filter_map(|e| {
-                                if e.tx_number == tx_number as u32 + 1 {
+                                if e.tx_number == tx_number as u32 {
                                     Some(e.into())
                                 } else {
                                     None
@@ -199,7 +199,7 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
                         l2_to_l1_logs: logs
                             .iter()
                             .filter_map(|m| {
-                                if m.tx_number == tx_number as u32 + 1 {
+                                if m.tx_number == tx_number as u32 {
                                     Some(m.into())
                                 } else {
                                     None
