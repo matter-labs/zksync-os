@@ -89,7 +89,6 @@ pub struct BlockMetadataFromOracle {
     pub gas_per_pubdata: U256,
     pub native_price: U256,
     pub coinbase: B160,
-    // TODO: gas_limit needed?
     pub gas_limit: u64,
 }
 

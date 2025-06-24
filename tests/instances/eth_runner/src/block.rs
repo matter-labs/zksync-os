@@ -19,6 +19,7 @@ impl Block {
             gas_per_pubdata: U256::ZERO,
             native_price: base_fee / U256::from(100),
             coinbase: B160::from_be_bytes(self.result.header.miner.0 .0),
+            gas_limit: self.result.header.gas_limit,
         }
     }
 
