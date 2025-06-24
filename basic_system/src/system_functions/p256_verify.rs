@@ -38,7 +38,7 @@ fn p256_verify_as_system_function_inner<
     resources: &mut R,
 ) -> Result<(), SystemFunctionError> {
     if src.len() != 160 {
-        return Err(InternalError("p256: src length").into());
+        return Err(SystemFunctionError::InvalidInput);
     }
     resources.charge(&R::from_ergs(P256_VERIFY_COST_ERGS))?;
     // digest, r, s, x, y
