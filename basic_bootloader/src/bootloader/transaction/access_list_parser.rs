@@ -7,6 +7,7 @@ use crate::bootloader::Bytes32;
 use crate::bootloader::TX_OFFSET;
 use ruint::aliases::B160;
 
+#[derive(Clone, Copy, Debug)]
 pub struct AccessListParser {
     pub offset: usize,
 }

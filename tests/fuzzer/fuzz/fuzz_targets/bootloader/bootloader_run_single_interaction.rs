@@ -4,7 +4,7 @@
 #![feature(generic_const_exprs)]
 
 use arbitrary::{Arbitrary, Result, Unstructured};
-use basic_bootloader::bootloader::constants::MAX_CALLSTACK_DEPTH;
+use basic_bootloader::bootloader::runner::RunnerMemoryBuffers;
 use basic_bootloader::bootloader::BasicBootloader;
 use common::mock_oracle_balance;
 use libfuzzer_sys::fuzz_target;
@@ -13,8 +13,8 @@ use rig::forward_system::system::system::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::L1_MESSENGER_ADDRESS;
 use system_hooks::HooksStorage;
-use zk_ee::reference_implementations::FORMAL_INFINITE_BASE_RESOURCES;
-use zk_ee::system::{MemorySubsystemExt, System};
+use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
+use zk_ee::system::{Resource, System};
 
 mod common;
 
@@ -78,8 +78,17 @@ fn fuzz(input: FuzzInput) {
     >::init_from_oracle(mock_oracle_balance(from, amount))
     .expect("Failed to initialize the mock system");
     let mut system_functions = HooksStorage::new_in(system.get_allocator());
-    let mut inf_resources = FORMAL_INFINITE_BASE_RESOURCES;
-    let mut callstack = Vec::with_capacity_in(MAX_CALLSTACK_DEPTH, system.get_allocator());
+    let mut inf_resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
+    pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
+    pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 27; // 128 MB
+
+    let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
+    let mut return_data = Box::new_uninit_slice_in(MAX_RETURN_BUFFER_SIZE, system.get_allocator());
+
+    let memories = RunnerMemoryBuffers {
+        heaps: &mut heaps,
+        return_data: &mut return_data,
+    };
 
     match selector {
         0 => {
@@ -87,17 +96,12 @@ fn fuzz(input: FuzzInput) {
         }
         1 => {
             // Fuzz-test run_single_interaction
-            let calldata =
-                unsafe {
-                    system.memory.construct_immutable_slice_from_static_slice(
-                        core::mem::transmute::<&[u8], &[u8]>(&input.calldata1),
-                    )
-                };
+            let calldata = input.calldata1;
 
-            let _ = BasicBootloader::run_single_interaction::<_>(
+            let _ = BasicBootloader::run_single_interaction(
                 &mut system,
                 &mut system_functions,
-                &mut callstack,
+                memories,
                 calldata,
                 &from,
                 &to,
@@ -112,17 +116,12 @@ fn fuzz(input: FuzzInput) {
 
             let amount = U256::from_be_bytes([0; 32]);
 
-            let calldata =
-                unsafe {
-                    system.memory.construct_immutable_slice_from_static_slice(
-                        core::mem::transmute::<&[u8], &[u8]>(&input.calldata2.raw),
-                    )
-                };
+            let calldata = &input.calldata2.raw;
 
-            let _ = BasicBootloader::run_single_interaction::<_>(
+            let _ = BasicBootloader::run_single_interaction(
                 &mut system,
                 &mut system_functions,
-                &mut callstack,
+                memories,
                 calldata,
                 &from,
                 &L1_MESSENGER_ADDRESS,

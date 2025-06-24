@@ -1032,8 +1032,8 @@ impl<'a> ZkSyncTransaction<'a> {
 
 #[derive(Clone, Debug)]
 pub struct ParsedValue<T: 'static + Clone + Copy + core::fmt::Debug> {
-    value: T,
-    range: Range<usize>,
+    pub value: T,
+    pub range: Range<usize>,
 }
 
 impl<T: 'static + Clone + Copy + core::fmt::Debug> ParsedValue<T> {

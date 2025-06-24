@@ -9,7 +9,7 @@ use zk_ee::system::errors::InternalError;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
 pub mod run_single_interaction;
-mod runner;
+pub mod runner;
 pub mod supported_ees;
 
 mod account_models;
@@ -188,12 +188,10 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
         let mut return_data =
             Box::new_uninit_slice_in(MAX_RETURN_BUFFER_SIZE, system.get_allocator());
-        //let callstack = Box::new_uninit_slice_in(MAX_CALLSTACK_DEPTH, system.get_allocator());
 
         let mut memories = RunnerMemoryBuffers {
             heaps: &mut heaps,
             return_data: &mut return_data,
-            //callstack: &mut callstack,
         };
 
         let mut system_functions = HooksStorage::new_in(system.get_allocator());
