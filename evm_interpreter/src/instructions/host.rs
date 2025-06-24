@@ -14,19 +14,21 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.gas.spend_gas_and_native(0, BALANCE_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         let address = u256_to_b160(*stack_top);
-        let value =
-            system
-                .io
-                .get_nominal_token_balance(THIS_EE_TYPE, self.gas.resources_mut(), &address)?;
+        let value = system.io.get_nominal_token_balance(
+            THIS_EE_TYPE,
+            self.gas.resources_mut(),
+            &address,
+        )?;
         *stack_top = value;
         Ok(())
     }
 
     pub fn selfbalance(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas.spend_gas_and_native(0, SELFBALANCE_NATIVE_COST)?;
-        let value = system
-            .io
-            .get_selfbalance(THIS_EE_TYPE, self.gas.resources_mut(), &self.address)?;
+        let value =
+            system
+                .io
+                .get_selfbalance(THIS_EE_TYPE, self.gas.resources_mut(), &self.address)?;
         self.stack.push(value)
     }
 
@@ -34,10 +36,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.gas.spend_gas_and_native(0, EXTCODESIZE_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         let address = u256_to_b160(*stack_top);
-        let value =
-            system
-                .io
-                .get_observable_bytecode_size(THIS_EE_TYPE, self.gas.resources_mut(), &address)?;
+        let value = system.io.get_observable_bytecode_size(
+            THIS_EE_TYPE,
+            self.gas.resources_mut(),
+            &address,
+        )?;
         *stack_top = U256::from(value);
         Ok(())
     }
@@ -46,10 +49,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.gas.spend_gas_and_native(0, EXTCODEHASH_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
         let address = u256_to_b160(*stack_top);
-        let value =
-            system
-                .io
-                .get_observable_bytecode_hash(THIS_EE_TYPE, self.gas.resources_mut(), &address)?;
+        let value = system.io.get_observable_bytecode_hash(
+            THIS_EE_TYPE,
+            self.gas.resources_mut(),
+            &address,
+        )?;
 
         *stack_top = value.into_u256_be();
         Ok(())
