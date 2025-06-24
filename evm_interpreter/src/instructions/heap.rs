@@ -1,8 +1,8 @@
 use crate::gas::gas_utils;
 
 use super::*;
+use core::ops::DerefMut;
 use native_resource_constants::*;
-use std::ops::DerefMut;
 use zk_ee::system::System;
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
