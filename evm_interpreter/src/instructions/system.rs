@@ -1,7 +1,5 @@
 // Adapted from https://github.com/bluealloy/revm/blob/main/crates/interpreter/src/instructions/system.rs
 
-use core::ops::DerefMut;
-
 use crate::gas::gas_utils;
 
 use super::*;
@@ -19,10 +17,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     ]);
 
     pub fn sha3(&mut self, system: &mut System<S>) -> InstructionResult {
-        let ([memory_offset], stack_top) = self.stack.pop_values_and_peek::<1>()?;
-        let memory_offset = Self::cast_to_usize(&memory_offset, ExitCode::InvalidOperandOOG)?;
-        let len = Self::cast_to_usize(stack_top, ExitCode::InvalidOperandOOG)?;
+        let [memory_offset, len] = self.stack.pop_values::<2>()?;
 
+        let memory_offset = Self::cast_to_usize(&memory_offset, ExitCode::InvalidOperandOOG)?;
+        let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
         let (_, of) = memory_offset.overflowing_add(len);
         if of {
             return Err(ExitCode::MemoryLimitOOG);
@@ -33,7 +31,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             self.gas.spend_gas(gas_constants::SHA3)?;
             Self::EMPTY_SLICE_SHA3
         } else {
-            Self::resize_heap_implementation(&mut self.heap, &mut self.gas, memory_offset, len)?;
+            self.resize_heap(memory_offset, len)?;
 
             let allocator = system.get_allocator();
             let input = &self.heap[memory_offset..(memory_offset + len)];
@@ -51,7 +49,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
                 use core::fmt::Write;
                 use zk_ee::system::logger::Logger;
                 let mut logger = system.get_logger();
-                let input = &self.heap.deref_mut()[memory_offset..(memory_offset + len)];
+                let input = &self.heap()[memory_offset..(memory_offset + len)];
                 let input_iter = input.iter().copied();
                 let _ = logger.write_fmt(format_args!(" input: ",));
                 let _ = logger.log_data(input_iter);
@@ -61,8 +59,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             hash
         };
 
-        *stack_top = hash;
-        Ok(())
+        self.stack.push(hash)
     }
 
     pub fn address(&mut self) -> InstructionResult {
