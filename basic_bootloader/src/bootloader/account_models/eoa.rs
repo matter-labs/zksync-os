@@ -8,10 +8,10 @@ use crate::bootloader::errors::InvalidTransaction::AAValidationError;
 use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
 use crate::bootloader::errors::{AAMethod, InvalidAA};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
-use crate::bootloader::runner::run_till_completion;
+use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
-use crate::bootloader::{BasicBootloader, Bytes32, StackFrame};
+use crate::bootloader::{BasicBootloader, Bytes32};
 use core::fmt::Write;
 use errors::FatalError;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
@@ -19,12 +19,11 @@ use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::{
     errors::{InternalError, SystemError, UpdateQueryError},
     logger::Logger,
-    EthereumLikeTypes, System, SystemFrameSnapshot, SystemTypes, *,
+    EthereumLikeTypes, System, SystemTypes, *,
 };
 use zk_ee::utils::{b160_to_u256, u256_to_b160_checked};
 
@@ -58,15 +57,14 @@ pub struct EOA;
 impl<S: EthereumLikeTypes> AccountModel<S> for EOA
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
-    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn validate(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut CS,
+        _memories: RunnerMemoryBuffers,
         _tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         caller_ee_type: ExecutionEnvironmentType,
         caller_is_code: bool,
         caller_nonce: u64,
@@ -169,33 +167,21 @@ where
         Ok(())
     }
 
-    fn execute<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn execute<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers<'a>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         // This data is read before bumping nonce
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<S>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, FatalError> {
         // panic is not reachable, validated by the structure
         let from = transaction.from.read();
 
-        // TODO: setup metadata for next tx based on out convention and TX fields
-
         let main_calldata = transaction.calldata();
-        let main_calldata = unsafe {
-            system
-                .memory
-                .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                    main_calldata,
-                ))
-        };
-
-        use zk_ee::memory::stack_trait::Stack;
-        assert!(Stack::len(callstack) == 0);
 
         // panic is not reachable, to is validated
         let to = transaction.to.read();
@@ -216,10 +202,10 @@ where
             reverted,
             deployed_address,
         } = match to_ee_type {
-            Some(to_ee_type) => process_deployment::<_, _>(
+            Some(to_ee_type) => process_deployment(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 resources,
                 to_ee_type,
                 main_calldata,
@@ -228,10 +214,10 @@ where
                 current_tx_nonce,
             )?,
             None => {
-                let final_state = BasicBootloader::run_single_interaction::<_>(
+                let final_state = BasicBootloader::run_single_interaction(
                     system,
                     system_functions,
-                    callstack,
+                    memories,
                     main_calldata,
                     &from,
                     &to,
@@ -326,13 +312,13 @@ where
         Ok(())
     }
 
-    fn pay_for_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pay_for_transaction(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut CS,
+        _memories: RunnerMemoryBuffers,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
@@ -378,13 +364,13 @@ where
         Ok(())
     }
 
-    fn pre_paymaster<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        mut memories: RunnerMemoryBuffers,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         paymaster: B160,
         _caller_ee_type: ExecutionEnvironmentType,
@@ -428,10 +414,10 @@ where
             let min_allowance = min_allowance.unwrap();
 
             let pre_tx_buffer = transaction.pre_tx_buffer();
-            let current_allowance = erc20_allowance::<_, CS>(
+            let current_allowance = erc20_allowance(
                 system,
                 system_functions,
-                callstack,
+                memories.reborrow(),
                 pre_tx_buffer,
                 from,
                 paymaster,
@@ -441,10 +427,10 @@ where
             if current_allowance < min_allowance {
                 // Some tokens, e.g. USDT require that the allowance is
                 // firstly set to zero and only then updated to the new value.
-                let success = erc20_approve::<_, _>(
+                let success = erc20_approve(
                     system,
                     system_functions,
-                    callstack,
+                    memories.reborrow(),
                     pre_tx_buffer,
                     from,
                     paymaster,
@@ -458,10 +444,10 @@ where
                     "ERC20 0 approve failed",
                     system
                 )?;
-                let success = erc20_approve::<_, _>(
+                let success = erc20_approve(
                     system,
                     system_functions,
-                    callstack,
+                    memories,
                     pre_tx_buffer,
                     from,
                     paymaster,
@@ -530,8 +516,8 @@ enum DeployedAddress {
     Address(B160),
 }
 
-struct TxExecutionResult<S: SystemTypes> {
-    return_values: ReturnValues<S>,
+struct TxExecutionResult<'a, S: SystemTypes> {
+    return_values: ReturnValues<'a, S>,
     resources_returned: S::Resources,
     reverted: bool,
     deployed_address: DeployedAddress,
@@ -539,23 +525,19 @@ struct TxExecutionResult<S: SystemTypes> {
 
 /// Run the deployment part of a contract creation tx
 /// The boolean in the return
-fn process_deployment<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
+fn process_deployment<'a, S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut CS,
+    memories: RunnerMemoryBuffers<'a>,
     resources: &mut S::Resources,
     to_ee_type: ExecutionEnvironmentType,
-    main_calldata: OSImmutableSlice<S>,
+    main_calldata: &[u8],
     from: B160,
     nominal_token_value: U256,
     existing_nonce: u64,
-) -> Result<TxExecutionResult<S>, FatalError>
+) -> Result<TxExecutionResult<'a, S>, FatalError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     // First, charge extra cost for deployment
     let extra_gas_cost = DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS as u64;
@@ -564,7 +546,7 @@ where
         Ok(_) => (),
         Err(SystemError::OutOfErgs) => {
             return Ok(TxExecutionResult {
-                return_values: ReturnValues::empty(system),
+                return_values: ReturnValues::empty(),
                 resources_returned: S::Resources::empty(),
                 reverted: true,
                 deployed_address: DeployedAddress::RevertedNoAddress,
@@ -576,7 +558,7 @@ where
     // Next check max initcode size
     if main_calldata.len() > MAX_INITCODE_SIZE {
         return Ok(TxExecutionResult {
-            return_values: ReturnValues::empty(system),
+            return_values: ReturnValues::empty(),
             resources_returned: resources.clone(),
             reverted: true,
             deployed_address: DeployedAddress::RevertedNoAddress,
@@ -589,11 +571,10 @@ where
         _ => return Err(InternalError("Unsupported EE").into()),
     };
 
-    let empty_region = system.memory.empty_immutable_slice();
     let deployment_parameters = DeploymentPreparationParameters {
         address_of_deployer: from,
         call_scratch_space: None,
-        constructor_parameters: empty_region, // no constructor parameters are supported as of yet
+        constructor_parameters: &[],
         nominal_token_value,
         deployment_code: main_calldata,
         ee_specific_deployment_processing_data,
@@ -602,14 +583,14 @@ where
     };
     let rollback_handle = system.start_global_frame()?;
 
-    let final_state = run_till_completion::<S, CS>(
-        callstack,
+    let final_state = run_till_completion(
+        memories,
         system,
         system_functions,
         to_ee_type,
-        ExecutionEnvironmentPreemptionPoint::RequestedDeployment(deployment_parameters),
+        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters),
     )?;
-    let ExecutionEnvironmentPreemptionPoint::CompletedDeployment(CompletedDeployment {
+    let TransactionEndPoint::CompletedDeployment(CompletedDeployment {
         resources_returned,
         deployment_result,
     }) = final_state
@@ -617,24 +598,16 @@ where
         return Err(InternalError("attempt to deploy ended up in invalid state").into());
     };
 
-    let (deployment_success, reverted, mut return_values, at) = match deployment_result {
+    let (deployment_success, reverted, return_values, at) = match deployment_result {
         DeploymentResult::Successful {
             return_values,
             deployed_at,
             ..
         } => (true, false, return_values, Some(deployed_at)),
         DeploymentResult::Failed { return_values, .. } => (false, true, return_values, None),
-        DeploymentResult::DeploymentCallFailedToExecute => {
-            (false, true, ReturnValues::empty(system), None)
-        }
     };
     // Do not forget to reassign it back after potential copy when finishing frame
     system.finish_global_frame(reverted.then_some(&rollback_handle))?;
-    let returndata = system
-        .memory
-        .copy_into_return_memory(&return_values.returndata)?;
-    let returndata = returndata.take_slice(0..returndata.len());
-    return_values.returndata = returndata;
 
     // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
     #[cfg(not(target_arch = "riscv32"))]
@@ -659,13 +632,10 @@ where
 /// Call the ERC20 [allowance] method for [token]
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
-fn erc20_allowance<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
+fn erc20_allowance<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut CS,
+    memories: RunnerMemoryBuffers,
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,
@@ -674,7 +644,6 @@ fn erc20_allowance<
 ) -> Result<U256, TxError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     // Calldata:
     // selector (4)
@@ -695,13 +664,7 @@ where
         .copy_from_slice(&b160_to_u256(paymaster).to_be_bytes::<{ U256::BYTES }>());
 
     // we are static relative to everything that happens later
-    let calldata = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)],
-            ))
-    };
+    let calldata = &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)];
 
     let _ = system
         .get_logger()
@@ -712,10 +675,10 @@ where
         return_values,
         reverted,
         ..
-    } = BasicBootloader::run_single_interaction::<CS>(
+    } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
-        callstack,
+        memories,
         calldata,
         &from,
         &token,
@@ -749,13 +712,10 @@ where
 /// Call the ERC20 [approve] method for [token]
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
-fn erc20_approve<
-    S: EthereumLikeTypes,
-    CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
->(
+fn erc20_approve<S: EthereumLikeTypes>(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    callstack: &mut CS,
+    memories: RunnerMemoryBuffers,
     pre_tx_buffer: &mut [u8],
     from: B160,
     paymaster: B160,
@@ -765,7 +725,6 @@ fn erc20_approve<
 ) -> Result<U256, TxError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     // Calldata:
     // selector (4)
@@ -786,13 +745,7 @@ where
         .copy_from_slice(&amount.to_be_bytes::<{ U256::BYTES }>());
 
     // we are static relative to everything that happens later
-    let calldata = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)],
-            ))
-    };
+    let calldata = &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)];
     let _ = system
         .get_logger()
         .write_fmt(format_args!("Calling ERC20 approve\n"));
@@ -802,10 +755,10 @@ where
         return_values,
         reverted,
         ..
-    } = BasicBootloader::run_single_interaction::<CS>(
+    } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
-        callstack,
+        memories,
         calldata,
         &from,
         &token,

@@ -1,62 +1,51 @@
 use crate::{
-    system::{system::SystemTypes, MemorySubsystem, MAX_SCRATCH_SPACE_USIZE_WORDS},
+    system::{system::SystemTypes, MAX_SCRATCH_SPACE_USIZE_WORDS},
     types_config::SystemIOTypesConfig,
 };
 
-use super::{BytecodeSource, OSImmutableSlice, ReturnValues};
+use super::ReturnValues;
 
-pub struct EnvironmentParameters<S: SystemTypes> {
-    pub decommitted_bytecode: BytecodeSource<S>,
+pub struct EnvironmentParameters<'a> {
+    pub decommitted_bytecode: &'a [u8],
     pub bytecode_len: u32,
     pub scratch_space_len: u32,
 }
 
-///
 /// All needed information for the bootloader and EEs to prepare
 /// for deploying a contract.
-///
-pub struct DeploymentPreparationParameters<S: SystemTypes> {
+pub struct DeploymentPreparationParameters<'a, S: SystemTypes> {
     pub address_of_deployer: <S::IOTypes as SystemIOTypesConfig>::Address,
-    pub call_scratch_space: Option<
-        alloc::boxed::Box<
-            [usize; MAX_SCRATCH_SPACE_USIZE_WORDS],
-            <S::Memory as MemorySubsystem>::Allocator,
-        >,
-    >,
-    pub deployment_code: OSImmutableSlice<S>,
-    pub constructor_parameters: OSImmutableSlice<S>,
+    pub call_scratch_space:
+        Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], S::Allocator>>,
+    pub deployment_code: &'a [u8],
+    pub constructor_parameters: &'a [u8],
     pub ee_specific_deployment_processing_data:
-        Option<alloc::boxed::Box<dyn core::any::Any, <S::Memory as MemorySubsystem>::Allocator>>,
+        Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
     pub deployer_full_resources: S::Resources,
     pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
     pub deployer_nonce: Option<u64>,
 }
 
-///
 /// Result of an attempted deployment.
-///
-pub enum DeploymentResult<S: SystemTypes> {
-    /// Preparation for deployment failed.
-    DeploymentCallFailedToExecute,
+pub enum DeploymentResult<'a, S: SystemTypes> {
     /// Deployment failed after preparation.
     Failed {
-        return_values: ReturnValues<S>,
+        return_values: ReturnValues<'a, S>,
         execution_reverted: bool,
     },
     /// Deployment succeeded.
     Successful {
-        bytecode: OSImmutableSlice<S>,
+        bytecode: &'a [u8],
         bytecode_len: u32,
         artifacts_len: u32,
-        return_values: ReturnValues<S>,
+        return_values: ReturnValues<'a, S>,
         deployed_at: <S::IOTypes as SystemIOTypesConfig>::Address,
     },
 }
 
-impl<S: SystemTypes> DeploymentResult<S> {
+impl<'a, S: SystemTypes> DeploymentResult<'a, S> {
     pub fn has_scratch_space(&self) -> bool {
         match self {
-            DeploymentResult::DeploymentCallFailedToExecute => false,
             DeploymentResult::Failed { return_values, .. }
             | DeploymentResult::Successful { return_values, .. } => {
                 return_values.return_scratch_space.is_some()
@@ -64,11 +53,10 @@ impl<S: SystemTypes> DeploymentResult<S> {
         }
     }
 
-    pub fn returndata(&self) -> Option<&OSImmutableSlice<S>> {
+    pub fn returndata(&self) -> &'a [u8] {
         match self {
-            DeploymentResult::DeploymentCallFailedToExecute => None,
             DeploymentResult::Failed { return_values, .. }
-            | DeploymentResult::Successful { return_values, .. } => Some(&return_values.returndata),
+            | DeploymentResult::Successful { return_values, .. } => return_values.returndata,
         }
     }
 }

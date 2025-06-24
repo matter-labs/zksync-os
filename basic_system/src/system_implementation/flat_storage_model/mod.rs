@@ -20,7 +20,7 @@ pub use self::storage_cache::*;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
-use storage_models::common_structs::PreimageCacheModel;
+use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageCacheModel;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::{derive_flat_storage_key, ValueDiffCompressionStrategy};
@@ -96,40 +96,10 @@ where
     type StorageCommitment = FlatStorageCommitment<TREE_HEIGHT>;
 
     type IOTypes = EthereumIOTypesConfig;
-
     type InitData = P;
-
-    type StateSnapshot = FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot;
-
-    fn begin_new_tx(&mut self) {
-        self.storage_cache.begin_new_tx();
-        self.preimages_cache.begin_new_tx();
-        self.account_data_cache.begin_new_tx();
-    }
 
     fn finish_tx(&mut self) -> Result<(), zk_ee::system::errors::InternalError> {
         self.account_data_cache.finish_tx(&mut self.storage_cache)
-    }
-
-    fn start_frame(&mut self) -> Self::StateSnapshot {
-        let storage_handle = self.storage_cache.start_frame();
-        let preimages_handle = self.preimages_cache.start_frame();
-        let account_handle = self.account_data_cache.start_frame();
-
-        FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
-            storage: storage_handle,
-            preimages: preimages_handle,
-            account_data: account_handle,
-        }
-    }
-
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
-        self.storage_cache
-            .finish_frame(rollback_handle.map(|x| &x.storage));
-        self.preimages_cache
-            .finish_frame(rollback_handle.map(|x| &x.preimages));
-        self.account_data_cache
-            .finish_frame(rollback_handle.map(|x| &x.account_data));
     }
 
     fn construct(init_data: Self::InitData, allocator: Self::Allocator) -> Self {
@@ -150,8 +120,9 @@ where
         }
     }
 
-    fn pubdata_used(&self) -> u32 {
-        self.account_data_cache.net_pubdata_used() + self.storage_cache.net_pubdata_used()
+    fn pubdata_used_by_tx(&self) -> u32 {
+        self.account_data_cache.calculate_pubdata_used_by_tx()
+            + self.storage_cache.calculate_pubdata_used_by_tx()
     }
 
     fn finish(
@@ -195,13 +166,13 @@ where
         storage_cache
             .0
             .cache
-            .for_total_diff_operands::<_, ()>(|l, r, k| {
-                // TODO: use tree index instead of key for repeated writes
+            .apply_to_all_updated_elements::<_, ()>(|l, r, k| {
+                // TODO(EVM-1074): use tree index instead of key for repeated writes
                 let derived_key = derive_flat_storage_key(&k.address, &k.key);
                 pubdata_hasher.update(derived_key.as_u8_ref());
                 result_keeper.pubdata(derived_key.as_u8_ref());
 
-                if l.value == r.value {
+                if l.value() == r.value() {
                     return Ok(());
                 }
                 // we publish preimages for account details
@@ -209,14 +180,11 @@ where
                     let account_address = B160::try_from_be_slice(&k.key.as_u8_ref()[12..])
                         .unwrap()
                         .into();
-                    let cache_item = account_data_cache
-                        .cache
-                        .get_current(&account_address)
-                        .ok_or(())?;
-                    let (l, r) = cache_item.diff_operands_total().ok_or(())?;
+                    let cache_item = account_data_cache.cache.get(&account_address).ok_or(())?;
+                    let (l, r) = cache_item.get_initial_and_last_values().ok_or(())?;
                     AccountProperties::diff_compression::<PROOF_ENV, _, _>(
-                        &l.value,
-                        &r.value,
+                        l.value(),
+                        r.value(),
                         pubdata_hasher,
                         result_keeper,
                         &mut preimages_cache,
@@ -225,8 +193,8 @@ where
                     .map_err(|_| ())?;
                 } else {
                     ValueDiffCompressionStrategy::optimal_compression(
-                        &l.value,
-                        &r.value,
+                        l.value(),
+                        r.value(),
                         pubdata_hasher,
                         result_keeper,
                     );
@@ -257,6 +225,19 @@ where
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
         self.storage_cache
             .read(ee_type, resources, address, key, oracle)
+    }
+
+    fn storage_touch(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        oracle: &mut impl IOOracle,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.storage_cache
+            .touch(ee_type, resources, address, key, oracle, is_access_list)
     }
 
     fn storage_write(
@@ -327,6 +308,25 @@ where
             )
     }
 
+    fn touch_account(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        oracle: &mut impl IOOracle,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.account_data_cache.touch_account::<PROOF_ENV>(
+            ee_type,
+            resources,
+            address,
+            &mut self.storage_cache,
+            &mut self.preimages_cache,
+            oracle,
+            is_access_list,
+        )
+    }
+
     fn get_selfbalance(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -367,6 +367,7 @@ where
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
+        in_constructor: bool,
     ) -> Result<(), SystemError> {
         self.account_data_cache
             .mark_for_deconstruction::<PROOF_ENV>(
@@ -377,6 +378,7 @@ where
                 &mut self.storage_cache,
                 &mut self.preimages_cache,
                 oracle,
+                in_constructor,
             )
     }
 
@@ -444,5 +446,51 @@ where
                 &mut self.preimages_cache,
                 oracle,
             )
+    }
+}
+
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+        SC: StackCtor<SCC>,
+        SCC: const StackCtorConst,
+        const PROOF_ENV: bool,
+    > SnapshottableIo for FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SC, SCC, PROOF_ENV>
+where
+    ExtraCheck<SCC, A>:,
+{
+    type StateSnapshot = FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot;
+
+    fn begin_new_tx(&mut self) {
+        self.storage_cache.begin_new_tx();
+        self.preimages_cache.begin_new_tx();
+        self.account_data_cache.begin_new_tx();
+    }
+
+    fn start_frame(&mut self) -> Self::StateSnapshot {
+        let storage_handle = self.storage_cache.start_frame();
+        let preimages_handle = self.preimages_cache.start_frame();
+        let account_handle = self.account_data_cache.start_frame();
+
+        FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
+            storage: storage_handle,
+            preimages: preimages_handle,
+            account_data: account_handle,
+        }
+    }
+
+    fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&Self::StateSnapshot>,
+    ) -> Result<(), InternalError> {
+        self.storage_cache
+            .finish_frame(rollback_handle.map(|x| &x.storage))?;
+        self.preimages_cache
+            .finish_frame(rollback_handle.map(|x| &x.preimages))?;
+        self.account_data_cache
+            .finish_frame(rollback_handle.map(|x| &x.account_data))?;
+
+        Ok(())
     }
 }

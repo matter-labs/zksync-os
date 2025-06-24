@@ -1,7 +1,4 @@
 os.elf
-app.bin
 app.elf
 app.text
 /target
-/Cargo.lock
-Cargo.lock

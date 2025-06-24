@@ -252,7 +252,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                 // );
                 num_nonexisting_reads += 1;
 
-                // TODO: debug implementation for B160 uses global alloc, which panics in ZKsync OS
+                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
                 #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "checking empty read for address = {:?}, key = {:?}\n",
@@ -315,7 +315,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                 }
                 // now we will need to check merkle paths for that indexes
             } else {
-                // TODO: debug implementation for B160 uses global alloc, which panics in ZKsync OS
+                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
                 #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "checking existing read for address = {:?}, key = {:?}, value = {:?}\n",
@@ -360,7 +360,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
             // writes
             let expect_new = value.is_new_storage_slot;
             if expect_new {
-                // TODO: debug implementation for B160 uses global alloc, which panics in ZKsync OS
+                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
                 #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "applying initial write for address = {:?}, key = {:?}, value {:?} -> {:?}\n",
@@ -439,7 +439,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                     },
                 ));
             } else {
-                // TODO: debug implementation for B160 uses global alloc, which panics in ZKsync OS
+                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
                 #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "applying repeated write for address = {:?}, key = {:?}, value {:?} -> {:?}\n",

@@ -47,6 +47,8 @@ pub struct TxOutput {
     pub gas_used: u64,
     /// Amount of refunded gas
     pub gas_refunded: u64,
+    #[cfg(feature = "report_native")]
+    pub native_used: u64,
     /// Deployed contract address
     /// - `Some(address)` for the deployment transaction
     /// - `None` otherwise
@@ -181,11 +183,13 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
                     TxOutput {
                         gas_used: output.gas_used,
                         gas_refunded: output.gas_refunded,
+                        #[cfg(feature = "report_native")]
+                        native_used: output.native_used,
                         contract_address: output.contract_address,
                         logs: events
                             .iter()
                             .filter_map(|e| {
-                                if e.tx_number == tx_number as u32 + 1 {
+                                if e.tx_number == tx_number as u32 {
                                     Some(e.into())
                                 } else {
                                     None
@@ -195,7 +199,7 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
                         l2_to_l1_logs: logs
                             .iter()
                             .filter_map(|m| {
-                                if m.tx_number == tx_number as u32 + 1 {
+                                if m.tx_number == tx_number as u32 {
                                     Some(m.into())
                                 } else {
                                     None

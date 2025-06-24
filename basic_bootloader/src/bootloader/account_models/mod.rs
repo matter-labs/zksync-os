@@ -6,77 +6,39 @@ mod abstract_account;
 mod contract;
 mod eoa;
 
-use core::ops::Deref;
-
 use crate::bootloader::errors::TxError;
+use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
 pub use abstract_account::AA;
 use errors::FatalError;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
 use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system::System;
-use zk_ee::system::SystemFrameSnapshot;
 use zk_ee::system::*;
 
 use zk_ee::utils::Bytes32;
 
-use super::StackFrame;
-
-///
 /// The execution step output
-///
-pub enum ExecutionOutput<S: EthereumLikeTypes> {
+#[derive(Debug)]
+pub enum ExecutionOutput<'a> {
     /// return data
-    Call(OSImmutableSlice<S>),
+    Call(&'a [u8]),
     /// return data, deployed contract address
-    Create(OSImmutableSlice<S>, B160),
+    Create(&'a [u8], B160),
 }
 
-impl<S: EthereumLikeTypes> core::fmt::Debug for ExecutionOutput<S> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Call(t) => f
-                .debug_tuple("ExecutionOutput::Call")
-                .field(&t.deref())
-                .finish(),
-            Self::Create(t, a) => f
-                .debug_tuple("ExecutionOutput::Create")
-                .field(&t.deref())
-                .field(&a)
-                .finish(),
-        }
-    }
-}
-
-///
 /// The execution step result
-///
-pub enum ExecutionResult<S: EthereumLikeTypes> {
+#[derive(Debug)]
+pub enum ExecutionResult<'a> {
     /// Transaction executed successfully
-    Success { output: ExecutionOutput<S> },
+    Success { output: ExecutionOutput<'a> },
     /// Transaction reverted
-    Revert { output: OSImmutableSlice<S> },
+    Revert { output: &'a [u8] },
 }
 
-impl<S: EthereumLikeTypes> core::fmt::Debug for ExecutionResult<S> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Success { output } => f
-                .debug_struct("ExecutionResult::Success")
-                .field("output", output)
-                .finish(),
-            Self::Revert { output } => f
-                .debug_struct("ExecutionResult::Revert")
-                .field("output", &output.deref())
-                .finish(),
-        }
-    }
-}
-
-impl<S: EthereumLikeTypes> ExecutionResult<S> {
+impl<'a> ExecutionResult<'a> {
     pub fn reverted(self) -> Self {
         match self {
             Self::Success {
@@ -90,68 +52,47 @@ impl<S: EthereumLikeTypes> ExecutionResult<S> {
     }
 }
 
-pub struct TxProcessingResult<S: EthereumLikeTypes> {
-    pub result: ExecutionResult<S>,
+#[derive(Debug)]
+pub struct TxProcessingResult<'a> {
+    pub result: ExecutionResult<'a>,
     pub tx_hash: Bytes32,
     pub is_l1_tx: bool,
     pub is_upgrade_tx: bool,
     pub gas_used: u64,
     pub gas_refunded: u64,
-}
-
-impl<S: EthereumLikeTypes> core::fmt::Debug for TxProcessingResult<S> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("TxProcessingResult")
-            .field("result", &self.result)
-            .field("tx_hash", &self.tx_hash)
-            .field("is_l1_tx", &self.is_l1_tx)
-            .field("is_upgrade_tx", &self.is_upgrade_tx)
-            .field("gas_used", &self.gas_used)
-            .field("gas_refunded", &self.gas_refunded)
-            .finish()
-    }
+    #[cfg(feature = "report_native")]
+    pub native_used: u64,
 }
 
 pub trait AccountModel<S: EthereumLikeTypes>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
-    ///
     /// Validate transaction
-    ///
-    /// `callstack` expected to be empty at the beginning and at the end of this function execution.
-    /// It's passed to reuse memory between transactions.
-    ///
-    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn validate(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         caller_ee_type: ExecutionEnvironmentType,
         caller_is_code: bool,
         caller_nonce: u64,
         resources: &mut S::Resources,
     ) -> Result<(), TxError>;
 
-    ///
     /// Execute transaction
-    ///
-    /// `callstack` expected to be empty at the beginning and at the end of this function execution.
-    /// It's passed to reuse memory between transactions.
-    ///
-    fn execute<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn execute<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers<'a>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<S>, FatalError>;
+    ) -> Result<ExecutionResult<'a>, FatalError>;
 
     ///
     /// Charge any additional intrinsic gas.
@@ -180,13 +121,13 @@ where
     ///
     /// Pay for the transaction's fees
     ///
-    fn pay_for_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pay_for_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
@@ -195,13 +136,13 @@ where
     ///
     /// Prepare for paymaster
     ///
-    fn pre_paymaster<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         paymaster: B160,
         caller_ee_type: ExecutionEnvironmentType,

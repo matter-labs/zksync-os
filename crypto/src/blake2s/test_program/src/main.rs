@@ -9,6 +9,10 @@ unsafe extern "C" fn start_rust() -> ! {
     main()
 }
 
+core::arch::global_asm!(include_str!(
+    "../../../../../zksync_os/src/asm/asm_reduced.S"
+));
+
 unsafe fn workload() -> ! {
     crypto::init_lib();
 

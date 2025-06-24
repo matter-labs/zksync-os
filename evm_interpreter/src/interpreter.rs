@@ -1,23 +1,23 @@
 use super::*;
 use core::fmt::Write;
+use core::ops::Range;
 use native_resource_constants::STEP_NATIVE_COST;
 use zk_ee::system::{
     logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
     DeploymentPreparationParameters, DeploymentResult, EthereumLikeTypes,
-    ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, OSImmutableSlice, OSManagedRegion,
-    ReturnValues,
+    ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
 };
-use zk_ee::system::{Ergs, Resources};
+use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, Resources, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     /// Keeps executing instructions (steps) from the system, until it hits a yield point -
     /// either due to some error, or return, or when trying to call a different contract
     /// or create one.
-    pub fn execute_till_yield_point(
-        &mut self,
+    pub fn execute_till_yield_point<'a>(
+        &'a mut self,
         system: &mut System<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
         let mut external_call = None;
         let exit_code = self.run(system, &mut external_call)?;
 
@@ -27,38 +27,53 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
 
         if let Some(call) = external_call {
             assert!(exit_code == ExitCode::ExternalCall);
-            match call {
-                ExternalCall::Call(EVMCallRequest {
-                    ergs_to_pass,
-                    destination_address,
-                    calldata,
-                    modifier,
-                    call_value,
-                }) => {
-                    let available_resources = self.resources.take();
-                    let final_state = ExecutionEnvironmentPreemptionPoint::RequestedExternalCall(
-                        ExternalCallRequest {
-                            calldata,
+            let (current_heap, next_heap) = self.heap.freeze();
+
+            return Ok(ExecutionEnvironmentPreemptionPoint::Spawn {
+                heap: next_heap,
+                request: match call {
+                    ExternalCall::Call(EVMCallRequest {
+                        ergs_to_pass,
+                        destination_address,
+                        calldata,
+                        modifier,
+                        call_value,
+                    }) => {
+                        let available_resources = self.resources.take();
+                        ExecutionEnvironmentSpawnRequest::RequestedExternalCall(
+                            ExternalCallRequest {
+                                calldata: &current_heap[calldata],
+                                call_scratch_space: None,
+                                nominal_token_value: call_value,
+                                callers_caller: self.caller,
+                                caller: self.address,
+                                callee: destination_address,
+                                modifier,
+                                ergs_to_pass,
+                                available_resources,
+                            },
+                        )
+                    }
+
+                    ExternalCall::Create(EVMDeploymentRequest {
+                        deployment_code,
+                        ee_specific_deployment_processing_data,
+                        deployer_full_resources,
+                        nominal_token_value,
+                    }) => ExecutionEnvironmentSpawnRequest::RequestedDeployment(
+                        DeploymentPreparationParameters {
+                            address_of_deployer: self.address,
                             call_scratch_space: None,
-                            nominal_token_value: call_value,
-                            callers_caller: self.caller,
-                            caller: self.address,
-                            callee: destination_address,
-                            modifier,
-                            ergs_to_pass,
-                            available_resources,
+                            deployment_code: &current_heap[deployment_code],
+                            constructor_parameters: &[],
+                            ee_specific_deployment_processing_data,
+                            deployer_full_resources,
+                            nominal_token_value,
+                            deployer_nonce: None,
                         },
-                    );
-
-                    return Ok(final_state);
-                }
-
-                ExternalCall::Create(request) => {
-                    return Ok(ExecutionEnvironmentPreemptionPoint::RequestedDeployment(
-                        request,
-                    ));
-                }
-            }
+                    ),
+                },
+            });
         }
 
         let (empty_returndata, reverted) = match exit_code {
@@ -69,21 +84,29 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
             _ => (true, true),
         };
 
-        self.create_immediate_return_state(system, empty_returndata, reverted, exit_code.is_error())
+        self.create_immediate_return_state(empty_returndata, reverted, exit_code.is_error())
     }
 }
 
 pub enum ExternalCall<S: EthereumLikeTypes> {
     Call(EVMCallRequest<S>),
-    Create(DeploymentPreparationParameters<S>),
+    Create(EVMDeploymentRequest<S>),
 }
 
 pub struct EVMCallRequest<S: EthereumLikeTypes> {
     pub(crate) ergs_to_pass: Ergs,
     pub(crate) call_value: U256,
     pub(crate) destination_address: <S::IOTypes as SystemIOTypesConfig>::Address,
-    pub(crate) calldata: OSImmutableSlice<S>,
+    pub(crate) calldata: Range<usize>,
     pub(crate) modifier: CallModifier,
+}
+
+pub struct EVMDeploymentRequest<S: SystemTypes> {
+    pub deployment_code: Range<usize>,
+    pub ee_specific_deployment_processing_data:
+        Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
+    pub deployer_full_resources: S::Resources,
+    pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -111,14 +134,12 @@ pub enum CreateScheme {
     },
 }
 
-impl<S: EthereumLikeTypes> Interpreter<S> {
+impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub(crate) const PRINT_OPCODES: bool = false;
 
     #[allow(dead_code)]
-    pub(crate) fn stack_debug_print(&self, mut logger: impl Logger) {
-        for el in self.stack.iter() {
-            let _ = logger.write_fmt(format_args!("{:?}\n", el));
-        }
+    pub(crate) fn stack_debug_print(&self, logger: &mut impl Logger) {
+        self.stack.print_stack_content(logger);
     }
 
     #[inline]
@@ -160,10 +181,10 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
                     .and_then(|_| match opcode {
                         opcodes::CREATE => self.create::<false>(system, external_call_dest),
                         opcodes::CREATE2 => self.create::<true>(system, external_call_dest),
-                        opcodes::CALL => self.call(system, external_call_dest),
-                        opcodes::CALLCODE => self.call_code(system, external_call_dest),
-                        opcodes::DELEGATECALL => self.delegate_call(system, external_call_dest),
-                        opcodes::STATICCALL => self.static_call(system, external_call_dest),
+                        opcodes::CALL => self.call(external_call_dest),
+                        opcodes::CALLCODE => self.call_code(external_call_dest),
+                        opcodes::DELEGATECALL => self.delegate_call(external_call_dest),
+                        opcodes::STATICCALL => self.static_call(external_call_dest),
                         opcodes::STOP => Err(ExitCode::Stop),
                         opcodes::ADD => self.wrapped_add(),
                         opcodes::MUL => self.wrapping_mul(),
@@ -275,8 +296,8 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
                         opcodes::SWAP15 => self.swap::<15>(),
                         opcodes::SWAP16 => self.swap::<16>(),
 
-                        opcodes::RETURN => self.ret(system),
-                        opcodes::REVERT => self.revert(system),
+                        opcodes::RETURN => self.ret(),
+                        opcodes::REVERT => self.revert(),
                         opcodes::INVALID => Err(ExitCode::InvalidFEOpcode),
                         opcodes::BASEFEE => self.basefee(system),
                         opcodes::ORIGIN => self.origin(system),
@@ -287,7 +308,7 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
                         opcodes::EXTCODEHASH => self.extcodehash(system),
                         opcodes::EXTCODECOPY => self.extcodecopy(system),
                         opcodes::RETURNDATASIZE => self.returndatasize(),
-                        opcodes::RETURNDATACOPY => self.returndatacopy(system),
+                        opcodes::RETURNDATACOPY => self.returndatacopy(),
                         opcodes::BLOCKHASH => self.blockhash(system),
                         opcodes::COINBASE => self.coinbase(system),
                         opcodes::TIMESTAMP => self.timestamp(system),
@@ -298,19 +319,16 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
                         opcodes::SSTORE => self.sstore(system),
                         opcodes::TLOAD => self.tload(system),
                         opcodes::TSTORE => self.tstore(system),
-                        opcodes::MCOPY => self.mcopy(system),
+                        opcodes::MCOPY => self.mcopy(),
                         opcodes::GAS => self.gas(),
                         opcodes::LOG0 => self.log::<0>(system),
                         opcodes::LOG1 => self.log::<1>(system),
                         opcodes::LOG2 => self.log::<2>(system),
                         opcodes::LOG3 => self.log::<3>(system),
                         opcodes::LOG4 => self.log::<4>(system),
-                        #[cfg(feature = "selfdestruct")]
                         opcodes::SELFDESTRUCT => self.selfdestruct(system),
                         opcodes::CHAINID => self.chainid(system),
-                        #[cfg(feature = "mock-eip-4844")]
                         opcodes::BLOBHASH => self.blobhash(system),
-                        #[cfg(feature = "mock-eip-4844")]
                         opcodes::BLOBBASEFEE => self.blobbasefee(system),
                         _ => Err(ExitCode::OpcodeNotFound),
                     });
@@ -334,92 +352,78 @@ impl<S: EthereumLikeTypes> Interpreter<S> {
         Ok(result)
     }
 
-    pub(crate) fn create_immediate_return_state(
-        &mut self,
-        system: &mut System<S>,
+    pub(crate) fn create_immediate_return_state<'a>(
+        &'a mut self,
         empty_returndata: bool,
-        reverted: bool,
+        execution_reverted: bool,
         is_error: bool,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
         if is_error {
             // Spend all remaining resources on error
             self.resources.exhaust_ergs();
         };
-        let resources = self.resources.take();
-        let mut return_values = ReturnValues::empty(system);
+        let mut resources = self.resources.take();
+        let mut return_values = ReturnValues::empty();
         if empty_returndata == false {
-            let returned_slice =
-                OSManagedRegion::take_slice(&self.heap, self.returndata_location.clone());
-            return_values.returndata = returned_slice;
+            return_values.returndata = &self.heap[self.returndata_location.clone()];
         }
 
         if self.is_constructor {
-            self.create_deployment_result(system, return_values, reverted, resources)
-        } else {
-            Ok(ExecutionEnvironmentPreemptionPoint::CompletedExecution(
-                CompletedExecution {
-                    return_values,
-                    resources_returned: resources,
-                    reverted,
-                },
-            ))
-        }
-    }
+            let deployment_result = if execution_reverted == false {
+                let deployed_code_len = return_values.returndata.len() as u64;
+                // EIP-3541: reject code starting with 0xEF.
+                // EIP-158: reject code of length > 24576.
+                let deployed = return_values.returndata;
+                if deployed_code_len >= 1 && deployed[0] == 0xEF
+                    || return_values.returndata.len() > MAX_CODE_SIZE
+                {
+                    // Spend all remaining resources
+                    resources.exhaust_ergs();
+                    DeploymentResult::Failed {
+                        return_values,
+                        execution_reverted,
+                    }
+                } else {
+                    // It's responsibility of the System/IO to properly charge,
+                    // so we just construct the structure
 
-    /// Post-constructor checks.
-    fn create_deployment_result(
-        &mut self,
-        system: &mut System<S>,
-        mut return_values: ReturnValues<S>,
-        execution_reverted: bool,
-        mut resources: S::Resources,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<S>, FatalError> {
-        let deployment_result = if execution_reverted == false {
-            let deployed_code_len = return_values.returndata.len() as u64;
-            // EIP-3541: reject code starting with 0xEF.
-            // EIP-158: reject code of length > 24576.
-            let deployed = &*return_values.returndata;
-            if deployed_code_len >= 1 && deployed[0] == 0xEF
-                || return_values.returndata.len() > MAX_CODE_SIZE
-            {
-                // Spend all remaining resources
-                resources.exhaust_ergs();
+                    let bytecode = return_values.returndata;
+                    return_values.returndata = &[];
+                    let bytecode_len = bytecode.len() as u32;
+                    let artifacts_len = 0u32;
+                    DeploymentResult::Successful {
+                        bytecode,
+                        bytecode_len,
+                        artifacts_len,
+                        return_values,
+                        deployed_at: self.address,
+                    }
+                }
+            } else {
                 DeploymentResult::Failed {
                     return_values,
                     execution_reverted,
                 }
-            } else {
-                // It's responsibility of the System/IO to properly charge,
-                // so we just construct the structure
+            };
 
-                let empty_slice = system.memory.empty_immutable_slice();
-                let bytecode = core::mem::replace(&mut return_values.returndata, empty_slice);
-                let bytecode_len = bytecode.len() as u32;
-                let artifacts_len = 0u32;
-                DeploymentResult::Successful {
-                    bytecode,
-                    bytecode_len,
-                    artifacts_len,
-                    return_values,
-                    deployed_at: self.address,
-                }
-            }
+            Ok(ExecutionEnvironmentPreemptionPoint::End(
+                TransactionEndPoint::CompletedDeployment(CompletedDeployment {
+                    resources_returned: resources,
+                    deployment_result,
+                }),
+            ))
         } else {
-            DeploymentResult::Failed {
-                return_values,
-                execution_reverted,
-            }
-        };
-
-        Ok(ExecutionEnvironmentPreemptionPoint::CompletedDeployment(
-            CompletedDeployment {
-                resources_returned: resources,
-                deployment_result,
-            },
-        ))
+            Ok(ExecutionEnvironmentPreemptionPoint::End(
+                TransactionEndPoint::CompletedExecution(CompletedExecution {
+                    return_values,
+                    resources_returned: resources,
+                    reverted: execution_reverted,
+                }),
+            ))
+        }
     }
 
-    pub(crate) fn copy_returndata_to_heap(&mut self, returndata_region: OSImmutableSlice<S>) {
+    pub(crate) fn copy_returndata_to_heap(&mut self, returndata_region: &'ee [u8]) {
         // NOTE: it's not "returndatacopy", but if there was a "call" that did set up non-empty buffer for returndata,
         // it'll be automatically copied there
         if !self.returndata_location.is_empty() {

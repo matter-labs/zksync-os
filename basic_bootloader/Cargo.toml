@@ -14,6 +14,7 @@ zk_ee = { path = "../zk_ee", default-features = false }
 cycle_marker = { path = "../cycle_marker" }
 evm_interpreter = { path = "../evm_interpreter", default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }
+basic_system = { path = "../basic_system", default-features = false }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 crypto = { path = "../crypto", default-features = false }
 seq-macro = "*"
@@ -30,3 +31,6 @@ charge_priority_fee = []
 evm-compatibility = ["code_in_kernel_space", "transfers_to_kernel_space", "system_hooks/mock-unsupported-precompiles", "charge_priority_fee"]
 cycle_marker = ["system_hooks/cycle_marker"]
 resources_for_tester = []
+unlimited_native = []
+report_native = []
+

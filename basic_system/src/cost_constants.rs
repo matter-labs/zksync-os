@@ -30,13 +30,17 @@ pub const SHA256_CHUNK_SIZE: usize = 64;
 pub const RIPEMD160_BASE_NATIVE_COST: u64 = 1_600;
 pub const RIPEMD160_ROUND_NATIVE_COST: u64 = 4_200;
 pub const RIPEMD160_CHUNK_SIZE: usize = 64;
-// TODO: make sure what the worst-case is
+// TODO (EVM-1071): make sure what the worst-case is
 pub const BN254_ECADD_NATIVE_COST: u64 = native_with_delegations!(46_000, 1650, 0);
-// TODO: make sure what the worst-case is
+// TODO (EVM-1071): make sure what the worst-case is
 pub const BN254_ECMUL_NATIVE_COST: u64 = native_with_delegations!(825_000, 62_000, 0);
-// TODO: make sure what the worst-case is
+// TODO (EVM-1071): make sure what the worst-case is
 pub const BN254_PAIRING_BASE_NATIVE_COST: u64 = native_with_delegations!(13_000_000, 500_000, 0);
-// TODO: make sure what the worst-case is
+// TODO (EVM-1071): make sure what the worst-case is
 pub const BN254_PAIRING_PER_PAIR_NATIVE_COST: u64 = BN254_PAIRING_BASE_NATIVE_COST;
-// TODO: add more precise calculation
+// TODO (EVM-1071): add more precise calculation
+// Note: after the modexp optimization, it should be ~200.
+#[cfg(feature = "evm-compatibility")]
+pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 200;
+#[cfg(not(feature = "evm-compatibility"))]
 pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 5_600;

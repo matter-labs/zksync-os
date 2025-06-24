@@ -63,11 +63,12 @@ pub const ERC20_ALLOWANCE_SELECTOR: &[u8] = &[0xdd, 0x62, 0xed, 0x3e];
 pub const ERC20_APPROVE_SELECTOR: &[u8] = &[0x09, 0x5e, 0xa7, 0xb3];
 
 // Value taken from system-contracts, to adjust.
-// TODO: make sure this covers cost for L1 log.
 pub const L1_TX_INTRINSIC_L2_GAS: usize = 11000;
 
+// Includes storing the l1 tx log.
+pub const L1_TX_INTRINSIC_NATIVE_COST: usize = 10_000;
+
 // Value taken from system-contracts, to adjust.
-// TODO: make sure this covers cost for L1 log.
 pub const L1_TX_INTRINSIC_PUBDATA: usize = 88;
 
 /// Does not include signature verification.
@@ -76,8 +77,11 @@ pub const L2_TX_INTRINSIC_GAS: usize = 18_000;
 /// Extra cost for deployment transactions.
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: usize = 32_000;
 
-// Value taken from system-contracts, to adjust.
+/// Value taken from system-contracts, to adjust.
 pub const L2_TX_INTRINSIC_PUBDATA: usize = 0;
+
+// To be adjusted
+pub const L2_TX_INTRINSIC_NATIVE_COST: usize = 4_000;
 
 /// Cost in gas to store one zero byte of calldata
 pub const CALLDATA_ZERO_BYTE_GAS_COST: usize = 4;
@@ -92,3 +96,16 @@ pub const DEFAULT_GAS_PER_PUBDATA: U256 = U256::from_limbs([1, 0, 0, 0]);
 /// low gas prices. We need to bypass the usual way to compute this
 /// value. The value is so high because of modexp tests.
 pub const TESTER_NATIVE_PER_GAS: usize = 25_000;
+
+/// native_per_gas value to use for simulation. Should be in line with
+/// the value of basefee / native_price provided by operator.
+/// Needed because simulation is done with basefee = 0.
+pub const SIMULATION_NATIVE_PER_GAS: U256 = U256::from_limbs([100, 0, 0, 0]);
+
+// Default native price for L1->L2 transactions.
+// TODO: find a reasonable value for it.
+pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
+
+// Upgrade transactions are expected to have ~72 million gas. We will use enough
+// gas to ensure that multiplied by the 72 million they exceed the native computational limit.
+pub const UPGRADE_TX_NATIVE_PER_GAS: U256 = U256::from_limbs([10000, 0, 0, 0]);

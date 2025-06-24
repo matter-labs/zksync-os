@@ -6,31 +6,30 @@ use crate::bootloader::constants::{
 use crate::bootloader::errors::{
     AAMethod, InvalidAA, InvalidTransaction::AAValidationError, TxError,
 };
+use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
-use crate::bootloader::{BasicBootloader, Bytes32, StackFrame};
+use crate::bootloader::{BasicBootloader, Bytes32};
 use crate::require;
 use core::fmt::Write;
 use errors::FatalError;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
-use zk_ee::system::{logger::Logger, EthereumLikeTypes, System, SystemFrameSnapshot, *};
+use zk_ee::system::{logger::Logger, *};
 
 pub struct Contract;
 
 impl<S: EthereumLikeTypes> AccountModel<S> for Contract
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
-    fn validate<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn validate(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         _caller_ee_type: ExecutionEnvironmentType,
         _caller_is_code: bool,
         _caller_nonce: u64,
@@ -47,10 +46,10 @@ where
             reverted,
             return_values,
             ..
-        } = BasicBootloader::call_account_method::<CS>(
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
@@ -60,10 +59,8 @@ where
         )
         .map_err(TxError::oon_as_validation)?;
 
-        let returndata_region = return_values.returndata;
+        let returndata_slice = return_values.returndata;
         *resources = resources_returned;
-
-        let returndata_slice = &*returndata_region;
 
         let res: Result<(), TxError> = if reverted {
             Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
@@ -87,16 +84,16 @@ where
         res
     }
 
-    fn execute<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn execute<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers<'a>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         _current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<S>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, FatalError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("About to start AA execution\n"));
@@ -108,10 +105,10 @@ where
             reverted,
             return_values,
             ..
-        } = BasicBootloader::call_account_method::<CS>(
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
@@ -138,9 +135,6 @@ where
         ));
 
         *resources = resources_after_main_tx;
-
-        // TODO: when to purge memory?
-        // system.purge_return_memory();
 
         let res = if reverted {
             ExecutionResult::Revert {
@@ -184,13 +178,13 @@ where
         )
     }
 
-    fn pay_for_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pay_for_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         _caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
@@ -203,10 +197,10 @@ where
             resources_returned,
             reverted,
             ..
-        } = BasicBootloader::call_account_method::<CS>(
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
@@ -232,13 +226,13 @@ where
         res
     }
 
-    fn pre_paymaster<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         _paymaster: B160,
         _caller_ee_type: ExecutionEnvironmentType,
@@ -252,10 +246,10 @@ where
             resources_returned,
             reverted,
             ..
-        } = BasicBootloader::call_account_method::<CS>(
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,

@@ -40,7 +40,7 @@ where
         self.list.push((value, md));
     }
 
-    pub fn peek(&mut self) -> Option<(&mut V, &mut M)> {
+    pub fn top(&self) -> Option<(&V, &M)> {
         self.list.top().map(|(v, m)| (v, m))
     }
 

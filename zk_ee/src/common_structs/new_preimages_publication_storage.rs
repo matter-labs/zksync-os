@@ -1,11 +1,12 @@
-use crate::common_structs::history_map::Appearance;
 use crate::system::errors::InternalError;
 use crate::utils::Bytes32;
 use alloc::alloc::Global;
-use alloc::collections::BTreeMap;
 use core::alloc::Allocator;
 
-use super::history_map::{CacheItemRef, CacheSnapshotId, HistoryMap, TransactionId};
+use super::{
+    cache_record::{Appearance, CacheRecord},
+    history_map::{CacheSnapshotId, HistoryMap, HistoryMapItemRef},
+};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -41,36 +42,35 @@ impl PreimagesPublicationStorageValue {
 // we want to store new preimages for DA
 
 pub struct NewPreimagesPublicationStorage<A: Allocator + Clone = Global> {
-    cache: HistoryMap<Bytes32, Elem, (), A>,
-    current_tx_number: u32,
-    pub inner: BTreeMap<Bytes32, (PreimagesPublicationStorageValue, PreimageType), A>,
+    cache: HistoryMap<Bytes32, CacheRecord<Elem, ()>, A>,
 }
 
 impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
             cache: HistoryMap::new(allocator.clone()),
-            current_tx_number: 0,
-            inner: BTreeMap::new_in(allocator.clone()),
         }
     }
 
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
-
-        self.current_tx_number += 1;
     }
 
     #[track_caller]
     pub fn start_frame(&mut self) -> CacheSnapshotId {
-        self.cache
-            .snapshot(TransactionId(self.current_tx_number as u64))
+        self.cache.snapshot()
     }
 
     #[track_caller]
-    pub fn finish_frame(&mut self, rollback_handle: Option<&CacheSnapshotId>) {
+    #[must_use]
+    pub fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&CacheSnapshotId>,
+    ) -> Result<(), InternalError> {
         if let Some(x) = rollback_handle {
-            self.cache.rollback(*x);
+            self.cache.rollback(*x)
+        } else {
+            Ok(())
         }
     }
 
@@ -80,7 +80,7 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
         preimage_publication_byte_len: usize,
         preimage_type: PreimageType,
     ) -> Result<(), InternalError> {
-        let mut item = self.cache.materialize(&mut (), hash, |_| {
+        let mut item = self.cache.get_or_insert(hash, || {
             let new = Elem {
                 preimage_type,
                 value: PreimagesPublicationStorageValue {
@@ -88,39 +88,27 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
                     publication_net_bytes: preimage_publication_byte_len,
                 },
             };
-            Ok((new, Appearance::Unset))
+            Ok(CacheRecord::new(new, Appearance::Unset))
         })?;
 
-        item.update(|x, _| {
-            if x.value.num_uses > 1 {
-                assert_eq!(x.value.publication_net_bytes, preimage_publication_byte_len);
-            }
-            x.value.mark_use()?;
-
-            Ok(())
+        item.update(|x| {
+            x.update(|elem, _| {
+                if elem.value.num_uses > 1 {
+                    assert_eq!(
+                        elem.value.publication_net_bytes,
+                        preimage_publication_byte_len
+                    );
+                }
+                elem.value.mark_use()
+            })
         })?;
 
         Ok(())
     }
 
-    pub fn net_pubdata_used(&self) -> u64 {
-        let mut size = 0;
-        self.cache
-            .for_total_diff_operands::<_, ()>(|_, r, _| {
-                match r.appearance {
-                    Appearance::Unset | Appearance::Retrieved => {}
-                    Appearance::Deconstructed | Appearance::Updated => {
-                        size += r.value.value.publication_net_bytes
-                    }
-                };
-                Ok(())
-            })
-            .expect("We're returning ok.");
-
-        size as u64
-    }
-
-    pub fn net_diffs_iter(&self) -> impl Iterator<Item = CacheItemRef<Bytes32, Elem, (), A>> {
+    pub fn net_diffs_iter(
+        &self,
+    ) -> impl Iterator<Item = HistoryMapItemRef<Bytes32, CacheRecord<Elem, ()>, A>> {
         self.cache.iter()
     }
 }
@@ -128,6 +116,19 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn calculate_total_pubdata_used(storage: &NewPreimagesPublicationStorage) -> usize {
+        let mut pubdata_used = 0;
+        storage
+            .cache
+            .apply_to_all_updated_elements::<_, ()>(|_, r, _| {
+                pubdata_used += r.value().value.publication_net_bytes;
+                Ok(())
+            })
+            .expect("We're returning ok.");
+
+        pubdata_used
+    }
 
     #[test]
     fn single_tx_single_frame_ok() {
@@ -142,11 +143,13 @@ mod tests {
             .add_preimage(&hash, preimage_publication_byte_len, PreimageType::Bytecode)
             .expect("add_preimage should succeed");
 
-        assert_eq!(storage.net_pubdata_used(), 100);
+        assert_eq!(calculate_total_pubdata_used(&storage), 100);
 
-        storage.finish_frame(None);
+        storage
+            .finish_frame(None)
+            .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 100);
+        assert_eq!(calculate_total_pubdata_used(&storage), 100);
     }
 
     #[test]
@@ -175,9 +178,11 @@ mod tests {
             )
             .expect("add_preimage should succeed");
 
-        storage.finish_frame(None);
+        storage
+            .finish_frame(None)
+            .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 200);
+        assert_eq!(calculate_total_pubdata_used(&storage), 200);
     }
 
     #[test]
@@ -196,9 +201,11 @@ mod tests {
             )
             .expect("add_preimage should succeed");
 
-        storage.finish_frame(Some(&ss));
+        storage
+            .finish_frame(Some(&ss))
+            .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 0);
+        assert_eq!(calculate_total_pubdata_used(&storage), 0);
     }
 
     #[test]
@@ -224,9 +231,11 @@ mod tests {
             )
             .expect("add_preimage should succeed");
 
-        storage.finish_frame(None);
+        storage
+            .finish_frame(None)
+            .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 200);
+        assert_eq!(calculate_total_pubdata_used(&storage), 200);
     }
 
     #[test]
@@ -255,9 +264,11 @@ mod tests {
             )
             .expect("add_preimage should succeed");
 
-        storage.finish_frame(Some(&ss));
+        storage
+            .finish_frame(Some(&ss))
+            .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 100);
+        assert_eq!(calculate_total_pubdata_used(&storage), 100);
     }
 
     #[test]
@@ -283,9 +294,11 @@ mod tests {
             )
             .expect("add_preimage should succeed");
 
-        storage.finish_frame(None);
+        storage
+            .finish_frame(None)
+            .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 100);
+        assert_eq!(calculate_total_pubdata_used(&storage), 100);
     }
 
     #[test]
@@ -294,8 +307,10 @@ mod tests {
 
         storage.begin_new_tx();
         storage.start_frame();
-        storage.finish_frame(None);
+        storage
+            .finish_frame(None)
+            .expect("Correct finishing snapshot");
 
-        assert_eq!(storage.net_pubdata_used(), 000);
+        assert_eq!(calculate_total_pubdata_used(&storage), 000);
     }
 }

@@ -30,6 +30,8 @@ mod io_subsystem;
 mod public_input;
 
 pub use self::io_subsystem::*;
+pub use self::public_input::BatchOutput;
+pub use self::public_input::BatchPublicInput;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EthereumLikeStorageAccessCostModel;
@@ -39,9 +41,18 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         &self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
+        is_access_list: bool,
     ) -> Result<(), SystemError> {
         let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
+            ExecutionEnvironmentType::NoEE => {
+                // For access lists, EVM charges the full cost as many
+                // times as a slot is in the list.
+                if is_access_list {
+                    Ergs(1900 * ERGS_PER_GAS)
+                } else {
+                    Ergs::empty()
+                }
+            }
             ExecutionEnvironmentType::EVM => Ergs(WARM_STORAGE_READ_COST * ERGS_PER_GAS),
             _ => return Err(InternalError("Unsupported EE").into()),
         };
