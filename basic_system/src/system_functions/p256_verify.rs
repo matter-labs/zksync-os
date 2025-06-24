@@ -2,7 +2,7 @@ use super::*;
 
 use crate::cost_constants::P256_VERIFY_COST_ERGS;
 use zk_ee::system::errors::SystemFunctionError;
-use zk_ee::system::{errors::InternalError, SystemFunction};
+use zk_ee::system::SystemFunction;
 
 // TODO(EVM-1072): think about error cases, as others follow evm specs
 /// p256 verify system function implementation.
