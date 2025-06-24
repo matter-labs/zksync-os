@@ -732,10 +732,10 @@ where
         self.transient_storage.begin_new_tx();
         self.logs_storage.begin_new_tx();
         self.events_storage.begin_new_tx();
-        self.tx_number += 1;
     }
 
     fn finish_tx(&mut self) -> Result<(), InternalError> {
+        self.tx_number += 1;
         self.storage.finish_tx()
     }
 

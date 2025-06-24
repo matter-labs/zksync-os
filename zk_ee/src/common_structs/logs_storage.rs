@@ -203,8 +203,7 @@ where
 
         self.list.push(
             LogContent {
-                // FIXME: huge hack, need to understand the reasons for discrepancy between zk os and era
-                tx_number: tx_number - 1,
+                tx_number: tx_number,
                 data: GenericLogContentData::UserMsg(UserMsgData {
                     address: *address,
                     data,
@@ -233,8 +232,7 @@ where
 
         self.list.push(
             LogContent {
-                // FIXME: huge hack, need to understand the reasons for discrepancy between zk os and era
-                tx_number: tx_number - 1,
+                tx_number: tx_number,
                 data: GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }),
             },
             total_pubdata,
