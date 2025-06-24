@@ -36,7 +36,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         &self.address
     }
 
-    /// TODO not needed?
+    /// TODO unused
     fn resources_mut(&mut self) -> &mut <S as SystemTypes>::Resources {
         self.gas.resources_mut()
     }
