@@ -7,7 +7,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, ADD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
-        core::ops::AddAssign::add_assign(op2, *op1);
+        *op2 = op1.wrapping_add(*op2);
         Ok(())
     }
 
@@ -15,7 +15,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, MUL_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
-        core::ops::MulAssign::mul_assign(op2, *op1);
+        *op2 = op1.wrapping_mul(*op2);
         Ok(())
     }
 
