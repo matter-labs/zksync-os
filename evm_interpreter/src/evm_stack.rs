@@ -101,7 +101,7 @@ impl<A: Allocator> EvmStack<A> {
                 .as_ref_unchecked()
                 .assume_init_ref();
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            dst_ref_mut.as_mut_ptr().write(src_ref.clone());
+            dst_ref_mut.as_mut_ptr().write(*src_ref);
         }
         self.len += 1;
 
@@ -327,7 +327,7 @@ impl<A: Allocator> EvmStack<A> {
         }
         unsafe {
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            dst_ref_mut.as_mut_ptr().write(value.clone());
+            dst_ref_mut.as_mut_ptr().write(*value);
             self.len += 1;
         }
 

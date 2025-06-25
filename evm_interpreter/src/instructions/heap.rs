@@ -36,7 +36,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2()?;
-        let mut le_value = value.clone();
+        let mut le_value = *value;
         let index = Self::cast_to_usize(index, ExitCode::InvalidOperandOOG)?;
 
         self.resize_heap(index, 32)?;

@@ -248,7 +248,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.clear_last_returndata();
 
         let (value, code_offset, len) = self.stack.pop_3()?;
-        let value = value.clone();
+        let value = *value;
 
         let (code_offset, len) =
             Self::cast_offset_and_len(code_offset, len, ExitCode::InvalidOperandOOG)?;
@@ -273,7 +273,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // we will charge for everything in the "should_continue..." function
         let scheme = if IS_CREATE2 {
             let salt = self.stack.pop_1()?;
-            CreateScheme::Create2 { salt: salt.clone() }
+            CreateScheme::Create2 { salt: *salt }
         } else {
             CreateScheme::Create
         };
@@ -341,14 +341,14 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value = match scheme {
             CallScheme::CallCode => {
                 let value = self.stack.pop_1()?;
-                value.clone()
+                *value
             }
             CallScheme::Call => {
                 let value = self.stack.pop_1()?;
                 if self.is_static && *value != U256::ZERO {
                     return Err(ExitCode::CallNotAllowedInsideStatic);
                 }
-                value.clone()
+                *value
             }
             CallScheme::DelegateCall => self.call_value,
             CallScheme::StaticCall => U256::ZERO,
