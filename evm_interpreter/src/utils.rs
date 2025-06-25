@@ -3,9 +3,7 @@ use core::ops::DerefMut;
 use crate::*;
 use ruint::aliases::B160;
 use zk_ee::kv_markers::ExactSizeChain;
-use zk_ee::system::Ergs;
 use zk_ee::system::EthereumLikeTypes;
-use zk_ee::system::Resources;
 
 #[inline(always)]
 pub(crate) unsafe fn assume(cond: bool) {
@@ -59,21 +57,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     #[inline(always)]
-    pub(crate) fn spend_gas(&mut self, to_spend: u64) -> Result<(), ExitCode> {
-        spend_gas_from_resources(&mut self.resources, to_spend)
-    }
-
-    #[inline(always)]
-    pub(crate) fn spend_gas_and_native(&mut self, gas: u64, native: u64) -> Result<(), ExitCode> {
-        spend_gas_and_native_from_resources(&mut self.resources, gas, native)
-    }
-
-    #[inline(always)]
-    pub(crate) fn gas_left(&self) -> u64 {
-        self.resources.ergs().0 / ERGS_PER_GAS
-    }
-
-    #[inline(always)]
     pub(crate) fn memory_len(&self) -> usize {
         self.heap.len()
     }
@@ -95,30 +78,26 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub(crate) fn resize_heap(&mut self, offset: usize, len: usize) -> Result<(), ExitCode> {
-        use native_resource_constants::*;
+        Self::resize_heap_implementation(&mut self.heap, &mut self.gas, offset, len)
+    }
+
+    pub(crate) fn resize_heap_implementation<'a>(
+        heap: &mut SliceVec<'a, u8>,
+        gas: &mut Gas<S>,
+        offset: usize,
+        len: usize,
+    ) -> Result<(), ExitCode> {
         let max_offset = offset.saturating_add(len);
-        let multiple_of_32 = if max_offset > ((u32::MAX - 31) as usize) {
+        let new_heap_size = if max_offset > ((u32::MAX - 31) as usize) {
             return Err(ExitCode::MemoryLimitOOG);
         } else {
             max_offset.next_multiple_of(32)
         };
-        let current_heap_size = self.memory_len();
-        if multiple_of_32 > current_heap_size {
-            let net_byte_increase = multiple_of_32 - current_heap_size;
-            let new_heap_size_words = multiple_of_32 as u64 / 32;
+        let current_heap_size = heap.len();
+        if new_heap_size > current_heap_size {
+            gas.pay_for_memory_growth(current_heap_size, new_heap_size)?;
 
-            let end_cost = crate::gas_constants::MEMORY
-                .saturating_mul(new_heap_size_words)
-                .saturating_add(new_heap_size_words.saturating_mul(new_heap_size_words) / 512);
-            let net_cost_gas = end_cost - self.gas_paid_for_heap_growth;
-            let net_cost_native = HEAP_EXPANSION_BASE_NATIVE_COST.saturating_add(
-                HEAP_EXPANSION_PER_BYTE_NATIVE_COST.saturating_mul(net_byte_increase as u64),
-            );
-            self.spend_gas_and_native(net_cost_gas, net_cost_native)?;
-            self.gas_paid_for_heap_growth = end_cost;
-
-            self.heap
-                .resize(multiple_of_32, 0)
+            heap.resize(new_heap_size, 0)
                 .map_err(|_| ExitCode::MemoryOOG)?;
         }
 
@@ -128,33 +107,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     #[inline(always)]
     pub(crate) const fn is_static_frame(&self) -> bool {
         self.is_static
-    }
-
-    #[inline]
-    pub fn copy_cost(&mut self, len: u64) -> Result<(u64, u64), ExitCode> {
-        let get_cost = |len: u64| -> Option<(u64, u64)> {
-            let num_words = len.checked_next_multiple_of(32)? / 32;
-            let gas = crate::gas_constants::COPY.checked_mul(num_words)?;
-            let native = crate::native_resource_constants::COPY_BYTE_NATIVE_COST
-                .checked_mul(len)?
-                .checked_add(crate::native_resource_constants::COPY_BASE_NATIVE_COST)?;
-            Some((gas, native))
-        };
-        get_cost(len).ok_or(ExitCode::OutOfGas)
-    }
-
-    #[inline]
-    pub fn very_low_copy_cost(&mut self, len: u64) -> Result<(u64, u64), ExitCode> {
-        let get_cost = |len: u64| -> Option<(u64, u64)> {
-            let num_words = len.checked_next_multiple_of(32)? / 32;
-            let gas = crate::gas_constants::VERYLOW
-                .checked_add(crate::gas_constants::COPY.checked_mul(num_words)?)?;
-            let native = crate::native_resource_constants::COPY_BASE_NATIVE_COST
-                .checked_mul(len)?
-                .checked_add(crate::native_resource_constants::COPY_BASE_NATIVE_COST)?;
-            Some((gas, native))
-        };
-        get_cost(len).ok_or(ExitCode::OutOfGas)
     }
 }
 
@@ -218,44 +170,6 @@ pub(crate) fn create_quasi_rlp(address: &B160, nonce: u64) -> impl ExactSizeIter
             ),
         ))
     }
-}
-
-#[inline(always)]
-pub(crate) fn spend_gas_from_resources<R: Resources>(
-    resources: &mut R,
-    to_spend: u64,
-) -> Result<(), ExitCode> {
-    let Some(ergs_cost) = to_spend.checked_mul(ERGS_PER_GAS) else {
-        return Err(ExitCode::OutOfGas);
-    };
-    let resource_cost = R::from_ergs(Ergs(ergs_cost));
-    resources.charge(&resource_cost)?;
-    Ok(())
-}
-
-#[inline(always)]
-pub(crate) fn spend_gas_and_native_from_resources<R: Resources>(
-    resources: &mut R,
-    gas: u64,
-    native: u64,
-) -> Result<(), ExitCode> {
-    use zk_ee::system::Computational;
-    let Some(ergs_cost) = gas.checked_mul(ERGS_PER_GAS) else {
-        return Err(ExitCode::OutOfGas);
-    };
-    let resource_cost =
-        R::from_ergs_and_native(Ergs(ergs_cost), R::Native::from_computational(native));
-    resources.charge(&resource_cost)?;
-    Ok(())
-}
-
-// Returns the result of subtracting 1/64th gas from
-// some resources.
-#[inline(always)]
-pub(crate) fn apply_63_64_rule(ergs: Ergs) -> Ergs {
-    // We need to apply the rule over gas, not ergs
-    let gas = ergs.0 / ERGS_PER_GAS;
-    Ergs(ergs.0 - (gas / 64) * ERGS_PER_GAS)
 }
 
 /// Helper to check if an address is an ethereum precompile
