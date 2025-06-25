@@ -7,7 +7,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, ADD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        *op2 = op1.wrapping_add(*op2);
+        core::ops::AddAssign::add_assign(op2, op1);
         Ok(())
     }
 
@@ -31,9 +31,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, DIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
-        if op2.is_zero() {
-            *op2 = U256::ZERO
-        } else {
+        if !op2.is_zero() {
             // we will mangle op1, but we do not care
             core::ops::DivAssign::div_assign(op1, *op2);
             Clone::clone_from(op2, &*op1);
@@ -98,14 +96,21 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn sign_extend(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, SIGNEXTEND_NATIVE_COST)?;
-        let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
-        if *op1 < U256::from(32) {
-            // `low_u32` works since op1 < 32
-            let bit_index = (8 * op1.as_limbs()[0] + 7) as usize;
+        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
+        if let Some(shift) = u256_try_to_usize_capped::<32>(op1) {
+            let bit_index = 8 * shift + 7;
             let bit = op2.bit(bit_index);
-            let mask = (U256::from(1) << bit_index) - U256::from(1);
-            *op2 = if bit { *op2 | !mask } else { *op2 & mask };
+            let mut mask = U256::ONE;
+            core::ops::ShlAssign::shl_assign(&mut mask, bit_index as u32);
+            core::ops::SubAssign::sub_assign(&mut mask, &U256::ONE);
+            if bit {
+                mask = mask.not();
+                core::ops::BitOrAssign::bitor_assign(op2, &mask);
+            } else {
+                core::ops::BitAndAssign::bitand_assign(op2, &mask);
+            }
         }
+
         Ok(())
     }
 }
