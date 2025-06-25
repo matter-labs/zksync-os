@@ -106,14 +106,11 @@ pub fn i256_div(dividend: &mut U256, divisor_or_quotient: &mut U256) {
     }
 
     // this is unsigned division of moduluses
-    // TODO order is inversed?
-    let (q, r) = dividend.div_rem(*divisor_or_quotient);
-    *divisor_or_quotient = r;
-    *dividend = q;
+    let (quotient, _) = dividend.div_rem(*divisor_or_quotient);
 
     // set sign bit to zero
 
-    if dividend.is_zero() {
+    if quotient.is_zero() {
         *divisor_or_quotient = U256::ZERO;
         return;
     } else {
@@ -124,13 +121,13 @@ pub fn i256_div(dividend: &mut U256, divisor_or_quotient: &mut U256) {
             | (Sign::Plus, Sign::Plus)
             | (Sign::Minus, Sign::Minus) => {
                 // no extra manipulation required
-                Clone::clone_from(divisor_or_quotient, &dividend);
+                Clone::clone_from(divisor_or_quotient, &quotient);
             }
             (Sign::Zero, Sign::Minus)
             | (Sign::Plus, Sign::Minus)
             | (Sign::Minus, Sign::Zero)
             | (Sign::Minus, Sign::Plus) => {
-                let (res, _) = U256::ZERO.overflowing_sub(dividend.clone());
+                let (res, _) = U256::ZERO.overflowing_sub(quotient);
                 *divisor_or_quotient = res;
             }
         }
@@ -148,11 +145,8 @@ pub fn i256_mod(dividend: &mut U256, divisor_or_remainder: &mut U256) {
     let _ = i256_sign::<true>(divisor_or_remainder);
 
     // this is unsigned division of moduluses
-    let (q, r) = dividend.div_rem(*divisor_or_remainder);
-    *dividend = q;
+    let (_q, r) = dividend.div_rem(*divisor_or_remainder);
     *divisor_or_remainder = r;
-
-    // u256_remove_sign(divisor_or_remainder);
 
     if divisor_or_remainder.is_zero() {
         return;
