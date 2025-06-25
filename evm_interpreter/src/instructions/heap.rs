@@ -1,10 +1,12 @@
+use crate::gas::gas_utils;
+
 use super::*;
 use native_resource_constants::*;
 use zk_ee::system::System;
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mload(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.spend_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
+        self.gas.spend_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
         let index = self.stack.pop_1()?;
         let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
         self.resize_heap(index, 32)?;
@@ -30,7 +32,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn mstore(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
+        self.gas.spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2()?;
         let mut le_value = value.clone();
         let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
@@ -55,7 +57,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn mstore8(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.spend_gas_and_native(gas_constants::VERYLOW, MSTORE8_NATIVE_COST)?;
+        self.gas.spend_gas_and_native(gas_constants::VERYLOW, MSTORE8_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2()?;
         let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
         let value = value.byte(0);
@@ -74,7 +76,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn msize(&mut self) -> InstructionResult {
-        self.spend_gas_and_native(gas_constants::BASE, MSIZE_NATIVE_COST)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::BASE, MSIZE_NATIVE_COST)?;
         let len = self.memory_len();
         debug_assert!(len.next_multiple_of(32) == len);
         self.stack.push_1(&U256::from(len as u64))
@@ -89,8 +92,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let len = len.clone();
 
         let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
-        let (gas_cost, native_cost) = self.very_low_copy_cost(len as u64)?;
-        self.spend_gas_and_native(gas_cost, native_cost)?;
+        let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len as u64)?;
+        self.gas.spend_gas_and_native(gas_cost, native_cost)?;
 
         if len == 0 {
             return Ok(());

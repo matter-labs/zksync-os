@@ -145,8 +145,13 @@ fn run_block(
         suffix.push_str("_witness");
         std::path::Path::new(&dir).join(suffix)
     });
-    let (output, stats) =
-        chain.run_block_with_extra_stats(transactions, Some(block_context), None, output_path);
+    let (output, stats) = chain.run_block_with_extra_stats(
+        transactions,
+        Some(block_context),
+        None,
+        output_path,
+        Some("evm_replay".to_string()),
+    );
 
     if let Some(ratio) = compute_ratio(stats) {
         db.set_block_ratio(block_number, ratio)?;
