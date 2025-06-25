@@ -6,7 +6,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn wrapped_add(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, ADD_NATIVE_COST)?;
-        let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
+        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         *op2 = op1.wrapping_add(*op2);
         Ok(())
     }
@@ -14,7 +14,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn wrapping_mul(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, MUL_NATIVE_COST)?;
-        let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
+        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         *op2 = op1.wrapping_mul(*op2);
         Ok(())
     }
@@ -22,7 +22,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn wrapping_sub(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SUB_NATIVE_COST)?;
-        let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
+        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         *op2 = op1.wrapping_sub(*op2);
         Ok(())
     }
@@ -85,7 +85,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn eval_exp(&mut self) -> InstructionResult {
-        let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
+        let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
         if let Some((gas_cost, native_cost)) = exp_cost(&op2) {
             self.gas.spend_gas_and_native(gas_cost, native_cost)?;
         } else {
