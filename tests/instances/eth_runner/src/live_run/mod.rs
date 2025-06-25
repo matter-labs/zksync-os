@@ -188,12 +188,19 @@ pub fn live_run(
     endpoint: String,
     db_path: String,
     witness_output_dir: Option<String>,
+    skip_successful: bool,
 ) -> Result<()> {
     let db = Database::init(db_path)?;
     assert!(start_block <= end_block);
     fetch_block_hashes(start_block, &db, &endpoint)?;
     let mut failures = 0;
     for n in start_block..=end_block {
+        let status = db.get_block_status(n)?;
+        let already_succeeded = status.is_some_and(|s| matches!(s, BlockStatus::Success));
+        if skip_successful && already_succeeded {
+            debug!("Skipping block {}, already succeeded", n);
+            continue;
+        }
         if let BlockStatus::Error(_) = run_block(n, &db, &endpoint, witness_output_dir.clone())? {
             failures += 1;
             if failures == MAX_FAILURES {
