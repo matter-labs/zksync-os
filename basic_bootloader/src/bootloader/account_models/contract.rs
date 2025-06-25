@@ -3,7 +3,7 @@ use crate::bootloader::constants::PREPARE_FOR_PAYMASTER_SELECTOR;
 use crate::bootloader::constants::{
     EXECUTE_SELECTOR, PAY_FOR_TRANSACTION_SELECTOR, VALIDATE_SELECTOR,
 };
-use crate::bootloader::errors::{AAMethod, InvalidTransaction, TxError};
+use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::{BasicBootloader, Bytes32};
@@ -14,6 +14,7 @@ use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::{logger::Logger, *};
+use zksync_os_error::core::tx_valid::ValidationError as InvalidTransaction;
 
 pub struct Contract;
 
@@ -61,10 +62,9 @@ where
         *resources = resources_returned;
 
         let res: Result<(), TxError> = if reverted {
-            Err(TxError::Validation(InvalidTransaction::Revert {
-                method: AAMethod::AccountValidate,
-                output: None, // TODO
-            }))
+            Err(TxError::Validation(
+                InvalidTransaction::AARevertAccountValidate,
+            ))
         } else if returndata_slice.len() != 32 {
             Err(TxError::Validation(
                 InvalidTransaction::InvalidReturndataLength,
@@ -207,10 +207,9 @@ where
         *resources = resources_returned;
 
         let res: Result<(), TxError> = if reverted {
-            Err(TxError::Validation(InvalidTransaction::Revert {
-                method: AAMethod::AccountPayForTransaction,
-                output: None, // TODO
-            }))
+            Err(TxError::Validation(
+                InvalidTransaction::AARevertAccountPayForTransaction,
+            ))
         } else {
             Ok(())
         };
@@ -255,10 +254,9 @@ where
         *resources = resources_returned;
 
         let res: Result<(), TxError> = if reverted {
-            Err(TxError::Validation(InvalidTransaction::Revert {
-                method: AAMethod::AccountPrePaymaster,
-                output: None, // todo
-            }))
+            Err(TxError::Validation(
+                InvalidTransaction::AARevertAccountPrePaymaster,
+            ))
         } else {
             Ok(())
         };

@@ -3,6 +3,7 @@ use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::system::errors::InternalError;
 use zk_ee::system::{Computational, Resources};
+use zksync_os_error::core::tx_valid::ValidationError as InvalidTransaction;
 
 use super::*;
 
@@ -42,7 +43,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         native_limit
             .checked_sub(intrinsic_pubdata_overhead)
             .ok_or(TxError::Validation(
-                errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
+                InvalidTransaction::OutOfNativeResourcesDuringValidation,
             ))?;
 
     // EVM tester requires high native limits, so for it we never hold off resources.
@@ -72,7 +73,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         .checked_sub(calldata_native)
         .and_then(|native| native.checked_sub(intrinsic_native as u64))
         .ok_or(TxError::Validation(
-            errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
+            InvalidTransaction::OutOfNativeResourcesDuringValidation,
         ))?;
 
     let native_limit =
@@ -89,7 +90,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
 
     if total_gas_to_charge > gas_limit {
         Err(TxError::Validation(
-            errors::InvalidTransaction::OutOfGasDuringValidation,
+            InvalidTransaction::OutOfGasDuringValidation,
         ))
     } else {
         let gas_limit_for_tx = gas_limit - total_gas_to_charge;

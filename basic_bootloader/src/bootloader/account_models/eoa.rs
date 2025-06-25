@@ -5,8 +5,7 @@ use crate::bootloader::constants::PAYMASTER_GENERAL_SELECTOR;
 use crate::bootloader::constants::{DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS, ERC20_ALLOWANCE_SELECTOR};
 use crate::bootloader::constants::{SPECIAL_ADDRESS_TO_WASM_DEPLOY, TX_OFFSET};
 use crate::bootloader::errors::AAMethod;
-use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
-use crate::bootloader::errors::{InvalidTransaction, TxError};
+use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
@@ -25,6 +24,16 @@ use zk_ee::system::{
     EthereumLikeTypes, System, SystemTypes, *,
 };
 use zk_ee::utils::{b160_to_u256, u256_to_b160_checked};
+use zksync_os_error::core::tx_valid::ValidationError as InvalidTransaction;
+
+fn require_revert_helper(method: AAMethod) -> InvalidTransaction {
+    match method {
+        AAMethod::AccountValidate => InvalidTransaction::AARevertAccountValidate,
+        AAMethod::AccountPayForTransaction => InvalidTransaction::AARevertAccountPayForTransaction,
+        AAMethod::AccountPrePaymaster => InvalidTransaction::AARevertAccountPrePaymaster,
+        AAMethod::PaymasterValidateAndPay => InvalidTransaction::AARevertPaymasterValidateAndPay,
+    }
+}
 
 macro_rules! require_or_revert {
     ($b:expr, $m:expr, $s:expr, $system:expr) => {
@@ -34,10 +43,7 @@ macro_rules! require_or_revert {
             let _ = $system
                 .get_logger()
                 .write_fmt(format_args!("Reverted: {}\n", $s));
-            Err(TxError::Validation(InvalidTransaction::Revert {
-                method: $m,
-                output: None,
-            }))
+            Err(TxError::Validation(require_revert_helper($m)))
         }
     };
 }
@@ -131,8 +137,8 @@ where
 
         if ecrecover_output.is_empty() {
             return Err(InvalidTransaction::IncorrectFrom {
-                recovered: B160::ZERO,
-                tx: from,
+                recovered: B160::ZERO.into(),
+                tx: from.into(),
             }
             .into());
         }
@@ -142,8 +148,8 @@ where
 
         if recovered_from != from {
             return Err(InvalidTransaction::IncorrectFrom {
-                recovered: recovered_from,
-                tx: from,
+                recovered: recovered_from.into(),
+                tx: from.into(),
             }
             .into());
         }
@@ -486,7 +492,9 @@ where
         if is_deployment {
             let calldata_len = transaction.calldata().len() as u64;
             if calldata_len > MAX_INITCODE_SIZE as u64 {
-                return Err(TxError::Validation(CreateInitCodeSizeLimit));
+                return Err(TxError::Validation(
+                    InvalidTransaction::CreateInitCodeSizeLimit,
+                ));
             }
             let initcode_gas_cost = evm_interpreter::gas_constants::INITCODE_WORD_COST
                 * (calldata_len.next_multiple_of(32) / 32);
@@ -693,10 +701,9 @@ where
     *resources = resources_returned;
 
     let res: Result<U256, TxError> = if reverted {
-        Err(TxError::Validation(InvalidTransaction::Revert {
-            method: AAMethod::AccountPrePaymaster,
-            output: None, // TODO
-        }))
+        Err(TxError::Validation(
+            InvalidTransaction::AARevertAccountPrePaymaster,
+        ))
     } else if returndata_slice.len() != 32 {
         Err(TxError::Validation(
             InvalidTransaction::InvalidReturndataLength,
@@ -773,10 +780,9 @@ where
     *resources = resources_returned;
 
     let res: Result<U256, TxError> = if reverted {
-        Err(TxError::Validation(InvalidTransaction::Revert {
-            method: AAMethod::AccountPrePaymaster,
-            output: None, // TODO
-        }))
+        Err(TxError::Validation(
+            InvalidTransaction::AARevertAccountPrePaymaster,
+        ))
     } else if returndata_slice.len() != 32 {
         Err(TxError::Validation(
             InvalidTransaction::InvalidReturndataLength,

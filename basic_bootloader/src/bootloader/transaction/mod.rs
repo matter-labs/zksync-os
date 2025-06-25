@@ -8,9 +8,9 @@ use crate::bootloader::rlp;
 use core::ops::Range;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
-use errors::InvalidTransaction;
 use ruint::aliases::U256;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};
+use zksync_os_error::core::tx_valid::ValidationError as InvalidTransaction;
 
 mod abi_utils;
 pub mod access_list_parser;

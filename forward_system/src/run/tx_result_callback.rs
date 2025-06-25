@@ -1,5 +1,5 @@
 use super::result_keeper::TxProcessingOutputOwned;
-use basic_bootloader::bootloader::errors::InvalidTransaction;
+use zksync_os_error::core::tx_valid::ValidationError as InvalidTransaction;
 
 pub trait TxResultCallback: 'static {
     fn tx_executed(
