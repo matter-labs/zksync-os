@@ -217,7 +217,7 @@ impl<
 
         // copy initial values
         for el in input.iter() {
-            self.stack.push_1(*el)?;
+            self.stack.push(*el)?;
         }
         // then put locals in the same storage
         self.stack
@@ -276,7 +276,7 @@ impl<
 
         // copy initial values
         for el in input.iter() {
-            self.stack.push_1(*el)?;
+            self.stack.push(*el)?;
         }
         // then put locals in the same storage
         self.stack
@@ -367,7 +367,7 @@ impl<
         if self.stack.len() == MAX_STACK_SIZE {
             return Err(());
         }
-        self.stack.push_1(value)?;
+        self.stack.push(value)?;
 
         Ok(())
     }
