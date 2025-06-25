@@ -107,7 +107,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             &Bytes32::from_u256_be(stack_head),
         )?;
 
-        *stack_head = value.into_u256_be();
+        *stack_head = value.into_u256_le();
         Ok(())
     }
 
@@ -121,7 +121,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             &Bytes32::from_u256_be(stack_head),
         )?;
 
-        *stack_head = value.into_u256_be();
+        *stack_head = value.into_u256_le();
         Ok(())
     }
 
