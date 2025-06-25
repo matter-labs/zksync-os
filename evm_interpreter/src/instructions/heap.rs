@@ -1,3 +1,5 @@
+use core::ops::DerefMut;
+
 use crate::gas::gas_utils;
 
 use super::*;
@@ -8,26 +10,22 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
-        let index = self.stack.pop_1()?;
-        let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
-        self.resize_heap(index, 32)?;
-        let value = unsafe {
+        let stack_top = self.stack.peek_mut()?;
+        let index = Self::cast_to_usize(stack_top, ExitCode::InvalidOperandOOG)?;
+        Self::resize_heap_implementation(&mut self.heap, &mut self.gas, index, 32)?;
+        unsafe {
             // we resized enough, so we can read as-if it's a pointer to array
-            let src = self.heap().as_ptr().add(index);
-            let value = U256::from_be_bytes(src.cast::<[u8; 32]>().as_ref_unchecked());
-
-            value
-        };
+            let src = self.heap.deref_mut().as_ptr().add(index);
+            *stack_top = U256::from_be_bytes(src.cast::<[u8; 32]>().as_ref_unchecked());
+        }
 
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
                 " offset: {}, read value: 0x{:0x}",
-                index, value
+                index, *stack_top
             ));
         }
-
-        self.stack.push_unchecked(&value);
 
         Ok(())
     }
