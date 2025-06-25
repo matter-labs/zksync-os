@@ -22,8 +22,8 @@ pub struct I256(pub Sign, pub U256);
 
 #[inline(always)]
 pub fn i256_sign<const DO_TWO_COMPL: bool>(val: &mut U256) -> Sign {
-    if !val.bit(U256::BITS - 1) {
-        if *val == U256::ZERO {
+    if val.as_limbs()[3] >> 63 == 0 {
+        if val.is_zero() {
             Sign::Zero
         } else {
             Sign::Plus
@@ -32,6 +32,19 @@ pub fn i256_sign<const DO_TWO_COMPL: bool>(val: &mut U256) -> Sign {
         if DO_TWO_COMPL {
             two_compl_mut(val);
         }
+        Sign::Minus
+    }
+}
+
+#[inline(always)]
+pub fn i256_sign_by_ref(val: &U256) -> Sign {
+    if val.as_limbs()[3] >> 63 == 0 {
+        if val.is_zero() {
+            Sign::Zero
+        } else {
+            Sign::Plus
+        }
+    } else {
         Sign::Minus
     }
 }
@@ -93,12 +106,11 @@ pub fn i256_div(dividend: &mut U256, divisor_or_quotient: &mut U256) {
     }
 
     // this is unsigned division of moduluses
-    // TODO order is inversed
+    // TODO order is inversed?
     let (q, r) = dividend.div_rem(*divisor_or_quotient);
-    *divisor_or_quotient = q;
-    *dividend = r;
+    *divisor_or_quotient = r;
+    *dividend = q;
 
-    // u256_remove_sign(dividend);
     // set sign bit to zero
 
     if dividend.is_zero() {
