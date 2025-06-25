@@ -334,3 +334,144 @@ impl<A: Allocator> EvmStack<A> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{ExitCode, STACK_SIZE};
+    use ruint::aliases::U256;
+
+    use super::EvmStack;
+    use std::alloc::Global;
+
+    #[test]
+    fn push_then_pop_works() {
+        let mut stack = EvmStack::new_in(Global);
+
+        stack.push(&U256::ONE).expect("Should push");
+        let res = stack.pop_1().expect("Should pop");
+
+        assert_eq!(*res, U256::ONE);
+    }
+
+    #[test]
+    fn push_can_not_overflow() {
+        let mut stack = EvmStack::new_in(Global);
+
+        for _ in 0..STACK_SIZE {
+            stack.push(&U256::ONE).expect("Should push");
+        }
+
+        assert_eq!(stack.push(&U256::ONE), Err(ExitCode::StackOverflow));
+    }
+
+    #[test]
+    fn push0_can_not_overflow() {
+        let mut stack = EvmStack::new_in(Global);
+
+        for _ in 0..STACK_SIZE {
+            stack.push_zero().expect("Should push");
+        }
+
+        assert_eq!(stack.push_zero(), Err(ExitCode::StackOverflow));
+    }
+
+    #[test]
+    fn push_one_can_not_overflow() {
+        let mut stack = EvmStack::new_in(Global);
+
+        for _ in 0..STACK_SIZE {
+            stack.push_one().expect("Should push");
+        }
+
+        assert_eq!(stack.push_one(), Err(ExitCode::StackOverflow));
+    }
+
+    #[test]
+    fn pop_can_not_underflow() {
+        let mut stack = EvmStack::new_in(Global);
+
+        assert_eq!(stack.pop_1(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_2(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_3(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_4(), Err(ExitCode::StackUnderflow));
+
+        stack.push_one().expect("Should push");
+
+        assert_eq!(stack.pop_2(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_3(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_4(), Err(ExitCode::StackUnderflow));
+
+        stack.push_one().expect("Should push");
+
+        assert_eq!(stack.pop_3(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_4(), Err(ExitCode::StackUnderflow));
+
+        stack.push_one().expect("Should push");
+
+        assert_eq!(stack.pop_4(), Err(ExitCode::StackUnderflow));
+    }
+
+    #[test]
+    fn pop_and_peek_can_not_underflow() {
+        let mut stack = EvmStack::new_in(Global);
+
+        stack.push_one().expect("Should push");
+
+        assert_eq!(stack.pop_1_and_peek_mut(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_1_mut_and_peek(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_2_and_peek_mut(), Err(ExitCode::StackUnderflow));
+
+        stack.push_one().expect("Should push");
+
+        assert_eq!(stack.pop_2_and_peek_mut(), Err(ExitCode::StackUnderflow));
+    }
+
+    #[test]
+    fn top_mut_can_not_underflow() {
+        let mut stack = EvmStack::new_in(Global);
+
+        assert_eq!(stack.top_mut(), Err(ExitCode::StackUnderflow));
+    }
+
+    #[test]
+    fn swap() {
+        let mut stack = EvmStack::new_in(Global);
+
+        assert_eq!(stack.swap(1), Err(ExitCode::StackUnderflow));
+
+        stack.push_one().expect("Should push");
+
+        assert_eq!(stack.swap(1), Err(ExitCode::StackUnderflow));
+
+        stack.push_zero().expect("Should push");
+        stack.swap(1).expect("Should swap");
+
+        let (p0, p1) = stack.pop_2().expect("Should pop");
+
+        assert_eq!(*p0, U256::ONE);
+        assert_eq!(*p1, U256::ZERO);
+    }
+
+    #[test]
+    fn dup() {
+        let mut stack = EvmStack::new_in(Global);
+
+        assert_eq!(stack.dup(1), Err(ExitCode::StackUnderflow));
+
+        stack.push_one().expect("Should push");
+        stack.dup(1).expect("Should dup");
+
+        let (p0, p1) = stack.pop_2().expect("Should pop");
+
+        assert_eq!(*p0, U256::ONE);
+        assert_eq!(*p1, U256::ONE);
+
+        stack.push_one().expect("Should push");
+
+        for _ in 0..STACK_SIZE - 1 {
+            stack.dup(1).expect("Should dup");
+        }
+
+        assert_eq!(stack.dup(1), Err(ExitCode::StackOverflow));
+    }
+}
