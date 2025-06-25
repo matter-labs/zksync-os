@@ -618,7 +618,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
         let mut num_total_writes = 0;
         let mut num_appends = 0;
 
-        // we will want to separetely update, delete and insert
+        // we will want to separately update, delete and insert
         let updates_iter = source.clone().filter(|(_, v)| {
             v.current_value != v.initial_value
                 && v.is_new_storage_slot == false
@@ -635,7 +635,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
             .clone()
             .filter(|(_, v)| v.current_value != v.initial_value && v.is_new_storage_slot == true);
 
-        // updates are simple - we expect leafs with such key to be present in the tree
+        // updates are simple - we expect leaves with such key to be present in the tree
         for (key, value) in updates_iter {
             num_total_writes += 1;
             let flat_key = derive_flat_storage_key(&key.address, &key.key);
@@ -665,7 +665,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
         // so it's convenient for node implementation - we can cache key -> index part before applying an update,
         // and avoid recomputing updates after every insert. Instead we will carefully relink below
 
-        // NOTE: flat keys come in random order, so we should be extra carefull with re-linking
+        // NOTE: flat keys come in random order, so we should be extra careful with re-linking
 
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
         enum RelinkData {
@@ -2071,7 +2071,7 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Clone, const RANDOMIZE
         for (k, v) in batch {
             let is_unique = set.insert(k);
             if is_unique == false {
-                panic!("Batch containts duplicate entries for key {:?}", k);
+                panic!("Batch contains duplicate entries for key {:?}", k);
             }
             ops.push((k, v));
         }
