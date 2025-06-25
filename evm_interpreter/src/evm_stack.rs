@@ -150,6 +150,32 @@ impl<A: Allocator> EvmStack<A> {
     }
 
     #[inline(always)]
+    pub fn pop_2_mut(&'_ mut self) -> Result<(&'_ mut U256, &'_ mut U256), ExitCode> {
+        unsafe {
+            if self.len < 2 {
+                return Err(ExitCode::StackUnderflow);
+            }
+            let mut offset = self.len - 1;
+            let p0 = self
+                .buffer
+                .as_mut_ptr()
+                .add(offset)
+                .as_mut_unchecked()
+                .assume_init_mut();
+            offset -= 1;
+            let p1 = self
+                .buffer
+                .as_mut_ptr()
+                .add(offset)
+                .as_mut_unchecked()
+                .assume_init_mut();
+            self.len = offset;
+
+            Ok((p0, p1))
+        }
+    }
+
+    #[inline(always)]
     pub fn pop_3(&'_ mut self) -> Result<(&'_ U256, &'_ U256, &'_ U256), ExitCode> {
         unsafe {
             if self.len < 3 {
