@@ -191,7 +191,7 @@ impl<const N: usize> UsizeDeserializable for FlatStorageCommitment<N> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 pub struct SlotsStackState {
     pub state_commitment: Bytes32,
@@ -2008,6 +2008,18 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Clone, const RANDOMIZE
         assert_eq!(previous_leaf.next_key, *key);
         previous_leaf.next_key = to_relink;
         self.insert_at_position(previous_pos, previous_leaf);
+    }
+
+    pub fn insert_dense_or_update(&mut self, key: &Bytes32, value: &Bytes32)
+    where
+        A: Default,
+    {
+        if self.key_lookup.contains_key(key) {
+            self.update(key, value);
+        } else {
+            assert!(self.empty_elements_stack.is_empty());
+            self.insert(key, value, &mut BTreeSet::new_in(A::default()));
+        }
     }
 
     fn insert(

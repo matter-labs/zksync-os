@@ -65,6 +65,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> From<ForwardRunningOr
                     None => FlatStorageCommitment {
                         root: Default::default(),
                         next_free_slot: 0,
+                        empty_slots_stack: Default::default(),
                     },
                 },
                 pubdata_diffs_log_hash: Bytes32::ZERO,

@@ -8,15 +8,15 @@ pub mod account_cache;
 mod account_cache_entry;
 pub mod cost_constants;
 pub mod preimage_cache;
-mod simple_growable_storage;
 pub mod storage_cache;
 mod storage_tree;
 
 pub use self::account_cache::*;
 pub use self::account_cache_entry::*;
 pub use self::preimage_cache::*;
-pub use self::simple_growable_storage::*;
 pub use self::storage_cache::*;
+pub use self::storage_tree::*;
+
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
