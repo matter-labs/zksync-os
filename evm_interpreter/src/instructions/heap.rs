@@ -89,12 +89,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mcopy(&mut self) -> InstructionResult {
         let (dst_offset, src_offset, len) = self.stack.pop_3()?;
 
-        // TODO: clone can be removed after https://github.com/matter-labs/zksync-os/pull/79
-        let dst_offset = dst_offset.clone();
-        let src_offset = src_offset.clone();
-        let len = len.clone();
-
-        let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
+        let len = Self::cast_to_usize(len, ExitCode::InvalidOperandOOG)?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len as u64)?;
         self.gas.spend_gas_and_native(gas_cost, native_cost)?;
 
@@ -102,8 +97,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             return Ok(());
         }
 
-        let dst_offset = Self::cast_to_usize(&dst_offset, ExitCode::InvalidOperandOOG)?;
-        let src_offset = Self::cast_to_usize(&src_offset, ExitCode::InvalidOperandOOG)?;
+        let dst_offset = Self::cast_to_usize(dst_offset, ExitCode::InvalidOperandOOG)?;
+        let src_offset = Self::cast_to_usize(src_offset, ExitCode::InvalidOperandOOG)?;
         self.resize_heap(core::cmp::max(dst_offset, src_offset), len)?;
         unsafe {
             let src_ptr = self.heap().as_ptr().add(src_offset);
