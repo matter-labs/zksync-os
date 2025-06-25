@@ -59,7 +59,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, SMOD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
-        if *op2 != U256::ZERO {
+        if !op2.is_zero() {
             i256_mod(op1, op2)
         };
         Ok(())
@@ -68,7 +68,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn addmod(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::MID, ADDMOD_NATIVE_COST)?;
-        let ((op1, op2), op3) = self.stack.pop_2_mut_and_peek()?;
+        let ((op1, op2), op3) = self.stack.pop_2_and_peek_mut()?;
 
         *op3 = U256::add_mod(*op1, *op2, *op3);
         Ok(())
@@ -77,7 +77,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mulmod(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::MID, MULMOD_NATIVE_COST)?;
-        let ((op1, op2), op3) = self.stack.pop_2_mut_and_peek()?;
+        let ((op1, op2), op3) = self.stack.pop_2_and_peek_mut()?;
         *op3 = mul_mod(op1, op2, *op3);
         Ok(())
     }

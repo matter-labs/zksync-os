@@ -109,7 +109,7 @@ impl<A: Allocator> EvmStack<A> {
     }
 
     #[inline(always)]
-    pub(crate) fn reduce_one(&mut self) -> Result<(), ExitCode> {
+    pub(crate) fn pop_and_ignore(&mut self) -> Result<(), ExitCode> {
         if self.len == 0 {
             Err(ExitCode::StackUnderflow)
         } else {
@@ -319,52 +319,6 @@ impl<A: Allocator> EvmStack<A> {
     }
 
     #[inline(always)]
-    pub fn pop_2_mut_and_peek(
-        &'_ mut self,
-    ) -> Result<((&'_ mut U256, &'_ mut U256), &'_ mut U256), ExitCode> {
-        unsafe {
-            if self.len < 3 {
-                return Err(ExitCode::StackUnderflow);
-            }
-            let mut offset = self.len - 1;
-            let p0 = self
-                .buffer
-                .as_mut_ptr()
-                .add(offset)
-                .as_mut_unchecked()
-                .assume_init_mut();
-
-            offset -= 1;
-            let p1 = self
-                .buffer
-                .as_mut_ptr()
-                .add(offset)
-                .as_mut_unchecked()
-                .assume_init_mut();
-            self.len = offset;
-
-            offset -= 1;
-            let peeked = self
-                .buffer
-                .as_mut_ptr()
-                .add(offset)
-                .as_mut_unchecked()
-                .assume_init_mut();
-
-            Ok(((p0, p1), peeked))
-        }
-    }
-
-    #[inline(always)]
-    pub fn push_unchecked(&mut self, value: &U256) {
-        unsafe {
-            let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
-            dst_ref_mut.as_mut_ptr().write(value.clone());
-        }
-        self.len += 1;
-    }
-
-    #[inline(always)]
     pub fn push_zero(&mut self) -> Result<(), ExitCode> {
         if self.len == STACK_SIZE {
             return Err(ExitCode::StackOverflow);
@@ -393,7 +347,7 @@ impl<A: Allocator> EvmStack<A> {
     }
 
     #[inline(always)]
-    pub fn push_1(&mut self, value: &U256) -> Result<(), ExitCode> {
+    pub fn push(&mut self, value: &U256) -> Result<(), ExitCode> {
         if self.len == STACK_SIZE {
             return Err(ExitCode::StackOverflow);
         }

@@ -5,7 +5,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn pop(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, POP_NATIVE_COST)?;
-        self.stack.reduce_one()
+        self.stack.pop_and_ignore()
     }
 
     /// Introduce a new instruction which pushes the constant value 0 onto the stack
@@ -45,7 +45,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         }
 
         self.instruction_pointer += N;
-        self.stack.push_1(&value)
+        self.stack.push(&value)
     }
 
     pub fn dup<const N: usize>(&mut self) -> InstructionResult {

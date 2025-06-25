@@ -29,7 +29,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             system
                 .io
                 .get_selfbalance(THIS_EE_TYPE, self.gas.resources_mut(), &self.address)?;
-        self.stack.push_1(&value)
+        self.stack.push(&value)
     }
 
     pub fn extcodesize(&mut self, system: &mut System<S>) -> InstructionResult {

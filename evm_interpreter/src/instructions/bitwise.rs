@@ -66,7 +66,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, ISZERO_NATIVE_COST)?;
         let stack_top = self.stack.top_mut()?;
-        *stack_top = if *stack_top == U256::ZERO {
+        *stack_top = if stack_top.is_zero() {
             U256::from(1)
         } else {
             U256::ZERO

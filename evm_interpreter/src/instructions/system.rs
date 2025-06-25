@@ -59,25 +59,25 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             hash
         };
 
-        self.stack.push_1(&hash)
+        self.stack.push(&hash)
     }
 
     pub fn address(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, ADDRESS_NATIVE_COST)?;
-        self.stack.push_1(&b160_to_u256(self.address))
+        self.stack.push(&b160_to_u256(self.address))
     }
 
     pub fn caller(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, CALLER_NATIVE_COST)?;
-        self.stack.push_1(&b160_to_u256(self.caller))
+        self.stack.push(&b160_to_u256(self.caller))
     }
 
     pub fn codesize(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, CODESIZE_NATIVE_COST)?;
-        self.stack.push_1(&U256::from(
+        self.stack.push(&U256::from(
             self.bytecode_preprocessing.original_bytecode_len as u64,
         ))
     }
@@ -158,13 +158,13 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, CALLDATASIZE_NATIVE_COST)?;
         let calldata_len = self.calldata().len();
-        self.stack.push_1(&U256::from(calldata_len))
+        self.stack.push(&U256::from(calldata_len))
     }
 
     pub fn callvalue(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, CALLVALUE_NATIVE_COST)?;
-        self.stack.push_1(&self.call_value)
+        self.stack.push(&self.call_value)
     }
 
     pub fn calldatacopy(&mut self, system: &mut System<S>) -> InstructionResult {
@@ -200,7 +200,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, RETURNDATASIZE_NATIVE_COST)?;
         let returndata_len = self.returndata.len();
-        self.stack.push_1(&U256::from(returndata_len))
+        self.stack.push(&U256::from(returndata_len))
     }
 
     pub fn returndatacopy(&mut self) -> InstructionResult {
@@ -234,6 +234,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn gas(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, GAS_NATIVE_COST)?;
-        self.stack.push_1(&U256::from(self.gas.gas_left()))
+        self.stack.push(&U256::from(self.gas.gas_left()))
     }
 }

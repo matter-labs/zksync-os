@@ -82,7 +82,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::BASE, MSIZE_NATIVE_COST)?;
         let len = self.memory_len();
         debug_assert!(len.next_multiple_of(32) == len);
-        self.stack.push_1(&U256::from(len))
+        self.stack.push(&U256::from(len))
     }
 
     pub fn mcopy(&mut self) -> InstructionResult {

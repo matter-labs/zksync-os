@@ -240,7 +240,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 self.returndata = return_values.returndata;
                 // we need to push address to stack
                 self.stack
-                    .push_1(&b160_to_u256(deployed_at))
+                    .push(&b160_to_u256(deployed_at))
                     .expect("must have enough space");
             }
         }
