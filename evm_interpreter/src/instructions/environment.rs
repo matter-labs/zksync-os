@@ -11,7 +11,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn coinbase(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::BASE, COINBASE_NATIVE_COST)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::BASE, COINBASE_NATIVE_COST)?;
         self.stack.push_1(&b160_to_u256(system.get_coinbase()))?;
         Ok(())
     }
@@ -33,7 +34,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn difficulty(&mut self) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::BASE, DIFFICULTY_NATIVE_COST)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::BASE, DIFFICULTY_NATIVE_COST)?;
         self.stack.push_1(&U256::one())?;
         Ok(())
     }
@@ -47,13 +49,15 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn gasprice(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::BASE, GASPRICE_NATIVE_COST)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::BASE, GASPRICE_NATIVE_COST)?;
         self.stack.push_1(&system.get_gas_price())?;
         Ok(())
     }
 
     pub fn basefee(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::BASE, BASEFEE_NATIVE_COST)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::BASE, BASEFEE_NATIVE_COST)?;
         self.stack.push_1(&system.get_eip1559_basefee())?;
         Ok(())
     }
@@ -67,14 +71,16 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
         #[cfg(not(feature = "eip-7645"))]
         {
-            self.gas.spend_gas_and_native(gas_constants::BASE, ORIGIN_NATIVE_COST)?;
+            self.gas
+                .spend_gas_and_native(gas_constants::BASE, ORIGIN_NATIVE_COST)?;
             self.stack.push_1(&b160_to_u256(system.get_tx_origin()))?;
             Ok(())
         }
     }
 
     pub fn blockhash(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::BLOCKHASH, BLOCKHASH_NATIVE_COST)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::BLOCKHASH, BLOCKHASH_NATIVE_COST)?;
         let block_number = self.stack.pop_1()?;
         let block_number = u256_to_u64_saturated(&block_number);
         self.stack

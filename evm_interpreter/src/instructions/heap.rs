@@ -6,7 +6,8 @@ use zk_ee::system::System;
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mload(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
         let index = self.stack.pop_1()?;
         let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
         self.resize_heap(index, 32)?;
@@ -32,7 +33,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn mstore(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2()?;
         let mut le_value = value.clone();
         let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
@@ -57,7 +59,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn mstore8(&mut self, system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::VERYLOW, MSTORE8_NATIVE_COST)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, MSTORE8_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2()?;
         let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
         let value = value.byte(0);
