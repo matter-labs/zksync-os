@@ -35,12 +35,13 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mstore(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
-        let [index, value] = self.stack.pop_values::<2>()?;
-        let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
+        let (index, value) = self.stack.pop_2()?;
+        let mut le_value = value.clone();
+        let index = Self::cast_to_usize(index, ExitCode::InvalidOperandOOG)?;
+
         self.resize_heap(index, 32)?;
 
         unsafe {
-            let mut le_value = value;
             crate::utils::bytereverse_u256(&mut le_value);
             let src = le_value.as_le_slice().as_ptr();
             let dst = self.heap().as_mut_ptr().add(index);
@@ -51,7 +52,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
                 " offset: {}, stored value: 0x{:0x}",
-                index, value
+                index, le_value
             ));
         }
 
@@ -61,10 +62,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mstore8(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, MSTORE8_NATIVE_COST)?;
-        let [index, value] = self.stack.pop_values::<2>()?;
+        let (index, value) = self.stack.pop_2()?;
         let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
-        self.resize_heap(index, 1)?;
         let value = value.byte(0);
+        self.resize_heap(index, 1)?;
+
         self.heap()[index] = value;
 
         if Self::PRINT_OPCODES {
@@ -83,11 +85,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::BASE, MSIZE_NATIVE_COST)?;
         let len = self.memory_len();
         debug_assert!(len.next_multiple_of(32) == len);
-        self.stack.push(U256::from(len))
+        self.stack.push_1(&U256::from(len))
     }
 
     pub fn mcopy(&mut self) -> InstructionResult {
-        let [dst_offset, src_offset, len] = self.stack.pop_values::<3>()?;
+        let (dst_offset, src_offset, len) = self.stack.pop_3()?;
 
         let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
         let (gas_cost, native_cost) = gas_utils::copy_cost_plus_very_low_gas(len as u64)?;

@@ -5,13 +5,6 @@ use ruint::aliases::B160;
 use zk_ee::kv_markers::ExactSizeChain;
 use zk_ee::system::EthereumLikeTypes;
 
-#[inline(always)]
-pub(crate) unsafe fn assume(cond: bool) {
-    if !cond {
-        core::hint::unreachable_unchecked()
-    }
-}
-
 pub fn bytereverse_u256(value: &mut U256) {
     // assuming LE
     unsafe {
@@ -42,7 +35,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     /// Helper for casting memory offset and length.
     /// If len is zero, offset is ignored.
     pub(crate) fn cast_offset_and_len(
-        &mut self,
         offset: &U256,
         len: &U256,
         error_to_set: ExitCode,
@@ -71,10 +63,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
     pub(crate) fn heap(&'_ mut self) -> &'_ mut [u8] {
         self.heap.deref_mut()
-    }
-
-    pub(crate) fn returndata(&'_ self) -> &'_ [u8] {
-        self.returndata
     }
 
     pub(crate) fn resize_heap(&mut self, offset: usize, len: usize) -> Result<(), ExitCode> {

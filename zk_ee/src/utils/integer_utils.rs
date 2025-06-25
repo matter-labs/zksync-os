@@ -87,7 +87,7 @@ pub fn u256_try_to_usize(src: &U256) -> Option<usize> {
 }
 
 #[inline(always)]
-pub fn u256_to_b160(src: U256) -> B160 {
+pub fn u256_to_b160(src: &U256) -> B160 {
     let mut result = B160::ZERO;
     unsafe {
         result.as_limbs_mut()[0] = src.as_limbs()[0];
