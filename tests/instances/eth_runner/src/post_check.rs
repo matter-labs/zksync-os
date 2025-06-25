@@ -137,10 +137,24 @@ impl DiffTrace {
                 };
             }
             if let Some(nonce) = account.nonce {
-                assert_eq!(nonce, zk_account.nonce.unwrap());
+                if nonce != zk_account.nonce.unwrap() {
+                    error!(
+                        "Nonce for address {} differed. ZKsync OS: {:?}, reference: {:?}",
+                        hex::encode(address.to_be_bytes_vec()),
+                        zk_account.nonce.unwrap(),
+                        nonce
+                    );
+                    return Err(PostCheckError::Internal);
+                }
             }
-            if account.code.is_some() {
-                assert_eq!(&account.code, &zk_account.code);
+            if account.code.is_some() && account.code != zk_account.code {
+                error!(
+                    "Code for address {} differed. ZKsync OS: {}, reference: {}",
+                    hex::encode(address.to_be_bytes_vec()),
+                    hex::encode(zk_account.code.as_ref().unwrap_or_default()),
+                    hex::encode(account.code.as_ref().unwrap_or_default())
+                );
+                return Err(PostCheckError::Internal);
             }
             if let Some(storage) = &account.storage {
                 for (key, value) in storage {
@@ -155,7 +169,14 @@ impl DiffTrace {
                             return Err(PostCheckError::Internal);
                         }
                     };
-                    assert_eq!(value, zksync_os_value);
+                    if value != zksync_os_value {
+                        error!(
+                          "Value for slot {} at address {} differed. ZKsync OS: {:?}, reference: {:?}",
+                          key,
+                          hex::encode(address.to_be_bytes_vec()),
+                          zksync_os_value, value);
+                        return Err(PostCheckError::Internal);
+                    }
                 }
 
                 for (k, v) in zk_account.storage.as_ref().unwrap().iter() {
