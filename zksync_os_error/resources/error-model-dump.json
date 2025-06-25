@@ -414,6 +414,17 @@
           }
         }
       },
+      "Validation": {
+        "name": "Validation",
+        "meta": {
+          "description": ""
+        },
+        "bindings": {
+          "rust": {
+            "expression": "Box<Validation>"
+          }
+        }
+      },
       "WASM": {
         "name": "WASM",
         "meta": {
@@ -578,7 +589,8 @@
           "API",
           "EraVM",
           "ExecutionPlatform",
-          "Sequencer"
+          "Sequencer",
+          "Validation"
         ],
         "bindings": {
           "rust": "Core",
@@ -587,7 +599,8 @@
         "identifier": "core",
         "description": "Errors in core ZKsync components such as sequencer or mempool.",
         "origins": [
-          "<embedded: zksync-root.json>"
+          "<embedded: zksync-root.json>",
+          "errors/zksync-os.json"
         ]
       },
       "ExecutionEnvironment": {
@@ -1025,6 +1038,20 @@
         "description": "",
         "origins": [
           "https://raw.githubusercontent.com/matter-labs/anvil-zksync/refs/heads/main/etc/errors/anvil.json"
+        ]
+      },
+      "Validation": {
+        "name": "Validation",
+        "code": 20,
+        "domain_name": "Core",
+        "bindings": {
+          "rust": "Validation",
+          "typescript": "Validation"
+        },
+        "identifier": "tx_valid",
+        "description": "",
+        "origins": [
+          "errors/zksync-os.json"
         ]
       },
       "WASM": {
@@ -3841,6 +3868,988 @@
         },
         "origins": [
           "<embedded: zksync-root.json>"
+        ]
+      },
+      "[core-tx_valid-0]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "GenericError",
+        "code": 0,
+        "identifier": "[core-tx_valid-0]",
+        "message": "Generic error: {message}",
+        "fields": [
+          {
+            "name": "message",
+            "type": "string"
+          }
+        ],
+        "documentation": null,
+        "bindings": {
+          "rust": {
+            "expression": "GenericError"
+          },
+          "typescript": {
+            "expression": "GenericError"
+          }
+        },
+        "origins": []
+      },
+      "[core-tx_valid-101]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "InvalidEncoding",
+        "code": 101,
+        "identifier": "[core-tx_valid-101]",
+        "message": "Failed to decode the transaction.",
+        "fields": [],
+        "documentation": {
+          "description": "The raw transaction data could not be parsed or decoded correctly.",
+          "summary": "Failed to decode.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "InvalidEncoding"
+          },
+          "typescript": {
+            "expression": "InvalidEncoding"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-102]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "InvalidStructure",
+        "code": 102,
+        "identifier": "[core-tx_valid-102]",
+        "message": "Transaction fields are set incorrectly for its type.",
+        "fields": [],
+        "documentation": {
+          "description": "The transaction's structure is invalid for its declared type (e.g., Legacy, EIP-2930, EIP-1559).",
+          "summary": "Fields set incorrectly in accordance to its type.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "InvalidStructure"
+          },
+          "typescript": {
+            "expression": "InvalidStructure"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-103]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "PriorityFeeGreaterThanMaxFee",
+        "code": 103,
+        "identifier": "[core-tx_valid-103]",
+        "message": "The priority fee is greater than the max fee.",
+        "fields": [],
+        "documentation": {
+          "description": "In an EIP-1559 transaction, the `max_priority_fee_per_gas` (tip) cannot be greater than the `max_fee_per_gas`.",
+          "summary": "Provided `gas_priority_fee` exceeds the total `gas_max_fee`.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "PriorityFeeGreaterThanMaxFee"
+          },
+          "typescript": {
+            "expression": "PriorityFeeGreaterThanMaxFee"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-104]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "BaseFeeGreaterThanMaxFee",
+        "code": 104,
+        "identifier": "[core-tx_valid-104]",
+        "message": "The block's base fee is greater than the transaction's max fee.",
+        "fields": [],
+        "documentation": {
+          "description": "The `max_fee_per_gas` in an EIP-1559 transaction must be at least as high as the current block's `basefee`.",
+          "summary": "`basefee` is greater than provided `gas_max_fee`.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "BaseFeeGreaterThanMaxFee"
+          },
+          "typescript": {
+            "expression": "BaseFeeGreaterThanMaxFee"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-105]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "GasPriceLessThanBasefee",
+        "code": 105,
+        "identifier": "[core-tx_valid-105]",
+        "message": "Gas price is less than the block's base fee.",
+        "fields": [],
+        "documentation": {
+          "description": "For legacy transactions processed in an EIP-1559 context, their `gas_price` must be at least as high as the block's `basefee`.",
+          "summary": "EIP-1559: `gas_price` is less than `basefee`.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "GasPriceLessThanBasefee"
+          },
+          "typescript": {
+            "expression": "GasPriceLessThanBasefee"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-106]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "CallerGasLimitMoreThanBlock",
+        "code": 106,
+        "identifier": "[core-tx_valid-106]",
+        "message": "The transaction's gas limit exceeds the block's gas limit.",
+        "fields": [],
+        "documentation": {
+          "description": "A transaction cannot require more gas than the total gas available in a single block.",
+          "summary": "`gas_limit` in the tx is bigger than `block_gas_limit`.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "CallerGasLimitMoreThanBlock"
+          },
+          "typescript": {
+            "expression": "CallerGasLimitMoreThanBlock"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-107]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "CallGasCostMoreThanGasLimit",
+        "code": 107,
+        "identifier": "[core-tx_valid-107]",
+        "message": "The intrinsic gas cost of the transaction is higher than its gas limit.",
+        "fields": [],
+        "documentation": {
+          "description": "The base cost to execute the transaction (calculated from its data size, access list, etc.) exceeds the `gas_limit` set in the transaction.",
+          "summary": "Initial gas for a Call is bigger than `gas_limit`.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "CallGasCostMoreThanGasLimit"
+          },
+          "typescript": {
+            "expression": "CallGasCostMoreThanGasLimit"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-108]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "RejectCallerWithCode",
+        "code": 108,
+        "identifier": "[core-tx_valid-108]",
+        "message": "The sender account is a contract and cannot initiate transactions.",
+        "fields": [],
+        "documentation": {
+          "description": "To prevent certain security risks, accounts with deployed code are not allowed to initiate transactions.",
+          "summary": "EIP-3607 Reject transactions from senders with deployed code.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "RejectCallerWithCode"
+          },
+          "typescript": {
+            "expression": "RejectCallerWithCode"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-109]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "LackOfFundForMaxFee",
+        "code": 109,
+        "identifier": "[core-tx_valid-109]",
+        "message": "Sender account has insufficient funds to cover the transaction's maximum cost. Balance: {balance}, Required: {fee}",
+        "fields": [
+          {
+            "name": "fee",
+            "type": "U256"
+          },
+          {
+            "name": "balance",
+            "type": "U256"
+          }
+        ],
+        "documentation": {
+          "description": "The sender's balance is lower than the transaction's value plus the maximum potential gas fee (`gas_limit` * `max_fee_per_gas`).",
+          "summary": "Transaction account does not have enough amount of ether to cover transferred value and gas_limit*gas_price.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "LackOfFundForMaxFee"
+          },
+          "typescript": {
+            "expression": "LackOfFundForMaxFee"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-110]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "OverflowPaymentInTransaction",
+        "code": 110,
+        "identifier": "[core-tx_valid-110]",
+        "message": "An arithmetic overflow occurred calculating the transaction's payment.",
+        "fields": [],
+        "documentation": {
+          "description": "The calculation of the total required funds for the transaction resulted in a value that exceeds the maximum representable amount.",
+          "summary": "Overflow payment in transaction.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "OverflowPaymentInTransaction"
+          },
+          "typescript": {
+            "expression": "OverflowPaymentInTransaction"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-111]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "NonceOverflowInTransaction",
+        "code": 111,
+        "identifier": "[core-tx_valid-111]",
+        "message": "The transaction's nonce has overflowed.",
+        "fields": [],
+        "documentation": {
+          "description": "The nonce specified in the transaction exceeds the maximum value for a u64.",
+          "summary": "Nonce overflows in transaction.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "NonceOverflowInTransaction"
+          },
+          "typescript": {
+            "expression": "NonceOverflowInTransaction"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-112]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "NonceTooHigh",
+        "code": 112,
+        "identifier": "[core-tx_valid-112]",
+        "message": "Transaction nonce {tx} is too high. Expected: {state}.",
+        "fields": [
+          {
+            "name": "tx",
+            "type": "u64"
+          },
+          {
+            "name": "state",
+            "type": "u64"
+          }
+        ],
+        "documentation": {
+          "description": "Transaction nonces must be sequential. This error indicates a future nonce was used, leaving a gap.",
+          "summary": "The transaction nonce is higher than the sender's current nonce.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "NonceTooHigh"
+          },
+          "typescript": {
+            "expression": "NonceTooHigh"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-113]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "NonceTooLow",
+        "code": 113,
+        "identifier": "[core-tx_valid-113]",
+        "message": "Transaction nonce {tx} is too low. Expected: {state}.",
+        "fields": [
+          {
+            "name": "tx",
+            "type": "u64"
+          },
+          {
+            "name": "state",
+            "type": "u64"
+          }
+        ],
+        "documentation": {
+          "description": "This nonce has already been used by a previously confirmed transaction from the same sender.",
+          "summary": "The transaction nonce is lower than the sender's current nonce.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "NonceTooLow"
+          },
+          "typescript": {
+            "expression": "NonceTooLow"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-114]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "MalleableSignature",
+        "code": 114,
+        "identifier": "[core-tx_valid-114]",
+        "message": "The transaction signature is malleable.",
+        "fields": [],
+        "documentation": {
+          "description": "The signature does not conform to standards that prevent malleability (e.g., low-s values as required by EIP-2).",
+          "summary": "The transaction signature is malleable.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "MalleableSignature"
+          },
+          "typescript": {
+            "expression": "MalleableSignature"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-115]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "IncorrectFrom",
+        "code": 115,
+        "identifier": "[core-tx_valid-115]",
+        "message": "The recovered sender address {recovered} does not match the transaction's 'from' address {tx}.",
+        "fields": [
+          {
+            "name": "tx",
+            "type": "B160"
+          },
+          {
+            "name": "recovered",
+            "type": "B160"
+          }
+        ],
+        "documentation": {
+          "description": "The public key recovered from the transaction's signature does not correspond to the address listed in the 'from' field.",
+          "summary": "The address recovered from the signature does not match the sender.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "IncorrectFrom"
+          },
+          "typescript": {
+            "expression": "IncorrectFrom"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-116]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "CreateInitCodeSizeLimit",
+        "code": 116,
+        "identifier": "[core-tx_valid-116]",
+        "message": "The contract creation initcode exceeds the size limit.",
+        "fields": [],
+        "documentation": {
+          "description": "The size of the initialization code for a contract creation transaction is larger than the maximum allowed by EIP-3860.",
+          "summary": "EIP-3860: Limit and meter initcode.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "CreateInitCodeSizeLimit"
+          },
+          "typescript": {
+            "expression": "CreateInitCodeSizeLimit"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-117]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "InvalidChainId",
+        "code": 117,
+        "identifier": "[core-tx_valid-117]",
+        "message": "The transaction's chain ID does not match the node's chain ID.",
+        "fields": [],
+        "documentation": {
+          "description": "The transaction is signed for a different chain and is therefore invalid on this one. This is a replay protection mechanism.",
+          "summary": "Transaction chain id does not match the config chain id.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "InvalidChainId"
+          },
+          "typescript": {
+            "expression": "InvalidChainId"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-118]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "AccessListNotSupported",
+        "code": 118,
+        "identifier": "[core-tx_valid-118]",
+        "message": "The transaction includes an access list, which is not supported before the Berlin hardfork.",
+        "fields": [],
+        "documentation": {
+          "description": "Access lists were introduced in EIP-2930 as part of the Berlin hardfork. This transaction type is invalid on earlier chain states.",
+          "summary": "Access list is not supported for blocks before the Berlin hardfork.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "AccessListNotSupported"
+          },
+          "typescript": {
+            "expression": "AccessListNotSupported"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-119]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "AARevertAccountValidate",
+        "code": 119,
+        "identifier": "[core-tx_valid-119]",
+        "message": "Account validation call reverted",
+        "fields": [],
+        "documentation": {
+          "description": "The primary `validateTransaction` logic of the smart contract account reverted during execution.",
+          "summary": "The account's validation method reverted.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "AARevertAccountValidate"
+          },
+          "typescript": {
+            "expression": "AARevertAccountValidate"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-120]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "AARevertAccountPayForTransaction",
+        "code": 120,
+        "identifier": "[core-tx_valid-120]",
+        "message": "Account `payForTransaction` call reverted.",
+        "fields": [],
+        "documentation": {
+          "description": "The account's method for paying transaction fees reverted, indicating an issue with its internal fee logic.",
+          "summary": "The account's `payForTransaction` method reverted.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "AARevertAccountPayForTransaction"
+          },
+          "typescript": {
+            "expression": "AARevertAccountPayForTransaction"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-121]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "AARevertAccountPrePaymaster",
+        "code": 121,
+        "identifier": "[core-tx_valid-121]",
+        "message": "Account `prePaymaster` call reverted.",
+        "fields": [],
+        "documentation": {
+          "description": "The account's hook that runs before paymaster interaction has reverted.",
+          "summary": "The account's `prePaymaster` method reverted.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "AARevertAccountPrePaymaster"
+          },
+          "typescript": {
+            "expression": "AARevertAccountPrePaymaster"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-122]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "AARevertPaymasterValidateAndPay",
+        "code": 122,
+        "identifier": "[core-tx_valid-122]",
+        "message": "Paymaster `validateAndPay` call reverted.",
+        "fields": [],
+        "documentation": {
+          "description": "The paymaster contract reverted during its validation and payment logic, refusing to sponsor the transaction.",
+          "summary": "The paymaster's `validateAndPay` method reverted.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "AARevertPaymasterValidateAndPay"
+          },
+          "typescript": {
+            "expression": "AARevertPaymasterValidateAndPay"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-123]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "AAReceivedInsufficientFees",
+        "code": 123,
+        "identifier": "[core-tx_valid-123]",
+        "message": "Bootloader received insufficient fees. Received: {received}, Required: {required}.",
+        "fields": [
+          {
+            "name": "received",
+            "type": "U256"
+          },
+          {
+            "name": "required",
+            "type": "U256"
+          }
+        ],
+        "documentation": {
+          "description": "The fees sent with the transaction were not enough to cover the costs required by the bootloader for Account Abstraction.",
+          "summary": "Bootloader received insufficient fees.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "AAReceivedInsufficientFees"
+          },
+          "typescript": {
+            "expression": "AAReceivedInsufficientFees"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-124]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "InvalidMagic",
+        "code": 124,
+        "identifier": "[core-tx_valid-124]",
+        "message": "Invalid magic value returned by validation.",
+        "fields": [],
+        "documentation": null,
+        "bindings": {
+          "rust": {
+            "expression": "InvalidMagic"
+          },
+          "typescript": {
+            "expression": "InvalidMagic"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-125]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "InvalidReturndataLength",
+        "code": 125,
+        "identifier": "[core-tx_valid-125]",
+        "message": "Validation returndata is of invalid length.",
+        "fields": [],
+        "documentation": null,
+        "bindings": {
+          "rust": {
+            "expression": "InvalidReturndataLength"
+          },
+          "typescript": {
+            "expression": "InvalidReturndataLength"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-126]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "OutOfGasDuringValidation",
+        "code": 126,
+        "identifier": "[core-tx_valid-126]",
+        "message": "Ran out of gas during AA validation.",
+        "fields": [],
+        "documentation": {
+          "description": "The gas supplied for the validation phase of the Account Abstraction process was insufficient.",
+          "summary": "Ran out of gas during validation.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "OutOfGasDuringValidation"
+          },
+          "typescript": {
+            "expression": "OutOfGasDuringValidation"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-127]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "OutOfNativeResourcesDuringValidation",
+        "code": 127,
+        "identifier": "[core-tx_valid-127]",
+        "message": "Ran out of native resources during validation.",
+        "fields": [],
+        "documentation": {
+          "description": "The validation process consumed more native resources (e.g., memory) than allocated.",
+          "summary": "Ran out of native resources during validation.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "OutOfNativeResourcesDuringValidation"
+          },
+          "typescript": {
+            "expression": "OutOfNativeResourcesDuringValidation"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-128]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "NonceUsedAlready",
+        "code": 128,
+        "identifier": "[core-tx_valid-128]",
+        "message": "Transaction nonce already used.",
+        "fields": [],
+        "documentation": {
+          "description": "The nonce for the Account Abstraction transaction has already been used and is not valid.",
+          "summary": "Transaction nonce already used.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "NonceUsedAlready"
+          },
+          "typescript": {
+            "expression": "NonceUsedAlready"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-129]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "NonceNotIncreased",
+        "code": 129,
+        "identifier": "[core-tx_valid-129]",
+        "message": "Nonce not increased after validation.",
+        "fields": [],
+        "documentation": {
+          "description": "A successful validation is expected to increment the account's nonce, which did not happen.",
+          "summary": "Nonce not increased after validation.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "NonceNotIncreased"
+          },
+          "typescript": {
+            "expression": "NonceNotIncreased"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-130]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "AAPaymasterReturnDataTooShort",
+        "code": 130,
+        "identifier": "[core-tx_valid-130]",
+        "message": "Return data from paymaster is too short.",
+        "fields": [],
+        "documentation": {
+          "description": "The data returned from the paymaster contract did not meet the minimum required length.",
+          "summary": "Return data from paymaster is too short.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "AAPaymasterReturnDataTooShort"
+          },
+          "typescript": {
+            "expression": "AAPaymasterReturnDataTooShort"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-131]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "AAPaymasterInvalidMagic",
+        "code": 131,
+        "identifier": "[core-tx_valid-131]",
+        "message": "Invalid magic in paymaster validation.",
+        "fields": [],
+        "documentation": {
+          "description": "The paymaster contract returned an invalid magic value, failing the validation.",
+          "summary": "Invalid magic in paymaster validation.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "AAPaymasterInvalidMagic"
+          },
+          "typescript": {
+            "expression": "AAPaymasterInvalidMagic"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-132]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "AAPaymasterContextInvalid",
+        "code": 132,
+        "identifier": "[core-tx_valid-132]",
+        "message": "Paymaster returned invalid context.",
+        "fields": [],
+        "documentation": {
+          "description": "The context returned by the paymaster is invalid or malformed.",
+          "summary": "Paymaster returned invalid context.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "AAPaymasterContextInvalid"
+          },
+          "typescript": {
+            "expression": "AAPaymasterContextInvalid"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-133]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "AAPaymasterContextOffsetTooLong",
+        "code": 133,
+        "identifier": "[core-tx_valid-133]",
+        "message": "Paymaster context offset is greater than returndata length.",
+        "fields": [],
+        "documentation": {
+          "description": "The offset for the context data specified by the paymaster points beyond the bounds of the returned data.",
+          "summary": "Paymaster context offset is greater than returndata length.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "AAPaymasterContextOffsetTooLong"
+          },
+          "typescript": {
+            "expression": "AAPaymasterContextOffsetTooLong"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-134]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "GasPerPubdataTooHigh",
+        "code": 134,
+        "identifier": "[core-tx_valid-134]",
+        "message": "The gas-per-pubdata price is unacceptably high.",
+        "fields": [],
+        "documentation": {
+          "description": "In L2 systems, this indicates the price for posting data to the L1 is above the limit set by the transaction.",
+          "summary": "Unacceptable gas per pubdata price.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "GasPerPubdataTooHigh"
+          },
+          "typescript": {
+            "expression": "GasPerPubdataTooHigh"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-135]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "BlockGasLimitTooHigh",
+        "code": 135,
+        "identifier": "[core-tx_valid-135]",
+        "message": "The block gas limit is too high.",
+        "fields": [],
+        "documentation": {
+          "description": "This error typically relates to an internal configuration or a special transaction that attempts to set the block gas limit to an invalid value.",
+          "summary": "Block gas limit is too high.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "BlockGasLimitTooHigh"
+          },
+          "typescript": {
+            "expression": "BlockGasLimitTooHigh"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-136]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "UpgradeTxNotFirst",
+        "code": 136,
+        "identifier": "[core-tx_valid-136]",
+        "message": "A protocol upgrade transaction must be the first in a block.",
+        "fields": [],
+        "documentation": {
+          "description": "Transactions that trigger a protocol upgrade are required to be the first transaction in their respective blocks.",
+          "summary": "Protocol upgrade tx should be first in the block.",
+          "likely_causes": []
+        },
+        "bindings": {
+          "rust": {
+            "expression": "UpgradeTxNotFirst"
+          },
+          "typescript": {
+            "expression": "UpgradeTxNotFirst"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
+        ]
+      },
+      "[core-tx_valid-137]": {
+        "domain": "Core",
+        "component": "Validation",
+        "name": "UpgradeTxFailed",
+        "code": 137,
+        "identifier": "[core-tx_valid-137]",
+        "message": "A protocol upgrade transaction has failed, which should never happen.",
+        "fields": [],
+        "documentation": null,
+        "bindings": {
+          "rust": {
+            "expression": "UpgradeTxFailed"
+          },
+          "typescript": {
+            "expression": "UpgradeTxFailed"
+          }
+        },
+        "origins": [
+          "errors/zksync-os.json"
         ]
       },
       "[exec_env-common-0]": {

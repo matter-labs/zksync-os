@@ -78,6 +78,7 @@ impl IError<ZksyncError> for ZksyncError {
             ZksyncError::Core(Core::EraVM(error)) => error.get_message(),
             ZksyncError::Core(Core::ExecutionPlatform(error)) => error.get_message(),
             ZksyncError::Core(Core::Sequencer(error)) => error.get_message(),
+            ZksyncError::Core(Core::Validation(error)) => error.get_message(),
             ZksyncError::ExecutionEnvironment(ExecutionEnvironment::Common(error)) => {
                 error.get_message()
             }

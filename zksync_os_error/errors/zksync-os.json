@@ -28,6 +28,459 @@
           "errors": []
         }
       ]
+    },
+    {
+      "domain_name": "Core",
+      "domain_code": 1,
+      "identifier_encoding": "core",
+      "components": [
+        {
+          "component_name": "Validation",
+          "component_code": 20,
+          "identifier_encoding": "tx_valid",
+          "errors": [
+            {
+              "name": "InvalidEncoding",
+              "code": 101,
+              "message": "Failed to decode the transaction.",
+              "doc": {
+                "summary": "Failed to decode.",
+                "description": [
+                  "The raw transaction data could not be parsed or decoded correctly."
+                ]
+              }
+            },
+            {
+              "name": "InvalidStructure",
+              "code": 102,
+              "message": "Transaction fields are set incorrectly for its type.",
+              "doc": {
+                "summary": "Fields set incorrectly in accordance to its type.",
+                "description": [
+                  "The transaction's structure is invalid for its declared type (e.g., Legacy, EIP-2930, EIP-1559)."
+                ]
+              }
+            },
+            {
+              "name": "PriorityFeeGreaterThanMaxFee",
+              "code": 103,
+              "message": "The priority fee is greater than the max fee.",
+              "doc": {
+                "summary": "Provided `gas_priority_fee` exceeds the total `gas_max_fee`.",
+                "description": [
+                  "In an EIP-1559 transaction, the `max_priority_fee_per_gas` (tip) cannot be greater than the `max_fee_per_gas`."
+                ]
+              }
+            },
+            {
+              "name": "BaseFeeGreaterThanMaxFee",
+              "code": 104,
+              "message": "The block's base fee is greater than the transaction's max fee.",
+              "doc": {
+                "summary": "`basefee` is greater than provided `gas_max_fee`.",
+                "description": [
+                  "The `max_fee_per_gas` in an EIP-1559 transaction must be at least as high as the current block's `basefee`."
+                ]
+              }
+            },
+            {
+              "name": "GasPriceLessThanBasefee",
+              "code": 105,
+              "message": "Gas price is less than the block's base fee.",
+              "doc": {
+                "summary": "EIP-1559: `gas_price` is less than `basefee`.",
+                "description": [
+                  "For legacy transactions processed in an EIP-1559 context, their `gas_price` must be at least as high as the block's `basefee`."
+                ]
+              }
+            },
+            {
+              "name": "CallerGasLimitMoreThanBlock",
+              "code": 106,
+              "message": "The transaction's gas limit exceeds the block's gas limit.",
+              "doc": {
+                "summary": "`gas_limit` in the tx is bigger than `block_gas_limit`.",
+                "description": [
+                  "A transaction cannot require more gas than the total gas available in a single block."
+                ]
+              }
+            },
+            {
+              "name": "CallGasCostMoreThanGasLimit",
+              "code": 107,
+              "message": "The intrinsic gas cost of the transaction is higher than its gas limit.",
+              "doc": {
+                "summary": "Initial gas for a Call is bigger than `gas_limit`.",
+                "description": [
+                  "The base cost to execute the transaction (calculated from its data size, access list, etc.) exceeds the `gas_limit` set in the transaction."
+                ]
+              }
+            },
+            {
+              "name": "RejectCallerWithCode",
+              "code": 108,
+              "message": "The sender account is a contract and cannot initiate transactions.",
+              "doc": {
+                "summary": "EIP-3607 Reject transactions from senders with deployed code.",
+                "description": [
+                  "To prevent certain security risks, accounts with deployed code are not allowed to initiate transactions."
+                ]
+              }
+            },
+            {
+              "name": "LackOfFundForMaxFee",
+              "code": 109,
+              "message": "Sender account has insufficient funds to cover the transaction's maximum cost. Balance: {balance}, Required: {fee}",
+              "fields": [
+                {
+                  "name": "fee",
+                  "type": "U256"
+                },
+                {
+                  "name": "balance",
+                  "type": "U256"
+                }
+              ],
+              "doc": {
+                "summary": "Transaction account does not have enough amount of ether to cover transferred value and gas_limit*gas_price.",
+                "description": [
+                  "The sender's balance is lower than the transaction's value plus the maximum potential gas fee (`gas_limit` * `max_fee_per_gas`)."
+                ]
+              }
+            },
+            {
+              "name": "OverflowPaymentInTransaction",
+              "code": 110,
+              "message": "An arithmetic overflow occurred calculating the transaction's payment.",
+              "doc": {
+                "summary": "Overflow payment in transaction.",
+                "description": [
+                  "The calculation of the total required funds for the transaction resulted in a value that exceeds the maximum representable amount."
+                ]
+              }
+            },
+            {
+              "name": "NonceOverflowInTransaction",
+              "code": 111,
+              "message": "The transaction's nonce has overflowed.",
+              "doc": {
+                "summary": "Nonce overflows in transaction.",
+                "description": [
+                  "The nonce specified in the transaction exceeds the maximum value for a u64."
+                ]
+              }
+            },
+            {
+              "name": "NonceTooHigh",
+              "code": 112,
+              "message": "Transaction nonce {tx} is too high. Expected: {state}.",
+              "fields": [
+                {
+                  "name": "tx",
+                  "type": "u64"
+                },
+                {
+                  "name": "state",
+                  "type": "u64"
+                }
+              ],
+              "doc": {
+                "summary": "The transaction nonce is higher than the sender's current nonce.",
+                "description": [
+                  "Transaction nonces must be sequential. This error indicates a future nonce was used, leaving a gap."
+                ]
+              }
+            },
+            {
+              "name": "NonceTooLow",
+              "code": 113,
+              "message": "Transaction nonce {tx} is too low. Expected: {state}.",
+              "fields": [
+                {
+                  "name": "tx",
+                  "type": "u64"
+                },
+                {
+                  "name": "state",
+                  "type": "u64"
+                }
+              ],
+              "doc": {
+                "summary": "The transaction nonce is lower than the sender's current nonce.",
+                "description": [
+                  "This nonce has already been used by a previously confirmed transaction from the same sender."
+                ]
+              }
+            },
+            {
+              "name": "MalleableSignature",
+              "code": 114,
+              "message": "The transaction signature is malleable.",
+              "doc": {
+                "summary": "The transaction signature is malleable.",
+                "description": [
+                  "The signature does not conform to standards that prevent malleability (e.g., low-s values as required by EIP-2)."
+                ]
+              }
+            },
+            {
+              "name": "IncorrectFrom",
+              "code": 115,
+              "message": "The recovered sender address {recovered} does not match the transaction's 'from' address {tx}.",
+              "fields": [
+                {
+                  "name": "tx",
+                  "type": "B160"
+                },
+                {
+                  "name": "recovered",
+                  "type": "B160"
+                }
+              ],
+              "doc": {
+                "summary": "The address recovered from the signature does not match the sender.",
+                "description": [
+                  "The public key recovered from the transaction's signature does not correspond to the address listed in the 'from' field."
+                ]
+              }
+            },
+            {
+              "name": "CreateInitCodeSizeLimit",
+              "code": 116,
+              "message": "The contract creation initcode exceeds the size limit.",
+              "doc": {
+                "summary": "EIP-3860: Limit and meter initcode.",
+                "description": [
+                  "The size of the initialization code for a contract creation transaction is larger than the maximum allowed by EIP-3860."
+                ]
+              }
+            },
+            {
+              "name": "InvalidChainId",
+              "code": 117,
+              "message": "The transaction's chain ID does not match the node's chain ID.",
+              "doc": {
+                "summary": "Transaction chain id does not match the config chain id.",
+                "description": [
+                  "The transaction is signed for a different chain and is therefore invalid on this one. This is a replay protection mechanism."
+                ]
+              }
+            },
+            {
+              "name": "AccessListNotSupported",
+              "code": 118,
+              "message": "The transaction includes an access list, which is not supported before the Berlin hardfork.",
+              "doc": {
+                "summary": "Access list is not supported for blocks before the Berlin hardfork.",
+                "description": [
+                  "Access lists were introduced in EIP-2930 as part of the Berlin hardfork. This transaction type is invalid on earlier chain states."
+                ]
+              }
+            },
+            {
+              "name": "AARevertAccountValidate",
+              "code": 119,
+              "message": "Account validation call reverted",
+              "doc": {
+                "summary": "The account's validation method reverted.",
+                "description": [
+                  "The primary `validateTransaction` logic of the smart contract account reverted during execution."
+                ]
+              }
+            },
+            {
+              "name": "AARevertAccountPayForTransaction",
+              "code": 120,
+              "message": "Account `payForTransaction` call reverted.",
+              "doc": {
+                "summary": "The account's `payForTransaction` method reverted.",
+                "description": [
+                  "The account's method for paying transaction fees reverted, indicating an issue with its internal fee logic."
+                ]
+              }
+            },
+            {
+              "name": "AARevertAccountPrePaymaster",
+              "code": 121,
+              "message": "Account `prePaymaster` call reverted.",
+              "doc": {
+                "summary": "The account's `prePaymaster` method reverted.",
+                "description": [
+                  "The account's hook that runs before paymaster interaction has reverted."
+                ]
+              }
+            },
+            {
+              "name": "AARevertPaymasterValidateAndPay",
+              "code": 122,
+              "message": "Paymaster `validateAndPay` call reverted.",
+              "doc": {
+                "summary": "The paymaster's `validateAndPay` method reverted.",
+                "description": [
+                  "The paymaster contract reverted during its validation and payment logic, refusing to sponsor the transaction."
+                ]
+              }
+            },
+            {
+              "name": "AAReceivedInsufficientFees",
+              "code": 123,
+              "message": "Bootloader received insufficient fees. Received: {received}, Required: {required}.",
+              "fields": [
+                {
+                  "name": "received",
+                  "type": "U256"
+                },
+                {
+                  "name": "required",
+                  "type": "U256"
+                }
+              ],
+              "doc": {
+                "summary": "Bootloader received insufficient fees.",
+                "description": [
+                  "The fees sent with the transaction were not enough to cover the costs required by the bootloader for Account Abstraction."
+                ]
+              }
+            },
+            {
+              "name": "InvalidMagic",
+              "code": 124,
+              "message": "Invalid magic value returned by validation."
+            },
+            {
+              "name": "InvalidReturndataLength",
+              "code": 125,
+              "message": "Validation returndata is of invalid length."
+            },
+            {
+              "name": "OutOfGasDuringValidation",
+              "code": 126,
+              "message": "Ran out of gas during AA validation.",
+              "doc": {
+                "summary": "Ran out of gas during validation.",
+                "description": [
+                  "The gas supplied for the validation phase of the Account Abstraction process was insufficient."
+                ]
+              }
+            },
+            {
+              "name": "OutOfNativeResourcesDuringValidation",
+              "code": 127,
+              "message": "Ran out of native resources during validation.",
+              "doc": {
+                "summary": "Ran out of native resources during validation.",
+                "description": [
+                  "The validation process consumed more native resources (e.g., memory) than allocated."
+                ]
+              }
+            },
+            {
+              "name": "NonceUsedAlready",
+              "code": 128,
+              "message": "Transaction nonce already used.",
+              "doc": {
+                "summary": "Transaction nonce already used.",
+                "description": [
+                  "The nonce for the Account Abstraction transaction has already been used and is not valid."
+                ]
+              }
+            },
+            {
+              "name": "NonceNotIncreased",
+              "code": 129,
+              "message": "Nonce not increased after validation.",
+              "doc": {
+                "summary": "Nonce not increased after validation.",
+                "description": [
+                  "A successful validation is expected to increment the account's nonce, which did not happen."
+                ]
+              }
+            },
+            {
+              "name": "AAPaymasterReturnDataTooShort",
+              "code": 130,
+              "message": "Return data from paymaster is too short.",
+              "doc": {
+                "summary": "Return data from paymaster is too short.",
+                "description": [
+                  "The data returned from the paymaster contract did not meet the minimum required length."
+                ]
+              }
+            },
+            {
+              "name": "AAPaymasterInvalidMagic",
+              "code": 131,
+              "message": "Invalid magic in paymaster validation.",
+              "doc": {
+                "summary": "Invalid magic in paymaster validation.",
+                "description": [
+                  "The paymaster contract returned an invalid magic value, failing the validation."
+                ]
+              }
+            },
+            {
+              "name": "AAPaymasterContextInvalid",
+              "code": 132,
+              "message": "Paymaster returned invalid context.",
+              "doc": {
+                "summary": "Paymaster returned invalid context.",
+                "description": [
+                  "The context returned by the paymaster is invalid or malformed."
+                ]
+              }
+            },
+            {
+              "name": "AAPaymasterContextOffsetTooLong",
+              "code": 133,
+              "message": "Paymaster context offset is greater than returndata length.",
+              "doc": {
+                "summary": "Paymaster context offset is greater than returndata length.",
+                "description": [
+                  "The offset for the context data specified by the paymaster points beyond the bounds of the returned data."
+                ]
+              }
+            },
+            {
+              "name": "GasPerPubdataTooHigh",
+              "code": 134,
+              "message": "The gas-per-pubdata price is unacceptably high.",
+              "doc": {
+                "summary": "Unacceptable gas per pubdata price.",
+                "description": [
+                  "In L2 systems, this indicates the price for posting data to the L1 is above the limit set by the transaction."
+                ]
+              }
+            },
+            {
+              "name": "BlockGasLimitTooHigh",
+              "code": 135,
+              "message": "The block gas limit is too high.",
+              "doc": {
+                "summary": "Block gas limit is too high.",
+                "description": [
+                  "This error typically relates to an internal configuration or a special transaction that attempts to set the block gas limit to an invalid value."
+                ]
+              }
+            },
+            {
+              "name": "UpgradeTxNotFirst",
+              "code": 136,
+              "message": "A protocol upgrade transaction must be the first in a block.",
+              "doc": {
+                "summary": "Protocol upgrade tx should be first in the block.",
+                "description": [
+                  "Transactions that trigger a protocol upgrade are required to be the first transaction in their respective blocks."
+                ]
+              }
+            },
+            {
+              "name": "UpgradeTxFailed",
+              "code": 137,
+              "message": "A protocol upgrade transaction has failed, which should never happen."
+            }
+          ]
+        }
+      ]
     }
   ]
 }

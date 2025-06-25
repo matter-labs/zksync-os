@@ -470,6 +470,64 @@ pub mod core {
             })
         }
     }
+    pub mod tx_valid {
+        pub use crate::error::definitions::Validation as ValidationError;
+        pub type ValidationResult<T> = core::result::Result<T, ValidationError>;
+        pub use crate::error::definitions::Validation::AAPaymasterContextInvalid;
+        pub use crate::error::definitions::Validation::AAPaymasterContextOffsetTooLong;
+        pub use crate::error::definitions::Validation::AAPaymasterInvalidMagic;
+        pub use crate::error::definitions::Validation::AAPaymasterReturnDataTooShort;
+        pub use crate::error::definitions::Validation::AAReceivedInsufficientFees;
+        pub use crate::error::definitions::Validation::AARevertAccountPayForTransaction;
+        pub use crate::error::definitions::Validation::AARevertAccountPrePaymaster;
+        pub use crate::error::definitions::Validation::AARevertAccountValidate;
+        pub use crate::error::definitions::Validation::AARevertPaymasterValidateAndPay;
+        pub use crate::error::definitions::Validation::AccessListNotSupported;
+        pub use crate::error::definitions::Validation::BaseFeeGreaterThanMaxFee;
+        pub use crate::error::definitions::Validation::BlockGasLimitTooHigh;
+        pub use crate::error::definitions::Validation::CallGasCostMoreThanGasLimit;
+        pub use crate::error::definitions::Validation::CallerGasLimitMoreThanBlock;
+        pub use crate::error::definitions::Validation::CreateInitCodeSizeLimit;
+        pub use crate::error::definitions::Validation::GasPerPubdataTooHigh;
+        pub use crate::error::definitions::Validation::GasPriceLessThanBasefee;
+        pub use crate::error::definitions::Validation::GenericError;
+        pub use crate::error::definitions::Validation::IncorrectFrom;
+        pub use crate::error::definitions::Validation::InvalidChainId;
+        pub use crate::error::definitions::Validation::InvalidEncoding;
+        pub use crate::error::definitions::Validation::InvalidMagic;
+        pub use crate::error::definitions::Validation::InvalidReturndataLength;
+        pub use crate::error::definitions::Validation::InvalidStructure;
+        pub use crate::error::definitions::Validation::LackOfFundForMaxFee;
+        pub use crate::error::definitions::Validation::MalleableSignature;
+        pub use crate::error::definitions::Validation::NonceNotIncreased;
+        pub use crate::error::definitions::Validation::NonceOverflowInTransaction;
+        pub use crate::error::definitions::Validation::NonceTooHigh;
+        pub use crate::error::definitions::Validation::NonceTooLow;
+        pub use crate::error::definitions::Validation::NonceUsedAlready;
+        pub use crate::error::definitions::Validation::OutOfGasDuringValidation;
+        pub use crate::error::definitions::Validation::OutOfNativeResourcesDuringValidation;
+        pub use crate::error::definitions::Validation::OverflowPaymentInTransaction;
+        pub use crate::error::definitions::Validation::PriorityFeeGreaterThanMaxFee;
+        pub use crate::error::definitions::Validation::RejectCallerWithCode;
+        pub use crate::error::definitions::Validation::UpgradeTxFailed;
+        pub use crate::error::definitions::Validation::UpgradeTxNotFirst;
+        pub use crate::error::definitions::ValidationCode as ErrorCode;
+        #[cfg(not(feature = "std"))]
+        use alloc::format;
+        #[macro_export]
+        macro_rules ! core_tx_valid_generic_error { ($ ($ arg : tt) *) => { zksync_error :: core :: tx_valid :: ValidationError :: GenericError { message : format ! ($ ($ arg) *) } } ; }
+        pub use crate::core_tx_valid_generic_error as generic_error;
+        pub fn to_generic<T: core::fmt::Display>(err: T) -> ValidationError {
+            GenericError {
+                message: format!("{}", err),
+            }
+        }
+        pub fn to_domain<T: core::fmt::Display>(err: T) -> super::CoreError {
+            super::CoreError::Validation(GenericError {
+                message: format!("{}", err),
+            })
+        }
+    }
 }
 pub mod exec_env {
     pub use crate::error::domains::ExecutionEnvironment as ExecutionEnvironmentError;

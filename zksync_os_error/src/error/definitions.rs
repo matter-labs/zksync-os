@@ -2048,6 +2048,418 @@ impl CustomErrorMessage for Sequencer {
 }
 #[doc = ""]
 #[doc = ""]
+#[doc = "Domain: Core"]
+#[repr(u32)]
+#[derive(AsRefStr, Clone, Debug, Eq, EnumDiscriminants, PartialEq)]
+#[cfg_attr(feature = "use_serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "use_serde", derive(serde::Deserialize))]
+#[strum_discriminants(name(ValidationCode))]
+#[strum_discriminants(vis(pub))]
+#[strum_discriminants(derive(AsRefStr, FromRepr))]
+#[non_exhaustive]
+pub enum Validation {
+    #[doc = "# Summary "]
+    #[doc = "Failed to decode."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The raw transaction data could not be parsed or decoded correctly."]
+    InvalidEncoding = 101u32,
+    #[doc = "# Summary "]
+    #[doc = "Fields set incorrectly in accordance to its type."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The transaction's structure is invalid for its declared type (e.g., Legacy, EIP-2930, EIP-1559)."]
+    InvalidStructure = 102u32,
+    #[doc = "# Summary "]
+    #[doc = "Provided `gas_priority_fee` exceeds the total `gas_max_fee`."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "In an EIP-1559 transaction, the `max_priority_fee_per_gas` (tip) cannot be greater than the `max_fee_per_gas`."]
+    PriorityFeeGreaterThanMaxFee = 103u32,
+    #[doc = "# Summary "]
+    #[doc = "`basefee` is greater than provided `gas_max_fee`."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The `max_fee_per_gas` in an EIP-1559 transaction must be at least as high as the current block's `basefee`."]
+    BaseFeeGreaterThanMaxFee = 104u32,
+    #[doc = "# Summary "]
+    #[doc = "EIP-1559: `gas_price` is less than `basefee`."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "For legacy transactions processed in an EIP-1559 context, their `gas_price` must be at least as high as the block's `basefee`."]
+    GasPriceLessThanBasefee = 105u32,
+    #[doc = "# Summary "]
+    #[doc = "`gas_limit` in the tx is bigger than `block_gas_limit`."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "A transaction cannot require more gas than the total gas available in a single block."]
+    CallerGasLimitMoreThanBlock = 106u32,
+    #[doc = "# Summary "]
+    #[doc = "Initial gas for a Call is bigger than `gas_limit`."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The base cost to execute the transaction (calculated from its data size, access list, etc.) exceeds the `gas_limit` set in the transaction."]
+    CallGasCostMoreThanGasLimit = 107u32,
+    #[doc = "# Summary "]
+    #[doc = "EIP-3607 Reject transactions from senders with deployed code."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "To prevent certain security risks, accounts with deployed code are not allowed to initiate transactions."]
+    RejectCallerWithCode = 108u32,
+    #[doc = "# Summary "]
+    #[doc = "Transaction account does not have enough amount of ether to cover transferred value and gas_limit*gas_price."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The sender's balance is lower than the transaction's value plus the maximum potential gas fee (`gas_limit` * `max_fee_per_gas`)."]
+    LackOfFundForMaxFee {
+        fee: ruint::aliases::U256,
+        balance: ruint::aliases::U256,
+    } = 109u32,
+    #[doc = "# Summary "]
+    #[doc = "Overflow payment in transaction."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The calculation of the total required funds for the transaction resulted in a value that exceeds the maximum representable amount."]
+    OverflowPaymentInTransaction = 110u32,
+    #[doc = "# Summary "]
+    #[doc = "Nonce overflows in transaction."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The nonce specified in the transaction exceeds the maximum value for a u64."]
+    NonceOverflowInTransaction = 111u32,
+    #[doc = "# Summary "]
+    #[doc = "The transaction nonce is higher than the sender's current nonce."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "Transaction nonces must be sequential. This error indicates a future nonce was used, leaving a gap."]
+    NonceTooHigh {
+        tx: u64,
+        state: u64,
+    } = 112u32,
+    #[doc = "# Summary "]
+    #[doc = "The transaction nonce is lower than the sender's current nonce."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "This nonce has already been used by a previously confirmed transaction from the same sender."]
+    NonceTooLow {
+        tx: u64,
+        state: u64,
+    } = 113u32,
+    #[doc = "# Summary "]
+    #[doc = "The transaction signature is malleable."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The signature does not conform to standards that prevent malleability (e.g., low-s values as required by EIP-2)."]
+    MalleableSignature = 114u32,
+    #[doc = "# Summary "]
+    #[doc = "The address recovered from the signature does not match the sender."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The public key recovered from the transaction's signature does not correspond to the address listed in the 'from' field."]
+    IncorrectFrom {
+        tx: ruint::aliases::U160,
+        recovered: ruint::aliases::U160,
+    } = 115u32,
+    #[doc = "# Summary "]
+    #[doc = "EIP-3860: Limit and meter initcode."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The size of the initialization code for a contract creation transaction is larger than the maximum allowed by EIP-3860."]
+    CreateInitCodeSizeLimit = 116u32,
+    #[doc = "# Summary "]
+    #[doc = "Transaction chain id does not match the config chain id."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The transaction is signed for a different chain and is therefore invalid on this one. This is a replay protection mechanism."]
+    InvalidChainId = 117u32,
+    #[doc = "# Summary "]
+    #[doc = "Access list is not supported for blocks before the Berlin hardfork."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "Access lists were introduced in EIP-2930 as part of the Berlin hardfork. This transaction type is invalid on earlier chain states."]
+    AccessListNotSupported = 118u32,
+    #[doc = "# Summary "]
+    #[doc = "The account's validation method reverted."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The primary `validateTransaction` logic of the smart contract account reverted during execution."]
+    AARevertAccountValidate = 119u32,
+    #[doc = "# Summary "]
+    #[doc = "The account's `payForTransaction` method reverted."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The account's method for paying transaction fees reverted, indicating an issue with its internal fee logic."]
+    AARevertAccountPayForTransaction = 120u32,
+    #[doc = "# Summary "]
+    #[doc = "The account's `prePaymaster` method reverted."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The account's hook that runs before paymaster interaction has reverted."]
+    AARevertAccountPrePaymaster = 121u32,
+    #[doc = "# Summary "]
+    #[doc = "The paymaster's `validateAndPay` method reverted."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The paymaster contract reverted during its validation and payment logic, refusing to sponsor the transaction."]
+    AARevertPaymasterValidateAndPay = 122u32,
+    #[doc = "# Summary "]
+    #[doc = "Bootloader received insufficient fees."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The fees sent with the transaction were not enough to cover the costs required by the bootloader for Account Abstraction."]
+    AAReceivedInsufficientFees {
+        received: ruint::aliases::U256,
+        required: ruint::aliases::U256,
+    } = 123u32,
+    InvalidMagic = 124u32,
+    InvalidReturndataLength = 125u32,
+    #[doc = "# Summary "]
+    #[doc = "Ran out of gas during validation."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The gas supplied for the validation phase of the Account Abstraction process was insufficient."]
+    OutOfGasDuringValidation = 126u32,
+    #[doc = "# Summary "]
+    #[doc = "Ran out of native resources during validation."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The validation process consumed more native resources (e.g., memory) than allocated."]
+    OutOfNativeResourcesDuringValidation = 127u32,
+    #[doc = "# Summary "]
+    #[doc = "Transaction nonce already used."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The nonce for the Account Abstraction transaction has already been used and is not valid."]
+    NonceUsedAlready = 128u32,
+    #[doc = "# Summary "]
+    #[doc = "Nonce not increased after validation."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "A successful validation is expected to increment the account's nonce, which did not happen."]
+    NonceNotIncreased = 129u32,
+    #[doc = "# Summary "]
+    #[doc = "Return data from paymaster is too short."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The data returned from the paymaster contract did not meet the minimum required length."]
+    AAPaymasterReturnDataTooShort = 130u32,
+    #[doc = "# Summary "]
+    #[doc = "Invalid magic in paymaster validation."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The paymaster contract returned an invalid magic value, failing the validation."]
+    AAPaymasterInvalidMagic = 131u32,
+    #[doc = "# Summary "]
+    #[doc = "Paymaster returned invalid context."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The context returned by the paymaster is invalid or malformed."]
+    AAPaymasterContextInvalid = 132u32,
+    #[doc = "# Summary "]
+    #[doc = "Paymaster context offset is greater than returndata length."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "The offset for the context data specified by the paymaster points beyond the bounds of the returned data."]
+    AAPaymasterContextOffsetTooLong = 133u32,
+    #[doc = "# Summary "]
+    #[doc = "Unacceptable gas per pubdata price."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "In L2 systems, this indicates the price for posting data to the L1 is above the limit set by the transaction."]
+    GasPerPubdataTooHigh = 134u32,
+    #[doc = "# Summary "]
+    #[doc = "Block gas limit is too high."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "This error typically relates to an internal configuration or a special transaction that attempts to set the block gas limit to an invalid value."]
+    BlockGasLimitTooHigh = 135u32,
+    #[doc = "# Summary "]
+    #[doc = "Protocol upgrade tx should be first in the block."]
+    #[doc = ""]
+    #[doc = "# Description"]
+    #[doc = "Transactions that trigger a protocol upgrade are required to be the first transaction in their respective blocks."]
+    UpgradeTxNotFirst = 136u32,
+    UpgradeTxFailed = 137u32,
+    GenericError {
+        message: String,
+    } = 0u32,
+}
+impl core::error::Error for Validation {}
+impl NamedError for Validation {
+    fn get_error_name(&self) -> String {
+        self.as_ref().to_owned()
+    }
+}
+impl NamedError for ValidationCode {
+    fn get_error_name(&self) -> String {
+        self.as_ref().to_owned()
+    }
+}
+impl From<Validation> for crate::ZksyncError {
+    fn from(val: Validation) -> Self {
+        val.to_unified()
+    }
+}
+impl fmt::Display for Validation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.get_message())
+    }
+}
+#[cfg(feature = "runtime_documentation")]
+impl Documented for Validation {
+    type Documentation = &'static zksync_error_description::ErrorDocumentation;
+    fn get_documentation(
+        &self,
+    ) -> Result<Option<Self::Documentation>, crate::documentation::DocumentationError> {
+        self.to_unified().get_identifier().get_documentation()
+    }
+}
+#[cfg(feature = "use_anyhow")]
+impl From<anyhow::Error> for Validation {
+    fn from(value: anyhow::Error) -> Self {
+        let message = format!("{value:#?}");
+        Validation::GenericError { message }
+    }
+}
+#[cfg(feature = "packed_errors")]
+impl From<Validation> for crate::packed::PackedError<crate::error::domains::ZksyncError> {
+    fn from(value: Validation) -> Self {
+        crate::packed::pack(value)
+    }
+}
+#[cfg(feature = "serialized_errors")]
+impl From<Validation> for crate::serialized::SerializedError {
+    fn from(value: Validation) -> Self {
+        let packed = crate::packed::pack(value);
+        crate::serialized::serialize(packed).expect("Internal serialization error.")
+    }
+}
+impl CustomErrorMessage for Validation {
+    fn get_message(&self) -> String {
+        match self {
+            Validation::InvalidEncoding => {
+                format!("[core-tx_valid-101] Failed to decode the transaction.")
+            }
+            Validation::InvalidStructure => {
+                format!("[core-tx_valid-102] Transaction fields are set incorrectly for its type.")
+            }
+            Validation::PriorityFeeGreaterThanMaxFee => {
+                format!("[core-tx_valid-103] The priority fee is greater than the max fee.")
+            }
+            Validation::BaseFeeGreaterThanMaxFee => {
+                format ! ("[core-tx_valid-104] The block's base fee is greater than the transaction's max fee.")
+            }
+            Validation::GasPriceLessThanBasefee => {
+                format!("[core-tx_valid-105] Gas price is less than the block's base fee.")
+            }
+            Validation::CallerGasLimitMoreThanBlock => {
+                format ! ("[core-tx_valid-106] The transaction's gas limit exceeds the block's gas limit.")
+            }
+            Validation::CallGasCostMoreThanGasLimit => {
+                format ! ("[core-tx_valid-107] The intrinsic gas cost of the transaction is higher than its gas limit.")
+            }
+            Validation::RejectCallerWithCode => {
+                format ! ("[core-tx_valid-108] The sender account is a contract and cannot initiate transactions.")
+            }
+            Validation::LackOfFundForMaxFee { fee, balance } => {
+                format ! ("[core-tx_valid-109] Sender account has insufficient funds to cover the transaction's maximum cost. Balance: {balance}, Required: {fee}")
+            }
+            Validation::OverflowPaymentInTransaction => {
+                format ! ("[core-tx_valid-110] An arithmetic overflow occurred calculating the transaction's payment.")
+            }
+            Validation::NonceOverflowInTransaction => {
+                format!("[core-tx_valid-111] The transaction's nonce has overflowed.")
+            }
+            Validation::NonceTooHigh { tx, state } => {
+                format!(
+                    "[core-tx_valid-112] Transaction nonce {tx} is too high. Expected: {state}."
+                )
+            }
+            Validation::NonceTooLow { tx, state } => {
+                format!("[core-tx_valid-113] Transaction nonce {tx} is too low. Expected: {state}.")
+            }
+            Validation::MalleableSignature => {
+                format!("[core-tx_valid-114] The transaction signature is malleable.")
+            }
+            Validation::IncorrectFrom { tx, recovered } => {
+                format ! ("[core-tx_valid-115] The recovered sender address {recovered} does not match the transaction's 'from' address {tx}.")
+            }
+            Validation::CreateInitCodeSizeLimit => {
+                format!(
+                    "[core-tx_valid-116] The contract creation initcode exceeds the size limit."
+                )
+            }
+            Validation::InvalidChainId => {
+                format ! ("[core-tx_valid-117] The transaction's chain ID does not match the node's chain ID.")
+            }
+            Validation::AccessListNotSupported => {
+                format ! ("[core-tx_valid-118] The transaction includes an access list, which is not supported before the Berlin hardfork.")
+            }
+            Validation::AARevertAccountValidate => {
+                format!("[core-tx_valid-119] Account validation call reverted")
+            }
+            Validation::AARevertAccountPayForTransaction => {
+                format!("[core-tx_valid-120] Account `payForTransaction` call reverted.")
+            }
+            Validation::AARevertAccountPrePaymaster => {
+                format!("[core-tx_valid-121] Account `prePaymaster` call reverted.")
+            }
+            Validation::AARevertPaymasterValidateAndPay => {
+                format!("[core-tx_valid-122] Paymaster `validateAndPay` call reverted.")
+            }
+            Validation::AAReceivedInsufficientFees { received, required } => {
+                format ! ("[core-tx_valid-123] Bootloader received insufficient fees. Received: {received}, Required: {required}.")
+            }
+            Validation::InvalidMagic => {
+                format!("[core-tx_valid-124] Invalid magic value returned by validation.")
+            }
+            Validation::InvalidReturndataLength => {
+                format!("[core-tx_valid-125] Validation returndata is of invalid length.")
+            }
+            Validation::OutOfGasDuringValidation => {
+                format!("[core-tx_valid-126] Ran out of gas during AA validation.")
+            }
+            Validation::OutOfNativeResourcesDuringValidation => {
+                format!("[core-tx_valid-127] Ran out of native resources during validation.")
+            }
+            Validation::NonceUsedAlready => {
+                format!("[core-tx_valid-128] Transaction nonce already used.")
+            }
+            Validation::NonceNotIncreased => {
+                format!("[core-tx_valid-129] Nonce not increased after validation.")
+            }
+            Validation::AAPaymasterReturnDataTooShort => {
+                format!("[core-tx_valid-130] Return data from paymaster is too short.")
+            }
+            Validation::AAPaymasterInvalidMagic => {
+                format!("[core-tx_valid-131] Invalid magic in paymaster validation.")
+            }
+            Validation::AAPaymasterContextInvalid => {
+                format!("[core-tx_valid-132] Paymaster returned invalid context.")
+            }
+            Validation::AAPaymasterContextOffsetTooLong => {
+                format ! ("[core-tx_valid-133] Paymaster context offset is greater than returndata length.")
+            }
+            Validation::GasPerPubdataTooHigh => {
+                format!("[core-tx_valid-134] The gas-per-pubdata price is unacceptably high.")
+            }
+            Validation::BlockGasLimitTooHigh => {
+                format!("[core-tx_valid-135] The block gas limit is too high.")
+            }
+            Validation::UpgradeTxNotFirst => {
+                format ! ("[core-tx_valid-136] A protocol upgrade transaction must be the first in a block.")
+            }
+            Validation::UpgradeTxFailed => {
+                format ! ("[core-tx_valid-137] A protocol upgrade transaction has failed, which should never happen.")
+            }
+            Validation::GenericError { message } => {
+                format!("[core-tx_valid-0] Generic error: {message}")
+            }
+        }
+    }
+}
+#[doc = ""]
+#[doc = ""]
 #[doc = "Domain: ExecutionEnvironment"]
 #[repr(u32)]
 #[derive(AsRefStr, Clone, Debug, Eq, EnumDiscriminants, PartialEq)]

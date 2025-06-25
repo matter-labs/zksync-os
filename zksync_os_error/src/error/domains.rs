@@ -51,6 +51,8 @@ use crate::error::definitions::SystemEnvironment;
 use crate::error::definitions::SystemEnvironmentCode;
 use crate::error::definitions::TransactionValidation;
 use crate::error::definitions::TransactionValidationCode;
+use crate::error::definitions::Validation;
+use crate::error::definitions::ValidationCode;
 use crate::error::definitions::WASMCode;
 use crate::error::definitions::Zksolc;
 use crate::error::definitions::ZksolcCode;
@@ -150,6 +152,7 @@ impl ZksyncError {
                 Kind::Core(CoreCode::ExecutionPlatform)
             }
             ZksyncError::Core(Core::Sequencer(_)) => Kind::Core(CoreCode::Sequencer),
+            ZksyncError::Core(Core::Validation(_)) => Kind::Core(CoreCode::Validation),
             ZksyncError::ExecutionEnvironment(ExecutionEnvironment::Common(_)) => {
                 Kind::ExecutionEnvironment(ExecutionEnvironmentCode::Common)
             }
@@ -227,6 +230,9 @@ impl ZksyncError {
                 Into::<ExecutionPlatformCode>::into(error) as u32
             }
             ZksyncError::Core(Core::Sequencer(error)) => Into::<SequencerCode>::into(error) as u32,
+            ZksyncError::Core(Core::Validation(error)) => {
+                Into::<ValidationCode>::into(error) as u32
+            }
             ZksyncError::ExecutionEnvironment(ExecutionEnvironment::Common(error)) => {
                 Into::<CommonCode>::into(error) as u32
             }
@@ -549,6 +555,7 @@ pub enum Core {
     EraVM(EraVM),
     ExecutionPlatform(ExecutionPlatform),
     Sequencer(Sequencer),
+    Validation(Validation),
 }
 impl Core {
     pub fn get_name(&self) -> &str {
@@ -595,6 +602,16 @@ impl From<Sequencer> for Core {
         Core::Sequencer(val)
     }
 }
+impl ICustomError<ZksyncError, ZksyncError> for Validation {
+    fn to_unified(&self) -> ZksyncError {
+        Core::Validation(self.clone()).to_unified()
+    }
+}
+impl From<Validation> for Core {
+    fn from(val: Validation) -> Self {
+        Core::Validation(val)
+    }
+}
 impl ICustomError<ZksyncError, ZksyncError> for Core {
     fn to_unified(&self) -> ZksyncError {
         ZksyncError::Core(self.clone())
@@ -616,6 +633,7 @@ impl crate::documentation::Documented for Core {
             Core::EraVM(error) => error.get_documentation(),
             Core::ExecutionPlatform(error) => error.get_documentation(),
             Core::Sequencer(error) => error.get_documentation(),
+            Core::Validation(error) => error.get_documentation(),
         }
     }
 }
@@ -626,6 +644,7 @@ impl fmt::Display for Core {
             Core::EraVM(component) => component.fmt(f),
             Core::ExecutionPlatform(component) => component.fmt(f),
             Core::Sequencer(component) => component.fmt(f),
+            Core::Validation(component) => component.fmt(f),
         }
     }
 }

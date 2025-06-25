@@ -105,6 +105,7 @@ impl Identifying for Kind {
             Kind::Core(CoreCode::EraVM) => "core-eravm",
             Kind::Core(CoreCode::ExecutionPlatform) => "core-exec",
             Kind::Core(CoreCode::Sequencer) => "core-seq",
+            Kind::Core(CoreCode::Validation) => "core-tx_valid",
             Kind::ExecutionEnvironment(ExecutionEnvironmentCode::Common) => "exec_env-common",
             Kind::ExecutionEnvironment(ExecutionEnvironmentCode::EVM) => "exec_env-evm",
             Kind::ExecutionEnvironment(ExecutionEnvironmentCode::Native) => "exec_env-native",
@@ -208,6 +209,11 @@ impl NamedError for Identifier {
             }
             Kind::Core(CoreCode::Sequencer) => {
                 crate::error::definitions::SequencerCode::from_repr(self.code)
+                    .expect("Internal error")
+                    .get_error_name()
+            }
+            Kind::Core(CoreCode::Validation) => {
+                crate::error::definitions::ValidationCode::from_repr(self.code)
                     .expect("Internal error")
                     .get_error_name()
             }
