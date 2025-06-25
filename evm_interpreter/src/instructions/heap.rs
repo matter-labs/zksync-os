@@ -12,36 +12,39 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let stack_top = self.stack.top_mut()?;
         let index = Self::cast_to_usize(stack_top, ExitCode::InvalidOperandOOG)?;
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, index, 32)?;
+        let mut value: ruint::Uint<256, 4> = U256::ZERO;
         unsafe {
             let src = self.heap.deref_mut().as_ptr().add(index);
-            let dst = stack_top.as_le_slice_mut().as_mut_ptr();
+            let dst = value.as_le_slice_mut().as_mut_ptr();
             core::ptr::copy_nonoverlapping(src, dst, 32);
-            crate::utils::bytereverse_u256(stack_top);
+            crate::utils::bytereverse_u256(&mut value);
         }
 
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
                 " offset: {}, read value: 0x{:0x}",
-                index, *stack_top
+                index, value
             ));
         }
 
+        *stack_top = value;
         Ok(())
     }
 
     pub fn mstore(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
-        let (index, value) = self.stack.pop_2_mut()?;
+        let (index, value) = self.stack.pop_2()?;
+        let mut le_value = value.clone();
         let index = Self::cast_to_usize(index, ExitCode::InvalidOperandOOG)?;
 
-        Self::resize_heap_implementation(&mut self.heap, &mut self.gas, index, 32)?;
+        self.resize_heap(index, 32)?;
 
         unsafe {
-            crate::utils::bytereverse_u256(value);
-            let src = value.as_le_slice().as_ptr();
-            let dst = self.heap.deref_mut().as_mut_ptr().add(index);
+            crate::utils::bytereverse_u256(&mut le_value);
+            let src = le_value.as_le_slice().as_ptr();
+            let dst = self.heap().as_mut_ptr().add(index);
             core::ptr::copy_nonoverlapping(src, dst, 32);
         }
 
@@ -49,7 +52,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
                 " offset: {}, stored value: 0x{:0x}",
-                index, value
+                index, le_value
             ));
         }
 
