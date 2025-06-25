@@ -76,12 +76,10 @@ pub fn u256_try_to_usize_capped<const CAP: usize>(src: &U256) -> Option<usize> {
     let limbs = src.as_limbs();
     if limbs[3] != 0 || limbs[2] != 0 || limbs[1] != 0 {
         None
+    } else if limbs[0] >= CAP as u64 {
+        None
     } else {
-        if limbs[0] >= CAP as u64 {
-            None
-        } else {
-            Some(limbs[0] as usize)
-        }
+        Some(limbs[0] as usize)
     }
 }
 
