@@ -143,7 +143,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             if sign_bit == false {
                 core::ops::ShrAssign::shr_assign(op2, shift as u32);
             } else {
-                // perform unsigned shift, then XOR with mask
+                // perform unsigned shift, then OR with mask
                 core::ops::ShrAssign::shr_assign(op2, shift as u32);
                 let (words, bits) = (shift / 64, shift % 64);
                 unsafe {
