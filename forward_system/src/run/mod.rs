@@ -205,6 +205,7 @@ pub fn io_implementer_init_data(
             None => StorageCommitment {
                 root: Default::default(),
                 next_free_slot: 0,
+                empty_slots_stack: Default::default(),
             },
         },
         pubdata_diffs_log_hash: Bytes32::ZERO,

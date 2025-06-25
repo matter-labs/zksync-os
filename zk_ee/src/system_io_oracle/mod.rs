@@ -136,6 +136,16 @@ impl OracleIteratorTypeMarker for ExactIndexIterator {
 }
 
 ///
+/// Empty slot proof query type.
+///
+pub struct EmptySlotsStackStateIterator;
+
+impl OracleIteratorTypeMarker for EmptySlotsStackStateIterator {
+    const ID: u32 = 10;
+    type Params = (Bytes32, u64);
+}
+
+///
 /// UART access query type.
 ///
 /// This type is not called on the oracle directly.

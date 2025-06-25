@@ -189,6 +189,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),
             next_free_slot: self.state_tree.storage_tree.next_free_slot,
+            empty_slots_stack:
+                basic_system::system_implementation::flat_storage_model::SlotsStackState {
+                    state_commitment: self.state_tree.storage_tree.stack_state_encoding(),
+                    num_elements: self.state_tree.storage_tree.empty_elements_stack.len() as u64,
+                },
         };
         let tx_source = TxListSource {
             transactions: transactions.into(),
@@ -400,7 +405,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             .insert(flat_key, properties_hash);
         self.state_tree
             .storage_tree
-            .insert(&flat_key, &properties_hash);
+            .insert_dense_or_update(&flat_key, &properties_hash);
     }
 
     ///
@@ -413,7 +418,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let value = Bytes32::from_array(value.to_be_bytes());
 
         self.state_tree.cold_storage.insert(flat_key, value);
-        self.state_tree.storage_tree.insert(&flat_key, &value);
+        self.state_tree
+            .storage_tree
+            .insert_dense_or_update(&flat_key, &value);
     }
 
     ///
@@ -436,7 +443,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             .insert(flat_key, properties_hash);
         self.state_tree
             .storage_tree
-            .insert(&flat_key, &properties_hash);
+            .insert_dense_or_update(&flat_key, &properties_hash);
         self.preimage_source
             .inner
             .insert(properties_hash, encoding.to_vec());
@@ -462,7 +469,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             .insert(flat_key, properties_hash);
         self.state_tree
             .storage_tree
-            .insert(&flat_key, &properties_hash);
+            .insert_dense_or_update(&flat_key, &properties_hash);
         self.preimage_source
             .inner
             .insert(account_properties.bytecode_hash, bytecode.to_vec());
