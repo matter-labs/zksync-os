@@ -62,6 +62,17 @@
           }
         }
       },
+      "B160": {
+        "name": "B160",
+        "meta": {
+          "description": "160-bit unsigned number"
+        },
+        "bindings": {
+          "rust": {
+            "expression": "ruint::aliases::U160"
+          }
+        }
+      },
       "Common": {
         "name": "Common",
         "meta": {
@@ -190,7 +201,7 @@
         },
         "bindings": {
           "rust": {
-            "expression": "Box<ruint::aliases::H160>"
+            "expression": "ruint::aliases::U160"
           }
         }
       },
@@ -201,7 +212,7 @@
         },
         "bindings": {
           "rust": {
-            "expression": "Box<ruint::aliases::U256>"
+            "expression": "ruint::aliases::U256"
           }
         }
       },
@@ -399,7 +410,7 @@
         },
         "bindings": {
           "rust": {
-            "expression": "Box<ruint::aliases::U256>"
+            "expression": "ruint::aliases::U256"
           }
         }
       },

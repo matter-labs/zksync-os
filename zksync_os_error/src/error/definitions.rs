@@ -267,7 +267,7 @@ pub enum AnvilNode {
     #[doc = "When using anvil-zksync for testing, these failures are valuable signals that help you identify issues with your contracts or transactions before deploying to the real ZKSync network."]
     TransactionHalt {
         inner: Box<Halt>,
-        transaction_hash: Box<ruint::aliases::U256>,
+        transaction_hash: ruint::aliases::U256,
     } = 1u32,
     #[doc = "# Summary "]
     #[doc = "Transaction validation failed in anvil-zksync."]
@@ -284,7 +284,7 @@ pub enum AnvilNode {
     #[doc = "When using anvil-zksync for testing, these errors are valuable signals that help you identify issues with your contracts or transactions before deploying to the real ZKSync network."]
     TransactionValidationFailed {
         inner: Box<TransactionValidation>,
-        transaction_hash: Box<ruint::aliases::U256>,
+        transaction_hash: ruint::aliases::U256,
     } = 10u32,
     #[doc = "# Summary "]
     #[doc = "Transaction gas estimation failed in anvil-zksync."]
@@ -324,8 +324,8 @@ pub enum AnvilNode {
     #[doc = "This typically happens during transaction creation or gas estimation when the request contains invalid or incompatible parameters."]
     SerializationError {
         transaction_type: String,
-        from: Box<ruint::aliases::U256>,
-        to: Box<ruint::aliases::U256>,
+        from: ruint::aliases::U256,
+        to: ruint::aliases::U256,
         reason: String,
     } = 30u32,
     GenericError {
@@ -1180,8 +1180,8 @@ pub enum TransactionValidation {
     #[doc = "As of protocol version 27, the gas is limited to 2^50"]
     #[doc = "Note: When anvil-zksync is in forking mode, it lock-in and uses gas price at the forked block"]
     InvalidGasLimit {
-        tx_gas_limit: Box<ruint::aliases::U256>,
-        max_gas: Box<ruint::aliases::U256>,
+        tx_gas_limit: ruint::aliases::U256,
+        max_gas: ruint::aliases::U256,
     } = 1u32,
     #[doc = "# Summary "]
     #[doc = "Transaction validation failed due to excessive gas per pubdata limit."]
@@ -1191,8 +1191,8 @@ pub enum TransactionValidation {
     #[doc = "As of protocol version 27, the gas is limited to 2^50"]
     #[doc = "Note: When anvil-zksync is in forking mode, it lock-in and uses gas price at the forked block"]
     GasPerPubdataLimit {
-        tx_gas_per_pubdata_limit: Box<ruint::aliases::U256>,
-        max_gas: Box<ruint::aliases::U256>,
+        tx_gas_per_pubdata_limit: ruint::aliases::U256,
+        max_gas: ruint::aliases::U256,
     } = 2u32,
     #[doc = "# Summary "]
     #[doc = "Transaction's maxFeePerGas is lower than the current gas price in anvil-zksync."]
@@ -1208,8 +1208,8 @@ pub enum TransactionValidation {
     #[doc = "Even though anvil-zksync is a testing environment, it enforces these gas price validations to ensure that your tests accurately reflect how transactions would behave on the actual ZKSync network."]
     #[doc = "Note: When anvil-zksync is in forking mode, it lock-in and uses gas price at the forked block"]
     MaxFeePerGasTooLow {
-        max_fee_per_gas: Box<ruint::aliases::U256>,
-        l2_gas_price: Box<ruint::aliases::U256>,
+        max_fee_per_gas: ruint::aliases::U256,
+        l2_gas_price: ruint::aliases::U256,
     } = 3u32,
     #[doc = "# Summary "]
     #[doc = "Transaction's maxPriorityFeePerGas exceeds maxFeePerGas."]
@@ -1220,8 +1220,8 @@ pub enum TransactionValidation {
     #[doc = "Instead, `maxFeePerGas` is utilized and includes the base fees."]
     #[doc = "However, certain transaction types like EIP-1559 or EIP-712 may contain field `maxPriorityFeePerGas`, which should be less or equal to the field `maxFeePerGas`."]
     MaxPriorityFeeGreaterThanMaxFee {
-        max_fee_per_gas: Box<ruint::aliases::U256>,
-        max_priority_fee_per_gas: Box<ruint::aliases::U256>,
+        max_fee_per_gas: ruint::aliases::U256,
+        max_priority_fee_per_gas: ruint::aliases::U256,
     } = 4u32,
     GenericError {
         message: String,

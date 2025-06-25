@@ -5,7 +5,16 @@
       "description": "160-bit hash",
       "bindings": {
         "rust": {
-          "expression": "Box<ruint::aliases::H160>"
+          "expression": "ruint::aliases::U160"
+        }
+      }
+    },
+    {
+      "name": "B160",
+      "description": "160-bit unsigned number",
+      "bindings": {
+        "rust": {
+          "expression": "ruint::aliases::U160"
         }
       }
     },
@@ -14,7 +23,7 @@
       "description": "256-bit hash",
       "bindings": {
         "rust": {
-          "expression": "Box<ruint::aliases::U256>"
+          "expression": "ruint::aliases::U256"
         }
       }
     },
@@ -23,7 +32,7 @@
       "description": "256-bit unsigned integer",
       "bindings": {
         "rust": {
-          "expression": "Box<ruint::aliases::U256>"
+          "expression": "ruint::aliases::U256"
         }
       }
     }
