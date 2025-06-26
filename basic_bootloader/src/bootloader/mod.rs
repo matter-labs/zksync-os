@@ -308,34 +308,36 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
             first_tx = false;
 
+            let coinbase = system.get_coinbase();
+            let mut inf_resources = S::Resources::FORMAL_INFINITE;
+            let bootloader_balance = system
+                .io
+                .read_account_properties(
+                    ExecutionEnvironmentType::NoEE,
+                    &mut inf_resources,
+                    &BOOTLOADER_FORMAL_ADDRESS,
+                    AccountDataRequest::empty().with_nominal_token_balance(),
+                )
+                .expect("must read bootloader balance")
+                .nominal_token_balance
+                .0;
+            if !bootloader_balance.is_zero() {
+                system
+                    .io
+                    .transfer_nominal_token_value(
+                        ExecutionEnvironmentType::NoEE,
+                        &mut inf_resources,
+                        &BOOTLOADER_FORMAL_ADDRESS,
+                        &coinbase,
+                        &bootloader_balance,
+                    )
+                    .expect("must be able to move funds to coinbase");
+            }
+
             let mut logger = system.get_logger();
             let _ = logger.write_fmt(format_args!("TX execution ends\n"));
             let _ = logger.write_fmt(format_args!("====================================\n"));
         }
-
-        let coinbase = system.get_coinbase();
-        let mut inf_resources = S::Resources::FORMAL_INFINITE;
-        let bootloader_balance = system
-            .io
-            .read_account_properties(
-                ExecutionEnvironmentType::NoEE,
-                &mut inf_resources,
-                &BOOTLOADER_FORMAL_ADDRESS,
-                AccountDataRequest::empty().with_nominal_token_balance(),
-            )
-            .expect("must read bootloader balance")
-            .nominal_token_balance
-            .0;
-        system
-            .io
-            .transfer_nominal_token_value(
-                ExecutionEnvironmentType::NoEE,
-                &mut inf_resources,
-                &BOOTLOADER_FORMAL_ADDRESS,
-                &coinbase,
-                &bootloader_balance,
-            )
-            .expect("must be able to move funds to coinbase");
 
         let block_number = system.get_block_number();
         let previous_block_hash = system.get_blockhash(block_number);
