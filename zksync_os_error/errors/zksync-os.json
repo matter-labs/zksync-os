@@ -97,7 +97,17 @@
             {
               "name": "CallerGasLimitMoreThanBlock",
               "code": 106,
-              "message": "The transaction's gas limit exceeds the block's gas limit.",
+              "message": "The transaction's gas limit {tx_gas_limit} exceeds the block's gas limit {block_gas_limit}.",
+              "fields": [
+                {
+                  "name": "tx_gas_limit",
+                  "type" : "u64"
+                },
+                {
+                  "name": "block_gas_limit",
+                  "type" : "u64"
+                }
+              ],
               "doc": {
                 "summary": "`gas_limit` in the tx is bigger than `block_gas_limit`.",
                 "description": [

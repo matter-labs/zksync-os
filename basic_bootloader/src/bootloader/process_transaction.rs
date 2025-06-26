@@ -418,7 +418,10 @@ where
         let tx_gas_limit = transaction.gas_limit.read();
         require!(
             tx_gas_limit <= block_gas_limit,
-            InvalidTransaction::CallerGasLimitMoreThanBlock,
+            InvalidTransaction::CallerGasLimitMoreThanBlock {
+                tx_gas_limit,
+                block_gas_limit
+            },
             system
         )?;
 
