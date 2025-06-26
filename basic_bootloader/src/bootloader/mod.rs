@@ -255,8 +255,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 }
                 Err(TxError::Validation(err)) => {
                     let _ = system.get_logger().write_fmt(format_args!(
-                        "Tx execution result: Validation error = {:?}\n",
-                        err,
+                        "Tx execution result: Validation error = {err}\n",
                     ));
                     result_keeper.tx_processed(Err(err));
                 }
