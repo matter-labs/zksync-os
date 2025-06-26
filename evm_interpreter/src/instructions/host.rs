@@ -107,7 +107,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             &Bytes32::from_u256_be(*stack_head),
         )?;
 
-        *stack_head = value.into_u256_be();
+        *stack_head = value.into_u256_le();
         Ok(())
     }
 
@@ -133,7 +133,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         if self.gas.gas_left() <= CALL_STIPEND {
             return Err(ExitCode::InvalidOperandOOG);
         }
-        let [index, value] = self.stack.pop_values::<2>()?.map(Bytes32::from_u256_be);
+        let [index, value] = self.stack.pop_values::<2>()?;
+        let index = Bytes32::from_u256_be(index);
+        let value = Bytes32::from_u256_le(value);
 
         system.io.storage_write::<false>(
             THIS_EE_TYPE,

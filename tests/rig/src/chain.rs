@@ -410,7 +410,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let key = Bytes32::from_u256_be(key);
         let flat_key = derive_flat_storage_key(&address, &key);
 
-        let value = Bytes32::from_array(value.to_be_bytes());
+        let value = Bytes32::from_array(value.to_le_bytes());
 
         self.state_tree.cold_storage.insert(flat_key, value);
         self.state_tree.storage_tree.insert(&flat_key, &value);
