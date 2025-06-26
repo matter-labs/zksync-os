@@ -92,6 +92,7 @@ fn run_block(
     db: &Database,
     endpoint: &str,
     witness_output_dir: Option<String>,
+    persist_all: bool,
 ) -> Result<BlockStatus> {
     let block_traces = fetch_block_traces(block_number, db, endpoint)?;
     let traces_clone = block_traces.clone();
@@ -181,6 +182,9 @@ fn run_block(
     ) {
         core::result::Result::Ok(()) => {
             db.set_block_status(block_number, db::BlockStatus::Success)?;
+            if persist_all {
+                db.set_block_traces(block_number, &traces_clone)?;
+            }
             Ok(db::BlockStatus::Success)
         }
         Err(e) => {
@@ -204,6 +208,7 @@ pub fn live_run(
     db_path: String,
     witness_output_dir: Option<String>,
     skip_successful: bool,
+    persist_all: bool,
 ) -> Result<()> {
     let db = Database::init(db_path)?;
     assert!(start_block <= end_block);
@@ -216,7 +221,9 @@ pub fn live_run(
             debug!("Skipping block {}, already succeeded", n);
             continue;
         }
-        if let BlockStatus::Error(_) = run_block(n, &db, &endpoint, witness_output_dir.clone())? {
+        if let BlockStatus::Error(_) =
+            run_block(n, &db, &endpoint, witness_output_dir.clone(), persist_all)?
+        {
             failures += 1;
             if failures == MAX_FAILURES {
                 error!("Reached max number of failures");

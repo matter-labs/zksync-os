@@ -39,6 +39,8 @@ enum Command {
         witness_output_dir: Option<String>,
         #[arg(long)]
         skip_successful: bool,
+        #[arg(long)]
+        persist_all: bool,
     },
     // Run a single block from JSON files
     SingleRun {
@@ -88,6 +90,7 @@ fn main() -> anyhow::Result<()> {
             db,
             witness_output_dir,
             skip_successful,
+            persist_all,
         } => live_run::live_run(
             start_block,
             end_block,
@@ -95,6 +98,7 @@ fn main() -> anyhow::Result<()> {
             db,
             witness_output_dir,
             skip_successful,
+            persist_all,
         ),
         Command::ExportRatios { db, path } => live_run::export_block_ratios(db, path),
         Command::ShowStatus { db } => live_run::show_status(db),
