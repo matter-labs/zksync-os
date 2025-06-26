@@ -22,4 +22,5 @@ COPY . zksync_os
 WORKDIR zksync_os/zksync_os
 
 RUN ./dump_bin.sh
+RUN ./dump_bin.sh --type server-logging-enabled
 RUN ./dump_bin_unlimited_native.sh
