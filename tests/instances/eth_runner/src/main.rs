@@ -1,8 +1,10 @@
 #![feature(slice_as_array)]
+#![recursion_limit = "1024"]
 
 use clap::{Parser, Subcommand};
 mod block;
 mod block_hashes;
+mod calltrace;
 mod live_run;
 mod native_model;
 mod post_check;

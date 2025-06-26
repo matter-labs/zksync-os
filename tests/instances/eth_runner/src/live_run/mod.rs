@@ -6,6 +6,7 @@ mod rpc;
 use rig::log::{debug, error, info};
 use rig::Chain;
 
+use crate::calltrace::CallTrace;
 use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
 use crate::prestate::populate_prestate;
@@ -72,11 +73,14 @@ fn fetch_block_traces(block_number: u64, db: &Database, endpoint: &str) -> Resul
                 "Failed to fetch block receipts for {}",
                 block_number
             ))?;
+            let call = rpc::get_calltrace(endpoint, block_number)
+                .context(format!("Failed to fetch call trace for {}", block_number))?;
             let block_traces = BlockTraces {
                 block,
                 prestate,
                 diff,
                 receipts,
+                call,
             };
             Ok(block_traces)
         }
@@ -97,6 +101,7 @@ fn run_block(
         diff,
         block,
         receipts,
+        call,
     } = block_traces;
     // set block hash for future blocks to use
     db.set_block_hash(
@@ -133,12 +138,22 @@ fn run_block(
             .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
             .collect(),
     };
+
+    let calltrace = CallTrace {
+        result: call
+            .result
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
+            .collect(),
+    };
+
     let mut chain = Chain::empty_randomized(Some(1));
     chain.set_last_block_number(block_number - 1);
 
     chain.set_block_hashes(get_block_hashes_array(block_number, db)?);
 
-    let prestate_cache = populate_prestate(&mut chain, ps_trace);
+    let prestate_cache = populate_prestate(&mut chain, ps_trace, &calltrace);
 
     let output_path = witness_output_dir.map(|dir| {
         let mut suffix = block_number.to_string();

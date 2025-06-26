@@ -1,4 +1,5 @@
 use crate::block::Block;
+use crate::calltrace::CallTrace;
 use crate::post_check::PostCheckError;
 use crate::prestate::{DiffTrace, PrestateTrace};
 use crate::receipts::BlockReceipts;
@@ -59,6 +60,7 @@ pub struct BlockTraces {
     #[serde(with = "as_json_string")]
     pub block: Block,
     pub receipts: BlockReceipts,
+    pub call: CallTrace,
 }
 
 impl Database {
