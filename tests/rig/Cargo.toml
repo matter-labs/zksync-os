@@ -18,7 +18,7 @@ forward_system = { path = "../../forward_system" }
 oracle_provider = { path = "../../oracle_provider" }
 zk_ee = { path = "../../zk_ee" }
 zksync_os_runner = { path = "../../zksync_os_runner"}
-system_hooks = { path = "../../system_hooks", features = ["p256_precompile"]}
+system_hooks = { path = "../../system_hooks" }
 crypto = { path = "../../crypto" }
 cycle_marker = { path = "../../cycle_marker", optional = true }
 
@@ -46,3 +46,4 @@ simulate_witness_gen = []
 unlimited_native = ["forward_system/unlimited_native"]
 resources_for_tester = ["basic_bootloader/resources_for_tester"]
 report_native = ["forward_system/report_native"]
+p256_precompile = ["system_hooks/p256_precompile"]
