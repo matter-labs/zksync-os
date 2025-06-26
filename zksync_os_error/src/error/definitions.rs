@@ -2093,7 +2093,10 @@ pub enum Validation {
     #[doc = ""]
     #[doc = "# Description"]
     #[doc = "A transaction cannot require more gas than the total gas available in a single block."]
-    CallerGasLimitMoreThanBlock = 106u32,
+    CallerGasLimitMoreThanBlock {
+        tx_gas_limit: u64,
+        block_gas_limit: u64,
+    } = 106u32,
     #[doc = "# Summary "]
     #[doc = "Initial gas for a Call is bigger than `gas_limit`."]
     #[doc = ""]
@@ -2352,8 +2355,11 @@ impl CustomErrorMessage for Validation {
             Validation::GasPriceLessThanBasefee => {
                 format!("[core-tx_valid-105] Gas price is less than the block's base fee.")
             }
-            Validation::CallerGasLimitMoreThanBlock => {
-                format ! ("[core-tx_valid-106] The transaction's gas limit exceeds the block's gas limit.")
+            Validation::CallerGasLimitMoreThanBlock {
+                tx_gas_limit,
+                block_gas_limit,
+            } => {
+                format ! ("[core-tx_valid-106] The transaction's gas limit {tx_gas_limit} exceeds the block's gas limit {block_gas_limit}.")
             }
             Validation::CallGasCostMoreThanGasLimit => {
                 format ! ("[core-tx_valid-107] The intrinsic gas cost of the transaction is higher than its gas limit.")

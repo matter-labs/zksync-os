@@ -4025,8 +4025,17 @@
         "name": "CallerGasLimitMoreThanBlock",
         "code": 106,
         "identifier": "[core-tx_valid-106]",
-        "message": "The transaction's gas limit exceeds the block's gas limit.",
-        "fields": [],
+        "message": "The transaction's gas limit {tx_gas_limit} exceeds the block's gas limit {block_gas_limit}.",
+        "fields": [
+          {
+            "name": "tx_gas_limit",
+            "type": "u64"
+          },
+          {
+            "name": "block_gas_limit",
+            "type": "u64"
+          }
+        ],
         "documentation": {
           "description": "A transaction cannot require more gas than the total gas available in a single block.",
           "summary": "`gas_limit` in the tx is bigger than `block_gas_limit`.",
