@@ -185,7 +185,7 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
                         logs: events
                             .iter()
                             .filter_map(|e| {
-                                if e.tx_number == tx_number as u32 + 1 {
+                                if e.tx_number == tx_number as u32 {
                                     Some(e.into())
                                 } else {
                                     None
