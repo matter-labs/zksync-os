@@ -96,9 +96,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
                 " len {}, source offset: {:?}, dest offset {}",
-                len,
-                source_offset,
-                memory_offset
+                len, source_offset, memory_offset
             ));
         }
 
@@ -271,7 +269,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         let (code_offset, len) =
             Self::cast_offset_and_len(code_offset, len, ExitCode::InvalidOperandOOG)?;
-        
 
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, code_offset, len)?;
 

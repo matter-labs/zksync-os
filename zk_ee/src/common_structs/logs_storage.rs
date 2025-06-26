@@ -517,11 +517,7 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
                 data_hash,
             ),
             GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => {
-                let value = if success {
-                    &U256::one()
-                } else {
-                    &U256::zero()
-                };
+                let value = if success { &U256::one() } else { &U256::zero() };
                 (
                     // TODO: move into const
                     B160::from_limbs([0x8001, 0, 0]),

@@ -31,8 +31,10 @@ impl Clone for U256 {
     fn clone_from(&mut self, source: &Self) {
         unsafe {
             with_ram_operand(source.0.as_ptr().cast(), |src_ptr| {
-                let _ =
-                    bigint_op_delegation::<MEMCOPY_BIT_IDX>(self.0.as_mut_ptr().cast(), src_ptr.cast());
+                let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(
+                    self.0.as_mut_ptr().cast(),
+                    src_ptr.cast(),
+                );
             })
         }
     }
@@ -46,8 +48,10 @@ impl core::cmp::PartialEq for U256 {
             with_ram_operand(self.0.as_ptr().cast(), |scratch| {
                 with_ram_operand(other.0.as_ptr().cast(), |scratch_2| {
                     // equality is non-destructing
-                    let eq =
-                    bigint_op_delegation::<EQ_OP_BIT_IDX>(scratch.cast_mut().cast(), scratch_2.cast());
+                    let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(
+                        scratch.cast_mut().cast(),
+                        scratch_2.cast(),
+                    );
                     eq != 0
                 })
             })
@@ -217,8 +221,10 @@ impl U256 {
     pub fn overflowing_add_assign(&mut self, rhs: &Self) -> bool {
         unsafe {
             with_ram_operand(rhs.0.as_ptr().cast(), |src_ptr| {
-                let carry =
-                    bigint_op_delegation::<ADD_OP_BIT_IDX>(self.0.as_mut_ptr().cast(), src_ptr.cast());
+                let carry = bigint_op_delegation::<ADD_OP_BIT_IDX>(
+                    self.0.as_mut_ptr().cast(),
+                    src_ptr.cast(),
+                );
                 carry != 0
             })
         }
@@ -247,8 +253,10 @@ impl U256 {
     pub fn overflowing_sub_assign(&mut self, rhs: &Self) -> bool {
         unsafe {
             with_ram_operand(rhs.0.as_ptr().cast(), |src_ptr| {
-                let borrow =
-                    bigint_op_delegation::<SUB_OP_BIT_IDX>(self.0.as_mut_ptr().cast(), src_ptr.cast());
+                let borrow = bigint_op_delegation::<SUB_OP_BIT_IDX>(
+                    self.0.as_mut_ptr().cast(),
+                    src_ptr.cast(),
+                );
                 borrow != 0
             })
         }
@@ -271,7 +279,10 @@ impl U256 {
     pub fn wrapping_mul_assign(&mut self, rhs: &Self) {
         unsafe {
             with_ram_operand(rhs.0.as_ptr().cast(), |src_ptr| {
-                bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(self.0.as_mut_ptr().cast(), src_ptr.cast());
+                bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(
+                    self.0.as_mut_ptr().cast(),
+                    src_ptr.cast(),
+                );
             })
         }
     }
@@ -280,7 +291,10 @@ impl U256 {
     pub fn high_mul_assign(&mut self, rhs: &Self) {
         unsafe {
             with_ram_operand(rhs.0.as_ptr().cast(), |src_ptr| {
-                bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(self.0.as_mut_ptr().cast(), src_ptr.cast());
+                bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(
+                    self.0.as_mut_ptr().cast(),
+                    src_ptr.cast(),
+                );
             })
         }
     }
@@ -299,7 +313,10 @@ impl U256 {
             });
 
             with_ram_operand(rhs.0.as_ptr().cast(), |src_ptr| {
-                bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(self.0.as_mut_ptr().cast(), src_ptr.cast());
+                bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(
+                    self.0.as_mut_ptr().cast(),
+                    src_ptr.cast(),
+                );
                 bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(
                     result.0.as_mut_ptr().cast(),
                     src_ptr.cast(),
@@ -314,8 +331,14 @@ impl U256 {
     pub fn widening_mul_assign_into(&mut self, high: &mut Self, rhs: &Self) {
         unsafe {
             with_ram_operand(rhs.0.as_ptr().cast(), |src_ptr| {
-                bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(self.0.as_mut_ptr().cast(), src_ptr.cast());
-                bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(high.0.as_mut_ptr().cast(), src_ptr.cast());
+                bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(
+                    self.0.as_mut_ptr().cast(),
+                    src_ptr.cast(),
+                );
+                bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(
+                    high.0.as_mut_ptr().cast(),
+                    src_ptr.cast(),
+                );
             });
         }
     }
@@ -522,13 +545,21 @@ impl U256 {
     pub fn checked_add(&self, rhs: &Self) -> Option<Self> {
         let mut result = self.clone();
         let of = result.overflowing_add_assign(rhs);
-        if of { None } else { Some(result) }
+        if of {
+            None
+        } else {
+            Some(result)
+        }
     }
 
     pub fn checked_sub(&self, rhs: &Self) -> Option<Self> {
         let mut result = self.clone();
         let of = result.overflowing_sub_assign(rhs);
-        if of { None } else { Some(result) }
+        if of {
+            None
+        } else {
+            Some(result)
+        }
     }
 
     pub fn checked_mul(&self, rhs: &Self) -> Option<Self> {
@@ -544,7 +575,11 @@ impl U256 {
             })
         };
 
-        if of { None } else { Some(result) }
+        if of {
+            None
+        } else {
+            Some(result)
+        }
     }
 }
 

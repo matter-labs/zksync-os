@@ -110,9 +110,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
                 " len {}, source offset: {:?}, dest offset {}",
-                len,
-                source_offset,
-                memory_offset
+                len, source_offset, memory_offset
             ));
         }
 
@@ -203,9 +201,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
                 " len {}, source offset: {:?}, dest offset {}",
-                len,
-                source_offset,
-                memory_offset
+                len, source_offset, memory_offset
             ));
         }
 

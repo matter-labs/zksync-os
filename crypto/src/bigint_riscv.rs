@@ -115,7 +115,7 @@ pub unsafe fn copy_to_scratch(
 #[inline(always)]
 pub unsafe fn with_ram_operand<T, F: FnMut(*const AlignedPrecompileSpace) -> T>(
     operand: *const AlignedPrecompileSpace,
-    mut f: F
+    mut f: F,
 ) -> T {
     #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
     {
@@ -258,7 +258,6 @@ pub fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
 
     mask
 }
-
 
 #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
 #[inline(always)]
