@@ -5,8 +5,8 @@ use crate::bootloader::account_models::ExecutionResult;
 use crate::bootloader::account_models::AA;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
+use crate::bootloader::errors::TxError;
 use crate::bootloader::errors::TxError::Validation;
-use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::{require, require_internal};
 use constants::L1_TX_INTRINSIC_NATIVE_COST;
@@ -24,6 +24,7 @@ use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::{EthereumLikeTypes, Resources};
+use zksync_os_error::core::tx_valid::ValidationError as InvalidTransaction;
 
 /// Return value of validation step
 #[derive(Default)]
@@ -417,7 +418,10 @@ where
         let tx_gas_limit = transaction.gas_limit.read();
         require!(
             tx_gas_limit <= block_gas_limit,
-            InvalidTransaction::CallerGasLimitMoreThanBlock,
+            InvalidTransaction::CallerGasLimitMoreThanBlock {
+                tx_gas_limit,
+                block_gas_limit
+            },
             system
         )?;
 
@@ -857,7 +861,7 @@ where
         // then this transaction should be rejected.
         require!(
             bootloader_received_funds >= required_funds,
-            InvalidTransaction::ReceivedInsufficientFees {
+            InvalidTransaction::AAReceivedInsufficientFees {
                 received: bootloader_received_funds,
                 required: required_funds
             },

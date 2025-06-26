@@ -3,11 +3,11 @@ use super::*;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use constants::{PAYMASTER_VALIDATE_AND_PAY_SELECTOR, TX_CALLDATA_OFFSET};
-use errors::InvalidTransaction;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::system::errors::{FatalError, InternalError};
 use zk_ee::system::{EthereumLikeTypes, System};
+use zksync_os_error::core::tx_valid::ValidationError as InvalidTransaction;
 
 // Helpers for paymaster flow.
 
@@ -54,10 +54,9 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         // Return memory isn't flushed, as it's read by
         // store_paymaster_context_and_check_magic
         if reverted {
-            Err(TxError::Validation(InvalidTransaction::Revert {
-                method: errors::AAMethod::PaymasterValidateAndPay,
-                output: None, // TODO
-            }))
+            Err(TxError::Validation(
+                InvalidTransaction::AARevertPaymasterValidateAndPay,
+            ))
         } else {
             Ok(return_values)
         }

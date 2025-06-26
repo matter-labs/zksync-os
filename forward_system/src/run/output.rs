@@ -4,7 +4,7 @@ use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::run::TxResultCallback;
 use arrayvec::ArrayVec;
 pub use basic_bootloader::bootloader::block_header::BlockHeader;
-use basic_bootloader::bootloader::errors::InvalidTransaction;
+use zksync_os_error::core::tx_valid::ValidationError as InvalidTransaction;
 use ruint::aliases::B160;
 use zk_ee::common_structs::GenericLogContent;
 use zk_ee::common_structs::{

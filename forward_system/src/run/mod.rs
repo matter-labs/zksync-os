@@ -42,7 +42,7 @@ pub use self::output::StorageWrite;
 pub use self::output::TxOutput;
 use crate::run::output::TxResult;
 use crate::run::test_impl::{NoopTxCallback, TxListSource};
-pub use basic_bootloader::bootloader::errors::InvalidTransaction;
+pub use zksync_os_error::core::tx_valid::ValidationError as InvalidTransaction;
 use basic_system::system_implementation::flat_storage_model::*;
 use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
 use zk_ee::system::errors::InternalError;

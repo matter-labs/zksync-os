@@ -11,6 +11,7 @@ use zk_ee::kv_markers::MAX_EVENT_TOPICS;
 use zk_ee::system::IOResultKeeper;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::{Bytes32, UsizeAlignedByteBox};
+use zksync_os_error::core::tx_valid::ValidationError as InvalidTransaction;
 
 #[derive(Debug, Clone)]
 pub struct TxProcessingOutputOwned {
@@ -29,7 +30,7 @@ pub struct ForwardRunningResultKeeper<TR: TxResultCallback> {
     pub logs: Vec<GenericLogContent<EthereumIOTypesConfig>>,
     pub storage_writes: Vec<(B160, Bytes32, Bytes32)>,
     pub tx_results: Vec<
-        Result<TxProcessingOutputOwned, basic_bootloader::bootloader::errors::InvalidTransaction>,
+        Result<TxProcessingOutputOwned, InvalidTransaction>,
     >,
     pub new_preimages: Vec<(Bytes32, Vec<u8>, PreimageType)>,
     pub pubdata: Vec<u8>,
@@ -103,7 +104,7 @@ impl<TR: TxResultCallback> ResultKeeperExt for ForwardRunningResultKeeper<TR> {
         &mut self,
         tx_result: Result<
             TxProcessingOutput,
-            basic_bootloader::bootloader::errors::InvalidTransaction,
+            InvalidTransaction,
         >,
     ) {
         let owned_result = tx_result.map(|output| TxProcessingOutputOwned {
