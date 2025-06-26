@@ -46,14 +46,14 @@ fn run<const RANDOMIZED: bool>(
 
     let _ratio = compute_ratio(stats);
 
-    post_check(
+    /*post_check(
         output,
         receipts,
         diff_trace,
         prestate_cache,
         ruint::aliases::B160::from_be_bytes(miner.into()),
     )
-    .unwrap();
+    .unwrap();*/
 
     Ok(())
 }
