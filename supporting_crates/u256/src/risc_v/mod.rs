@@ -61,20 +61,19 @@ impl core::cmp::Ord for U256 {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         // we use scratch space to get mutable memory for our comparisons
         unsafe {
-            crypto::bigint_riscv::with_ram_operand(self.0.as_ptr().cast(), |scratch| {
-                crypto::bigint_riscv::with_ram_operand(other.0.as_ptr().cast(), |other| {
-                    // equality is non-destructing
-                    let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(scratch.cast(), other.cast());
-                    if eq != 0 {
-                        return core::cmp::Ordering::Equal;
-                    }
-                    let borrow = bigint_op_delegation::<SUB_OP_BIT_IDX>(scratch.cast(), other.cast());
-                    if borrow != 0 {
-                        core::cmp::Ordering::Less
-                    } else {
-                        core::cmp::Ordering::Greater
-                    }
-                })
+            let scratch = crypto::bigint_riscv::copy_to_scratch(self.0.as_ptr().cast());
+            crypto::bigint_riscv::with_ram_operand(other.0.as_ptr().cast(), |other| {
+                // equality is non-destructing
+                let eq = bigint_op_delegation::<EQ_OP_BIT_IDX>(scratch.cast(), other.cast());
+                if eq != 0 {
+                    return core::cmp::Ordering::Equal;
+                }
+                let borrow = bigint_op_delegation::<SUB_OP_BIT_IDX>(scratch.cast(), other.cast());
+                if borrow != 0 {
+                    core::cmp::Ordering::Less
+                } else {
+                    core::cmp::Ordering::Greater
+                }
             })
         }
     }

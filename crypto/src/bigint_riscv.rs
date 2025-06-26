@@ -85,32 +85,32 @@ pub unsafe fn is_one_mut(operand: *mut AlignedPrecompileSpace) -> bool {
     eq != 0
 }
 
-// #[inline(always)]
-// /// Safety: `operand` must be 32 bytes aligned and point to 32 bytes of accessible memory.
-// pub unsafe fn copy_to_scratch(
-//     operand: *const AlignedPrecompileSpace,
-// ) -> *mut AlignedPrecompileSpace {
-//     #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
-//     {
-//         if operand.addr() < ROM_BOUND {
-//             SCRATCH_FOR_MUT.as_mut_ptr().write(operand.read());
-//             SCRATCH_FOR_MUT.as_mut_ptr()
-//         } else {
-//             // otherwise we can just use precompile
-//             let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(
-//                 SCRATCH_FOR_MUT.as_mut_ptr().cast(),
-//                 operand.cast(),
-//             );
-//             SCRATCH_FOR_MUT.as_mut_ptr()
-//         }
-//     }
-//
-//     #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
-//     {
-//         SCRATCH_FOR_MUT.as_mut_ptr().write(operand.read());
-//         SCRATCH_FOR_MUT.as_mut_ptr()
-//     }
-// }
+#[inline(always)]
+/// Safety: `operand` must be 32 bytes aligned and point to 32 bytes of accessible memory.
+pub unsafe fn copy_to_scratch(
+    operand: *const AlignedPrecompileSpace,
+) -> *mut AlignedPrecompileSpace {
+    #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
+    {
+        if operand.addr() < ROM_BOUND {
+            SCRATCH_FOR_MUT.as_mut_ptr().write(operand.read());
+            SCRATCH_FOR_MUT.as_mut_ptr()
+        } else {
+            // otherwise we can just use precompile
+            let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(
+                SCRATCH_FOR_MUT.as_mut_ptr().cast(),
+                operand.cast(),
+            );
+            SCRATCH_FOR_MUT.as_mut_ptr()
+        }
+    }
+
+    #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
+    {
+        SCRATCH_FOR_MUT.as_mut_ptr().write(operand.read());
+        SCRATCH_FOR_MUT.as_mut_ptr()
+    }
+}
 
 #[inline(always)]
 pub unsafe fn with_ram_operand<T, F: FnMut(*const AlignedPrecompileSpace) -> T>(
