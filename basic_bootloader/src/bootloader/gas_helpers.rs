@@ -42,9 +42,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         native_limit
             .checked_sub(intrinsic_pubdata_overhead)
             .ok_or(TxError::Validation(
-                errors::InvalidTransaction::AAValidationError(
-                    errors::InvalidAA::OutOfNativeResourcesDuringValidation,
-                ),
+                errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
             ))?;
 
     // EVM tester requires high native limits, so for it we never hold off resources.
@@ -74,9 +72,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         .checked_sub(calldata_native)
         .and_then(|native| native.checked_sub(intrinsic_native as u64))
         .ok_or(TxError::Validation(
-            errors::InvalidTransaction::AAValidationError(
-                errors::InvalidAA::OutOfNativeResourcesDuringValidation,
-            ),
+            errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
         ))?;
 
     let native_limit =
@@ -93,9 +89,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
 
     if total_gas_to_charge > gas_limit {
         Err(TxError::Validation(
-            errors::InvalidTransaction::AAValidationError(
-                errors::InvalidAA::OutOfGasDuringValidation,
-            ),
+            errors::InvalidTransaction::OutOfGasDuringValidation,
         ))
     } else {
         let gas_limit_for_tx = gas_limit - total_gas_to_charge;

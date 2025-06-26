@@ -3,9 +3,7 @@ use crate::bootloader::constants::PREPARE_FOR_PAYMASTER_SELECTOR;
 use crate::bootloader::constants::{
     EXECUTE_SELECTOR, PAY_FOR_TRANSACTION_SELECTOR, VALIDATE_SELECTOR,
 };
-use crate::bootloader::errors::{
-    AAMethod, InvalidAA, InvalidTransaction::AAValidationError, TxError,
-};
+use crate::bootloader::errors::{AAMethod, InvalidTransaction, TxError};
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::{BasicBootloader, Bytes32};
@@ -63,18 +61,16 @@ where
         *resources = resources_returned;
 
         let res: Result<(), TxError> = if reverted {
-            Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
+            Err(TxError::Validation(InvalidTransaction::Revert {
                 method: AAMethod::AccountValidate,
                 output: None, // TODO
-            })))
+            }))
         } else if returndata_slice.len() != 32 {
-            Err(TxError::Validation(AAValidationError(
-                InvalidAA::InvalidReturndataLength,
-            )))
+            Err(TxError::Validation(
+                InvalidTransaction::InvalidReturndataLength,
+            ))
         } else if &returndata_slice[..4] != VALIDATE_SELECTOR {
-            Err(TxError::Validation(AAValidationError(
-                InvalidAA::InvalidMagic,
-            )))
+            Err(TxError::Validation(InvalidTransaction::InvalidMagic))
         } else {
             Ok(())
         };
@@ -155,9 +151,7 @@ where
     ///
     fn check_nonce_is_not_used(account_data_nonce: u64, tx_nonce: u64) -> Result<(), TxError> {
         if tx_nonce < account_data_nonce {
-            return Err(TxError::Validation(AAValidationError(
-                InvalidAA::NonceUsedAlready,
-            )));
+            return Err(TxError::Validation(InvalidTransaction::NonceUsedAlready));
         }
         Ok(())
     }
@@ -173,7 +167,7 @@ where
         let acc_nonce = system.io.read_nonce(caller_ee_type, resources, &from)?;
         require!(
             acc_nonce > tx_nonce,
-            TxError::Validation(AAValidationError(InvalidAA::NonceNotIncreased,)),
+            TxError::Validation(InvalidTransaction::NonceNotIncreased),
             system
         )
     }
@@ -213,10 +207,10 @@ where
         *resources = resources_returned;
 
         let res: Result<(), TxError> = if reverted {
-            Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
+            Err(TxError::Validation(InvalidTransaction::Revert {
                 method: AAMethod::AccountPayForTransaction,
                 output: None, // TODO
-            })))
+            }))
         } else {
             Ok(())
         };
@@ -261,10 +255,10 @@ where
         *resources = resources_returned;
 
         let res: Result<(), TxError> = if reverted {
-            Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
+            Err(TxError::Validation(InvalidTransaction::Revert {
                 method: AAMethod::AccountPrePaymaster,
                 output: None, // todo
-            })))
+            }))
         } else {
             Ok(())
         };

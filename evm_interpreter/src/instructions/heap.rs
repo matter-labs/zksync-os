@@ -10,7 +10,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn mload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, MLOAD_NATIVE_COST)?;
-        let stack_top = self.stack.peek_mut()?;
+        let stack_top = self.stack.top_mut()?;
         let index = Self::cast_to_usize(stack_top, ExitCode::InvalidOperandOOG)?;
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, index, 32)?;
         unsafe {
@@ -35,7 +35,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::VERYLOW, MSTORE_NATIVE_COST)?;
         let (index, value) = self.stack.pop_2()?;
         let mut le_value = value.clone();
-        let index = Self::cast_to_usize(&index, ExitCode::InvalidOperandOOG)?;
+        let index = Self::cast_to_usize(index, ExitCode::InvalidOperandOOG)?;
         self.resize_heap(index, 32)?;
 
         unsafe {
@@ -81,7 +81,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::BASE, MSIZE_NATIVE_COST)?;
         let len = self.memory_len();
         debug_assert!(len.next_multiple_of(32) == len);
-        self.stack.push_1(&U256::from(len as u64))
+        self.stack.push(&U256::from(len as u64))
     }
 
     pub fn mcopy(&mut self) -> InstructionResult {

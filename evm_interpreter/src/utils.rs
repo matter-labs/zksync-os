@@ -53,10 +53,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.heap.deref_mut()
     }
 
-    pub(crate) fn returndata(&'_ self) -> &'_ [u8] {
-        self.returndata
-    }
-
     pub(crate) fn resize_heap(&mut self, offset: usize, len: usize) -> Result<(), ExitCode> {
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, offset, len)
     }

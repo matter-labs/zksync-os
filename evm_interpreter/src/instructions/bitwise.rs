@@ -65,7 +65,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn iszero(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, ISZERO_NATIVE_COST)?;
-        let op1 = self.stack.peek_mut()?;
+        let op1 = self.stack.top_mut()?;
         if op1.is_zero() {
             U256::write_one(op1);
         } else {
@@ -98,7 +98,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn not(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, NOT_NATIVE_COST)?;
-        let op1 = self.stack.peek_mut()?;
+        let op1 = self.stack.top_mut()?;
         op1.not_mut();
         Ok(())
     }
@@ -110,7 +110,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
         if let Some(offset) = u256_try_to_usize_capped::<32>(offset) {
             let ret = src.byte(31 - offset);
-
             *src = U256::from(ret as u64);
         } else {
             U256::write_zero(src);
@@ -144,7 +143,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             if sign_bit == false {
                 core::ops::ShrAssign::shr_assign(op2, shift as u32);
             } else {
-                // perform unsigned shift, then XOR with mask
+                // perform unsigned shift, then OR with mask
                 core::ops::ShrAssign::shr_assign(op2, shift as u32);
                 let (words, bits) = (shift / 64, shift % 64);
                 for i in 0..words {

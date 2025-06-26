@@ -12,7 +12,7 @@ use super::*;
 impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn balance(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas.spend_gas_and_native(0, BALANCE_NATIVE_COST)?;
-        let stack_top = self.stack.peek_mut()?;
+        let stack_top = self.stack.top_mut()?;
         let address = u256_to_b160(stack_top);
         let value = system.io.get_nominal_token_balance(
             THIS_EE_TYPE,
@@ -31,12 +31,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             system
                 .io
                 .get_selfbalance(THIS_EE_TYPE, self.gas.resources_mut(), &self.address)?;
-        self.stack.push_1(&value)
+        self.stack.push(&value)
     }
 
     pub fn extcodesize(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas.spend_gas_and_native(0, EXTCODESIZE_NATIVE_COST)?;
-        let stack_top = self.stack.peek_mut()?;
+        let stack_top = self.stack.top_mut()?;
         let address = u256_to_b160(stack_top);
         let value = system.io.get_observable_bytecode_size(
             THIS_EE_TYPE,
@@ -51,7 +51,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
     pub fn extcodehash(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas.spend_gas_and_native(0, EXTCODEHASH_NATIVE_COST)?;
-        let stack_top = self.stack.peek_mut()?;
+        let stack_top = self.stack.top_mut()?;
         let address = u256_to_b160(stack_top);
         let value = system.io.get_observable_bytecode_hash(
             THIS_EE_TYPE,
@@ -72,10 +72,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let (memory_offset, len) =
             Self::cast_offset_and_len(&memory_offset, &len, ExitCode::InvalidOperandOOG)?;
 
-        let maybe_source_offset = u256_try_to_usize(&source_offset);
-
         // resize memory to account for the destination memory required
-        self.resize_heap(memory_offset, len)?;
+        Self::resize_heap_implementation(&mut self.heap, &mut self.gas, memory_offset, len)?;
 
         let bytecode =
             system
@@ -83,7 +81,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 .get_observable_bytecode(THIS_EE_TYPE, self.gas.resources_mut(), &address)?;
 
         // now follow logic of calldatacopy
-        let source = maybe_source_offset
+        let source = u256_try_to_usize(source_offset)
             .and_then(|offset| bytecode.get(offset..))
             .unwrap_or(&[]);
 
@@ -99,7 +97,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             let _ = system.get_logger().write_fmt(format_args!(
                 " len {}, source offset: {:?}, dest offset {}",
                 len,
-                maybe_source_offset.unwrap(),
+                source_offset,
                 memory_offset
             ));
         }
@@ -110,7 +108,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn sload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas.spend_gas_and_native(0, SLOAD_NATIVE_COST)?;
         // TODO: extend U256 to produce bytes32 immediately
-        let stack_top = self.stack.peek_mut()?;
+        let stack_top = self.stack.top_mut()?;
         let value = system.io.storage_read::<false>(
             THIS_EE_TYPE,
             self.gas.resources_mut(),
@@ -126,7 +124,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
     pub fn tload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas.spend_gas_and_native(0, TLOAD_NATIVE_COST)?;
-        let stack_top = self.stack.peek_mut()?;
+        let stack_top = self.stack.top_mut()?;
         let value = system.io.storage_read::<true>(
             THIS_EE_TYPE,
             self.gas.resources_mut(),
@@ -175,7 +173,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         if self.is_static_frame() {
             return Err(ExitCode::StateChangeDuringStaticCall);
         }
-
         let (index, value) = self.stack.pop_2()?;
         let index = Bytes32::from_u256_be(index);
         let value = Bytes32::from_u256_be(value);
@@ -270,12 +267,13 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.clear_last_returndata();
 
         let (value, code_offset, len) = self.stack.pop_3()?;
+        let value = value.clone();
 
         let (code_offset, len) =
             Self::cast_offset_and_len(code_offset, len, ExitCode::InvalidOperandOOG)?;
-        let value = value.clone();
+        
 
-        self.resize_heap(code_offset, len)?;
+        Self::resize_heap_implementation(&mut self.heap, &mut self.gas, code_offset, len)?;
 
         // Create code size is limited
         if len > MAX_INITCODE_SIZE {
@@ -355,7 +353,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.gas
             .spend_gas_and_native(0, native_resource_constants::CALL_NATIVE_COST)?;
         self.clear_last_returndata();
-
         let (gas_to_pass, to) = self.stack.pop_2()?;
         let gas_to_pass = u256_to_u64_saturated(gas_to_pass);
         let to = u256_to_b160(to);

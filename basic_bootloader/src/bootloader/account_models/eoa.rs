@@ -4,9 +4,8 @@ use crate::bootloader::constants::PAYMASTER_APPROVAL_BASED_SELECTOR;
 use crate::bootloader::constants::PAYMASTER_GENERAL_SELECTOR;
 use crate::bootloader::constants::{DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS, ERC20_ALLOWANCE_SELECTOR};
 use crate::bootloader::constants::{SPECIAL_ADDRESS_TO_WASM_DEPLOY, TX_OFFSET};
-use crate::bootloader::errors::InvalidTransaction::AAValidationError;
+use crate::bootloader::errors::AAMethod;
 use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
-use crate::bootloader::errors::{AAMethod, InvalidAA};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
@@ -36,10 +35,10 @@ macro_rules! require_or_revert {
             let _ = $system
                 .get_logger()
                 .write_fmt(format_args!("Reverted: {}\n", $s));
-            Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
+            Err(TxError::Validation(InvalidTransaction::Revert {
                 method: $m,
                 output: None,
-            })))
+            }))
         }
     };
 }
@@ -99,14 +98,14 @@ where
                 }
             }
             Err(SystemError::OutOfErgs) => {
-                return Err(TxError::Validation(InvalidTransaction::AAValidationError(
-                    InvalidAA::OutOfGasDuringValidation,
-                )))
+                return Err(TxError::Validation(
+                    InvalidTransaction::OutOfGasDuringValidation,
+                ))
             }
             Err(SystemError::OutOfNativeResources) => {
-                return Err(TxError::Validation(InvalidTransaction::AAValidationError(
-                    InvalidAA::OutOfNativeResourcesDuringValidation,
-                )))
+                return Err(TxError::Validation(
+                    InvalidTransaction::OutOfNativeResourcesDuringValidation,
+                ))
             }
             Err(SystemError::Internal(e)) => return Err(TxError::Internal(e)),
         }
@@ -356,9 +355,9 @@ where
                         Err(e) => e.into(),
                     }
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs) => TxError::Validation(
-                    InvalidTransaction::AAValidationError(InvalidAA::OutOfGasDuringValidation),
-                ),
+                UpdateQueryError::System(SystemError::OutOfErgs) => {
+                    TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
+                }
                 UpdateQueryError::System(SystemError::OutOfNativeResources) => {
                     TxError::oon_as_validation(FatalError::OutOfNativeResources)
                 }
@@ -484,9 +483,9 @@ where
             match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
                 Ok(_) => (),
                 Err(SystemError::OutOfErgs) => {
-                    return Err(TxError::Validation(InvalidTransaction::AAValidationError(
-                        InvalidAA::OutOfGasDuringValidation,
-                    )))
+                    return Err(TxError::Validation(
+                        InvalidTransaction::OutOfGasDuringValidation,
+                    ))
                 }
                 Err(SystemError::OutOfNativeResources) => {
                     return Err(TxError::oon_as_validation(FatalError::OutOfNativeResources))
@@ -683,14 +682,14 @@ where
     *resources = resources_returned;
 
     let res: Result<U256, TxError> = if reverted {
-        Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
+        Err(TxError::Validation(InvalidTransaction::Revert {
             method: AAMethod::AccountPrePaymaster,
             output: None, // TODO
-        })))
+        }))
     } else if returndata_slice.len() != 32 {
-        Err(TxError::Validation(AAValidationError(
-            InvalidAA::InvalidReturndataLength,
-        )))
+        Err(TxError::Validation(
+            InvalidTransaction::InvalidReturndataLength,
+        ))
     } else {
         Ok(U256::from_be_bytes(
             &returndata_slice[..].try_into().unwrap(),
@@ -765,14 +764,14 @@ where
     *resources = resources_returned;
 
     let res: Result<U256, TxError> = if reverted {
-        Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
+        Err(TxError::Validation(InvalidTransaction::Revert {
             method: AAMethod::AccountPrePaymaster,
             output: None, // TODO
-        })))
+        }))
     } else if returndata_slice.len() != 32 {
-        Err(TxError::Validation(AAValidationError(
-            InvalidAA::InvalidReturndataLength,
-        )))
+        Err(TxError::Validation(
+            InvalidTransaction::InvalidReturndataLength,
+        ))
     } else {
         Ok(U256::from_be_bytes(
             &returndata_slice[..].try_into().unwrap(),

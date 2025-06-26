@@ -31,9 +31,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, DIV_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
-        if op2.is_zero() {
-            U256::write_zero(op2);
-        } else {
+        if op2.is_zero() == false {
             // we will mangle op1, but we do not care
             U256::div_rem(op1, op2);
             Clone::clone_from(op2, &*op1);
@@ -53,9 +51,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::LOW, MOD_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_mut_and_peek()?;
-        if op2.is_zero() {
-            U256::write_zero(op2);
-        } else {
+        if op2.is_zero() == false {
             // we will mangle op1, but we do not care
             U256::div_rem(op1, op2);
         }

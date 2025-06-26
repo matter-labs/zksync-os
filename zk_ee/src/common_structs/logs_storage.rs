@@ -518,7 +518,7 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
             ),
             GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => {
                 let value = if success {
-                    &U256::from(1u64)
+                    &U256::one()
                 } else {
                     &U256::zero()
                 };

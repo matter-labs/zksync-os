@@ -17,9 +17,7 @@ pub fn mul_mod(this: &U256, other: &U256, mut modulus: U256) -> U256 {
 
     // Compute modulus using `div_rem`.
     // This stores the remainder in the divisor, `modulus`.
-    unsafe {
-        ruint::algorithms::div(&mut product, modulus.as_limbs_mut());
-    }
+    ruint::algorithms::div(&mut product, modulus.as_limbs_mut());
 
     modulus
 }

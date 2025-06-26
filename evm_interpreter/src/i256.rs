@@ -73,12 +73,10 @@ pub fn i256_cmp(first: &U256, second: &U256) -> Ordering {
             let uf = tmp.overflowing_sub_assign(&second);
             if uf {
                 Ordering::Less
+            } else if tmp.is_zero() {
+                Ordering::Equal
             } else {
-                if tmp.is_zero() {
-                    Ordering::Equal
-                } else {
-                    Ordering::Greater
-                }
+                Ordering::Greater
             }
         }
     }
@@ -105,9 +103,9 @@ pub fn i256_div(dividend: &mut U256, divisor_or_quotient: &mut U256) {
     }
 
     // this is unsigned division of moduluses
+    // TODO actual quotinent will be in "dividend", it is confusing
     U256::div_rem(dividend, divisor_or_quotient);
 
-    // u256_remove_sign(dividend);
     // set sign bit to zero
 
     if dividend.is_zero() {
@@ -146,8 +144,6 @@ pub fn i256_mod(dividend: &mut U256, divisor_or_remainder: &mut U256) {
 
     // this is unsigned division of moduluses
     U256::div_rem(dividend, divisor_or_remainder);
-
-    // u256_remove_sign(divisor_or_remainder);
 
     if divisor_or_remainder.is_zero() {
         return;
