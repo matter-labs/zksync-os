@@ -6,7 +6,7 @@ use crate::bootloader::account_models::AA;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
 use crate::bootloader::errors::TxError::Validation;
-use crate::bootloader::errors::{InvalidAA, InvalidTransaction, TxError};
+use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::{require, require_internal};
 use constants::L1_TX_INTRINSIC_NATIVE_COST;
@@ -857,10 +857,10 @@ where
         // then this transaction should be rejected.
         require!(
             bootloader_received_funds >= required_funds,
-            InvalidTransaction::AAValidationError(InvalidAA::ReceivedInsufficientFees {
+            InvalidTransaction::ReceivedInsufficientFees {
                 received: bootloader_received_funds,
                 required: required_funds
-            }),
+            },
             system
         )?;
         let excessive_funds = bootloader_received_funds

@@ -72,6 +72,16 @@ pub fn u256_try_to_u64(src: &U256) -> Option<u64> {
 }
 
 #[inline(always)]
+pub fn u256_try_to_usize_capped<const CAP: usize>(src: &U256) -> Option<usize> {
+    let limbs = src.as_limbs();
+    if limbs[3] != 0 || limbs[2] != 0 || limbs[1] != 0 || limbs[0] >= CAP as u64 {
+        None
+    } else {
+        Some(limbs[0] as usize)
+    }
+}
+
+#[inline(always)]
 pub fn u256_to_usize_saturated(src: &U256) -> usize {
     u256_to_u64_saturated(src) as usize
 }
@@ -87,7 +97,7 @@ pub fn u256_try_to_usize(src: &U256) -> Option<usize> {
 }
 
 #[inline(always)]
-pub fn u256_to_b160(src: U256) -> B160 {
+pub fn u256_to_b160(src: &U256) -> B160 {
     let mut result = B160::ZERO;
     unsafe {
         result.as_limbs_mut()[0] = src.as_limbs()[0];

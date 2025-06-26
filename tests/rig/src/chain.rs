@@ -407,7 +407,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     /// Set a storage slot
     ///
     pub fn set_storage_slot(&mut self, address: B160, key: U256, value: B256) {
-        let key = Bytes32::from_u256_be(key);
+        let key = Bytes32::from_u256_be(&key);
         let flat_key = derive_flat_storage_key(&address, &key);
 
         let value = Bytes32::from_array(value.to_be_bytes());
