@@ -263,8 +263,8 @@ pub fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
 #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
 #[inline(always)]
 pub fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
-    a: *mut u32,
-    b: *const u32,
+    _a: *mut u32,
+    _b: *const u32,
     carry: bool,
 ) -> u32 {
     // #[cfg(test)]
@@ -285,8 +285,8 @@ pub fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
             }
         }
 
-        let a = a.cast::<[u32; 8]>().read();
-        let b = b.cast::<[u32; 8]>().read();
+        let a = _a.cast::<[u32; 8]>().read();
+        let b = _b.cast::<[u32; 8]>().read();
         let a = make_u256(&a);
         let b = make_u256(&b);
         let carry_or_borrow = U256::from(carry as u64);
@@ -342,7 +342,7 @@ pub fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
             *h = (*src >> 32) as u32;
         }
 
-        a.cast::<[u32; 8]>().write(low_result);
+        _a.cast::<[u32; 8]>().write(low_result);
 
         of as u32
     }
