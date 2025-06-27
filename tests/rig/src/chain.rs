@@ -189,7 +189,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             native_price: block_context.native_price.into(),
             coinbase: block_context.coinbase,
             gas_limit: block_context.gas_limit,
-            mix_hash: block_context.mix_hash,
+            mix_hash: block_context.mix_hash.into(),
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),

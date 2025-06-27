@@ -108,7 +108,7 @@ impl BlockMetadataFromOracle {
             gas_limit: u64::MAX / 256,
             coinbase: B160::ZERO,
             block_hashes: BlockHashes::default(),
-            mix_hash: U256::ONE,
+            mix_hash: U256::one(),
         }
     }
 }

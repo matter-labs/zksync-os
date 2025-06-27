@@ -846,7 +846,7 @@ where
             .apply_to_last_record_of_pending_changes(|key, head_history_record| {
                 if head_history_record.value.appearance() == Appearance::Deconstructed {
                     head_history_record.value.update(|x, _| {
-                        *x = AccountProperties::TRIVIAL_VALUE;
+                        *x = AccountProperties::default();
                         Ok(())
                     })?;
                     storage
