@@ -93,17 +93,28 @@ impl<const N: u8> core::fmt::Debug for VersioningData<N> {
 
 pub const DEFAULT_ADDRESS_SPECIFIC_IMMUTABLE_DATA_VERSION: u8 = 1;
 
+#[derive(Default, Clone, PartialEq)]
+pub enum AccountAccessMarker {
+    #[default]
+    Cold,
+    DeployedInTx(u32),
+    AccessedInTx(u32),
+}
+
 #[derive(Default, Clone)]
 pub struct AccountPropertiesMetadata {
-    pub deployed_in_tx: u32,
-    /// Transaction where this account was last accessed.
-    /// Considered warm if equal to Some(current_tx)
-    pub last_touched_in_tx: Option<u32>,
+    pub access_marker: AccountAccessMarker,
 }
 
 impl AccountPropertiesMetadata {
     pub fn considered_warm(&self, current_tx_number: u32) -> bool {
-        self.last_touched_in_tx == Some(current_tx_number)
+        match self.access_marker {
+            AccountAccessMarker::Cold => false,
+            AccountAccessMarker::DeployedInTx(accessed_in_tx)
+            | AccountAccessMarker::AccessedInTx(accessed_in_tx) => {
+                current_tx_number == accessed_in_tx
+            }
+        }
     }
 }
 
