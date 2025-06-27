@@ -315,7 +315,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::COINBASE => self.coinbase(system),
                     opcodes::TIMESTAMP => self.timestamp(system),
                     opcodes::NUMBER => self.number(system),
-                    opcodes::DIFFICULTY => self.difficulty(),
+                    opcodes::DIFFICULTY => self.difficulty(system),
                     opcodes::GASLIMIT => self.gaslimit(system),
                     opcodes::SLOAD => self.sload(system),
                     opcodes::SSTORE => self.sstore(system),

@@ -1,4 +1,5 @@
 use crate::block::Block;
+use crate::calltrace::CallTrace;
 use crate::post_check::PostCheckError;
 use crate::prestate::{DiffTrace, PrestateTrace};
 use crate::receipts::BlockReceipts;
@@ -59,6 +60,7 @@ pub struct BlockTraces {
     #[serde(with = "as_json_string")]
     pub block: Block,
     pub receipts: BlockReceipts,
+    pub call: CallTrace,
 }
 
 impl Database {
@@ -111,7 +113,6 @@ impl Database {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn get_block_status(&self, block_number: u64) -> Result<Option<BlockStatus>> {
         if let Some(bytes) = self.block_status.get(block_number.to_be_bytes())? {
             let (status, _) = decode_from_slice::<BlockStatus, _>(&bytes, standard())

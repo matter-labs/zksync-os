@@ -13,7 +13,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: $0 [--type default|server|server-logging-enabled]"
+      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking]"
       exit 1
       ;;
   esac
@@ -38,6 +38,24 @@ case "$TYPE" in
     BIN_NAME="server_app_logging_enabled.bin"
     ELF_NAME="server_app_logging_enabled.elf"
     TEXT_NAME="server_app_logging_enabled.text"
+    ;;
+  benchmarking)
+    FEATURES="$FEATURES,proof_running_system/cycle_marker,proof_running_system/unlimited_native"
+    BIN_NAME="app.bin"
+    ELF_NAME="app.elf"
+    TEXT_NAME="app.text"
+    ;;
+  evm-replay)
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts"
+    BIN_NAME="evm_replay.bin"
+    ELF_NAME="evm_replay.elf"
+    TEXT_NAME="evm_replay.text"
+    ;;
+  evm-replay-benchmarking)
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/cycle_marker"
+    BIN_NAME="evm_replay.bin"
+    ELF_NAME="evm_replay.elf"
+    TEXT_NAME="evm_replay.text"
     ;;
   default)
     # leave defaults
