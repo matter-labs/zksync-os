@@ -20,9 +20,9 @@ extern crate alloc;
 
 use core::ops::Range;
 
+use ::u256::U256;
 use evm_stack::EvmStack;
 use gas::Gas;
-use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};

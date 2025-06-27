@@ -1,6 +1,7 @@
 use crate::bootloader::constants::SPECIAL_ADDRESS_SPACE_BOUND;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::DEBUG_OUTPUT;
+use ::u256::U256;
 use alloc::boxed::Box;
 use core::fmt::Write;
 use core::mem::MaybeUninit;
@@ -10,7 +11,6 @@ use evm_interpreter::gas_constants::CALL_STIPEND;
 use evm_interpreter::gas_constants::NEWACCOUNT;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
-use ruint::aliases::U256;
 use system_hooks::*;
 use zk_ee::common_structs::CalleeParameters;
 use zk_ee::common_structs::TransferInfo;
@@ -662,7 +662,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let mut constructor = create_ee(ee_type as u8, self.system)?;
         let constructor_ee_type = constructor.ee_type();
 
-        let nominal_token_value = launch_params.external_call.nominal_token_value;
+        let nominal_token_value = launch_params.external_call.nominal_token_value.clone();
 
         // EIP-161: contracts should be initialized with nonce 1
         // Note: this has to be done before we actually deploy the bytecode,
@@ -1024,7 +1024,7 @@ where
                 _ => call_request.callee,
             };
             Some(TransferInfo {
-                value: call_request.nominal_token_value,
+                value: call_request.nominal_token_value.clone(),
                 target,
             })
         } else {

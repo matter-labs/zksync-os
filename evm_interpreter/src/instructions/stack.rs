@@ -21,7 +21,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
         let start = self.instruction_pointer;
 
-        let mut value = U256::ZERO;
+        let mut value = U256::zero();
 
         match self.bytecode.as_ref().get(start) {
             Some(src) => {
@@ -35,8 +35,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
                         to_copy,
                     );
                 }
-                crate::utils::bytereverse_u256(&mut value);
-                value >>= (32 - N) * 8;
+                value.bytereverse();
+                core::ops::ShrAssign::shr_assign(&mut value, ((32 - N) * 8) as u32);
             }
             None => {
                 // start is out of bounds of the bytecode buffer,

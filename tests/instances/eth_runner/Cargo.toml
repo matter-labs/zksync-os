@@ -20,8 +20,9 @@ basic_system = { path = "../../../basic_system" }
 system_hooks = {path = "../../../system_hooks" }
 clap = { version = "4.4", features = ["derive"] }
 anyhow = "=1.0.89"
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+ruint = { version = "1.14", default-features = false, features = ["alloc"] }
 hex = "*"
+u256 = { path = "../../../supporting_crates/u256" }
 ureq = { version = "2", features = ["json"] }
 sled = {version = "0.34" }
 bincode = { version = "2", features = ["serde"] }

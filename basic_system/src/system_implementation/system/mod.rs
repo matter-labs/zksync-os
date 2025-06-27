@@ -11,7 +11,6 @@ use evm_interpreter::gas_constants::SSTORE_RESET_EXTRA;
 use evm_interpreter::gas_constants::SSTORE_SET_EXTRA;
 use evm_interpreter::gas_constants::WARM_STORAGE_READ_COST;
 use evm_interpreter::ERGS_PER_GAS;
-use ruint::aliases::U256;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::EventContent;
 use zk_ee::common_structs::LogContent;

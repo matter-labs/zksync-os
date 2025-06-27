@@ -3,9 +3,10 @@ use super::{
     kv_markers::{ExactSizeChain, UsizeDeserializable, UsizeSerializable},
     types_config::SystemIOTypesConfig,
 };
-use ruint::aliases::{B160, U256};
+use ruint::aliases::B160;
+use u256::U256;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Metadata<IOTypes: SystemIOTypesConfig> {
     pub chain_id: u64,
     pub tx_origin: IOTypes::Address,
@@ -17,12 +18,12 @@ pub struct Metadata<IOTypes: SystemIOTypesConfig> {
 /// Hash for block number N will be at index [current_block_number - N - 1]
 /// (most recent will be at the start) if N is one of the most recent
 /// 256 blocks.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BlockHashes(pub [U256; 256]);
 
 impl Default for BlockHashes {
     fn default() -> Self {
-        Self([U256::ZERO; 256])
+        Self(core::array::from_fn(|_| U256::zero()))
     }
 }
 
@@ -76,7 +77,7 @@ impl UsizeDeserializable for BlockHashes {
 // block number, etc
 
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct BlockMetadataFromOracle {
     // Chain id is temporarily also added here (so that it can be easily passed from the oracle)
     // long term, we have to decide whether we want to keep it here, or add a separate oracle
@@ -100,14 +101,14 @@ impl BlockMetadataFromOracle {
         BlockMetadataFromOracle {
             eip1559_basefee: U256::from(1000u64),
             gas_per_pubdata: U256::from(0u64),
-            native_price: U256::from(10),
+            native_price: U256::from(10u64),
             block_number: 1,
             timestamp: 42,
             chain_id: 37,
             gas_limit: u64::MAX / 256,
             coinbase: B160::ZERO,
             block_hashes: BlockHashes::default(),
-            mix_hash: U256::ONE,
+            mix_hash: U256::one(),
         }
     }
 }

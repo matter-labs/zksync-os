@@ -38,7 +38,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::BASE, DIFFICULTY_NATIVE_COST)?;
         // Mix hash is the source of randomness, currently holding
         // the value of prevRandao.
-        self.stack.push(&system.get_mix_hash())?;
+        self.stack.push(system.get_mix_hash())?;
         Ok(())
     }
 
@@ -83,21 +83,22 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn blockhash(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::BLOCKHASH, BLOCKHASH_NATIVE_COST)?;
-        let block_number = self.stack.pop_1()?;
-        let block_number = u256_to_u64_saturated(block_number);
-        self.stack.push(&system.get_blockhash(block_number))?;
+        let stack_top = self.stack.top_mut()?;
+        let block_number = u256_to_u64_saturated(stack_top);
+        *stack_top = system.get_blockhash(block_number);
         Ok(())
     }
 
     pub fn blobhash(&mut self, _system: &mut System<S>) -> InstructionResult {
         self.gas.spend_gas_and_native(gas_constants::VERYLOW, 40)?;
-        let stack_top = self.stack.top_mut()?; // We ignore argument
-        *stack_top = U256::ZERO;
+        let stack_top = self.stack.top_mut()?;
+        U256::write_zero(stack_top);
+
         Ok(())
     }
 
     pub fn blobbasefee(&mut self, _system: &mut System<S>) -> InstructionResult {
         self.gas.spend_gas_and_native(gas_constants::BASE, 40)?;
-        self.stack.push(&U256::from(1))
+        self.stack.push(&U256::one())
     }
 }

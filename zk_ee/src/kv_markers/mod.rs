@@ -3,7 +3,6 @@ pub mod kv_impls;
 
 use arrayvec::ArrayVec;
 use core::mem::MaybeUninit;
-use ruint::aliases::U256;
 
 use super::system::errors::InternalError;
 use super::types_config::SystemIOTypesConfig;

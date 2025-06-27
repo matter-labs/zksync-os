@@ -64,7 +64,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
             returndata_location: 0..0,
             bytecode: &[],
             bytecode_preprocessing: empty_preprocessing,
-            call_value: U256::ZERO,
+            call_value: U256::zero(),
             is_constructor: false,
         })
     }
@@ -412,8 +412,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 let mut create2_buffer = [0xffu8; 1 + 20 + 32 + 32];
                 create2_buffer[1..(1 + 20)]
                     .copy_from_slice(&address_of_deployer.to_be_bytes::<{ B160::BYTES }>());
-                create2_buffer[(1 + 20)..(1 + 20 + 32)]
-                    .copy_from_slice(&salt.to_be_bytes::<{ U256::BYTES }>());
+                create2_buffer[(1 + 20)..(1 + 20 + 32)].copy_from_slice(&salt.to_be_bytes());
                 create2_buffer[(1 + 20 + 32)..(1 + 20 + 32 + 32)]
                     .copy_from_slice(initcode_hash.as_u8_array_ref());
 

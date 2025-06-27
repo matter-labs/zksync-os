@@ -173,7 +173,7 @@ impl UsizeDeserializable for u64 {
     }
 }
 
-impl UsizeSerializable for U256 {
+impl UsizeSerializable for ruint::aliases::U256 {
     const USIZE_LEN: usize = <u64 as UsizeSerializable>::USIZE_LEN * 4;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
@@ -193,8 +193,66 @@ impl UsizeSerializable for U256 {
     }
 }
 
-impl UsizeDeserializable for U256 {
-    const USIZE_LEN: usize = <U256 as UsizeSerializable>::USIZE_LEN;
+impl UsizeDeserializable for ruint::aliases::U256 {
+    const USIZE_LEN: usize = <ruint::aliases::U256 as UsizeSerializable>::USIZE_LEN;
+
+    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let mut new = MaybeUninit::uninit();
+        unsafe {
+            Self::init_from_iter(&mut new, src)?;
+
+            Ok(new.assume_init())
+        }
+    }
+
+    unsafe fn init_from_iter(
+        this: &mut MaybeUninit<Self>,
+        src: &mut impl ExactSizeIterator<Item = usize>,
+    ) -> Result<(), InternalError> {
+        cfg_if::cfg_if!(
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                for dst in this.assume_init_mut().as_limbs_mut() {
+                    let low = src.next().ok_or(InternalError("u256 limb low deserialization failed"))?;
+                    let high = src.next().ok_or(InternalError("u256 limb high deserialization failed"))?;
+                    *dst = ((high as u64) << 32) | (low as u64);
+                }
+                return Ok(())
+            } else if #[cfg(target_pointer_width = "64")] {
+                for dst in this.assume_init_mut().as_limbs_mut() {
+                    *dst = src.next().ok_or(InternalError("u256 limb deserialization failed"))? as u64;
+                }
+                return Ok(())
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        );
+    }
+}
+
+impl UsizeSerializable for u256::U256 {
+    const USIZE_LEN: usize = <u64 as UsizeSerializable>::USIZE_LEN * 4;
+
+    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
+        cfg_if::cfg_if!(
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                unsafe {
+                    return core::mem::transmute::<_, [u32; 8]>(*self.as_limbs()).into_iter().map(|el| el as usize);
+                }
+            } else if #[cfg(target_pointer_width = "64")] {
+                return self.as_limbs().iter().map(|el| *el as usize);
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        );
+    }
+}
+
+impl UsizeDeserializable for u256::U256 {
+    const USIZE_LEN: usize = <u256::U256 as UsizeSerializable>::USIZE_LEN;
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         let mut new = MaybeUninit::uninit();

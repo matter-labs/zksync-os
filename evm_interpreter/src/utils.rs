@@ -5,18 +5,6 @@ use ruint::aliases::B160;
 use zk_ee::kv_markers::ExactSizeChain;
 use zk_ee::system::EthereumLikeTypes;
 
-pub fn bytereverse_u256(value: &mut U256) {
-    // assuming LE
-    unsafe {
-        let limbs = value.as_limbs_mut();
-        core::ptr::swap(&mut limbs[0] as *mut u64, &mut limbs[3] as *mut u64);
-        core::ptr::swap(&mut limbs[1] as *mut u64, &mut limbs[2] as *mut u64);
-        for limb in limbs.iter_mut() {
-            *limb = limb.to_be();
-        }
-    }
-}
-
 pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
     use crypto::sha3::{Digest, Keccak256};
     let hash = Keccak256::digest(bytecode);
@@ -27,7 +15,7 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
 }
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
-    #[inline]
+    #[inline(always)]
     pub(crate) fn cast_to_usize(src: &U256, error_to_set: ExitCode) -> Result<usize, ExitCode> {
         u256_try_to_usize(src).ok_or(error_to_set)
     }

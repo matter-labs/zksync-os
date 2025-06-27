@@ -1,0 +1,20 @@
+[package]
+name = "u256"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+ruint = { version = "1.14", default-features = false }
+crypto = { path = "../../crypto", default-features = false }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+
+[features]
+# default = ["delegation"]
+serde = ["ruint/serde"]
+delegation = ["crypto/bigint_ops"]

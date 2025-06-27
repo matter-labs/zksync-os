@@ -124,7 +124,7 @@ pub enum CallScheme {
 
 /// Create scheme.
 #[repr(usize)]
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum CreateScheme {
     /// Legacy create scheme of `CREATE`.
     Create = 1,
@@ -340,6 +340,13 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             }
 
             cycles += 1;
+
+            // {
+            //     let _ = system
+            //         .get_logger()
+            //         .write_fmt(format_args!("End of cycle {}\n", cycles));
+            //     self.stack.print_stack_top(&mut system.get_logger());
+            // }
 
             if let Err(r) = result {
                 break r;

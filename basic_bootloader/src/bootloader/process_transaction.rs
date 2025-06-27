@@ -107,18 +107,20 @@ where
         // For L1->L2 txs, we use a constant native price to avoid censorship.
         let native_price = L1_TX_NATIVE_PRICE;
         let native_per_gas = if is_priority_op {
-            U256::from(gas_price).div_ceil(native_price)
+            let mut native_per_gas = U256::from(gas_price);
+            U256::div_ceil(&mut native_per_gas, &native_price);
+            native_per_gas
         } else {
             UPGRADE_TX_NATIVE_PER_GAS
         };
         let native_per_pubdata = U256::from(gas_per_pubdata)
-            .checked_mul(native_per_gas)
+            .checked_mul(&native_per_gas)
             .ok_or(InternalError("gpp*npg"))?;
 
         let (mut resources, withheld_resources) = get_resources_for_tx::<S>(
             gas_limit,
-            native_per_pubdata,
-            native_per_gas,
+            &native_per_pubdata,
+            &native_per_gas,
             transaction.calldata(),
             L1_TX_INTRINSIC_L2_GAS,
             L1_TX_INTRINSIC_PUBDATA,
@@ -127,11 +129,11 @@ where
 
         let tx_internal_cost = gas_price
             .checked_mul(gas_limit as u128)
-            .ok_or(InternalError("gp*gl"))?;
+            .ok_or(InternalError("gp*gl l1"))?;
         let value = transaction.value.read();
         let total_deposited = transaction.reserved[0].read();
         let needed_amount = value
-            .checked_add(U256::from(tx_internal_cost))
+            .checked_add(&U256::from(tx_internal_cost))
             .ok_or(InternalError("v+tic"))?;
         require_internal!(
             total_deposited >= needed_amount,
@@ -174,8 +176,8 @@ where
                 &transaction,
                 from,
                 to,
-                value,
-                native_per_pubdata,
+                &value,
+                &native_per_pubdata,
                 &mut resources,
                 withheld_resources,
             ) {
@@ -204,20 +206,20 @@ where
         // Compute gas to refund
         // TODO: consider operator refund
         let (_pubdata_spent, to_charge_for_pubdata) =
-            get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
+            get_resources_to_charge_for_pubdata(system, &native_per_pubdata, None)?;
         #[allow(unused_variables)]
         let (_, gas_used) = Self::compute_gas_refund(
             system,
             to_charge_for_pubdata,
             gas_limit,
-            native_per_gas,
+            &native_per_gas,
             &mut resources,
         )?;
 
         // Mint fee to bootloader
         // We already checked that total_gas_refund <= gas_limit
         let pay_to_operator = U256::from(gas_used)
-            .checked_mul(U256::from(gas_price))
+            .checked_mul(&U256::from(gas_price))
             .ok_or(InternalError("gu*gp"))?;
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
 
@@ -244,7 +246,7 @@ where
                 // user has been reverted as well, so we can simply mint everything
                 // that the user has deposited to the refund recipient
                 total_deposited
-                    .checked_sub(pay_to_operator)
+                    .checked_sub(&pay_to_operator)
                     .ok_or(InternalError("td-pto"))
             }
             ExecutionResult::Success { .. } => {
@@ -253,10 +255,10 @@ where
                 // However, the remaining value deposited will be given to
                 // the refund recipient.
                 let value_plus_fee = value
-                    .checked_add(pay_to_operator)
+                    .checked_add(&pay_to_operator)
                     .ok_or(InternalError("v+pto"))?;
                 total_deposited
-                    .checked_sub(value_plus_fee)
+                    .checked_sub(&value_plus_fee)
                     .ok_or(InternalError("td-vpf"))
             }
         }?;
@@ -304,8 +306,8 @@ where
         transaction: &ZkSyncTransaction,
         from: B160,
         to: B160,
-        value: U256,
-        native_per_pubdata: U256,
+        value: &U256,
+        native_per_pubdata: &U256,
         resources: &mut S::Resources,
         withheld_resources: S::Resources,
     ) -> Result<ExecutionResult<'a>, FatalError> {
@@ -314,13 +316,13 @@ where
             .write_fmt(format_args!("Executing L1 transaction\n"));
 
         let gas_price = U256::from(transaction.max_fee_per_gas.read());
-        system.set_tx_context(from, gas_price);
+        system.set_tx_context(from, &gas_price);
 
         // Start a frame, to revert minting of value if execution fails
         let rollback_handle = system.start_global_frame()?;
 
         // First we mint value
-        if value > U256::ZERO {
+        if value.is_zero() == false {
             resources
                 .with_infinite_ergs(|inf_resources| {
                     BasicBootloader::mint_token(system, &value, &from, inf_resources)
@@ -432,20 +434,22 @@ where
             return Err(InternalError("Native price cannot be 0").into());
         };
         let native_per_gas = if cfg!(feature = "resources_for_tester") {
-            U256::from(crate::bootloader::constants::TESTER_NATIVE_PER_GAS)
+            U256::from(crate::bootloader::constants::TESTER_NATIVE_PER_GAS as u64)
         } else if Config::ONLY_SIMULATE {
             SIMULATION_NATIVE_PER_GAS
         } else {
-            U256::from(gas_price).div_ceil(native_price)
+            let mut native_per_gas = gas_price.clone();
+            U256::div_ceil(&mut native_per_gas, &native_price);
+            native_per_gas
         };
-        let native_per_pubdata = U256::from(gas_per_pubdata)
-            .checked_mul(native_per_gas)
+        let native_per_pubdata = gas_per_pubdata
+            .checked_mul(&native_per_gas)
             .ok_or(InternalError("gpp*npg"))?;
 
         let (mut resources, withheld_resources) = get_resources_for_tx::<S>(
             gas_limit,
-            native_per_pubdata,
-            native_per_gas,
+            &native_per_pubdata,
+            &native_per_gas,
             calldata,
             L2_TX_INTRINSIC_GAS,
             L2_TX_INTRINSIC_PUBDATA,
@@ -482,7 +486,7 @@ where
 
         account_model.charge_additional_intrinsic_gas(&mut resources, &transaction)?;
 
-        system.set_tx_context(from, gas_price);
+        system.set_tx_context(from, &gas_price);
 
         let chain_id = system.get_chain_id();
 
@@ -506,14 +510,14 @@ where
                 system,
                 system_functions,
                 memories.reborrow(),
-                tx_hash,
-                suggested_signed_hash,
+                &tx_hash,
+                &suggested_signed_hash,
                 &mut transaction,
                 &account_model,
                 from,
-                gas_price,
-                gas_per_pubdata,
-                native_per_pubdata,
+                &gas_price,
+                &gas_per_pubdata,
+                &native_per_pubdata,
                 caller_ee_type,
                 caller_is_code,
                 caller_nonce,
@@ -530,11 +534,11 @@ where
             system,
             system_functions,
             memories,
-            tx_hash,
-            suggested_signed_hash,
+            &tx_hash,
+            &suggested_signed_hash,
             &mut transaction,
             &account_model,
-            native_per_pubdata,
+            &native_per_pubdata,
             validation_pubdata,
             caller_nonce,
             &mut resources,
@@ -571,14 +575,14 @@ where
             Self::refund_transaction::<Config>(
                 system,
                 system_functions,
-                tx_hash,
-                suggested_signed_hash,
+                &tx_hash,
+                &suggested_signed_hash,
                 &mut transaction,
                 from,
                 &execution_result,
-                gas_price,
-                native_per_gas,
-                native_per_pubdata,
+                &gas_price,
+                &native_per_gas,
+                &native_per_pubdata,
                 validation_pubdata,
                 caller_ee_type,
                 &mut resources,
@@ -628,14 +632,14 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         mut memories: RunnerMemoryBuffers,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
+        tx_hash: &Bytes32,
+        suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         account_model: &AA<S>,
         from: B160,
-        gas_price: U256,
-        gas_per_pubdata: U256,
-        native_per_pubdata: U256,
+        gas_price: &U256,
+        gas_per_pubdata: &U256,
+        native_per_pubdata: &U256,
         caller_ee_type: ExecutionEnvironmentType,
         caller_is_code: bool,
         caller_nonce: u64,
@@ -648,7 +652,7 @@ where
         let user_gas_per_pubdata_limit = transaction.get_user_gas_per_pubdata_limit();
         // Validate the user provided gas per pubdata
         require!(
-            user_gas_per_pubdata_limit >= gas_per_pubdata,
+            &user_gas_per_pubdata_limit >= gas_per_pubdata,
             InvalidTransaction::GasPerPubdataTooHigh,
             system
         )?;
@@ -719,11 +723,11 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
+        tx_hash: &Bytes32,
+        suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         account_model: &AA<S>,
-        native_per_pubdata: U256,
+        native_per_pubdata: &U256,
         validation_pubdata: u64,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
@@ -770,12 +774,12 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         mut memories: RunnerMemoryBuffers,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
+        tx_hash: &Bytes32,
+        suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         account_model: &AA<S>,
         from: B160,
-        gas_price: U256,
+        gas_price: &U256,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
     ) -> Result<(), TxError> {
@@ -790,7 +794,7 @@ where
             )
         })?;
         let required_funds = gas_price
-            .checked_mul(U256::from(transaction.gas_limit.read()))
+            .checked_mul(&U256::from(transaction.gas_limit.read()))
             .ok_or(InternalError("gp*gl"))?;
         // First we charge the fees, then we verify the bootloader got
         // the funds.
@@ -851,22 +855,22 @@ where
             )
         })?;
         let bootloader_received_funds = bootloader_balance_after
-            .checked_sub(bootloader_balance_before)
+            .checked_sub(&bootloader_balance_before)
             .ok_or(InternalError("bba-bbb"))?;
         // If the amount of funds provided to the bootloader is less than the minimum required one
         // then this transaction should be rejected.
         require!(
-            bootloader_received_funds >= required_funds,
+            bootloader_received_funds.ge(&required_funds),
             InvalidTransaction::ReceivedInsufficientFees {
-                received: bootloader_received_funds,
-                required: required_funds
+                received: bootloader_received_funds.clone(),
+                required: required_funds.clone()
             },
             system
         )?;
         let excessive_funds = bootloader_received_funds
-            .checked_sub(required_funds)
+            .checked_sub(&required_funds)
             .ok_or(InternalError("brf-rf"))?;
-        if excessive_funds > U256::ZERO {
+        if excessive_funds.is_zero() == false {
             resources
                 .with_infinite_ergs(|inf_resources| {
                     system.io.transfer_nominal_token_value(
@@ -906,25 +910,30 @@ where
             system
         )?;
         let priority_fee_per_gas = if cfg!(feature = "charge_priority_fee") {
-            core::cmp::min(max_priority_fee_per_gas, max_fee_per_gas - base_fee)
+            let mut t = max_fee_per_gas;
+            let _ = t.overflowing_sub_assign(&base_fee);
+            core::cmp::min(max_priority_fee_per_gas, t)
         } else {
             U256::ZERO
         };
-        Ok(base_fee + priority_fee_per_gas)
+        let mut t = base_fee;
+        let _ = t.overflowing_add_assign(&priority_fee_per_gas);
+
+        Ok(t)
     }
 
     #[allow(clippy::too_many_arguments)]
     fn refund_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _tx_hash: Bytes32,
-        _suggested_signed_hash: Bytes32,
+        _tx_hash: &Bytes32,
+        _suggested_signed_hash: &Bytes32,
         transaction: &mut ZkSyncTransaction,
         from: B160,
         execution_result: &ExecutionResult,
-        gas_price: U256,
-        native_per_gas: U256,
-        native_per_pubdata: U256,
+        gas_price: &U256,
+        native_per_gas: &U256,
+        native_per_pubdata: &U256,
         validation_pubdata: u64,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
@@ -964,7 +973,7 @@ where
         // we charge for the rest now.
         let (_pubdata_spent, to_charge_for_pubdata) = get_resources_to_charge_for_pubdata(
             system,
-            native_per_pubdata,
+            &native_per_pubdata,
             Some(validation_pubdata),
         )?;
         let (total_gas_refund, gas_used) = Self::compute_gas_refund(
@@ -1007,7 +1016,7 @@ where
         system: &mut System<S>,
         to_charge_for_pubdata: S::Resources,
         gas_limit: u64,
-        native_per_gas: U256,
+        native_per_gas: &U256,
         resources: &mut S::Resources,
     ) -> Result<(U256, u64), InternalError> {
         // Already checked
@@ -1042,7 +1051,7 @@ where
             .get_logger()
             .write_fmt(format_args!("Gas refund: {}\n", total_gas_refund));
         require_internal!(
-            total_gas_refund <= gas_limit,
+            total_gas_refund.le(&gas_limit),
             "Gas refund greater than gas limit",
             system
         )?;

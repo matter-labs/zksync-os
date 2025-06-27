@@ -36,6 +36,7 @@ allow = [
     "Zlib",
     "Unlicense",
     "CDLA-Permissive-2.0",
+    "CDDL-1.0",
 ]
 exceptions = [
     # CC0 is a bit unclear about source code: https://tldrlegal.com/license/creative-commons-cc0-1.0-universal

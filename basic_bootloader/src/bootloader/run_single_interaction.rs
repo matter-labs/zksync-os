@@ -113,7 +113,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 modifier: CallModifier::NoModifier,
                 calldata,
                 call_scratch_space: None,
-                nominal_token_value: *nominal_token_value,
+                nominal_token_value: nominal_token_value.clone(),
             });
 
         let final_state =

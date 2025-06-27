@@ -6,7 +6,8 @@
 use super::*;
 use core::fmt::Write;
 use errors::UpdateQueryError;
-use ruint::aliases::{B160, U256};
+use ruint::aliases::B160;
+use u256::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::SystemError;
 use zk_ee::system::logger::Logger;
@@ -171,7 +172,7 @@ where
                 ));
             }
             message[4..24].copy_from_slice(&calldata[(4 + 12)..36]);
-            message[24..56].copy_from_slice(&nominal_token_value.to_be_bytes::<32>());
+            message[24..56].copy_from_slice(&nominal_token_value.to_be_bytes());
             system.io.emit_l1_message(
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
                     .map_err(SystemError::Internal)?,
@@ -196,7 +197,10 @@ where
                 ));
             }
             let message_offset: usize =
-                match U256::from_be_slice(&calldata[36..68]).try_into() {
+                match U256::try_from_be_slice(&calldata[36..68])
+                    .expect("Should convert slice to U256")
+                    .try_into()
+                {
                     Ok(offset) => offset,
                     Err(_) => return Ok(Err(
                         "L2 base token failure: withdrawWithMessage called with invalid calldata",
@@ -217,8 +221,11 @@ where
                 ));
             }
             let length =
-                match U256::from_be_slice(&calldata[length_encoding_end - 32..length_encoding_end])
-                    .try_into()
+                match U256::try_from_be_slice(
+                    &calldata[length_encoding_end - 32..length_encoding_end],
+                )
+                .expect("Should convert slice to U256")
+                .try_into()
                 {
                     Ok(length) => length,
                     Err(_) => return Ok(Err(
@@ -268,7 +275,7 @@ where
                 alloc::vec::Vec::with_capacity_in(message_length, system.get_allocator());
             message.extend_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
             message.extend_from_slice(&calldata[16..36]);
-            message.extend_from_slice(&nominal_token_value.to_be_bytes::<32>());
+            message.extend_from_slice(&nominal_token_value.to_be_bytes());
             message.extend_from_slice(&caller.to_be_bytes::<20>());
             message.extend_from_slice(additional_data);
 

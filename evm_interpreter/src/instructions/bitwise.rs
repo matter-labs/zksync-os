@@ -6,11 +6,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, LT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        *op2 = if op1.lt(op2) {
-            U256::from(1)
+        if op1.lt(&*op2) {
+            U256::write_one(op2);
         } else {
-            U256::ZERO
-        };
+            U256::write_zero(op2);
+        }
         Ok(())
     }
 
@@ -18,11 +18,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, GT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        *op2 = if op1.gt(op2) {
-            U256::from(1)
+        if op1.gt(&*op2) {
+            U256::write_one(op2);
         } else {
-            U256::ZERO
-        };
+            U256::write_zero(op2);
+        }
         Ok(())
     }
 
@@ -30,10 +30,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SLT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        *op2 = if i256_cmp(op1, op2) == core::cmp::Ordering::Less {
-            U256::from(1)
+        if i256_cmp(op1, op2) == core::cmp::Ordering::Less {
+            U256::write_one(op2);
         } else {
-            U256::ZERO
+            U256::write_zero(op2);
         };
         Ok(())
     }
@@ -42,10 +42,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SGT_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        *op2 = if i256_cmp(op1, op2) == core::cmp::Ordering::Greater {
-            U256::from(1)
+        if i256_cmp(op1, op2) == core::cmp::Ordering::Greater {
+            U256::write_one(op2);
         } else {
-            U256::ZERO
+            U256::write_zero(op2);
         };
         Ok(())
     }
@@ -54,23 +54,23 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, EQ_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        *op2 = if op1.eq(op2) {
-            U256::from(1)
+        if op1.eq(&*op2) {
+            U256::write_one(op2);
         } else {
-            U256::ZERO
-        };
+            U256::write_zero(op2);
+        }
         Ok(())
     }
 
     pub fn iszero(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, ISZERO_NATIVE_COST)?;
-        let stack_top = self.stack.top_mut()?;
-        *stack_top = if stack_top.is_zero() {
-            U256::from(1)
+        let op1 = self.stack.top_mut()?;
+        if op1.is_zero() {
+            U256::write_one(op1);
         } else {
-            U256::ZERO
-        };
+            U256::write_zero(op1);
+        }
         Ok(())
     }
     pub fn bitand(&mut self) -> InstructionResult {
@@ -99,7 +99,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, NOT_NATIVE_COST)?;
         let op1 = self.stack.top_mut()?;
-        *op1 = !*op1;
+        op1.not_mut();
         Ok(())
     }
 
@@ -112,7 +112,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             let ret = src.byte(31 - offset);
             *src = U256::from(ret as u64);
         } else {
-            *src = U256::ZERO;
+            U256::write_zero(src);
         }
 
         Ok(())
@@ -146,27 +146,24 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
                 // perform unsigned shift, then OR with mask
                 core::ops::ShrAssign::shr_assign(op2, shift as u32);
                 let (words, bits) = (shift / 64, shift % 64);
-                unsafe {
-                    for i in 0..words {
-                        op2.as_limbs_mut()[3 - i] = u64::MAX;
-                    }
-                    if bits != 0 {
-                        op2.as_limbs_mut()[3 - words] |= u64::MAX << (64 - bits);
-                    }
+                for i in 0..words {
+                    op2.as_limbs_mut()[3 - i] = u64::MAX;
+                }
+                if bits != 0 {
+                    op2.as_limbs_mut()[3 - words] |= u64::MAX << (64 - bits);
                 }
             }
         } else {
             // shift overflowed
             if sign_bit == false {
                 // value is 0 or >=1, pushing 0
-                *op2 = U256::ZERO;
+                U256::write_zero(op2);
             } else {
                 // value is <0, pushing -1
-                unsafe {
-                    op2.as_limbs_mut().iter_mut().for_each(|el| *el = u64::MAX);
-                }
+                op2.as_limbs_mut().iter_mut().for_each(|el| *el = u64::MAX);
             }
         }
+
         Ok(())
     }
 }

@@ -19,8 +19,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn sha3(&mut self, system: &mut System<S>) -> InstructionResult {
         let (memory_offset, len) = self.stack.pop_2()?;
 
-        let memory_offset = Self::cast_to_usize(&memory_offset, ExitCode::InvalidOperandOOG)?;
-        let len = Self::cast_to_usize(&len, ExitCode::InvalidOperandOOG)?;
+        let memory_offset = Self::cast_to_usize(memory_offset, ExitCode::InvalidOperandOOG)?;
+        let len = Self::cast_to_usize(len, ExitCode::InvalidOperandOOG)?;
         let (_, of) = memory_offset.overflowing_add(len);
         if of {
             return Err(ExitCode::MemoryLimitOOG);
@@ -59,7 +59,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             hash
         };
 
-        self.stack.push(&hash)
+        unsafe {
+            self.stack.push_unchecked(&hash);
+        }
+
+        Ok(())
     }
 
     pub fn address(&mut self) -> InstructionResult {
@@ -116,40 +120,48 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn calldataload(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, CALLDATALOAD_NATIVE_COST)?;
-        let stack_top = self.stack.top_mut()?;
-        let value = match u256_try_to_usize(stack_top) {
+        let t = {
+            let index = self.stack.pop_1()?;
+            u256_try_to_usize(index)
+        };
+
+        let value = match t {
             Some(index) => {
                 if index < self.calldata.len() {
                     let have_bytes = 32.min(self.calldata.len() - index);
-                    let mut bytes = Bytes32::ZERO;
+                    let mut value = U256::zero();
                     unsafe {
                         core::ptr::copy_nonoverlapping(
-                            self.calldata.as_ptr().add(index),
-                            bytes.as_u8_array_mut().as_mut_ptr(),
+                            self.calldata().as_ptr().add(index),
+                            value.as_limbs_mut().as_mut_ptr().cast::<u8>(),
                             have_bytes,
                         )
                     }
-                    bytes.into_u256_be()
+                    value.bytereverse();
+
+                    if Self::PRINT_OPCODES {
+                        use core::fmt::Write;
+                        let _ = system.get_logger().write_fmt(format_args!(
+                            " offset: {}, read value: 0x{:0x}",
+                            index, &value
+                        ));
+                    }
+
+                    value
                 } else {
                     // virtual zero-pad
-                    U256::ZERO
+                    U256::zero()
                 }
             }
             None => {
                 // virtual zero-pad
-                U256::ZERO
+                U256::zero()
             }
         };
 
-        if Self::PRINT_OPCODES {
-            use core::fmt::Write;
-            let _ = system.get_logger().write_fmt(format_args!(
-                " offset: {}, read value: 0x{:0x}",
-                *stack_top, value
-            ));
+        unsafe {
+            self.stack.push_unchecked(&value);
         }
-
-        *stack_top = value;
 
         Ok(())
     }
@@ -158,7 +170,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, CALLDATASIZE_NATIVE_COST)?;
         let calldata_len = self.calldata().len();
-        self.stack.push(&U256::from(calldata_len))
+        self.stack.push(&U256::from(calldata_len as u64))
     }
 
     pub fn callvalue(&mut self) -> InstructionResult {
@@ -179,7 +191,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         let memory_offset = Self::cast_to_usize(&memory_offset, ExitCode::InvalidOperandOOG)?;
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, memory_offset, len)?;
 
-        let source = u256_try_to_usize(&source_offset)
+        let source = u256_try_to_usize(source_offset)
             .and_then(|offset| self.calldata.get(offset..))
             .unwrap_or(&[]);
 
@@ -200,7 +212,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, RETURNDATASIZE_NATIVE_COST)?;
         let returndata_len = self.returndata.len();
-        self.stack.push(&U256::from(returndata_len))
+        self.stack.push(&U256::from(returndata_len as u64))
     }
 
     pub fn returndatacopy(&mut self) -> InstructionResult {

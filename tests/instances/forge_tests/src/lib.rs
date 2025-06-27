@@ -30,7 +30,7 @@ fn address_to_bytecodehash_key(address: &alloy::primitives::Address) -> Bytes32 
 
     derive_flat_storage_key(
         &account_properties_address,
-        &Bytes32::from_u256_be(&U256::from_be_slice(&address.0 .0)),
+        &Bytes32::from_u256_be(&U256::from_be_slice(&address.0 .0).into()),
     )
 }
 

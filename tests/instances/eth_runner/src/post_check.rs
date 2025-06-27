@@ -3,9 +3,10 @@ use crate::receipts::TransactionReceipt;
 use alloy::hex;
 use rig::forward_system::run::BatchOutput;
 use rig::log::{debug, error, info, warn};
-use ruint::aliases::{B160, B256, U256};
+use ruint::aliases::{B160, B256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use u256::U256;
 use zk_ee::utils::u256_to_usize_saturated;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -273,7 +274,7 @@ fn zksync_os_output_into_account_state(
                     AccountProperties::decode(&encoded.try_into().unwrap())
                 };
                 let entry = updates.entry(address).or_default();
-                entry.balance = Some(props.balance);
+                entry.balance = Some(props.balance.into());
                 entry.nonce = Some(props.nonce);
                 if let Some(bytecode) = preimages.get(&props.bytecode_hash.as_u8_array()) {
                     let owned = bytecode.clone();
@@ -283,10 +284,13 @@ fn zksync_os_output_into_account_state(
         } else {
             // populate slot
             let address = w.account;
-            let key = U256::from_be_bytes(w.account_key.as_u8_array());
+            let key = U256::from_be_bytes(&w.account_key.as_u8_array());
             let entry = updates.entry(address).or_default();
             let value = B256::from_be_bytes(w.value.as_u8_array());
-            entry.storage.get_or_insert_default().insert(key, value);
+            entry
+                .storage
+                .get_or_insert_default()
+                .insert(key.into(), value);
         }
     }
 
@@ -359,6 +363,7 @@ pub fn post_check(
     miner: B160,
 ) -> Result<(), PostCheckError> {
     for (res, receipt) in output.tx_results.iter().zip(receipts.iter()) {
+        let transaction_index = U256::from_be_bytes(&receipt.transaction_index.to_be_bytes());
         let res = match res {
             Ok(res) => res,
             Err(e) => {
@@ -373,40 +378,34 @@ pub fn post_check(
         };
         if receipt.status == Some(alloy::primitives::U256::ONE) {
             if !res.is_success() {
-                error!(
-                    "Transaction {} should have succeeded",
-                    receipt.transaction_index
-                );
+                error!("Transaction {} should have succeeded", transaction_index);
                 return Err(PostCheckError::InvalidTx {
-                    id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                    id: TxId::Index(u256_to_usize_saturated(&transaction_index)),
                 });
             };
         } else if receipt.status == Some(alloy::primitives::U256::ZERO) && res.is_success() {
-            error!(
-                "Transaction {} should have failed",
-                receipt.transaction_index
-            );
+            error!("Transaction {} should have failed", transaction_index);
             return Err(PostCheckError::TxShouldHaveFailed {
-                id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                id: TxId::Index(u256_to_usize_saturated(&transaction_index)),
             });
         }
-        let gas_difference =
-            zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used).abs_diff(res.gas_used);
+        let gas_used = U256::from_be_bytes(&receipt.gas_used.to_be_bytes());
+        let gas_difference = zk_ee::utils::u256_to_u64_saturated(&gas_used).abs_diff(res.gas_used);
         // Check gas used
-        if res.gas_used != zk_ee::utils::u256_to_u64_saturated(&receipt.gas_used) {
+        if res.gas_used != zk_ee::utils::u256_to_u64_saturated(&gas_used) {
             debug!(
                     "Transaction {} has a gas mismatch: ZKsync OS used {}, reference: {}\n  Difference:{}",
-                    receipt.transaction_index, res.gas_used, receipt.gas_used,
+                    transaction_index, res.gas_used, gas_used,
                     gas_difference,
                 );
             if !consistent_with_refund(res.gas_used, gas_difference) {
                 warn!("Transaction {}, gas difference should be consistent with refund\n  ZKsync OS used {}, reference: {}\n    Difference:{}",
-                    receipt.transaction_index, res.gas_used, receipt.gas_used,
+                    transaction_index, res.gas_used, gas_used,
                     gas_difference,
                 );
                 // TODO: do we want this case to halt the block?
                 return Err(PostCheckError::GasMismatch {
-                    id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                    id: TxId::Index(u256_to_usize_saturated(&transaction_index)),
                 });
             }
         }
@@ -414,10 +413,10 @@ pub fn post_check(
         if res.logs.len() != receipt.logs.len() {
             error!(
                 "Transaction {} has mismatch in number of logs",
-                receipt.transaction_index
+                transaction_index
             );
             return Err(PostCheckError::IncorrectLogs {
-                id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                id: TxId::Index(u256_to_usize_saturated(&transaction_index)),
             });
         }
         for (l, r) in res.logs.iter().zip(receipt.logs.iter()) {
@@ -425,7 +424,7 @@ pub fn post_check(
             if !eq {
                 error!("Not equal logs:\n {:#?} \nand\n {:?}", l, r);
                 return Err(PostCheckError::IncorrectLogs {
-                    id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                    id: TxId::Index(u256_to_usize_saturated(&transaction_index)),
                 });
             }
             if r.data.to_vec() != l.data {
@@ -435,7 +434,7 @@ pub fn post_check(
                     hex::encode(r.data.clone())
                 );
                 return Err(PostCheckError::IncorrectLogs {
-                    id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                    id: TxId::Index(u256_to_usize_saturated(&transaction_index)),
                 });
             }
         }

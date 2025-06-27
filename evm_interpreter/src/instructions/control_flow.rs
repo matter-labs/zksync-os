@@ -19,7 +19,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::HIGH, JUMPI_NATIVE_COST)?;
         let (dest, value) = self.stack.pop_2()?;
-        if *value != U256::ZERO {
+        if value.is_zero() == false {
             let dest = Self::cast_to_usize(dest, ExitCode::InvalidJump)?;
             if self.bytecode_preprocessing.is_valid_jumpdest(dest) {
                 self.instruction_pointer = dest;
@@ -39,7 +39,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn pc(&mut self) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, PC_NATIVE_COST)?;
-        self.stack.push(&U256::from(self.instruction_pointer - 1))?;
+        self.stack
+            .push(&U256::from((self.instruction_pointer - 1) as u64))?;
         Ok(())
     }
 

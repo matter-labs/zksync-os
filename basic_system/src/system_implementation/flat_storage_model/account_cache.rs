@@ -10,12 +10,12 @@ use crate::system_implementation::flat_storage_model::PreimageRequest;
 use crate::system_implementation::flat_storage_model::StorageAccessPolicy;
 use crate::system_implementation::flat_storage_model::DEFAULT_CODE_VERSION_BYTE;
 use crate::system_implementation::system::ExtraCheck;
+use ::u256::U256;
 use alloc::collections::BTreeSet;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
-use ruint::aliases::U256;
 use storage_models::common_structs::AccountAggregateDataHash;
 use storage_models::common_structs::PreimageCacheModel;
 use storage_models::common_structs::StorageCacheModel;
@@ -252,7 +252,7 @@ where
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
 
-        let cur = account_data.current().value().balance;
+        let cur = account_data.current().value().balance.clone();
         let new = update_fn(&cur)?;
         account_data.update(|cache_record| {
             cache_record.update(|v, _| {
@@ -276,13 +276,14 @@ where
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
     ) -> Result<(), UpdateQueryError> {
-        let mut f = |addr, op: fn(U256, U256) -> (U256, bool)| {
+        let mut f = |addr, op: fn(&mut U256, &U256) -> bool| {
             self.update_nominal_token_value_inner::<PROOF_ENV>(
                 from_ee,
                 resources,
                 addr,
                 move |old_balance: &U256| {
-                    let (new_value, of) = op(*old_balance, *amount);
+                    let mut new_value = old_balance.clone();
+                    let of = op(&mut new_value, amount);
                     if of {
                         Err(UpdateQueryError::NumericBoundsError)
                     } else {
@@ -297,8 +298,8 @@ where
         };
 
         // can do update twice
-        f(from, U256::overflowing_sub)?;
-        f(to, U256::overflowing_add)?;
+        f(from, U256::overflowing_sub_assign)?;
+        f(to, U256::overflowing_add_assign)?;
 
         Ok(())
     }
@@ -409,7 +410,7 @@ where
         }
 
         match self.cache.get(address.into()) {
-            Some(cache_item) => Ok(cache_item.current().value().balance),
+            Some(cache_item) => Ok(cache_item.current().value().balance.clone()),
             None => Err(InternalError("Balance assumed warm but not in cache").into()),
         }
     }
@@ -494,7 +495,7 @@ where
             false,
         )?;
 
-        let full_data = account_data.current().value();
+        let full_data = account_data.current().value().clone();
 
         // we already charged for "cold" case, and now can charge more precisely
 
@@ -761,7 +762,7 @@ where
         )))?;
 
         let same_address = at_address == nominal_token_beneficiary;
-        let transfer_amount = account_data.current().value().balance;
+        let transfer_amount = account_data.current().value().balance.clone();
 
         // We consider two cases: either deconstruction happens within the same
         // tx as the address was deployed or it happens in constructor code.
@@ -801,7 +802,7 @@ where
         } else if should_be_deconstructed {
             account_data.update(|cache_record| {
                 cache_record.update(|v, _| {
-                    v.balance = U256::ZERO;
+                    U256::write_zero(&mut v.balance);
                     Ok(())
                 })
             })?;
@@ -822,7 +823,7 @@ where
                         && beneficiary_properties.bytecode_len == 0
                         // We need to check with the transferred amount,
                         // this means it was 0 before the transfer.
-                        && beneficiary_properties.balance == transfer_amount;
+                        && beneficiary_properties.balance.eq(&transfer_amount);
                     if beneficiary_is_empty {
                         use evm_interpreter::gas_constants::NEWACCOUNT;
                         let ergs_to_spend = Ergs(NEWACCOUNT * ERGS_PER_GAS);
@@ -845,7 +846,7 @@ where
             .apply_to_last_record_of_pending_changes(|key, head_history_record| {
                 if head_history_record.value.appearance() == Appearance::Deconstructed {
                     head_history_record.value.update(|x, _| {
-                        *x = AccountProperties::TRIVIAL_VALUE;
+                        *x = AccountProperties::default();
                         Ok(())
                     })?;
                     storage

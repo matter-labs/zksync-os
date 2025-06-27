@@ -2,6 +2,7 @@
 use super::*;
 use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_functions::keccak256::Keccak256Impl;
+use ::u256::U256;
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
@@ -485,7 +486,7 @@ where
 
         let mut blocks_hasher = Blake2s256::new();
         for block_hash in block_metadata.block_hashes.0.iter() {
-            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+            blocks_hasher.update(&block_hash.to_be_bytes());
         }
 
         // chain state before
@@ -524,7 +525,7 @@ where
 
         blocks_hasher = Blake2s256::new();
         for block_hash in block_metadata.block_hashes.0.iter().skip(1) {
-            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+            blocks_hasher.update(&block_hash.to_be_bytes());
         }
         blocks_hasher.update(current_block_hash.as_u8_ref());
 
@@ -925,16 +926,21 @@ where
         ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-        diff: &ruint::aliases::U256,
+        diff: &U256,
         should_subtract: bool,
-    ) -> Result<ruint::aliases::U256, UpdateQueryError> {
-        let update_fn = move |old_value: &ruint::aliases::U256| {
-            let new_value = if should_subtract {
-                old_value.checked_sub(*diff)
+    ) -> Result<U256, UpdateQueryError> {
+        let update_fn = move |old_value: &U256| {
+            let mut new_value = old_value.clone();
+            let of = if should_subtract {
+                new_value.overflowing_sub_assign(diff)
             } else {
-                old_value.checked_add(*diff)
+                new_value.overflowing_add_assign(diff)
             };
-            new_value.ok_or(UpdateQueryError::NumericBoundsError)
+            if of {
+                Err(UpdateQueryError::NumericBoundsError)
+            } else {
+                Ok(new_value)
+            }
         };
         self.storage.update_nominal_token_value(
             ee_type,

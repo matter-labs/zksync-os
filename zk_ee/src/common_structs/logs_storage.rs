@@ -16,7 +16,7 @@ use core::alloc::Allocator;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
-use ruint::aliases::U256;
+use u256::U256;
 
 pub const L2_TO_L1_LOG_SERIALIZE_SIZE: usize = 88;
 
@@ -135,7 +135,7 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
                 success: l.success,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
-                address: *m.address,
+                address: m.address.clone(),
                 data: UsizeAlignedByteBox::from_slice_in(m.data, allocator),
                 data_hash: *m.data_hash,
             }),
@@ -517,12 +517,12 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
                 data_hash,
             ),
             GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => {
-                let data = if success { U256::from(1) } else { U256::ZERO };
+                let value = if success { &U256::one() } else { &U256::zero() };
                 (
                     // TODO: move into const
                     B160::from_limbs([0x8001, 0, 0]),
                     tx_hash,
-                    Bytes32::from_u256_be(&data),
+                    Bytes32::from_u256_be(value),
                 )
             }
         };

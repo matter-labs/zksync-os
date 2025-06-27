@@ -182,14 +182,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
             block_number: self.block_number + 1,
-            block_hashes: BlockHashes(self.block_hashes),
+            block_hashes: BlockHashes(self.block_hashes.map(|el| el.into())),
             timestamp: block_context.timestamp,
-            eip1559_basefee: block_context.eip1559_basefee,
-            gas_per_pubdata: block_context.gas_per_pubdata,
-            native_price: block_context.native_price,
+            eip1559_basefee: block_context.eip1559_basefee.into(),
+            gas_per_pubdata: block_context.gas_per_pubdata.into(),
+            native_price: block_context.native_price.into(),
             coinbase: block_context.coinbase,
             gas_limit: block_context.gas_limit,
-            mix_hash: block_context.mix_hash,
+            mix_hash: block_context.mix_hash.into(),
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),
@@ -384,7 +384,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 .insert(account_properties.bytecode_hash, bytecode);
         }
         if let Some(nominal_token_balance) = balance {
-            account_properties.balance = nominal_token_balance;
+            account_properties.balance = nominal_token_balance.into();
         }
         if let Some(nonce) = nonce {
             account_properties.nonce = nonce;
@@ -412,7 +412,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     /// Set a storage slot
     ///
     pub fn set_storage_slot(&mut self, address: B160, key: U256, value: B256) {
-        let key = Bytes32::from_u256_be(&key);
+        let key = Bytes32::from_u256_be(&key.into());
         let flat_key = derive_flat_storage_key(&address, &key);
 
         let value = Bytes32::from_array(value.to_be_bytes());
@@ -427,8 +427,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     /// **Note, that other account fields will be zeroed out(nonce, code).**
     ///
     pub fn set_balance(&mut self, address: B160, balance: U256) -> &mut Self {
-        let mut account_properties = AccountProperties::TRIVIAL_VALUE;
-        account_properties.balance = balance;
+        let mut account_properties = AccountProperties::default();
+        account_properties.balance = balance.into();
         let encoding = account_properties.encoding();
         let properties_hash = account_properties.compute_hash();
 

@@ -1,4 +1,4 @@
-use ruint::aliases::*;
+use ::u256::U256;
 use zk_ee::utils::*;
 
 use crate::i256::*;

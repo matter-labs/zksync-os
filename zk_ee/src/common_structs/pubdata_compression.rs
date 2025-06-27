@@ -5,7 +5,7 @@ use crate::system::IOResultKeeper;
 use crate::types_config::SystemIOTypesConfig;
 use crate::utils::*;
 use crypto::MiniDigest;
-use ruint::aliases::U256;
+use u256::U256;
 
 ///
 /// value diff "Era VM" compression, can be used for contracts storage values and account data fields(nonce and balance).
@@ -26,11 +26,12 @@ pub enum ValueDiffCompressionStrategy {
 }
 
 impl ValueDiffCompressionStrategy {
-    fn compression_length(&self, initial_value: U256, final_value: U256) -> Option<u8> {
+    fn compression_length(&self, initial_value: &U256, final_value: &U256) -> Option<u8> {
         match self {
             Self::Nothing => Some(33), //full value + metadata byte
             Self::Add => {
-                let (result, of) = final_value.overflowing_sub(initial_value);
+                let mut result = final_value.clone();
+                let of = result.overflowing_sub_assign(initial_value);
                 let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
                 if of || length == 32 {
                     None
@@ -39,7 +40,8 @@ impl ValueDiffCompressionStrategy {
                 }
             }
             Self::Sub => {
-                let (result, of) = initial_value.overflowing_sub(final_value);
+                let mut result = initial_value.clone();
+                let of = result.overflowing_sub_assign(final_value);
                 let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
                 if of || length == 32 {
                     None
@@ -69,14 +71,15 @@ impl ValueDiffCompressionStrategy {
             Self::Nothing => {
                 let metadata_byte = 0u8;
                 hasher.update([metadata_byte]);
-                hasher.update(final_value.to_be_bytes::<32>());
+                hasher.update(final_value.to_be_bytes());
                 result_keeper.pubdata(&[metadata_byte]);
-                result_keeper.pubdata(&final_value.to_be_bytes::<32>());
+                result_keeper.pubdata(&final_value.to_be_bytes());
 
                 Ok(())
             }
             Self::Add => {
-                let (result, of) = final_value.overflowing_sub(initial_value);
+                let mut result = final_value;
+                let of = result.overflowing_sub_assign(&initial_value);
                 let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
 
                 if of || length == 32 {
@@ -84,15 +87,16 @@ impl ValueDiffCompressionStrategy {
                 } else {
                     let metadata_byte = (length << 3) | 1;
                     hasher.update([metadata_byte]);
-                    hasher.update(&result.to_be_bytes::<32>()[32usize - length as usize..]);
+                    hasher.update(&result.to_be_bytes()[32usize - length as usize..]);
                     result_keeper.pubdata(&[metadata_byte]);
-                    result_keeper.pubdata(&result.to_be_bytes::<32>()[32usize - length as usize..]);
+                    result_keeper.pubdata(&result.to_be_bytes()[32usize - length as usize..]);
 
                     Ok(())
                 }
             }
             Self::Sub => {
-                let (result, of) = initial_value.overflowing_sub(final_value);
+                let mut result = initial_value;
+                let of = result.overflowing_sub_assign(&final_value);
                 let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
 
                 if of || length == 32 {
@@ -100,9 +104,9 @@ impl ValueDiffCompressionStrategy {
                 } else {
                     let metadata_byte = (length << 3) | 2;
                     hasher.update([metadata_byte]);
-                    hasher.update(&result.to_be_bytes::<32>()[32usize - length as usize..]);
+                    hasher.update(&result.to_be_bytes()[32usize - length as usize..]);
                     result_keeper.pubdata(&[metadata_byte]);
-                    result_keeper.pubdata(&result.to_be_bytes::<32>()[32usize - length as usize..]);
+                    result_keeper.pubdata(&result.to_be_bytes()[32usize - length as usize..]);
 
                     Ok(())
                 }
@@ -114,10 +118,9 @@ impl ValueDiffCompressionStrategy {
                 } else {
                     let metadata_byte = (length << 3) | 3;
                     hasher.update([metadata_byte]);
-                    hasher.update(&final_value.to_be_bytes::<32>()[32usize - length as usize..]);
+                    hasher.update(&final_value.to_be_bytes()[32usize - length as usize..]);
                     result_keeper.pubdata(&[metadata_byte]);
-                    result_keeper
-                        .pubdata(&final_value.to_be_bytes::<32>()[32usize - length as usize..]);
+                    result_keeper.pubdata(&final_value.to_be_bytes()[32usize - length as usize..]);
 
                     Ok(())
                 }
@@ -128,12 +131,12 @@ impl ValueDiffCompressionStrategy {
     pub fn optimal_compression_length_u256(initial_value: U256, final_value: U256) -> u8 {
         // worst case "Nothing" strategy, always possible to encode
         let mut optimal = Self::Nothing
-            .compression_length(initial_value, final_value)
+            .compression_length(&initial_value, &final_value)
             .unwrap();
 
         // so we don't check nothing here
         for strategy in [Self::Add, Self::Sub, Self::Transform].iter() {
-            if let Some(length) = strategy.compression_length(initial_value, final_value) {
+            if let Some(length) = strategy.compression_length(&initial_value, &final_value) {
                 optimal = core::cmp::min(optimal, length);
             }
         }
@@ -155,12 +158,12 @@ impl ValueDiffCompressionStrategy {
     ) {
         let mut optimal_strategy = Self::Nothing;
         let mut optimal_length = optimal_strategy
-            .compression_length(initial_value, final_value)
+            .compression_length(&initial_value, &final_value)
             .unwrap();
 
         // nothing already checked
         for strategy in [Self::Add, Self::Sub, Self::Transform] {
-            if let Some(length) = strategy.compression_length(initial_value, final_value) {
+            if let Some(length) = strategy.compression_length(&initial_value, &final_value) {
                 if length < optimal_length {
                     optimal_strategy = strategy;
                     optimal_length = length;

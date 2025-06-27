@@ -5,11 +5,11 @@
 
 use self::u256be_ptr::U256BEPtr;
 use crate::bootloader::rlp;
+use ::u256::U256;
 use core::ops::Range;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use errors::InvalidTransaction;
-use ruint::aliases::U256;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError};
 
 mod abi_utils;
@@ -337,7 +337,7 @@ impl<'a> ZkSyncTransaction<'a> {
     ///
     pub fn get_user_gas_per_pubdata_limit(&self) -> U256 {
         if self.is_eip_712() {
-            U256::from(self.gas_per_pubdata_limit.read())
+            U256::from(self.gas_per_pubdata_limit.read() as u64)
         } else {
             crate::bootloader::constants::DEFAULT_GAS_PER_PUBDATA
         }
@@ -895,7 +895,7 @@ impl<'a> ZkSyncTransaction<'a> {
         hasher.update(Self::DOMAIN_TYPE_HASH);
         hasher.update(Self::DOMAIN_NAME_HASH);
         hasher.update(Self::DOMAIN_VERSION_HASH);
-        hasher.update(U256::from(chain_id).to_be_bytes::<32>());
+        hasher.update(U256::from(chain_id).to_be_bytes());
         Ok(*hasher.finalize().split_first_chunk::<32>().unwrap().0)
     }
 
@@ -999,7 +999,7 @@ impl<'a> ZkSyncTransaction<'a> {
         charge_keccak(32 + self.underlying_buffer[TX_OFFSET..].len(), resources)?;
         let mut hasher = Keccak256::new();
         // Note, that the correct ABI encoding of the Transaction structure starts with 0x20
-        hasher.update(&U256::from(0x20).to_be_bytes::<32>());
+        hasher.update(&U256::from(0x20u64).to_be_bytes());
         hasher.update(&self.underlying_buffer[TX_OFFSET..]);
         Ok(hasher.finalize())
     }
@@ -1021,21 +1021,21 @@ impl<'a> ZkSyncTransaction<'a> {
                 .ok_or(InternalError("mfpg*gl"))?;
             self.value
                 .read()
-                .checked_add(U256::from(fee_amount))
+                .checked_add(&U256::from(fee_amount))
                 .ok_or(InternalError("fa+v"))
         }
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct ParsedValue<T: 'static + Clone + Copy + core::fmt::Debug> {
+pub struct ParsedValue<T: 'static + Clone + core::fmt::Debug> {
     value: T,
     range: Range<usize>,
 }
 
-impl<T: 'static + Clone + Copy + core::fmt::Debug> ParsedValue<T> {
+impl<T: 'static + Clone + core::fmt::Debug> ParsedValue<T> {
     pub fn read(&self) -> T {
-        self.value
+        self.value.clone()
     }
 
     fn encoding<'a>(&self, source: &'a [u8]) -> &'a [u8] {

@@ -40,6 +40,9 @@ use crate::{
     utils::USIZE_SIZE,
 };
 
+use ruint::aliases::B160;
+use u256::U256;
+
 pub trait SystemTypes {
     /// Handles all side effects and information from the outside world.
     type IO: IOSubsystem<IOTypes = Self::IOTypes, Resources = Self::Resources>;
@@ -77,27 +80,27 @@ impl<S: SystemTypes> System<S> {
     }
 
     pub fn get_tx_origin(&self) -> <S::IOTypes as SystemIOTypesConfig>::Address {
-        self.metadata.tx_origin
+        self.metadata.tx_origin.clone()
     }
 
     pub fn get_block_number(&self) -> u64 {
         self.metadata.block_level_metadata.block_number
     }
 
-    pub fn get_mix_hash(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.mix_hash
+    pub fn get_mix_hash(&self) -> &U256 {
+        &self.metadata.block_level_metadata.mix_hash
     }
 
-    pub fn get_blockhash(&self, block_number: u64) -> ruint::aliases::U256 {
+    pub fn get_blockhash(&self, block_number: u64) -> U256 {
         let current_block_number = self.metadata.block_level_metadata.block_number;
         if block_number >= current_block_number
             || block_number < current_block_number.saturating_sub(256)
         {
             // Out of range
-            ruint::aliases::U256::ZERO
+            U256::zero()
         } else {
             let index = current_block_number - block_number - 1;
-            self.metadata.block_level_metadata.block_hashes.0[index as usize]
+            self.metadata.block_level_metadata.block_hashes.0[index as usize].clone()
         }
     }
 
@@ -105,28 +108,28 @@ impl<S: SystemTypes> System<S> {
         self.metadata.chain_id
     }
 
-    pub fn get_coinbase(&self) -> ruint::aliases::B160 {
+    pub fn get_coinbase(&self) -> B160 {
         self.metadata.block_level_metadata.coinbase
     }
 
-    pub fn get_eip1559_basefee(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.eip1559_basefee
+    pub fn get_eip1559_basefee(&self) -> U256 {
+        self.metadata.block_level_metadata.eip1559_basefee.clone()
     }
 
-    pub fn get_native_price(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.native_price
+    pub fn get_native_price(&self) -> U256 {
+        self.metadata.block_level_metadata.native_price.clone()
     }
 
     pub fn get_gas_limit(&self) -> u64 {
         self.metadata.block_level_metadata.gas_limit
     }
 
-    pub fn get_gas_per_pubdata(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.gas_per_pubdata
+    pub fn get_gas_per_pubdata(&self) -> U256 {
+        self.metadata.block_level_metadata.gas_per_pubdata.clone()
     }
 
-    pub fn get_gas_price(&self) -> ruint::aliases::U256 {
-        self.metadata.tx_gas_price
+    pub fn get_gas_price(&self) -> U256 {
+        self.metadata.tx_gas_price.clone()
     }
 
     pub fn get_timestamp(&self) -> u64 {
@@ -143,10 +146,10 @@ impl<S: SystemTypes> System<S> {
     pub fn set_tx_context(
         &mut self,
         tx_origin: <S::IOTypes as SystemIOTypesConfig>::Address,
-        tx_gas_price: ruint::aliases::U256,
+        tx_gas_price: &U256,
     ) {
         self.metadata.tx_origin = tx_origin;
-        self.metadata.tx_gas_price = tx_gas_price;
+        self.metadata.tx_gas_price = tx_gas_price.clone();
     }
 
     pub fn net_pubdata_used(&self) -> Result<u64, InternalError> {
