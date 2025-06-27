@@ -87,6 +87,10 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_level_metadata.block_number
     }
 
+    pub fn get_mix_hash(&self) -> &U256 {
+        &self.metadata.block_level_metadata.mix_hash
+    }
+
     pub fn get_blockhash(&self, block_number: u64) -> U256 {
         let current_block_number = self.metadata.block_level_metadata.block_number;
         if block_number >= current_block_number

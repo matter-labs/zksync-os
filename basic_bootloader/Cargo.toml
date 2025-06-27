@@ -34,4 +34,4 @@ cycle_marker = ["system_hooks/cycle_marker"]
 resources_for_tester = []
 unlimited_native = []
 report_native = []
-
+disable_system_contracts = []

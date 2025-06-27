@@ -12,6 +12,8 @@ docker create --name zksync-os-bin zksync-os-bin
 FILES=(
     app.bin
     evm_replay.bin
+    server_app.bin
+    server_app_logging_enabled.bin
 )
 
 for FILE in "${FILES[@]}"; do
