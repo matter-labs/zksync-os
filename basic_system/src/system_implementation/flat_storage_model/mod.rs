@@ -120,7 +120,8 @@ where
     }
 
     fn pubdata_used_by_tx(&self) -> u32 {
-        self.account_data_cache.calculate_pubdata_used_by_tx()
+        self.account_data_cache
+            .calculate_pubdata_used_by_tx(&self.preimages_cache)
             + self.storage_cache.calculate_pubdata_used_by_tx()
     }
 
@@ -181,10 +182,13 @@ where
                         .into();
                     let cache_item = account_data_cache.cache.get(&account_address).ok_or(())?;
                     let (l, r) = cache_item.get_initial_and_last_values().ok_or(())?;
+                    let should_publish_bytecode = preimages_cache
+                        .storage
+                        .contains_key(&r.value().bytecode_hash);
                     AccountProperties::diff_compression::<PROOF_ENV, _, _>(
                         l.value(),
                         r.value(),
-                        r.metadata().not_publish_bytecode,
+                        should_publish_bytecode,
                         pubdata_hasher,
                         result_keeper,
                         &mut preimages_cache,
