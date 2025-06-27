@@ -199,9 +199,13 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let mut system_functions = HooksStorage::new_in(system.get_allocator());
 
         system_functions.add_precompiles();
-        system_functions.add_l1_messenger();
-        system_functions.add_l2_base_token();
-        system_functions.add_contract_deployer();
+
+        #[cfg(not(feature = "disable_system_contracts"))]
+        {
+            system_functions.add_l1_messenger();
+            system_functions.add_l2_base_token();
+            system_functions.add_contract_deployer();
+        }
 
         let mut tx_rolling_hash = [0u8; 32];
         let mut l1_to_l2_txs_hasher = crypto::blake2s::Blake2s256::new();
