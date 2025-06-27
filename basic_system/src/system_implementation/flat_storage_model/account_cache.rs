@@ -345,7 +345,10 @@ where
         })
     }
 
-    pub fn calculate_pubdata_used_by_tx(&self) -> u32 {
+    pub fn calculate_pubdata_used_by_tx(
+        &self,
+        preimages_cache: &BytecodeAndAccountDataPreimagesStorage<R, A>,
+    ) -> u32 {
         let mut visited_elements = BTreeSet::new_in(self.alloc.clone());
 
         let mut pubdata_used = 0u32;
@@ -363,10 +366,13 @@ where
             let current = element_history.current();
             let initial = element_history.initial();
 
+            let should_publish_bytecode = preimages_cache
+                .storage
+                .contains_key(&current.value().bytecode_hash);
             pubdata_used += AccountProperties::diff_compression_length(
                 initial.value(),
                 current.value(),
-                current.metadata().not_publish_bytecode,
+                should_publish_bytecode,
             )
             .unwrap();
         }
@@ -730,9 +736,6 @@ where
                     .set_code_version(DEFAULT_CODE_VERSION_BYTE);
 
                 m.deployed_in_tx = cur_tx;
-                // This is unlikely to happen, this case shouldn't be reachable by higher level logic
-                // but just in case if force deployed contract was redeployed with regular deployment we want to publish it
-                m.not_publish_bytecode = false;
 
                 Ok(())
             })
@@ -787,7 +790,6 @@ where
                     .set_code_version(DEFAULT_CODE_VERSION_BYTE);
 
                 m.deployed_in_tx = cur_tx;
-                m.not_publish_bytecode = true;
 
                 Ok(())
             })

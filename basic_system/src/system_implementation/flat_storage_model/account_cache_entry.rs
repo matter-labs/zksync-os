@@ -99,10 +99,6 @@ pub struct AccountPropertiesMetadata {
     /// Transaction where this account was last accessed.
     /// Considered warm if equal to Some(current_tx)
     pub last_touched_in_tx: Option<u32>,
-    /// Special flag that allows to avoid publishing bytecode for deployed account.
-    /// In practice, it can be set to `true` only during special protocol upgrade txs.
-    /// For protocol upgrades it's ensured by governance that bytecodes are already published separately.
-    pub not_publish_bytecode: bool,
 }
 
 impl AccountPropertiesMetadata {
@@ -212,7 +208,7 @@ impl AccountProperties {
     pub fn diff_compression_length(
         initial: &Self,
         r#final: &Self,
-        not_publish_bytecode: bool,
+        should_publish_bytecode: bool,
     ) -> Result<u32, InternalError> {
         match (
             initial.versioning_data.is_deployed(),
@@ -222,7 +218,7 @@ impl AccountProperties {
                 "Account destructed at the end of the tx/block",
             )),
             (false, true) => {
-                Ok(if not_publish_bytecode {
+                Ok(if should_publish_bytecode == false {
                     1u32 // metadata byte
                         + 8 // versioning data
                         + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?) as u32 // nonce diff
@@ -305,7 +301,7 @@ impl AccountProperties {
     pub fn diff_compression<const PROOF_ENV: bool, R: Resources, A: Allocator + Clone>(
         initial: &Self,
         r#final: &Self,
-        not_publish_bytecode: bool,
+        should_publish_bytecode: bool,
         hasher: &mut impl MiniDigest,
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
@@ -319,11 +315,11 @@ impl AccountProperties {
                 "Account destructed at the end of the tx/block",
             )),
             (false, true) => {
-                // Account encoding (0b100), option 4 (0b100100) or option 0 (0b000100), see function specs.
-                let metadata_byte = if not_publish_bytecode {
-                    0b00100100
-                } else {
+                // Account encoding (0b100), option 0 (0b000100) or option 4 (0b100100), see function specs.
+                let metadata_byte = if should_publish_bytecode {
                     0b00000100
+                } else {
+                    0b00100100
                 };
 
                 hasher.update([metadata_byte]);
@@ -349,7 +345,7 @@ impl AccountProperties {
                     result_keeper,
                 );
 
-                if not_publish_bytecode {
+                if should_publish_bytecode == false {
                     hasher.update(r#final.bytecode_hash.as_u8_ref());
                     result_keeper.pubdata(r#final.bytecode_hash.as_u8_ref());
                 } else {
@@ -496,7 +492,7 @@ mod tests {
         r#final.nonce = 22;
 
         let optimal_length =
-            AccountProperties::diff_compression_length(&initial, &r#final, false).unwrap();
+            AccountProperties::diff_compression_length(&initial, &r#final, true).unwrap();
 
         let mut nop_hasher = NopHasher::new();
         let mut result_keeper = TestResultKeeper { pubdata: vec![] };
@@ -508,7 +504,7 @@ mod tests {
         AccountProperties::diff_compression::<false, _, _>(
             &initial,
             &r#final,
-            false,
+            true,
             &mut nop_hasher,
             &mut result_keeper,
             &mut preimages_cache,
@@ -543,7 +539,7 @@ mod tests {
         r#final.observable_bytecode_hash = keccak.into();
 
         let optimal_length =
-            AccountProperties::diff_compression_length(&initial, &r#final, false).unwrap();
+            AccountProperties::diff_compression_length(&initial, &r#final, true).unwrap();
 
         let mut nop_hasher = NopHasher::new();
         let mut result_keeper = TestResultKeeper { pubdata: vec![] };
@@ -568,7 +564,7 @@ mod tests {
         AccountProperties::diff_compression::<false, _, _>(
             &initial,
             &r#final,
-            false,
+            true,
             &mut nop_hasher,
             &mut result_keeper,
             &mut preimages_cache,
