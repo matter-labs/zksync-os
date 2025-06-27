@@ -31,13 +31,19 @@ impl Block {
                 .into_transactions()
                 .enumerate()
                 .filter_map(|(i, tx)| {
-                    // Skip blob and 7702 txs
-                    if tx.transaction_type == Some(3u8) || tx.transaction_type == Some(4u8) {
-                        warn!("Skipping unsupported transaction");
+                    // Skip unsupported txs
+                    if tx.transaction_type.is_none_or(|t| t == 0u8)
+                        || tx.transaction_type == Some(1u8)
+                        || tx.transaction_type == Some(2u8)
+                    {
+                        Some(encode_alloy_rpc_tx(tx))
+                    } else {
+                        warn!(
+                            "Skipping unsupported transaction of type {:?}",
+                            tx.transaction_type
+                        );
                         skipped.insert(i);
                         None
-                    } else {
-                        Some(encode_alloy_rpc_tx(tx))
                     }
                 })
                 .collect(),
