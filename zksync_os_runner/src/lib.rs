@@ -99,11 +99,15 @@ pub fn run_and_get_effective_cycles(
         diagnostics,
     };
 
-    let (_non_determinism_source, final_state) =
+    let (_non_determinism_source, final_state, report) =
         risc_v_simulator::runner::run_simple_with_entry_point_and_non_determimism_source(
             config,
             non_determinism_source,
         );
+
+    let mut fmt: numfmt::Formatter = "[.0n]".parse().unwrap();
+
+    println!("Simulation freq: {}", fmt.fmt2(report.freq()));
 
     risc_v_simulator::cycle::state::output_opcode_stats();
 

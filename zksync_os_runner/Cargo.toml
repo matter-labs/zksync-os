@@ -16,6 +16,7 @@ execution_utils = { workspace = true }
 prover_examples = { workspace = true }
 cycle_marker = { path = "../cycle_marker" }
 # risc_v_simulator = { path = "../../zksync-airbender/risc_v_simulator" }
+numfmt = "*"
 
 [features]
 opcode_stats = ["risc_v_simulator/opcode_stats"]
