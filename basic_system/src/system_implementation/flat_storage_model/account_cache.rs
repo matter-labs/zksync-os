@@ -1,6 +1,7 @@
 //! Account cache, backed by a history map.
 //! This caches the actual account data, which will
 //! then be published into the preimage storage.
+use super::AccountAccessMarker;
 use super::AccountPropertiesMetadata;
 use super::BytecodeAndAccountDataPreimagesStorage;
 use super::NewStorageWithAccountPropertiesUnderHash;
@@ -217,7 +218,8 @@ where
 
                     x.update(|cache_record| {
                         cache_record.update_metadata(|m| {
-                            m.last_touched_in_tx = Some(self.current_tx_number);
+                            m.access_marker =
+                                AccountAccessMarker::AccessedInTx(self.current_tx_number);
                             Ok(())
                         })
                     })?;
@@ -725,7 +727,7 @@ where
                 v.versioning_data
                     .set_code_version(DEFAULT_CODE_VERSION_BYTE);
 
-                m.deployed_in_tx = cur_tx;
+                m.access_marker = AccountAccessMarker::DeployedInTx(cur_tx);
 
                 Ok(())
             })
@@ -768,8 +770,9 @@ where
         // Note that the contract is only deployed after finalization of
         // constructor, so in the second case `deployed_in_tx` won't be set
         // yet.
-        let should_be_deconstructed =
-            account_data.current().metadata().deployed_in_tx == cur_tx || in_constructor;
+        let should_be_deconstructed = account_data.current().metadata().access_marker
+            == AccountAccessMarker::DeployedInTx(cur_tx)
+            || in_constructor;
 
         if should_be_deconstructed {
             account_data.update::<_, SystemError>(|cache_record| {
