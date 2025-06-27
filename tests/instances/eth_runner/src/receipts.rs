@@ -1,8 +1,8 @@
 use alloy::primitives::{Address, Bloom, B256, U256};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TransactionReceipt {
     pub transaction_hash: B256,
@@ -22,7 +22,7 @@ pub struct TransactionReceipt {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Log {
     pub address: Address,
@@ -51,7 +51,7 @@ impl Log {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct BlockReceipts {
     pub result: Vec<TransactionReceipt>,
 }

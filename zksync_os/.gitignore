@@ -1,4 +1,5 @@
-os.elf
-app.elf
-app.text
+*.elf
+*.text
+server_app.bin
+server_app_logging_enabled.bin
 /target

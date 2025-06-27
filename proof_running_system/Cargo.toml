@@ -40,3 +40,4 @@ evm-compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-com
 unlimited_native = ["basic_bootloader/unlimited_native"]
 wrap-in-batch = ["basic_system/wrap-in-batch"]
 global-alloc = []
+disable_system_contracts = ["basic_bootloader/disable_system_contracts"]

@@ -298,7 +298,7 @@ where
                     Bytes32::ZERO
                 } else {
                     // EOA case:
-                    Bytes32::from_u256_be(U256::from_limbs([
+                    Bytes32::from_u256_be(&U256::from_limbs([
                         0x7bfad8045d85a470,
                         0xe500b653ca82273b,
                         0x927e7db2dcc703c0,
@@ -734,11 +734,12 @@ where
         self.transient_storage.begin_new_tx();
         self.logs_storage.begin_new_tx();
         self.events_storage.begin_new_tx();
-        self.tx_number += 1;
     }
 
     fn finish_tx(&mut self) -> Result<(), InternalError> {
-        self.storage.finish_tx()
+        self.storage.finish_tx()?;
+        self.tx_number += 1;
+        Ok(())
     }
 
     fn storage_touch(
