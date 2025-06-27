@@ -48,6 +48,7 @@ pub struct BlockContext {
     pub gas_per_pubdata: U256,
     pub native_price: U256,
     pub coinbase: B160,
+    pub gas_limit: u64,
 }
 
 impl Default for BlockContext {
@@ -58,6 +59,7 @@ impl Default for BlockContext {
             gas_per_pubdata: U256::default(),
             native_price: U256::from(10),
             coinbase: B160::default(),
+            gas_limit: MAX_BLOCK_GAS_LIMIT,
         }
     }
 }
@@ -184,7 +186,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             gas_per_pubdata: block_context.gas_per_pubdata,
             native_price: block_context.native_price,
             coinbase: block_context.coinbase,
-            gas_limit: MAX_BLOCK_GAS_LIMIT,
+            gas_limit: block_context.gas_limit,
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),
