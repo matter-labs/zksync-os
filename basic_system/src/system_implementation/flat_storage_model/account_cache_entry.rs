@@ -319,61 +319,40 @@ impl AccountProperties {
                 "Account destructed at the end of the tx/block",
             )),
             (false, true) => {
+                // Account encoding (0b100), option 4 (0b100100) or option 0 (0b000100), see function specs.
+                let metadata_byte = if not_publish_bytecode {
+                    0b00100100
+                } else {
+                    0b00000100
+                };
+
+                hasher.update([metadata_byte]);
+                result_keeper.pubdata(&[metadata_byte]);
+                hasher.update(r#final.versioning_data.into_u64().to_be_bytes());
+                result_keeper.pubdata(&r#final.versioning_data.into_u64().to_be_bytes());
+                ValueDiffCompressionStrategy::optimal_compression_u256(
+                    initial
+                        .nonce
+                        .try_into()
+                        .map_err(|_| InternalError("u64 into U256"))?,
+                    r#final
+                        .nonce
+                        .try_into()
+                        .map_err(|_| InternalError("u64 into U256"))?,
+                    hasher,
+                    result_keeper,
+                );
+                ValueDiffCompressionStrategy::optimal_compression_u256(
+                    initial.balance,
+                    r#final.balance,
+                    hasher,
+                    result_keeper,
+                );
+
                 if not_publish_bytecode {
-                    let metadata_byte = 0b00100100;
-                    hasher.update([metadata_byte]);
-                    result_keeper.pubdata(&[metadata_byte]);
-                    hasher.update(r#final.versioning_data.into_u64().to_be_bytes());
-                    result_keeper.pubdata(&r#final.versioning_data.into_u64().to_be_bytes());
-                    ValueDiffCompressionStrategy::optimal_compression_u256(
-                        initial
-                            .nonce
-                            .try_into()
-                            .map_err(|_| InternalError("u64 into U256"))?,
-                        r#final
-                            .nonce
-                            .try_into()
-                            .map_err(|_| InternalError("u64 into U256"))?,
-                        hasher,
-                        result_keeper,
-                    );
-                    ValueDiffCompressionStrategy::optimal_compression_u256(
-                        initial.balance,
-                        r#final.balance,
-                        hasher,
-                        result_keeper,
-                    );
                     hasher.update(r#final.bytecode_hash.as_u8_ref());
                     result_keeper.pubdata(r#final.bytecode_hash.as_u8_ref());
-                    hasher.update(r#final.artifacts_len.to_be_bytes());
-                    result_keeper.pubdata(&r#final.artifacts_len.to_be_bytes());
-                    hasher.update(r#final.observable_bytecode_len.to_be_bytes());
-                    result_keeper.pubdata(&r#final.observable_bytecode_len.to_be_bytes());
-                    Ok(())
                 } else {
-                    let metadata_byte = 4u8;
-                    hasher.update([metadata_byte]);
-                    result_keeper.pubdata(&[metadata_byte]);
-                    hasher.update(r#final.versioning_data.into_u64().to_be_bytes());
-                    result_keeper.pubdata(&r#final.versioning_data.into_u64().to_be_bytes());
-                    ValueDiffCompressionStrategy::optimal_compression_u256(
-                        initial
-                            .nonce
-                            .try_into()
-                            .map_err(|_| InternalError("u64 into U256"))?,
-                        r#final
-                            .nonce
-                            .try_into()
-                            .map_err(|_| InternalError("u64 into U256"))?,
-                        hasher,
-                        result_keeper,
-                    );
-                    ValueDiffCompressionStrategy::optimal_compression_u256(
-                        initial.balance,
-                        r#final.balance,
-                        hasher,
-                        result_keeper,
-                    );
                     hasher.update(r#final.bytecode_len.to_be_bytes());
                     result_keeper.pubdata(&r#final.bytecode_len.to_be_bytes());
                     let preimage_type = PreimageRequest {
@@ -398,12 +377,13 @@ impl AccountProperties {
                         })?;
                     hasher.update(bytecode);
                     result_keeper.pubdata(bytecode);
-                    hasher.update(r#final.artifacts_len.to_be_bytes());
-                    result_keeper.pubdata(&r#final.artifacts_len.to_be_bytes());
-                    hasher.update(r#final.observable_bytecode_len.to_be_bytes());
-                    result_keeper.pubdata(&r#final.observable_bytecode_len.to_be_bytes());
-                    Ok(())
                 }
+
+                hasher.update(r#final.artifacts_len.to_be_bytes());
+                result_keeper.pubdata(&r#final.artifacts_len.to_be_bytes());
+                hasher.update(r#final.observable_bytecode_len.to_be_bytes());
+                result_keeper.pubdata(&r#final.observable_bytecode_len.to_be_bytes());
+                Ok(())
             }
             (_, _) => {
                 // if deployment status didn't change, only balance and nonce can be changed
