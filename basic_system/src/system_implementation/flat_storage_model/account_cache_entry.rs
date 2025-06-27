@@ -97,8 +97,8 @@ pub const DEFAULT_ADDRESS_SPECIFIC_IMMUTABLE_DATA_VERSION: u8 = 1;
 pub enum AccountAccessMarker {
     #[default]
     Cold,
-    DeployedInTx(u32),
-    AccessedInTx(u32),
+    DeployedInTx(u16),
+    AccessedInTx(u16),
 }
 
 #[derive(Default, Clone)]
@@ -112,7 +112,7 @@ impl AccountPropertiesMetadata {
             AccountAccessMarker::Cold => false,
             AccountAccessMarker::DeployedInTx(accessed_in_tx)
             | AccountAccessMarker::AccessedInTx(accessed_in_tx) => {
-                current_tx_number == accessed_in_tx
+                current_tx_number == accessed_in_tx as u32
             }
         }
     }

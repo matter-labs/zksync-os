@@ -218,8 +218,11 @@ where
 
                     x.update(|cache_record| {
                         cache_record.update_metadata(|m| {
-                            m.access_marker =
-                                AccountAccessMarker::AccessedInTx(self.current_tx_number);
+                            m.access_marker = AccountAccessMarker::AccessedInTx(
+                                self.current_tx_number
+                                    .try_into()
+                                    .expect("Should not overflow"),
+                            );
                             Ok(())
                         })
                     })?;
@@ -727,7 +730,9 @@ where
                 v.versioning_data
                     .set_code_version(DEFAULT_CODE_VERSION_BYTE);
 
-                m.access_marker = AccountAccessMarker::DeployedInTx(cur_tx);
+                m.access_marker = AccountAccessMarker::DeployedInTx(
+                    cur_tx.try_into().expect("Should not overflow"),
+                );
 
                 Ok(())
             })
@@ -771,7 +776,7 @@ where
         // constructor, so in the second case `deployed_in_tx` won't be set
         // yet.
         let should_be_deconstructed = account_data.current().metadata().access_marker
-            == AccountAccessMarker::DeployedInTx(cur_tx)
+            == AccountAccessMarker::DeployedInTx(cur_tx.try_into().expect("Should not overflow"))
             || in_constructor;
 
         if should_be_deconstructed {
