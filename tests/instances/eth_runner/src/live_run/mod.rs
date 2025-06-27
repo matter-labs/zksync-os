@@ -93,6 +93,7 @@ fn run_block(
     endpoint: &str,
     witness_output_dir: Option<String>,
     persist_all: bool,
+    chain_id: Option<u64>,
 ) -> Result<BlockStatus> {
     let block_traces = fetch_block_traces(block_number, db, endpoint)?;
     let traces_clone = block_traces.clone();
@@ -149,7 +150,7 @@ fn run_block(
             .collect(),
     };
 
-    let mut chain = Chain::empty_randomized(Some(1));
+    let mut chain = Chain::empty_randomized(Some(chain_id.unwrap_or(1)));
     chain.set_last_block_number(block_number - 1);
 
     chain.set_block_hashes(get_block_hashes_array(block_number, db)?);
@@ -201,6 +202,7 @@ fn run_block(
 ///
 /// Run blocks from [start_block] to [end_block].
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn live_run(
     start_block: u64,
     end_block: u64,
@@ -209,6 +211,7 @@ pub fn live_run(
     witness_output_dir: Option<String>,
     skip_successful: bool,
     persist_all: bool,
+    chain_id: Option<u64>,
 ) -> Result<()> {
     let db = Database::init(db_path)?;
     assert!(start_block <= end_block);
@@ -221,9 +224,14 @@ pub fn live_run(
             debug!("Skipping block {}, already succeeded", n);
             continue;
         }
-        if let BlockStatus::Error(_) =
-            run_block(n, &db, &endpoint, witness_output_dir.clone(), persist_all)?
-        {
+        if let BlockStatus::Error(_) = run_block(
+            n,
+            &db,
+            &endpoint,
+            witness_output_dir.clone(),
+            persist_all,
+            chain_id,
+        )? {
             failures += 1;
             if failures == MAX_FAILURES {
                 error!("Reached max number of failures");

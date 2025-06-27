@@ -65,6 +65,7 @@ pub fn single_run(
     block_hashes: Option<String>,
     randomized: bool,
     witness_output_dir: Option<String>,
+    chain_id: Option<u64>,
 ) -> anyhow::Result<()> {
     use std::path::Path;
     let dir = Path::new(&block_dir);
@@ -131,7 +132,7 @@ pub fn single_run(
     };
 
     if randomized {
-        let chain = Chain::empty_randomized(Some(1));
+        let chain = Chain::empty_randomized(Some(chain_id.unwrap_or(1)));
         run(
             chain,
             block_context,
