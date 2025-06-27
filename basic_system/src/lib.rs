@@ -15,6 +15,8 @@
 #![feature(btree_cursors)]
 #![feature(slice_from_ptr_range)]
 #![feature(const_trait_impl)]
+#![feature(maybe_uninit_write_slice)]
+#![feature(likely_unlikely)]
 #![allow(clippy::new_without_default)]
 #![allow(clippy::needless_lifetimes)]
 #![allow(clippy::needless_borrow)]
