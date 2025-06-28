@@ -5,10 +5,14 @@ mod fe64;
 
 use core::ops::MulAssign;
 
-#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
-pub(super) use fe32_delegation::FieldElement;
-#[cfg(target_pointer_width = "64")]
-pub(super) use fe64::FieldElement;
+cfg_if::cfg_if!{
+    if #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))] {
+        pub(super) use fe32_delegation::FieldElement;
+    } else {
+        pub(super) use fe64::FieldElement;
+    }
+}
+
 pub(super) use fe64::FieldElement as FieldElementConst;
 
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
@@ -131,7 +135,7 @@ impl FieldElementConst {
         x
     }
 
-    #[cfg(target_pointer_width = "64")]
+    #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
     pub(super) const fn to_fe(self) -> FieldElement {
         self
     }

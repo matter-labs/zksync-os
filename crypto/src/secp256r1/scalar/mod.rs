@@ -1,16 +1,19 @@
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 mod scalar_delegation;
 
-#[cfg(target_pointer_width = "64")]
+#[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
 mod scalar64;
 
 use core::ops::{Mul, Neg};
 
-#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
-pub(crate) use scalar_delegation::Scalar;
+cfg_if::cfg_if! {
+    if #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))] {
+        pub(super) use scalar_delegation::Scalar;
+    } else {
+        pub(super) use scalar64::Scalar;
+    }
 
-#[cfg(target_pointer_width = "64")]
-pub(crate) use scalar64::Scalar;
+}
 
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 pub(super) use scalar_delegation::init;
