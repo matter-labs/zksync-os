@@ -921,6 +921,17 @@ pub struct LeafProof<const N: usize, H: FlatStorageHasher, A: Allocator = Global
     _marker: core::marker::PhantomData<H>,
 }
 
+impl LeafProof<32, Blake2sStorageHasher> {
+    pub fn new(index: u64, leaf: FlatStorageLeaf<32>, path: Box<[Bytes32; 32]>) -> Self {
+        Self {
+            index,
+            leaf,
+            path,
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
 impl<const N: usize, H: FlatStorageHasher, A: Allocator> core::fmt::Debug for LeafProof<N, H, A> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct(core::any::type_name::<Self>())
