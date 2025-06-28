@@ -14,6 +14,8 @@ pub const ECPAIRING_HOOK_ADDRESS_LOW: u16 = 0x0008;
 pub const BLAKE_HOOK_ADDRESS_LOW: u16 = 0x0009;
 #[cfg(feature = "mock-unsupported-precompiles")]
 pub const POINT_EVAL_HOOK_ADDRESS_LOW: u16 = 0x000a;
+#[cfg(feature = "p256_precompile")]
+pub const P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW: u16 = 0x0100;
 
 // bootloader formal address used to collect fees, as caller for AA and block.coinbase
 pub const BOOTLOADER_FORMAL_ADDRESS: B160 = B160::from_limbs([0x8001, 0, 0]);

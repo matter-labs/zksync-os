@@ -164,6 +164,13 @@ where
                 POINT_EVAL_HOOK_ADDRESS_LOW,
             );
         }
+
+        #[cfg(feature = "p256_precompile")]
+        {
+            self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::P256Verify>(
+                P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW,
+            );
+        }
     }
 
     pub fn add_l1_messenger(&mut self) {
