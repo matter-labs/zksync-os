@@ -5,7 +5,7 @@ mod fe64;
 
 use core::ops::MulAssign;
 
-cfg_if::cfg_if!{
+cfg_if::cfg_if! {
     if #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))] {
         pub(super) use fe32_delegation::FieldElement;
     } else {
