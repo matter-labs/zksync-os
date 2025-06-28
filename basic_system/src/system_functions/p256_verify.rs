@@ -74,30 +74,5 @@ pub fn secp256r1_verify_inner(
     x: &[u8; 32],
     y: &[u8; 32],
 ) -> Result<bool, ()> {
-    use crypto::p256::ecdsa::signature::hazmat::PrehashVerifier;
-    use crypto::p256::ecdsa::{Signature, VerifyingKey};
-    use crypto::p256::elliptic_curve::generic_array::GenericArray;
-    use crypto::p256::elliptic_curve::sec1::FromEncodedPoint;
-    use crypto::p256::{AffinePoint, EncodedPoint};
-
-    // we expect pre-validation, so this check always works
-    let signature = Signature::from_scalars(*r, *s).map_err(|_| ())?;
-
-    let encoded_pk = EncodedPoint::from_affine_coordinates(
-        &GenericArray::clone_from_slice(x),
-        &GenericArray::clone_from_slice(y),
-        false,
-    );
-
-    let may_be_pk_point = AffinePoint::from_encoded_point(&encoded_pk);
-    if bool::from(may_be_pk_point.is_none()) {
-        return Err(());
-    }
-    let pk_point = may_be_pk_point.unwrap();
-
-    let verifier = VerifyingKey::from_affine(pk_point).map_err(|_| ())?;
-
-    let result = verifier.verify_prehash(digest, &signature);
-
-    Ok(result.is_ok())
+    crypto::secp256r1::verify(digest, r, s, x, y).map_err(|_| ())
 }
