@@ -4,7 +4,7 @@ use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::utils::Bytes32;
 use zk_ee::{
     system::{
-        errors::{InternalError, SystemError, UpdateQueryError},
+        errors::{internal::InternalError, SystemError, UpdateQueryError},
         logger::Logger,
         AccountData, AccountDataRequest, IOResultKeeper, Maybe, Resources,
     },

@@ -24,7 +24,7 @@ use storage_models::common_structs::StorageCacheModel;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ValueDiffCompressionStrategy};
 use zk_ee::internal_error;
-use zk_ee::system::errors::InternalError;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::Resources;
 use zk_ee::{
     common_structs::{
@@ -96,7 +96,7 @@ where
     type IOTypes = EthereumIOTypesConfig;
     type InitData = P;
 
-    fn finish_tx(&mut self) -> Result<(), zk_ee::system::errors::InternalError> {
+    fn finish_tx(&mut self) -> Result<(), zk_ee::system::errors::internal::InternalError> {
         self.account_data_cache.finish_tx(&mut self.storage_cache)
     }
 

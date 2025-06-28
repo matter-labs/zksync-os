@@ -1,7 +1,8 @@
+use crate::bootloader::supported_ees::errors::EESubsystemError;
 use ruint::aliases::{B160, U256};
-use zk_ee::{
-    internal_error,
-    system::errors::{FatalError, InternalError, SystemError, SystemFunctionError},
+use zk_ee::internal_error;
+use zk_ee::system::errors::{
+    internal::InternalError, subsystem::SubsystemError, SystemError, SystemFunctionError,
 };
 
 // Taken from revm, contains changes
@@ -129,7 +130,13 @@ pub enum TxError {
     /// shouldn't terminate the block execution
     Validation(InvalidTransaction),
     /// Internal error.
-    Internal(InternalError),
+    Internal(BootloaderSubsystemError),
+}
+
+impl From<BootloaderSubsystemError> for TxError {
+    fn from(v: BootloaderSubsystemError) -> Self {
+        Self::Internal(v)
+    }
 }
 
 impl From<InvalidTransaction> for TxError {
@@ -140,19 +147,19 @@ impl From<InvalidTransaction> for TxError {
 
 impl From<InternalError> for TxError {
     fn from(e: InternalError) -> Self {
-        TxError::Internal(e)
+        TxError::Internal(e.into())
     }
 }
 
 impl TxError {
     /// Do not implement From to avoid accidentally wrapping
     /// an out of native during Tx execution as a validation error.
-    pub fn oon_as_validation(e: FatalError) -> Self {
+    pub fn oon_as_validation(e: BootloaderSubsystemError) -> Self {
         match e {
-            FatalError::Internal(e) => Self::Internal(e),
-            FatalError::OutOfNativeResources(_) => {
+            SubsystemError::LeafRuntime(_) => {
                 Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
             }
+            other => Self::Internal(other),
         }
     }
 }
@@ -166,16 +173,17 @@ impl From<SystemError> for TxError {
             SystemError::OutOfNativeResources(_) => {
                 Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
             }
-            SystemError::Internal(e) => TxError::Internal(e),
+            SystemError::Internal(e) => TxError::Internal(e.into()),
         }
     }
 }
 
+//TODO remove
 impl From<SystemFunctionError> for TxError {
     fn from(e: SystemFunctionError) -> Self {
         match e {
             SystemFunctionError::InvalidInput => {
-                TxError::Internal(internal_error!("Invalid system function input"))
+                TxError::Internal(internal_error!("Invalid system function input").into())
             }
             SystemFunctionError::System(e) => e.into(),
         }
@@ -241,3 +249,8 @@ macro_rules! require_internal {
         }
     };
 }
+
+zk_ee::define_subsystem!(Bootloader,
+cascade WrappedError {
+    EEError(EESubsystemError),
+});

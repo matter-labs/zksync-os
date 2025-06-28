@@ -23,7 +23,7 @@ use zk_ee::utils::NopHasher;
 use zk_ee::{
     kv_markers::MAX_EVENT_TOPICS,
     memory::stack_trait::{StackCtor, StackCtorConst},
-    system::{errors::InternalError, logger::Logger, Resources, *},
+    system::{errors::internal::InternalError, logger::Logger, Resources, *},
     system_io_oracle::IOOracle,
 };
 

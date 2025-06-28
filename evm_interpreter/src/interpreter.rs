@@ -1,6 +1,7 @@
 use super::*;
 use core::fmt::Write;
 use core::ops::Range;
+use errors::EvmSubsystemError;
 use native_resource_constants::STEP_NATIVE_COST;
 use zk_ee::system::{
     logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
@@ -17,12 +18,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn execute_till_yield_point<'a>(
         &'a mut self,
         system: &mut System<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
         let mut external_call = None;
         let exit_code = self.run(system, &mut external_call)?;
 
         if let ExitCode::FatalError(e) = exit_code {
-            return Err(e);
+            return Err(e.into());
         }
 
         if let Some(call) = external_call {
@@ -156,7 +157,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         &mut self,
         system: &mut System<S>,
         external_call_dest: &mut Option<ExternalCall<S>>,
-    ) -> Result<ExitCode, FatalError> {
+    ) -> Result<ExitCode, EvmSubsystemError> {
         let mut cycles = 0;
         let result = loop {
             let opcode = self.get_bytecode_unchecked(self.instruction_pointer);
@@ -359,7 +360,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         empty_returndata: bool,
         execution_reverted: bool,
         is_error: bool,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, FatalError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
         if is_error {
             // Spend all remaining resources on error
             self.gas.consume_all_gas();

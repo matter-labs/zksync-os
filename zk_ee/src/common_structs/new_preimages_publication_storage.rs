@@ -1,5 +1,5 @@
 use crate::utils::Bytes32;
-use crate::{internal_error, system::errors::InternalError};
+use crate::{internal_error, system::errors::internal::InternalError};
 use alloc::alloc::Global;
 use core::alloc::Allocator;
 

@@ -6,7 +6,7 @@ use zk_ee::common_structs::BasicIOImplementerFSM;
 use zk_ee::internal_error;
 use zk_ee::kv_markers::StorageAddress;
 use zk_ee::oracle::*;
-use zk_ee::system::errors::InternalError;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::system_io_oracle::dyn_usize_iterator::DynUsizeIterator;
 use zk_ee::system_io_oracle::*;

@@ -4,13 +4,13 @@ use crate::bootloader::account_models::contract::Contract;
 use crate::bootloader::account_models::eoa::EOA;
 use crate::bootloader::account_models::AccountModel;
 use crate::bootloader::account_models::{ExecutionResult, TxError};
+use crate::bootloader::errors::BootloaderSubsystemError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::Bytes32;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::system::errors::FatalError;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
 
 pub enum AA<S> {
@@ -120,7 +120,7 @@ where
         transaction: &mut ZkSyncTransaction,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         match self {
             AA::EOA(_) => EOA::execute(
                 system,

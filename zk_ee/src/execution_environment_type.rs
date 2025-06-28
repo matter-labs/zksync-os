@@ -1,6 +1,6 @@
 use crate::internal_error;
 use crate::kv_markers::{UsizeDeserializable, UsizeSerializable};
-use crate::system::errors::InternalError;
+use crate::system::errors::internal::InternalError;
 
 #[repr(u8)]
 #[non_exhaustive]

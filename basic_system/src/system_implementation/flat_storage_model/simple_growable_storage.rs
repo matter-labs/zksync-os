@@ -30,7 +30,7 @@ use zk_ee::internal_error;
 use zk_ee::{
     kv_markers::{ExactSizeChain, ExactSizeChainN, UsizeDeserializable, UsizeSerializable},
     memory::stack_trait::Stack,
-    system::{errors::InternalError, logger::Logger},
+    system::{errors::internal::InternalError, logger::Logger},
     system_io_oracle::*,
     types_config::EthereumIOTypesConfig,
     utils::Bytes32,

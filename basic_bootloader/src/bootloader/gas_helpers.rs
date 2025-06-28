@@ -2,7 +2,7 @@ use constants::{CALLDATA_NON_ZERO_BYTE_GAS_COST, CALLDATA_ZERO_BYTE_GAS_COST};
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::internal_error;
-use zk_ee::system::errors::InternalError;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::{Computational, Resources};
 
 use super::*;

@@ -5,7 +5,7 @@ pub mod element_with_history;
 
 use crate::common_structs::history_map::element_with_history::HistoryRecord;
 use crate::internal_error;
-use crate::{system::errors::InternalError, utils::stack_linked_list::StackLinkedList};
+use crate::{system::errors::internal::InternalError, utils::stack_linked_list::StackLinkedList};
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
 use core::{alloc::Allocator, fmt::Debug, ops::Bound};

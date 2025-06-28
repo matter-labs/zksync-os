@@ -8,7 +8,7 @@ use storage_models::common_structs::PreimageCacheModel;
 use zk_ee::common_structs::{PreimageType, ValueDiffCompressionStrategy};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
-use zk_ee::system::errors::{InternalError, SystemError};
+use zk_ee::system::errors::{internal::InternalError, SystemError};
 use zk_ee::system::{IOResultKeeper, Resources};
 use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::types_config::EthereumIOTypesConfig;
@@ -448,7 +448,7 @@ mod tests {
     use zk_ee::common_structs::PreimageType;
     use zk_ee::execution_environment_type::ExecutionEnvironmentType;
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
-    use zk_ee::system::errors::InternalError;
+    use zk_ee::system::errors::internal::InternalError;
     use zk_ee::system::IOResultKeeper;
     use zk_ee::system::Resource;
     use zk_ee::system_io_oracle::{IOOracle, OracleIteratorTypeMarker};

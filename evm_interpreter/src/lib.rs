@@ -27,7 +27,7 @@ use gas::Gas;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
-use zk_ee::system::errors::{FatalError, InternalError, SystemError};
+use zk_ee::system::errors::{internal::InternalError, FatalError, SystemError};
 use zk_ee::system::{EthereumLikeTypes, Resource, Resources, System, SystemTypes};
 
 use alloc::vec::Vec;
@@ -35,6 +35,7 @@ use zk_ee::utils::*;
 use zk_ee::{internal_error, types_config::*};
 
 mod ee_trait_impl;
+pub mod errors;
 mod evm_stack;
 pub mod gas;
 pub mod gas_constants;

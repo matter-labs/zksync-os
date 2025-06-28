@@ -1,6 +1,14 @@
-use location::ErrorLocation;
-
+pub mod cascade;
+pub mod interface;
+pub mod internal;
 pub mod location;
+pub mod no_errors;
+pub mod root_cause;
+pub mod runtime;
+pub mod subsystem;
+
+use internal::InternalError;
+use location::{ErrorLocation, Localizable};
 
 ///
 /// Possible errors raised by the system.
@@ -20,6 +28,16 @@ pub enum SystemError {
     Internal(InternalError),
 }
 
+#[macro_export]
+macro_rules! out_of_ergs_error {
+    () => {
+        $crate::system::errors::SystemError::OutOfErgs(
+            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
+        )
+    };
+}
+
+// TODO remove in favor of subsystem errors
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum FatalError {
     /// EE execution exhausted the resources passed.
@@ -52,6 +70,7 @@ impl SystemError {
     }
 }
 
+//TODO remove in favor of subsystem errors
 #[derive(Debug)]
 pub enum UpdateQueryError {
     /// Attempted an update that over/underflows the numerical bound.
@@ -68,6 +87,7 @@ impl From<SystemError> for UpdateQueryError {
     }
 }
 
+//TODO  remove in favor of subsystem errors
 #[derive(Debug, PartialEq, Eq)]
 pub enum SystemFunctionError {
     /// Invalid input passed to system function.
@@ -86,49 +106,6 @@ impl From<SystemError> for SystemFunctionError {
     }
 }
 
-///
-/// Internal error, should not be triggered by user input.
-///
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct InternalError(pub &'static str, pub ErrorLocation);
-
-#[macro_export]
-macro_rules! internal_error {
-    ($msg:expr $(,)?) => {
-        $crate::system::errors::InternalError(
-            $msg,
-            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
-        )
-    };
-}
-
-impl From<InternalError> for SystemError {
-    fn from(e: InternalError) -> Self {
-        SystemError::Internal(e)
-    }
-}
-
-impl From<InternalError> for UpdateQueryError {
-    fn from(e: InternalError) -> Self {
-        SystemError::Internal(e).into()
-    }
-}
-
-impl From<InternalError> for SystemFunctionError {
-    fn from(e: InternalError) -> Self {
-        SystemError::Internal(e).into()
-    }
-}
-
-#[macro_export]
-macro_rules! out_of_native_resources_system_error {
-    () => {
-        $crate::system::errors::SystemError::OutOfNativeResources(
-            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
-        )
-    };
-}
-
 #[macro_export]
 macro_rules! out_of_native_resources_fatal_error {
     () => {
@@ -139,9 +116,9 @@ macro_rules! out_of_native_resources_fatal_error {
 }
 
 #[macro_export]
-macro_rules! out_of_ergs_error {
+macro_rules! out_of_native_resources_system_error {
     () => {
-        $crate::system::errors::SystemError::OutOfErgs(
+        $crate::system::errors::SystemError::OutOfNativeResources(
             $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
         )
     };

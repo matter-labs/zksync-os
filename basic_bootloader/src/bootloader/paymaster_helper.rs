@@ -3,11 +3,10 @@ use super::*;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use constants::{PAYMASTER_VALIDATE_AND_PAY_SELECTOR, TX_CALLDATA_OFFSET};
-use errors::InvalidTransaction;
+use errors::{BootloaderSubsystemError, InvalidTransaction};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::internal_error;
-use zk_ee::system::errors::FatalError;
 use zk_ee::system::{EthereumLikeTypes, System};
 
 // Helpers for paymaster flow.
@@ -173,7 +172,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         _gas_per_pubdata: U256,
         _validation_pubdata: u64,
         _resources: &mut S::Resources,
-    ) -> Result<bool, FatalError>
+    ) -> Result<bool, BootloaderSubsystemError>
 where {
         todo!();
 
@@ -332,7 +331,7 @@ where {
         from: B160,
         selector: &[u8],
         resources: &mut S::Resources,
-    ) -> Result<CompletedExecution<'a, S>, FatalError>
+    ) -> Result<CompletedExecution<'a, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {

@@ -3,13 +3,12 @@ use crate::bootloader::constants::PREPARE_FOR_PAYMASTER_SELECTOR;
 use crate::bootloader::constants::{
     EXECUTE_SELECTOR, PAY_FOR_TRANSACTION_SELECTOR, VALIDATE_SELECTOR,
 };
-use crate::bootloader::errors::{AAMethod, InvalidTransaction, TxError};
+use crate::bootloader::errors::{AAMethod, BootloaderSubsystemError, InvalidTransaction, TxError};
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use crate::require;
 use core::fmt::Write;
-use errors::FatalError;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -89,7 +88,7 @@ where
         transaction: &mut ZkSyncTransaction,
         _current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("About to start AA execution\n"));

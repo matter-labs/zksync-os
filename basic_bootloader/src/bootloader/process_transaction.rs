@@ -17,13 +17,18 @@ use constants::{
     L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_PUBDATA, L2_TX_INTRINSIC_GAS, L2_TX_INTRINSIC_PUBDATA,
     MAX_BLOCK_GAS_LIMIT,
 };
+use errors::BootloaderSubsystemError;
 use evm_interpreter::ERGS_PER_GAS;
 use gas_helpers::check_enough_resources_for_pubdata;
 use gas_helpers::get_resources_to_charge_for_pubdata;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::internal_error;
-use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
+use zk_ee::system::errors::root_cause::GetRootCause;
+use zk_ee::system::errors::root_cause::RootCause;
+use zk_ee::system::errors::runtime::RuntimeError;
+use zk_ee::system::errors::runtime::RuntimeErrorKind;
+use zk_ee::system::errors::{internal::InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::{EthereumLikeTypes, Resources};
 
 /// Return value of validation step
@@ -146,18 +151,26 @@ where
         let (tx_hash, preparation_out_of_resources): (Bytes32, bool) =
             match transaction.calculate_hash(chain_id, &mut resources) {
                 Ok(h) => (h.into(), false),
-                Err(FatalError::Internal(e)) => return Err(e.into()),
-                Err(FatalError::OutOfNativeResources(_)) => {
-                    resources.exhaust_ergs();
-                    // We need to compute the hash anyways, we do with inf resources
-                    let mut inf_resources = S::Resources::FORMAL_INFINITE;
-                    (
-                        transaction
-                            .calculate_hash(chain_id, &mut inf_resources)
-                            .expect("must succeed")
-                            .into(),
-                        true,
-                    )
+                Err(e) => {
+                    match e.root_cause() {
+                        RootCause::Runtime(_) => {
+                            let _ = system.get_logger().write_fmt(format_args!(
+                                "Transaction preparation exhausted native resources: {e:?}\n"
+                            ));
+
+                            resources.exhaust_ergs();
+                            // We need to compute the hash anyways, we do with inf resources
+                            let mut inf_resources = S::Resources::FORMAL_INFINITE;
+                            (
+                                transaction
+                                    .calculate_hash(chain_id, &mut inf_resources)
+                                    .expect("must succeed")
+                                    .into(),
+                                true,
+                            )
+                        }
+                        _ => return Err(e.into()),
+                    }
                 }
             };
 
@@ -189,14 +202,23 @@ where
                     }
                     r
                 }
-                // Out of native is converted to a top-level revert and
-                // gas is exhausted.
-                Err(FatalError::OutOfNativeResources(_)) => {
-                    resources.exhaust_ergs();
-                    system.finish_global_frame(Some(&rollback_handle))?;
-                    ExecutionResult::Revert { output: &[] }
+                Err(e) => {
+                    match e.root_cause() {
+                        // Out of native is converted to a top-level revert and
+                        // gas is exhausted.
+                        RootCause::Runtime(
+                            e @ RuntimeError(RuntimeErrorKind::OutOfNativeResources, _),
+                        ) => {
+                            let _ = system.get_logger().write_fmt(format_args!(
+                                "L1 transaction ran out of native resources {e:?}\n"
+                            ));
+                            resources.exhaust_ergs();
+                            system.finish_global_frame(Some(&rollback_handle))?;
+                            ExecutionResult::Revert { output: &[] }
+                        }
+                        _ => return Err(e.into()),
+                    }
                 }
-                Err(FatalError::Internal(e)) => return Err(e.into()),
             }
         } else {
             ExecutionResult::Revert { output: &[] }
@@ -311,7 +333,7 @@ where
         native_per_pubdata: U256,
         resources: &mut S::Resources,
         withheld_resources: S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Executing L1 transaction\n"));
@@ -329,11 +351,20 @@ where
                     BasicBootloader::mint_token(system, &value, &from, inf_resources)
                 })
                 .map_err(|e| match e {
-                    SystemError::OutOfErgs(_) => {
-                        FatalError::Internal(internal_error!("Out of ergs on infinite ergs"))
+                    SystemError::OutOfErgs(loc) => {
+                        //TODO this should not be an invariant violation?
+                        BootloaderSubsystemError::LeafDefect(InternalError(
+                            "Out of ergs on infinite ergs",
+                            loc,
+                        ))
                     }
-                    SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
-                    SystemError::Internal(i) => FatalError::Internal(i),
+                    SystemError::OutOfNativeResources(loc) => {
+                        BootloaderSubsystemError::LeafRuntime(RuntimeError(
+                            zk_ee::system::errors::runtime::RuntimeErrorKind::OutOfNativeResources,
+                            loc,
+                        ))
+                    }
+                    SystemError::Internal(i) => BootloaderSubsystemError::LeafDefect(i),
                 })?;
         }
 
@@ -553,15 +584,17 @@ where
             }
             // Out of native is converted to a top-level revert and
             // gas is exhausted.
-            Err(FatalError::OutOfNativeResources(_)) => {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Transaction ran out of native resource\n"));
-                resources.exhaust_ergs();
-                system.finish_global_frame(Some(&rollback_handle))?;
-                ExecutionResult::Revert { output: &[] }
-            }
-            Err(FatalError::Internal(e)) => return Err(e.into()),
+            Err(e) => match e.root_cause() {
+                RootCause::Runtime(e @ RuntimeError(RuntimeErrorKind::OutOfNativeResources, _)) => {
+                    let _ = system.get_logger().write_fmt(format_args!(
+                        "Transaction ran out of native resources: {e:?}\n"
+                    ));
+                    resources.exhaust_ergs();
+                    system.finish_global_frame(Some(&rollback_handle))?;
+                    ExecutionResult::Revert { output: &[] }
+                }
+                _ => return Err(e.into()),
+            },
         };
 
         let resources_before_refund = resources.clone();
@@ -730,7 +763,7 @@ where
         validation_pubdata: u64,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Start of execution\n"));
