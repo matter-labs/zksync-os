@@ -16,3 +16,7 @@ pub trait ReadStorageTree: ReadStorage {
     /// Previous tree index must exist, since we add keys with minimal and maximal possible values to the tree by default.
     fn prev_tree_index(&mut self, key: Bytes32) -> u64;
 }
+
+pub trait SimpleReadStorageTree  {
+    fn merkle_proof(&mut self, tree_index: u64) -> (u64, FlatStorageLeaf<64>, Box<[Bytes32; 64]>); 
+}
