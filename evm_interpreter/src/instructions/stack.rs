@@ -3,19 +3,22 @@ use native_resource_constants::*;
 
 impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn pop(&mut self) -> InstructionResult {
-        self.spend_gas_and_native(gas_constants::BASE, POP_NATIVE_COST)?;
-        self.stack.reduce_one()
+        self.gas
+            .spend_gas_and_native(gas_constants::BASE, POP_NATIVE_COST)?;
+        self.stack.pop_and_ignore()
     }
 
     /// Introduce a new instruction which pushes the constant value 0 onto the stack
     pub fn push0(&mut self) -> InstructionResult {
         // EIP-3855: PUSH0 instruction
-        self.spend_gas_and_native(gas_constants::BASE, PUSH0_NATIVE_COST)?;
-        self.stack.push(U256::ZERO)
+        self.gas
+            .spend_gas_and_native(gas_constants::BASE, PUSH0_NATIVE_COST)?;
+        self.stack.push_zero()
     }
 
     pub fn push<const N: usize>(&mut self) -> InstructionResult {
-        self.spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, PUSH_NATIVE_COSTS[N])?;
         let start = self.instruction_pointer;
 
         let mut value = U256::ZERO;
@@ -42,16 +45,18 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         }
 
         self.instruction_pointer += N;
-        self.stack.push(value)
+        self.stack.push(&value)
     }
 
     pub fn dup<const N: usize>(&mut self) -> InstructionResult {
-        self.spend_gas_and_native(gas_constants::VERYLOW, DUP_NATIVE_COST)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, DUP_NATIVE_COST)?;
         self.stack.dup(N)
     }
 
     pub fn swap<const N: usize>(&mut self) -> InstructionResult {
-        self.spend_gas_and_native(gas_constants::VERYLOW, SWAP_NATIVE_COST)?;
+        self.gas
+            .spend_gas_and_native(gas_constants::VERYLOW, SWAP_NATIVE_COST)?;
         self.stack.swap(N)
     }
 }

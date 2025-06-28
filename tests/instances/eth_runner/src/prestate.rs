@@ -6,6 +6,8 @@ use ruint::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
+use crate::calltrace::CallTrace;
+
 #[repr(transparent)]
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct BitsOrd<const BITS: usize, const LIMBS: usize>(pub Bits<BITS, LIMBS>);
@@ -144,25 +146,48 @@ impl Cache {
 pub fn populate_prestate<const RANDOMIZED_TREE: bool>(
     chain: &mut Chain<RANDOMIZED_TREE>,
     ps: PrestateTrace,
+    calltrace: &CallTrace,
 ) -> Cache {
     let mut cache = Cache::default();
-    ps.result.into_iter().for_each(|item| {
-        item.result.into_iter().for_each(|(address, account)| {
-            let account = cache.filter_pre_account_state(address.0, account);
-            // Set account properties
-            chain.set_account_properties(
-                address.0,
-                account.balance,
-                account.nonce,
-                account.code.map(|b| b.to_vec()),
-            );
-            // Set storage slots
-            if let Some(storage) = account.storage {
-                storage
-                    .into_iter()
-                    .for_each(|(key, value)| chain.set_storage_slot(address.0, key, value))
-            }
+    ps.result
+        .into_iter()
+        .zip(calltrace.result.iter())
+        .for_each(|(item, tx_calltrace)| {
+            item.result.into_iter().for_each(|(address, account)| {
+                let account = cache.filter_pre_account_state(address.0, account);
+                // Set account properties
+                chain.set_account_properties(
+                    address.0,
+                    account.balance,
+                    account.nonce,
+                    account.code.map(|b| b.to_vec()),
+                );
+                // Set storage slots
+                if let Some(storage) = account.storage {
+                    storage
+                        .into_iter()
+                        .for_each(|(key, value)| chain.set_storage_slot(address.0, key, value))
+                }
+            });
+
+            // Add an empty read for deployed contracts. If they had balance, they
+            // should have been part of the prestate trace.
+            // We only add to cache to prevent future reads to be considered
+            // initial reads.
+            tx_calltrace
+                .result
+                .get_deployed_addresses()
+                .into_iter()
+                .for_each(|address| {
+                    // Only insert if not cached already
+                    let _cache_el = cache
+                        .0
+                        .entry(ruint::aliases::B160::from_be_bytes(address.into()))
+                        .or_insert(AccountState {
+                            balance: Some(ruint::aliases::U256::ZERO),
+                            ..Default::default()
+                        });
+                })
         });
-    });
     cache
 }

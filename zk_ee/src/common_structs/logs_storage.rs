@@ -516,12 +516,15 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
                 address.into(),
                 data_hash,
             ),
-            GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => (
-                // TODO: move into const
-                B160::from_limbs([0x8001, 0, 0]),
-                tx_hash,
-                Bytes32::from_u256_be(if success { U256::from(1) } else { U256::ZERO }),
-            ),
+            GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => {
+                let data = if success { U256::from(1) } else { U256::ZERO };
+                (
+                    // TODO: move into const
+                    B160::from_limbs([0x8001, 0, 0]),
+                    tx_hash,
+                    Bytes32::from_u256_be(&data),
+                )
+            }
         };
         Self {
             l2_shard_id: 0,

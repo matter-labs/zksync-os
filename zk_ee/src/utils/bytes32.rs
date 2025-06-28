@@ -188,20 +188,20 @@ impl Bytes32 {
         U256::from_be_bytes(self.as_u8_array())
     }
 
-    pub fn from_u256_le(value: U256) -> Self {
+    pub fn from_u256_le(value: &U256) -> Self {
         cfg_if::cfg_if!(
             if #[cfg(target_endian = "big")] {
                 compile_error!("unsupported architecture: big endian arch is not supported")
             } else {
                 unsafe {
                     #[allow(clippy::missing_transmute_annotations)]
-                    return core::mem::transmute(value);
+                    return core::mem::transmute_copy(value);
                 }
             }
         );
     }
 
-    pub fn from_u256_be(value: U256) -> Self {
+    pub fn from_u256_be(value: &U256) -> Self {
         let mut new = Self::uninit();
         unsafe {
             *new.assume_init_mut().as_u8_array_mut() = value.to_be_bytes();

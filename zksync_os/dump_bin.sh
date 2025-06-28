@@ -1,11 +1,85 @@
 #!/bin/sh
-rm app.bin
-rm app.elf
-rm app.text
+set -e
 
-cargo build --features proving --release # easier errors
-# cargo build -Z build-std=core,panic_abort,alloc -Z build-std-features=panic_immediate_abort --release
-cargo objcopy --features proving --release -- -O binary app.bin
-cargo objcopy --features proving --release -- -R .text app.elf
-cargo objcopy --features proving --release -- -O binary --only-section=.text app.text
-# cargo objcopy -- -O binary app.bin
+# Default mode
+TYPE="default"
+
+# Parse --type argument
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --type)
+      TYPE="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking]"
+      exit 1
+      ;;
+  esac
+done
+
+# Base features and output names
+FEATURES="proving"
+BIN_NAME="app.bin"
+ELF_NAME="app.elf"
+TEXT_NAME="app.text"
+
+# Adjust for server modes
+case "$TYPE" in
+  server)
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/wrap-in-batch"
+    BIN_NAME="server_app.bin"
+    ELF_NAME="server_app.elf"
+    TEXT_NAME="server_app.text"
+    ;;
+  server-logging-enabled)
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/wrap-in-batch,print_debug_info"
+    BIN_NAME="server_app_logging_enabled.bin"
+    ELF_NAME="server_app_logging_enabled.elf"
+    TEXT_NAME="server_app_logging_enabled.text"
+    ;;
+  benchmarking)
+    FEATURES="$FEATURES,proof_running_system/cycle_marker,proof_running_system/unlimited_native,proof_running_system/p256_precompile"
+    BIN_NAME="app.bin"
+    ELF_NAME="app.elf"
+    TEXT_NAME="app.text"
+    ;;
+  evm-replay)
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts"
+    BIN_NAME="evm_replay.bin"
+    ELF_NAME="evm_replay.elf"
+    TEXT_NAME="evm_replay.text"
+    ;;
+  evm-replay-benchmarking)
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/cycle_marker"
+    BIN_NAME="evm_replay.bin"
+    ELF_NAME="evm_replay.elf"
+    TEXT_NAME="evm_replay.text"
+    ;;
+  default)
+    # leave defaults
+    ;;
+  *)
+    echo "Invalid --type: $TYPE"
+    echo "Valid types are: default, server, server-logging-enabled"
+    exit 1
+    ;;
+esac
+
+# Clean up only the artifacts for this mode
+rm -f "$BIN_NAME" "$ELF_NAME" "$TEXT_NAME"
+
+# Build
+cargo build --features "$FEATURES" --release
+
+# Produce and rename outputs
+cargo objcopy --features "$FEATURES" --release -- -O binary "$BIN_NAME"
+cargo objcopy --features "$FEATURES" --release -- -R .text "$ELF_NAME"
+cargo objcopy --features "$FEATURES" --release -- -O binary --only-section=.text "$TEXT_NAME"
+
+# Summary
+echo "Built [$TYPE] with features: $FEATURES"
+echo "→ $BIN_NAME"
+echo "→ $ELF_NAME"
+echo "→ $TEXT_NAME"
