@@ -1,3 +1,4 @@
+pub mod errors;
 pub(crate) mod oracle;
 pub mod output;
 mod preimage_source;
@@ -14,10 +15,12 @@ use crate::system::system::CallSimulationBootloader;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
 };
+use errors::ForwardSystemError;
 use oracle::CallSimulationOracle;
 pub use oracle::ForwardRunningOracle;
 pub use oracle::ForwardRunningOracleAux;
 use zk_ee::common_structs::BasicIOImplementerFSM;
+use zk_ee::system::errors::SubsystemError;
 use zk_ee::utils::Bytes32;
 
 pub use tree::LeafProof;
@@ -45,7 +48,6 @@ use crate::run::test_impl::{NoopTxCallback, TxListSource};
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;
 use basic_system::system_implementation::flat_storage_model::*;
 use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
-use zk_ee::system::errors::InternalError;
 pub use zk_ee::system::metadata::BlockMetadataFromOracle as BatchContext;
 
 pub type StorageCommitment = FlatStorageCommitment<{ TREE_HEIGHT }>;
@@ -56,7 +58,7 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     preimage_source: PS,
     tx_source: TS,
     tx_result_callback: TR,
-) -> Result<BatchOutput, InternalError> {
+) -> Result<BatchOutput, ForwardSystemError> {
     let oracle = ForwardRunningOracle {
         io_implementer_init_data: None,
         block_metadata: batch_context,
@@ -80,7 +82,7 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     tree: T,
     preimage_source: PS,
     tx_source: TS,
-) -> Result<Vec<u32>, InternalError> {
+) -> Result<Vec<u32>, ForwardSystemError> {
     let oracle = ForwardRunningOracle {
         io_implementer_init_data: Some(io_implementer_init_data(Some(storage_commitment))),
         block_metadata: batch_context,
@@ -113,7 +115,7 @@ pub fn run_batch_with_oracle_dump<
     preimage_source: PS,
     tx_source: TS,
     tx_result_callback: TR,
-) -> Result<BatchOutput, InternalError> {
+) -> Result<BatchOutput, ForwardSystemError> {
     let oracle = ForwardRunningOracle {
         io_implementer_init_data: None,
         block_metadata: batch_context,
@@ -143,7 +145,7 @@ pub fn run_batch_from_oracle_dump<
     TS: TxSource + Clone + serde::de::DeserializeOwned,
 >(
     path: Option<String>,
-) -> Result<BatchOutput, InternalError> {
+) -> Result<BatchOutput, ForwardSystemError> {
     let path = path.unwrap_or_else(|| std::env::var("ORACLE_DUMP_FILE").unwrap());
     let mut file = File::open(path).expect("should open file");
     let mut buffer = Vec::new();
@@ -172,7 +174,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     batch_context: BatchContext,
     storage: S,
     preimage_source: PS,
-) -> Result<TxResult, InternalError> {
+) -> Result<TxResult, ForwardSystemError> {
     let tx_source = TxListSource {
         transactions: vec![transaction].into(),
     };
@@ -191,7 +193,8 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     CallSimulationBootloader::run_prepared::<BasicBootloaderCallSimulationConfig>(
         oracle,
         &mut result_keeper,
-    )?;
+    )
+    .map_err(SubsystemError::wrap)?;
     let mut batch_output: BatchOutput = result_keeper.into();
     Ok(batch_output.tx_results.remove(0))
 }

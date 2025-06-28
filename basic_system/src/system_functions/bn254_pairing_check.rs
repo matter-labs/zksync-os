@@ -212,7 +212,7 @@ mod test {
                 .unwrap();
         let mut dst = vec![];
 
-        let _ = Bn254PairingCheckImpl::execute(src, &mut dst, &mut resource, allocator).unwrap();
+        Bn254PairingCheckImpl::execute(src, &mut dst, &mut resource, allocator).unwrap();
 
         assert_eq!(expected, dst.as_slice());
 
@@ -221,7 +221,7 @@ mod test {
                 .unwrap();
         let mut dst = vec![];
 
-        let _ = Bn254PairingCheckImpl::execute(src, &mut dst, &mut resource, allocator).unwrap();
+        Bn254PairingCheckImpl::execute(src, &mut dst, &mut resource, allocator).unwrap();
 
         assert_eq!(expected, dst.as_slice());
     }

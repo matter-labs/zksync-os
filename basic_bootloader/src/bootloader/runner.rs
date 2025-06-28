@@ -4,7 +4,8 @@ use crate::bootloader::DEBUG_OUTPUT;
 use alloc::boxed::Box;
 use core::fmt::Write;
 use core::mem::MaybeUninit;
-use errors::FatalError;
+use errors::RuntimeError;
+use errors::SubsystemError;
 use evm_interpreter::gas_constants::CALLVALUE;
 use evm_interpreter::gas_constants::CALL_STIPEND;
 use evm_interpreter::gas_constants::NEWACCOUNT;
@@ -22,6 +23,8 @@ use zk_ee::system::{
     *,
 };
 
+use super::errors::BootloaderSubsystemError;
+
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
 pub fn run_till_completion<'a, S: EthereumLikeTypes>(
@@ -30,7 +33,7 @@ pub fn run_till_completion<'a, S: EthereumLikeTypes>(
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
     initial_request: ExecutionEnvironmentSpawnRequest<S>,
-) -> Result<TransactionEndPoint<'a, S>, FatalError>
+) -> Result<TransactionEndPoint<'a, S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -115,7 +118,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         ee_type: ExecutionEnvironmentType,
         spawn: ExecutionEnvironmentSpawnRequest<'a, S>,
         heap: SliceVec<'a, u8>,
-    ) -> Result<(S::Resources, CallOrDeployResult<'external, S>), FatalError>
+    ) -> Result<(S::Resources, CallOrDeployResult<'external, S>), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -131,7 +134,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         ee_type: ExecutionEnvironmentType,
         spawn: ExecutionEnvironmentSpawnRequest<'a, S>,
         heap: SliceVec<'a, u8>,
-    ) -> Result<(S::Resources, CallOrDeployResult<'external, S>), FatalError>
+    ) -> Result<(S::Resources, CallOrDeployResult<'external, S>), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -196,7 +199,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         is_entry_frame: bool,
         call_request: ExternalCallRequest<S>,
         heap: SliceVec<u8>,
-    ) -> Result<(S::Resources, CallResult<'external, S>), FatalError>
+    ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -314,21 +317,23 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 new_vm = create_ee(next_ee_version, self.system)?;
                 new_ee_type = new_vm.ee_type();
 
-                preemption = new_vm.start_executing_frame(
-                    self.system,
-                    ExecutionEnvironmentLaunchParams {
-                        external_call: ExternalCallRequest {
-                            available_resources: actual_resources_to_pass,
-                            ..call_request
+                preemption = new_vm
+                    .start_executing_frame(
+                        self.system,
+                        ExecutionEnvironmentLaunchParams {
+                            external_call: ExternalCallRequest {
+                                available_resources: actual_resources_to_pass,
+                                ..call_request
+                            },
+                            environment_parameters: EnvironmentParameters {
+                                decommitted_bytecode: bytecode,
+                                bytecode_len,
+                                scratch_space_len: artifacts_len,
+                            },
                         },
-                        environment_parameters: EnvironmentParameters {
-                            decommitted_bytecode: bytecode,
-                            bytecode_len,
-                            scratch_space_len: artifacts_len,
-                        },
-                    },
-                    heap,
-                )?;
+                        heap,
+                    )
+                    .map_err(SubsystemError::wrap)?;
             }
 
             Ok(CallPreparationResult::Failure { resources_returned }) => {
@@ -349,9 +354,11 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     drop(preemption);
                     preemption = match result {
                         CallOrDeployResult::CallResult(call_result) => new_vm
-                            .continue_after_external_call(self.system, resources, call_result)?,
+                            .continue_after_external_call(self.system, resources, call_result)
+                            .map_err(SubsystemError::wrap)?,
                         CallOrDeployResult::DeploymentResult(deployment_result) => new_vm
-                            .continue_after_deployment(self.system, resources, deployment_result)?,
+                            .continue_after_deployment(self.system, resources, deployment_result)
+                            .map_err(SubsystemError::wrap)?,
                     };
                 }
                 ExecutionEnvironmentPreemptionPoint::End(
@@ -387,9 +394,10 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 ExecutionEnvironmentPreemptionPoint::End(
                     TransactionEndPoint::CompletedDeployment(_),
                 ) => {
-                    return Err(FatalError::Internal(InternalError(
+                    //TODO should be misuse
+                    return Err(BootloaderSubsystemError::Defect(InternalError(
                         "returned from external call as if it was a deployment",
-                    )))
+                    )));
                 }
             }
         }
@@ -403,7 +411,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         is_eoa: bool,
         transfer_to_perform: &Option<TransferInfo>,
         ee_type: ExecutionEnvironmentType,
-    ) -> Result<Option<CallResult<'a, S>>, FatalError>
+    ) -> Result<Option<CallResult<'a, S>>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -422,11 +430,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 Err(UpdateQueryError::System(SystemError::OutOfErgs)) => {
                     return Err(InternalError("Our of ergs on infinite").into());
                 }
-                Err(UpdateQueryError::System(SystemError::Internal(e))) => {
-                    return Err(FatalError::Internal(e))
-                }
+                Err(UpdateQueryError::System(SystemError::Internal(e))) => return Err(e.into()),
                 Err(UpdateQueryError::System(SystemError::OutOfNativeResources)) => {
-                    return Err(FatalError::OutOfNativeResources);
+                    return Err(RuntimeError::OutOfNativeResources.into());
                 }
                 Err(UpdateQueryError::NumericBoundsError) => {
                     // Insufficient balance
@@ -469,7 +475,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         ee_type: ExecutionEnvironmentType,
         is_entry_frame: bool,
         call_request: ExternalCallRequest<S>,
-    ) -> Result<(S::Resources, CallResult<'external, S>), FatalError>
+    ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -603,7 +609,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         is_entry_frame: bool,
         deployment_parameters: DeploymentPreparationParameters<S>,
         heap: SliceVec<u8>,
-    ) -> Result<CompletedDeployment<'external, S>, FatalError>
+    ) -> Result<CompletedDeployment<'external, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -626,10 +632,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         },
                     })
                 }
-                Err(FatalError::OutOfNativeResources) => {
-                    return Err(FatalError::OutOfNativeResources)
+                Err(e) => {
+                    return Err(e.wrap());
                 }
-                Err(FatalError::Internal(e)) => return Err(e.into()),
             };
 
         // resources returned back to caller
@@ -679,11 +684,13 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     1,
                 )
             })
-            .map_err(|e| match e {
-                UpdateQueryError::System(SystemError::OutOfNativeResources) => {
-                    FatalError::OutOfNativeResources
+            .map_err(|e| -> BootloaderSubsystemError {
+                match e {
+                    UpdateQueryError::System(SystemError::OutOfNativeResources) => {
+                        RuntimeError::OutOfNativeResources.into()
+                    }
+                    _ => InternalError("Failed to set deployed nonce to 1").into(),
                 }
-                _ => InternalError("Failed to set deployed nonce to 1").into(),
             })?;
 
         if nominal_token_value != U256::ZERO {
@@ -699,18 +706,22 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         &nominal_token_value,
                     )
                 })
-                .map_err(|e| match e {
-                    UpdateQueryError::System(SystemError::OutOfNativeResources) => {
-                        FatalError::OutOfNativeResources
+                .map_err(|e| -> BootloaderSubsystemError {
+                    match e {
+                        UpdateQueryError::System(SystemError::OutOfNativeResources) => {
+                            RuntimeError::OutOfNativeResources.into()
+                        }
+                        _ => InternalError(
+                            "Must transfer value on deployment after check in preparation",
+                        )
+                        .into(),
                     }
-                    _ => InternalError(
-                        "Must transfer value on deployment after check in preparation",
-                    )
-                    .into(),
                 })?;
         }
 
-        let mut preemption = constructor.start_executing_frame(self.system, launch_params, heap)?;
+        let mut preemption = constructor
+            .start_executing_frame(self.system, launch_params, heap)
+            .map_err(SubsystemError::wrap)?;
 
         let CompletedDeployment {
             mut resources_returned,
@@ -728,17 +739,20 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     drop(preemption);
                     preemption = match result {
                         CallOrDeployResult::CallResult(call_result) => constructor
-                            .continue_after_external_call(self.system, resources, call_result)?,
+                            .continue_after_external_call(self.system, resources, call_result)
+                            .map_err(SubsystemError::wrap)?,
                         CallOrDeployResult::DeploymentResult(deployment_result) => constructor
-                            .continue_after_deployment(self.system, resources, deployment_result)?,
+                            .continue_after_deployment(self.system, resources, deployment_result)
+                            .map_err(SubsystemError::wrap)?,
                     };
                 }
                 ExecutionEnvironmentPreemptionPoint::End(end) => {
                     break match end {
                         TransactionEndPoint::CompletedExecution(_) => {
-                            return Err(FatalError::Internal(InternalError(
+                            return Err(InternalError(
                                 "returned from deployment as if it was an external call",
-                            )))
+                            )
+                            .into())
                         }
                         TransactionEndPoint::CompletedDeployment(result) => result,
                     }
@@ -787,7 +801,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         (false, deployment_result)
                     }
                     Err(SystemError::OutOfNativeResources) => {
-                        return Err(FatalError::OutOfNativeResources)
+                        return Err(RuntimeError::OutOfNativeResources.into())
                     }
                     Err(SystemError::Internal(e)) => return Err(e.into()),
                 }
@@ -843,7 +857,7 @@ fn run_call_preparation<'a, S: EthereumLikeTypes>(
     system: &mut System<S>,
     ee_version: ExecutionEnvironmentType,
     call_request: &ExternalCallRequest<S>,
-) -> Result<CallPreparationResult<'a, S>, FatalError>
+) -> Result<CallPreparationResult<'a, S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -889,7 +903,9 @@ where
                 resources_returned: resources_available,
             });
         }
-        Err(SystemError::OutOfNativeResources) => return Err(FatalError::OutOfNativeResources),
+        Err(SystemError::OutOfNativeResources) => {
+            return Err(RuntimeError::OutOfNativeResources.into())
+        }
         Err(SystemError::Internal(e)) => return Err(e.into()),
     };
 
@@ -899,19 +915,12 @@ where
     let mut actual_resources_to_pass = if !is_entry_frame {
         // now we should ask current EE for observable resource behavior if needed
         {
-            match SupportedEEVMState::<S>::clarify_and_take_passed_resources(
+            SupportedEEVMState::<S>::clarify_and_take_passed_resources(
                 ee_version,
                 &mut resources_available,
                 call_request.ergs_to_pass,
-            ) {
-                Ok(x) => x,
-                Err(FatalError::OutOfNativeResources) => {
-                    return Err(FatalError::OutOfNativeResources)
-                }
-                Err(FatalError::Internal(error)) => {
-                    return Err(error.into());
-                }
-            }
+            )
+            .map_err(SubsystemError::wrap)?
         }
     } else {
         resources_available.take()
@@ -1057,9 +1066,9 @@ where
 fn create_ee<'a, S: EthereumLikeTypes>(
     ee_type: u8,
     system: &mut System<S>,
-) -> Result<Box<SupportedEEVMState<'a, S>, S::Allocator>, InternalError> {
+) -> Result<Box<SupportedEEVMState<'a, S>, S::Allocator>, BootloaderSubsystemError> {
     Ok(Box::new_in(
-        SupportedEEVMState::create_initial(ee_type, system)?,
+        SupportedEEVMState::create_initial(ee_type, system).map_err(SubsystemError::wrap)?,
         system.get_allocator(),
     ))
 }

@@ -33,6 +33,7 @@ use zk_ee::types_config::*;
 use zk_ee::utils::*;
 
 mod ee_trait_impl;
+pub mod errors;
 mod evm_stack;
 pub mod gas;
 pub mod gas_constants;

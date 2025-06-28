@@ -1,11 +1,11 @@
 use alloc::vec::Vec;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
+use errors::BootloaderSubsystemError;
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
-use zk_ee::system::errors::InternalError;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
 pub mod run_single_interaction;
@@ -171,7 +171,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
         oracle: <S::IO as IOSubsystemExt>::IOOracle,
         result_keeper: &mut impl ResultKeeperExt,
-    ) -> Result<<S::IO as IOSubsystemExt>::FinalData, InternalError>
+    ) -> Result<<S::IO as IOSubsystemExt>::FinalData, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {

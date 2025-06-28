@@ -1,3 +1,5 @@
+use errors::SubsystemErrorTypes;
+
 use super::*;
 pub mod base_system_functions;
 pub mod call_modifiers;
@@ -133,7 +135,11 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_level_metadata.timestamp
     }
 
-    pub fn storage_code_version_for_execution_environment<'a, EE: ExecutionEnvironment<'a, S>>(
+    pub fn storage_code_version_for_execution_environment<
+        'a,
+        Es: SubsystemErrorTypes,
+        EE: ExecutionEnvironment<'a, S, Es>,
+    >(
         &self,
     ) -> Result<u8, InternalError> {
         // TODO
