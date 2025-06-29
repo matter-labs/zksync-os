@@ -230,9 +230,9 @@ where
             &mut inf_resources,
         )
         .map_err(|e| match e {
-            SystemError::OutOfErgs => InternalError("Out of ergs on infinite ergs"),
-            SystemError::OutOfNativeResources => InternalError("Out of native on infinite"),
-            SystemError::Internal(i) => i,
+            SystemError::Runtime(RuntimeError::OutOfErgs) => InternalError("Out of ergs on infinite ergs"),
+            SystemError::Runtime(RuntimeError::OutOfNativeResources) => InternalError("Out of native on infinite"),
+            SystemError::Defect(i) => i,
         })?;
 
         // Refund
@@ -271,9 +271,9 @@ where
                 &mut inf_resources,
             )
             .map_err(|e| match e {
-                SystemError::OutOfErgs => InternalError("Out of ergs on infinite ergs"),
-                SystemError::OutOfNativeResources => InternalError("Out of native on infinite"),
-                SystemError::Internal(i) => i,
+                SystemError::Runtime(RuntimeError::OutOfErgs) => InternalError("Out of ergs on infinite ergs"),
+                SystemError::Runtime(RuntimeError::OutOfNativeResources) => InternalError("Out of native on infinite"),
+                SystemError::Defect(i) => i,
             })?;
         }
 
@@ -328,16 +328,16 @@ where
                     BasicBootloader::mint_token(system, &value, &from, inf_resources)
                 })
                 .map_err(|e| match e {
-                    SystemError::OutOfErgs => {
+                    SystemError::Runtime(RuntimeError::OutOfErgs) => {
                         //TODO this should not be an invariant violation?
                         BootloaderSubsystemError::Defect(InternalError(
                             "Out of ergs on infinite ergs",
                         ))
                     }
-                    SystemError::OutOfNativeResources => {
+                    SystemError::Runtime(RuntimeError::OutOfNativeResources) => {
                         BootloaderSubsystemError::Runtime(RuntimeError::OutOfNativeResources)
                     }
-                    SystemError::Internal(i) => BootloaderSubsystemError::Defect(i),
+                    SystemError::Defect(i) => BootloaderSubsystemError::Defect(i),
                 })?;
         }
 
@@ -885,7 +885,7 @@ where
                     )
                 })
                 .map_err(|e| match e {
-                    UpdateQueryError::NumericBoundsError => SystemError::Internal(InternalError(
+                    UpdateQueryError::NumericBoundsError => SystemError::Defect(InternalError(
                         "Bootloader cannot return excessive funds",
                     )),
                     UpdateQueryError::System(e) => e,
@@ -998,13 +998,13 @@ where
                 UpdateQueryError::NumericBoundsError => {
                     InternalError("Bootloader cannot pay for refund")
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs) => {
+                UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
                     InternalError("should transfer refund")
                 }
-                UpdateQueryError::System(SystemError::OutOfNativeResources) => {
+                UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
                     InternalError("should transfer refund")
                 }
-                UpdateQueryError::System(SystemError::Internal(e)) => e,
+                UpdateQueryError::System(SystemError::Defect(e)) => e,
             })?;
         Ok(gas_used)
     }

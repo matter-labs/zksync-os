@@ -1,20 +1,25 @@
-// TODO remove in favor of subsystem errors
 ///
 /// Possible errors raised by the system.
+/// A sink type, it can be converted to any subsystem error.
+/// Prefer using `[SubsystemError]` whenever possible -- this type does not
+/// encode cascaded errors and interface misuses.
 ///
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SystemError {
-    /// System execution exhausted the native resources passed.
-    OutOfNativeResources,
-    /// Execution exhausted the EE resource.
-    OutOfErgs,
+    Runtime(RuntimeError),
     /// Internal error.
     /// Note that currently it means internal error in terms of whole zksync_os program execution.
     /// Not the component/function internal error.
     ///
     /// For example if you'll try to finish unstarted frame on `System` - internal error will be returned.
     /// But it doesn't mean that it's internal `System` error, the failure happened on caller(EE/bootlaoder side).
-    Internal(InternalError),
+    Defect(InternalError),
+}
+
+impl From<RuntimeError> for SystemError {
+    fn from(v: RuntimeError) -> Self {
+        Self::Runtime(v)
+    }
 }
 
 // TODO remove in favor of subsystem errors
@@ -28,8 +33,8 @@ pub enum FatalError {
 impl From<FatalError> for SystemError {
     fn from(e: FatalError) -> Self {
         match e {
-            FatalError::Internal(e) => Self::Internal(e),
-            FatalError::OutOfNativeResources => Self::OutOfNativeResources,
+            FatalError::Internal(e) => Self::Defect(e),
+            FatalError::OutOfNativeResources => RuntimeError::OutOfNativeResources.into(),
         }
     }
 }
@@ -43,9 +48,11 @@ impl From<InternalError> for FatalError {
 impl SystemError {
     pub fn into_fatal(self) -> FatalError {
         match self {
-            SystemError::Internal(e) => FatalError::Internal(e),
-            SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
-            SystemError::OutOfErgs => unreachable!(),
+            SystemError::Defect(e) => FatalError::Internal(e),
+            SystemError::Runtime(RuntimeError::OutOfNativeResources) => {
+                FatalError::OutOfNativeResources
+            }
+            _ => unreachable!(),
         }
     }
 }
@@ -95,28 +102,29 @@ pub struct InternalError(pub &'static str);
 
 impl From<InternalError> for SystemError {
     fn from(e: InternalError) -> Self {
-        SystemError::Internal(e)
+        SystemError::Defect(e)
     }
 }
 
 impl From<InternalError> for UpdateQueryError {
     fn from(e: InternalError) -> Self {
-        SystemError::Internal(e).into()
+        SystemError::Defect(e).into()
     }
 }
 
 impl From<InternalError> for SystemFunctionError {
     fn from(e: InternalError) -> Self {
-        SystemError::Internal(e).into()
+        SystemError::Defect(e).into()
     }
 }
 
 ///
 /// Errors common for all subsystems.
 ///
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RuntimeError {
     OutOfNativeResources,
+    OutOfErgs,
 }
 
 /// # Types of errors occurring in a subsystem
@@ -195,7 +203,15 @@ impl<S: SubsystemErrorTypes> From<FatalError> for SubsystemError<S> {
     }
 }
 
-macro_rules! invariant_violation {
+impl<T: SubsystemErrorTypes> From<SystemError> for SubsystemError<T> {
+    fn from(value: SystemError) -> Self {
+        match value {
+            SystemError::Runtime(runtime_error) => runtime_error.into(),
+            SystemError::Defect(internal_error) => internal_error.into(),
+        }
+    }
+}
+
 macro_rules! internal_error {
     ($msg:expr) => {
         // The concatenation happens at compile time.

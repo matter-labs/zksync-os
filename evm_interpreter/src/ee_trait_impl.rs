@@ -406,7 +406,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmSubsystemErrors>
                         )
                     })
                     .map_err(|e| match e {
-                        SystemFunctionError::System(SystemError::OutOfNativeResources) => {
+                        SystemFunctionError::System(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
                             SubsystemError::Runtime(RuntimeError::OutOfNativeResources)
                         }
                         _ => InternalError("Keccak in create2 cannot fail").into(),

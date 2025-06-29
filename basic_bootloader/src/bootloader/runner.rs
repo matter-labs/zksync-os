@@ -427,11 +427,11 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 )
             }) {
                 Ok(()) => (),
-                Err(UpdateQueryError::System(SystemError::OutOfErgs)) => {
+                Err(UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfErgs))) => {
                     return Err(InternalError("Our of ergs on infinite").into());
                 }
-                Err(UpdateQueryError::System(SystemError::Internal(e))) => return Err(e.into()),
-                Err(UpdateQueryError::System(SystemError::OutOfNativeResources)) => {
+                Err(UpdateQueryError::System(SystemError::Defect(e))) => return Err(e.into()),
+                Err(UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfNativeResources))) => {
                     return Err(RuntimeError::OutOfNativeResources.into());
                 }
                 Err(UpdateQueryError::NumericBoundsError) => {
@@ -686,7 +686,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             })
             .map_err(|e| -> BootloaderSubsystemError {
                 match e {
-                    UpdateQueryError::System(SystemError::OutOfNativeResources) => {
+                    UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
                         RuntimeError::OutOfNativeResources.into()
                     }
                     _ => InternalError("Failed to set deployed nonce to 1").into(),
@@ -708,7 +708,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })
                 .map_err(|e| -> BootloaderSubsystemError {
                     match e {
-                        UpdateQueryError::System(SystemError::OutOfNativeResources) => {
+                        UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
                             RuntimeError::OutOfNativeResources.into()
                         }
                         _ => InternalError(
@@ -793,17 +793,17 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         ));
                         (true, deployment_result)
                     }
-                    Err(SystemError::OutOfErgs) => {
+                    Err(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
                         let deployment_result = DeploymentResult::Failed {
                             return_values: self.copy_into_return_memory(return_values),
                             execution_reverted: false,
                         };
                         (false, deployment_result)
                     }
-                    Err(SystemError::OutOfNativeResources) => {
+                    Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
                         return Err(RuntimeError::OutOfNativeResources.into())
                     }
-                    Err(SystemError::Internal(e)) => return Err(e.into()),
+                    Err(SystemError::Defect(e)) => return Err(e.into()),
                 }
             }
             DeploymentResult::Failed {
@@ -898,15 +898,15 @@ where
         transfer_to_perform,
     } = match r {
         Ok(x) => x,
-        Err(SystemError::OutOfErgs) => {
+        Err(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
             return Ok(CallPreparationResult::Failure {
                 resources_returned: resources_available,
             });
         }
-        Err(SystemError::OutOfNativeResources) => {
+        Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
             return Err(RuntimeError::OutOfNativeResources.into())
         }
-        Err(SystemError::Internal(e)) => return Err(e.into()),
+        Err(SystemError::Defect(e)) => return Err(e.into()),
     };
 
     // If we're in the entry frame, i.e. not the execution of a CALL opcode,
@@ -968,14 +968,14 @@ where
             .with_nominal_token_balance(),
     ) {
         Ok(account_properties) => account_properties,
-        Err(SystemError::OutOfErgs) => {
+        Err(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
             let _ = system.get_logger().write_fmt(format_args!(
                 "Call failed: insufficient resources to read callee account data\n",
             ));
-            return Err(SystemError::OutOfErgs);
+            return Err(SystemError::Runtime(RuntimeError::OutOfErgs));
         }
-        Err(SystemError::OutOfNativeResources) => return Err(SystemError::OutOfNativeResources),
-        Err(SystemError::Internal(e)) => return Err(e.into()),
+        Err(e@SystemError::Runtime(RuntimeError::OutOfNativeResources)) => return Err(e),
+        Err(SystemError::Defect(e)) => return Err(e.into()),
     };
 
     // Now we charge for the rest of the CALL related costs
@@ -1025,7 +1025,7 @@ where
                     "Call failed: positive value with modifier {:?}\n",
                     call_request.modifier
                 ));
-                return Err(SystemError::OutOfErgs);
+                return Err(SystemError::Runtime(RuntimeError::OutOfErgs));
             }
             // Adjust transfer target due to CALLCODE
             let target = match call_request.modifier {

@@ -94,17 +94,17 @@ where
                     ));
                 }
             }
-            Err(SystemError::OutOfErgs) => {
+            Err(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfGasDuringValidation,
                 ))
             }
-            Err(SystemError::OutOfNativeResources) => {
+            Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfNativeResourcesDuringValidation,
                 ))
             }
-            Err(SystemError::Internal(e)) => return Err(TxError::Internal(e.into())),
+            Err(SystemError::Defect(e)) => return Err(TxError::Internal(e.into())),
         }
 
         let signature = transaction.signature();
@@ -353,13 +353,13 @@ where
                         Err(e) => e.into(),
                     }
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs) => {
+                UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
                     TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
                 }
-                UpdateQueryError::System(SystemError::OutOfNativeResources) => {
+                UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
                     TxError::oon_as_validation(RuntimeError::OutOfNativeResources.into())
                 }
-                UpdateQueryError::System(SystemError::Internal(e)) => e.into(),
+                UpdateQueryError::System(SystemError::Defect(e)) => e.into(),
             })?;
         Ok(())
     }
@@ -494,17 +494,17 @@ where
             let ergs_to_spend = Ergs(initcode_gas_cost.saturating_mul(ERGS_PER_GAS));
             match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
                 Ok(_) => (),
-                Err(SystemError::OutOfErgs) => {
+                Err(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
                     return Err(TxError::Validation(
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(SystemError::OutOfNativeResources) => {
+                Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
                     return Err(TxError::oon_as_validation(
                         RuntimeError::OutOfNativeResources.into(),
                     ))
                 }
-                Err(SystemError::Internal(e)) => return Err(TxError::Internal(e.into())),
+                Err(SystemError::Defect(e)) => return Err(TxError::Internal(e.into())),
             };
         }
         Ok(())
@@ -546,7 +546,7 @@ where
     let ergs_to_spend = Ergs(extra_gas_cost.saturating_mul(ERGS_PER_GAS));
     match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
         Ok(_) => (),
-        Err(SystemError::OutOfErgs) => {
+        Err(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
             return Ok(TxExecutionResult {
                 return_values: ReturnValues::empty(),
                 resources_returned: S::Resources::empty(),
@@ -554,10 +554,10 @@ where
                 deployed_address: DeployedAddress::RevertedNoAddress,
             })
         }
-        Err(SystemError::OutOfNativeResources) => {
+        Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
             return Err(RuntimeError::OutOfNativeResources.into())
         }
-        Err(SystemError::Internal(e)) => return Err(e.into()),
+        Err(SystemError::Defect(e)) => return Err(e.into()),
     };
     // Next check max initcode size
     if main_calldata.len() > MAX_INITCODE_SIZE {

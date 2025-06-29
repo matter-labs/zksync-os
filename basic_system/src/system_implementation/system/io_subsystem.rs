@@ -9,6 +9,7 @@ use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use crypto::blake2s::Blake2s256;
 use crypto::MiniDigest;
+use errors::RuntimeError;
 use errors::SystemFunctionError;
 use evm_interpreter::gas_constants::LOG;
 use evm_interpreter::gas_constants::LOGDATA;
@@ -164,7 +165,7 @@ where
                 let cost = static_cost + topic_cost + len_cost;
                 let ergs = cost
                     .checked_mul(ERGS_PER_GAS)
-                    .ok_or(SystemError::OutOfErgs)?;
+                    .ok_or(SystemError::Runtime(RuntimeError::OutOfErgs))?;
                 Ergs(ergs)
             }
             _ => return Err(InternalError("Unsupported EE").into()),

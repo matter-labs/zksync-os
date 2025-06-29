@@ -1201,9 +1201,9 @@ fn charge_keccak<R: Resources>(
     resources
         .charge(&R::from_native(native_cost))
         .map_err(|e| match e {
-            SystemError::OutOfErgs => unreachable!(),
-            SystemError::Internal(e) => BootloaderSubsystemError::Defect(e),
-            SystemError::OutOfNativeResources => RuntimeError::OutOfNativeResources.into(),
+            SystemError::Runtime(RuntimeError::OutOfErgs) => unreachable!(),
+            SystemError::Defect(e) => BootloaderSubsystemError::Defect(e),
+            SystemError::Runtime(RuntimeError::OutOfNativeResources) => RuntimeError::OutOfNativeResources.into(),
         })
 }
 

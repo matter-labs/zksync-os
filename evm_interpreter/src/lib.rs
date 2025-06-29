@@ -25,7 +25,7 @@ use gas::Gas;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
-use zk_ee::system::errors::{FatalError, InternalError, SystemError};
+use zk_ee::system::errors::{FatalError, InternalError, RuntimeError, SystemError};
 use zk_ee::system::{EthereumLikeTypes, Resource, System, SystemTypes};
 
 use alloc::vec::Vec;
@@ -127,11 +127,11 @@ impl<S: SystemTypes> BytecodePreprocessingData<S> {
         resources
             .charge(&S::Resources::from_native(native_cost))
             .map_err(|e| match e {
-                SystemError::Internal(e) => FatalError::Internal(e),
-                SystemError::OutOfErgs => {
+                SystemError::Defect(e) => FatalError::Internal(e),
+                SystemError::Runtime(RuntimeError::OutOfErgs) => {
                     FatalError::Internal(InternalError("OOE when charging only native"))
                 }
-                SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+                SystemError::Runtime(RuntimeError::OutOfNativeResources) => FatalError::OutOfNativeResources,
             })?;
         let jump_map = analyze::<S>(padded_bytecode, system)
             .map_err(|_| InternalError("Could not preprocess bytecode"))?;
@@ -277,9 +277,9 @@ pub enum ExitCode {
 impl From<SystemError> for ExitCode {
     fn from(e: SystemError) -> Self {
         match e {
-            SystemError::Internal(e) => Self::FatalError(FatalError::Internal(e)),
-            SystemError::OutOfNativeResources => Self::FatalError(FatalError::OutOfNativeResources),
-            SystemError::OutOfErgs => Self::OutOfGas,
+            SystemError::Defect(e) => Self::FatalError(FatalError::Internal(e)),
+            SystemError::Runtime(RuntimeError::OutOfNativeResources) => Self::FatalError(FatalError::OutOfNativeResources),
+            SystemError::Runtime(RuntimeError::OutOfErgs) => Self::OutOfGas,
         }
     }
 }

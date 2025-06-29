@@ -14,6 +14,7 @@
 //!
 use super::*;
 use core::fmt::Write;
+use errors::RuntimeError;
 use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::system::{
     errors::{SystemError, SystemFunctionError},
@@ -60,7 +61,7 @@ pub fn pure_system_function_hook_impl<'a, F: SystemFunction<S::Resources>, S: Et
                 rest,
             ))
         }
-        Err(SystemFunctionError::System(SystemError::OutOfErgs))
+        Err(SystemFunctionError::System(SystemError::Runtime(RuntimeError::OutOfErgs)))
         | Err(SystemFunctionError::InvalidInput) => {
             let _ = system
                 .get_logger()
@@ -69,10 +70,10 @@ pub fn pure_system_function_hook_impl<'a, F: SystemFunction<S::Resources>, S: Et
             let (_, rest) = return_vec.destruct();
             Ok((make_error_return_state(resources), rest))
         }
-        Err(SystemFunctionError::System(SystemError::OutOfNativeResources)) => {
-            Err(FatalError::OutOfNativeResources)
-        }
-        Err(SystemFunctionError::System(SystemError::Internal(e))) => Err(e.into()),
+        Err(SystemFunctionError::System(SystemError::Runtime(
+            RuntimeError::OutOfNativeResources,
+        ))) => Err(FatalError::OutOfNativeResources),
+        Err(SystemFunctionError::System(SystemError::Defect(e))) => Err(e.into()),
     }
 }
 

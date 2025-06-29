@@ -4,7 +4,7 @@
 //!
 use super::*;
 use core::fmt::Write;
-use errors::FatalError;
+use errors::{FatalError, RuntimeError};
 use ruint::aliases::{B160, U256};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
@@ -88,14 +88,16 @@ where
                 .write_fmt(format_args!("Revert: {:?}\n", e));
             Ok((make_error_return_state(resources), return_memory))
         }
-        Err(SystemError::OutOfErgs) => {
+        Err(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Out of gas during system hook\n"));
             Ok((make_error_return_state(resources), return_memory))
         }
-        Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
-        Err(SystemError::Internal(e)) => Err(e.into()),
+        Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
+            Err(FatalError::OutOfNativeResources)
+        }
+        Err(SystemError::Defect(e)) => Err(e.into()),
     }
 }
 // sendToL1(bytes) - 62f84b24
@@ -191,7 +193,7 @@ where
             let message = &calldata[length_encoding_end..message_end];
             let message_hash = system.io.emit_l1_message(
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-                    .map_err(SystemError::Internal)?,
+                    .map_err(SystemError::Defect)?,
                 resources,
                 &caller,
                 message,

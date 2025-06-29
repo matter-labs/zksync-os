@@ -90,7 +90,7 @@ where
             *x = value.clone();
             Ok(())
         })
-        .map_err(SystemError::Internal)
+        .map_err(SystemError::Defect)
     }
 
     #[track_caller]
