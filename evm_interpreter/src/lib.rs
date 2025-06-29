@@ -27,7 +27,9 @@ use gas::Gas;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
-use zk_ee::system::errors::{internal::InternalError, FatalError, SystemError};
+use zk_ee::system::errors::runtime::RuntimeError;
+use zk_ee::system::errors::system::SystemError;
+use zk_ee::system::errors::{internal::InternalError, FatalError};
 use zk_ee::system::{EthereumLikeTypes, Resource, Resources, System, SystemTypes};
 
 use alloc::vec::Vec;
@@ -171,12 +173,16 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
         );
         resources
             .charge(&R::from_native(native_cost))
-            .map_err(|e| match e {
-                SystemError::Internal(e) => FatalError::Internal(e),
-                SystemError::OutOfErgs(_) => {
-                    FatalError::Internal(internal_error!("OOE when charging only native"))
+            .map_err(|e| -> FatalError {
+                match e {
+                    SystemError::LeafDefect(e) => FatalError::Internal(e),
+                    SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                        FatalError::Internal(internal_error!("OOE when charging only native"))
+                    }
+                    SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc)) => {
+                        FatalError::OutOfNativeResources(loc)
+                    }
                 }
-                SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
             })?;
         Ok(Self::create_artifacts_inner(allocator, deployed_code))
     }
@@ -373,11 +379,11 @@ pub enum ExitCode {
 impl From<SystemError> for ExitCode {
     fn from(e: SystemError) -> Self {
         match e {
-            SystemError::Internal(e) => Self::FatalError(FatalError::Internal(e)),
-            SystemError::OutOfNativeResources(loc) => {
+            SystemError::LeafDefect(e) => Self::FatalError(FatalError::Internal(e)),
+            SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc)) => {
                 Self::FatalError(FatalError::OutOfNativeResources(loc))
             }
-            SystemError::OutOfErgs(_) => Self::OutOfGas,
+            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => Self::OutOfGas,
         }
     }
 }

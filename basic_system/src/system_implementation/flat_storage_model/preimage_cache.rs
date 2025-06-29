@@ -6,7 +6,7 @@ use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     internal_error,
     system::{
-        errors::{internal::InternalError, SystemError},
+        errors::{internal::InternalError, system::SystemError},
         IOResultKeeper, Resources,
     },
     system_io_oracle::{IOOracle, PreimageContentWordsIterator},

@@ -16,10 +16,8 @@ use zk_ee::common_structs::TransferInfo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::runtime::RuntimeError;
-use zk_ee::system::errors::runtime::RuntimeErrorKind;
-use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::{
-    errors::{SystemError, UpdateQueryError},
+    errors::{system::SystemError, UpdateQueryError},
     logger::Logger,
     *,
 };
@@ -435,16 +433,16 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 )
             }) {
                 Ok(()) => (),
-                Err(UpdateQueryError::System(SystemError::OutOfErgs(_))) => {
+                Err(UpdateQueryError::System(SystemError::LeafRuntime(
+                    RuntimeError::OutOfErgs(_),
+                ))) => {
                     return Err(internal_error!("Our of ergs on infinite").into());
                 }
-                Err(UpdateQueryError::System(SystemError::Internal(e))) => return Err(e.into()),
-                Err(UpdateQueryError::System(SystemError::OutOfNativeResources(loc))) => {
-                    return Err(RuntimeError(
-                        zk_ee::system::errors::runtime::RuntimeErrorKind::OutOfNativeResources,
-                        loc,
-                    )
-                    .into());
+                Err(UpdateQueryError::System(SystemError::LeafDefect(e))) => return Err(e.into()),
+                Err(UpdateQueryError::System(SystemError::LeafRuntime(
+                    RuntimeError::OutOfNativeResources(loc),
+                ))) => {
+                    return Err(RuntimeError::OutOfNativeResources(loc).into());
                 }
                 Err(UpdateQueryError::NumericBoundsError) => {
                     // Insufficient balance
@@ -698,13 +696,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             })
             .map_err(|e| -> BootloaderSubsystemError {
                 match e {
-                    UpdateQueryError::System(SystemError::OutOfNativeResources(loc)) => {
-                        RuntimeError(
-                            zk_ee::system::errors::runtime::RuntimeErrorKind::OutOfNativeResources,
-                            loc,
-                        )
-                        .into()
-                    }
+                    UpdateQueryError::System(SystemError::LeafRuntime(
+                        RuntimeError::OutOfNativeResources(loc),
+                    )) => RuntimeError::OutOfNativeResources(loc).into(),
                     _ => internal_error!("Failed to set deployed nonce to 1").into(),
                 }
             })?;
@@ -724,9 +718,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })
                 .map_err(|e| -> BootloaderSubsystemError {
                     match e {
-                        UpdateQueryError::System(SystemError::OutOfNativeResources(loc)) => {
-                            RuntimeError(zk_ee::system::errors::runtime::RuntimeErrorKind::OutOfNativeResources, loc).into()
-                        }
+                        UpdateQueryError::System(SystemError::LeafRuntime(
+                            RuntimeError::OutOfNativeResources(loc),
+                        )) => RuntimeError::OutOfNativeResources(loc).into(),
                         _ => internal_error!(
                             "Must transfer value on deployment after check in preparation",
                         )
@@ -803,21 +797,17 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         ));
                         (true, deployment_result)
                     }
-                    Err(SystemError::OutOfErgs(_)) => {
+                    Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                         let deployment_result = DeploymentResult::Failed {
                             return_values: self.copy_into_return_memory(return_values),
                             execution_reverted: false,
                         };
                         (false, deployment_result)
                     }
-                    Err(SystemError::OutOfNativeResources(loc)) => {
-                        return Err(SubsystemError::LeafRuntime(RuntimeError(
-                            RuntimeErrorKind::OutOfNativeResources,
-                            loc,
-                        ))
-                        .into())
+                    Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
+                        return Err(RuntimeError::OutOfNativeResources(loc).into())
                     }
-                    Err(SystemError::Internal(e)) => return Err(e.into()),
+                    Err(SystemError::LeafDefect(e)) => return Err(e.into()),
                 }
             }
             DeploymentResult::Failed {
@@ -914,19 +904,15 @@ where
         transfer_to_perform,
     } = match r {
         Ok(x) => x,
-        Err(SystemError::OutOfErgs(_)) => {
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
             return Ok(CallPreparationResult::Failure {
                 resources_returned: resources_available,
             });
         }
-        Err(SystemError::OutOfNativeResources(loc)) => {
-            return Err(RuntimeError(
-                zk_ee::system::errors::runtime::RuntimeErrorKind::OutOfNativeResources,
-                loc,
-            )
-            .into())
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
+            return Err(RuntimeError::OutOfNativeResources(loc).into())
         }
-        Err(SystemError::Internal(e)) => return Err(e.into()),
+        Err(SystemError::LeafDefect(e)) => return Err(e.into()),
     };
 
     // If we're in the entry frame, i.e. not the execution of a CALL opcode,
@@ -990,16 +976,18 @@ where
             .with_code_version(),
     ) {
         Ok(account_properties) => account_properties,
-        Err(SystemError::OutOfErgs(_)) => {
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
             let _ = system.get_logger().write_fmt(format_args!(
                 "Call failed: insufficient resources to read callee account data\n",
             ));
             return Err(out_of_ergs_error!());
         }
-        Err(SystemError::OutOfNativeResources(loc)) => {
-            return Err(SystemError::OutOfNativeResources(loc))
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
+            return Err(SystemError::LeafRuntime(
+                RuntimeError::OutOfNativeResources(loc),
+            ))
         }
-        Err(SystemError::Internal(e)) => return Err(e.into()),
+        Err(SystemError::LeafDefect(e)) => return Err(e.into()),
     };
 
     // Now we charge for the rest of the CALL related costs

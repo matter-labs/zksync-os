@@ -27,8 +27,7 @@ use zk_ee::internal_error;
 use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
-use zk_ee::system::errors::runtime::RuntimeErrorKind;
-use zk_ee::system::errors::{internal::InternalError, SystemError, UpdateQueryError};
+use zk_ee::system::errors::{internal::InternalError, system::SystemError, UpdateQueryError};
 use zk_ee::system::{EthereumLikeTypes, Resources};
 
 /// Return value of validation step
@@ -206,9 +205,7 @@ where
                     match e.root_cause() {
                         // Out of native is converted to a top-level revert and
                         // gas is exhausted.
-                        RootCause::Runtime(
-                            e @ RuntimeError(RuntimeErrorKind::OutOfNativeResources, _),
-                        ) => {
+                        RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
                             let _ = system.get_logger().write_fmt(format_args!(
                                 "L1 transaction ran out of native resources {e:?}\n"
                             ));
@@ -251,9 +248,13 @@ where
             &mut inf_resources,
         )
         .map_err(|e| match e {
-            SystemError::OutOfErgs(_) => internal_error!("Out of ergs on infinite ergs"),
-            SystemError::OutOfNativeResources(_) => internal_error!("Out of native on infinite"),
-            SystemError::Internal(i) => i,
+            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                internal_error!("Out of ergs on infinite ergs")
+            }
+            SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
+                internal_error!("Out of native on infinite")
+            }
+            SystemError::LeafDefect(i) => i,
         })?;
 
         // Refund
@@ -292,11 +293,13 @@ where
                 &mut inf_resources,
             )
             .map_err(|e| match e {
-                SystemError::OutOfErgs(_) => internal_error!("Out of ergs on infinite ergs"),
-                SystemError::OutOfNativeResources(_) => {
+                SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                    internal_error!("Out of ergs on infinite ergs")
+                }
+                SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
                     internal_error!("Out of native on infinite")
                 }
-                SystemError::Internal(i) => i,
+                SystemError::LeafDefect(i) => i,
             })?;
         }
 
@@ -351,20 +354,19 @@ where
                     BasicBootloader::mint_token(system, &value, &from, inf_resources)
                 })
                 .map_err(|e| match e {
-                    SystemError::OutOfErgs(loc) => {
+                    SystemError::LeafRuntime(RuntimeError::OutOfErgs(loc)) => {
                         //TODO this should not be an invariant violation?
                         BootloaderSubsystemError::LeafDefect(InternalError(
                             "Out of ergs on infinite ergs",
                             loc,
                         ))
                     }
-                    SystemError::OutOfNativeResources(loc) => {
-                        BootloaderSubsystemError::LeafRuntime(RuntimeError(
-                            zk_ee::system::errors::runtime::RuntimeErrorKind::OutOfNativeResources,
+                    SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc)) => {
+                        BootloaderSubsystemError::LeafRuntime(RuntimeError::OutOfNativeResources(
                             loc,
                         ))
                     }
-                    SystemError::Internal(i) => BootloaderSubsystemError::LeafDefect(i),
+                    SystemError::LeafDefect(i) => BootloaderSubsystemError::LeafDefect(i),
                 })?;
         }
 
@@ -585,7 +587,7 @@ where
             // Out of native is converted to a top-level revert and
             // gas is exhausted.
             Err(e) => match e.root_cause() {
-                RootCause::Runtime(e @ RuntimeError(RuntimeErrorKind::OutOfNativeResources, _)) => {
+                RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
                     let _ = system.get_logger().write_fmt(format_args!(
                         "Transaction ran out of native resources: {e:?}\n"
                     ));
@@ -914,9 +916,9 @@ where
                     )
                 })
                 .map_err(|e| match e {
-                    UpdateQueryError::NumericBoundsError => SystemError::Internal(internal_error!(
-                        "Bootloader cannot return excessive funds",
-                    )),
+                    UpdateQueryError::NumericBoundsError => SystemError::LeafDefect(
+                        internal_error!("Bootloader cannot return excessive funds",),
+                    ),
                     UpdateQueryError::System(e) => e,
                 })?;
         }
@@ -1027,13 +1029,15 @@ where
                 UpdateQueryError::NumericBoundsError => {
                     internal_error!("Bootloader cannot pay for refund")
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs(_)) => {
+                UpdateQueryError::System(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                     internal_error!("should transfer refund")
                 }
-                UpdateQueryError::System(SystemError::OutOfNativeResources(_)) => {
+                UpdateQueryError::System(SystemError::LeafRuntime(
+                    RuntimeError::OutOfNativeResources(_),
+                )) => {
                     internal_error!("should transfer refund")
                 }
-                UpdateQueryError::System(SystemError::Internal(e)) => e,
+                UpdateQueryError::System(SystemError::LeafDefect(e)) => e,
             })?;
         Ok(gas_used)
     }

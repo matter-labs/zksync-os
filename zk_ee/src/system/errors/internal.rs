@@ -1,6 +1,4 @@
-use super::{
-    location::Localizable, ErrorLocation, SystemError, SystemFunctionError, UpdateQueryError,
-};
+use super::{location::Localizable, ErrorLocation, SystemFunctionError, UpdateQueryError};
 
 ///
 /// Internal error, should not be triggered by user input.
@@ -24,22 +22,15 @@ impl Localizable for InternalError {
 }
 
 //TODO migrate away
-impl From<InternalError> for SystemError {
-    fn from(e: InternalError) -> Self {
-        SystemError::Internal(e)
-    }
-}
-
-//TODO migrate away
 impl From<InternalError> for UpdateQueryError {
     fn from(e: InternalError) -> Self {
-        SystemError::Internal(e).into()
+        UpdateQueryError::System(e.into())
     }
 }
 
 //TODO migrate away
 impl From<InternalError> for SystemFunctionError {
     fn from(e: InternalError) -> Self {
-        SystemError::Internal(e).into()
+        SystemFunctionError::System(e.into())
     }
 }

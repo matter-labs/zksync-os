@@ -5,7 +5,7 @@ use crate::system_implementation::system::public_input::{
     BlocksOutput, BlocksPublicInput, ChainStateCommitment,
 };
 use core::alloc::Allocator;
-use errors::SystemError;
+use errors::system::SystemError;
 use evm_interpreter::gas_constants::COLD_SLOAD_COST;
 use evm_interpreter::gas_constants::SSTORE_RESET_EXTRA;
 use evm_interpreter::gas_constants::SSTORE_SET_EXTRA;

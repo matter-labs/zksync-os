@@ -28,7 +28,7 @@ use zk_ee::{
     kv_markers::UsizeDeserializable,
     memory::ArrayBuilder,
     system::{
-        errors::{SystemError, UpdateQueryError},
+        errors::{system::SystemError, UpdateQueryError},
         AccountData, AccountDataRequest, EthereumLikeIOSubsystem, IOResultKeeper, IOSubsystem,
         IOSubsystemExt, Maybe,
     },

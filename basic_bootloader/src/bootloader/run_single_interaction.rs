@@ -2,7 +2,7 @@ use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use errors::BootloaderSubsystemError;
 use system_hooks::HooksStorage;
 use zk_ee::internal_error;
-use zk_ee::system::errors::{runtime::RuntimeError, SystemError, UpdateQueryError};
+use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError, UpdateQueryError};
 use zk_ee::system::CallModifier;
 use zk_ee::system::{EthereumLikeTypes, System};
 
@@ -87,15 +87,14 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 })
                 .map_err(|e| -> BootloaderSubsystemError {
                     match e {
-                    SystemError::OutOfErgs(_) => unreachable!("OOG on infinite resources"),
-                    SystemError::OutOfNativeResources(loc) => {
-                        BootloaderSubsystemError::LeafRuntime(RuntimeError(
-                            zk_ee::system::errors::runtime::RuntimeErrorKind::OutOfNativeResources,
-                            loc,
-                        )).into()
+                        SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                            unreachable!("OOG on infinite resources")
+                        }
+                        e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
+                            e.into()
+                        }
+                        SystemError::LeafDefect(e) => e.into(),
                     }
-                    SystemError::Internal(e) => BootloaderSubsystemError::LeafDefect(e),
-                }
                 })?
                 .ee_version
                 .0

@@ -3,8 +3,9 @@
 //! - EE resource: measured in ergs. Includes EVM gas, converted as 1 gas = ERGS_PER_GAS ergs.
 //! - Native resource: model for prover complexity.
 
-use super::errors::SystemError;
 use crate::out_of_ergs_error;
+
+use super::errors::system::SystemError;
 
 ///
 /// Single resource, both resources will implement this, as well as

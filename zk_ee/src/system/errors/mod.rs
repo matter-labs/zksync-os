@@ -6,36 +6,12 @@ pub mod no_errors;
 pub mod root_cause;
 pub mod runtime;
 pub mod subsystem;
+pub mod system;
 
 use internal::InternalError;
 use location::{ErrorLocation, Localizable};
-
-///
-/// Possible errors raised by the system.
-///
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum SystemError {
-    /// System execution exhausted the native resources passed.
-    OutOfNativeResources(ErrorLocation),
-    /// Execution exhausted the EE resource.
-    OutOfErgs(ErrorLocation),
-    /// Internal error.
-    /// Note that currently it means internal error in terms of whole zksync_os program execution.
-    /// Not the component/function internal error.
-    ///
-    /// For example if you'll try to finish unstarted frame on `System` - internal error will be returned.
-    /// But it doesn't mean that it's internal `System` error, the failure happened on caller(EE/bootlaoder side).
-    Internal(InternalError),
-}
-
-#[macro_export]
-macro_rules! out_of_ergs_error {
-    () => {
-        $crate::system::errors::SystemError::OutOfErgs(
-            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
-        )
-    };
-}
+use runtime::RuntimeError;
+use system::SystemError;
 
 // TODO remove in favor of subsystem errors
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -48,8 +24,10 @@ pub enum FatalError {
 impl From<FatalError> for SystemError {
     fn from(e: FatalError) -> Self {
         match e {
-            FatalError::Internal(e) => Self::Internal(e),
-            FatalError::OutOfNativeResources(loc) => Self::OutOfNativeResources(loc),
+            FatalError::Internal(e) => Self::LeafDefect(e),
+            FatalError::OutOfNativeResources(loc) => {
+                Self::LeafRuntime(RuntimeError::OutOfNativeResources(loc))
+            }
         }
     }
 }
@@ -57,16 +35,6 @@ impl From<FatalError> for SystemError {
 impl From<InternalError> for FatalError {
     fn from(e: InternalError) -> Self {
         Self::Internal(e)
-    }
-}
-
-impl SystemError {
-    pub fn into_fatal(self) -> FatalError {
-        match self {
-            SystemError::Internal(e) => FatalError::Internal(e),
-            SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
-            SystemError::OutOfErgs(_) => unreachable!(),
-        }
     }
 }
 
@@ -109,17 +77,17 @@ impl From<SystemError> for SystemFunctionError {
 #[macro_export]
 macro_rules! out_of_native_resources_fatal_error {
     () => {
-        $crate::system::errors::FatalError::OutOfNativeResources(
-            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
-        )
+        $crate::system::errors::FatalError::OutOfNativeResources($crate::location!())
     };
 }
 
 #[macro_export]
 macro_rules! out_of_native_resources_system_error {
     () => {
-        $crate::system::errors::SystemError::OutOfNativeResources(
-            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
+        $crate::system::errors::system::SystemError::LeafRuntime(
+            $crate::system::errors::runtime::RuntimeError::OutOfNativeResources(
+                $crate::location!(),
+            ),
         )
     };
 }

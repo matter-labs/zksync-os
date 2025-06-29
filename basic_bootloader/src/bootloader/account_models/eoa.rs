@@ -20,7 +20,7 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::errors::FatalError;
 use zk_ee::system::{
-    errors::{SystemError, UpdateQueryError},
+    errors::{runtime::RuntimeError, system::SystemError, UpdateQueryError},
     logger::Logger,
     EthereumLikeTypes, System, SystemTypes, *,
 };
@@ -95,17 +95,17 @@ where
                     ));
                 }
             }
-            Err(SystemError::OutOfErgs(_)) => {
+            Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfGasDuringValidation,
                 ))
             }
-            Err(SystemError::OutOfNativeResources(_)) => {
+            Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfNativeResourcesDuringValidation,
                 ))
             }
-            Err(SystemError::Internal(e)) => return Err(TxError::Internal(e.into())),
+            Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
         }
 
         let signature = transaction.signature();
@@ -353,13 +353,13 @@ where
                         Err(e) => e.into(),
                     }
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs(_)) => {
+                UpdateQueryError::System(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                     TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
                 }
-                UpdateQueryError::System(SystemError::OutOfNativeResources(_)) => {
-                    TxError::oon_as_validation(out_of_native_resources_fatal_error!().into())
-                }
-                UpdateQueryError::System(SystemError::Internal(e)) => e.into(),
+                UpdateQueryError::System(SystemError::LeafRuntime(
+                    RuntimeError::OutOfNativeResources(_),
+                )) => TxError::oon_as_validation(out_of_native_resources_fatal_error!().into()),
+                UpdateQueryError::System(SystemError::LeafDefect(e)) => e.into(),
             })?;
         Ok(())
     }
@@ -494,17 +494,17 @@ where
             let ergs_to_spend = Ergs(initcode_gas_cost.saturating_mul(ERGS_PER_GAS));
             match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
                 Ok(_) => (),
-                Err(SystemError::OutOfErgs(_)) => {
+                Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                     return Err(TxError::Validation(
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(SystemError::OutOfNativeResources(_)) => {
+                Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
                     return Err(TxError::oon_as_validation(
                         out_of_native_resources_fatal_error!().into(),
                     ))
                 }
-                Err(SystemError::Internal(e)) => return Err(TxError::Internal(e.into())),
+                Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
             };
         }
         Ok(())
@@ -546,7 +546,7 @@ where
     let ergs_to_spend = Ergs(extra_gas_cost.saturating_mul(ERGS_PER_GAS));
     match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
         Ok(_) => (),
-        Err(SystemError::OutOfErgs(_)) => {
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
             return Ok(TxExecutionResult {
                 return_values: ReturnValues::empty(),
                 resources_returned: S::Resources::empty(),
@@ -554,10 +554,10 @@ where
                 deployed_address: DeployedAddress::RevertedNoAddress,
             })
         }
-        Err(SystemError::OutOfNativeResources(loc)) => {
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
             return Err(FatalError::OutOfNativeResources(loc).into())
         }
-        Err(SystemError::Internal(e)) => return Err(e.into()),
+        Err(SystemError::LeafDefect(e)) => return Err(e.into()),
     };
     // Next check max initcode size
     if main_calldata.len() > MAX_INITCODE_SIZE {

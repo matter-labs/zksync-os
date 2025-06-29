@@ -9,7 +9,7 @@ use errors::UpdateQueryError;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
-use zk_ee::system::errors::SystemError;
+use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::logger::Logger;
 
 pub fn l2_base_token_hook<'a, S: EthereumLikeTypes>(
@@ -82,14 +82,16 @@ where
                 .write_fmt(format_args!("Revert: {:?}\n", e));
             Ok(make_error_return_state(resources))
         }
-        Err(SystemError::OutOfErgs(_)) => {
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Out of gas during system hook\n"));
             Ok(make_error_return_state(resources))
         }
-        Err(SystemError::OutOfNativeResources(loc)) => Err(FatalError::OutOfNativeResources(loc)),
-        Err(SystemError::Internal(e)) => Err(e.into()),
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
+            Err(FatalError::OutOfNativeResources(loc))
+        }
+        Err(SystemError::LeafDefect(e)) => Err(e.into()),
     }
     .map(|x| (x, return_memory))
 }
@@ -147,14 +149,14 @@ where
             // Burn nominal_token_value
             match system.io.update_account_nominal_token_balance(
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-                    .map_err(SystemError::Internal)?,
+                    .map_err(SystemError::LeafDefect)?,
                 resources,
                 &L2_BASE_TOKEN_ADDRESS,
                 &nominal_token_value,
                 true,
             ) {
                 Ok(_) => Ok(()),
-                Err(UpdateQueryError::NumericBoundsError) => Err(SystemError::Internal(
+                Err(UpdateQueryError::NumericBoundsError) => Err(SystemError::LeafDefect(
                     internal_error!("L2 base token must have withdrawal amount"),
                 )),
                 Err(UpdateQueryError::System(e)) => Err(e),
@@ -177,7 +179,7 @@ where
             message[24..56].copy_from_slice(&nominal_token_value.to_be_bytes::<32>());
             system.io.emit_l1_message(
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-                    .map_err(SystemError::Internal)?,
+                    .map_err(SystemError::LeafDefect)?,
                 resources,
                 &caller,
                 &message,
@@ -246,14 +248,14 @@ where
             // Burn nominal_token_value
             match system.io.update_account_nominal_token_balance(
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-                    .map_err(SystemError::Internal)?,
+                    .map_err(SystemError::LeafDefect)?,
                 resources,
                 &L2_BASE_TOKEN_ADDRESS,
                 &nominal_token_value,
                 true,
             ) {
                 Ok(_) => Ok(()),
-                Err(UpdateQueryError::NumericBoundsError) => Err(SystemError::Internal(
+                Err(UpdateQueryError::NumericBoundsError) => Err(SystemError::LeafDefect(
                     internal_error!("L2 base token must have withdrawal amount"),
                 )),
                 Err(UpdateQueryError::System(e)) => Err(e),
@@ -277,7 +279,7 @@ where
 
             system.io.emit_l1_message(
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-                    .map_err(SystemError::Internal)?,
+                    .map_err(SystemError::LeafDefect)?,
                 resources,
                 &caller,
                 &message,

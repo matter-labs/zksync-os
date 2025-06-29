@@ -11,7 +11,7 @@ use crypto::MiniDigest;
 use errors::{BootloaderSubsystemError, InvalidTransaction};
 use ruint::aliases::U256;
 use zk_ee::internal_error;
-use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, SystemError};
+use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, system::SystemError};
 
 mod abi_utils;
 pub mod access_list_parser;
@@ -1202,13 +1202,10 @@ fn charge_keccak<R: Resources>(
     resources
         .charge(&R::from_native(native_cost))
         .map_err(|e| match e {
-            SystemError::OutOfErgs(_) => unreachable!(),
-            SystemError::Internal(e) => BootloaderSubsystemError::LeafDefect(e),
-            SystemError::OutOfNativeResources(loc) => {
-                BootloaderSubsystemError::LeafRuntime(RuntimeError(
-                    zk_ee::system::errors::runtime::RuntimeErrorKind::OutOfNativeResources,
-                    loc,
-                ))
+            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => unreachable!(),
+            SystemError::LeafDefect(e) => BootloaderSubsystemError::LeafDefect(e),
+            SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc)) => {
+                BootloaderSubsystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))
             }
         })
 }

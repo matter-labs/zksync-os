@@ -30,7 +30,7 @@ use core::alloc::Allocator;
 use core::fmt::Write;
 
 use self::{
-    errors::{internal::InternalError, SystemError},
+    errors::{internal::InternalError, system::SystemError},
     logger::Logger,
     metadata::{BlockMetadataFromOracle, Metadata},
 };

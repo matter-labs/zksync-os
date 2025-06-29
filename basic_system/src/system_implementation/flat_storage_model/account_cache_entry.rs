@@ -8,7 +8,7 @@ use storage_models::common_structs::PreimageCacheModel;
 use zk_ee::common_structs::{PreimageType, ValueDiffCompressionStrategy};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
-use zk_ee::system::errors::{internal::InternalError, SystemError};
+use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, system::SystemError};
 use zk_ee::system::{IOResultKeeper, Resources};
 use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::types_config::EthereumIOTypesConfig;
@@ -377,13 +377,13 @@ impl AccountProperties {
                         oracle,
                     )
                     .map_err(|err| match err {
-                        SystemError::OutOfErgs(_) => {
+                        SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
                             internal_error!("Out of ergs on infinite ergs")
                         }
-                        SystemError::OutOfNativeResources(_) => {
+                        SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
                             internal_error!("Out of native on infinite")
                         }
-                        SystemError::Internal(i) => i,
+                        SystemError::LeafDefect(i) => i,
                     })?;
                 hasher.update(bytecode);
                 result_keeper.pubdata(bytecode);

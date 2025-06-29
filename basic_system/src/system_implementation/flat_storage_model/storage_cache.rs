@@ -16,7 +16,7 @@ use zk_ee::{
     common_structs::{WarmStorageKey, WarmStorageValue},
     kv_markers::{StorageAddress, UsizeDeserializable},
     memory::stack_trait::{StackCtor, StackCtorConst},
-    system::{errors::SystemError, Resources},
+    system::{errors::system::SystemError, Resources},
     system_io_oracle::{IOOracle, InitialStorageSlotData, InitialStorageSlotDataIterator},
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::Bytes32,

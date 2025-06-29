@@ -8,7 +8,7 @@ use crate::system::errors::internal::InternalError;
 use crate::system::IOResultKeeper;
 use crate::{
     memory::stack_trait::{StackCtor, StackCtorConst},
-    system::errors::SystemError,
+    system::errors::system::SystemError,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::{Bytes32, UsizeAlignedByteBox},
 };

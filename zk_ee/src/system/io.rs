@@ -6,7 +6,7 @@
 use core::marker::PhantomData;
 
 use super::errors::internal::InternalError;
-use super::errors::{SystemError, UpdateQueryError};
+use super::errors::{system::SystemError, UpdateQueryError};
 use super::logger::Logger;
 use super::{IOResultKeeper, Resources};
 use crate::execution_environment_type::ExecutionEnvironmentType;

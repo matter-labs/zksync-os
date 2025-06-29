@@ -4,7 +4,7 @@ use super::{
     internal::InternalError,
     location::ErrorLocation,
     no_errors::NoErrors,
-    runtime::{RuntimeError, RuntimeErrorKind},
+    runtime::RuntimeError,
     FatalError,
 };
 
@@ -219,9 +219,7 @@ impl<S: Subsystem> From<InternalError> for SubsystemError<S> {
 impl<S: Subsystem> From<FatalError> for SubsystemError<S> {
     fn from(value: FatalError) -> Self {
         match value {
-            FatalError::OutOfNativeResources(loc) => {
-                RuntimeError(RuntimeErrorKind::OutOfNativeResources, loc).into()
-            }
+            FatalError::OutOfNativeResources(loc) => RuntimeError::OutOfNativeResources(loc).into(),
             FatalError::Internal(internal_error) => internal_error.into(),
         }
     }

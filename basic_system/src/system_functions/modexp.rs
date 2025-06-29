@@ -8,7 +8,7 @@ use ruint::aliases::U256;
 use zk_ee::{
     internal_error, out_of_ergs_error,
     system::{
-        errors::{SystemError, SystemFunctionError},
+        errors::{system::SystemError, SystemFunctionError},
         Computational, Ergs, SystemFunction,
     },
 };
@@ -133,21 +133,21 @@ fn modexp_as_system_function_inner<D: ?Sized + Extend<u8>, A: Allocator + Clone,
 
     let mut input_it = input.iter();
     let mut base = Vec::try_with_capacity_in(base_len, allocator.clone())
-        .map_err(|_| SystemError::Internal(internal_error!("alloc")))?;
+        .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
     base.resize(base_len, 0);
     for (dst, src) in base.iter_mut().zip(&mut input_it) {
         *dst = *src;
     }
 
     let mut exponent = Vec::try_with_capacity_in(exp_len, allocator.clone())
-        .map_err(|_| SystemError::Internal(internal_error!("alloc")))?;
+        .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
     exponent.resize(exp_len, 0);
     for (dst, src) in exponent.iter_mut().zip(&mut input_it) {
         *dst = *src;
     }
 
     let mut modulus = Vec::try_with_capacity_in(mod_len, allocator.clone())
-        .map_err(|_| SystemError::Internal(internal_error!("alloc")))?;
+        .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
     modulus.resize(mod_len, 0);
     for (dst, src) in modulus.iter_mut().zip(&mut input_it) {
         *dst = *src;

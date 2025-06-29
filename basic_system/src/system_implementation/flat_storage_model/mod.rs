@@ -33,7 +33,7 @@ use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     memory::stack_trait::{StackCtor, StackCtorConst},
     system::{
-        errors::{SystemError, UpdateQueryError},
+        errors::{system::SystemError, UpdateQueryError},
         logger::Logger,
         AccountData, AccountDataRequest, IOResultKeeper, Maybe,
     },

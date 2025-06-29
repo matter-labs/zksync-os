@@ -36,7 +36,7 @@ use zk_ee::utils::Bytes32;
 use zk_ee::{
     memory::stack_trait::StackCtorConst,
     system::{
-        errors::{internal::InternalError, SystemError, UpdateQueryError},
+        errors::{internal::InternalError, system::SystemError, UpdateQueryError},
         AccountData, AccountDataRequest, Ergs, IOResultKeeper, Maybe, Resources,
     },
     system_io_oracle::IOOracle,

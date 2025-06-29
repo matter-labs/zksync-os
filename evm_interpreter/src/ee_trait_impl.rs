@@ -7,10 +7,10 @@ use core::any::Any;
 use core::fmt::Write;
 use ruint::aliases::B160;
 use zk_ee::memory::ArrayBuilder;
-use zk_ee::system::errors::runtime::{RuntimeError, RuntimeErrorKind};
+use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::SystemFunctionError;
 use zk_ee::system::{
-    errors::{SystemError, UpdateQueryError},
+    errors::{system::SystemError, UpdateQueryError},
     *,
 };
 use zk_ee::types_config::SystemIOTypesConfig;
@@ -434,13 +434,9 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     })
                     .map_err(|e| -> EvmSubsystemError {
                         match e {
-                            SystemFunctionError::System(SystemError::OutOfNativeResources(loc)) => {
-                                EvmSubsystemError::LeafRuntime(
-                                    RuntimeError(RuntimeErrorKind::OutOfNativeResources, loc)
-                                        .into(),
-                                )
-                                .into()
-                            }
+                            SystemFunctionError::System(SystemError::LeafRuntime(
+                                e @ RuntimeError::OutOfNativeResources(_),
+                            )) => e.into(),
                             _ => internal_error!("Keccak in create2 cannot fail").into(),
                         }
                     })?;

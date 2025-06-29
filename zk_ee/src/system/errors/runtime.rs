@@ -2,12 +2,10 @@ use strum_macros::IntoStaticStr;
 
 use super::location::ErrorLocation;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RuntimeError(pub RuntimeErrorKind, pub ErrorLocation);
-
-#[derive(Clone, Debug, PartialEq, Eq, IntoStaticStr)]
-pub enum RuntimeErrorKind {
-    OutOfNativeResources,
+#[derive(Copy, Clone, Debug, PartialEq, Eq, IntoStaticStr)]
+pub enum RuntimeError {
+    OutOfNativeResources(ErrorLocation),
+    OutOfErgs(ErrorLocation),
 }
 
 #[macro_export]

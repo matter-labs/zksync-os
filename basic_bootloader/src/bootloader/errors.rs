@@ -2,7 +2,8 @@ use crate::bootloader::supported_ees::errors::EESubsystemError;
 use ruint::aliases::{B160, U256};
 use zk_ee::internal_error;
 use zk_ee::system::errors::{
-    internal::InternalError, subsystem::SubsystemError, SystemError, SystemFunctionError,
+    internal::InternalError, runtime::RuntimeError, subsystem::SubsystemError, system::SystemError,
+    SystemFunctionError,
 };
 
 // Taken from revm, contains changes
@@ -167,13 +168,13 @@ impl TxError {
 impl From<SystemError> for TxError {
     fn from(e: SystemError) -> Self {
         match e {
-            SystemError::OutOfErgs(_) => {
+            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
                 TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
             }
-            SystemError::OutOfNativeResources(_) => {
+            SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
                 Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
             }
-            SystemError::Internal(e) => TxError::Internal(e.into()),
+            SystemError::LeafDefect(e) => TxError::Internal(e.into()),
         }
     }
 }
@@ -195,8 +196,8 @@ macro_rules! revert_on_recoverable {
     ($e:expr) => {
         match $e {
             Ok(x) => Ok(x),
-            Err(SystemError::Internal(err)) => Err(err),
-            Err(SystemError::OutOfResources) => {
+            Err(SystemError::LeafDefect(err)) => Err(err),
+            Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
                 return Ok(ExecutionResult::Revert {
                     output: MemoryRegion::empty_shared(),
                 })
