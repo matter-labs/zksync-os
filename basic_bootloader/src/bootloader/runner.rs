@@ -431,7 +431,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     return Err(InternalError("Our of ergs on infinite").into());
                 }
                 Err(UpdateQueryError::System(SystemError::Defect(e))) => return Err(e.into()),
-                Err(UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfNativeResources))) => {
+                Err(UpdateQueryError::System(SystemError::Runtime(
+                    RuntimeError::OutOfNativeResources,
+                ))) => {
                     return Err(RuntimeError::OutOfNativeResources.into());
                 }
                 Err(UpdateQueryError::NumericBoundsError) => {
@@ -686,9 +688,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             })
             .map_err(|e| -> BootloaderSubsystemError {
                 match e {
-                    UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
-                        RuntimeError::OutOfNativeResources.into()
-                    }
+                    UpdateQueryError::System(SystemError::Runtime(
+                        RuntimeError::OutOfNativeResources,
+                    )) => RuntimeError::OutOfNativeResources.into(),
                     _ => InternalError("Failed to set deployed nonce to 1").into(),
                 }
             })?;
@@ -708,9 +710,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })
                 .map_err(|e| -> BootloaderSubsystemError {
                     match e {
-                        UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
-                            RuntimeError::OutOfNativeResources.into()
-                        }
+                        UpdateQueryError::System(SystemError::Runtime(
+                            RuntimeError::OutOfNativeResources,
+                        )) => RuntimeError::OutOfNativeResources.into(),
                         _ => InternalError(
                             "Must transfer value on deployment after check in preparation",
                         )
@@ -974,7 +976,7 @@ where
             ));
             return Err(SystemError::Runtime(RuntimeError::OutOfErgs));
         }
-        Err(e@SystemError::Runtime(RuntimeError::OutOfNativeResources)) => return Err(e),
+        Err(e @ SystemError::Runtime(RuntimeError::OutOfNativeResources)) => return Err(e),
         Err(SystemError::Defect(e)) => return Err(e.into()),
     };
 

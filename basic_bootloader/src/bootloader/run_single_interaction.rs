@@ -85,8 +85,12 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                     )
                 })
                 .map_err(|e| match e {
-                    SystemError::Runtime(RuntimeError::OutOfErgs) => unreachable!("OOG on infinite resources"),
-                    SystemError::Runtime(RuntimeError::OutOfNativeResources) => RuntimeError::OutOfNativeResources.into(),
+                    SystemError::Runtime(RuntimeError::OutOfErgs) => {
+                        unreachable!("OOG on infinite resources")
+                    }
+                    SystemError::Runtime(RuntimeError::OutOfNativeResources) => {
+                        RuntimeError::OutOfNativeResources.into()
+                    }
                     SystemError::Defect(e) => BootloaderSubsystemError::Defect(e),
                 })?
                 .ee_version

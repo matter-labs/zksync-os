@@ -230,8 +230,12 @@ where
             &mut inf_resources,
         )
         .map_err(|e| match e {
-            SystemError::Runtime(RuntimeError::OutOfErgs) => InternalError("Out of ergs on infinite ergs"),
-            SystemError::Runtime(RuntimeError::OutOfNativeResources) => InternalError("Out of native on infinite"),
+            SystemError::Runtime(RuntimeError::OutOfErgs) => {
+                InternalError("Out of ergs on infinite ergs")
+            }
+            SystemError::Runtime(RuntimeError::OutOfNativeResources) => {
+                InternalError("Out of native on infinite")
+            }
             SystemError::Defect(i) => i,
         })?;
 
@@ -271,8 +275,12 @@ where
                 &mut inf_resources,
             )
             .map_err(|e| match e {
-                SystemError::Runtime(RuntimeError::OutOfErgs) => InternalError("Out of ergs on infinite ergs"),
-                SystemError::Runtime(RuntimeError::OutOfNativeResources) => InternalError("Out of native on infinite"),
+                SystemError::Runtime(RuntimeError::OutOfErgs) => {
+                    InternalError("Out of ergs on infinite ergs")
+                }
+                SystemError::Runtime(RuntimeError::OutOfNativeResources) => {
+                    InternalError("Out of native on infinite")
+                }
                 SystemError::Defect(i) => i,
             })?;
         }
@@ -1001,9 +1009,9 @@ where
                 UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
                     InternalError("should transfer refund")
                 }
-                UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
-                    InternalError("should transfer refund")
-                }
+                UpdateQueryError::System(SystemError::Runtime(
+                    RuntimeError::OutOfNativeResources,
+                )) => InternalError("should transfer refund"),
                 UpdateQueryError::System(SystemError::Defect(e)) => e,
             })?;
         Ok(gas_used)

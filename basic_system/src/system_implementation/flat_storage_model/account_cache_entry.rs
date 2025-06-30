@@ -337,7 +337,9 @@ impl AccountProperties {
                         oracle,
                     )
                     .map_err(|err| match err {
-                        SystemError::Runtime(RuntimeError::OutOfErgs) => InternalError("Out of ergs on infinite ergs"),
+                        SystemError::Runtime(RuntimeError::OutOfErgs) => {
+                            InternalError("Out of ergs on infinite ergs")
+                        }
                         SystemError::Runtime(RuntimeError::OutOfNativeResources) => {
                             InternalError("Out of native on infinite")
                         }

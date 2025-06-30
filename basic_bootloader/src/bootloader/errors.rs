@@ -1,7 +1,7 @@
 use crate::bootloader::supported_ees::errors::EESubsystemError;
 use ruint::aliases::{B160, U256};
-use zk_ee::system::errors::{RuntimeError, SubsystemErrorTypes};
 use zk_ee::system::errors::{InternalError, SubsystemError, SystemError};
+use zk_ee::system::errors::{RuntimeError, SubsystemErrorTypes};
 
 // Taken from revm, contains changes
 ///

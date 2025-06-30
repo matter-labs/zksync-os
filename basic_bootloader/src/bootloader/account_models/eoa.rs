@@ -127,7 +127,8 @@ where
             &mut ecrecover_output,
             resources,
             system.get_allocator(),
-        ).map_err(SystemError::from)?;
+        )
+        .map_err(SystemError::from)?;
 
         if ecrecover_output.is_empty() {
             return Err(InvalidTransaction::IncorrectFrom {
@@ -356,9 +357,9 @@ where
                 UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
                     TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
                 }
-                UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
-                    TxError::oon_as_validation(RuntimeError::OutOfNativeResources.into())
-                }
+                UpdateQueryError::System(SystemError::Runtime(
+                    RuntimeError::OutOfNativeResources,
+                )) => TxError::oon_as_validation(RuntimeError::OutOfNativeResources.into()),
                 UpdateQueryError::System(SystemError::Defect(e)) => e.into(),
             })?;
         Ok(())
