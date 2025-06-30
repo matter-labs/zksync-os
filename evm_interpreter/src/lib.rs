@@ -20,12 +20,13 @@ extern crate alloc;
 
 use core::ops::Range;
 
+use errors::EvmSubsystemError;
 use evm_stack::EvmStack;
 use gas::Gas;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
-use zk_ee::system::errors::{FatalError, InternalError, RuntimeError, SystemError};
+use zk_ee::system::errors::{InternalError, RuntimeError, SystemError};
 use zk_ee::system::{EthereumLikeTypes, Resource, System, SystemTypes};
 
 use alloc::vec::Vec;
@@ -118,7 +119,7 @@ impl<S: SystemTypes> BytecodePreprocessingData<S> {
         original_len: u32,
         system: &mut System<S>,
         resources: &mut S::Resources,
-    ) -> Result<Self, FatalError> {
+    ) -> Result<Self, EvmSubsystemError> {
         use crate::native_resource_constants::BYTECODE_PREPROCESSING_BYTE_NATIVE_COST;
         use zk_ee::system::{Computational, Resources};
         let native_cost = <S::Resources as Resources>::Native::from_computational(
@@ -127,11 +128,10 @@ impl<S: SystemTypes> BytecodePreprocessingData<S> {
         resources
             .charge(&S::Resources::from_native(native_cost))
             .map_err(|e| match e {
-                SystemError::Defect(e) => FatalError::Internal(e),
                 SystemError::Runtime(RuntimeError::OutOfErgs) => {
-                    FatalError::Internal(InternalError("OOE when charging only native"))
+                    InternalError("OOE when charging only native").into()
                 }
-                SystemError::Runtime(RuntimeError::OutOfNativeResources) => FatalError::OutOfNativeResources,
+                e => e,
             })?;
         let jump_map = analyze::<S>(padded_bytecode, system)
             .map_err(|_| InternalError("Could not preprocess bytecode"))?;
@@ -271,16 +271,12 @@ pub enum ExitCode {
     FatalExternalError,
 
     // Fatal internal error
-    FatalError(FatalError),
+    FatalError(SystemError),
 }
 
 impl From<SystemError> for ExitCode {
-    fn from(e: SystemError) -> Self {
-        match e {
-            SystemError::Defect(e) => Self::FatalError(FatalError::Internal(e)),
-            SystemError::Runtime(RuntimeError::OutOfNativeResources) => Self::FatalError(FatalError::OutOfNativeResources),
-            SystemError::Runtime(RuntimeError::OutOfErgs) => Self::OutOfGas,
-        }
+    fn from(v: SystemError) -> Self {
+        Self::FatalError(v)
     }
 }
 

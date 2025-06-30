@@ -4,7 +4,10 @@
 //! - EE resource: measured in ergs. Includes EVM gas, converted as 1 gas = ERGS_PER_GAS ergs.
 //! - Native resource: model for prover complexity.
 
-use crate::system::{errors::{RuntimeError, SystemError}, Computational, Ergs, Resource, Resources};
+use crate::system::{
+    errors::{RuntimeError, SystemError},
+    Computational, Ergs, Resource, Resources,
+};
 
 /// Native resource that counts down, as done for ergs.
 #[derive(Clone, core::fmt::Debug, Default, PartialEq, Eq)]

@@ -16,7 +16,7 @@ pub fn l2_base_token_hook<'a, S: EthereumLikeTypes>(
     caller_ee: u8,
     system: &mut System<S>,
     return_memory: &'a mut [MaybeUninit<u8>],
-) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -85,10 +85,7 @@ where
                 .write_fmt(format_args!("Out of gas during system hook\n"));
             Ok(make_error_return_state(resources))
         }
-        Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
-            Err(FatalError::OutOfNativeResources)
-        }
-        Err(SystemError::Defect(e)) => Err(e.into()),
+        Err(e) => Err(e),
     }
     .map(|x| (x, return_memory))
 }

@@ -34,7 +34,7 @@ use crate::l1_messenger::l1_messenger_hook;
 use crate::l2_base_token::l2_base_token_hook;
 use alloc::collections::BTreeMap;
 use core::{alloc::Allocator, mem::MaybeUninit};
-use errors::FatalError;
+use errors::SystemError;
 use precompiles::{pure_system_function_hook_impl, IdentityPrecompile};
 use zk_ee::{
     memory::slice_vec::SliceVec,
@@ -65,7 +65,7 @@ pub struct SystemHook<S: SystemTypes>(
         u8,
         &mut System<S>,
         &'a mut [MaybeUninit<u8>],
-    ) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>,
+    ) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>,
 );
 
 ///
@@ -108,7 +108,7 @@ impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
         caller_ee: u8,
         system: &mut System<S>,
         return_memory: &'a mut [MaybeUninit<u8>],
-    ) -> Result<(Option<CompletedExecution<'a, S>>, &'a mut [MaybeUninit<u8>]), FatalError> {
+    ) -> Result<(Option<CompletedExecution<'a, S>>, &'a mut [MaybeUninit<u8>]), SystemError> {
         let Some(hook) = self.inner.get(&address_low) else {
             return Ok((None, return_memory));
         };

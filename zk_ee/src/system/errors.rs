@@ -22,41 +22,6 @@ impl From<RuntimeError> for SystemError {
     }
 }
 
-// TODO remove in favor of subsystem errors
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum FatalError {
-    /// EE execution exhausted the resources passed.
-    OutOfNativeResources,
-    Internal(InternalError),
-}
-
-impl From<FatalError> for SystemError {
-    fn from(e: FatalError) -> Self {
-        match e {
-            FatalError::Internal(e) => Self::Defect(e),
-            FatalError::OutOfNativeResources => RuntimeError::OutOfNativeResources.into(),
-        }
-    }
-}
-
-impl From<InternalError> for FatalError {
-    fn from(e: InternalError) -> Self {
-        Self::Internal(e)
-    }
-}
-
-impl SystemError {
-    pub fn into_fatal(self) -> FatalError {
-        match self {
-            SystemError::Defect(e) => FatalError::Internal(e),
-            SystemError::Runtime(RuntimeError::OutOfNativeResources) => {
-                FatalError::OutOfNativeResources
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
 //TODO remove in favor of subsystem errors
 #[derive(Debug)]
 pub enum UpdateQueryError {
@@ -194,20 +159,23 @@ impl<S: SubsystemErrorTypes> From<AsInterfaceError<S::Interface>> for SubsystemE
     }
 }
 
-impl<S: SubsystemErrorTypes> From<FatalError> for SubsystemError<S> {
-    fn from(value: FatalError) -> Self {
-        match value {
-            FatalError::OutOfNativeResources => RuntimeError::OutOfNativeResources.into(),
-            FatalError::Internal(internal_error) => internal_error.into(),
-        }
-    }
-}
-
 impl<T: SubsystemErrorTypes> From<SystemError> for SubsystemError<T> {
     fn from(value: SystemError) -> Self {
         match value {
             SystemError::Runtime(runtime_error) => runtime_error.into(),
             SystemError::Defect(internal_error) => internal_error.into(),
+        }
+    }
+}
+
+
+impl<S: SubsystemErrorTypes<Wrapped = NoErrors, Interface = NoErrors>> From<SubsystemError<S>> for SystemError {
+    fn from(value: SubsystemError<S>) -> Self {
+        match value {
+            SubsystemError::Usage(_) => unreachable!(),
+            SubsystemError::Defect(internal_error) => internal_error.into(),
+            SubsystemError::Runtime(runtime_error) => runtime_error.into(),
+            SubsystemError::Cascaded(_) => unreachable!(),
         }
     }
 }

@@ -16,7 +16,7 @@ pub fn contract_deployer_hook<'a, S: EthereumLikeTypes>(
     caller_ee: u8,
     system: &mut System<S>,
     return_memory: &'a mut [MaybeUninit<u8>],
-) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -86,7 +86,7 @@ where
                 make_error_return_state(resources)
             }
             Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
-                return Err(FatalError::OutOfNativeResources)
+                return Err(SystemError::Runtime(RuntimeError::OutOfNativeResources))
             }
             Err(SystemError::Defect(e)) => return Err(e.into()),
         },

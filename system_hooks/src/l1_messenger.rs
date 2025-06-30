@@ -4,13 +4,11 @@
 //!
 use super::*;
 use core::fmt::Write;
-use errors::{FatalError, RuntimeError};
+use errors::{RuntimeError, SystemError};
 use ruint::aliases::{B160, U256};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
-    system::{
-        errors::SystemError, logger::Logger, CallModifier, CompletedExecution, ExternalCallRequest,
-    },
+    system::{logger::Logger, CallModifier, CompletedExecution, ExternalCallRequest},
     utils::Bytes32,
 };
 
@@ -19,7 +17,7 @@ pub fn l1_messenger_hook<'a, S: EthereumLikeTypes>(
     caller_ee: u8,
     system: &mut System<S>,
     return_memory: &'a mut [MaybeUninit<u8>],
-) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
 where
 {
     let ExternalCallRequest {
@@ -94,10 +92,7 @@ where
                 .write_fmt(format_args!("Out of gas during system hook\n"));
             Ok((make_error_return_state(resources), return_memory))
         }
-        Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
-            Err(FatalError::OutOfNativeResources)
-        }
-        Err(SystemError::Defect(e)) => Err(e.into()),
+        Err(e) => Err(e),
     }
 }
 // sendToL1(bytes) - 62f84b24
