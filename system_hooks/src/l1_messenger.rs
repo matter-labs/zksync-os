@@ -156,8 +156,12 @@ where
                     ))
                 }
             };
+            // Note, that in general, Solidity allows to have non-strict offsets, i.e. it should be possible
+            // to call a function with offset pointing to a faraway point in calldata. However,
+            // when explicitly calling a contract Solidity encodes it via a strict encoding and allowing
+            // only standard encoding here allows for cheaper and easier implementation.
             if message_offset != 32 {
-                return Ok(Err("L1 messenger failure: sendToL1 expects standard message offset"));
+                return Ok(Err("L1 messenger failure: sendToL1 expects strict message offset"));
             }
             // length located at 4+message_offset..4+message_offset+32
             // we want to check that 4+message_offset+32 will not overflow usize
