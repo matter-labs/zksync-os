@@ -204,6 +204,10 @@ where
                 ));
             }
 
+            // Note, that in general, Solidity allows to have non-strict offsets, i.e. it should be possible
+            // to call a function with offset pointing to a faraway point in calldata. However,
+            // when explicitly calling a contract Solidity encodes it via a strict encoding and allowing
+            // only standard encoding here allows for cheaper and easier implementation.
             if (calldata.len() - 4) % 32 != 0 {
                 return Ok(Err("Calldata is not well formed"));
             }
@@ -219,7 +223,7 @@ where
 
             let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
             topics.push(Bytes32::from_array(L1_MESSAGE_SENT_TOPIC));
-            topics.push(Bytes32::from_u256_be(b160_to_u256(caller)));
+            topics.push(Bytes32::from_u256_be(&b160_to_u256(caller)));
             topics.push(message_hash);
 
             system.io.emit_event(
