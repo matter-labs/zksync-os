@@ -17,13 +17,13 @@ use zk_ee::utils::Bytes32;
 #[derive(Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
 ///
 /// Stores multiple account version information packed in u64.
-/// Holds information about(7th is the most signifact byte):
+/// Holds information about(7th is the most significant byte):
 /// - deployment status (u8, 7th byte)
 /// - EE version/type (EVM, EraVM, etc.) (u8, 6th byte)
 /// - code version (u8) - ee specific (currently both EVM and IWASM use 1, 5th byte)
 /// - system aux bitmask (u8, 4th byte)
 /// - EE aux bitmask (u8, 3th byte)
-/// - 3 less signifact(0-2) bytes currently set to 0, may be used in the future.
+/// - 3 less significant(0-2) bytes currently set to 0, may be used in the future.
 ///
 pub struct VersioningData<const DEPLOYED: u8>(u64);
 
