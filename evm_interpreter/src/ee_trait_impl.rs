@@ -371,8 +371,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     &address_of_deployer,
                     AccountDataRequest::empty().with_nominal_token_balance(),
                 )
-            })
-            .map_err(SystemError::into_fatal)?
+            })?
             .nominal_token_balance
             .0;
 
@@ -397,7 +396,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     )
                 }) {
                     Ok(nonce) => Ok(nonce),
-                    Err(UpdateQueryError::System(e)) => return Err(e.into_fatal().into()),
+                    Err(UpdateQueryError::System(e)) => return Err(e.into()),
                     Err(UpdateQueryError::NumericBoundsError) => {
                         return Ok((deployer_full_resources, None))
                     }
@@ -468,18 +467,16 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             nonce: Just(deployee_nonce),
             unpadded_code_len: Just(deployee_code_len),
             ..
-        } = deployer_remaining_resources
-            .with_infinite_ergs(|inf_resources| {
-                system.io.read_account_properties(
-                    THIS_EE_TYPE,
-                    inf_resources,
-                    &deployed_address,
-                    AccountDataRequest::empty()
-                        .with_nonce()
-                        .with_unpadded_code_len(),
-                )
-            })
-            .map_err(SystemError::into_fatal)?;
+        } = deployer_remaining_resources.with_infinite_ergs(|inf_resources| {
+            system.io.read_account_properties(
+                THIS_EE_TYPE,
+                inf_resources,
+                &deployed_address,
+                AccountDataRequest::empty()
+                    .with_nonce()
+                    .with_unpadded_code_len(),
+            )
+        })?;
 
         // Check there's no contract already deployed at this address.
         // NB: EVM also specifies that the address should have empty storage,

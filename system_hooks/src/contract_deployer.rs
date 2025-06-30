@@ -17,7 +17,7 @@ pub fn contract_deployer_hook<'a, S: EthereumLikeTypes>(
     caller_ee: u8,
     system: &mut System<S>,
     return_memory: &'a mut [MaybeUninit<u8>],
-) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -86,8 +86,8 @@ where
                     .write_fmt(format_args!("Out of gas during system hook\n"));
                 make_error_return_state(resources)
             }
-            Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
-                return Err(FatalError::OutOfNativeResources(loc))
+            Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+                return Err(e)
             }
             Err(SystemError::LeafDefect(e)) => return Err(e.into()),
         },

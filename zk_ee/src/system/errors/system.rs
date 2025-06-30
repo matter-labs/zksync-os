@@ -2,10 +2,9 @@ use super::{
     internal::InternalError,
     runtime::RuntimeError,
     subsystem::{Subsystem, SubsystemError},
-    FatalError,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SystemError {
     LeafDefect(InternalError),
     LeafRuntime(RuntimeError),
@@ -41,17 +40,4 @@ macro_rules! out_of_ergs_error {
             ),
         )
     };
-}
-
-impl SystemError {
-    //TODO migrate away
-    pub fn into_fatal(self) -> FatalError {
-        match self {
-            SystemError::LeafDefect(e) => FatalError::Internal(e),
-            SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc)) => {
-                FatalError::OutOfNativeResources(loc)
-            }
-            SystemError::LeafRuntime(_) => unreachable!(),
-        }
-    }
 }

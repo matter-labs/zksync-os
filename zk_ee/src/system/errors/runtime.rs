@@ -11,9 +11,6 @@ pub enum RuntimeError {
 #[macro_export]
 macro_rules! out_of_native_resources {
     () => {
-        $crate::system::errors::runtime::RuntimeError(
-            $crate::system::errors::runtime::RuntimeErrorKind::OutOfNativeResources,
-            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
-        )
+        $crate::system::errors::runtime::RuntimeError::OutOfNativeResources($crate::location!())
     };
 }

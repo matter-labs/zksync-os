@@ -14,6 +14,7 @@ use crate::system_implementation::system::ExtraCheck;
 use alloc::collections::BTreeSet;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
+use evm_interpreter::errors::EvmSubsystemError;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
@@ -26,6 +27,7 @@ use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::history_map::HistoryMap;
 use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 use zk_ee::common_structs::PreimageType;
+use zk_ee::define_subsystem;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackCtor;
@@ -1017,3 +1019,10 @@ where
         Ok(())
     }
 }
+
+define_subsystem!(AccountCache,
+                  interface AccountCacheInterfaceError {},
+                  cascade AccountCacheCascadedError {
+                      EvmSubsystem(EvmSubsystemError),
+                  }
+);

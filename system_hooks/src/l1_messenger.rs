@@ -5,7 +5,6 @@
 use super::*;
 use arrayvec::ArrayVec;
 use core::fmt::Write;
-use errors::FatalError;
 use ruint::aliases::{B160, U256};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
@@ -24,7 +23,7 @@ pub fn l1_messenger_hook<'a, S: EthereumLikeTypes>(
     caller_ee: u8,
     system: &mut System<S>,
     return_memory: &'a mut [MaybeUninit<u8>],
-) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
 where
 {
     let ExternalCallRequest {
@@ -101,9 +100,7 @@ where
                 .write_fmt(format_args!("Out of gas during system hook\n"));
             Ok((make_error_return_state(resources), return_memory))
         }
-        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
-            Err(FatalError::OutOfNativeResources(loc))
-        }
+        Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => Err(e),
         Err(SystemError::LeafDefect(e)) => Err(e.into()),
     }
 }

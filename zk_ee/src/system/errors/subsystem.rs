@@ -5,7 +5,6 @@ use super::{
     location::ErrorLocation,
     no_errors::NoErrors,
     runtime::RuntimeError,
-    FatalError,
 };
 
 pub trait Subsystem {
@@ -212,15 +211,5 @@ impl<S: Subsystem> From<RuntimeError> for SubsystemError<S> {
 impl<S: Subsystem> From<InternalError> for SubsystemError<S> {
     fn from(v: InternalError) -> Self {
         SubsystemError::LeafDefect(v)
-    }
-}
-
-//TODO migrate away
-impl<S: Subsystem> From<FatalError> for SubsystemError<S> {
-    fn from(value: FatalError) -> Self {
-        match value {
-            FatalError::OutOfNativeResources(loc) => RuntimeError::OutOfNativeResources(loc).into(),
-            FatalError::Internal(internal_error) => internal_error.into(),
-        }
     }
 }

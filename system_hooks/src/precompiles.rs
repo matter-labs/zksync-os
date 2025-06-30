@@ -35,7 +35,7 @@ pub fn pure_system_function_hook_impl<'a, F: SystemFunction<S::Resources>, S: Et
     _caller_ee: u8,
     system: &mut System<S>,
     return_memory: &'a mut [MaybeUninit<u8>],
-) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError> {
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError> {
     let ExternalCallRequest {
         available_resources,
         calldata,
@@ -72,9 +72,9 @@ pub fn pure_system_function_hook_impl<'a, F: SystemFunction<S::Resources>, S: Et
             let (_, rest) = return_vec.destruct();
             Ok((make_error_return_state(resources), rest))
         }
-        Err(SystemFunctionError::System(SystemError::LeafRuntime(
-            RuntimeError::OutOfNativeResources(loc),
-        ))) => Err(FatalError::OutOfNativeResources(loc)),
+        Err(SystemFunctionError::System(
+            e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)),
+        )) => Err(e),
         Err(SystemFunctionError::System(SystemError::LeafDefect(e))) => Err(e.into()),
     }
 }

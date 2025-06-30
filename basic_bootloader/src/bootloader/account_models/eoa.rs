@@ -18,14 +18,13 @@ use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::ArrayBuilder;
-use zk_ee::system::errors::FatalError;
 use zk_ee::system::{
     errors::{runtime::RuntimeError, system::SystemError, UpdateQueryError},
     logger::Logger,
     EthereumLikeTypes, System, SystemTypes, *,
 };
 use zk_ee::utils::{b160_to_u256, u256_to_b160_checked};
-use zk_ee::{internal_error, out_of_native_resources_fatal_error};
+use zk_ee::{internal_error, out_of_native_resources};
 
 macro_rules! require_or_revert {
     ($b:expr, $m:expr, $s:expr, $system:expr) => {
@@ -358,7 +357,7 @@ where
                 }
                 UpdateQueryError::System(SystemError::LeafRuntime(
                     RuntimeError::OutOfNativeResources(_),
-                )) => TxError::oon_as_validation(out_of_native_resources_fatal_error!().into()),
+                )) => TxError::oon_as_validation(out_of_native_resources!().into()),
                 UpdateQueryError::System(SystemError::LeafDefect(e)) => e.into(),
             })?;
         Ok(())
@@ -499,10 +498,8 @@ where
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
-                    return Err(TxError::oon_as_validation(
-                        out_of_native_resources_fatal_error!().into(),
-                    ))
+                Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+                    return Err(TxError::oon_as_validation(e.into()))
                 }
                 Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
             };
@@ -555,7 +552,7 @@ where
             })
         }
         Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
-            return Err(FatalError::OutOfNativeResources(loc).into())
+            return Err(RuntimeError::OutOfNativeResources(loc).into())
         }
         Err(SystemError::LeafDefect(e)) => return Err(e.into()),
     };
