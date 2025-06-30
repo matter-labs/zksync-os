@@ -75,6 +75,15 @@ pub fn run(
     cycles: usize,
     non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
 ) -> [u32; 8] {
+    run_and_get_effective_cycles(img_path, diagnostics, cycles, non_determinism_source).0
+}
+
+pub fn run_and_get_effective_cycles(
+    img_path: PathBuf,
+    diagnostics: Option<DiagnosticsConfig>,
+    cycles: usize,
+    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
+) -> ([u32; 8], Option<u64>) {
     println!("ZK RISC-V simulator is starting");
 
     // Check that the bin file is present and readable.
@@ -98,16 +107,22 @@ pub fn run(
 
     risc_v_simulator::cycle::state::output_opcode_stats();
 
+    #[allow(unused_mut, unused_assignments)]
+    let mut block_effective = None;
+
     #[cfg(feature = "cycle_marker")]
     {
-        cycle_marker::print_cycle_markers();
+        block_effective = cycle_marker::print_cycle_markers();
     }
 
     // our convention is to return 32 bytes placed into registers x10-x17
 
     // TODO: move to new simulator
     #[allow(deprecated)]
-    final_state.registers[10..18].try_into().unwrap()
+    (
+        final_state.registers[10..18].try_into().unwrap(),
+        block_effective,
+    )
 }
 
 pub fn simulate_witness_tracing(

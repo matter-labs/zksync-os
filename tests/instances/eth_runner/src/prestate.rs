@@ -6,6 +6,8 @@ use ruint::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
+use crate::calltrace::CallTrace;
+
 #[repr(transparent)]
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct BitsOrd<const BITS: usize, const LIMBS: usize>(pub Bits<BITS, LIMBS>);
@@ -37,12 +39,12 @@ impl<const BITS: usize, const LIMBS: usize> From<&Bits<BITS, LIMBS>> for &BitsOr
 
 pub type BitsOrd160 = BitsOrd<{ B160::BITS }, { B160::LIMBS }>;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PrestateTrace {
     pub result: Vec<PrestateItem>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PrestateItem {
     pub result: BTreeMap<BitsOrd160, AccountState>,
 }
@@ -52,24 +54,24 @@ pub struct PrestateItem {
 // This means that we cannot construct an initial state only from
 // the pre side of the diff trace.
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DiffTrace {
     pub result: Vec<DiffItem>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DiffItem {
     pub result: StateDiff,
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct StateDiff {
     pub pre: BTreeMap<BitsOrd160, AccountState>,
     pub post: BTreeMap<BitsOrd160, AccountState>,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct AccountState {
     pub balance: Option<U256>,
     pub nonce: Option<u64>,
@@ -117,16 +119,14 @@ impl Cache {
         new_account_state: AccountState,
     ) -> AccountState {
         let cache_el = self.0.entry(address).or_default();
-        if cache_el.balance.is_none() {
+        if cache_el.balance.is_none() && cache_el.nonce.is_none() && cache_el.code.is_none() {
             // Balance not touched yet
             cache_el.balance = new_account_state.balance;
-        }
-        if cache_el.nonce.is_none() {
+
             // Nonce not touched yet
             // Tracer omits nonce when it's 0, we need to fill it in
             cache_el.nonce = Some(new_account_state.nonce.unwrap_or(0));
-        }
-        if cache_el.code.is_none() {
+
             // Code not touched yet
             cache_el.code = new_account_state.code;
         }
@@ -146,25 +146,48 @@ impl Cache {
 pub fn populate_prestate<const RANDOMIZED_TREE: bool>(
     chain: &mut Chain<RANDOMIZED_TREE>,
     ps: PrestateTrace,
+    calltrace: &CallTrace,
 ) -> Cache {
     let mut cache = Cache::default();
-    ps.result.into_iter().for_each(|item| {
-        item.result.into_iter().for_each(|(address, account)| {
-            let account = cache.filter_pre_account_state(address.0, account);
-            // Set account properties
-            chain.set_account_properties(
-                address.0,
-                account.balance,
-                account.nonce,
-                account.code.map(|b| b.to_vec()),
-            );
-            // Set storage slots
-            if let Some(storage) = account.storage {
-                storage
-                    .into_iter()
-                    .for_each(|(key, value)| chain.set_storage_slot(address.0, key, value))
-            }
+    ps.result
+        .into_iter()
+        .zip(calltrace.result.iter())
+        .for_each(|(item, tx_calltrace)| {
+            item.result.into_iter().for_each(|(address, account)| {
+                let account = cache.filter_pre_account_state(address.0, account);
+                // Set account properties
+                chain.set_account_properties(
+                    address.0,
+                    account.balance,
+                    account.nonce,
+                    account.code.map(|b| b.to_vec()),
+                );
+                // Set storage slots
+                if let Some(storage) = account.storage {
+                    storage
+                        .into_iter()
+                        .for_each(|(key, value)| chain.set_storage_slot(address.0, key, value))
+                }
+            });
+
+            // Add an empty read for deployed contracts. If they had balance, they
+            // should have been part of the prestate trace.
+            // We only add to cache to prevent future reads to be considered
+            // initial reads.
+            tx_calltrace
+                .result
+                .get_deployed_addresses()
+                .into_iter()
+                .for_each(|address| {
+                    // Only insert if not cached already
+                    let _cache_el = cache
+                        .0
+                        .entry(ruint::aliases::B160::from_be_bytes(address.into()))
+                        .or_insert(AccountState {
+                            balance: Some(ruint::aliases::U256::ZERO),
+                            ..Default::default()
+                        });
+                })
         });
-    });
     cache
 }
