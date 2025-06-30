@@ -203,7 +203,7 @@ where
 
         self.list.push(
             LogContent {
-                tx_number: tx_number,
+                tx_number,
                 data: GenericLogContentData::UserMsg(UserMsgData {
                     address: *address,
                     data,
@@ -232,7 +232,7 @@ where
 
         self.list.push(
             LogContent {
-                tx_number: tx_number,
+                tx_number,
                 data: GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }),
             },
             total_pubdata,

@@ -106,7 +106,6 @@ fn contract_deployer_hook_inner<S: EthereumLikeTypes>(
 ) -> Result<Result<&'static [u8], &'static str>, SystemError>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     // TODO: charge native
     let step_cost: S::Resources = S::Resources::from_ergs(Ergs(10));
