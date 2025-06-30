@@ -30,8 +30,8 @@ members = [
     "tests/instances/system_hooks",
     "cycle_marker", 
     "tests/binary_checker",
-    "supporting_crates/u256"
-]
+    "supporting_crates/u256",
+    "supporting_crates/bigint_riscv"]
 
 exclude = [
     "zksync_os",

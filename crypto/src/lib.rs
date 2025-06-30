@@ -39,7 +39,6 @@ pub fn init_lib() {
         bls12_381::fields::init();
         secp256k1::init();
         bigint_delegation::init();
-        bigint_riscv::init(); // TODO merge with bigint_delegation
     }
 }
 

@@ -18,7 +18,7 @@ pub fn run_forward<
     result_keeper: &mut impl ResultKeeperExt,
 ) {
     crypto::init_lib();
-    ::u256::init();
+    ::bigint_riscv::init();
 
     if let Err(err) = ForwardBootloader::run_prepared::<Config>(oracle, result_keeper) {
         panic!("Forward run failed with: {:?}", err)

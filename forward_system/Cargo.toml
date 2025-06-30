@@ -28,6 +28,7 @@ either = { version = "*", default-features = false }
 hex = { version = "*", optional = true }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 u256 = { path = "../supporting_crates/u256" }
+bigint_riscv = { path = "../supporting_crates/bigint_riscv" }
 bincode = "1.3"
 
 [features]

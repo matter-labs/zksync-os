@@ -25,14 +25,6 @@ mod risc_v;
 // #[cfg(any(all(target_arch = "riscv32", feature = "delegation"), test))]
 pub use self::risc_v::U256;
 
-pub fn init() {
-    // #[cfg(any(all(target_arch = "riscv32", feature = "delegation"), test))]
-    #[cfg(feature = "delegation")]
-    {
-        crypto::bigint_riscv::init();
-    }
-}
-
 #[derive(Debug)]
 pub struct BitIteratorBE<Slice: AsRef<[u64]>> {
     s: Slice,

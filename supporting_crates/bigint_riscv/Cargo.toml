@@ -1,5 +1,5 @@
 [package]
-name = "u256"
+name = "bigint_riscv"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,10 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-ruint = { version = "1.14", default-features = false }
-bigint_riscv = { path = "../bigint_riscv" }
+ruint = {version = "1.15.0", default-features=false}
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 
+
 [features]
-serde = ["ruint/serde", "bigint_riscv/serde"]
-delegation = []
+serde = []
