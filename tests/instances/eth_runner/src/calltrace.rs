@@ -1,4 +1,5 @@
 use alloy::primitives::{Address, B256, U256};
+use hex::FromHex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -53,5 +54,14 @@ impl CallTraceItem {
                 call.collect_deployed_addresses(acc);
             }
         }
+    }
+
+    pub fn has_call_to_unsupported_precompile(&self) -> bool {
+        self.to == Address::from_hex("0000000000000000000000000000000000000009").unwrap()
+            || self.to == Address::from_hex("000000000000000000000000000000000000000a").unwrap()
+            || self
+                .calls
+                .as_ref()
+                .is_some_and(|calls| calls.iter().any(|i| i.has_call_to_unsupported_precompile()))
     }
 }
