@@ -39,25 +39,6 @@ impl From<SystemError> for UpdateQueryError {
     }
 }
 
-//TODO  remove in favor of subsystem errors
-#[derive(Debug, PartialEq, Eq)]
-pub enum SystemFunctionError {
-    /// Invalid input passed to system function.
-    ///
-    /// For example, invalid length for pairing check, or values that don't represent a point for ecadd.
-    ///
-    /// Please note, that system function decides when to return this error.
-    /// For example ecrecover(according to EVM specs) returns empty output instead of error in all the cases.
-    InvalidInput,
-    System(SystemError),
-}
-
-impl From<SystemError> for SystemFunctionError {
-    fn from(e: SystemError) -> Self {
-        SystemFunctionError::System(e)
-    }
-}
-
 // TODO: try replacing all instantiations with a macro
 ///
 /// Internal error, should not be triggered by user input.
@@ -72,12 +53,6 @@ impl From<InternalError> for SystemError {
 }
 
 impl From<InternalError> for UpdateQueryError {
-    fn from(e: InternalError) -> Self {
-        SystemError::Defect(e).into()
-    }
-}
-
-impl From<InternalError> for SystemFunctionError {
     fn from(e: InternalError) -> Self {
         SystemError::Defect(e).into()
     }

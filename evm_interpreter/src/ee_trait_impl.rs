@@ -10,9 +10,9 @@ use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::memory::ArrayBuilder;
-use zk_ee::system::errors::{RuntimeError, SubsystemError, SystemFunctionError};
+use zk_ee::system::errors::{RuntimeError, SubsystemError};
 use zk_ee::system::{
-    errors::{InternalError, SystemError, UpdateQueryError},
+    errors::{InternalError, UpdateQueryError},
     *,
 };
 use zk_ee::types_config::SystemIOTypesConfig;
@@ -405,9 +405,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmSubsystemErrors>
                         )
                     })
                     .map_err(|e| match e {
-                        SystemFunctionError::System(SystemError::Runtime(
-                            RuntimeError::OutOfNativeResources,
-                        )) => SubsystemError::Runtime(RuntimeError::OutOfNativeResources),
+                        SubsystemError::Runtime(RuntimeError::OutOfNativeResources) => 
+                            SubsystemError::Runtime(RuntimeError::OutOfNativeResources),
                         _ => InternalError("Keccak in create2 cannot fail").into(),
                     })?;
                 let initcode_hash = Bytes32::from_array(initcode_hash.build());

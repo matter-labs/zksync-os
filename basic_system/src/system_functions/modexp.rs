@@ -6,8 +6,9 @@ use crypto::modexp::modexp;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
 use zk_ee::system::{
-    errors::{InternalError, RuntimeError, SystemError, SystemFunctionError},
-    Computational, Ergs, SystemFunction,
+    base_system_functions::{ModExpErrors, ModExpInterfaceError, SystemFunction},
+    errors::{AsInterfaceError, InternalError, RuntimeError, SubsystemError, SystemError},
+    Computational, Ergs,
 };
 
 ///
@@ -15,7 +16,7 @@ use zk_ee::system::{
 ///
 pub struct ModExpImpl;
 
-impl<R: Resources> SystemFunction<R> for ModExpImpl {
+impl<R: Resources> SystemFunction<R, ModExpErrors> for ModExpImpl {
     /// If the input size is less than expected - it will be padded with zeroes.
     /// If the input size is greater - redundant bytes will be ignored.
     ///
@@ -30,7 +31,7 @@ impl<R: Resources> SystemFunction<R> for ModExpImpl {
         output: &mut D,
         resources: &mut R,
         allocator: A,
-    ) -> Result<(), SystemFunctionError> {
+    ) -> Result<(), SubsystemError<ModExpErrors>> {
         cycle_marker::wrap_with_resources!("modexp", resources, {
             modexp_as_system_function_inner(input, output, resources, allocator)
         })
@@ -50,7 +51,7 @@ fn modexp_as_system_function_inner<D: ?Sized + Extend<u8>, A: Allocator + Clone,
     dst: &mut D,
     resources: &mut R,
     allocator: A,
-) -> Result<(), SystemFunctionError> {
+) -> Result<(), SubsystemError<ModExpErrors>> {
     // Check at least we have min gas
     let minimal_resources = resources_from_ergs::<R>(MODEXP_MINIMAL_COST_ERGS);
     if !resources.has_enough(&minimal_resources) {
@@ -86,10 +87,10 @@ fn modexp_as_system_function_inner<D: ?Sized + Extend<u8>, A: Allocator + Clone,
     // On 32 bit machine precompile will cost at least around ~ (2^32/8)^2/3 ~= 9e16 gas,
     // so should be ok in practice
     let Ok(base_len) = usize::try_from(base_len) else {
-        return Err(SystemFunctionError::InvalidInput);
+        return Err(AsInterfaceError(ModExpInterfaceError::InvalidInputLength).into());
     };
     let Ok(mod_len) = usize::try_from(mod_len) else {
-        return Err(SystemFunctionError::InvalidInput);
+        return Err(AsInterfaceError(ModExpInterfaceError::InvalidInputLength).into());
     };
 
     // Handle a special case when both the base and mod length are zero.
@@ -105,7 +106,7 @@ fn modexp_as_system_function_inner<D: ?Sized + Extend<u8>, A: Allocator + Clone,
     // So, on 32 bit machine precompile will cost at least around ~ 2^32*8/3 ~= 1e10 gas,
     // so should be ok in practice
     let Ok(exp_len) = usize::try_from(exp_len) else {
-        return Err(SystemFunctionError::InvalidInput);
+        return Err(AsInterfaceError(ModExpInterfaceError::InvalidInputLength).into());
     };
 
     // Used to extract ADJUSTED_EXPONENT_LENGTH.
@@ -174,7 +175,9 @@ pub fn ergs_cost(
     let multiplication_complexity = {
         let max_length = core::cmp::max(base_size, mod_size);
         let words = max_length.div_ceil(8);
-        words.checked_mul(words).ok_or(SystemError::Runtime(RuntimeError::OutOfErgs))?
+        words
+            .checked_mul(words)
+            .ok_or(RuntimeError::OutOfErgs)?
     };
     let iteration_count = {
         let ic = if exp_size <= 32 && exp_highp.is_zero() {
@@ -183,20 +186,20 @@ pub fn ergs_cost(
             exp_highp.bit_len() as u64 - 1
         } else {
             8u64.checked_mul(exp_size - 32)
-                .ok_or(SystemError::Runtime(RuntimeError::OutOfErgs))?
+                .ok_or(RuntimeError::OutOfErgs)?
                 .checked_add(core::cmp::max(1, exp_highp.bit_len() as u64) - 1)
-                .ok_or(SystemError::Runtime(RuntimeError::OutOfErgs))?
+                .ok_or(RuntimeError::OutOfErgs)?
         };
         core::cmp::max(1, ic)
     };
     let computed_gas = multiplication_complexity
         .checked_mul(iteration_count)
-        .ok_or(SystemError::Runtime(RuntimeError::OutOfErgs))?
+        .ok_or(RuntimeError::OutOfErgs)?
         .checked_div(3)
-        .ok_or(SystemError::Runtime(RuntimeError::OutOfErgs))?;
+        .ok_or(RuntimeError::OutOfErgs)?;
     let gas = core::cmp::max(200, computed_gas);
     let ergs = gas
         .checked_mul(ERGS_PER_GAS)
-        .ok_or(SystemError::Runtime(RuntimeError::OutOfErgs))?;
+        .ok_or(RuntimeError::OutOfErgs)?;
     Ok(Ergs(ergs))
 }

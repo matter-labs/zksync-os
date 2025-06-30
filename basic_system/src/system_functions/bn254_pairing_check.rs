@@ -8,15 +8,17 @@ use alloc::vec::Vec;
 use crypto::ark_ec::AffineRepr;
 use crypto::ark_ff::Zero;
 use crypto::ark_serialize::{CanonicalDeserialize, Valid};
-use zk_ee::system::errors::SystemFunctionError;
-use zk_ee::system::SystemFunction;
+use zk_ee::system::base_system_functions::{
+    Bn254PairingCheckErrors, Bn254PairingCheckInterfaceError, SystemFunction,
+};
+use zk_ee::system::errors::{AsInterfaceError, SubsystemError};
 
 ///
 /// bn254 pairing check system function implementation.
 ///
 pub struct Bn254PairingCheckImpl;
 
-impl<R: Resources> SystemFunction<R> for Bn254PairingCheckImpl {
+impl<R: Resources> SystemFunction<R, Bn254PairingCheckErrors> for Bn254PairingCheckImpl {
     /// Returns `OutOfGas` if not enough resources provided.
     /// Returns `InvalidInput` error if the input size is not divisible by 192
     /// or failed to create affine points from inputs
@@ -25,7 +27,7 @@ impl<R: Resources> SystemFunction<R> for Bn254PairingCheckImpl {
         dst: &mut D,
         resources: &mut R,
         allocator: A,
-    ) -> Result<(), SystemFunctionError> {
+    ) -> Result<(), SubsystemError<Bn254PairingCheckErrors>> {
         cycle_marker::wrap_with_resources!("bn254_pairing", resources, {
             let num_pairs = src.len() / 192;
             let ergs_cost = BN254_PAIRING_STATIC_COST_ERGS
@@ -39,14 +41,16 @@ impl<R: Resources> SystemFunction<R> for Bn254PairingCheckImpl {
             ))?;
 
             if src.len() % 192 != 0 {
-                return Err(SystemFunctionError::InvalidInput);
+                return Err(
+                    AsInterfaceError(Bn254PairingCheckInterfaceError::InvalidPairingSize).into(),
+                );
             }
 
             let success = if src.is_empty() {
                 true
             } else {
                 bn254_pairing_check_inner::<A>(num_pairs, src, allocator)
-                    .map_err(|_| SystemFunctionError::InvalidInput)?
+                    .map_err(|_| AsInterfaceError(Bn254PairingCheckInterfaceError::InvalidPoint))?
             };
 
             dst.extend(core::iter::repeat_n(0, 31).chain(core::iter::once(success as u8)));

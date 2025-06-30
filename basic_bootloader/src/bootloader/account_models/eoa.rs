@@ -127,7 +127,7 @@ where
             &mut ecrecover_output,
             resources,
             system.get_allocator(),
-        )?;
+        ).map_err(SystemError::from)?;
 
         if ecrecover_output.is_empty() {
             return Err(InvalidTransaction::IncorrectFrom {
