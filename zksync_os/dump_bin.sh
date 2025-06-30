@@ -40,7 +40,7 @@ case "$TYPE" in
     TEXT_NAME="server_app_logging_enabled.text"
     ;;
   benchmarking)
-    FEATURES="$FEATURES,proof_running_system/cycle_marker,proof_running_system/unlimited_native"
+    FEATURES="$FEATURES,proof_running_system/cycle_marker,proof_running_system/unlimited_native,proof_running_system/p256_precompile"
     BIN_NAME="app.bin"
     ELF_NAME="app.elf"
     TEXT_NAME="app.text"
