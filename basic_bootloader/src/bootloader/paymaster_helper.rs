@@ -14,20 +14,19 @@ use zk_ee::system::{EthereumLikeTypes, System};
 impl<S: EthereumLikeTypes> BasicBootloader<S> {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)]
-    pub(crate) fn validate_and_pay_for_paymaster_transaction(
+    pub(crate) fn validate_and_pay_for_paymaster_transaction<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemoryBuffers<'a>,
         transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         paymaster: B160,
         _caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
-    ) -> Result<ReturnValues<S>, TxError>
+    ) -> Result<ReturnValues<'a, S>, TxError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         let _ = system.get_logger().write_fmt(format_args!(
             "About to start call to validateAndPayForPaymasterTransaction\n"
@@ -41,7 +40,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
@@ -174,9 +173,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         _validation_pubdata: u64,
         _resources: &mut S::Resources,
     ) -> Result<bool, FatalError>
-    where
-        S::Memory: MemorySubsystemExt,
-    {
+where {
         todo!();
 
         // let _ = system
@@ -324,20 +321,19 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     /// )
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)]
-    pub fn call_account_method(
+    pub fn call_account_method<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        memories: RunnerMemoryBuffers<'a>,
         transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         from: B160,
         selector: &[u8],
         resources: &mut S::Resources,
-    ) -> Result<CompletedExecution<S>, FatalError>
+    ) -> Result<CompletedExecution<'a, S>, FatalError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         let header_length = 4 + U256::BYTES * 3;
         let calldata_start = TX_OFFSET - header_length;
@@ -359,12 +355,10 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         let resources_for_tx = resources.clone();
 
-        assert!(callstack.len() == 0);
-
         BasicBootloader::run_single_interaction(
             system,
             system_functions,
-            callstack,
+            memories,
             calldata,
             &BOOTLOADER_FORMAL_ADDRESS,
             &from,

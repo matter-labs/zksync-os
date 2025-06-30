@@ -11,17 +11,16 @@ use ruint::aliases::{B160, U256};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType, kv_markers::MAX_EVENT_TOPICS, system::{
         errors::SystemError, logger::Logger, CallModifier, CompletedExecution, ExternalCallRequest,
-        MemorySubsystem, MemorySubsystemExt, OSManagedRegion,
     }, utils::{b160_to_u256, Bytes32}
 };
 
-pub fn l1_messenger_hook<S: EthereumLikeTypes>(
+pub fn l1_messenger_hook<'a, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
     caller_ee: u8,
     system: &mut System<S>,
-) -> Result<CompletedExecution<S>, FatalError>
+    return_memory: &'a mut [MaybeUninit<u8>],
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
 where
-    S::Memory: MemorySubsystemExt,
 {
     let ExternalCallRequest {
         available_resources,
@@ -58,7 +57,7 @@ where
     }
 
     if error {
-        return Ok(make_error_return_state(system, available_resources));
+        return Ok((make_error_return_state(available_resources), return_memory));
     }
 
     let mut resources = available_resources;
@@ -73,22 +72,27 @@ where
     );
 
     match result {
-        Ok(Ok(return_data)) => Ok(make_return_state_from_returndata_region(
-            system,
-            resources,
-            return_data,
-        )),
+        Ok(Ok(return_data)) => {
+            let mut return_memory = SliceVec::new(return_memory);
+            // TODO: check endianness
+            return_memory.extend(return_data.as_u8_ref().iter().copied());
+            let (returndata, rest) = return_memory.destruct();
+            Ok((
+                make_return_state_from_returndata_region(resources, returndata),
+                rest,
+            ))
+        }
         Ok(Err(e)) => {
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Revert: {:?}\n", e));
-            Ok(make_error_return_state(system, resources))
+            Ok((make_error_return_state(resources), return_memory))
         }
         Err(SystemError::OutOfErgs) => {
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Out of gas during system hook\n"));
-            Ok(make_error_return_state(system, resources))
+            Ok((make_error_return_state(resources), return_memory))
         }
         Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
         Err(SystemError::Internal(e)) => Err(e.into()),
@@ -112,15 +116,8 @@ fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
     caller: B160,
     caller_ee: u8,
     is_static: bool,
-) -> Result<
-    Result<
-        <<S::Memory as MemorySubsystem>::ManagedRegion as OSManagedRegion>::OSManagedImmutableSlice,
-        &'static str,
-    >,
-    SystemError,
->
+) -> Result<Result<Bytes32, &'static str>, SystemError>
 where
-    S::Memory: MemorySubsystemExt,
 {
     // TODO: charge native
     let step_cost: S::Resources = S::Resources::from_ergs(Ergs(10));
@@ -231,13 +228,7 @@ where
                     &calldata[4..]
             )?;
 
-            // TODO: check endianness
-            let return_data = system
-                .memory
-                .copy_into_return_memory(&message_hash.as_u8_ref())
-                .expect("must copy into returndata")
-                .take_slice(0..32);
-            Ok(Ok(return_data))
+            Ok(Ok(message_hash))
         }
         _ => Ok(Err("L1 messenger: unknown selector")),
     }

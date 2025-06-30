@@ -97,7 +97,15 @@ where
         is_access_list: bool,
     ) -> Result<AddressItem<A>, SystemError> {
         let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
+            ExecutionEnvironmentType::NoEE => {
+                if is_access_list {
+                    // For access lists, EVM charges the full cost as many
+                    // times as an account is in the list.
+                    Ergs(2400 * ERGS_PER_GAS)
+                } else {
+                    Ergs::empty()
+                }
+            }
             ExecutionEnvironmentType::EVM =>
             // For selfdestruct, there's no warm access cost
             {
@@ -121,14 +129,7 @@ where
 
                 // - first get a hash of properties from storage
                 match ee_type {
-                    ExecutionEnvironmentType::NoEE => {
-                        // Access list accesses are always done in NoEE.
-                        // Note that, for that reason, the warm cost isn't charged,
-                        // so here we charge full cold cost.
-                        if is_access_list {
-                            resources.charge(&R::from_ergs(Ergs(2400 * ERGS_PER_GAS)))?
-                        }
-                    }
+                    ExecutionEnvironmentType::NoEE => {}
                     ExecutionEnvironmentType::EVM => {
                         let mut cost: R = if evm_interpreter::utils::is_precompile(&address) {
                             R::empty() // We've charged the access already.
@@ -195,14 +196,7 @@ where
                     if initialized_element == false {
                         // Element exists in cache, but wasn't touched in current tx yet
                         match ee_type {
-                            ExecutionEnvironmentType::NoEE => {
-                                // Access list accesses are always done in NoEE.
-                                // Note that, for that reason, the warm cost isn't charged,
-                                // so here we charge full cold cost.
-                                if is_access_list {
-                                    resources.charge(&R::from_ergs(Ergs(2400 * ERGS_PER_GAS)))?
-                                }
-                            }
+                            ExecutionEnvironmentType::NoEE => {}
                             ExecutionEnvironmentType::EVM => {
                                 let mut cost: R = if evm_interpreter::utils::is_precompile(&address)
                                 {
@@ -811,6 +805,7 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
+        in_constructor: bool,
     ) -> Result<(), SystemError> {
         let cur_tx = self.current_tx_number;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
@@ -830,7 +825,15 @@ where
         let same_address = at_address == nominal_token_beneficiary;
         let transfer_amount = account_data.current().value().balance;
 
-        if account_data.current().metadata().deployed_in_tx == cur_tx {
+        // We consider two cases: either deconstruction happens within the same
+        // tx as the address was deployed or it happens in constructor code.
+        // Note that the contract is only deployed after finalization of
+        // constructor, so in the second case `deployed_in_tx` won't be set
+        // yet.
+        let should_be_deconstructed =
+            account_data.current().metadata().deployed_in_tx == cur_tx || in_constructor;
+
+        if should_be_deconstructed {
             account_data.update::<_, SystemError>(|cache_record| {
                 cache_record.deconstruct();
                 Ok(())
@@ -857,7 +860,7 @@ where
                 }
                 UpdateQueryError::System(e) => e,
             })?
-        } else if account_data.current().metadata().deployed_in_tx == cur_tx {
+        } else if should_be_deconstructed {
             account_data.update(|cache_record| {
                 cache_record.update(|v, _| {
                     v.balance = U256::ZERO;
@@ -900,14 +903,22 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
     ) -> Result<(), InternalError> {
         // Actually deconstructing accounts
-        for i in self.cache.iter_altered_since_commit() {
-            if i.current().appearance() == Appearance::Deconstructed {
-                storage
-                    .0
-                    .clear_state_impl(i.key())
-                    .expect("must clear state for code deconstruction in same TX");
-            }
-        }
+        self.cache
+            .apply_to_last_record_of_pending_changes(|key, head_history_record| {
+                if head_history_record.value.appearance() == Appearance::Deconstructed {
+                    head_history_record.value.update(|x, _| {
+                        x.nonce = 0;
+                        x.balance = U256::ZERO;
+                        Ok(())
+                    })?;
+                    storage
+                        .0
+                        .clear_state_impl(key)
+                        .expect("must clear state for code deconstruction in same TX");
+                }
+                Ok(())
+            })?;
+
         Ok(())
     }
 }

@@ -179,7 +179,7 @@ pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> Vec<u8> {
         });
     let reserved_dynamic = access_list.map(encode_access_list);
 
-    let tx = encode_tx(
+    encode_tx(
         tx_type,
         from,
         to,
@@ -195,9 +195,7 @@ pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> Vec<u8> {
         None,
         reserved_dynamic,
         is_eip155,
-    );
-    println!("Tx: {}", hex::encode(tx.clone()));
-    tx
+    )
 }
 
 ///
