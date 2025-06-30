@@ -136,7 +136,7 @@ where
         let Self {
             mut storage_cache,
             mut preimages_cache,
-            mut account_data_cache,
+            account_data_cache,
             allocator,
         } = self;
         // flush accounts into storage
