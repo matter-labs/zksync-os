@@ -115,7 +115,7 @@ fn run_block(
 
     let miner = block.result.header.miner;
     let block_context = block.get_block_context();
-    let (transactions, skipped) = block.get_transactions();
+    let (transactions, skipped) = block.get_transactions(&call);
     let receipts: Vec<TransactionReceipt> = receipts
         .result
         .into_iter()

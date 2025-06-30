@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use crate::calltrace::CallTrace;
 use rig::log::warn;
 use rig::utils::encode_alloy_rpc_tx;
 use ruint::aliases::{B160, U256};
@@ -29,19 +30,22 @@ impl Block {
         }
     }
 
-    pub fn get_transactions(self) -> (Vec<Vec<u8>>, HashSet<usize>) {
+    pub fn get_transactions(self, calltrace: &CallTrace) -> (Vec<Vec<u8>>, HashSet<usize>) {
         let mut skipped: HashSet<usize> = HashSet::new();
         (
             self.result
                 .transactions
                 .into_transactions()
                 .enumerate()
-                .filter_map(|(i, tx)| {
-                    // Skip unsupported txs
-                    if tx.transaction_type.is_none_or(|t| t == 0u8)
+                .zip(calltrace.result.iter())
+                .filter_map(|((i, tx), calltrace)| {
+                    // Skip unsupported txs or tx that call into unsupported precompiles
+                    let calls_unsupported_percompile =
+                        || calltrace.result.has_call_to_unsupported_precompile();
+                    let supported_tx_type = tx.transaction_type.is_none_or(|t| t == 0u8)
                         || tx.transaction_type == Some(1u8)
-                        || tx.transaction_type == Some(2u8)
-                    {
+                        || tx.transaction_type == Some(2u8);
+                    if supported_tx_type && !calls_unsupported_percompile() {
                         Some(encode_alloy_rpc_tx(tx))
                     } else {
                         warn!(
