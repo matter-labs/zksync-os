@@ -5,10 +5,10 @@
 //!
 use super::*;
 use core::fmt::Write;
-use errors::UpdateQueryError;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
+use zk_ee::system::errors::UpdateQueryError;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::logger::Logger;
 

@@ -4,15 +4,18 @@ use crate::system_functions::bytereverse;
 use crypto::ark_ec::CurveGroup;
 use crypto::ark_ff::PrimeField;
 use crypto::ark_serialize::{CanonicalSerialize, Valid};
-use zk_ee::system::errors::SystemFunctionError;
-use zk_ee::system::SystemFunction;
+use zk_ee::interface_error;
+use zk_ee::system::base_system_functions::{
+    Bn254AddErrors, Bn254AddInterfaceError, SystemFunction,
+};
+use zk_ee::system::errors::subsystem::SubsystemError;
 
 ///
 /// bn254 ecadd system function implementation.
 ///
 pub struct Bn254AddImpl;
 
-impl<R: Resources> SystemFunction<R> for Bn254AddImpl {
+impl<R: Resources> SystemFunction<R, Bn254AddErrors> for Bn254AddImpl {
     /// Returns the size in bytes of output.
     ///
     /// If the input size is less than expected - it will be padded with zeroes.
@@ -26,7 +29,7 @@ impl<R: Resources> SystemFunction<R> for Bn254AddImpl {
         dst: &mut D,
         resources: &mut R,
         _: A,
-    ) -> Result<(), SystemFunctionError> {
+    ) -> Result<(), SubsystemError<Bn254AddErrors>> {
         cycle_marker::wrap_with_resources!("bn254_ecadd", resources, {
             bn254_ecadd_as_system_function_inner(src, dst, resources)
         })
@@ -41,7 +44,7 @@ fn bn254_ecadd_as_system_function_inner<
     src: &S,
     dst: &mut D,
     resources: &mut R,
-) -> Result<(), SystemFunctionError> {
+) -> Result<(), SubsystemError<Bn254AddErrors>> {
     resources.charge(&R::from_ergs_and_native(
         BN254_ECADD_COST_ERGS,
         <R::Native as zk_ee::system::Computational>::from_computational(BN254_ECADD_NATIVE_COST),
@@ -59,7 +62,9 @@ fn bn254_ecadd_as_system_function_inner<
         let x1 = it.next().unwrap_unchecked();
         let y1 = it.next().unwrap_unchecked();
 
-        bn254_ecadd_inner(x0, y0, x1, y1).map_err(|_| SystemFunctionError::InvalidInput)?
+        bn254_ecadd_inner(x0, y0, x1, y1).map_err(|_| -> SubsystemError<_> {
+            interface_error!(Bn254AddInterfaceError::InvalidPoint)
+        })?
     };
 
     dst.extend(serialized_result);

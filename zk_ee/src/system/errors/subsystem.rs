@@ -7,7 +7,7 @@ use super::{
     runtime::RuntimeError,
 };
 
-pub trait Subsystem {
+pub trait Subsystem: core::fmt::Debug {
     const SUBSYSTEM_NAME: &'static str;
     type Interface: InterfaceErrorKind = NoErrors;
     type Cascaded: ICascadedInner = NoErrors;

@@ -18,7 +18,10 @@ use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::{
     internal_error,
     system::{
-        errors::{runtime::RuntimeError, system::SystemError, SystemFunctionError},
+        errors::{
+            no_errors::NoErrors, runtime::RuntimeError, subsystem::SubsystemError,
+            system::SystemError,
+        },
         CallModifier, Resources, System,
     },
 };
@@ -30,12 +33,17 @@ use zk_ee::{
 /// NOTE: "pure" here means that we do not expect to trigger any state changes (and calling with static flag is ok),
 /// so for all the purposes we remain in the callee frame in terms of memory for efficiency
 ///
-pub fn pure_system_function_hook_impl<'a, F: SystemFunction<S::Resources>, S: EthereumLikeTypes>(
+pub fn pure_system_function_hook_impl<'a, F, E, S>(
     request: ExternalCallRequest<S>,
     _caller_ee: u8,
     system: &mut System<S>,
     return_memory: &'a mut [MaybeUninit<u8>],
-) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError> {
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
+where
+    F: SystemFunction<S::Resources, E>,
+    E: Subsystem,
+    S: EthereumLikeTypes,
+{
     let ExternalCallRequest {
         available_resources,
         calldata,
@@ -63,37 +71,63 @@ pub fn pure_system_function_hook_impl<'a, F: SystemFunction<S::Resources>, S: Et
                 rest,
             ))
         }
-        Err(SystemFunctionError::System(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))))
-        | Err(SystemFunctionError::InvalidInput) => {
+        Err(e @ SubsystemError::LeafRuntime(RuntimeError::OutOfErgs(_)))
+        | Err(e @ SubsystemError::Cascaded(_))
+        | Err(e @ SubsystemError::LeafUsage(_)) => {
             let _ = system
                 .get_logger()
-                .write_fmt(format_args!("Out of gas during system hook\n"));
+                .write_fmt(format_args!("Out of gas during system hook\nError:{e:?}"));
             resources.exhaust_ergs();
             let (_, rest) = return_vec.destruct();
             Ok((make_error_return_state(resources), rest))
         }
-        Err(SystemFunctionError::System(
-            e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)),
-        )) => Err(e),
-        Err(SystemFunctionError::System(SystemError::LeafDefect(e))) => Err(e.into()),
+        Err(SubsystemError::LeafRuntime(e @ RuntimeError::OutOfNativeResources(_))) => {
+            Err(SystemError::LeafRuntime(e))
+        }
+        Err(SubsystemError::LeafDefect(e)) => Err(e.into()),
     }
 }
 
 /// as there is no system function for identity(memcopy)
 /// we define one following the system functions interface
 /// to use same logic as for other hooks
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum IdentityPrecompileInterfaceError {}
+
+impl zk_ee::system::errors::interface::InterfaceErrorKind for IdentityPrecompileInterfaceError {
+    fn get_name(&self) -> &'static str {
+        match *self {}
+    }
+}
+
+impl Into<&'static str> for IdentityPrecompileInterfaceError {
+    fn into(self) -> &'static str {
+        match self {}
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdentityPrecompileErrors;
+
+impl Subsystem for IdentityPrecompileErrors {
+    const SUBSYSTEM_NAME: &'static str = "IdentityPrecompile";
+    type Interface = IdentityPrecompileInterfaceError;
+    type Cascaded = NoErrors;
+}
+
 pub struct IdentityPrecompile;
 const ID_STATIC_COST_ERGS: Ergs = Ergs(15 * ERGS_PER_GAS);
 const ID_WORD_COST_ERGS: Ergs = Ergs(3 * ERGS_PER_GAS);
 const ID_BASE_NATIVE_COST: u64 = 20;
 const ID_BYTE_NATIVE_COST: u64 = 10;
-impl<R: Resources> SystemFunction<R> for IdentityPrecompile {
+impl<R: Resources> SystemFunction<R, IdentityPrecompileErrors> for IdentityPrecompile {
     fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         src: &[u8],
         dst: &mut D,
         resources: &mut R,
         _: A,
-    ) -> Result<(), SystemFunctionError> {
+    ) -> Result<(), SubsystemError<IdentityPrecompileErrors>> {
         cycle_marker::wrap_with_resources!("id", resources, {
             let cost_ergs =
                 ID_STATIC_COST_ERGS + ID_WORD_COST_ERGS.times((src.len() as u64).div_ceil(32));

@@ -1,9 +1,7 @@
 use crate::bootloader::supported_ees::errors::EESubsystemError;
 use ruint::aliases::{B160, U256};
-use zk_ee::internal_error;
 use zk_ee::system::errors::{
     internal::InternalError, runtime::RuntimeError, subsystem::SubsystemError, system::SystemError,
-    SystemFunctionError,
 };
 
 // Taken from revm, contains changes
@@ -175,18 +173,6 @@ impl From<SystemError> for TxError {
                 Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
             }
             SystemError::LeafDefect(e) => TxError::Internal(e.into()),
-        }
-    }
-}
-
-//TODO remove
-impl From<SystemFunctionError> for TxError {
-    fn from(e: SystemFunctionError) -> Self {
-        match e {
-            SystemFunctionError::InvalidInput => {
-                TxError::Internal(internal_error!("Invalid system function input").into())
-            }
-            SystemFunctionError::System(e) => e.into(),
         }
     }
 }

@@ -1,15 +1,15 @@
 use super::*;
 use crate::cost_constants::{ECRECOVER_COST_ERGS, ECRECOVER_NATIVE_COST};
-use zk_ee::system::errors::SystemFunctionError;
+use zk_ee::system::base_system_functions::{Secp256k1ECRecoverErrors, SystemFunction};
+use zk_ee::system::errors::{subsystem::SubsystemError, system::SystemError};
 use zk_ee::system::Computational;
-use zk_ee::system::SystemFunction;
 
 ///
 /// ecrecover system function implementation.
 ///
 pub struct EcRecoverImpl;
 
-impl<R: Resources> SystemFunction<R> for EcRecoverImpl {
+impl<R: Resources> SystemFunction<R, Secp256k1ECRecoverErrors> for EcRecoverImpl {
     /// If the input size is less than expected - it will be padded with zeroes.
     /// If the input size is greater - redundant bytes will be ignored.
     /// If the input is invalid(v != 27|28 or failed to recover signer) returns `Ok(0)`.
@@ -20,10 +20,12 @@ impl<R: Resources> SystemFunction<R> for EcRecoverImpl {
         output: &mut D,
         resources: &mut R,
         _allocator: A,
-    ) -> Result<(), SystemFunctionError> {
-        cycle_marker::wrap_with_resources!("ecrecover", resources, {
-            ecrecover_as_system_function_inner(input, output, resources)
-        })
+    ) -> Result<(), SubsystemError<Secp256k1ECRecoverErrors>> {
+        Ok(cycle_marker::wrap_with_resources!(
+            "ecrecover",
+            resources,
+            { ecrecover_as_system_function_inner(input, output, resources) }
+        )?)
     }
 }
 
@@ -35,7 +37,7 @@ fn ecrecover_as_system_function_inner<
     src: &S,
     dst: &mut D,
     resources: &mut R,
-) -> Result<(), SystemFunctionError> {
+) -> Result<(), SystemError> {
     resources.charge(&R::from_ergs_and_native(
         ECRECOVER_COST_ERGS,
         R::Native::from_computational(ECRECOVER_NATIVE_COST),

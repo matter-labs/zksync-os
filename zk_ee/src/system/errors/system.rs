@@ -1,5 +1,6 @@
 use super::{
     internal::InternalError,
+    no_errors::NoErrors,
     runtime::RuntimeError,
     subsystem::{Subsystem, SubsystemError},
 };
@@ -28,6 +29,20 @@ impl From<InternalError> for SystemError {
 impl From<RuntimeError> for SystemError {
     fn from(v: RuntimeError) -> Self {
         Self::LeafRuntime(v)
+    }
+}
+
+impl<S> From<SubsystemError<S>> for SystemError
+where
+    S: Subsystem<Interface = NoErrors, Cascaded = NoErrors>,
+{
+    fn from(value: SubsystemError<S>) -> Self {
+        match value {
+            SubsystemError::LeafUsage(_) => unreachable!(),
+            SubsystemError::LeafDefect(internal_error) => internal_error.into(),
+            SubsystemError::LeafRuntime(runtime_error) => runtime_error.into(),
+            SubsystemError::Cascaded(_) => unreachable!(),
+        }
     }
 }
 
