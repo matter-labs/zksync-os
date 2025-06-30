@@ -183,7 +183,7 @@ where
                     let cache_item = account_data_cache.cache.get(&account_address).ok_or(())?;
                     let (l, r) = cache_item.get_initial_and_last_values().ok_or(())?;
                     let should_publish_bytecode = preimages_cache
-                        .storage
+                        .publication_storage
                         .contains_key(&r.value().bytecode_hash);
                     AccountProperties::diff_compression::<PROOF_ENV, _, _>(
                         l.value(),

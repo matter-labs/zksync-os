@@ -74,6 +74,10 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
         }
     }
 
+    pub fn contains_key(&self, key: &Bytes32) -> bool {
+        self.cache.get(key).is_some()
+    }
+
     pub fn add_preimage(
         &mut self,
         hash: &Bytes32,

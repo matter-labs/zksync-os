@@ -66,7 +66,7 @@ where
     }
 
     /// Get history of an element by key
-    pub fn get<'s>(&'s mut self, key: &'s K) -> Option<HistoryMapItemRef<'s, K, V, A>> {
+    pub fn get<'s>(&'s self, key: &'s K) -> Option<HistoryMapItemRef<'s, K, V, A>> {
         self.btree
             .get(key)
             .map(|ec| HistoryMapItemRef { key, history: ec })

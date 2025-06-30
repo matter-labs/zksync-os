@@ -367,7 +367,7 @@ where
             let initial = element_history.initial();
 
             let should_publish_bytecode = preimages_cache
-                .storage
+                .publication_storage
                 .contains_key(&current.value().bytecode_hash);
             pubdata_used += AccountProperties::diff_compression_length(
                 initial.value(),
