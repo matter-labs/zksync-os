@@ -7,7 +7,7 @@ use ruint::aliases::U256;
 use storage_models::common_structs::PreimageCacheModel;
 use zk_ee::common_structs::{PreimageType, ValueDiffCompressionStrategy};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::system::errors::{InternalError, SystemError};
+use zk_ee::system::errors::{InternalError, RuntimeError, SystemError};
 use zk_ee::system::{IOResultKeeper, Resources};
 use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::types_config::EthereumIOTypesConfig;
@@ -337,11 +337,13 @@ impl AccountProperties {
                         oracle,
                     )
                     .map_err(|err| match err {
-                        SystemError::OutOfErgs => InternalError("Out of ergs on infinite ergs"),
-                        SystemError::OutOfNativeResources => {
+                        SystemError::Runtime(RuntimeError::OutOfErgs) => {
+                            InternalError("Out of ergs on infinite ergs")
+                        }
+                        SystemError::Runtime(RuntimeError::OutOfNativeResources) => {
                             InternalError("Out of native on infinite")
                         }
-                        SystemError::Internal(i) => i,
+                        SystemError::Defect(i) => i,
                     })?;
                 hasher.update(bytecode);
                 result_keeper.pubdata(bytecode);

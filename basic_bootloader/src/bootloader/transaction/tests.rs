@@ -1,6 +1,5 @@
 use crate::bootloader::constants::TX_OFFSET;
 use crate::bootloader::transaction::ZkSyncTransaction;
-use ruint::aliases::U256;
 
 #[test]
 fn test_parsing() {

@@ -9,7 +9,8 @@ use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use crypto::blake2s::Blake2s256;
 use crypto::MiniDigest;
-use errors::SystemFunctionError;
+use errors::RuntimeError;
+use errors::SubsystemError;
 use evm_interpreter::gas_constants::LOG;
 use evm_interpreter::gas_constants::LOGDATA;
 use evm_interpreter::gas_constants::LOGTOPIC;
@@ -164,7 +165,7 @@ where
                 let cost = static_cost + topic_cost + len_cost;
                 let ergs = cost
                     .checked_mul(ERGS_PER_GAS)
-                    .ok_or(SystemError::OutOfErgs)?;
+                    .ok_or(SystemError::Runtime(RuntimeError::OutOfErgs))?;
                 Ergs(ergs)
             }
             _ => return Err(InternalError("Unsupported EE").into()),
@@ -216,12 +217,7 @@ where
         // TODO(EVM-1078): for Era backward compatibility we may need to add events for l2 to l1 log and l1 message
 
         let mut data_hash = ArrayBuilder::default();
-        Keccak256Impl::execute(&data, &mut data_hash, resources, self.allocator.clone()).map_err(
-            |e| match e {
-                SystemFunctionError::InvalidInput => unreachable!(),
-                SystemFunctionError::System(e) => e,
-            },
-        )?;
+        Keccak256Impl::execute(&data, &mut data_hash, resources, self.allocator.clone()).map_err(SystemError::from)?;
         let data_hash = Bytes32::from_array(data_hash.build());
         let data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
         self.logs_storage

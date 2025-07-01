@@ -1,8 +1,10 @@
 use super::*;
 
 use crate::cost_constants::P256_VERIFY_COST_ERGS;
-use zk_ee::system::errors::SystemFunctionError;
-use zk_ee::system::SystemFunction;
+use zk_ee::system::{
+    base_system_functions::{P256VerifyErrors, SystemFunction},
+    errors::{AsInterfaceError, SubsystemError}, P256VerifyInterfaceError,
+};
 
 // TODO(EVM-1072): think about error cases, as others follow evm specs
 /// p256 verify system function implementation.
@@ -15,13 +17,13 @@ use zk_ee::system::SystemFunction;
 /// If dst len less than needed(1) returns `InternalError`.
 pub struct P256VerifyImpl;
 
-impl<R: Resources> SystemFunction<R> for P256VerifyImpl {
+impl<R: Resources> SystemFunction<R, P256VerifyErrors> for P256VerifyImpl {
     fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         src: &[u8],
         dst: &mut D,
         resources: &mut R,
         _: A,
-    ) -> Result<(), SystemFunctionError> {
+    ) -> Result<(), SubsystemError<P256VerifyErrors>> {
         cycle_marker::wrap_with_resources!("p256_verify", resources, {
             p256_verify_as_system_function_inner(src, dst, resources)
         })
@@ -36,9 +38,9 @@ fn p256_verify_as_system_function_inner<
     src: &S,
     dst: &mut D,
     resources: &mut R,
-) -> Result<(), SystemFunctionError> {
+) -> Result<(), SubsystemError<P256VerifyErrors>> {
     if src.len() != 160 {
-        return Err(SystemFunctionError::InvalidInput);
+        return Err(AsInterfaceError(P256VerifyInterfaceError::InvalidInputLength).into());
     }
     resources.charge(&R::from_ergs(P256_VERIFY_COST_ERGS))?;
     // digest, r, s, x, y

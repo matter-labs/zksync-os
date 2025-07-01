@@ -1,6 +1,7 @@
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
+use errors::BootloaderSubsystemError;
 use system_hooks::HooksStorage;
-use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
+use zk_ee::system::errors::{InternalError, RuntimeError, SystemError, UpdateQueryError};
 use zk_ee::system::CallModifier;
 use zk_ee::system::{EthereumLikeTypes, System};
 
@@ -60,7 +61,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         mut resources: S::Resources,
         nominal_token_value: &U256,
         should_make_frame: bool,
-    ) -> Result<CompletedExecution<'a, S>, FatalError>
+    ) -> Result<CompletedExecution<'a, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -84,9 +85,13 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                     )
                 })
                 .map_err(|e| match e {
-                    SystemError::OutOfErgs => unreachable!("OOG on infinite resources"),
-                    SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
-                    SystemError::Internal(e) => FatalError::Internal(e),
+                    SystemError::Runtime(RuntimeError::OutOfErgs) => {
+                        unreachable!("OOG on infinite resources")
+                    }
+                    SystemError::Runtime(RuntimeError::OutOfNativeResources) => {
+                        RuntimeError::OutOfNativeResources.into()
+                    }
+                    SystemError::Defect(e) => BootloaderSubsystemError::Defect(e),
                 })?
                 .ee_version
                 .0

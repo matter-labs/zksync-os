@@ -5,6 +5,7 @@
 //!
 use super::*;
 use core::fmt::Write;
+use errors::RuntimeError;
 use evm_interpreter::MAX_CODE_SIZE;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -15,7 +16,7 @@ pub fn contract_deployer_hook<'a, S: EthereumLikeTypes>(
     caller_ee: u8,
     system: &mut System<S>,
     return_memory: &'a mut [MaybeUninit<u8>],
-) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -78,14 +79,16 @@ where
                     .write_fmt(format_args!("Revert: {:?}\n", e));
                 make_error_return_state(resources)
             }
-            Err(SystemError::OutOfErgs) => {
+            Err(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
                 let _ = system
                     .get_logger()
                     .write_fmt(format_args!("Out of gas during system hook\n"));
                 make_error_return_state(resources)
             }
-            Err(SystemError::OutOfNativeResources) => return Err(FatalError::OutOfNativeResources),
-            Err(SystemError::Internal(e)) => return Err(e.into()),
+            Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
+                return Err(SystemError::Runtime(RuntimeError::OutOfNativeResources))
+            }
+            Err(SystemError::Defect(e)) => return Err(e.into()),
         },
         return_memory,
     ))
@@ -146,9 +149,9 @@ where
                     "Contract deployer failure: setDeployedCodeEVM called with invalid calldata",
                 ));
             }
-            let address = B160::try_from_be_slice(&calldata[12..32]).ok_or(
-                SystemError::Internal(InternalError("Failed to create B160 from 20 byte array")),
-            )?;
+            let address = B160::try_from_be_slice(&calldata[12..32]).ok_or(SystemError::Defect(
+                InternalError("Failed to create B160 from 20 byte array"),
+            ))?;
 
             let bytecode_offset: usize = match U256::from_be_slice(&calldata[32..64]).try_into() {
                 Ok(offset) => offset,

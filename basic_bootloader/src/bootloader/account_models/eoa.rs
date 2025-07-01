@@ -4,15 +4,15 @@ use crate::bootloader::constants::PAYMASTER_APPROVAL_BASED_SELECTOR;
 use crate::bootloader::constants::PAYMASTER_GENERAL_SELECTOR;
 use crate::bootloader::constants::{DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS, ERC20_ALLOWANCE_SELECTOR};
 use crate::bootloader::constants::{SPECIAL_ADDRESS_TO_WASM_DEPLOY, TX_OFFSET};
-use crate::bootloader::errors::AAMethod;
 use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
+use crate::bootloader::errors::{AAMethod, BootloaderSubsystemError};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use core::fmt::Write;
-use errors::FatalError;
+use errors::RuntimeError;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
@@ -94,17 +94,17 @@ where
                     ));
                 }
             }
-            Err(SystemError::OutOfErgs) => {
+            Err(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfGasDuringValidation,
                 ))
             }
-            Err(SystemError::OutOfNativeResources) => {
+            Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfNativeResourcesDuringValidation,
                 ))
             }
-            Err(SystemError::Internal(e)) => return Err(TxError::Internal(e)),
+            Err(SystemError::Defect(e)) => return Err(TxError::Internal(e.into())),
         }
 
         let signature = transaction.signature();
@@ -127,7 +127,8 @@ where
             &mut ecrecover_output,
             resources,
             system.get_allocator(),
-        )?;
+        )
+        .map_err(SystemError::from)?;
 
         if ecrecover_output.is_empty() {
             return Err(InvalidTransaction::IncorrectFrom {
@@ -176,7 +177,7 @@ where
         // This data is read before bumping nonce
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         // panic is not reachable, validated by the structure
         let from = transaction.from.read();
 
@@ -338,6 +339,7 @@ where
                 &amount,
             )
             .map_err(|e| match e {
+                //TODO this match is dirty
                 UpdateQueryError::NumericBoundsError => {
                     match system
                         .io
@@ -352,13 +354,13 @@ where
                         Err(e) => e.into(),
                     }
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs) => {
+                UpdateQueryError::System(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
                     TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
                 }
-                UpdateQueryError::System(SystemError::OutOfNativeResources) => {
-                    TxError::oon_as_validation(FatalError::OutOfNativeResources)
-                }
-                UpdateQueryError::System(SystemError::Internal(e)) => e.into(),
+                UpdateQueryError::System(SystemError::Runtime(
+                    RuntimeError::OutOfNativeResources,
+                )) => TxError::oon_as_validation(RuntimeError::OutOfNativeResources.into()),
+                UpdateQueryError::System(SystemError::Defect(e)) => e.into(),
             })?;
         Ok(())
     }
@@ -493,15 +495,17 @@ where
             let ergs_to_spend = Ergs(initcode_gas_cost.saturating_mul(ERGS_PER_GAS));
             match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
                 Ok(_) => (),
-                Err(SystemError::OutOfErgs) => {
+                Err(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
                     return Err(TxError::Validation(
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(SystemError::OutOfNativeResources) => {
-                    return Err(TxError::oon_as_validation(FatalError::OutOfNativeResources))
+                Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
+                    return Err(TxError::oon_as_validation(
+                        RuntimeError::OutOfNativeResources.into(),
+                    ))
                 }
-                Err(SystemError::Internal(e)) => return Err(TxError::Internal(e)),
+                Err(SystemError::Defect(e)) => return Err(TxError::Internal(e.into())),
             };
         }
         Ok(())
@@ -534,7 +538,7 @@ fn process_deployment<'a, S: EthereumLikeTypes>(
     from: B160,
     nominal_token_value: U256,
     existing_nonce: u64,
-) -> Result<TxExecutionResult<'a, S>, FatalError>
+) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -543,7 +547,7 @@ where
     let ergs_to_spend = Ergs(extra_gas_cost.saturating_mul(ERGS_PER_GAS));
     match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
         Ok(_) => (),
-        Err(SystemError::OutOfErgs) => {
+        Err(SystemError::Runtime(RuntimeError::OutOfErgs)) => {
             return Ok(TxExecutionResult {
                 return_values: ReturnValues::empty(),
                 resources_returned: S::Resources::empty(),
@@ -551,8 +555,10 @@ where
                 deployed_address: DeployedAddress::RevertedNoAddress,
             })
         }
-        Err(SystemError::OutOfNativeResources) => return Err(FatalError::OutOfNativeResources),
-        Err(SystemError::Internal(e)) => return Err(e.into()),
+        Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
+            return Err(RuntimeError::OutOfNativeResources.into())
+        }
+        Err(SystemError::Defect(e)) => return Err(e.into()),
     };
     // Next check max initcode size
     if main_calldata.len() > MAX_INITCODE_SIZE {

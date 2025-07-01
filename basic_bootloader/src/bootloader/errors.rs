@@ -1,5 +1,7 @@
+use crate::bootloader::supported_ees::errors::EESubsystemError;
 use ruint::aliases::{B160, U256};
-use zk_ee::system::errors::{FatalError, InternalError, SystemError, SystemFunctionError};
+use zk_ee::system::errors::{InternalError, SubsystemError, SystemError};
+use zk_ee::system::errors::{RuntimeError, SubsystemErrorTypes};
 
 // Taken from revm, contains changes
 ///
@@ -126,7 +128,13 @@ pub enum TxError {
     /// shouldn't terminate the block execution
     Validation(InvalidTransaction),
     /// Internal error.
-    Internal(InternalError),
+    Internal(BootloaderSubsystemError),
+}
+
+impl From<BootloaderSubsystemError> for TxError {
+    fn from(v: BootloaderSubsystemError) -> Self {
+        Self::Internal(v)
+    }
 }
 
 impl From<InvalidTransaction> for TxError {
@@ -137,19 +145,19 @@ impl From<InvalidTransaction> for TxError {
 
 impl From<InternalError> for TxError {
     fn from(e: InternalError) -> Self {
-        TxError::Internal(e)
+        TxError::Internal(e.into())
     }
 }
 
 impl TxError {
     /// Do not implement From to avoid accidentally wrapping
     /// an out of native during Tx execution as a validation error.
-    pub fn oon_as_validation(e: FatalError) -> Self {
+    pub fn oon_as_validation(e: BootloaderSubsystemError) -> Self {
         match e {
-            FatalError::Internal(e) => Self::Internal(e),
-            FatalError::OutOfNativeResources => {
+            SubsystemError::Runtime(_) => {
                 Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
             }
+            other => Self::Internal(other),
         }
     }
 }
@@ -157,24 +165,13 @@ impl TxError {
 impl From<SystemError> for TxError {
     fn from(e: SystemError) -> Self {
         match e {
-            SystemError::OutOfErgs => {
+            SystemError::Runtime(RuntimeError::OutOfErgs) => {
                 TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
             }
-            SystemError::OutOfNativeResources => {
+            SystemError::Runtime(RuntimeError::OutOfNativeResources) => {
                 Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
             }
-            SystemError::Internal(e) => TxError::Internal(e),
-        }
-    }
-}
-
-impl From<SystemFunctionError> for TxError {
-    fn from(e: SystemFunctionError) -> Self {
-        match e {
-            SystemFunctionError::InvalidInput => {
-                TxError::Internal(InternalError("Invalid system function input"))
-            }
-            SystemFunctionError::System(e) => e.into(),
+            SystemError::Defect(e) => TxError::Internal(e.into()),
         }
     }
 }
@@ -184,8 +181,8 @@ macro_rules! revert_on_recoverable {
     ($e:expr) => {
         match $e {
             Ok(x) => Ok(x),
-            Err(SystemError::Internal(err)) => Err(err),
-            Err(SystemError::OutOfResources) => {
+            Err(SystemError::Defect(err)) => Err(err),
+            Err(SystemError::Runtime(RuntimeError::OutOfNativeResources)) => {
                 return Ok(ExecutionResult::Revert {
                     output: MemoryRegion::empty_shared(),
                 })
@@ -238,3 +235,26 @@ macro_rules! require_internal {
         }
     };
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InterfaceError {}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ErrorsDescription;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WrappedError {
+    EEError(EESubsystemError),
+}
+
+impl From<EESubsystemError> for WrappedError {
+    fn from(v: EESubsystemError) -> Self {
+        Self::EEError(v)
+    }
+}
+
+impl SubsystemErrorTypes for ErrorsDescription {
+    type Interface = InterfaceError;
+    type Wrapped = WrappedError;
+}
+
+pub type BootloaderSubsystemError = SubsystemError<ErrorsDescription>;
