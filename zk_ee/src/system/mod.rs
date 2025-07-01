@@ -85,7 +85,15 @@ impl<S: SystemTypes> System<S> {
     }
 
     pub fn get_mix_hash(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.mix_hash
+        #[cfg(feature = "prevrandao")]
+        {
+            self.metadata.block_level_metadata.mix_hash
+        }
+
+        #[cfg(not(feature = "prevrandao"))]
+        {
+            ruint::aliases::U256::ONE
+        }
     }
 
     pub fn get_blockhash(&self, block_number: u64) -> ruint::aliases::U256 {
