@@ -1,7 +1,8 @@
-use super::{delegation::*, utils::*, DelegatedU256};
+use super::{delegation::*, DelegatedU256};
 use core::mem::MaybeUninit;
 
 static mut SCRATCH_FOR_MUT: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
+#[cfg(target_arch = "riscv32")]
 static mut SCRATCH_FOR_REF: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
 
 #[cfg(target_arch = "riscv32")]
@@ -17,6 +18,7 @@ impl Clone for DelegatedU256 {
             // We have to do `uninit().assume_init()` because calling `assume_init()` later may trigger a stack-to-stack copy
             // And this is safe becasue there are no references to result, and on risc-v all memory is init by default
             #[allow(invalid_value)]
+            #[allow(clippy::uninit_assumed_init)]
             let mut result = MaybeUninit::<Self>::uninit().assume_init();
             with_ram_operand(self.0.as_ptr().cast(), |src_ptr| {
                 let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(&mut result as *mut Self, src_ptr);
@@ -92,6 +94,7 @@ pub(super) unsafe fn copy_to_scratch(operand: *const DelegatedU256) -> *mut Dele
     }
 
     #[cfg(not(target_arch = "riscv32"))]
+    #[allow(static_mut_refs)]
     {
         SCRATCH_FOR_MUT.as_mut_ptr().write(operand.read());
         SCRATCH_FOR_MUT.as_mut_ptr()

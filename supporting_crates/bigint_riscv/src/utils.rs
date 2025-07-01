@@ -22,6 +22,7 @@ impl DelegatedU256 {
     pub const fn from_be_bytes(input: &[u8; 32]) -> Self {
         unsafe {
             #[allow(invalid_value)]
+            #[allow(clippy::uninit_assumed_init)]
             let mut result: DelegatedU256 = MaybeUninit::uninit().assume_init();
             let ptr = &mut result.0[0] as *mut u64;
             let src: *const [u8; 8] = input.as_ptr_range().end.cast();
@@ -44,6 +45,7 @@ impl DelegatedU256 {
     pub fn from_le_bytes(input: &[u8; 32]) -> Self {
         unsafe {
             #[allow(invalid_value)]
+            #[allow(clippy::uninit_assumed_init)]
             let mut result: DelegatedU256 = MaybeUninit::uninit().assume_init();
             let ptr = &mut result.0[0] as *mut u64;
             let src: *const [u8; 8] = input.as_ptr().cast();

@@ -8,6 +8,7 @@ pub static mut ZERO: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
 pub static mut ONE: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
 
 pub(super) fn init() {
+    #[allow(static_mut_refs)]
     unsafe {
         ZERO.write(DelegatedU256::ZERO);
         ONE.write(DelegatedU256::ONE);
@@ -65,6 +66,7 @@ impl DelegatedU256 {
 
     pub fn zero() -> Self {
         #[allow(invalid_value)]
+        #[allow(clippy::uninit_assumed_init)]
         let mut result: Self = unsafe { MaybeUninit::uninit().assume_init() };
         result.write_zero();
         result
@@ -72,24 +74,28 @@ impl DelegatedU256 {
 
     pub fn one() -> Self {
         #[allow(invalid_value)]
+        #[allow(clippy::uninit_assumed_init)]
         let mut result: Self = unsafe { MaybeUninit::uninit().assume_init() };
         result.write_one();
         result
     }
 
     pub fn write_zero(&mut self) {
+        #[allow(static_mut_refs)]
         unsafe {
             let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(self as *mut Self, ZERO.as_ptr());
         }
     }
 
     pub fn write_one(&mut self) {
+        #[allow(static_mut_refs)]
         unsafe {
             let _ = bigint_op_delegation::<MEMCOPY_BIT_IDX>(self as *mut Self, ONE.as_ptr());
         }
     }
 
     pub fn is_zero_mut(&mut self) -> bool {
+        #[allow(static_mut_refs)]
         let eq = unsafe { bigint_op_delegation::<EQ_OP_BIT_IDX>(self as *mut Self, ZERO.as_ptr()) };
 
         eq != 0
@@ -99,6 +105,7 @@ impl DelegatedU256 {
         let eq = unsafe {
             let src = copy_if_needed(self as *const Self);
             // we can cast constness since equality is non-destructive
+            #[allow(static_mut_refs)]
             bigint_op_delegation::<EQ_OP_BIT_IDX>(src.cast_mut(), ZERO.as_ptr())
         };
 
@@ -109,6 +116,7 @@ impl DelegatedU256 {
         let eq = unsafe {
             let src = copy_if_needed(self as *const Self);
             // we can cast constness since equality is non-destructive
+            #[allow(static_mut_refs)]
             bigint_op_delegation::<EQ_OP_BIT_IDX>(src.cast_mut(), ONE.as_ptr())
         };
 
@@ -202,6 +210,7 @@ impl DelegatedU256 {
     pub fn widening_mul_assign(&mut self, rhs: &Self) -> Self {
         unsafe {
             #[allow(invalid_value)]
+            #[allow(clippy::uninit_assumed_init)]
             let mut result = MaybeUninit::uninit().assume_init();
             // no need to copy to scratch since self cannot be in ROM
             bigint_op_delegation::<MEMCOPY_BIT_IDX>(&mut result as *mut Self, self as *const Self);
@@ -429,12 +438,14 @@ impl ShlAssign<u32> for DelegatedU256 {
 }
 
 pub unsafe fn write_zero_into_ptr(operand: *mut DelegatedU256) {
+    #[allow(static_mut_refs)]
     unsafe {
         bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand, ZERO.as_ptr());
     }
 }
 
 pub unsafe fn write_one_into_ptr(operand: *mut DelegatedU256) {
+    #[allow(static_mut_refs)]
     unsafe {
         bigint_op_delegation::<MEMCOPY_BIT_IDX>(operand, ONE.as_ptr());
     }
