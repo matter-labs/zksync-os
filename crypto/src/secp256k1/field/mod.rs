@@ -257,7 +257,6 @@ impl FieldElement {
     }
 }
 
-
 impl MulAssign<&FieldElement> for FieldElement {
     fn mul_assign(&mut self, rhs: &Self) {
         self.mul_in_place(rhs);

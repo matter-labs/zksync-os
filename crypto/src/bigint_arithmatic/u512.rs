@@ -1,5 +1,5 @@
-use core::{borrow, mem::MaybeUninit};
 use crate::ark_ff_delegation::BigInt;
+use core::{borrow, mem::MaybeUninit};
 
 use super::u256;
 use bigint_riscv::*;
@@ -7,7 +7,7 @@ use bigint_riscv::*;
 #[inline(always)]
 pub fn from_ark_ref(a: &BigInt<8>) -> &DelegatedU512 {
     debug_assert_eq!(
-        core::mem::align_of_val(a), 
+        core::mem::align_of_val(a),
         core::mem::align_of::<DelegatedU512>()
     );
     debug_assert_eq!(
@@ -15,15 +15,13 @@ pub fn from_ark_ref(a: &BigInt<8>) -> &DelegatedU512 {
         core::mem::size_of::<DelegatedU512>()
     );
 
-    unsafe {
-        core::mem::transmute(a)
-    }
+    unsafe { core::mem::transmute(a) }
 }
 
 #[inline(always)]
 pub fn from_ark_mut(a: &mut BigInt<8>) -> &mut DelegatedU512 {
     debug_assert_eq!(
-        core::mem::align_of_val(a), 
+        core::mem::align_of_val(a),
         core::mem::align_of::<DelegatedU512>()
     );
     debug_assert_eq!(
@@ -31,9 +29,7 @@ pub fn from_ark_mut(a: &mut BigInt<8>) -> &mut DelegatedU512 {
         core::mem::size_of::<DelegatedU512>()
     );
 
-    unsafe {
-        core::mem::transmute(a)
-    }
+    unsafe { core::mem::transmute(a) }
 }
 
 pub trait DelegatedModParams: Default {
@@ -67,12 +63,11 @@ impl DelegatedU512 {
         high.copy_from_slice(high_ref);
 
         Self(
-            DelegatedU256::from_limbs(low), 
-            DelegatedU256::from_limbs(high)
+            DelegatedU256::from_limbs(low),
+            DelegatedU256::from_limbs(high),
         )
     }
 }
-
 
 /// Tries to get `self` in the range `[0..modulus)`.
 /// Note: we assume `self < 2*modulus`, otherwise the result might not be in the range
@@ -81,7 +76,9 @@ impl DelegatedU512 {
 /// It is the responsibility of the caller to make sure that is the case
 unsafe fn sub_mod_with_carry<T: DelegatedModParams>(a: &mut DelegatedU512, carry: bool) {
     let borrow = bigint_op_delegation::<SUB_OP_BIT_IDX>(&mut a.0, &T::modulus().0) != 0;
-    let borrow = bigint_op_delegation_with_carry_bit::<SUB_OP_BIT_IDX>(&mut a.1, &T::modulus().1, borrow) != 0;
+    let borrow =
+        bigint_op_delegation_with_carry_bit::<SUB_OP_BIT_IDX>(&mut a.1, &T::modulus().1, borrow)
+            != 0;
 
     if borrow & !carry {
         let carry = bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut a.0, &T::modulus().0) != 0;
@@ -134,8 +131,13 @@ pub unsafe fn double_mod_assign<T: DelegatedModParams>(a: &mut DelegatedU512) {
 /// It is the responsibility of the caller to make sure that is the case
 pub unsafe fn neg_mod_assign<T: DelegatedModParams>(a: &mut DelegatedU512) {
     if !a.0.is_zero_mut() && !a.1.is_zero_mut() {
-        let borrow = bigint_op_delegation::<SUB_AND_NEGATE_OP_BIT_IDX>(&mut a.0, &T::modulus().0) != 0;
-        bigint_op_delegation_with_carry_bit::<SUB_AND_NEGATE_OP_BIT_IDX>(&mut a.1, &T::modulus().1, borrow);
+        let borrow =
+            bigint_op_delegation::<SUB_AND_NEGATE_OP_BIT_IDX>(&mut a.0, &T::modulus().0) != 0;
+        bigint_op_delegation_with_carry_bit::<SUB_AND_NEGATE_OP_BIT_IDX>(
+            &mut a.1,
+            &T::modulus().1,
+            borrow,
+        );
     }
 }
 
@@ -145,7 +147,10 @@ pub unsafe fn neg_mod_assign<T: DelegatedModParams>(a: &mut DelegatedU512) {
 /// # Safety
 /// `DelegationMontParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
-pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams>(a: &mut DelegatedU512, b: &DelegatedU512) {
+pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams>(
+    a: &mut DelegatedU512,
+    b: &DelegatedU512,
+) {
     let (r0, r1) = {
         let b0 = copy_if_needed(&b.0);
         let mut r0 = a.0.clone();
@@ -213,10 +218,10 @@ pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams>(a: &mut DelegatedU51
     let mut new_r0 = a.0.clone();
 
     let mut carry_1 = new_r0.clone();
-    
+
     bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(&mut new_r0, b1);
-    let of = bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut new_r0, &r0) != 0; 
-    bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(&mut carry_1, b1); 
+    let of = bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut new_r0, &r0) != 0;
+    bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(&mut carry_1, b1);
     if of {
         bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut carry_1, ONE.as_ptr());
     }
@@ -230,7 +235,7 @@ pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams>(a: &mut DelegatedU51
     let mut carry_2_low = T::modulus().0.clone();
 
     bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(&mut carry_2_low, &reduction_k);
-    let of  = bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut carry_2_low, &r0) != 0;
+    let of = bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut carry_2_low, &r0) != 0;
 
     let mut carry_2 = T::modulus().0.clone();
 
@@ -261,10 +266,10 @@ pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams>(a: &mut DelegatedU51
     bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(&mut a.0, &reduction_k);
 
     let of0 = bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut a.0, &r1) != 0;
-    let of1 = bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut a.0, &carry_2) !=0;
+    let of1 = bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut a.0, &carry_2) != 0;
 
     let mut new_carry_2 = T::modulus().1.clone();
-    bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(&mut new_carry_2,&reduction_k);
+    bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(&mut new_carry_2, &reduction_k);
 
     if of0 || of1 {
         let temp = DelegatedU256::from(of0 as u64 + of1 as u64);

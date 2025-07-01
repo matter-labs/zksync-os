@@ -22,7 +22,8 @@ static mut REDUCTION_CONST: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
 const MONT_REDUCTION_CONSTANT_LIMBS: [u64; 4] =
     BigIntMacro!("27711634432943687283656245953990505159342029877880134060146103271536583507967").0;
 
-const MONT_REDUCTION_CONSTANT: DelegatedU256 = DelegatedU256::from_limbs(MONT_REDUCTION_CONSTANT_LIMBS);
+const MONT_REDUCTION_CONSTANT: DelegatedU256 =
+    DelegatedU256::from_limbs(MONT_REDUCTION_CONSTANT_LIMBS);
 const MODULUS_CONSTANT: DelegatedU256 = DelegatedU256::from_limbs(FrConfig::MODULUS.0);
 
 #[derive(Default, Debug)]
@@ -85,10 +86,7 @@ impl MontConfig<4> for FrConfig {
 
     fn into_bigint(mut a: Fr) -> BigInt<4> {
         unsafe {
-            mul_assign_montgomery::<FrParams>(
-                from_ark_mut(&mut a.0),
-                &DelegatedU256::one()
-            );
+            mul_assign_montgomery::<FrParams>(from_ark_mut(&mut a.0), &DelegatedU256::one());
         }
         a.0
     }
@@ -96,57 +94,42 @@ impl MontConfig<4> for FrConfig {
     #[inline(always)]
     fn add_assign(a: &mut Fr, b: &Fr) {
         unsafe {
-            add_mod_assign::<FrParams>(
-                from_ark_mut(&mut a.0),
-                from_ark_ref(&b.0)
-            );
+            add_mod_assign::<FrParams>(from_ark_mut(&mut a.0), from_ark_ref(&b.0));
         }
     }
 
     #[inline(always)]
     fn sub_assign(a: &mut Fr, b: &Fr) {
         unsafe {
-            sub_mod_assign::<FrParams>(
-                from_ark_mut(&mut a.0),
-                from_ark_ref(&b.0)
-            );
+            sub_mod_assign::<FrParams>(from_ark_mut(&mut a.0), from_ark_ref(&b.0));
         }
     }
 
     #[inline(always)]
     fn double_in_place(a: &mut Fr) {
         unsafe {
-            double_mod_assign::<FrParams>(
-                from_ark_mut(&mut a.0)
-            );
+            double_mod_assign::<FrParams>(from_ark_mut(&mut a.0));
         }
     }
 
     #[inline(always)]
     fn neg_in_place(a: &mut Fr) {
         unsafe {
-            neg_mod_assign::<FrParams>(
-                from_ark_mut(&mut a.0)
-            );
+            neg_mod_assign::<FrParams>(from_ark_mut(&mut a.0));
         }
     }
 
     #[inline(always)]
     fn mul_assign(a: &mut Fr, b: &Fr) {
         unsafe {
-            mul_assign_montgomery::<FrParams>(
-                from_ark_mut(&mut a.0),
-                from_ark_ref(&b.0)
-            );
+            mul_assign_montgomery::<FrParams>(from_ark_mut(&mut a.0), from_ark_ref(&b.0));
         }
     }
 
     #[inline(always)]
     fn square_in_place(a: &mut Fr) {
         unsafe {
-            square_assign_montgomery::<FrParams>(
-                from_ark_mut(&mut a.0)
-            );
+            square_assign_montgomery::<FrParams>(from_ark_mut(&mut a.0));
         }
     }
 
@@ -188,9 +171,7 @@ fn __gcd_inverse(a: &Fr) -> Option<Fr> {
             if b.0.is_even() {
                 b.0.div2();
             } else {
-                let _carry = from_ark_mut(&mut b.0).overflowing_add_assign(
-                    from_ark_ref(&modulus)
-                );
+                let _carry = from_ark_mut(&mut b.0).overflowing_add_assign(from_ark_ref(&modulus));
                 b.0.div2();
                 // if !Self::MODULUS_HAS_SPARE_BIT && carry {
                 //     (b.0).0[N - 1] |= 1 << 63;

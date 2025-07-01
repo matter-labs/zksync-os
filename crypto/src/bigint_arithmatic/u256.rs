@@ -6,7 +6,7 @@ use bigint_riscv::*;
 #[inline(always)]
 pub fn from_ark_ref(a: &BigInt<4>) -> &DelegatedU256 {
     debug_assert_eq!(
-        core::mem::align_of_val(a), 
+        core::mem::align_of_val(a),
         core::mem::align_of::<DelegatedU256>()
     );
     debug_assert_eq!(
@@ -14,16 +14,14 @@ pub fn from_ark_ref(a: &BigInt<4>) -> &DelegatedU256 {
         core::mem::size_of::<DelegatedU256>()
     );
 
-    unsafe {
-        core::mem::transmute(a)
-    }
+    unsafe { core::mem::transmute(a) }
 }
 
 #[inline(always)]
 
 pub fn from_ark_mut(a: &mut BigInt<4>) -> &mut DelegatedU256 {
     debug_assert_eq!(
-        core::mem::align_of_val(a), 
+        core::mem::align_of_val(a),
         core::mem::align_of::<DelegatedU256>()
     );
     debug_assert_eq!(
@@ -31,9 +29,7 @@ pub fn from_ark_mut(a: &mut BigInt<4>) -> &mut DelegatedU256 {
         core::mem::size_of::<DelegatedU256>()
     );
 
-    unsafe {
-        core::mem::transmute(a)
-    }
+    unsafe { core::mem::transmute(a) }
 }
 
 pub trait DelegatedModParams: Default {
@@ -120,7 +116,10 @@ pub unsafe fn neg_mod_assign<T: DelegatedModParams>(a: &mut DelegatedU256) {
 /// # Safety
 /// `DelegationBarretParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
-pub unsafe fn mul_assign_barret<T: DelegatedBarretParams>(a: &mut DelegatedU256, b: &DelegatedU256) {
+pub unsafe fn mul_assign_barret<T: DelegatedBarretParams>(
+    a: &mut DelegatedU256,
+    b: &DelegatedU256,
+) {
     let b = copy_if_needed(b);
 
     let mut temp0 = a.clone();
@@ -169,7 +168,10 @@ pub unsafe fn square_assign_montgomery<T: DelegatedMontParams>(a: &mut Delegated
 /// It's the responsibility of the caller to make sure the parameters are in montgomerry form.
 /// # Safety
 ///
-pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams>(a: &mut DelegatedU256, b: &DelegatedU256) {
+pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams>(
+    a: &mut DelegatedU256,
+    b: &DelegatedU256,
+) {
     let b = copy_if_needed(b);
 
     let mut temp0 = a.clone();

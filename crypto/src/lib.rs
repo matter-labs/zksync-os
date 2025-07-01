@@ -30,7 +30,6 @@ pub use ark_ec;
 pub use ark_ff;
 pub use ark_serialize;
 
-
 pub fn init_lib() {
     #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
     {

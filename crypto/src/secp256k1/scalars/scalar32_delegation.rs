@@ -110,7 +110,13 @@ impl ScalarInner {
 
     #[cfg(test)]
     pub(super) fn from_u128(n: u128) -> Self {
-        Self(DelegatedU256::from_limbs([n as u64, (n >> 64) as u64, 0, 0])).to_representation()
+        Self(DelegatedU256::from_limbs([
+            n as u64,
+            (n >> 64) as u64,
+            0,
+            0,
+        ]))
+        .to_representation()
     }
 
     pub(super) const fn from_be_hex_unchecked(hex: &str) -> Self {

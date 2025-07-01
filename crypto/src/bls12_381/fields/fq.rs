@@ -57,7 +57,8 @@ const MONT_REDUCTION_CONSTANT_LIMBS: [u64; 4] =
     BigIntMacro!("11726191667098586211898467594267748916577995138249226639719947807923487178749").0;
 
 const MODULUS_CONSTANT: DelegatedU512 = DelegatedU512::from_limbs(MODULUS_CONSTANT_LIMBS);
-const MONT_REDUCTION_CONSTANT: DelegatedU256 = DelegatedU256::from_limbs(MONT_REDUCTION_CONSTANT_LIMBS);
+const MONT_REDUCTION_CONSTANT: DelegatedU256 =
+    DelegatedU256::from_limbs(MONT_REDUCTION_CONSTANT_LIMBS);
 
 // a^-1 = a ^ (p - 2)
 const INVERSION_POW: [u64; 6] = [
@@ -89,10 +90,7 @@ impl MontConfig<NUM_LIMBS> for FqConfig {
     fn into_bigint(mut a: Fp<MontBackend<Self, NUM_LIMBS>, NUM_LIMBS>) -> BigInt<NUM_LIMBS> {
         // for now it's just a multiplication with 1 literal
         unsafe {
-            mul_assign_montgomery::<FqParams>(
-                from_ark_mut(&mut a.0),
-                &DelegatedU512::one()
-            );
+            mul_assign_montgomery::<FqParams>(from_ark_mut(&mut a.0), &DelegatedU512::one());
         }
         a.0
     }
@@ -135,56 +133,41 @@ impl MontConfig<NUM_LIMBS> for FqConfig {
     #[inline(always)]
     fn add_assign(a: &mut F, b: &F) {
         unsafe {
-            add_mod_assign::<FqParams>(
-                from_ark_mut(&mut a.0),
-                from_ark_ref(&b.0)    
-            );
+            add_mod_assign::<FqParams>(from_ark_mut(&mut a.0), from_ark_ref(&b.0));
         }
     }
     #[inline(always)]
     fn sub_assign(a: &mut F, b: &F) {
         unsafe {
-            sub_mod_assign::<FqParams>(
-                from_ark_mut(&mut a.0),
-                from_ark_ref(&b.0)
-            );
+            sub_mod_assign::<FqParams>(from_ark_mut(&mut a.0), from_ark_ref(&b.0));
         }
     }
 
     #[inline(always)]
     fn double_in_place(a: &mut F) {
         unsafe {
-            double_mod_assign::<FqParams>(
-                from_ark_mut(&mut a.0)
-            );
+            double_mod_assign::<FqParams>(from_ark_mut(&mut a.0));
         }
     }
     /// Sets `a = -a`.
     #[inline(always)]
     fn neg_in_place(a: &mut F) {
         unsafe {
-            neg_mod_assign::<FqParams>(
-                from_ark_mut(&mut a.0)
-            );
+            neg_mod_assign::<FqParams>(from_ark_mut(&mut a.0));
         }
     }
 
     #[inline(always)]
     fn mul_assign(a: &mut F, b: &F) {
         unsafe {
-            mul_assign_montgomery::<FqParams>(
-                from_ark_mut(&mut a.0), 
-                from_ark_ref(&b.0)
-            );
+            mul_assign_montgomery::<FqParams>(from_ark_mut(&mut a.0), from_ark_ref(&b.0));
         }
     }
 
     #[inline(always)]
     fn square_in_place(a: &mut F) {
         unsafe {
-            square_assign_montgomery::<FqParams>(
-                from_ark_mut(&mut a.0)
-            );
+            square_assign_montgomery::<FqParams>(from_ark_mut(&mut a.0));
         }
     }
 

@@ -29,10 +29,12 @@ const MODULUS_CONSTANT_LIMBS: [u64; 4] =
     BigIntMacro!("21888242871839275222246405745257275088696311157297823662689037894645226208583").0;
 // it's - MODULUS^-1 mod 2^256
 const MONT_REDUCTION_CONSTANT_LIMBS: [u64; 4] =
-    BigIntMacro!("111032442853175714102588374283752698368366046808579839647964533820976443843465").0;
+    BigIntMacro!("111032442853175714102588374283752698368366046808579839647964533820976443843465")
+        .0;
 
 const MODULUS_CONSTANT: DelegatedU256 = DelegatedU256::from_limbs(MONT_REDUCTION_CONSTANT_LIMBS);
-const MONT_REDUCTION_CONSTANT: DelegatedU256 = DelegatedU256::from_limbs(MONT_REDUCTION_CONSTANT_LIMBS);
+const MONT_REDUCTION_CONSTANT: DelegatedU256 =
+    DelegatedU256::from_limbs(MONT_REDUCTION_CONSTANT_LIMBS);
 
 // // a^-1 = a ^ (p - 2)
 // const INVERSION_POW: B = BigInt([
@@ -89,54 +91,39 @@ impl MontConfig<4usize> for FqConfig {
     #[inline(always)]
     fn add_assign(a: &mut F, b: &F) {
         unsafe {
-            add_mod_assign::<FqParams>(
-                from_ark_mut(&mut a.0),
-                from_ark_ref(&b.0)
-            );
+            add_mod_assign::<FqParams>(from_ark_mut(&mut a.0), from_ark_ref(&b.0));
         }
     }
     #[inline(always)]
     fn sub_assign(a: &mut F, b: &F) {
         unsafe {
-            sub_mod_assign::<FqParams>(
-                from_ark_mut(&mut a.0),
-                from_ark_ref(&b.0)
-            );
+            sub_mod_assign::<FqParams>(from_ark_mut(&mut a.0), from_ark_ref(&b.0));
         }
     }
     #[inline(always)]
     fn double_in_place(a: &mut F) {
         unsafe {
-            double_mod_assign::<FqParams>(
-                from_ark_mut(&mut a.0)
-            );
+            double_mod_assign::<FqParams>(from_ark_mut(&mut a.0));
         }
     }
     /// Sets `a = -a`.
     #[inline(always)]
     fn neg_in_place(a: &mut F) {
         unsafe {
-            neg_mod_assign::<FqParams>(
-                from_ark_mut(&mut a.0)
-            );
+            neg_mod_assign::<FqParams>(from_ark_mut(&mut a.0));
         }
     }
     #[inline(always)]
     fn mul_assign(a: &mut F, b: &F) {
         unsafe {
-            mul_assign_montgomery::<FqParams>(
-                from_ark_mut(&mut a.0),
-                from_ark_ref(&b.0)
-            );
+            mul_assign_montgomery::<FqParams>(from_ark_mut(&mut a.0), from_ark_ref(&b.0));
         }
     }
 
     #[inline(always)]
     fn square_in_place(a: &mut F) {
         unsafe {
-            square_assign_montgomery::<FqParams>(
-                from_ark_mut(&mut a.0)
-            );
+            square_assign_montgomery::<FqParams>(from_ark_mut(&mut a.0));
         }
     }
 
@@ -145,10 +132,7 @@ impl MontConfig<4usize> for FqConfig {
     fn into_bigint(mut a: Fp<MontBackend<Self, 4>, 4>) -> BigInt<4> {
         // for now it's just a multiplication with 1 literal
         unsafe {
-            mul_assign_montgomery::<FqParams>(
-                from_ark_mut(&mut a.0),
-                &DelegatedU256::one()
-            );
+            mul_assign_montgomery::<FqParams>(from_ark_mut(&mut a.0), &DelegatedU256::one());
         }
 
         a.0
@@ -189,7 +173,7 @@ fn __gcd_inverse(a: &F) -> Option<F> {
     // Cryptography
     // Algorithm 16 (BEA for Inversion in Fp)
 
-    let mut u = DelegatedU256::from_limbs(a.0.0);
+    let mut u = DelegatedU256::from_limbs(a.0 .0);
     let mut v = MODULUS_CONSTANT;
     let mut b = DelegatedU256::from_limbs(F::R2.0);
     let mut c = DelegatedU256::zero();
@@ -230,26 +214,18 @@ fn __gcd_inverse(a: &F) -> Option<F> {
         if v.lt(&u) {
             u.overflowing_sub_assign(&v);
 
-            unsafe { 
-                sub_mod_assign::<FqParams>(&mut b, &c) 
-            };
+            unsafe { sub_mod_assign::<FqParams>(&mut b, &c) };
         } else {
             v.overflowing_sub_assign(&u);
-            
-            unsafe {
-                sub_mod_assign::<FqParams>(&mut c, &b)
-            };
+
+            unsafe { sub_mod_assign::<FqParams>(&mut c, &b) };
         }
     }
 
     if u.is_one() {
-        Some(
-            F::new_unchecked(BigInt::<4>(*b.as_limbs()))
-        )
+        Some(F::new_unchecked(BigInt::<4>(*b.as_limbs())))
     } else {
-        Some(
-            F::new_unchecked(BigInt::<4>(*c.as_limbs()))
-        )
+        Some(F::new_unchecked(BigInt::<4>(*c.as_limbs())))
     }
 }
 

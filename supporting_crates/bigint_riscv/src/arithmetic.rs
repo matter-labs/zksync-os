@@ -1,5 +1,5 @@
-use super::{delegation::*, DelegatedU256};
 use super::copy::*;
+use super::{delegation::*, DelegatedU256};
 use core::cmp::Ordering;
 use core::ops::{BitAndAssign, BitOrAssign, ShlAssign, ShrAssign};
 use core::{mem::MaybeUninit, ops::BitXorAssign};
@@ -159,13 +159,16 @@ impl DelegatedU256 {
     pub fn overflowing_sub_assign_with_borrow(&mut self, rhs: &Self, borrow: bool) -> bool {
         unsafe {
             with_ram_operand(rhs as *const Self, |rhs_ptr| {
-                let borrow = bigint_op_delegation_with_carry_bit::<SUB_OP_BIT_IDX>(self as *mut Self, rhs_ptr, borrow);
+                let borrow = bigint_op_delegation_with_carry_bit::<SUB_OP_BIT_IDX>(
+                    self as *mut Self,
+                    rhs_ptr,
+                    borrow,
+                );
 
                 borrow != 0
             })
         }
     }
-
 
     pub fn overflowing_sub_and_negate_assign(&mut self, rhs: &Self) -> bool {
         unsafe {

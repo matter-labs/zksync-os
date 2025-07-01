@@ -1,7 +1,7 @@
 use crate::ark_ff_delegation::BigIntMacro;
 use crate::bigint_arithmatic::u256::*;
-use bigint_riscv::DelegatedU256;
 use crate::k256::FieldBytes;
+use bigint_riscv::DelegatedU256;
 use core::mem::MaybeUninit;
 
 use super::field_10x26::FieldStorage10x26;
@@ -42,7 +42,8 @@ impl FieldElement8x32 {
     pub(super) const BETA: Self = const {
         let limbs = BigIntMacro!(
             "55594575648329892869085402983802832744385952214688224221778511981742606582254"
-        ).0;
+        )
+        .0;
 
         Self(DelegatedU256::from_limbs(limbs))
     };
@@ -53,11 +54,12 @@ impl FieldElement8x32 {
 
         DelegatedU256::from_limbs(limbs)
     };
-    
+
     const MODULUS: DelegatedU256 = const {
         let limbs = BigIntMacro!(
             "115792089237316195423570985008687907853269984665640564039457584007908834671663"
-        ).0;
+        )
+        .0;
 
         DelegatedU256::from_limbs(limbs)
     };

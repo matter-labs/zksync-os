@@ -588,8 +588,13 @@ mod tests {
         for (k, x, y) in MUL_TEST_VECTORS {
             let k = Scalar::from_repr(k.clone().into());
 
-            let computed_ctx =
-                ecmult(Jacobian::INFINITY, Scalar::ZERO, k.clone(), &ECRECOVER_CONTEXT).to_affine();
+            let computed_ctx = ecmult(
+                Jacobian::INFINITY,
+                Scalar::ZERO,
+                k.clone(),
+                &ECRECOVER_CONTEXT,
+            )
+            .to_affine();
 
             let computed = ecmult(
                 Affine::GENERATOR.to_jacobian(),

@@ -223,9 +223,7 @@ impl U256 {
     pub fn add_mod(a: &mut Self, b: &mut Self, modulus_or_result: &mut Self) {
         a.reduce_mod(&*modulus_or_result);
         b.reduce_mod(&*modulus_or_result);
-        let of = unsafe { 
-            bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut a.0, &b.0) != 0
-        };
+        let of = unsafe { bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut a.0, &b.0) != 0 };
         if of || (&*a).gt(&*modulus_or_result) {
             let _ = Self::overflowing_sub_assign_reversed(modulus_or_result, &*a);
         }
