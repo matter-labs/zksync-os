@@ -144,7 +144,7 @@ impl U256 {
     pub fn div_rem(dividend_or_quotient: &mut Self, divisor_or_remainder: &mut Self) {
         // Eventually it'll be solved via non-determinism and comparison that a = q * divisor + r,
         // but for now it's just a naive one
-        let is_zero = dividend_or_quotient.0.is_zero_mut();
+        let is_zero = divisor_or_remainder.0.is_zero_mut();
         assert!(is_zero == false);
         ruint::algorithms::div(
             dividend_or_quotient.as_limbs_mut(),
