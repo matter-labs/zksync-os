@@ -33,10 +33,12 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         Ok(())
     }
 
-    pub fn difficulty(&mut self) -> InstructionResult {
+    pub fn difficulty(&mut self, system: &mut System<S>) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::BASE, DIFFICULTY_NATIVE_COST)?;
-        self.stack.push_one()?;
+        // Mix hash is the source of randomness, currently holding
+        // the value of prevRandao.
+        self.stack.push(system.get_mix_hash())?;
         Ok(())
     }
 
