@@ -95,7 +95,8 @@ pub const DEFAULT_ADDRESS_SPECIFIC_IMMUTABLE_DATA_VERSION: u8 = 1;
 
 #[derive(Default, Clone)]
 pub struct AccountPropertiesMetadata {
-    pub deployed_in_tx: u32,
+    /// None if the account hasn't been deployed in the current block.
+    pub deployed_in_tx: Option<u32>,
     /// Transaction where this account was last accessed.
     /// Considered warm if equal to Some(current_tx)
     pub last_touched_in_tx: Option<u32>,
