@@ -25,6 +25,7 @@ cycle_marker = { path = "../cycle_marker" }
 testing = ["serde", "ruint/serde"]
 default = ["testing"]
 cycle_marker = []
+prevrandao = []
 
 [dev-dependencies]
 
