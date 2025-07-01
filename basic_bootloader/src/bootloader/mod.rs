@@ -351,8 +351,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         // TODO: gas used shouldn't be zero
         let gas_used = 0;
         let timestamp = system.get_timestamp();
-        // after consensus should be provided in the block metadata
-        let consensus_random = Bytes32::zero();
+        let consensus_random = Bytes32::from_u256_be(&system.get_mix_hash());
         let base_fee_per_gas = system.get_eip1559_basefee();
         // TODO: add gas_per_pubdata and native price
         let block_header = BlockHeader::new(

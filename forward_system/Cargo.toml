@@ -34,3 +34,4 @@ evm-compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-com
 # Adds a field with native resource used to the block output
 report_native = ["basic_bootloader/report_native"]
 disable_system_contracts = ["basic_bootloader/disable_system_contracts"]
+prevrandao = ["zk_ee/prevrandao"]
