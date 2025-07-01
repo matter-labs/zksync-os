@@ -725,7 +725,7 @@ where
                 v.versioning_data
                     .set_code_version(DEFAULT_CODE_VERSION_BYTE);
 
-                m.deployed_in_tx = cur_tx;
+                m.deployed_in_tx = Some(cur_tx);
 
                 Ok(())
             })
@@ -769,7 +769,7 @@ where
         // constructor, so in the second case `deployed_in_tx` won't be set
         // yet.
         let should_be_deconstructed =
-            account_data.current().metadata().deployed_in_tx == cur_tx || in_constructor;
+            account_data.current().metadata().deployed_in_tx == Some(cur_tx) || in_constructor;
 
         if should_be_deconstructed {
             account_data.update::<_, SystemError>(|cache_record| {
