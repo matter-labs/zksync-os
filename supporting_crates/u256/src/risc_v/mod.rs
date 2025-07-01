@@ -1,9 +1,9 @@
-use bigint_riscv::DelegatedU256;
+use bigint_riscv::*;
 use core::ops::{
     AddAssign, BitAndAssign, BitOrAssign, BitXorAssign, ShlAssign, ShrAssign, SubAssign,
 };
 
-#[derive(Clone, Hash, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Clone, Hash, PartialEq, Eq, Ord, PartialOrd, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct U256(DelegatedU256);
 
@@ -13,19 +13,9 @@ impl core::fmt::Display for U256 {
     }
 }
 
-impl core::fmt::Debug for U256 {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        core::fmt::LowerHex::fmt(self, f)
-    }
-}
-
 impl core::fmt::LowerHex for U256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        for word in self.as_limbs().iter().rev() {
-            write!(f, "{:016x}", word)?;
-        }
-
-        core::fmt::Result::Ok(())
+        <DelegatedU256 as core::fmt::LowerHex>::fmt(&self.0, f)
     }
 }
 
@@ -194,11 +184,11 @@ impl U256 {
         Self(DelegatedU256::from_le_bytes(input))
     }
 
-    pub fn to_le_bytes(self) -> [u8; 32] {
+    pub fn to_le_bytes(&self) -> [u8; 32] {
         self.0.to_le_bytes()
     }
 
-    pub fn to_be_bytes(self) -> [u8; 32] {
+    pub fn to_be_bytes(&self) -> [u8; 32] {
         self.0.to_be_bytes()
     }
 
@@ -233,7 +223,9 @@ impl U256 {
     pub fn add_mod(a: &mut Self, b: &mut Self, modulus_or_result: &mut Self) {
         a.reduce_mod(&*modulus_or_result);
         b.reduce_mod(&*modulus_or_result);
-        let of = unsafe { a.0.overflowing_add_assign_unchecked(&b.0) };
+        let of = unsafe { 
+            bigint_op_delegation::<ADD_OP_BIT_IDX>(&mut a.0, &b.0) != 0
+        };
         if of || (&*a).gt(&*modulus_or_result) {
             let _ = Self::overflowing_sub_assign_reversed(modulus_or_result, &*a);
         }

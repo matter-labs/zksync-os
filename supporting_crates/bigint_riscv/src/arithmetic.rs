@@ -1,11 +1,11 @@
 use super::{delegation::*, DelegatedU256};
-use crate::copy::*;
+use super::copy::*;
 use core::cmp::Ordering;
 use core::ops::{BitAndAssign, BitOrAssign, ShlAssign, ShrAssign};
 use core::{mem::MaybeUninit, ops::BitXorAssign};
 
-static mut ZERO: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
-static mut ONE: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
+pub static mut ZERO: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
+pub static mut ONE: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
 
 pub(super) fn init() {
     unsafe {
@@ -115,20 +115,20 @@ impl DelegatedU256 {
         eq != 0
     }
 
+    pub fn is_odd(&self) -> bool {
+        self.0[0] & 1 == 1
+    }
+
+    pub fn is_even(&self) -> bool {
+        !self.is_odd()
+    }
+
     pub fn overflowing_add_assign(&mut self, rhs: &Self) -> bool {
         unsafe {
             with_ram_operand(rhs as *const Self, |rhs_ptr| {
                 let carry = bigint_op_delegation::<ADD_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
                 carry != 0
             })
-        }
-    }
-
-    pub unsafe fn overflowing_add_assign_unchecked(&mut self, rhs: &Self) -> bool {
-        unsafe {
-            let carry =
-                bigint_op_delegation::<ADD_OP_BIT_IDX>(self as *mut Self, rhs as *const Self);
-            carry != 0
         }
     }
 
@@ -155,6 +155,17 @@ impl DelegatedU256 {
             })
         }
     }
+
+    pub fn overflowing_sub_assign_with_borrow(&mut self, rhs: &Self, borrow: bool) -> bool {
+        unsafe {
+            with_ram_operand(rhs as *const Self, |rhs_ptr| {
+                let borrow = bigint_op_delegation_with_carry_bit::<SUB_OP_BIT_IDX>(self as *mut Self, rhs_ptr, borrow);
+
+                borrow != 0
+            })
+        }
+    }
+
 
     pub fn overflowing_sub_and_negate_assign(&mut self, rhs: &Self) -> bool {
         unsafe {

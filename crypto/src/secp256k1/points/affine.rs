@@ -78,7 +78,7 @@ impl PartialEq for AffineConst {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Affine {
     pub(crate) x: FieldElement,
     pub(crate) y: FieldElement,
@@ -148,7 +148,7 @@ impl Affine {
     }
 
     fn set_xo(&mut self, x: &FieldElement, y_is_odd: bool) -> bool {
-        self.y = *x;
+        self.y = x.clone();
         self.y.square_in_place();
         self.y *= x;
         self.y += 7;
@@ -160,7 +160,7 @@ impl Affine {
             self.y.negate_in_place(1);
         }
 
-        self.x = *x;
+        self.x = x.clone();
         self.infinity = false;
 
         ret
@@ -179,8 +179,8 @@ impl Affine {
         } else {
             self.set_ge_zinv(
                 &Affine {
-                    x: a.x,
-                    y: a.y,
+                    x: a.x.clone(),
+                    y: a.y.clone(),
                     infinity: false,
                 },
                 z,
@@ -191,17 +191,17 @@ impl Affine {
     pub(crate) fn set_ge_zinv(&mut self, a: &Affine, z: &FieldElement) {
         a.assert_verify();
 
-        let mut z2 = *z;
+        let mut z2 = z.clone();
         z2.square_in_place();
 
-        let mut z3 = z2;
+        let mut z3 = z2.clone();
         z3 *= z;
 
-        self.x = a.x;
-        self.x *= z2;
+        self.x = a.x.clone();
+        self.x *= &z2;
 
-        self.y = a.y;
-        self.y *= z3;
+        self.y = a.y.clone();
+        self.y *= &z3;
 
         self.infinity = a.infinity;
     }
@@ -217,6 +217,7 @@ impl Affine {
     pub fn to_encoded_point(self, compress: bool) -> EncodedPoint {
         use crate::k256::elliptic_curve::subtle::ConditionallySelectable;
 
+        let is_infinity = self.is_infinity();
         EncodedPoint::conditional_select(
             &EncodedPoint::from_affine_coordinates(
                 &self.x.to_bytes(),
@@ -224,7 +225,7 @@ impl Affine {
                 compress,
             ),
             &EncodedPoint::identity(),
-            Choice::from(self.is_infinity() as u8),
+            Choice::from(is_infinity as u8),
         )
     }
 
@@ -273,7 +274,7 @@ mod tests {
         crate::secp256k1::init();
 
         let g = Affine::GENERATOR;
-        let x = g.x;
+        let x = g.x.clone();
         let y_is_odd = false;
         let mut a = Affine::DEFAULT;
         a.set_xo(&x, y_is_odd);
@@ -286,7 +287,7 @@ mod tests {
         crate::secp256k1::init();
 
         proptest!(|(x: Affine)| {
-            prop_assert_eq!(x.to_jacobian().to_affine(), x);
+            prop_assert_eq!(x.clone().to_jacobian().to_affine(), x);
         });
     }
 }

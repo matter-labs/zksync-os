@@ -11,9 +11,10 @@ pub fn init() {
 
 pub type Fq = Fp256<MontBackend<FqConfig, 4>>;
 use crate::ark_ff_delegation::{BigInt, BigIntMacro, Fp, Fp256, MontBackend, MontConfig};
-use crate::bigint_delegation::{u256, DelegatedModParams, DelegatedMontParams};
+use crate::bigint_arithmatic::u256::*;
 use ark_ff::ark_ff_macros::unroll_for_loops;
 use ark_ff::{AdditiveGroup, Zero};
+use bigint_riscv::DelegatedU256;
 use core::mem::MaybeUninit;
 
 type B = BigInt<4>;
@@ -21,14 +22,17 @@ type F = Fp<MontBackend<FqConfig, 4usize>, 4usize>;
 
 // we also need few empty representations
 // static mut MINUS_ONE_REPR: MaybeUninit<[u32; 8]> = MaybeUninit::uninit();
-static mut MODULUS: MaybeUninit<B> = MaybeUninit::uninit();
-static mut REDUCTION_CONST: MaybeUninit<B> = MaybeUninit::uninit();
+static mut MODULUS: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
+static mut REDUCTION_CONST: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
 
-const MODULUS_CONSTANT: B =
-    BigIntMacro!("21888242871839275222246405745257275088696311157297823662689037894645226208583");
+const MODULUS_CONSTANT_LIMBS: [u64; 4] =
+    BigIntMacro!("21888242871839275222246405745257275088696311157297823662689037894645226208583").0;
 // it's - MODULUS^-1 mod 2^256
-const MONT_REDUCTION_CONSTANT: B =
-    BigIntMacro!("111032442853175714102588374283752698368366046808579839647964533820976443843465");
+const MONT_REDUCTION_CONSTANT_LIMBS: [u64; 4] =
+    BigIntMacro!("111032442853175714102588374283752698368366046808579839647964533820976443843465").0;
+
+const MODULUS_CONSTANT: DelegatedU256 = DelegatedU256::from_limbs(MONT_REDUCTION_CONSTANT_LIMBS);
+const MONT_REDUCTION_CONSTANT: DelegatedU256 = DelegatedU256::from_limbs(MONT_REDUCTION_CONSTANT_LIMBS);
 
 // // a^-1 = a ^ (p - 2)
 // const INVERSION_POW: B = BigInt([
@@ -41,14 +45,14 @@ const MONT_REDUCTION_CONSTANT: B =
 #[derive(Default)]
 struct FqParams;
 
-impl DelegatedModParams<4> for FqParams {
-    unsafe fn modulus() -> &'static BigInt<4> {
+impl DelegatedModParams for FqParams {
+    unsafe fn modulus() -> &'static DelegatedU256 {
         unsafe { MODULUS.assume_init_ref() }
     }
 }
 
-impl DelegatedMontParams<4> for FqParams {
-    unsafe fn reduction_const() -> &'static BigInt<4> {
+impl DelegatedMontParams for FqParams {
+    unsafe fn reduction_const() -> &'static DelegatedU256 {
         unsafe { REDUCTION_CONST.assume_init_ref() }
     }
 }
@@ -85,39 +89,54 @@ impl MontConfig<4usize> for FqConfig {
     #[inline(always)]
     fn add_assign(a: &mut F, b: &F) {
         unsafe {
-            u256::add_mod_assign::<FqParams>(&mut a.0, &b.0);
+            add_mod_assign::<FqParams>(
+                from_ark_mut(&mut a.0),
+                from_ark_ref(&b.0)
+            );
         }
     }
     #[inline(always)]
     fn sub_assign(a: &mut F, b: &F) {
         unsafe {
-            u256::sub_mod_assign::<FqParams>(&mut a.0, &b.0);
+            sub_mod_assign::<FqParams>(
+                from_ark_mut(&mut a.0),
+                from_ark_ref(&b.0)
+            );
         }
     }
     #[inline(always)]
     fn double_in_place(a: &mut F) {
         unsafe {
-            u256::double_mod_assign::<FqParams>(&mut a.0);
+            double_mod_assign::<FqParams>(
+                from_ark_mut(&mut a.0)
+            );
         }
     }
     /// Sets `a = -a`.
     #[inline(always)]
     fn neg_in_place(a: &mut F) {
         unsafe {
-            u256::neg_mod_assign::<FqParams>(&mut a.0);
+            neg_mod_assign::<FqParams>(
+                from_ark_mut(&mut a.0)
+            );
         }
     }
     #[inline(always)]
     fn mul_assign(a: &mut F, b: &F) {
         unsafe {
-            u256::mul_assign_montgomery::<FqParams>(&mut a.0, &b.0);
+            mul_assign_montgomery::<FqParams>(
+                from_ark_mut(&mut a.0),
+                from_ark_ref(&b.0)
+            );
         }
     }
 
     #[inline(always)]
     fn square_in_place(a: &mut F) {
         unsafe {
-            u256::square_assign_montgomery::<FqParams>(&mut a.0);
+            square_assign_montgomery::<FqParams>(
+                from_ark_mut(&mut a.0)
+            );
         }
     }
 
@@ -126,7 +145,10 @@ impl MontConfig<4usize> for FqConfig {
     fn into_bigint(mut a: Fp<MontBackend<Self, 4>, 4>) -> BigInt<4> {
         // for now it's just a multiplication with 1 literal
         unsafe {
-            u256::mul_assign_montgomery::<FqParams>(&mut a.0, &BigInt::one());
+            mul_assign_montgomery::<FqParams>(
+                from_ark_mut(&mut a.0),
+                &DelegatedU256::one()
+            );
         }
 
         a.0
@@ -167,24 +189,22 @@ fn __gcd_inverse(a: &F) -> Option<F> {
     // Cryptography
     // Algorithm 16 (BEA for Inversion in Fp)
 
-    use ark_ff::BigInteger;
-    use ark_ff::PrimeField;
+    let mut u = DelegatedU256::from_limbs(a.0.0);
+    let mut v = MODULUS_CONSTANT;
+    let mut b = DelegatedU256::from_limbs(F::R2.0);
+    let mut c = DelegatedU256::zero();
+    let modulus = MODULUS_CONSTANT;
 
-    let mut u = a.0;
-    let mut v = F::MODULUS;
-    let mut b = Fp::new_unchecked(F::R2); // Avoids unnecessary reduction step.
-    let mut c = Fp::zero();
-    let modulus = F::MODULUS;
-
-    while !u256::is_one(&mut u) && !u256::is_one(&mut v) {
+    while !u.is_one() && !v.is_one() {
         while u.is_even() {
-            u.div2();
+            u >>= 1;
 
-            if b.0.is_even() {
-                b.0.div2();
+            if b.is_even() {
+                b >>= 1;
             } else {
-                let _carry = u256::add_assign(&mut b.0, &modulus);
-                b.0.div2();
+                let _carry = b.overflowing_add_assign(&modulus);
+
+                b >>= 1;
                 // if !Self::MODULUS_HAS_SPARE_BIT && carry {
                 //     (b.0).0[N - 1] |= 1 << 63;
                 // }
@@ -192,13 +212,14 @@ fn __gcd_inverse(a: &F) -> Option<F> {
         }
 
         while v.is_even() {
-            v.div2();
+            v >>= 1;
 
-            if c.0.is_even() {
-                c.0.div2();
+            if c.is_even() {
+                c >>= 1;
             } else {
-                let _carry = u256::add_assign(&mut c.0, &modulus);
-                c.0.div2();
+                let _carry = c.overflowing_add_assign(&modulus);
+
+                c >>= 1;
                 // if !Self::MODULUS_HAS_SPARE_BIT && carry {
                 //     (c.0).0[N - 1] |= 1 << 63;
                 // }
@@ -207,18 +228,28 @@ fn __gcd_inverse(a: &F) -> Option<F> {
 
         // if v < u {
         if v.lt(&u) {
-            u256::sub_assign(&mut u, &v);
-            b -= &c;
+            u.overflowing_sub_assign(&v);
+
+            unsafe { 
+                sub_mod_assign::<FqParams>(&mut b, &c) 
+            };
         } else {
-            u256::sub_assign(&mut v, &u);
-            c -= &b;
+            v.overflowing_sub_assign(&u);
+            
+            unsafe {
+                sub_mod_assign::<FqParams>(&mut c, &b)
+            };
         }
     }
 
-    if u256::is_one(&mut u) {
-        Some(b)
+    if u.is_one() {
+        Some(
+            F::new_unchecked(BigInt::<4>(*b.as_limbs()))
+        )
     } else {
-        Some(c)
+        Some(
+            F::new_unchecked(BigInt::<4>(*c.as_limbs()))
+        )
     }
 }
 
@@ -229,7 +260,7 @@ mod test {
 
     fn init() {
         super::init();
-        crate::bigint_delegation::init();
+        bigint_riscv::init();
     }
 
     #[ignore = "requires single threaded runner"]

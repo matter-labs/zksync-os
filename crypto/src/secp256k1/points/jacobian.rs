@@ -176,7 +176,7 @@ impl JacobianConst {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct Jacobian {
     pub(crate) x: FieldElement,
     pub(crate) y: FieldElement,
@@ -223,16 +223,16 @@ impl Jacobian {
         zi.invert_in_place();
 
         let mut ret = Affine {
-            x: zi,
+            x: zi.clone(),
             y: zi,
             infinity: false,
         };
 
         ret.x.square_in_place();
-        ret.y *= ret.x;
+        ret.y *= &ret.x;
 
-        ret.x *= self.x;
-        ret.y *= self.y;
+        ret.x *= &self.x;
+        ret.y *= &self.y;
 
         ret
     }
@@ -251,43 +251,43 @@ impl Jacobian {
         }
 
         if let Some(rzr) = rzr {
-            *rzr = self.y;
+            *rzr = self.y.clone();
             rzr.double_in_place();
         }
 
-        self.z *= self.y;
+        self.z *= &self.y;
         self.z.double_in_place();
         self.z.normalize_in_place();
 
-        let mut a = self.x;
+        let mut a = self.x.clone();
         a.square_in_place();
 
         self.y.square_in_place();
-        let b = self.y;
+        let b = self.y.clone();
         self.y.square_in_place();
         self.y.negate_in_place(1);
 
-        self.x += b;
+        self.x += &b;
         self.x.square_in_place();
-        self.x -= a;
-        self.x += self.y;
+        self.x -= &a;
+        self.x += &self.y;
         self.x.double_in_place();
         self.x.normalize_in_place();
 
-        let mut d = self.x;
+        let mut d = self.x.clone();
 
         a *= 3;
-        let mut f = a;
+        let mut f = a.clone();
         f.square_in_place();
 
         self.x.double_in_place();
         self.x.normalize_in_place();
         self.x.negate_in_place(1);
-        self.x += f;
+        self.x += &f;
         self.x.normalize_in_place();
 
-        d -= self.x;
-        d *= a;
+        d -= &self.x;
+        d *= &a;
         self.y *= 8;
         self.y.normalize_in_place();
         self.y.add_in_place(&d);
@@ -318,19 +318,19 @@ impl Jacobian {
             return;
         }
 
-        let mut z12 = self.z;
+        let mut z12 = self.z.clone();
         z12.square_in_place();
-        a.x *= z12;
-        a.y *= z12;
-        a.y *= self.z;
+        a.x *= &z12;
+        a.y *= &z12;
+        a.y *= &self.z;
         a.y.negate_in_place(1);
 
-        let mut h = self.x;
+        let mut h = self.x.clone();
         h.negate_in_place(Self::X_MAGNITUDE_MAX);
-        h += a.x;
+        h += &a.x;
 
-        let mut i = self.y;
-        i += a.y;
+        let mut i = self.y.clone();
+        i += &a.y;
 
         if h.normalizes_to_zero() {
             if i.normalizes_to_zero() {
@@ -345,30 +345,30 @@ impl Jacobian {
         }
 
         if let Some(rzr) = rzr {
-            *rzr = h;
+            *rzr = h.clone();
         }
 
-        self.z *= h;
+        self.z *= &h;
         self.z.normalize_in_place();
 
-        let mut h2 = h;
+        let mut h2 = h.clone();
         h2.square_in_place();
         h2.negate_in_place(1);
-        h *= h2;
+        h *= &h2;
 
-        self.x *= h2;
-        let mut t = self.x;
+        self.x *= &h2;
+        let mut t = self.x.clone();
         self.x.double_in_place();
-        self.x += h;
-        let mut i2 = i;
+        self.x += &h;
+        let mut i2 = i.clone();
         i2.square_in_place();
-        self.x += i2;
+        self.x += &i2;
         self.x.normalize_in_place();
 
-        t += self.x;
-        t *= i;
-        self.y *= h;
-        self.y += t;
+        t += &self.x;
+        t *= &i;
+        self.y *= &h;
+        self.y += &t;
         self.y.normalize_in_place();
     }
 
@@ -382,16 +382,16 @@ impl Jacobian {
         }
 
         if self.is_infinity() {
-            let mut z2 = *z;
+            let mut z2 = z.clone();
             z2.square_in_place();
-            let mut z3 = z2;
+            let mut z3 = z2.clone();
             z3 *= z;
 
             self.x = b.x;
-            self.x *= z2;
+            self.x *= &z2;
 
             self.y = b.y;
-            self.y *= z3;
+            self.y *= &z3;
 
             self.z = FieldElement::ONE;
 
@@ -405,23 +405,23 @@ impl Jacobian {
         // (ax,ay,az*z) + (bx,by,1), when not applying the z factor to rz.
         // The variable az below holds the modified Z coordinate for a, which is used
         // for the computation of rx and ry, but not for rz.
-        let mut az = self.z;
+        let mut az = self.z.clone();
         az.mul_in_place(z);
 
-        let mut z12 = az;
+        let mut z12 = az.clone();
         z12.square_in_place();
 
-        b.x *= z12;
-        b.y *= z12;
-        b.y *= az;
+        b.x *= &z12;
+        b.y *= &z12;
+        b.y *= &az;
 
-        let mut h = self.x;
+        let mut h = self.x.clone();
         h.negate_in_place(Self::X_MAGNITUDE_MAX);
-        h += b.x;
+        h += &b.x;
 
-        let mut i = self.y;
+        let mut i = self.y.clone();
         i.negate_in_place(Self::Y_MAGNITUDE_MAX);
-        i += b.y;
+        i += &b.y;
 
         if h.normalizes_to_zero() {
             if i.normalizes_to_zero() {
@@ -432,31 +432,31 @@ impl Jacobian {
             return;
         }
 
-        self.z *= h;
+        self.z *= &h;
         self.z.normalize_in_place();
 
-        let mut h2 = h;
+        let mut h2 = h.clone();
         h2.square_in_place();
-        h *= h2;
+        h *= &h2;
 
-        let mut i2 = i;
+        let mut i2 = i.clone();
         i2.square_in_place();
 
-        self.x *= h2;
-        let t = self.x;
+        self.x *= &h2;
+        let t = self.x.clone();
         self.x.double_in_place();
-        self.x += h;
+        self.x += &h;
         self.x.negate_in_place(Self::X_MAGNITUDE_MAX);
-        self.x += i2;
+        self.x += &i2;
         self.x.normalize_in_place();
 
-        self.y *= h;
+        self.y *= &h;
         self.y.negate_in_place(Self::Y_MAGNITUDE_MAX);
-        let mut x = self.x;
+        let mut x = self.x.clone();
         x.negate_in_place(Self::X_MAGNITUDE_MAX);
-        x += t;
-        x *= i;
-        self.y += x;
+        x += &t;
+        x *= &i;
+        self.y += &x;
         self.y.normalize_in_place();
     }
 }
@@ -494,14 +494,14 @@ mod tests {
         let g = Affine::GENERATOR;
         let mut a = Jacobian::INFINITY;
         a.add_ge_in_place(Affine::INFINITY, None);
-        assert_eq!(a.to_affine(), Affine::INFINITY);
+        assert_eq!(a.clone().to_affine(), Affine::INFINITY);
 
-        a.add_ge_in_place(g, None);
+        a.add_ge_in_place(g.clone(), None);
         assert_eq!(a.to_affine(), g);
 
-        let mut g2 = g.to_jacobian();
-        g2.add_ge_in_place(g, None);
-        let mut g4 = g2;
+        let mut g2 = g.clone().to_jacobian();
+        g2.add_ge_in_place(g.clone(), None);
+        let mut g4 = g2.clone();
         g4.add_ge_in_place(g2.to_affine(), None);
 
         let mut g4_double = g.to_jacobian();
@@ -534,10 +534,10 @@ mod tests {
 
         let g = Affine::GENERATOR;
 
-        let mut p = g.to_jacobian();
+        let mut p = g.clone().to_jacobian();
 
         for i in 0..ADD_TEST_VECTORS.len() {
-            let a = p.to_affine();
+            let a = p.clone().to_affine();
 
             let expected = Affine {
                 x: FieldElement::from_bytes(&ADD_TEST_VECTORS[i].0).unwrap(),
@@ -547,7 +547,7 @@ mod tests {
 
             assert_eq!(expected, a);
 
-            p.add_ge_in_place(g, None);
+            p.add_ge_in_place(g.clone(), None);
         }
     }
 
@@ -602,17 +602,17 @@ mod tests {
         crate::secp256k1::init();
 
         proptest!(|(a: Jacobian, b: Jacobian)| {
-            let mut t = a;
-            t.add_zinv_in_place(Affine { x: b.x, y: b.y, infinity: false}, &b.z);
+            let mut t = a.clone();
+            t.add_zinv_in_place(Affine { x: b.x.clone(), y: b.y.clone(), infinity: false}, &b.z);
 
-            let mut tt = a;
+            let mut tt = a.clone();
             tt.add_ge_in_place(b.to_affine(), None);
 
             prop_assert_eq!(t.to_affine(), tt.to_affine());
 
             let mut t = Jacobian::INFINITY;
             let a = a.to_affine();
-            t.add_zinv_in_place(a, &FieldElement::ONE);
+            t.add_zinv_in_place(a.clone(), &FieldElement::ONE);
             assert_eq!(t.to_affine(), a);
         })
     }

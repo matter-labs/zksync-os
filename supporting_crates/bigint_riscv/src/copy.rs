@@ -98,8 +98,9 @@ pub(super) unsafe fn copy_to_scratch(operand: *const DelegatedU256) -> *mut Dele
     }
 }
 
+
 #[inline(always)]
-pub(super) unsafe fn copy_if_needed(operand: *const DelegatedU256) -> *const DelegatedU256 {
+pub unsafe fn copy_if_needed(operand: *const DelegatedU256) -> *const DelegatedU256 {
     #[cfg(target_arch = "riscv32")]
     unsafe {
         if operand.addr() < ROM_BOUND {

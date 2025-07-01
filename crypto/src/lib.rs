@@ -9,7 +9,7 @@
 mod ark_ff_delegation;
 #[allow(unused_imports)]
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-mod bigint_delegation;
+mod bigint_arithmatic;
 #[allow(unexpected_cfgs)]
 pub mod blake2s;
 #[allow(clippy::all)]
@@ -30,7 +30,6 @@ pub use ark_ec;
 pub use ark_ff;
 pub use ark_serialize;
 
-pub mod bigint_riscv;
 
 pub fn init_lib() {
     #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
@@ -38,7 +37,6 @@ pub fn init_lib() {
         bn254::fields::init();
         bls12_381::fields::init();
         secp256k1::init();
-        bigint_delegation::init();
     }
 }
 

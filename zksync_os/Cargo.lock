@@ -187,6 +187,7 @@ dependencies = [
  "ruint",
  "seq-macro",
  "system_hooks",
+ "u256",
  "zk_ee",
 ]
 
@@ -204,7 +205,16 @@ dependencies = [
  "ruint",
  "storage_models",
  "system_hooks",
+ "u256",
  "zk_ee",
+]
+
+[[package]]
+name = "bigint_riscv"
+version = "0.1.0"
+dependencies = [
+ "ruint",
+ "serde",
 ]
 
 [[package]]
@@ -225,7 +235,7 @@ dependencies = [
 [[package]]
 name = "blake2s_u32"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=0.1.0#ea0a0d030dd4645cd6f2ab0691a2d05d89d43771"
+source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=0.2.0#30635bd7d9bb2aedf9c67450d8a7e1a7ff3c7ee3"
 dependencies = [
  "unroll",
 ]
@@ -294,6 +304,7 @@ dependencies = [
  "ark-ff",
  "ark-serialize",
  "ark-std",
+ "bigint_riscv",
  "blake2",
  "blake2s_u32",
  "cfg-if",
@@ -306,6 +317,7 @@ dependencies = [
  "num-traits",
  "p256",
  "ripemd",
+ "ruint",
  "sha2",
  "sha3",
  "zeroize",
@@ -443,6 +455,7 @@ dependencies = [
  "cycle_marker",
  "either",
  "ruint",
+ "u256",
  "zk_ee",
 ]
 
@@ -796,7 +809,7 @@ dependencies = [
 [[package]]
 name = "riscv_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=0.1.0#ea0a0d030dd4645cd6f2ab0691a2d05d89d43771"
+source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=0.2.0#30635bd7d9bb2aedf9c67450d8a7e1a7ff3c7ee3"
 
 [[package]]
 name = "ruint"
@@ -949,6 +962,7 @@ dependencies = [
  "cycle_marker",
  "evm_interpreter",
  "ruint",
+ "u256",
  "zk_ee",
 ]
 
@@ -966,6 +980,15 @@ name = "typenum"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
+
+[[package]]
+name = "u256"
+version = "0.1.0"
+dependencies = [
+ "bigint_riscv",
+ "ruint",
+ "serde",
+]
 
 [[package]]
 name = "unarray"
@@ -1051,16 +1074,19 @@ dependencies = [
  "crypto",
  "cycle_marker",
  "ruint",
+ "u256",
 ]
 
 [[package]]
 name = "zksync_os"
 version = "0.1.0"
 dependencies = [
+ "bigint_riscv",
  "crypto",
  "heapless",
  "proof_running_system",
  "r0",
  "riscv",
  "riscv_common",
+ "u256",
 ]

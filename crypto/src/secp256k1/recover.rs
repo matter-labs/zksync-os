@@ -37,7 +37,7 @@ pub fn recover_with_context(
     let message = Scalar::from_k256_scalar(*message);
 
     // We go through bytes because it's mod GROUP_ORDER and later we need mod BASE FIELD
-    let mut brx = sigr.to_repr();
+    let mut brx = sigr.clone().to_repr();
 
     if recovery_id.is_x_reduced() {
         match <U256 as FieldBytesEncoding<Secp256k1>>::decode_field_bytes(&brx)
@@ -57,12 +57,12 @@ pub fn recover_with_context(
     let xj = x.to_jacobian();
 
     sigr.invert_in_place();
-    sigs *= sigr;
+    sigs *= &sigr;
 
-    sigr *= message;
+    sigr *= &message;
     sigr.negate_in_place();
 
-    let mut pk = ecmult(&xj, &sigs, &sigr, context).to_affine();
+    let mut pk = ecmult(xj, sigs, sigr, context).to_affine();
     pk.normalize_in_place();
 
     if pk.is_infinity() {
@@ -74,7 +74,7 @@ pub fn recover_with_context(
 
 /// Compute na*a+ng*g where g is the generator.
 /// Algorithm adapted from https://github.com/bitcoin-core/secp256k1/blob/master/src/ecmult_impl.h#L237
-fn ecmult(a: &Jacobian, na: &Scalar, ng: &Scalar, context: &ECMultContext) -> Jacobian {
+fn ecmult(a: Jacobian, na: Scalar, ng: Scalar, context: &ECMultContext) -> Jacobian {
     let mut z = FieldElement::ONE;
 
     let mut prea: [Affine; ECMULT_TABLE_SIZE_A] = [Affine::DEFAULT; ECMULT_TABLE_SIZE_A];
@@ -102,8 +102,8 @@ fn ecmult(a: &Jacobian, na: &Scalar, ng: &Scalar, context: &ECMultContext) -> Ja
         let (na_1, na_lam) = na.decompose();
 
         // build wnaf representation
-        bits_na_1 = wnaf(&mut wnaf_na_1, &na_1, WINDOW_A);
-        bits_na_lam = wnaf(&mut wnaf_na_lam, &na_lam, WINDOW_A);
+        bits_na_1 = wnaf(&mut wnaf_na_1, na_1, WINDOW_A);
+        bits_na_lam = wnaf(&mut wnaf_na_lam, na_lam, WINDOW_A);
 
         debug_assert!(bits_na_1 <= WNAF_BITS as i32);
         debug_assert!(bits_na_lam <= WNAF_BITS as i32);
@@ -123,7 +123,7 @@ fn ecmult(a: &Jacobian, na: &Scalar, ng: &Scalar, context: &ECMultContext) -> Ja
 
         for i in 0..ECMULT_TABLE_SIZE_A {
             aux[i] = FieldElement::BETA;
-            aux[i] *= prea[i].x;
+            aux[i] *= &prea[i].x;
         }
     }
 
@@ -136,8 +136,8 @@ fn ecmult(a: &Jacobian, na: &Scalar, ng: &Scalar, context: &ECMultContext) -> Ja
         let (ng_1, ng_128) = ng.decompose_128(); // NOTE: must return normal form
 
         // build wnaf representation
-        bits_ng_1 = wnaf(&mut wnaf_ng_1, &ng_1, WINDOW_G);
-        bits_ng_128 = wnaf(&mut wnaf_ng_128, &ng_128, WINDOW_G);
+        bits_ng_1 = wnaf(&mut wnaf_ng_1, ng_1, WINDOW_G);
+        bits_ng_128 = wnaf(&mut wnaf_ng_128, ng_128, WINDOW_G);
 
         if bits_ng_1 > bits {
             bits = bits_ng_1;
@@ -174,7 +174,7 @@ fn ecmult(a: &Jacobian, na: &Scalar, ng: &Scalar, context: &ECMultContext) -> Ja
     }
 
     if !r.is_infinity() {
-        r.z *= z
+        r.z *= &z
     }
 
     r
@@ -193,11 +193,11 @@ fn odd_multiples_table_windowa(
     pre_a: &mut [Affine; ECMULT_TABLE_SIZE_A],
     zr: &mut [FieldElement; ECMULT_TABLE_SIZE_A],
     z: &mut FieldElement,
-    a: &Jacobian,
+    a: Jacobian,
 ) {
     debug_assert!(!a.is_infinity());
 
-    let mut d = *a;
+    let mut d = a.clone();
     d.double_in_place(None);
 
     // we perform additions using an isomorphic curve Y^2 = X^3 + 7*C^6 where  C := d.z
@@ -214,23 +214,23 @@ fn odd_multiples_table_windowa(
         infinity: false,
     };
 
-    pre_a[0].set_gej_zinv(a, &d.z);
+    pre_a[0].set_gej_zinv(&a, &d.z);
 
     let mut ai = Jacobian {
-        x: pre_a[0].x,
-        y: pre_a[0].y,
+        x: pre_a[0].x.clone(),
+        y: pre_a[0].y.clone(),
         z: a.z,
     };
 
     // pre_a[0] is the point (a.x*C^2, a.y*C^3, a.z*C) which is equivalent to a.
     // Set zr[0] to C, which is the ratio between the omitted z(pre_a[0]) value and a.z.
-    zr[0] = d.z;
+    zr[0] = d.z.clone();
 
     for i in 1..ECMULT_TABLE_SIZE_A {
-        ai.add_ge_in_place(d_ge, Some(&mut zr[i]));
+        ai.add_ge_in_place(d_ge.clone(), Some(&mut zr[i]));
         pre_a[i] = Affine {
-            x: ai.x,
-            y: ai.y,
+            x: ai.x.clone(),
+            y: ai.y.clone(),
             infinity: false,
         };
     }
@@ -239,7 +239,7 @@ fn odd_multiples_table_windowa(
     // Since the z-coordinates of the pre_a values are implied by the zr array of z-coordinate ratios,
     // undoing the isomorphism here undoes the isomorphism for all pre_a values.
     *z = ai.z;
-    *z *= d.z;
+    *z *= &d.z;
 }
 
 fn table_set_globalz_windowa(
@@ -250,18 +250,18 @@ fn table_set_globalz_windowa(
 
     pre_a[i].y.normalize_in_place();
 
-    let mut zs = zr[i];
+    let mut zs = zr[i].clone();
 
     i -= 1;
 
-    let mut ai = pre_a[i];
+    let mut ai = pre_a[i].clone();
     pre_a[i].set_ge_zinv(&ai, &zs);
 
     while i > 0 {
-        zs *= zr[i];
+        zs *= &zr[i];
         i -= 1;
 
-        ai = pre_a[i];
+        ai = pre_a[i].clone();
         pre_a[i].set_ge_zinv(&ai, &zs);
     }
 }
@@ -273,12 +273,12 @@ fn table_set_globalz_windowa(
 ///     - the number of set values in wnaf is returned
 ///
 /// NOTE: the function assumes that `wnaf` is zeroed
-fn wnaf(wnaf: &mut [i32], s: &Scalar, w: usize) -> i32 {
+fn wnaf(wnaf: &mut [i32], s: Scalar, w: usize) -> i32 {
     debug_assert!(wnaf.len() <= 256);
     debug_assert!((2..=31).contains(&w));
     debug_assert!(wnaf.iter().all(|&x| x == 0));
 
-    let mut s = *s;
+    let mut s = s;
 
     let mut last_set_bit: i32 = -1;
     let mut bit = 0;
@@ -329,9 +329,9 @@ fn table_get_ge(pre: &[Affine], n: i32, w: usize) -> Affine {
     debug_assert!(table_verify(n, w));
 
     if n > 0 {
-        pre[(n - 1) as usize / 2]
+        pre[(n - 1) as usize / 2].clone()
     } else {
-        let mut r = pre[(-n - 1) as usize / 2];
+        let mut r = pre[(-n - 1) as usize / 2].clone();
         r.y.negate_in_place(1);
         r
     }
@@ -342,16 +342,16 @@ fn table_get_ge_lambda(pre: &[Affine], aux: &[FieldElement], n: i32, w: usize) -
 
     if n > 0 {
         Affine {
-            x: aux[(n - 1) as usize / 2],
-            y: pre[(n - 1) as usize / 2].y,
+            x: aux[(n - 1) as usize / 2].clone(),
+            y: pre[(n - 1) as usize / 2].y.clone(),
             infinity: false,
         }
     } else {
-        let mut y = pre[(-n - 1) as usize / 2].y;
+        let mut y = pre[(-n - 1) as usize / 2].y.clone();
         y.negate_in_place(1);
 
         Affine {
-            x: aux[(-n - 1) as usize / 2],
+            x: aux[(-n - 1) as usize / 2].clone(),
             y,
             infinity: false,
         }
@@ -398,9 +398,9 @@ mod tests {
 
         // 0*infinity + 0*G = 0
         let res = ecmult(
-            &Jacobian::INFINITY,
-            &Scalar::ZERO,
-            &Scalar::ZERO,
+            Jacobian::INFINITY,
+            Scalar::ZERO,
+            Scalar::ZERO,
             &ECRECOVER_CONTEXT,
         )
         .to_affine();
@@ -416,9 +416,9 @@ mod tests {
 
         // 0*infinity + 1*G = G
         let mut res = ecmult(
-            &Jacobian::INFINITY,
-            &Scalar::ZERO,
-            &Scalar::ONE,
+            Jacobian::INFINITY,
+            Scalar::ZERO,
+            Scalar::ONE,
             &ECRECOVER_CONTEXT,
         )
         .to_affine();
@@ -436,9 +436,9 @@ mod tests {
 
         // 0*infinity + 3*G = 3*G
         let res = ecmult(
-            &Jacobian::INFINITY,
-            &Scalar::ZERO,
-            &Scalar::from_u128(3),
+            Jacobian::INFINITY,
+            Scalar::ZERO,
+            Scalar::from_u128(3),
             &ECRECOVER_CONTEXT,
         )
         .to_affine();
@@ -453,9 +453,9 @@ mod tests {
         crate::secp256k1::init();
 
         let res = ecmult(
-            &Jacobian::INFINITY,
-            &Scalar::ZERO,
-            &Scalar::from_u128(5),
+            Jacobian::INFINITY,
+            Scalar::ZERO,
+            Scalar::from_u128(5),
             &ECRECOVER_CONTEXT,
         )
         .to_affine();
@@ -477,9 +477,9 @@ mod tests {
 
         // 0*infinity + 8*G = 8*G
         let res = ecmult(
-            &Jacobian::INFINITY,
-            &Scalar::ZERO,
-            &Scalar::from_u128(8),
+            Jacobian::INFINITY,
+            Scalar::ZERO,
+            Scalar::from_u128(8),
             &ECRECOVER_CONTEXT,
         )
         .to_affine();
@@ -494,9 +494,9 @@ mod tests {
         crate::secp256k1::init();
 
         let res = ecmult(
-            &Affine::GENERATOR.to_jacobian(),
-            &Scalar::ONE,
-            &Scalar::ZERO,
+            Affine::GENERATOR.to_jacobian(),
+            Scalar::ONE,
+            Scalar::ZERO,
             &ECRECOVER_CONTEXT,
         )
         .to_affine();
@@ -511,9 +511,9 @@ mod tests {
         crate::secp256k1::init();
 
         let res = ecmult(
-            &Affine::GENERATOR.to_jacobian(),
-            &Scalar::ONE,
-            &Scalar::ONE,
+            Affine::GENERATOR.to_jacobian(),
+            Scalar::ONE,
+            Scalar::ONE,
             &ECRECOVER_CONTEXT,
         )
         .to_affine();
@@ -531,9 +531,9 @@ mod tests {
         crate::secp256k1::init();
 
         let res = ecmult(
-            &Affine::GENERATOR.to_jacobian(),
-            &Scalar::ONE,
-            &Scalar::from_u128(2),
+            Affine::GENERATOR.to_jacobian(),
+            Scalar::ONE,
+            Scalar::from_u128(2),
             &ECRECOVER_CONTEXT,
         )
         .to_affine();
@@ -548,9 +548,9 @@ mod tests {
         crate::secp256k1::init();
 
         let mut res = ecmult(
-            &Affine::GENERATOR.to_jacobian(),
-            &Scalar::from_u128(2),
-            &Scalar::ONE,
+            Affine::GENERATOR.to_jacobian(),
+            Scalar::from_u128(2),
+            Scalar::ONE,
             &ECRECOVER_CONTEXT,
         )
         .to_affine();
@@ -565,16 +565,16 @@ mod tests {
     fn compare_ecmult() {
         proptest!(|(k: Scalar)| {
             let res1 = ecmult(
-                &Jacobian::INFINITY,
-                &Scalar::ZERO,
-                &k,
+                Jacobian::INFINITY,
+                Scalar::ZERO,
+                k.clone(),
                 &ECRECOVER_CONTEXT
             ).to_affine();
 
             let res2 = ecmult(
-                &Affine::GENERATOR.to_jacobian(),
-                &k,
-                &Scalar::ZERO,
+                Affine::GENERATOR.to_jacobian(),
+                k,
+                Scalar::ZERO,
                 &ECRECOVER_CONTEXT
             ).to_affine();
 
@@ -589,12 +589,12 @@ mod tests {
             let k = Scalar::from_repr(k.clone().into());
 
             let computed_ctx =
-                ecmult(&Jacobian::INFINITY, &Scalar::ZERO, &k, &ECRECOVER_CONTEXT).to_affine();
+                ecmult(Jacobian::INFINITY, Scalar::ZERO, k.clone(), &ECRECOVER_CONTEXT).to_affine();
 
             let computed = ecmult(
-                &Affine::GENERATOR.to_jacobian(),
-                &k,
-                &Scalar::ZERO,
+                Affine::GENERATOR.to_jacobian(),
+                k,
+                Scalar::ZERO,
                 &ECRECOVER_CONTEXT,
             )
             .to_affine();

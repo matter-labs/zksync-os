@@ -19,7 +19,7 @@ impl DelegatedU256 {
         Self(limbs)
     }
 
-    pub fn from_be_bytes(input: &[u8; 32]) -> Self {
+    pub const fn from_be_bytes(input: &[u8; 32]) -> Self {
         unsafe {
             #[allow(invalid_value)]
             let mut result: DelegatedU256 = MaybeUninit::uninit().assume_init();
@@ -35,9 +35,10 @@ impl DelegatedU256 {
         }
     }
 
-    pub fn to_be_bytes(mut self) -> [u8; 32] {
-        self.bytereverse();
-        unsafe { core::mem::transmute(self) }
+    pub fn to_be_bytes(&self) -> [u8; 32] {
+        let mut res = self.clone();
+        res.bytereverse();
+        unsafe { core::mem::transmute(res) }
     }
 
     pub fn from_le_bytes(input: &[u8; 32]) -> Self {
@@ -56,8 +57,8 @@ impl DelegatedU256 {
         }
     }
 
-    pub fn to_le_bytes(self) -> [u8; 32] {
-        unsafe { core::mem::transmute(self) }
+    pub fn to_le_bytes(&self) -> [u8; 32] {
+        unsafe { core::mem::transmute(self.clone()) }
     }
 
     pub fn as_le_bytes(&self) -> &[u8; 32] {
@@ -107,5 +108,27 @@ impl DelegatedU256 {
             let (word, bit_idx) = (bit_idx / 64, bit_idx % 64);
             self.0[word] & 1 << bit_idx != 0
         }
+    }
+}
+
+impl core::fmt::Display for DelegatedU256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::LowerHex::fmt(self, f)
+    }
+}
+
+impl core::fmt::Debug for DelegatedU256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::LowerHex::fmt(self, f)
+    }
+}
+
+impl core::fmt::LowerHex for DelegatedU256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for word in self.as_limbs().iter().rev() {
+            write!(f, "{:016x}", word)?;
+        }
+
+        core::fmt::Result::Ok(())
     }
 }

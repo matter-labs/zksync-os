@@ -1,17 +1,17 @@
 use super::DelegatedU256;
 
-pub(super) const ADD_OP_BIT_IDX: usize = 0;
-pub(super) const SUB_OP_BIT_IDX: usize = 1;
-pub(super) const SUB_AND_NEGATE_OP_BIT_IDX: usize = 2;
-pub(super) const MUL_LOW_OP_BIT_IDX: usize = 3;
-pub(super) const MUL_HIGH_OP_BIT_IDX: usize = 4;
-pub(super) const EQ_OP_BIT_IDX: usize = 5;
+pub const ADD_OP_BIT_IDX: usize = 0;
+pub const SUB_OP_BIT_IDX: usize = 1;
+pub const SUB_AND_NEGATE_OP_BIT_IDX: usize = 2;
+pub const MUL_LOW_OP_BIT_IDX: usize = 3;
+pub const MUL_HIGH_OP_BIT_IDX: usize = 4;
+pub const EQ_OP_BIT_IDX: usize = 5;
 
-pub(super) const CARRY_BIT_IDX: usize = 6;
-pub(super) const MEMCOPY_BIT_IDX: usize = 7;
+pub const CARRY_BIT_IDX: usize = 6;
+pub const MEMCOPY_BIT_IDX: usize = 7;
 
 #[inline(always)]
-pub(super) unsafe fn bigint_op_delegation<const OP_SHIFT: usize>(
+pub unsafe fn bigint_op_delegation<const OP_SHIFT: usize>(
     a: *mut DelegatedU256,
     b: *const DelegatedU256,
 ) -> u32 {
@@ -20,7 +20,7 @@ pub(super) unsafe fn bigint_op_delegation<const OP_SHIFT: usize>(
 
 #[cfg(target_arch = "riscv32")]
 #[inline(always)]
-pub(super) unsafe fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
+pub unsafe fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
     a: *mut DelegatedU256,
     b: *const DelegatedU256,
     carry: bool,
@@ -43,7 +43,7 @@ pub(super) unsafe fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
 
 #[cfg(not(target_arch = "riscv32"))]
 #[inline(always)]
-pub(super) unsafe fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
+pub unsafe fn bigint_op_delegation_with_carry_bit<const OP_SHIFT: usize>(
     _a: *mut DelegatedU256,
     _b: *const DelegatedU256,
     carry: bool,
