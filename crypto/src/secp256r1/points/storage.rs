@@ -8,6 +8,11 @@ pub(crate) struct Storage {
 }
 
 impl Storage {
+    pub(crate) const DEFAULT: Self = Storage {
+        x: FieldElement::ZERO,
+        y: FieldElement::ZERO
+    };
+
     pub(crate) fn to_affine(self) -> Affine {
         Affine {
             x: self.x,

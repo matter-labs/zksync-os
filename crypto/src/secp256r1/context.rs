@@ -2,7 +2,6 @@ use super::{
     points::{Affine, JacobianConst, Storage},
     ECMULT_TABLE_SIZE_G,
 };
-use core::mem::MaybeUninit;
 
 pub(super) struct GeneratorMultiplesTable([Storage; ECMULT_TABLE_SIZE_G]);
 
@@ -10,17 +9,12 @@ pub(super) const TABLE_G: GeneratorMultiplesTable = GeneratorMultiplesTable::new
 
 impl GeneratorMultiplesTable {
     const fn new() -> Self {
-        let mut pre_g = [const { MaybeUninit::uninit() }; ECMULT_TABLE_SIZE_G];
+        let mut pre_g = [Storage::DEFAULT; ECMULT_TABLE_SIZE_G];
         let g = JacobianConst::GENERATOR;
 
         odd_multiples(&mut pre_g, &g);
 
-        unsafe {
-            Self(core::mem::transmute::<
-                [MaybeUninit<Storage>; ECMULT_TABLE_SIZE_G],
-                [Storage; ECMULT_TABLE_SIZE_G],
-            >(pre_g))
-        }
+        Self(pre_g)
     }
 
     pub(super) fn get_ge(&self, n: i32) -> Affine {
@@ -33,18 +27,18 @@ impl GeneratorMultiplesTable {
 }
 
 const fn odd_multiples(
-    table: &mut [MaybeUninit<Storage>; ECMULT_TABLE_SIZE_G],
+    table: &mut [Storage; ECMULT_TABLE_SIZE_G],
     gen: &JacobianConst,
 ) {
     use const_for::const_for;
     let mut gj = *gen;
 
-    table[0].write(gj.to_storage());
+    table[0] = gj.to_storage();
 
     let g_double = gen.double();
 
     const_for!(i in 1..ECMULT_TABLE_SIZE_G => {
         gj = gj.add(&g_double);
-        table[i].write(gj.to_storage());
+        table[i] = gj.to_storage();
     });
 }
