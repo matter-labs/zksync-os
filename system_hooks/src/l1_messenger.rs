@@ -5,7 +5,6 @@
 use super::*;
 use arrayvec::ArrayVec;
 use core::fmt::Write;
-use crypto::sha3::digest::KeyInit;
 use errors::FatalError;
 use ruint::aliases::{B160, U256};
 use zk_ee::{
