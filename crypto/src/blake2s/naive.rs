@@ -35,21 +35,31 @@ impl Blake2s256 {
 impl crate::MiniDigest for Blake2s256 {
     type HashOutput = [u8; 32];
 
+    #[inline(always)]
     fn new() -> Self {
         Self::new_impl()
     }
 
+    #[inline(always)]
     fn digest(input: impl AsRef<[u8]>) -> Self::HashOutput {
         <blake2::Blake2s256 as blake2::Digest>::digest(input).into()
     }
 
+    #[inline(always)]
     fn update(&mut self, input: impl AsRef<[u8]>) {
         use blake2::Digest;
         self.inner.update(input);
     }
 
+    #[inline(always)]
     fn finalize(self) -> Self::HashOutput {
         use blake2::Digest;
         self.inner.finalize().into()
+    }
+
+    #[inline(always)]
+    fn finalize_reset(&mut self) -> Self::HashOutput {
+        use blake2::Digest;
+        self.inner.finalize_reset().into()
     }
 }
