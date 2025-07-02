@@ -3,7 +3,6 @@
 #![feature(allocator_api)]
 #![feature(generic_const_exprs)]
 #![no_main]
-#![no_builtins]
 
 extern "C" {
     // Boundaries of the heap
