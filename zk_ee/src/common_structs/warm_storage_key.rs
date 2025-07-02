@@ -65,8 +65,8 @@ pub fn derive_flat_storage_key_with_hasher(
     hasher: &mut crypto::blake2s::Blake2s256,
 ) -> Bytes32 {
     use crypto::MiniDigest;
-    hasher.update(&[0u8; 12]);
-    hasher.update(&address.to_be_bytes::<{ B160::BYTES }>());
+    hasher.update([0u8; 12]);
+    hasher.update(address.to_be_bytes::<{ B160::BYTES }>());
     hasher.update(key.as_u8_array_ref());
     let hash = hasher.finalize_reset();
     Bytes32::from_array(hash)
