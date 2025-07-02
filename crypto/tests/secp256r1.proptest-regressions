@@ -1,0 +1,13 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 4180121ba8c57ae9097e8e862bbc92dd5334dec74e0677f632c5a12bf2cdf97a # shrinks to digest = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+cc 5de4d6e1fa86c4145871576e21e755c306ef9bf2ba490563ff8a8162c715315d # shrinks to msg = ":ﬣ=.g𐄫dভJt\u{aa32}ù"
+cc fe0cd14be04de2bfebad05ae9b5729fffdf6373b66485066ffe5becffce3ed0b # shrinks to digest = [125, 43, 51, 132, 79, 60, 103, 206, 133, 249, 116, 166, 21, 67, 43, 14, 34, 55, 109, 172, 36, 0, 142, 79, 53, 194, 2, 171, 227, 208, 127, 13], signing_key = [78, 38, 172, 210, 117, 164, 89, 55, 101, 59, 205, 33, 253, 156, 40, 86, 216, 226, 12, 36, 68, 231, 213, 235, 108, 191, 138, 64, 40, 118, 14, 199]
+cc 39bb7bbc942329e35caf1edab824f6cb73f2c90d737a00d7700247fc733c33e8 # shrinks to msg = [99, 211, 157, 38, 75, 53, 126, 237, 169, 138, 165, 232, 242, 175, 158, 143, 44, 205, 77, 167, 212, 82, 53, 134, 216, 19, 202, 53, 153, 134, 150, 77, 200, 143, 156, 200, 201, 63, 170, 177, 179, 64, 142, 149, 167, 232, 36, 215, 67, 54, 14, 82, 9, 245, 208, 231, 209, 86, 101, 215, 29, 154, 93, 217, 234, 83, 78, 198, 48, 227, 10, 252, 90, 191, 119, 119, 163, 51, 236, 184, 206, 75, 85, 235, 182, 104, 189, 55, 109, 194, 183, 31, 103, 243, 122, 105, 185, 135, 79, 170]
+cc cd5470ba400ef5fdd5302941a173cbb89c82837b49c1de249bf47b863d514ce9 # shrinks to msg = [32, 194, 22, 30, 205, 115, 120, 29, 44, 199, 11, 45, 27, 108, 247, 250, 156, 152, 13, 75, 47, 4, 73, 131, 1, 187, 192, 251, 216, 218, 169, 202]
+cc dfb2eb1ed78b2b3ea02669f050940a7a0d50e6faeeaf13deec91d377dd93eacd # shrinks to msg = [107, 219, 194, 140, 230, 133, 59, 78, 137, 215]
+cc 1a5126342d1fac3d6ba8b77ae0069c290978ae931446e819d8658c1f250b25ca # shrinks to msg = [0, 0, 0, 0, 0, 255, 0, 0, 0, 0]

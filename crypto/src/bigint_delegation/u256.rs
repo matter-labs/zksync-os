@@ -144,7 +144,7 @@ pub fn sub_and_negate_with_carry(a: &mut U256, b: &U256, carry: bool) -> bool {
 /// # Safety
 /// `DelegationModParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
-unsafe fn sub_mod_with_carry<T: DelegatedModParams<4>>(a: &mut U256, carry: bool) {
+pub unsafe fn sub_mod_with_carry<T: DelegatedModParams<4>>(a: &mut U256, carry: bool) {
     let borrow = delegation::sub(a, T::modulus()) != 0;
 
     if borrow && !carry {
@@ -202,19 +202,20 @@ pub unsafe fn neg_mod_assign<T: DelegatedModParams<4>>(a: &mut U256) {
 }
 
 #[inline(always)]
-/// It takes `a` as mutable for the purposes of delegation calls, but doesn't mutate it
-pub fn eq(a: &mut U256, b: &U256) -> bool {
+pub fn eq(a: &U256, b: &U256) -> bool {
+    let temp = unsafe { COPY_PLACE_0.assume_init_mut() };
+    delegation::memcpy(temp, a);
     let b = delegation::copy_if_needed(b);
 
-    delegation::eq(a, b) != 0
+    delegation::eq(temp, b) != 0
 }
 
 #[inline(always)]
-/// it takes `a` as mutable for the purposes of delegation calls, but doesn't mutate it
-pub fn is_zero(a: &mut U256) -> bool {
+pub fn is_zero(a: &U256) -> bool {
     let zero = unsafe { ZERO.assume_init_ref() };
-
-    delegation::eq(a, zero) != 0
+    let temp = unsafe { COPY_PLACE_0.assume_init_mut() };
+    delegation::memcpy(temp, a);
+    delegation::eq(temp, zero) != 0
 }
 
 #[inline(always)]

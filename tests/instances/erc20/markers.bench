@@ -1,0 +1,33 @@
+Spent ergs for [ecrecover]: 768000
+
+Spent native for [ecrecover]: 522000
+
+Spent ergs for [prepare_for_call]: 0
+
+Spent native for [prepare_for_call]: 160960
+
+Spent ergs for [keccak]: 10752
+
+Spent native for [keccak]: 20000
+
+Spent ergs for [process_transaction]: 17179904
+Spent native for [process_transaction]: 1987728
+Spent ergs for [ecrecover]: 768000
+
+Spent native for [ecrecover]: 522000
+
+Spent ergs for [prepare_for_call]: 0
+
+Spent native for [prepare_for_call]: 4500
+
+Spent ergs for [keccak]: 10752
+
+Spent native for [keccak]: 20000
+
+Spent ergs for [keccak]: 10752
+
+Spent native for [keccak]: 20000
+
+Spent ergs for [keccak]: 10Spent ergs for [run_prepared]: 23399424Spent ergs for [process_transaction]: 13421056
+Spent native for [process_transaction]: 1337662
+Spent ergs for [run_prepared]: 30600960
