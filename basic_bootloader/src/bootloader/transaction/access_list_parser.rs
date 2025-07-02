@@ -5,7 +5,7 @@
 
 use crate::bootloader::Bytes32;
 use crate::bootloader::TX_OFFSET;
-use ruint::aliases::{B160, U256};
+use ruint::aliases::B160;
 
 pub struct AccessListParser {
     pub offset: usize,
@@ -25,10 +25,16 @@ pub struct AccessListIter<'a> {
 }
 
 impl<'a> AccessListIter<'a> {
-    fn parse_u256(slice: &'a [u8], offset: usize) -> Result<U256, ()> {
-        Ok(U256::from_be_slice(
-            slice.get(offset..(offset + 32)).ok_or(())?,
-        ))
+    // Return usize for ease of use for indexing
+    fn parse_u32(slice: &'a [u8], offset: usize) -> Result<usize, ()> {
+        let bytes = slice.get(offset..(offset + 32)).ok_or(())?;
+        for byte in bytes.iter().take(28) {
+            if *byte != 0 {
+                return Err(());
+            }
+        }
+        let value = u32::from_be_bytes(bytes[28..32].try_into().unwrap());
+        Ok(value as usize)
     }
 
     fn new(slice: &'a [u8], offset: usize) -> Result<Self, ()> {
@@ -37,7 +43,7 @@ impl<'a> AccessListIter<'a> {
         // Reserved dynamic is a bytestring of a list,
         // so that we can add fields later on.
 
-        let bytestring_len = Self::parse_u256(slice, offset)?.as_limbs()[0] as usize;
+        let bytestring_len = Self::parse_u32(slice, offset)?;
         if bytestring_len == 0 {
             // If empty bytestring, interpret as empty list
             return Ok(AccessListIter {
@@ -50,17 +56,16 @@ impl<'a> AccessListIter<'a> {
         let offset = offset + 32;
 
         // For now, it only has the access list
-        let outer_offset = Self::parse_u256(slice, offset)?.as_limbs()[0] as usize;
+        let outer_offset = Self::parse_u32(slice, offset)?;
         let outer_base = offset + outer_offset;
-        let outer_len = Self::parse_u256(slice, outer_base)?.as_limbs()[0] as usize;
+        let outer_len = Self::parse_u32(slice, outer_base)?;
         if outer_len != 1 {
             return Err(());
         }
 
-        let access_list_rel_offset =
-            Self::parse_u256(slice, outer_base + 32)?.as_limbs()[0] as usize;
+        let access_list_rel_offset = Self::parse_u32(slice, outer_base + 32)?;
         let access_list_base = outer_base + 32 + access_list_rel_offset;
-        let count = Self::parse_u256(slice, access_list_base)?.as_limbs()[0] as usize;
+        let count = Self::parse_u32(slice, access_list_base)?;
         let head_start = access_list_base + 32;
 
         Ok(AccessListIter {
@@ -74,14 +79,13 @@ impl<'a> AccessListIter<'a> {
     fn parse_current(&mut self) -> Result<(B160, StorageKeysIter<'a>), ()> {
         // Assume index < count, checked by iterator impl
         let offset = self.head_start + self.index.checked_mul(32).ok_or(())?;
-        let item_ptr_offset = Self::parse_u256(self.slice, offset)?.as_limbs()[0] as usize;
+        let item_ptr_offset = Self::parse_u32(self.slice, offset)?;
         let item_offset = self.head_start + item_ptr_offset;
         let address_bytes = &self.slice.get(item_offset..item_offset + 32).ok_or(())?[12..];
         let address = B160::try_from_be_slice(address_bytes).unwrap();
-        let keys_ptr_offset =
-            Self::parse_u256(self.slice, item_offset + 32)?.as_limbs()[0] as usize;
+        let keys_ptr_offset = Self::parse_u32(self.slice, item_offset + 32)?;
         let keys_offset = item_offset + keys_ptr_offset;
-        let keys_len = Self::parse_u256(self.slice, keys_offset)?.as_limbs()[0] as usize;
+        let keys_len = Self::parse_u32(self.slice, keys_offset)?;
         let keys_slice = self.slice.get(keys_offset + 32..).ok_or(())?;
 
         Ok((
