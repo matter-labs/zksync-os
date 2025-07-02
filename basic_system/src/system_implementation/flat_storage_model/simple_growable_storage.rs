@@ -23,7 +23,7 @@ use alloc::vec::Vec;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use either::Either;
-use zk_ee::common_structs::derive_flat_storage_key;
+use zk_ee::common_structs::derive_flat_storage_key_with_hasher;
 use zk_ee::common_structs::state_root_view::StateRootView;
 use zk_ee::common_structs::{WarmStorageKey, WarmStorageValue};
 use zk_ee::{
@@ -231,8 +231,9 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
 
         let mut num_nonexisting_reads = 0;
 
+        let mut hasher = crypto::blake2s::Blake2s256::new();
         for (key, value) in reads_iter {
-            let flat_key = derive_flat_storage_key(&key.address, &key.key);
+            let flat_key = derive_flat_storage_key_with_hasher(&key.address, &key.key, &mut hasher);
             // reads
             let expect_new = value.is_new_storage_slot;
             assert!(value.initial_value_used);
@@ -348,7 +349,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
 
         for (key, value) in writes_iter {
             num_total_writes += 1;
-            let flat_key = derive_flat_storage_key(&key.address, &key.key);
+            let flat_key = derive_flat_storage_key_with_hasher(&key.address, &key.key, &mut hasher);
             // writes
             let expect_new = value.is_new_storage_slot;
             if expect_new {
@@ -1669,6 +1670,7 @@ mod test {
     use proptest::{prelude::*, sample::Index};
     use ruint::aliases::{B160, U256};
     use std::{any, collections::HashMap, ops};
+    use zk_ee::common_structs::derive_flat_storage_key;
     use zk_ee::{system::NullLogger, system_io_oracle::dyn_usize_iterator::DynUsizeIterator};
 
     fn hex_bytes(s: &str) -> Bytes32 {
