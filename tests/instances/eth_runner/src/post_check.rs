@@ -140,13 +140,13 @@ impl DiffTrace {
             };
             if let Some(bal) = account.balance {
                 // Balance might differ due to refunds and access list gas charging
-                if bal != zk_account.balance.unwrap() {
+                if Some(bal) != zk_account.balance {
                     debug!(
                         "Balance for {} is {:?} but expected {:?}.\n  Difference: {:?}",
                         hex::encode(address.to_be_bytes_vec()),
-                        zk_account.balance.unwrap(),
+                        zk_account.balance,
                         bal,
-                        zk_account.balance.unwrap().abs_diff(bal),
+                        zk_account.balance.unwrap_or(U256::ZERO).abs_diff(bal),
                     )
                 };
             }
