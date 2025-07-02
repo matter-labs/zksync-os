@@ -216,13 +216,12 @@ impl AccountProperties {
         not_publish_bytecode: bool,
     ) -> Result<u32, InternalError> {
         // if something except nonce and balance changed, we'll encode full diff, for all the fields
-        let full_diff =
-            initial.versioning_data != r#final.versioning_data ||
-                initial.bytecode_hash != r#final.bytecode_hash ||
-                initial.bytecode_len != r#final.bytecode_len ||
-                initial.artifacts_len != r#final.artifacts_len ||
-                initial.observable_bytecode_len != r#final.observable_bytecode_len ||
-                initial.observable_bytecode_hash != r#final.observable_bytecode_hash;
+        let full_diff = initial.versioning_data != r#final.versioning_data
+            || initial.bytecode_hash != r#final.bytecode_hash
+            || initial.bytecode_len != r#final.bytecode_len
+            || initial.artifacts_len != r#final.artifacts_len
+            || initial.observable_bytecode_len != r#final.observable_bytecode_len
+            || initial.observable_bytecode_hash != r#final.observable_bytecode_hash;
         if full_diff {
             Ok(if not_publish_bytecode {
                 1u32 // metadata byte
@@ -298,13 +297,12 @@ impl AccountProperties {
         oracle: &mut impl IOOracle,
     ) -> Result<(), InternalError> {
         // if something except nonce and balance changed, we'll encode full diff, for all the fields
-        let full_diff =
-        initial.versioning_data != r#final.versioning_data ||
-            initial.bytecode_hash != r#final.bytecode_hash ||
-            initial.bytecode_len != r#final.bytecode_len ||
-            initial.artifacts_len != r#final.artifacts_len ||
-            initial.observable_bytecode_len != r#final.observable_bytecode_len ||
-            initial.observable_bytecode_hash != r#final.observable_bytecode_hash;
+        let full_diff = initial.versioning_data != r#final.versioning_data
+            || initial.bytecode_hash != r#final.bytecode_hash
+            || initial.bytecode_len != r#final.bytecode_len
+            || initial.artifacts_len != r#final.artifacts_len
+            || initial.observable_bytecode_len != r#final.observable_bytecode_len
+            || initial.observable_bytecode_hash != r#final.observable_bytecode_hash;
 
         if full_diff {
             // Account encoding (0b100), option 0 (0b000100) or option 4 (0b100100), see function specs.
