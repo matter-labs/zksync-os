@@ -48,4 +48,5 @@ pub trait MiniDigest: Sized {
     fn digest(input: impl AsRef<[u8]>) -> Self::HashOutput;
     fn update(&mut self, input: impl AsRef<[u8]>);
     fn finalize(self) -> Self::HashOutput;
+    fn finalize_reset(&mut self) -> Self::HashOutput;
 }
