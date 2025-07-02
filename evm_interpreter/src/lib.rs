@@ -277,7 +277,7 @@ const fn analyze_byte_pair(first_byte: usize, second_byte: usize) -> BytecodeAna
 
 /// Analyzs bytecode to build a jump map.
 fn analyze<A: Allocator>(code: &[u8], allocator: A) -> BitMap<A> {
-    // NOTE: we should be carefull - we are on LE machine. So if we need to ignore the byte
+    // NOTE: we should be careful - we are on LE machine. So if we need to ignore the byte
     // that comes first, it'll be lower byte of the word
     const IGNORE_FIRST_BYTE_MASK: u16 = 0xff00;
 
@@ -297,7 +297,7 @@ fn analyze<A: Allocator>(code: &[u8], allocator: A) -> BitMap<A> {
         while u16_ptr < end_ptr {
             let mut table_idx = u16_ptr.read();
             if mask_first_byte {
-                // masking of the first byte is reponsible to "attach" it to some previoux pushX
+                // masking of the first byte corresponds to "attaching" it to some previoux pushX if needed
                 table_idx &= IGNORE_FIRST_BYTE_MASK;
                 mask_first_byte = false;
             }
