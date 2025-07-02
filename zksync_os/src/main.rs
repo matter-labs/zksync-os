@@ -147,6 +147,9 @@ static GLOBAL_ALLOC: OptionalGlobalAllocator = OptionalGlobalAllocator;
 // TODO: disable global alloc once dependencies are fixed
 // static GLOBAL_ALLOCATOR_PLACEHOLDER: NullAllocator = NullAllocator;
 
+core::arch::global_asm!(include_str!("memset.s"));
+core::arch::global_asm!(include_str!("memcpy.s"));
+
 unsafe fn workload() -> ! {
     use core::ptr::addr_of_mut;
     let heap_start = addr_of_mut!(_sheap);
