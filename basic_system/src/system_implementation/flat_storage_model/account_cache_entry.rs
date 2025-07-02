@@ -214,73 +214,58 @@ impl AccountProperties {
         r#final: &Self,
         not_publish_bytecode: bool,
     ) -> Result<u32, InternalError> {
-        match (
-            initial.versioning_data.is_deployed(),
-            r#final.versioning_data.is_deployed(),
-        ) {
-            (true, false) => Err(InternalError(
-                "Account destructed at the end of the tx/block",
-            )),
-            (false, true) => {
-                Ok(if not_publish_bytecode {
-                    1u32 // metadata byte
-                        + 8 // versioning data
-                        + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?) as u32 // nonce diff
-                        + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
-                        + 32 // bytecode hash
-                        + 4 // artifacts len
-                        + 4 // observable bytecode len
-                } else {
-                    1u32 // metadata byte
-                        + 8 // versioning data
-                        + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?) as u32 // nonce diff
-                        + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
-                        + 4 // bytecode len
-                        + r#final.bytecode_len // bytecode
-                        + 4 // artifacts len
-                        + 4 // observable bytecode len
-                })
+        // if something except nonce and balance changed, we'll encode full diff, for all the fields
+        let full_diff =
+            initial.versioning_data != r#final.versioning_data ||
+                initial.bytecode_hash != r#final.bytecode_hash ||
+                initial.bytecode_len != r#final.bytecode_len ||
+                initial.artifacts_len != r#final.artifacts_len ||
+                initial.observable_bytecode_len != r#final.observable_bytecode_len ||
+                initial.observable_bytecode_hash != r#final.observable_bytecode_hash;
+        if full_diff {
+            Ok(if not_publish_bytecode {
+                1u32 // metadata byte
+                    + 8 // versioning data
+                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?) as u32 // nonce diff
+                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
+                    + 32 // bytecode hash
+                    + 4 // artifacts len
+                    + 4 // observable bytecode len
+            } else {
+                1u32 // metadata byte
+                    + 8 // versioning data
+                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?) as u32 // nonce diff
+                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
+                    + 4 // bytecode len
+                    + r#final.bytecode_len // bytecode
+                    + 4 // artifacts len
+                    + 4 // observable bytecode len
+            })
+        } else {
+            // the diff shouldn't be included at all in such case
+            if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
+                return Ok(0);
             }
-            (_, _) => {
-                // if deployment status didn't change, only balance and nonce can be changed
-                debug_assert_eq!(initial.versioning_data, r#final.versioning_data);
-                debug_assert_eq!(initial.bytecode_hash, r#final.bytecode_hash);
-                debug_assert_eq!(
-                    initial.observable_bytecode_hash,
-                    r#final.observable_bytecode_hash
-                );
-                debug_assert_eq!(initial.bytecode_len, r#final.bytecode_len);
-                debug_assert_eq!(
-                    initial.observable_bytecode_len,
-                    r#final.observable_bytecode_len
-                );
-                debug_assert_eq!(initial.artifacts_len, r#final.artifacts_len);
-
-                // the diff shouldn't be included at all in such case
-                if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
-                    return Ok(0);
-                }
-                let mut length = 1u32; // metadata byte
-                if initial.nonce != r#final.nonce {
-                    length += ValueDiffCompressionStrategy::optimal_compression_length_u256(
-                        initial
-                            .nonce
-                            .try_into()
-                            .map_err(|_| InternalError("u64 into U256"))?,
-                        r#final
-                            .nonce
-                            .try_into()
-                            .map_err(|_| InternalError("u64 into U256"))?,
-                    ) as u32; // nonce diff
-                }
-                if initial.balance != r#final.balance {
-                    length += ValueDiffCompressionStrategy::optimal_compression_length_u256(
-                        initial.balance,
-                        r#final.balance,
-                    ) as u32; // balance diff
-                }
-                Ok(length)
+            let mut length = 1u32; // metadata byte
+            if initial.nonce != r#final.nonce {
+                length += ValueDiffCompressionStrategy::optimal_compression_length_u256(
+                    initial
+                        .nonce
+                        .try_into()
+                        .map_err(|_| InternalError("u64 into U256"))?,
+                    r#final
+                        .nonce
+                        .try_into()
+                        .map_err(|_| InternalError("u64 into U256"))?,
+                ) as u32; // nonce diff
             }
+            if initial.balance != r#final.balance {
+                length += ValueDiffCompressionStrategy::optimal_compression_length_u256(
+                    initial.balance,
+                    r#final.balance,
+                ) as u32; // balance diff
+            }
+            Ok(length)
         }
     }
 
@@ -311,25 +296,97 @@ impl AccountProperties {
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
     ) -> Result<(), InternalError> {
-        match (
-            initial.versioning_data.is_deployed(),
-            r#final.versioning_data.is_deployed(),
-        ) {
-            (true, false) => Err(InternalError(
-                "Account destructed at the end of the tx/block",
-            )),
-            (false, true) => {
-                // Account encoding (0b100), option 0 (0b000100) or option 4 (0b100100), see function specs.
-                let metadata_byte = if not_publish_bytecode {
-                    0b00000100
-                } else {
-                    0b00100100
-                };
+        // if something except nonce and balance changed, we'll encode full diff, for all the fields
+        let full_diff =
+        initial.versioning_data != r#final.versioning_data ||
+            initial.bytecode_hash != r#final.bytecode_hash ||
+            initial.bytecode_len != r#final.bytecode_len ||
+            initial.artifacts_len != r#final.artifacts_len ||
+            initial.observable_bytecode_len != r#final.observable_bytecode_len ||
+            initial.observable_bytecode_hash != r#final.observable_bytecode_hash;
 
-                hasher.update([metadata_byte]);
-                result_keeper.pubdata(&[metadata_byte]);
-                hasher.update(r#final.versioning_data.into_u64().to_be_bytes());
-                result_keeper.pubdata(&r#final.versioning_data.into_u64().to_be_bytes());
+        if full_diff {
+            // Account encoding (0b100), option 0 (0b000100) or option 4 (0b100100), see function specs.
+            let metadata_byte = if not_publish_bytecode {
+                0b00000100
+            } else {
+                0b00100100
+            };
+
+            hasher.update([metadata_byte]);
+            result_keeper.pubdata(&[metadata_byte]);
+            hasher.update(r#final.versioning_data.into_u64().to_be_bytes());
+            result_keeper.pubdata(&r#final.versioning_data.into_u64().to_be_bytes());
+            ValueDiffCompressionStrategy::optimal_compression_u256(
+                initial
+                    .nonce
+                    .try_into()
+                    .map_err(|_| InternalError("u64 into U256"))?,
+                r#final
+                    .nonce
+                    .try_into()
+                    .map_err(|_| InternalError("u64 into U256"))?,
+                hasher,
+                result_keeper,
+            );
+            ValueDiffCompressionStrategy::optimal_compression_u256(
+                initial.balance,
+                r#final.balance,
+                hasher,
+                result_keeper,
+            );
+
+            if not_publish_bytecode {
+                hasher.update(r#final.bytecode_hash.as_u8_ref());
+                result_keeper.pubdata(r#final.bytecode_hash.as_u8_ref());
+            } else {
+                hasher.update(r#final.bytecode_len.to_be_bytes());
+                result_keeper.pubdata(&r#final.bytecode_len.to_be_bytes());
+                let preimage_type = PreimageRequest {
+                    hash: r#final.bytecode_hash,
+                    expected_preimage_len_in_bytes: r#final.bytecode_len,
+                    preimage_type: PreimageType::Bytecode,
+                };
+                let mut resources = R::FORMAL_INFINITE;
+                let bytecode = preimages_cache
+                    .get_preimage::<PROOF_ENV>(
+                        ExecutionEnvironmentType::NoEE,
+                        &preimage_type,
+                        &mut resources,
+                        oracle,
+                    )
+                    .map_err(|err| match err {
+                        SystemError::OutOfErgs => InternalError("Out of ergs on infinite ergs"),
+                        SystemError::OutOfNativeResources => {
+                            InternalError("Out of native on infinite")
+                        }
+                        SystemError::Internal(i) => i,
+                    })?;
+                hasher.update(bytecode);
+                result_keeper.pubdata(bytecode);
+            }
+
+            hasher.update(r#final.artifacts_len.to_be_bytes());
+            result_keeper.pubdata(&r#final.artifacts_len.to_be_bytes());
+            hasher.update(r#final.observable_bytecode_len.to_be_bytes());
+            result_keeper.pubdata(&r#final.observable_bytecode_len.to_be_bytes());
+            Ok(())
+        } else {
+            if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
+                return Err(InternalError(
+                    "Account properties diff compression shouldn't be called for same values",
+                ));
+            }
+            let mut metadata_byte = 4u8;
+            if initial.nonce != r#final.nonce {
+                metadata_byte |= 1 << 3;
+            }
+            if initial.balance != r#final.balance {
+                metadata_byte |= 2 << 3;
+            }
+            hasher.update([metadata_byte]);
+            result_keeper.pubdata(&[metadata_byte]);
+            if initial.nonce != r#final.nonce {
                 ValueDiffCompressionStrategy::optimal_compression_u256(
                     initial
                         .nonce
@@ -342,102 +399,16 @@ impl AccountProperties {
                     hasher,
                     result_keeper,
                 );
+            }
+            if initial.balance != r#final.balance {
                 ValueDiffCompressionStrategy::optimal_compression_u256(
                     initial.balance,
                     r#final.balance,
                     hasher,
                     result_keeper,
                 );
-
-                if not_publish_bytecode {
-                    hasher.update(r#final.bytecode_hash.as_u8_ref());
-                    result_keeper.pubdata(r#final.bytecode_hash.as_u8_ref());
-                } else {
-                    hasher.update(r#final.bytecode_len.to_be_bytes());
-                    result_keeper.pubdata(&r#final.bytecode_len.to_be_bytes());
-                    let preimage_type = PreimageRequest {
-                        hash: r#final.bytecode_hash,
-                        expected_preimage_len_in_bytes: r#final.bytecode_len,
-                        preimage_type: PreimageType::Bytecode,
-                    };
-                    let mut resources = R::FORMAL_INFINITE;
-                    let bytecode = preimages_cache
-                        .get_preimage::<PROOF_ENV>(
-                            ExecutionEnvironmentType::NoEE,
-                            &preimage_type,
-                            &mut resources,
-                            oracle,
-                        )
-                        .map_err(|err| match err {
-                            SystemError::OutOfErgs => InternalError("Out of ergs on infinite ergs"),
-                            SystemError::OutOfNativeResources => {
-                                InternalError("Out of native on infinite")
-                            }
-                            SystemError::Internal(i) => i,
-                        })?;
-                    hasher.update(bytecode);
-                    result_keeper.pubdata(bytecode);
-                }
-
-                hasher.update(r#final.artifacts_len.to_be_bytes());
-                result_keeper.pubdata(&r#final.artifacts_len.to_be_bytes());
-                hasher.update(r#final.observable_bytecode_len.to_be_bytes());
-                result_keeper.pubdata(&r#final.observable_bytecode_len.to_be_bytes());
-                Ok(())
             }
-            (_, _) => {
-                // if deployment status didn't change, only balance and nonce can be changed
-                debug_assert_eq!(initial.versioning_data, r#final.versioning_data);
-                debug_assert_eq!(initial.bytecode_hash, r#final.bytecode_hash);
-                debug_assert_eq!(
-                    initial.observable_bytecode_hash,
-                    r#final.observable_bytecode_hash
-                );
-                debug_assert_eq!(initial.bytecode_len, r#final.bytecode_len);
-                debug_assert_eq!(
-                    initial.observable_bytecode_len,
-                    r#final.observable_bytecode_len
-                );
-                debug_assert_eq!(initial.artifacts_len, r#final.artifacts_len);
-
-                if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
-                    return Err(InternalError(
-                        "Account properties diff compression shouldn't be called for same values",
-                    ));
-                }
-                let mut metadata_byte = 4u8;
-                if initial.nonce != r#final.nonce {
-                    metadata_byte |= 1 << 3;
-                }
-                if initial.balance != r#final.balance {
-                    metadata_byte |= 2 << 3;
-                }
-                hasher.update([metadata_byte]);
-                result_keeper.pubdata(&[metadata_byte]);
-                if initial.nonce != r#final.nonce {
-                    ValueDiffCompressionStrategy::optimal_compression_u256(
-                        initial
-                            .nonce
-                            .try_into()
-                            .map_err(|_| InternalError("u64 into U256"))?,
-                        r#final
-                            .nonce
-                            .try_into()
-                            .map_err(|_| InternalError("u64 into U256"))?,
-                        hasher,
-                        result_keeper,
-                    );
-                }
-                if initial.balance != r#final.balance {
-                    ValueDiffCompressionStrategy::optimal_compression_u256(
-                        initial.balance,
-                        r#final.balance,
-                        hasher,
-                        result_keeper,
-                    );
-                }
-                Ok(())
-            }
+            Ok(())
         }
     }
 }
