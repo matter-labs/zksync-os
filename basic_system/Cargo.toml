@@ -38,3 +38,6 @@ wrap-in-batch = []
 [dev-dependencies]
 hex = {version = "0.4.3"}
 proptest = "1.6.0"
+serde_json = "*"
+num-bigint = "*"
+num-traits = "*"

@@ -26,4 +26,5 @@ impl MiniDigest for NopHasher {
     fn digest(_input: impl AsRef<[u8]>) -> Self::HashOutput {}
     fn update(&mut self, _input: impl AsRef<[u8]>) {}
     fn finalize(self) -> Self::HashOutput {}
+    fn finalize_reset(&mut self) -> Self::HashOutput {}
 }
