@@ -729,7 +729,7 @@ where
                 v.versioning_data
                     .set_code_version(DEFAULT_CODE_VERSION_BYTE);
 
-                m.deployed_in_tx = cur_tx;
+                m.deployed_in_tx = Some(cur_tx);
                 // This is unlikely to happen, this case shouldn't be reachable by higher level logic
                 // but just in case if force deployed contract was redeployed with regular deployment we want to publish it
                 m.not_publish_bytecode = false;
@@ -786,7 +786,7 @@ where
                 v.versioning_data
                     .set_code_version(DEFAULT_CODE_VERSION_BYTE);
 
-                m.deployed_in_tx = cur_tx;
+                m.deployed_in_tx = Some(cur_tx);
                 m.not_publish_bytecode = true;
 
                 Ok(())
@@ -831,7 +831,7 @@ where
         // constructor, so in the second case `deployed_in_tx` won't be set
         // yet.
         let should_be_deconstructed =
-            account_data.current().metadata().deployed_in_tx == cur_tx || in_constructor;
+            account_data.current().metadata().deployed_in_tx == Some(cur_tx) || in_constructor;
 
         if should_be_deconstructed {
             account_data.update::<_, SystemError>(|cache_record| {
