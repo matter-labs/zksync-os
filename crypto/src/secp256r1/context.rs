@@ -26,10 +26,7 @@ impl GeneratorMultiplesTable {
     }
 }
 
-const fn odd_multiples(
-    table: &mut [Storage; ECMULT_TABLE_SIZE_G],
-    gen: &JacobianConst,
-) {
+const fn odd_multiples(table: &mut [Storage; ECMULT_TABLE_SIZE_G], gen: &JacobianConst) {
     use const_for::const_for;
     let mut gj = *gen;
 
