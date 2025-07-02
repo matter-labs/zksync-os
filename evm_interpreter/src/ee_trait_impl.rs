@@ -49,7 +49,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         let gas = Gas::new();
         let stack_space = EvmStack::new_in(system.get_allocator());
         let empty_address = <S::IOTypes as SystemIOTypesConfig>::Address::default();
-        let empty_preprocessing = BytecodePreprocessingData::<S>::empty(system);
+        let empty_preprocessing =
+            BytecodePreprocessingData::<S::Allocator>::empty(system.get_allocator());
 
         Ok(Self {
             instruction_pointer: 0,
@@ -151,10 +152,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         // we need to set bytecode, address of self and caller, static state
         // and calldata
         let original_bytecode_len = bytecode_len;
-        let bytecode_preprocessing = BytecodePreprocessingData::<S>::from_raw_bytecode(
+        let bytecode_preprocessing = BytecodePreprocessingData::<S::Allocator>::from_raw_bytecode(
             decommitted_bytecode,
             original_bytecode_len,
-            system,
+            system.get_allocator(),
             &mut available_resources,
         )?;
 
