@@ -307,9 +307,9 @@ impl AccountProperties {
         if full_diff {
             // Account encoding (0b100), option 0 (0b000100) or option 4 (0b100100), see function specs.
             let metadata_byte = if not_publish_bytecode {
-                0b00000100
-            } else {
                 0b00100100
+            } else {
+                0b00000100
             };
 
             hasher.update([metadata_byte]);
