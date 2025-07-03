@@ -181,34 +181,22 @@ impl<S: SystemTypes> BitMap<S> {
 
 /// Analyzs bytecode to build a jump map.
 fn analyze<S: SystemTypes>(code: &[u8], system: &mut System<S>) -> Result<BitMap<S>, ()> {
-    let code_len = code.len();
-    let mut jumps = BitMap::<S>::allocate_for_bit_capacity(code_len, system);
-    let mut code_iter = code.iter().copied().enumerate();
-
     use self::opcodes as opcode;
 
-    while let Some((offset, opcode)) = code_iter.next() {
-        if opcode::JUMPDEST == opcode {
-            // SAFETY: jumps are max length of the code
-            unsafe { jumps.set_bit_on_unchecked(offset) }
-            // step by 1 is automatic
+    let code_len = code.len();
+    let mut jumps = BitMap::<S>::allocate_for_bit_capacity(code_len, system);
+
+    let mut i = 0;
+    while i < code_len {
+        let op = code[i];
+        if op == opcode::JUMPDEST {
+            // SAFETY: `i` is always < code_len
+            unsafe { jumps.set_bit_on_unchecked(i) };
+            i += 1;
+        } else if (opcode::PUSH1..=opcode::PUSH32).contains(&op) {
+            i += 1 + (op - opcode::PUSH1 + 1) as usize;
         } else {
-            let push_bytes = opcode.wrapping_sub(opcode::PUSH1);
-            if push_bytes < 32 {
-                // we just consumed encoding of "PUSH_X" itself, and now we should
-                // consume X bytes after
-                // step by 1 is automatic, and then we need to skip push_offset + 1
-                match code_iter.advance_by((push_bytes + 1) as usize) {
-                    Ok(_) => {
-                        // nothing, we continue
-                    }
-                    Err(_advanced_by) => {
-                        // actually we are fine, since bytecode is virtually extendable with zero-pad for EVM
-                    }
-                }
-            } else {
-                // step by 1 is automatic
-            }
+            i += 1;
         }
     }
 
