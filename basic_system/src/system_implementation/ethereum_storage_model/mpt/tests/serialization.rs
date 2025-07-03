@@ -5,15 +5,9 @@ use num_traits::Num;
 use crate::system_implementation::ethereum_storage_model::mpt::path_char_to_digit;
 
 #[derive(Clone, Debug, serde::Deserialize)]
-pub(crate) struct TestJsonResponse {
-    pub(crate) result: AccountProof,
+pub(crate) struct TestJsonResponse<T> {
+    pub(crate) result: T,
 }
-
-// #[derive(Clone, Debug, serde::Deserialize)]
-// pub(crate) struct AccountProofResult {
-//     #[serde(rename = "accountProof")]
-//     pub(crate) account_proof: AccountProof,
-// }
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub(crate) struct AccountProof {

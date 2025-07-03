@@ -1,14 +1,8 @@
 use core::cmp::Ordering;
-
-use crate::system_implementation::ethereum_storage_model::mpt::trie::ShortNodeIndex;
-
 use super::*;
 
 impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
-    pub(crate) fn find_as_existing_leaf<'b>(
-        &self,
-        full_path: &'b [u8],
-    ) -> Result<NodeType, ()> {
+    pub(crate) fn find_as_existing_leaf<'b>(&self, full_path: &'b [u8]) -> Result<NodeType, ()> {
         // it's a little naive, but we can walk over index of leafs
         // to get all elements for which prefix is less than current, and take few top-most
         let short_index = ShortNodeIndex {
@@ -22,13 +16,11 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             let segment = &full_path[index.node_prefix.len()..];
             let (_, leaf) = self.leaf_nodes.get_persistent_by_index(*pos);
             match leaf.path_segment.cmp(segment) {
-                Ordering::Less => {
-                    break
-                },
+                Ordering::Less => break,
                 Ordering::Equal => {
                     let node_type = NodeType::leaf(*pos);
-                    return Ok(node_type)
-                },
+                    return Ok(node_type);
+                }
                 Ordering::Greater => {
                     continue;
                 }
@@ -45,12 +37,16 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         pre_encoded_leaf_value: &[u8],
         interner: &'_ mut (impl Interner<'a> + 'a),
         hasher: &mut D,
-    ) -> Result<&'a [u8], ()> where D::HashOutput: AsRef<[u8]> {
+    ) -> Result<&'a [u8], ()>
+    where
+        D::HashOutput: AsRef<[u8]>,
+    {
         let (_, existing_leaf) = self.leaf_nodes.get_persistent_by_index(node.index());
         let Some(remaining_prefix) = full_path.strip_suffix(existing_leaf.path_segment) else {
-            return Err(())
+            return Err(());
         };
-        let new_leaf_key = interner.update_leaf_value(&existing_leaf, pre_encoded_leaf_value, hasher)?;
+        let new_leaf_key =
+            interner.update_leaf_value(&existing_leaf, pre_encoded_leaf_value, hasher)?;
         debug_assert!(new_leaf_key.len() <= 33);
 
         // dbg!(hex::encode(new_leaf_key));

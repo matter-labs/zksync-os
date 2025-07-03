@@ -153,13 +153,13 @@ impl<'a> PathSegment<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct Path<'a> {
+pub struct Path<'a> {
     path: &'a [u8],
     prefix_len: usize,
 }
 
 impl<'a> Path<'a> {
-    pub(crate) fn new(path: &'a [u8]) -> Self {
+    pub fn new(path: &'a [u8]) -> Self {
         Self {
             path,
             prefix_len: 0,
@@ -230,7 +230,7 @@ pub(crate) struct LeafNode<'a> {
     pub(crate) parent_node: NodeType,
     pub(crate) raw_nibbles_encoding: &'a [u8], // RLP, not even internals. Handy for updates
     // pub(crate) raw_encoding: &'a [u8], // of full node (including prefix)
-    // pub(crate) value: &'a [u8], // fully parsed, and if any update will happen we can benefit from it
+    pub(crate) value: &'a [u8], // fully parsed
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -242,16 +242,16 @@ pub(crate) struct ExtensionNode<'a> {
     pub(crate) child_node: NodeType,
     pub(crate) raw_nibbles_encoding: &'a [u8], // RLP, not even internals. Handy for updates
     // pub(crate) raw_encoding: &'a [u8], // of full node (including prefix)
-    // pub(crate) next_node_key: &'a [u8], // fully parsed, and if any update will happen we can benefit from it
+    pub(crate) next_node_key: &'a [u8], // fully parsed, and if any update will happen we can benefit from it
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct UnreferencedPath<'a> {
-    pub(crate) key: &'a [u8],
-    pub(crate) path: PathSegment<'a>,
-    pub(crate) parent_node: NodeType,
-    pub(crate) raw_encoding: &'a [u8],
-}
+// #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+// pub(crate) struct UnreferencedPath<'a> {
+//     pub(crate) key: &'a [u8],
+//     pub(crate) path: PathSegment<'a>,
+//     pub(crate) parent_node: NodeType,
+//     pub(crate) raw_encoding: &'a [u8],
+// }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct BranchNode<'a> {
@@ -262,10 +262,10 @@ pub(crate) struct BranchNode<'a> {
     pub(crate) branches_encodings_concatenation: &'a [u8],
     pub(crate) child_encoding_lengths: [u8; 16], // can not be more than 33 anyway
 
-    // pub(crate) child_nodes_raw_encodings: [&'a [u8]; 16], // allows to avoid storing raw encodings in other node types
-    // pub(crate) raw_encoding: &'a [u8],
-    // in practice branch nodes can not have value - consensus forbids branch nodes with 0 or 1 children,
-    // and all storage slot keys are fixed 32 bytes, so branch node can not be "passthrough"
+                                                 // pub(crate) child_nodes_raw_encodings: [&'a [u8]; 16], // allows to avoid storing raw encodings in other node types
+                                                 // pub(crate) raw_encoding: &'a [u8],
+                                                 // in practice branch nodes can not have value - consensus forbids branch nodes with 0 or 1 children,
+                                                 // and all storage slot keys are fixed 32 bytes, so branch node can not be "passthrough"
 }
 
 impl<'a> core::fmt::Debug for BranchNode<'a> {
@@ -287,5 +287,19 @@ impl<'a> BranchNode<'a> {
         }
 
         occupied
+    }
+
+    pub(crate) fn encoding_of_branch(&self, branch_index: usize) -> &'a [u8] {
+        let mut raw_encoding_slice = self.branches_encodings_concatenation;
+        for idx in 0..16 {
+            let len = self.child_encoding_lengths[idx] as usize;
+            let (child, rest) = raw_encoding_slice.split_at(len);
+            if branch_index == idx {
+                return child;
+            }
+            raw_encoding_slice = rest;
+        }
+
+        unreachable!("branch index is too high: {}", branch_index);
     }
 }

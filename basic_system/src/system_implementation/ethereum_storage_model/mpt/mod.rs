@@ -1,17 +1,30 @@
 mod nodes;
 mod trie;
 // mod nibbles;
-mod updates;
+mod parse_node;
 mod rlp;
+// mod updates;
+mod preimages;
 
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
-
 use crypto::MiniDigest;
+use zk_ee::utils::Bytes32;
 
+pub(crate) use self::nodes::*;
+pub(crate) use self::parse_node::*;
 pub(crate) use self::rlp::*;
+pub(crate) use self::trie::*;
 
+pub use self::preimages::*;
 pub use self::trie::EthereumMPT;
+
+pub const EMPTY_ROOT_HASH: Bytes32 = Bytes32::from_hex("39bef1777deb3dfb14f64b9f81ced092c501fee72f90e93d03bb95ee89df9837");
+
+#[cfg(test)]
+mod tests;
+
+pub(crate) const EMPTY_LIST_ENCODING: &'static [u8] = &[0x80];
 
 pub(crate) fn path_char_to_digit(c: u8) -> u8 {
     // c
@@ -25,16 +38,46 @@ pub(crate) fn path_char_to_digit(c: u8) -> u8 {
     }
 }
 
-#[cfg(test)]
-mod tests;
+#[inline]
+pub(crate) fn consume<'a>(src: &mut &'a [u8], bytes: usize) -> Result<&'a [u8], ()> {
+    let (data, rest) = src.split_at_checked(bytes).ok_or(())?;
+    *src = rest;
 
-pub(crate) const EMPTY_LIST_ENCODING: &'static [u8] = &[0x80];
+    Ok(data)
+}
 
-pub(crate) use self::nodes::*;
+pub(crate) fn rlp_parse_short_bytes<'a>(src: &'a [u8]) -> Result<&'a [u8], ()> {
+    let mut data = src;
+    let b0 = consume(&mut data, 1)?;
+    let bb0 = b0[0];
+    if bb0 >= 0xc0 {
+        // it can not be a list
+        return Err(());
+    }
+    if bb0 < 0x80 {
+        if src.len() != 1 {
+            return Err(());
+        }
+        Ok(src)
+    } else if bb0 < 0xb8 {
+        let expected_len = (bb0 - 0x80) as usize;
+        if data.len() != expected_len {
+            return Err(());
+        }
+        Ok(data)
+    } else {
+        Err(())
+    }
+}
 
 pub trait ByteBuffer {
     fn write_byte(&mut self, byte: u8);
     fn write_slice(&mut self, slice: &[u8]);
+}
+
+pub trait WordBuffer {
+    fn write_word(&mut self, word: usize);
+    fn write_slice(&mut self, slice: &[usize]);
 }
 
 impl<T: MiniDigest> ByteBuffer for T {
@@ -50,19 +93,48 @@ pub trait InterningBuffer<'a>: ByteBuffer {
     fn flush(self) -> &'a [u8];
 }
 
+pub trait InterningWordBuffer<'a>: WordBuffer {
+    fn flush(self) -> &'a [usize];
+    fn flush_as_bytes(self, byte_len: usize) -> &'a [u8];
+}
+
+impl WordBuffer for () {
+    fn write_word(&mut self, _word: usize) {
+        unreachable!()
+    }
+    fn write_slice(&mut self, _slice: &[usize]) {
+        unreachable!()
+    }
+}
+
+impl<'a> InterningWordBuffer<'a> for () {
+    fn flush(self) -> &'a [usize] {
+        unreachable!()
+    }
+    fn flush_as_bytes(self, _byte_len: usize) -> &'a [u8] {
+        unreachable!()
+    }
+}
+
 pub trait Interner<'a>: 'a {
+    const SUPPORTS_WORD_LEVEL_INTERNING: bool;
+
     type Buffer: InterningBuffer<'a>
     where
         Self: 'a;
+    type WordBuffer: InterningWordBuffer<'a>
+    where
+        Self: 'a;
     fn get_buffer(&'_ mut self, capacity: usize) -> Result<Self::Buffer, ()>;
+    fn get_word_buffer(&'_ mut self, word_capacity: usize) -> Result<Self::WordBuffer, ()>;
 }
 
-pub struct MaybeUninitBuffer<'a> {
+pub struct MaybeUninitByteBuffer<'a> {
     buffer: &'a mut [MaybeUninit<u8>],
     num_written: usize,
 }
 
-impl<'a> ByteBuffer for MaybeUninitBuffer<'a> {
+impl<'a> ByteBuffer for MaybeUninitByteBuffer<'a> {
     fn write_byte(&mut self, byte: u8) {
         self.buffer[self.num_written].write(byte);
         self.num_written += 1;
@@ -73,29 +145,65 @@ impl<'a> ByteBuffer for MaybeUninitBuffer<'a> {
     }
 }
 
-impl<'a> InterningBuffer<'a> for MaybeUninitBuffer<'a> {
+impl<'a> InterningBuffer<'a> for MaybeUninitByteBuffer<'a> {
     fn flush(self) -> &'a [u8] {
         unsafe { core::slice::from_raw_parts(self.buffer.as_ptr().cast(), self.num_written) }
     }
 }
 
+pub struct MaybeUninitWordBuffer<'a> {
+    buffer: &'a mut [MaybeUninit<usize>],
+    num_written: usize,
+}
+
+impl<'a> WordBuffer for MaybeUninitWordBuffer<'a> {
+    fn write_word(&mut self, word: usize) {
+        self.buffer[self.num_written].write(word);
+        self.num_written += 1;
+    }
+    fn write_slice(&mut self, slice: &[usize]) {
+        self.buffer[self.num_written..][..slice.len()].write_copy_of_slice(slice);
+        self.num_written += slice.len();
+    }
+}
+
+impl<'a> InterningWordBuffer<'a> for MaybeUninitWordBuffer<'a> {
+    fn flush_as_bytes(self, byte_len: usize) -> &'a [u8] {
+        assert!(byte_len <= self.num_written * core::mem::size_of::<usize>());
+        unsafe { core::slice::from_raw_parts(self.buffer.as_ptr().cast(), byte_len) }
+    }
+
+    fn flush(self) -> &'a [usize] {
+        unsafe { core::slice::from_raw_parts(self.buffer.as_ptr().cast(), self.num_written) }
+    }
+}
+
 pub struct BoxInterner<A: Allocator> {
-    buffer: Box<[MaybeUninit<u8>], A>,
+    buffer: Box<[MaybeUninit<usize>], A>,
     used: usize,
 }
 
 impl<A: Allocator> BoxInterner<A> {
-    pub fn with_capacity_in(capacity: usize, allocator: A) -> Self {
+    pub fn with_capacity_in(byte_capacity: usize, allocator: A) -> Self {
+        let word_capacity = byte_capacity.next_multiple_of(core::mem::size_of::<usize>())
+            / core::mem::size_of::<usize>();
         Self {
-            buffer: Box::new_uninit_slice_in(capacity, allocator),
+            buffer: Box::new_uninit_slice_in(word_capacity, allocator),
             used: 0,
         }
     }
 }
 
 impl<'a, A: Allocator + 'a> Interner<'a> for BoxInterner<A> {
+    const SUPPORTS_WORD_LEVEL_INTERNING: bool = true;
+
     type Buffer
-        = MaybeUninitBuffer<'a>
+        = MaybeUninitByteBuffer<'a>
+    where
+        Self: 'a;
+
+    type WordBuffer
+        = MaybeUninitWordBuffer<'a>
     where
         Self: 'a;
 
@@ -103,15 +211,38 @@ impl<'a, A: Allocator + 'a> Interner<'a> for BoxInterner<A> {
     where
         A: 'a,
     {
-        if self.used + capacity > self.buffer.len() {
+        let next_multiple = capacity.next_multiple_of(core::mem::size_of::<usize>());
+        let word_capacity = next_multiple
+            / core::mem::size_of::<usize>();
+        if self.used + word_capacity > self.buffer.len() {
             return Err(());
         }
         unsafe {
-            let to_use =
-                core::slice::from_raw_parts_mut(self.buffer.as_mut_ptr().add(self.used), capacity);
-            self.used += capacity;
+            let to_use = core::slice::from_raw_parts_mut(
+                self.buffer.as_mut_ptr().add(self.used).cast(),
+                next_multiple,
+            );
+            self.used += word_capacity;
 
-            Ok(MaybeUninitBuffer {
+            Ok(MaybeUninitByteBuffer {
+                buffer: to_use,
+                num_written: 0,
+            })
+        }
+    }
+
+    fn get_word_buffer(&'_ mut self, word_capacity: usize) -> Result<Self::WordBuffer, ()> {
+        if self.used + word_capacity > self.buffer.len() {
+            return Err(());
+        }
+        unsafe {
+            let to_use = core::slice::from_raw_parts_mut(
+                self.buffer.as_mut_ptr().add(self.used),
+                word_capacity,
+            );
+            self.used += word_capacity;
+
+            Ok(MaybeUninitWordBuffer {
                 buffer: to_use,
                 num_written: 0,
             })
@@ -121,10 +252,7 @@ impl<'a, A: Allocator + 'a> Interner<'a> for BoxInterner<A> {
 
 // Some generic convenience function
 pub trait InternerExt<'a>: Interner<'a> {
-    fn intern_nibbles(
-        &'_ mut self,
-        nibbles_encoding: &'_ [u8],
-    ) -> Result<(&'a [u8], bool), ()> {
+    fn intern_nibbles(&'_ mut self, nibbles_encoding: &'_ [u8]) -> Result<(&'a [u8], bool), ()> {
         if nibbles_encoding.len() < 1 {
             return Err(());
         }
@@ -185,12 +313,16 @@ pub trait InternerExt<'a>: Interner<'a> {
         existing_leaf_node: &LeafNode<'_>,
         new_raw_value: &[u8],
         hasher: &mut D,
-    ) -> Result<&'a [u8], ()> where D::HashOutput: AsRef<[u8]>{
+    ) -> Result<&'a [u8], ()>
+    where
+        D::HashOutput: AsRef<[u8]>,
+    {
         // we need to make an RLP of the leaf and intern a new key (we are not interested in value actually)
 
         let mut total_list_concatenated_len = existing_leaf_node.raw_nibbles_encoding.len();
         total_list_concatenated_len += new_raw_value.len();
-        let total_len = total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
+        let total_len =
+            total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
 
         if total_len < 32 {
             // we need RLP of RLP
@@ -242,14 +374,20 @@ pub trait InternerExt<'a>: Interner<'a> {
         branch_index: usize,
         new_raw_value: &[u8],
         hasher: &mut D,
-    ) -> Result<&'a [u8], ()> where D::HashOutput: AsRef<[u8]>{
-        let mut total_list_concatenated_len = existing_branch_node.branches_encodings_concatenation.len();
-        total_list_concatenated_len -= existing_branch_node.child_encoding_lengths[branch_index] as usize;
+    ) -> Result<&'a [u8], ()>
+    where
+        D::HashOutput: AsRef<[u8]>,
+    {
+        let mut total_list_concatenated_len =
+            existing_branch_node.branches_encodings_concatenation.len();
+        total_list_concatenated_len -=
+            existing_branch_node.child_encoding_lengths[branch_index] as usize;
         total_list_concatenated_len += new_raw_value.len();
         // and empty value
         total_list_concatenated_len += 1;
 
-        let total_len = total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
+        let total_len =
+            total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
 
         if total_len < 32 {
             // we need RLP of RLP
@@ -278,7 +416,8 @@ pub trait InternerExt<'a>: Interner<'a> {
             let result = buffer.flush();
 
             // update encoding part using interned buffer
-            existing_branch_node.branches_encodings_concatenation = &result[encoding_offset..][..new_encoding_len];
+            existing_branch_node.branches_encodings_concatenation =
+                &result[encoding_offset..][..new_encoding_len];
 
             Ok(result)
         } else {
@@ -316,7 +455,8 @@ pub trait InternerExt<'a>: Interner<'a> {
                     let (child, rest) = raw_encoding_slice.split_at(len);
                     raw_encoding_slice = rest;
                     if branch_index == idx {
-                        existing_branch_node.child_encoding_lengths[idx] = new_raw_value.len() as u8;
+                        existing_branch_node.child_encoding_lengths[idx] =
+                            new_raw_value.len() as u8;
                         writer.write_slice(new_raw_value);
                     } else {
                         writer.write_slice(child);
@@ -347,12 +487,16 @@ pub trait InternerExt<'a>: Interner<'a> {
         existing_extension_node: &ExtensionNode<'_>,
         new_raw_value: &[u8],
         hasher: &mut D,
-    ) -> Result<&'a [u8], ()> where D::HashOutput: AsRef<[u8]>{
+    ) -> Result<&'a [u8], ()>
+    where
+        D::HashOutput: AsRef<[u8]>,
+    {
         // we need to make an RLP of the leaf and intern a new key (we are not interested in value actually)
 
         let mut total_list_concatenated_len = existing_extension_node.raw_nibbles_encoding.len();
         total_list_concatenated_len += new_raw_value.len();
-        let total_len = total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
+        let total_len =
+            total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
 
         if total_len < 32 {
             // we need RLP of RLP
@@ -402,14 +546,18 @@ pub trait InternerExt<'a>: Interner<'a> {
         branch_index: usize,
         raw_value: &[u8],
         hasher: &mut D,
-    ) -> Result<&'a [u8], ()> where D::HashOutput: AsRef<[u8]>{
+    ) -> Result<&'a [u8], ()>
+    where
+        D::HashOutput: AsRef<[u8]>,
+    {
         // we need to make an RLP of the leaf and intern a new key (we are not interested in value actually)
 
         // nibbles encoding is always short in this case - single byte
         let nibbles = [0x30 + (branch_index as u8)];
         let mut total_list_concatenated_len = 1;
         total_list_concatenated_len += raw_value.len();
-        let total_len = total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
+        let total_len =
+            total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
 
         if total_len < 32 {
             // we need RLP of RLP

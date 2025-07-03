@@ -41,3 +41,10 @@ proptest = "1.6.0"
 serde_json = "*"
 num-bigint = "*"
 num-traits = "*"
+alloy-rpc-types-debug = { version = "*", default-features = false }
+eth-runner = { git = "git@github.com:matter-labs/zksync-os.git" }
+# ress-primitives = { git = "https://github.com/paradigmxyz/ress.git", features = ["serde"] }
+# # we have to directly import alloy as ress-primitives doesn't properly import features
+# alloy-primitives = { version = "1.0.0", default-features = false, features = ["serde", ] }
+# alloy-trie = { version = "0.8.1", default-features = false, features = ["serde", "ethereum"] }
+# alloy-rlp = { version = "0.3.10", default-features = false }

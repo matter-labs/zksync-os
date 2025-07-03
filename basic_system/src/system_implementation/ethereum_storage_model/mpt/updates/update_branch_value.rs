@@ -24,7 +24,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             let branch_index = *full_path.last().unwrap() as usize;
             let remaining_prefix = &full_path[..(full_path.len() - 1)];
             let node_type = NodeType::branch(*pos);
-            return Ok((node_type, remaining_prefix, branch_index))
+            return Ok((node_type, remaining_prefix, branch_index));
         }
 
         Err(())
@@ -39,12 +39,20 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         child_node: NodeType,
         interner: &'_ mut (impl Interner<'a> + 'a),
         hasher: &mut D,
-    ) -> Result<&'a [u8], ()> where D::HashOutput: AsRef<[u8]> {
+    ) -> Result<&'a [u8], ()>
+    where
+        D::HashOutput: AsRef<[u8]>,
+    {
         // dbg!(hex::encode(pre_encoded_branch_value));
 
         let (_, (_, existing_node)) = self.branch_nodes.get_persistent_mut_by_index(node.index());
         // we need to recompute the key
-        let new_branch_key = interner.update_branch_node(existing_node, branch_index, pre_encoded_branch_value, hasher)?;
+        let new_branch_key = interner.update_branch_node(
+            existing_node,
+            branch_index,
+            pre_encoded_branch_value,
+            hasher,
+        )?;
         debug_assert!(new_branch_key.len() <= 33);
         existing_node.child_nodes[branch_index] = child_node;
 

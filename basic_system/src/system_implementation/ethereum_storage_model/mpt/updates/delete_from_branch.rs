@@ -1,5 +1,3 @@
-use crate::system_implementation::ethereum_storage_model::mpt::trie::rlp_parse_short_bytes;
-
 use super::*;
 
 impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
@@ -10,13 +8,19 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         branch_index: usize,
         interner: &'_ mut (impl Interner<'a> + 'a),
         hasher: &mut D,
-    ) -> Result<&'a [u8], ()> where D::HashOutput: AsRef<[u8]> {
+    ) -> Result<&'a [u8], ()>
+    where
+        D::HashOutput: AsRef<[u8]>,
+    {
         // dbg!(hex::encode(pre_encoded_branch_value));
         let (_, (_, existing_node)) = self.branch_nodes.get_persistent_mut_by_index(node.index());
         // two cases - if we need to delete a node in full, or not
         debug_assert!(existing_node.num_occupied() >= 2);
         if existing_node.num_occupied() == 2 {
-            let (short_index, (_, mut existing_node)) = self.branch_nodes.remove_persisted(node.index()).expect("must delete existing");
+            let (short_index, (_, mut existing_node)) = self
+                .branch_nodes
+                .remove_persisted(node.index())
+                .expect("must delete existing");
             dbg!(branch_index);
             dbg!(hex::encode(prefix));
             dbg!(hex::encode(short_index.node_prefix));
@@ -34,13 +38,17 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             }
             assert!(surviving_branch < 16);
             let surviving_node = existing_node.child_nodes[surviving_branch];
-            let survining_node_encoding = &existing_node.branches_encodings_concatenation[offset..][..len];
+            let survining_node_encoding =
+                &existing_node.branches_encodings_concatenation[offset..][..len];
             dbg!(hex::encode(survining_node_encoding));
             if surviving_node.is_unreferenced_path() {
                 if survining_node_encoding.len() == 33 {
                     // it requires a preimage
                     let key_for_preimage = rlp_parse_short_bytes(survining_node_encoding)?;
-                    panic!("require preimage for node value {}", hex::encode(key_for_preimage));
+                    panic!(
+                        "require preimage for node value {}",
+                        hex::encode(key_for_preimage)
+                    );
                 } else {
                     // we can try to parse it as node
                     todo!();
@@ -54,7 +62,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 let new_leaf = interner.convert_branch_value_into_leaf(
                     branch_index,
                     survining_node_encoding,
-                    hasher
+                    hasher,
                 )?;
                 self.update_branch_node(
                     parent_node,
@@ -63,7 +71,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                     new_leaf,
                     surviving_node,
                     interner,
-                    hasher
+                    hasher,
                 )
             } else if parent_node.is_extension() {
                 // we will need to replace extension as leaf itself
@@ -73,7 +81,12 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             }
         } else {
             // effectively degrades to update
-            let new_branch_key = interner.update_branch_node(existing_node, branch_index, &EMPTY_LIST_ENCODING, hasher)?;
+            let new_branch_key = interner.update_branch_node(
+                existing_node,
+                branch_index,
+                &EMPTY_LIST_ENCODING,
+                hasher,
+            )?;
             debug_assert!(new_branch_key.len() <= 33);
             existing_node.child_nodes[branch_index] = NodeType::empty();
 

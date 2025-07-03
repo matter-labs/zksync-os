@@ -7,12 +7,18 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         full_path: &[u8],
         interner: &'_ mut (impl Interner<'a> + 'a),
         hasher: &mut D,
-    ) -> Result<&'a [u8], ()> where D::HashOutput: AsRef<[u8]> {
-        let (short_index, existing_leaf) = self.leaf_nodes.remove_persisted(node.index()).expect("must be existing");
+    ) -> Result<&'a [u8], ()>
+    where
+        D::HashOutput: AsRef<[u8]>,
+    {
+        let (short_index, existing_leaf) = self
+            .leaf_nodes
+            .remove_persisted(node.index())
+            .expect("must be existing");
         dbg!(hex::encode(short_index.node_prefix));
         dbg!(hex::encode(existing_leaf.path_segment));
         let Some(remaining_prefix) = full_path.strip_suffix(existing_leaf.path_segment) else {
-            return Err(())
+            return Err(());
         };
 
         if remaining_prefix.is_empty() {
