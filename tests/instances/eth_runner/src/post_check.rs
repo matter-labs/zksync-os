@@ -28,8 +28,8 @@ pub enum TxId {
 impl DiffTrace {
     fn collect_diffs(self, prestate_cache: &Cache, miner: B160) -> HashMap<B160, AccountState> {
         let mut updates: HashMap<B160, AccountState> = HashMap::new();
-        self.result.into_iter().for_each(|item| {
-            item.result.post.into_iter().for_each(|(address, account)| {
+        self.result.iter().for_each(|item| {
+            item.result.post.iter().for_each(|(address, account)| {
                 if address.0 != miner {
                     let entry = updates.entry(address.0).or_default();
                     account
@@ -40,11 +40,15 @@ impl DiffTrace {
                         .nonce
                         .into_iter()
                         .for_each(|x| entry.nonce = Some(x));
-                    account.code.into_iter().for_each(|x| entry.code = Some(x));
+                    account
+                        .code
+                        .clone()
+                        .into_iter()
+                        .for_each(|x| entry.code = Some(x));
 
                     // Populate storage slot clears (slots present in pre but
                     // absent in post). Write 0 to them.
-                    if let Some(pre_account) = item.result.pre.get(&address) {
+                    if let Some(pre_account) = item.result.pre.get(address) {
                         if let Some(pre_storage) = pre_account.storage.as_ref() {
                             let cleared_keys = pre_storage.keys().filter(|k| {
                                 account
@@ -60,15 +64,26 @@ impl DiffTrace {
                     }
 
                     // Populate storage slot writes
-                    if let Some(storage) = account.storage {
+                    if let Some(storage) = account.storage.as_ref() {
                         let entry_storage = entry.storage.get_or_insert_default();
-                        storage.into_iter().for_each(|(key, value)| {
-                            entry_storage.insert(key, value);
+                        storage.iter().for_each(|(key, value)| {
+                            entry_storage.insert(*key, *value);
                         })
                     }
                 }
+            });
+            // Add account clears
+            item.result.pre.iter().for_each(|(address, _)| {
+                if address.0 != miner && !updates.contains_key(&address.0) {
+                    let acc = AccountState {
+                        balance: Some(U256::ZERO),
+                        ..Default::default()
+                    };
+                    updates.insert(address.0, acc);
+                }
             })
         });
+
         // Filter out empty diffs
         // These can be empty because their value is the same as in the initial tree
         // or the post state was empty. Note that if the account was selfdestructed,
@@ -76,7 +91,6 @@ impl DiffTrace {
         // case where the logs add an empty entry for accounts that haven't been
         // modified.
 
-        // TODO: account for selfdestruct
         updates.retain(|address, account| {
             if let Some(storage) = account.storage.as_mut() {
                 storage.retain(|key, new_val| match prestate_cache.get_slot(address, key) {
@@ -126,13 +140,13 @@ impl DiffTrace {
             };
             if let Some(bal) = account.balance {
                 // Balance might differ due to refunds and access list gas charging
-                if bal != zk_account.balance.unwrap() {
+                if Some(bal) != zk_account.balance {
                     debug!(
                         "Balance for {} is {:?} but expected {:?}.\n  Difference: {:?}",
                         hex::encode(address.to_be_bytes_vec()),
-                        zk_account.balance.unwrap(),
+                        zk_account.balance,
                         bal,
-                        zk_account.balance.unwrap().abs_diff(bal),
+                        zk_account.balance.unwrap_or(U256::ZERO).abs_diff(bal),
                     )
                 };
             }
