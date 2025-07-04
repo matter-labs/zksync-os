@@ -3,7 +3,6 @@
 #![feature(allocator_api)]
 #![feature(generic_const_exprs)]
 #![no_main]
-#![no_builtins]
 
 extern "C" {
     // Boundaries of the heap
@@ -146,6 +145,9 @@ use proof_running_system::system::bootloader::OptionalGlobalAllocator;
 static GLOBAL_ALLOC: OptionalGlobalAllocator = OptionalGlobalAllocator;
 // TODO: disable global alloc once dependencies are fixed
 // static GLOBAL_ALLOCATOR_PLACEHOLDER: NullAllocator = NullAllocator;
+
+core::arch::global_asm!(include_str!("memset.s"));
+core::arch::global_asm!(include_str!("memcpy.s"));
 
 unsafe fn workload() -> ! {
     use core::ptr::addr_of_mut;
