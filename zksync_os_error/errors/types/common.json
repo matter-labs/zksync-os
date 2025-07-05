@@ -1,0 +1,40 @@
+{
+  "types": [
+    {
+      "name": "uint",
+      "description": "Unsigned 32-bit integer",
+      "bindings": {
+        "rust": {
+          "expression": "u32"
+        }
+      }
+    },
+    {
+      "name": "int",
+      "description": "Signed 32-bit integer",
+      "bindings": {
+        "rust": {
+          "expression": "i32"
+        }
+      }
+    },
+    {
+      "name": "string",
+      "description": "Unicode zero-terminated string",
+      "bindings": {
+        "rust": {
+          "expression": "&'static str"
+        }
+      }
+    },
+    {
+      "name": "u64",
+      "description": "64-bit unsigned integer",
+      "bindings": {
+        "rust": {
+          "expression": "u64"
+        }
+      }
+    }
+  ]
+}
