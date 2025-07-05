@@ -9,6 +9,7 @@ fn main() -> ExitCode {
     let local_evm_path = "errors/evm.json";
     let local_os_path = "errors/zksync-os.json";
     let local_error_types_path = "errors/types/zksync-os-specific.json";
+    let local_root_path = "errors/zksync-root-tmp.json";
     let local_common_types_path = "errors/types/zksync-os-common.json";
     let null_path = "errors/null.json";
 
@@ -27,6 +28,11 @@ fn main() -> ExitCode {
 
         mode: zksync_error_codegen::arguments::ResolutionMode::Normal {
             override_links: vec![
+                // FIXME: delete before merging and after updating zksync-error
+                (
+                    "zksync-error://zksync-root.json".to_owned(),
+                    local_root_path.to_owned(),
+                ),
                 (
                     "zksync-error://types/zksync-specific.json".to_owned(),
                     local_error_types_path.to_owned(),
