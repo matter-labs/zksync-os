@@ -15,7 +15,7 @@ impl<T: ICascadedInner> Localizable for CascadedError<T> {
 #[macro_export]
 macro_rules! wrap_error {
     ($e:expr) => {
-        e.wrap($crate::location!())
+        $e.wrap($crate::location!())
     };
     () => {
         |e| e.wrap($crate::location!())

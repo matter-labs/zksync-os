@@ -19,7 +19,10 @@ use zk_ee::{
     internal_error,
     system::{
         errors::{
-            no_errors::NoErrors, runtime::RuntimeError, subsystem::SubsystemError,
+            no_errors::NoErrors,
+            root_cause::{GetRootCause, RootCause},
+            runtime::RuntimeError,
+            subsystem::SubsystemError,
             system::SystemError,
         },
         CallModifier, Resources, System,
@@ -71,20 +74,21 @@ where
                 rest,
             ))
         }
-        Err(e @ SubsystemError::LeafRuntime(RuntimeError::OutOfErgs(_)))
-        | Err(e @ SubsystemError::Cascaded(_))
-        | Err(e @ SubsystemError::LeafUsage(_)) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Out of gas during system hook\nError:{e:?}"));
-            resources.exhaust_ergs();
-            let (_, rest) = return_vec.destruct();
-            Ok((make_error_return_state(resources), rest))
-        }
-        Err(SubsystemError::LeafRuntime(e @ RuntimeError::OutOfNativeResources(_))) => {
-            Err(SystemError::LeafRuntime(e))
-        }
-        Err(SubsystemError::LeafDefect(e)) => Err(e.into()),
+        Err(e) => match e.root_cause() {
+            RootCause::Runtime(RuntimeError::OutOfErgs(_))
+            | RootCause::Internal(_)
+            | RootCause::Usage(_) => {
+                let _ = system
+                    .get_logger()
+                    .write_fmt(format_args!("Out of gas during system hook\nError:{e:?}"));
+                resources.exhaust_ergs();
+                let (_, rest) = return_vec.destruct();
+                Ok((make_error_return_state(resources), rest))
+            }
+            RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
+                Err(Into::<SystemError>::into(*e))
+            }
+        },
     }
 }
 

@@ -153,7 +153,6 @@ pub mod errors {
         EE,
         interface InterfaceError {
             UnsupportedExecutionEnvironment,
-            Yes { field1: u32, field2: u64 }
         },
         cascade WrappedError {
             EvmError(EvmSubsystemError),

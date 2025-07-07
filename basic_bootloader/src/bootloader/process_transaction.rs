@@ -354,19 +354,15 @@ where
                     BasicBootloader::mint_token(system, &value, &from, inf_resources)
                 })
                 .map_err(|e| match e {
-                    SystemError::LeafRuntime(RuntimeError::OutOfErgs(loc)) => {
-                        //TODO this should not be an invariant violation?
-                        BootloaderSubsystemError::LeafDefect(InternalError(
-                            "Out of ergs on infinite ergs",
-                            loc,
+                    SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                        let _ = system.get_logger().write_fmt(format_args!(
+                            "Out of ergs on infinite ergs: inner error was {e:?}"
+                        ));
+                        BootloaderSubsystemError::LeafDefect(internal_error!(
+                            "Out of ergs on infinite ergs"
                         ))
                     }
-                    SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc)) => {
-                        BootloaderSubsystemError::LeafRuntime(RuntimeError::OutOfNativeResources(
-                            loc,
-                        ))
-                    }
-                    SystemError::LeafDefect(i) => BootloaderSubsystemError::LeafDefect(i),
+                    other => other.into(),
                 })?;
         }
 

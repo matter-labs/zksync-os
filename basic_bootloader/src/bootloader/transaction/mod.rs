@@ -1202,7 +1202,9 @@ fn charge_keccak<R: Resources>(
     resources
         .charge(&R::from_native(native_cost))
         .map_err(|e| match e {
-            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => unreachable!(),
+            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                internal_error!("Charging for keccak is not supposed to consume ergs").into()
+            }
             SystemError::LeafDefect(e) => BootloaderSubsystemError::LeafDefect(e),
             SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc)) => {
                 BootloaderSubsystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))

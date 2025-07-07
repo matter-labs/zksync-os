@@ -1,7 +1,10 @@
 use crate::bootloader::supported_ees::errors::EESubsystemError;
 use ruint::aliases::{B160, U256};
 use zk_ee::system::errors::{
-    internal::InternalError, runtime::RuntimeError, subsystem::SubsystemError, system::SystemError,
+    internal::InternalError,
+    root_cause::{GetRootCause, RootCause},
+    runtime::RuntimeError,
+    system::SystemError,
 };
 
 // Taken from revm, contains changes
@@ -154,11 +157,10 @@ impl TxError {
     /// Do not implement From to avoid accidentally wrapping
     /// an out of native during Tx execution as a validation error.
     pub fn oon_as_validation(e: BootloaderSubsystemError) -> Self {
-        match e {
-            SubsystemError::LeafRuntime(_) => {
-                Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
-            }
-            other => Self::Internal(other),
+        if let RootCause::Runtime(RuntimeError::OutOfNativeResources(_)) = e.root_cause() {
+            Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
+        } else {
+            Self::Internal(e)
         }
     }
 }
