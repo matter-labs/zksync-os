@@ -8,7 +8,7 @@ pub mod location;
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SystemError {
     /// System execution exhausted the native resources passed.
-    OutOfNativeResources,
+    OutOfNativeResources(ErrorLocation),
     /// Execution exhausted the EE resource.
     OutOfErgs,
     /// Internal error.
@@ -23,7 +23,7 @@ pub enum SystemError {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum FatalError {
     /// EE execution exhausted the resources passed.
-    OutOfNativeResources,
+    OutOfNativeResources(ErrorLocation),
     Internal(InternalError),
 }
 
@@ -31,7 +31,7 @@ impl From<FatalError> for SystemError {
     fn from(e: FatalError) -> Self {
         match e {
             FatalError::Internal(e) => Self::Internal(e),
-            FatalError::OutOfNativeResources => Self::OutOfNativeResources,
+            FatalError::OutOfNativeResources(loc) => Self::OutOfNativeResources(loc),
         }
     }
 }
@@ -46,7 +46,7 @@ impl SystemError {
     pub fn into_fatal(self) -> FatalError {
         match self {
             SystemError::Internal(e) => FatalError::Internal(e),
-            SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+            SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
             SystemError::OutOfErgs => unreachable!(),
         }
     }
@@ -118,4 +118,22 @@ impl From<InternalError> for SystemFunctionError {
     fn from(e: InternalError) -> Self {
         SystemError::Internal(e).into()
     }
+}
+
+#[macro_export]
+macro_rules! out_of_native_resources_system_error {
+    () => {
+        $crate::system::errors::SystemError::OutOfNativeResources(
+            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
+        )
+    };
+}
+
+#[macro_export]
+macro_rules! out_of_native_resources_fatal_error {
+    () => {
+        $crate::system::errors::FatalError::OutOfNativeResources(
+            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
+        )
+    };
 }

@@ -88,7 +88,7 @@ where
                 .write_fmt(format_args!("Out of gas during system hook\n"));
             Ok(make_error_return_state(resources))
         }
-        Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
+        Err(SystemError::OutOfNativeResources(loc)) => Err(FatalError::OutOfNativeResources(loc)),
         Err(SystemError::Internal(e)) => Err(e.into()),
     }
     .map(|x| (x, return_memory))
