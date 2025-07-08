@@ -12,8 +12,6 @@ categories.workspace = true
 [dependencies]
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 solidity_abi_derive = { path = "../solidity_abi_derive"}
-arrayvec = {version = "0.7", default-features = false }
-sha3 = { version = "0.10", default-features = false }
 const_keccak256 = { path = "../keccak"}
 
 [dev-dependencies]
