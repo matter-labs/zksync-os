@@ -5,6 +5,7 @@ use super::AccountPropertiesMetadata;
 use super::BytecodeAndAccountDataPreimagesStorage;
 use super::NewStorageWithAccountPropertiesUnderHash;
 use crate::system_implementation::flat_storage_model::account_cache_entry::AccountProperties;
+use crate::system_implementation::flat_storage_model::bytecode_padding_len;
 use crate::system_implementation::flat_storage_model::cost_constants::*;
 use crate::system_implementation::flat_storage_model::PreimageRequest;
 use crate::system_implementation::flat_storage_model::StorageAccessPolicy;
@@ -28,6 +29,7 @@ use zk_ee::common_structs::PreimageType;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackCtor;
+use zk_ee::system::errors::FatalError;
 use zk_ee::system::Computational;
 use zk_ee::system::Resource;
 use zk_ee::utils::BitsOrd;
@@ -531,7 +533,7 @@ where
                     // TODO(EVM-1073): compute preimage len using artifacts and bytecode len, and EE type in our model
                     let preimage_type = PreimageRequest {
                         hash: full_data.bytecode_hash,
-                        expected_preimage_len_in_bytes: full_data.bytecode_len,
+                        expected_preimage_len_in_bytes: full_data.full_bytecode_len(),
                         preimage_type: PreimageType::Bytecode,
                     };
                     preimages_cache.get_preimage::<PROOF_ENV>(
@@ -631,14 +633,33 @@ where
         )
     }
 
+    pub fn compute_bytecode_hash(
+        from_ee: ExecutionEnvironmentType,
+        observable_bytecode: &[u8],
+        artifacts: &[u8],
+    ) -> Result<Bytes32, FatalError> {
+        match from_ee {
+            ExecutionEnvironmentType::EVM => {
+                use crypto::blake2s::Blake2s256;
+                use crypto::MiniDigest;
+                let mut hasher = Blake2s256::new();
+                let padding = [0u8; core::mem::size_of::<u64>() - 1];
+                hasher.update(observable_bytecode);
+                hasher.update(&padding[..bytecode_padding_len(observable_bytecode.len())]);
+                hasher.update(artifacts);
+                Ok(Bytes32::from_array(hasher.finalize()))
+            }
+            _ => Err(internal_error!("Unsupported EE").into()),
+        }
+    }
+
     pub fn deploy_code<const PROOF_ENV: bool>(
         &mut self,
         from_ee: ExecutionEnvironmentType,
         resources: &mut R,
         at_address: &B160,
-        bytecode: &[u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
+        observable_bytecode: &[u8],
+        artifacts: &[u8],
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
@@ -648,7 +669,8 @@ where
             ExecutionEnvironmentType::NoEE => (),
             ExecutionEnvironmentType::EVM => {
                 use evm_interpreter::gas_constants::CODEDEPOSIT;
-                let code_deposit_cost = CODEDEPOSIT.saturating_mul(bytecode_len.into());
+                let code_deposit_cost =
+                    CODEDEPOSIT.saturating_mul(observable_bytecode.len() as u64);
                 let ergs_to_spend = Ergs(code_deposit_cost.saturating_mul(ERGS_PER_GAS));
                 resources.charge(&R::from_ergs(ergs_to_spend))?;
             }
@@ -676,10 +698,9 @@ where
         // compute observable and true hashes of bytecode
         let observable_bytecode_hash = match from_ee {
             ExecutionEnvironmentType::EVM => {
-                assert_eq!(artifacts_len, 0);
                 use crypto::sha3::Keccak256;
                 use crypto::MiniDigest;
-                let digest = Keccak256::digest(bytecode);
+                let digest = Keccak256::digest(observable_bytecode);
                 Bytes32::from_array(digest)
             }
             _ => {
@@ -687,22 +708,18 @@ where
             }
         };
 
-        let bytecode_hash = match from_ee {
-            ExecutionEnvironmentType::EVM => {
-                assert_eq!(artifacts_len, 0);
-                use crypto::blake2s::Blake2s256;
-                use crypto::MiniDigest;
-                let digest = Blake2s256::digest(bytecode);
-                Bytes32::from_array(digest)
-            }
-            _ => {
-                return Err(internal_error!("Unsupported EE").into());
-            }
-        };
+        let bytecode_hash = Self::compute_bytecode_hash(from_ee, observable_bytecode, artifacts)?;
 
         // save bytecode
 
+        let observable_bytecode_len = observable_bytecode.len() as u32;
+        let artifacts_len = artifacts.len() as u32;
+        let padding_len = bytecode_padding_len(observable_bytecode.len());
+        let bytecode_len = observable_bytecode_len + (padding_len as u32) + artifacts_len;
+
         // TODO(EVM-1073): compute preimage len using bytecode and artifacts len, and EE type
+        let padding = [0u8; core::mem::size_of::<u64>() - 1];
+        let padding = &padding[..padding_len];
         let bytecode = preimages_cache.record_preimage::<PROOF_ENV>(
             from_ee,
             &(PreimageRequest {
@@ -711,7 +728,7 @@ where
                 preimage_type: PreimageType::Bytecode,
             }),
             resources,
-            bytecode,
+            &[observable_bytecode, padding, artifacts],
         )?;
 
         resources.charge(&R::from_native(R::Native::from_computational(

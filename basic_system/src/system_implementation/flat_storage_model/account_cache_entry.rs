@@ -254,7 +254,7 @@ impl AccountProperties {
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?) as u32 // nonce diff
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
                     + 4 // unpadded code len
-                    + r#final.unpadded_code_len // bytecode
+                    + r#final.full_bytecode_len() // bytecode
                     + 4 // artifacts len
                     + 4 // observable bytecode len
             })
@@ -360,7 +360,7 @@ impl AccountProperties {
                 result_keeper.pubdata(&r#final.unpadded_code_len.to_be_bytes());
                 let preimage_type = PreimageRequest {
                     hash: r#final.bytecode_hash,
-                    expected_preimage_len_in_bytes: r#final.unpadded_code_len,
+                    expected_preimage_len_in_bytes: r#final.full_bytecode_len(),
                     preimage_type: PreimageType::Bytecode,
                 };
                 let mut resources = R::FORMAL_INFINITE;
@@ -519,14 +519,19 @@ mod tests {
         let mut initial = AccountProperties::TRIVIAL_VALUE;
         initial.balance = U256::try_from(0xFF00000000FFu64).unwrap();
 
-        let bytecode = vec![1u8, 2, 3, 4, 5];
-        let blake = Blake2s256::digest(&bytecode);
+        let mut bytecode = vec![1u8, 2, 3, 4, 5];
         let keccak = Keccak256::digest(&bytecode);
+        let code_len = bytecode.len();
+
+        // Add padding
+        bytecode.append(&mut vec![0u8, 0u8, 0u8]);
+        let blake = Blake2s256::digest(&bytecode);
+
         let mut r#final = AccountProperties::TRIVIAL_VALUE;
         r#final.versioning_data = VersioningData::empty_deployed();
         r#final.balance = U256::try_from(0xFF0000000000u64).unwrap();
-        r#final.unpadded_code_len = bytecode.len() as u32;
-        r#final.observable_bytecode_len = bytecode.len() as u32;
+        r#final.unpadded_code_len = code_len as u32;
+        r#final.observable_bytecode_len = code_len as u32;
         r#final.bytecode_hash = blake.into();
         r#final.observable_bytecode_hash = keccak.into();
 
@@ -544,7 +549,7 @@ mod tests {
                 ExecutionEnvironmentType::EVM,
                 &(PreimageRequest {
                     hash: r#final.bytecode_hash,
-                    expected_preimage_len_in_bytes: r#final.unpadded_code_len,
+                    expected_preimage_len_in_bytes: r#final.full_bytecode_len(),
                     preimage_type: PreimageType::Bytecode,
                 }),
                 &mut resources,
@@ -584,10 +589,10 @@ mod tests {
         expected.push(0b00000001); // nonce: add,initial == final == 0
         expected.push(0b00001010); // balance: sub 0xff
         expected.push(0xff); // balance: sub 0xff
-        expected.extend((bytecode.len() as u32).to_be_bytes());
+        expected.extend((code_len as u32).to_be_bytes());
         expected.extend_from_slice(&bytecode);
         expected.extend([0, 0, 0, 0]); // arifacts len
-        expected.extend((bytecode.len() as u32).to_be_bytes()); // observable
+        expected.extend((code_len as u32).to_be_bytes()); // observable
 
         assert_eq!(compression, expected);
     }
