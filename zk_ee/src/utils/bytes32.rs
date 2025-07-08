@@ -78,7 +78,7 @@ impl Bytes32 {
         unsafe {
             if array.as_ptr().addr() % core::mem::align_of::<usize>() == 0 {
                 Self {
-                    inner: core::mem::transmute(array)
+                    inner: core::mem::transmute(array),
                 }
             } else {
                 let mut result = Self::uninit();
@@ -94,14 +94,14 @@ impl Bytes32 {
 
     pub const fn from_hex(input: &str) -> Self {
         const fn hex_to_digit(c: u8) -> u8 {
-        match c {
-            b'A'..=b'F' => c - b'A' + 10,
-            b'a'..=b'f' => c - b'a' + 10,
-            b'0'..=b'9' => c - b'0',
-            _ => {
-                unreachable!()
+            match c {
+                b'A'..=b'F' => c - b'A' + 10,
+                b'a'..=b'f' => c - b'a' + 10,
+                b'0'..=b'9' => c - b'0',
+                _ => {
+                    unreachable!()
+                }
             }
-        }
         }
 
         assert!(input.len() == 64);
@@ -119,7 +119,7 @@ impl Bytes32 {
 
             idx += 1;
         }
-        
+
         result
     }
 

@@ -80,7 +80,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
     ) -> Result<ValueInsertionStrategy, ()> {
         // we have another extension/leaf node as the nearest neighbour,
         // and we need to understand whether we diverge at the first path element
-        // immediatelly (so we just make branch), or make extension + branch
+        // immediately (so we just make branch), or make extension + branch
         let remaining_path = path.remaining_path();
         let (parent, alternative_path) = if alternative_node.is_extension() {
             let node = &self.extension_nodes[alternative_node.index()];
@@ -421,7 +421,6 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         interner: &mut (impl Interner<'a> + 'a),
         hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
     ) -> Result<(bool, &'a [u8]), ()> {
-        // for leafs we can rely on cache
         if let Some(known_key) = self.keys_cache.get(&leaf_node).copied() {
             Ok((false, known_key))
         } else {
