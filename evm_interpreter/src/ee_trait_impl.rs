@@ -433,7 +433,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
 
         let AccountData {
             nonce: Just(deployee_nonce),
-            bytecode_len: Just(deployee_code_len),
+            unpadded_code_len: Just(deployee_code_len),
             ..
         } = deployer_remaining_resources
             .with_infinite_ergs(|inf_resources| {
@@ -441,7 +441,9 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                     THIS_EE_TYPE,
                     inf_resources,
                     &deployed_address,
-                    AccountDataRequest::empty().with_nonce().with_bytecode_len(),
+                    AccountDataRequest::empty()
+                        .with_nonce()
+                        .with_unpadded_code_len(),
                 )
             })
             .map_err(SystemError::into_fatal)?;

@@ -512,7 +512,7 @@ where
             observable_bytecode_len: Maybe::construct(|| full_data.observable_bytecode_len),
             nonce: Maybe::construct(|| full_data.nonce),
             bytecode_hash: Maybe::construct(|| full_data.bytecode_hash),
-            bytecode_len: Maybe::construct(|| full_data.bytecode_len),
+            unpadded_code_len: Maybe::construct(|| full_data.unpadded_code_len),
             artifacts_len: Maybe::construct(|| full_data.artifacts_len),
             nominal_token_balance: Maybe::construct(|| full_data.balance),
             bytecode: Maybe::try_construct(|| {
@@ -520,7 +520,7 @@ where
 
                 if full_data.bytecode_hash.is_zero() {
                     assert!(full_data.observable_bytecode_hash.is_zero());
-                    assert_eq!(full_data.bytecode_len, 0);
+                    assert_eq!(full_data.unpadded_code_len, 0);
                     assert_eq!(full_data.artifacts_len, 0);
                     assert_eq!(full_data.observable_bytecode_len, 0);
 
@@ -721,9 +721,9 @@ where
         account_data.update(|cache_record| {
             cache_record.update(|v, m| {
                 v.observable_bytecode_hash = observable_bytecode_hash;
-                v.observable_bytecode_len = bytecode_len;
+                v.observable_bytecode_len = observable_bytecode_len;
                 v.bytecode_hash = bytecode_hash;
-                v.bytecode_len = bytecode_len;
+                v.unpadded_code_len = observable_bytecode_len;
                 v.artifacts_len = artifacts_len;
                 v.versioning_data.set_as_deployed();
                 v.versioning_data.set_ee_version(from_ee as u8);
@@ -748,7 +748,7 @@ where
         at_address: &B160,
         ee: ExecutionEnvironmentType,
         bytecode_hash: Bytes32,
-        bytecode_len: u32,
+        unpadded_bytecode_len: u32,
         artifacts_len: u32,
         observable_bytecode_hash: Bytes32,
         observable_bytecode_len: u32,
@@ -780,7 +780,7 @@ where
                 v.observable_bytecode_hash = observable_bytecode_hash;
                 v.observable_bytecode_len = observable_bytecode_len;
                 v.bytecode_hash = bytecode_hash;
-                v.bytecode_len = bytecode_len;
+                v.unpadded_code_len = unpadded_bytecode_len;
                 v.artifacts_len = artifacts_len;
                 v.versioning_data.set_as_deployed();
                 v.versioning_data.set_ee_version(ee as u8);
@@ -882,7 +882,7 @@ where
                     let beneficiary_properties = entry.current().value();
 
                     let beneficiary_is_empty = beneficiary_properties.nonce == 0
-                        && beneficiary_properties.bytecode_len == 0
+                        && beneficiary_properties.unpadded_code_len == 0
                         // We need to check with the transferred amount,
                         // this means it was 0 before the transfer.
                         && beneficiary_properties.balance == transfer_amount;

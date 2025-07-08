@@ -469,7 +469,7 @@ where
                         .with_ee_version()
                         .with_nonce()
                         .with_artifacts_len()
-                        .with_bytecode_len(),
+                        .with_unpadded_code_len(),
                 )
             })?;
 

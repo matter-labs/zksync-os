@@ -268,7 +268,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             Ok(CallPreparationResult::Success {
                 next_ee_version,
                 bytecode,
-                bytecode_len,
+                unpadded_code_len,
                 artifacts_len,
                 mut actual_resources_to_pass,
                 transfer_to_perform,
@@ -826,7 +826,7 @@ pub enum CallPreparationResult<'a, S: SystemTypes> {
     Success {
         next_ee_version: u8,
         bytecode: &'a [u8],
-        bytecode_len: u32,
+        unpadded_code_len: u32,
         artifacts_len: u32,
         actual_resources_to_pass: S::Resources,
         transfer_to_perform: Option<TransferInfo>,
@@ -879,7 +879,7 @@ where
     let CalleeParameters {
         next_ee_version,
         bytecode,
-        bytecode_len,
+        unpadded_code_len,
         artifacts_len,
         stipend,
         transfer_to_perform,
@@ -927,7 +927,7 @@ where
     Ok(CallPreparationResult::Success {
         next_ee_version,
         bytecode,
-        bytecode_len,
+        unpadded_code_len,
         artifacts_len,
         actual_resources_to_pass,
         transfer_to_perform,
@@ -955,7 +955,7 @@ where
         &call_request.callee,
         AccountDataRequest::empty()
             .with_ee_version()
-            .with_bytecode_len()
+            .with_unpadded_code_len()
             .with_artifacts_len()
             .with_bytecode()
             .with_nonce()
@@ -994,7 +994,7 @@ where
 
                 // Account creation cost
                 let callee_is_empty = account_properties.nonce.0 == 0
-                    && account_properties.bytecode_len.0 == 0
+                    && account_properties.unpadded_code_len.0 == 0
                     && account_properties.nominal_token_balance.0.is_zero();
                 if !is_callcode_or_delegate
                     && !call_request.nominal_token_value.is_zero()
@@ -1037,19 +1037,19 @@ where
         };
 
     // Read required data to perform a call
-    let (next_ee_version, bytecode, bytecode_len, artifacts_len) = {
+    let (next_ee_version, bytecode, unpadded_code_len, artifacts_len) = {
         let ee_version = account_properties.ee_version.0;
-        let bytecode_len = account_properties.bytecode_len.0;
+        let unpadded_code_len = account_properties.unpadded_code_len.0;
         let artifacts_len = account_properties.artifacts_len.0;
         let bytecode = account_properties.bytecode.0;
 
-        (ee_version, bytecode, bytecode_len, artifacts_len)
+        (ee_version, bytecode, unpadded_code_len, artifacts_len)
     };
 
     Ok(CalleeParameters {
         next_ee_version,
         bytecode,
-        bytecode_len,
+        unpadded_code_len,
         artifacts_len,
         stipend,
         transfer_to_perform,

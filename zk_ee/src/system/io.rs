@@ -168,7 +168,7 @@ pub struct AccountData<
     ObservableBytecodeLen,
     Nonce,
     BytecodeHash,
-    BytecodeLen,
+    UnpaddedCodeLen,
     ArtifactsLen,
     NominalTokenBalance,
     Bytecode,
@@ -178,7 +178,7 @@ pub struct AccountData<
     pub observable_bytecode_len: ObservableBytecodeLen,
     pub nonce: Nonce,
     pub bytecode_hash: BytecodeHash,
-    pub bytecode_len: BytecodeLen,
+    pub unpadded_code_len: UnpaddedCodeLen,
     pub artifacts_len: ArtifactsLen,
     pub nominal_token_balance: NominalTokenBalance,
     pub bytecode: Bytecode,
@@ -186,13 +186,13 @@ pub struct AccountData<
 
 impl<A, B, C, D, E, F, G> AccountData<A, B, C, D, E, Just<u32>, Just<u32>, F, G> {
     pub fn is_contract(&self) -> bool {
-        self.bytecode_len.0 > 0 || self.artifacts_len.0 > 0
+        self.unpadded_code_len.0 > 0 || self.artifacts_len.0 > 0
     }
 }
 
 impl<A, B, C, D, E, F> AccountData<A, B, C, Just<u64>, D, Just<u32>, Just<u32>, E, F> {
     pub fn can_deploy_into(&self) -> bool {
-        self.bytecode_len.0 == 0 && self.artifacts_len.0 == 0 && self.nonce.0 == 0
+        self.unpadded_code_len.0 == 0 && self.artifacts_len.0 == 0 && self.nonce.0 == 0
     }
 }
 
@@ -247,7 +247,7 @@ impl<A, B, C, D, E, F, G, H, I> AccountDataRequest<AccountData<A, B, C, D, E, F,
         AccountDataRequest(PhantomData)
     }
 
-    pub fn with_bytecode_len(
+    pub fn with_unpadded_code_len(
         self,
     ) -> AccountDataRequest<AccountData<A, B, C, D, E, Just<u32>, G, H, I>> {
         AccountDataRequest(PhantomData)
@@ -388,8 +388,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
+        artifacts: &[u8],
     ) -> Result<&'static [u8], SystemError>;
 
     /// Special method that allows to set bytecode under address by hash.
