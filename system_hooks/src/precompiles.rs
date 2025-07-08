@@ -15,10 +15,13 @@
 use super::*;
 use core::fmt::Write;
 use evm_interpreter::ERGS_PER_GAS;
-use zk_ee::{internal_error, system::{
-    errors::{SystemError, SystemFunctionError},
-    CallModifier, Resources, System,
-}};
+use zk_ee::{
+    internal_error,
+    system::{
+        errors::{SystemError, SystemFunctionError},
+        CallModifier, Resources, System,
+    },
+};
 
 ///
 /// Generic system function hook implementation.

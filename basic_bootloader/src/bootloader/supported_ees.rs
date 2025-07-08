@@ -1,7 +1,10 @@
 use crate::bootloader::EVM_EE_BYTE;
 use errors::FatalError;
 use zk_ee::{
-    execution_environment_type::ExecutionEnvironmentType, internal_error, memory::slice_vec::SliceVec, system::{errors::InternalError, *}
+    execution_environment_type::ExecutionEnvironmentType,
+    internal_error,
+    memory::slice_vec::SliceVec,
+    system::{errors::InternalError, *},
 };
 
 #[allow(type_alias_bounds)]

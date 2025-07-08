@@ -8,9 +8,13 @@ use core::fmt::Write;
 use errors::FatalError;
 use ruint::aliases::{B160, U256};
 use zk_ee::{
-    execution_environment_type::ExecutionEnvironmentType, internal_error, kv_markers::MAX_EVENT_TOPICS, system::{
+    execution_environment_type::ExecutionEnvironmentType,
+    internal_error,
+    kv_markers::MAX_EVENT_TOPICS,
+    system::{
         errors::SystemError, logger::Logger, CallModifier, CompletedExecution, ExternalCallRequest,
-    }, utils::{b160_to_u256, Bytes32}
+    },
+    utils::{b160_to_u256, Bytes32},
 };
 
 pub fn l1_messenger_hook<'a, S: EthereumLikeTypes>(
@@ -41,7 +45,9 @@ where
     let mut is_static = false;
     match modifier {
         CallModifier::Constructor => {
-            return Err(internal_error!("L1 messenger hook called with constructor modifier").into())
+            return Err(
+                internal_error!("L1 messenger hook called with constructor modifier").into(),
+            )
         }
         CallModifier::Delegate
         | CallModifier::DelegateStatic

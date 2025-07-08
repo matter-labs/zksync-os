@@ -122,7 +122,9 @@ where
     /// Rollbacks the data to the state at the provided `snapshot_id`.
     pub fn rollback(&mut self, snapshot_id: CacheSnapshotId) -> Result<(), InternalError> {
         if snapshot_id < self.state.frozen_snapshot_id {
-            return Err(internal_error!("History map: rollback below frozen snapshot"));
+            return Err(internal_error!(
+                "History map: rollback below frozen snapshot"
+            ));
         }
 
         if snapshot_id >= self.state.next_snapshot_id {

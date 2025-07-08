@@ -29,8 +29,8 @@ use zk_ee::system::errors::{FatalError, InternalError, SystemError};
 use zk_ee::system::{EthereumLikeTypes, Resource, System, SystemTypes};
 
 use alloc::vec::Vec;
-use zk_ee::{internal_error, types_config::*};
 use zk_ee::utils::*;
+use zk_ee::{internal_error, types_config::*};
 
 mod ee_trait_impl;
 mod evm_stack;

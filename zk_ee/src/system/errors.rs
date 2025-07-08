@@ -95,7 +95,13 @@ pub struct InternalError(pub &'static str, pub ErrorLocation);
 #[macro_export]
 macro_rules! internal_error {
     ($msg:expr $(,)?) => {
-        $crate::system::errors::InternalError($msg, $crate::system::errors::location::ErrorLocation { file: file!(), line: line!() })
+        $crate::system::errors::InternalError(
+            $msg,
+            $crate::system::errors::location::ErrorLocation {
+                file: file!(),
+                line: line!(),
+            },
+        )
     };
 }
 

@@ -39,7 +39,9 @@ where
     let mut is_static = false;
     match modifier {
         CallModifier::Constructor => {
-            return Err(internal_error!("L2 base token hook called with constructor modifier").into())
+            return Err(
+                internal_error!("L2 base token hook called with constructor modifier").into(),
+            )
         }
         CallModifier::Delegate
         | CallModifier::DelegateStatic

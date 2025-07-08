@@ -2,10 +2,16 @@ use alloc::{alloc::Global, collections::BTreeMap};
 use core::{alloc::Allocator, marker::PhantomData};
 use storage_models::common_structs::{snapshottable_io::SnapshottableIo, PreimageCacheModel};
 use zk_ee::{
-    common_structs::{history_map::CacheSnapshotId, NewPreimagesPublicationStorage, PreimageType}, execution_environment_type::ExecutionEnvironmentType, internal_error, system::{
+    common_structs::{history_map::CacheSnapshotId, NewPreimagesPublicationStorage, PreimageType},
+    execution_environment_type::ExecutionEnvironmentType,
+    internal_error,
+    system::{
         errors::{InternalError, SystemError},
         IOResultKeeper, Resources,
-    }, system_io_oracle::{IOOracle, PreimageContentWordsIterator}, types_config::EthereumIOTypesConfig, utils::{Bytes32, UsizeAlignedByteBox}
+    },
+    system_io_oracle::{IOOracle, PreimageContentWordsIterator},
+    types_config::EthereumIOTypesConfig,
+    utils::{Bytes32, UsizeAlignedByteBox},
 };
 
 use crate::system_implementation::flat_storage_model::cost_constants::{

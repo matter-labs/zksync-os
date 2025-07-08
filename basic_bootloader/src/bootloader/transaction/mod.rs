@@ -10,7 +10,10 @@ use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use errors::InvalidTransaction;
 use ruint::aliases::U256;
-use zk_ee::{internal_error, system::errors::{FatalError, InternalError, SystemError}};
+use zk_ee::{
+    internal_error,
+    system::errors::{FatalError, InternalError, SystemError},
+};
 
 mod abi_utils;
 pub mod access_list_parser;
@@ -390,9 +393,9 @@ impl<'a> ZkSyncTransaction<'a> {
             Self::EIP_2930_TX_TYPE => self.eip2930_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_1559_TX_TYPE => self.eip1559_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_signed_hash(chain_id, resources),
-            _ => {
-                Err(internal_error!("Invalid type for signed hash, most likely l1 or upgrade").into())
-            }
+            _ => Err(
+                internal_error!("Invalid type for signed hash, most likely l1 or upgrade").into(),
+            ),
         }
     }
 

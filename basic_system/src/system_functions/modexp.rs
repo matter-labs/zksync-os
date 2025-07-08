@@ -5,10 +5,13 @@ use alloc::vec::Vec;
 use crypto::modexp::modexp;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
-use zk_ee::{internal_error, system::{
-    errors::{SystemError, SystemFunctionError},
-    Computational, Ergs, SystemFunction,
-}};
+use zk_ee::{
+    internal_error,
+    system::{
+        errors::{SystemError, SystemFunctionError},
+        Computational, Ergs, SystemFunction,
+    },
+};
 
 ///
 /// modexp system function implementation.
