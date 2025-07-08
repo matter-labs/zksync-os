@@ -2,6 +2,7 @@ use super::nodes::*;
 use super::*;
 use alloc::alloc::Allocator;
 use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 use core::fmt::Debug;
 use crypto::MiniDigest;
 use zk_ee::utils::Bytes32;

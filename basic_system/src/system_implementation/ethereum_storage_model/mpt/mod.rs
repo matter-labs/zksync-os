@@ -5,6 +5,7 @@ mod rlp;
 mod trie;
 mod updates;
 
+use alloc::boxed::Box;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use crypto::MiniDigest;
