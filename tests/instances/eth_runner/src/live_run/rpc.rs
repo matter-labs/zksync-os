@@ -1,5 +1,6 @@
 use crate::{
     block::Block,
+    calltrace::CallTrace,
     prestate::{DiffTrace, PrestateTrace},
     receipts::BlockReceipts,
 };
@@ -91,6 +92,28 @@ pub fn get_difftrace(endpoint: &str, block_number: u64) -> Result<DiffTrace> {
     let res = send(endpoint, body)?;
     let v = serde_json::from_str(&res)?;
     Ok(v)
+}
+
+pub fn get_calltrace(endpoint: &str, block_number: u64) -> Result<CallTrace> {
+    debug!("RPC: get_calltrace({})", block_number);
+    use serde::Deserialize;
+    use serde_json::Deserializer;
+
+    let body = json!({
+        "method": "debug_traceBlockByNumber",
+        "params": [to_hex(block_number), {
+            "tracer": "callTracer",
+        }],
+        "id": 1,
+        "jsonrpc": "2.0"
+    });
+    let res = send(endpoint, body)?;
+
+    let mut de = Deserializer::from_str(&res);
+    de.disable_recursion_limit();
+
+    let calltrace = CallTrace::deserialize(&mut de)?;
+    Ok(calltrace)
 }
 
 fn send(endpoint: &str, body: serde_json::Value) -> Result<String> {

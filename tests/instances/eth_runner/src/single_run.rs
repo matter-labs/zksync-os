@@ -1,5 +1,6 @@
 use crate::block::Block;
 use crate::block_hashes::BlockHashes;
+use crate::calltrace::CallTrace;
 use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
 use crate::prestate::{populate_prestate, DiffTrace, PrestateTrace};
@@ -19,6 +20,7 @@ fn run<const RANDOMIZED: bool>(
     transactions: Vec<Vec<u8>>,
     receipts: Vec<TransactionReceipt>,
     diff_trace: DiffTrace,
+    calltrace: CallTrace,
     block_hashes: Option<BlockHashes>,
     witness_output_dir: Option<String>,
 ) -> anyhow::Result<()> {
@@ -28,7 +30,7 @@ fn run<const RANDOMIZED: bool>(
         chain.set_block_hashes(block_hashes.into_array(block_number))
     }
 
-    let prestate_cache = populate_prestate(&mut chain, ps_trace);
+    let prestate_cache = populate_prestate(&mut chain, ps_trace, &calltrace);
 
     let output_path = witness_output_dir.map(|dir| {
         let mut suffix = block_number.to_string();
@@ -63,12 +65,14 @@ pub fn single_run(
     block_hashes: Option<String>,
     randomized: bool,
     witness_output_dir: Option<String>,
+    chain_id: Option<u64>,
 ) -> anyhow::Result<()> {
     use std::path::Path;
     let dir = Path::new(&block_dir);
     let block = fs::read_to_string(dir.join("block.json"))?;
     // TODO: ensure there are no calls to unsupported precompiles
-    let _calltrace = fs::read_to_string(dir.join("calltrace.json"))?;
+    let calltrace_file = File::open(dir.join("calltrace.json"))?;
+    let calltrace_reader = BufReader::new(calltrace_file);
     let receipts = fs::read_to_string(dir.join("receipts.json"))?;
     let ps_file = File::open(dir.join("prestatetrace.json"))?;
     let ps_reader = BufReader::new(ps_file);
@@ -82,6 +86,7 @@ pub fn single_run(
         serde_json::from_str(&hashes).expect("valid block hashes JSON")
     });
 
+    let calltrace: CallTrace = serde_json::from_reader(calltrace_reader)?;
     let block: Block = serde_json::from_str(&block).expect("valid block JSON");
     let block_number = block.result.header.number;
     info!("Running block: {}", block_number);
@@ -90,7 +95,7 @@ pub fn single_run(
     let miner = block.result.header.miner;
 
     let block_context = block.get_block_context();
-    let (transactions, skipped) = block.get_transactions();
+    let (transactions, skipped) = block.get_transactions(&calltrace);
 
     let receipts = receipts
         .result
@@ -117,8 +122,17 @@ pub fn single_run(
             .collect(),
     };
 
+    let calltrace = CallTrace {
+        result: calltrace
+            .result
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
+            .collect(),
+    };
+
     if randomized {
-        let chain = Chain::empty_randomized(Some(1));
+        let chain = Chain::empty_randomized(Some(chain_id.unwrap_or(1)));
         run(
             chain,
             block_context,
@@ -128,6 +142,7 @@ pub fn single_run(
             transactions,
             receipts,
             diff_trace,
+            calltrace,
             block_hashes,
             witness_output_dir,
         )
@@ -142,6 +157,7 @@ pub fn single_run(
             transactions,
             receipts,
             diff_trace,
+            calltrace,
             block_hashes,
             witness_output_dir,
         )

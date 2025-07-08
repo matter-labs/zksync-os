@@ -20,4 +20,5 @@ arrayvec = { version = "0.7.4", default-features = false }
 
 [features]
 mock-unsupported-precompiles = []
+p256_precompile = []
 cycle_marker = []

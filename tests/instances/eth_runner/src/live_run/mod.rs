@@ -6,6 +6,7 @@ mod rpc;
 use rig::log::{debug, error, info};
 use rig::Chain;
 
+use crate::calltrace::CallTrace;
 use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
 use crate::prestate::populate_prestate;
@@ -72,11 +73,14 @@ fn fetch_block_traces(block_number: u64, db: &Database, endpoint: &str) -> Resul
                 "Failed to fetch block receipts for {}",
                 block_number
             ))?;
+            let call = rpc::get_calltrace(endpoint, block_number)
+                .context(format!("Failed to fetch call trace for {}", block_number))?;
             let block_traces = BlockTraces {
                 block,
                 prestate,
                 diff,
                 receipts,
+                call,
             };
             Ok(block_traces)
         }
@@ -88,6 +92,8 @@ fn run_block(
     db: &Database,
     endpoint: &str,
     witness_output_dir: Option<String>,
+    persist_all: bool,
+    chain_id: Option<u64>,
 ) -> Result<BlockStatus> {
     let block_traces = fetch_block_traces(block_number, db, endpoint)?;
     let traces_clone = block_traces.clone();
@@ -97,6 +103,7 @@ fn run_block(
         diff,
         block,
         receipts,
+        call,
     } = block_traces;
     // set block hash for future blocks to use
     db.set_block_hash(
@@ -108,7 +115,7 @@ fn run_block(
 
     let miner = block.result.header.miner;
     let block_context = block.get_block_context();
-    let (transactions, skipped) = block.get_transactions();
+    let (transactions, skipped) = block.get_transactions(&call);
     let receipts: Vec<TransactionReceipt> = receipts
         .result
         .into_iter()
@@ -133,12 +140,22 @@ fn run_block(
             .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
             .collect(),
     };
-    let mut chain = Chain::empty_randomized(Some(1));
+
+    let calltrace = CallTrace {
+        result: call
+            .result
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
+            .collect(),
+    };
+
+    let mut chain = Chain::empty_randomized(Some(chain_id.unwrap_or(1)));
     chain.set_last_block_number(block_number - 1);
 
     chain.set_block_hashes(get_block_hashes_array(block_number, db)?);
 
-    let prestate_cache = populate_prestate(&mut chain, ps_trace);
+    let prestate_cache = populate_prestate(&mut chain, ps_trace, &calltrace);
 
     let output_path = witness_output_dir.map(|dir| {
         let mut suffix = block_number.to_string();
@@ -166,6 +183,9 @@ fn run_block(
     ) {
         core::result::Result::Ok(()) => {
             db.set_block_status(block_number, db::BlockStatus::Success)?;
+            if persist_all {
+                db.set_block_traces(block_number, &traces_clone)?;
+            }
             Ok(db::BlockStatus::Success)
         }
         Err(e) => {
@@ -182,19 +202,36 @@ fn run_block(
 ///
 /// Run blocks from [start_block] to [end_block].
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn live_run(
     start_block: u64,
     end_block: u64,
     endpoint: String,
     db_path: String,
     witness_output_dir: Option<String>,
+    skip_successful: bool,
+    persist_all: bool,
+    chain_id: Option<u64>,
 ) -> Result<()> {
     let db = Database::init(db_path)?;
     assert!(start_block <= end_block);
     fetch_block_hashes(start_block, &db, &endpoint)?;
     let mut failures = 0;
     for n in start_block..=end_block {
-        if let BlockStatus::Error(_) = run_block(n, &db, &endpoint, witness_output_dir.clone())? {
+        let status = db.get_block_status(n)?;
+        let already_succeeded = status.is_some_and(|s| matches!(s, BlockStatus::Success));
+        if skip_successful && already_succeeded {
+            debug!("Skipping block {}, already succeeded", n);
+            continue;
+        }
+        if let BlockStatus::Error(_) = run_block(
+            n,
+            &db,
+            &endpoint,
+            witness_output_dir.clone(),
+            persist_all,
+            chain_id,
+        )? {
             failures += 1;
             if failures == MAX_FAILURES {
                 error!("Reached max number of failures");

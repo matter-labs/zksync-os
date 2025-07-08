@@ -31,34 +31,34 @@ pub struct L2ToL1Log {
     /// Shard id.
     /// Deprecated, kept for compatibility, always set to 0.
     ///
-    l2_shard_id: u8,
+    pub l2_shard_id: u8,
     ///
     /// Boolean flag.
     /// Deprecated, kept for compatibility, always set to `true`.
     ///
-    is_service: bool,
+    pub is_service: bool,
     ///
     /// The L2 transaction number in a block, in which the log was sent
     ///
-    tx_number_in_block: u16,
+    pub tx_number_in_block: u16,
     ///
     /// The L2 address which sent the log.
     /// For user messages set to `L1Messenger` system hook address,
     /// for l1 -> l2 txs logs - `BootloaderFormalAddress`.
     ///
-    sender: B160,
+    pub sender: B160,
     ///
     /// The 32 bytes of information that was sent in the log.
     /// For user messages used to save message sender address(padded),
     /// for l1 -> l2 txs logs - transaction hash.
     ///
-    key: Bytes32,
+    pub key: Bytes32,
     ///
     /// The 32 bytes of information that was sent in the log.
     /// For user messages used to save message hash.
     /// for l1 -> l2 txs logs - success flag(padded).
     ///
-    value: Bytes32,
+    pub value: Bytes32,
 }
 
 ///

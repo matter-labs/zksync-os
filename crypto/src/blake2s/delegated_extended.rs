@@ -81,6 +81,38 @@ impl Blake2s256 {
             core::mem::transmute_copy::<_, [u8; 32]>(self.state.read_state_for_output_ref())
         }
     }
+
+    #[inline(always)]
+    fn finalize_reset_impl(&mut self) -> [u8; 32] {
+        // pad the buffer with 0s and run round function again,
+        // then copy the output
+
+        // NOTE: there is no branching here, as we would not otherwise process empty inputs
+
+        unsafe {
+            // write zeroes
+            let start = self
+                .state
+                .input_buffer
+                .as_mut_ptr()
+                .cast::<u8>()
+                .add(self.buffer_filled_bytes);
+            let end = self.state.input_buffer.as_mut_ptr_range().end.cast::<u8>();
+            core::hint::assert_unchecked(start <= end);
+            core::ptr::write_bytes(start, 0, end.offset_from_unsigned(start));
+            // and run round function
+            self.state
+                .run_round_function_with_byte_len::<false>(self.buffer_filled_bytes, true);
+
+            let to_return =
+                core::mem::transmute_copy::<_, [u8; 32]>(self.state.read_state_for_output_ref());
+
+            self.state.reset();
+            self.buffer_filled_bytes = 0;
+
+            to_return
+        }
+    }
 }
 
 impl crate::MiniDigest for Blake2s256 {
@@ -105,6 +137,11 @@ impl crate::MiniDigest for Blake2s256 {
     #[inline(always)]
     fn finalize(self) -> Self::HashOutput {
         self.finalize_impl()
+    }
+
+    #[inline(always)]
+    fn finalize_reset(&mut self) -> Self::HashOutput {
+        self.finalize_reset_impl()
     }
 }
 

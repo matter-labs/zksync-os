@@ -24,7 +24,7 @@ The tool has two modes: `single-run` and `live-run`. The former takes as argumen
 From the root of the project, run:
 
 ```raw
-RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_print,rig/unlimited_native -- single-run --block-dir tests/instances/eth_runner --randomized
+RUST_LOG=eth_runner=info cargo run -p eth_runner --release --features rig/no_print,rig/unlimited_native -- single-run --block-dir tests/instances/eth_runner/blocks/22244135 --randomized
 ```
 
 This will run the example block committed to the repo (22244135). Some more example blocks can be found in https://github.com/antoniolocascio/ethereum-block-examples.
