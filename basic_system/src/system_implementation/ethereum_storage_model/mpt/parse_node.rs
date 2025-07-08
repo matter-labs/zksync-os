@@ -9,8 +9,8 @@ pub(crate) struct RLPSlice<'a> {
 impl<'a> RLPSlice<'a> {
     pub(crate) const fn empty() -> Self {
         Self {
-            full_encoding: &[],
-            raw_data_offset: 0,
+            full_encoding: EMPTY_SLICE_ENCODING,
+            raw_data_offset: 1,
         }
     }
     pub(crate) const fn full_encoding(&self) -> &'a [u8] {
@@ -149,7 +149,7 @@ fn parse_initial<'a>(raw_encoding: &'a [u8]) -> Result<(usize, [RLPSlice<'a>; 17
 pub(crate) fn parse_node_from_bytes<'a>(
     raw_encoding: &'a [u8],
     interner: &'_ mut (impl Interner<'a> + 'a),
-) -> Result<ParsedNode<'a>, ()> {
+) -> Result<(ParsedNode<'a>, [RLPSlice<'a>; 17]), ()> {
     let (num_filled, pieces, num_non_empty_branches) = parse_initial(raw_encoding)?;
 
     if num_filled == 2 {
@@ -160,21 +160,16 @@ pub(crate) fn parse_node_from_bytes<'a>(
         let (path_segment, is_leaf) = interner.intern_nibbles(nibbles)?;
         if is_leaf == false {
             // extension
-            let next_node_key = pieces[1].data();
             let extension_node = ExtensionNode {
-                // key: key,
-                // prefix,
                 path_segment,
                 parent_node: NodeType::unlinked(), // will be re-linked
                 child_node: NodeType::unlinked(),  // will be re-linked
                 raw_nibbles_encoding: nibbles_encoding.full_encoding(),
-                // raw_encoding,
-                next_node_key,
+                next_node_key: pieces[1],
             };
 
-            Ok(ParsedNode::Extension(extension_node))
+            Ok((ParsedNode::Extension(extension_node), pieces))
         } else {
-            let leaf_value = pieces[1].data();
             let leaf_node = LeafNode {
                 // key: key,
                 // prefix,
@@ -182,10 +177,10 @@ pub(crate) fn parse_node_from_bytes<'a>(
                 raw_nibbles_encoding: nibbles_encoding.full_encoding(),
                 parent_node: NodeType::unlinked(),
                 // raw_encoding,
-                value: leaf_value,
+                value: pieces[1],
             };
 
-            Ok(ParsedNode::Leaf(leaf_node))
+            Ok((ParsedNode::Leaf(leaf_node), pieces))
         }
     } else if num_filled == 17 {
         // branch
@@ -200,35 +195,34 @@ pub(crate) fn parse_node_from_bytes<'a>(
         // it is a branch, and we must parse it in full, but only take a single path that we are interested in. We do not need to
         // verify well-formedness of branches too much, just to the extend that they are short enough
 
-        let mut child_nodes = [NodeType::unknown_branch(); 16];
-        let mut child_encoding_lengths = [0u8; 16];
-        // a little unsafe, but why not
-        let branches_encodings_concatenation = unsafe {
-            core::slice::from_ptr_range(
-                pieces[0].full_encoding().as_ptr()..pieces[15].full_encoding().as_ptr_range().end,
-            )
-        };
-
-        for (idx, branch_value) in pieces[..16].iter().enumerate() {
+        let child_nodes = [NodeType::unlinked(); 16];
+        // let mut child_encoding_lengths = [0u8; 16];
+        for branch_value in pieces[..16].iter() {
             if branch_value.data().len() > 32 {
                 return Err(());
             }
-            child_encoding_lengths[idx] = branch_value.full_encoding().len() as u8;
-            if branch_value.is_empty() {
-                child_nodes[idx] = NodeType::empty();
-            }
         }
+        // for (idx, branch_value) in pieces[..16].iter().enumerate() {
+        //     if branch_value.data().len() > 32 {
+        //         return Err(());
+        //     }
+        //     child_encoding_lengths[idx] = branch_value.full_encoding().len() as u8;
+        //     if branch_value.is_empty() {
+        //         child_nodes[idx] = NodeType::empty();
+        //     }
+        // }
         let branch_node = BranchNode {
             // key,
             // prefix: branch_prefix_as_path,
             parent_node: NodeType::unlinked(),
             child_nodes,
-            branches_encodings_concatenation,
-            child_encoding_lengths,
+            // branches_encodings_concatenation,
+            // child_encoding_lengths,
             // raw_encoding,
+            _marker: core::marker::PhantomData,
         };
 
-        Ok(ParsedNode::Branch(branch_node))
+        Ok((ParsedNode::Branch(branch_node), pieces))
     } else {
         return Err(());
     }

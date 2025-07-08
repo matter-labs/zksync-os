@@ -13,6 +13,8 @@
 // - Inserts somewhere near the leaf - convert to branch, but types of nodes do not change
 // - Inserts somewhere near the extension - convert to branch too, potentially eliminating extension itself
 
+use crate::system_implementation::ethereum_storage_model::{mpt::RLPSlice, ByteBuffer};
+
 // Stable index. We assume that number of nodes is small enough
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct NodeType {
@@ -35,12 +37,19 @@ impl core::fmt::Debug for NodeType {
             f.debug_struct("Node: Branch")
                 .field("index", &self.index())
                 .finish()
-        } else if self.is_unreferenced_path() {
-            f.debug_struct("Node: Unreferenced")
+        } else if self.is_unreferenced_value_in_branch() {
+            f.debug_struct("Node: Unreferenced value in branch")
+                .field("index", &self.index())
+                .finish()
+        } else if self.is_terminal_value_in_branch() {
+            f.debug_struct("Node: Terminal value inside of branch node")
                 .field("index", &self.index())
                 .finish()
         } else if self.is_unlinked() {
             f.debug_tuple("Node: Unlinked").finish()
+        // } else if self.is_terminal_value_in_branch() {
+        //     f.debug_tuple("Node: Terminal value inside of branch node")
+        //         .finish()
         } else {
             unreachable!()
         }
@@ -54,8 +63,10 @@ impl NodeType {
     const LEAF_TYPE_MARKER: usize = 0b001;
     const EXTENSION_TYPE_MARKER: usize = 0b010;
     const BRANCH_TYPE_MARKER: usize = 0b011;
-    const UNREFERENCED_PATH: usize = 0b100;
+    const UNREFERENCED_VALUE_IN_BRANCH_NODE: usize = 0b100;
     const UNLINKED_MARKER: usize = 0b101;
+    const TERMINAL_VALUE_IN_BRANCH_NODE: usize = 0b110;
+    // const OPAQUE_VALUE: usize = 0b111;
 
     pub(crate) const fn index(&self) -> usize {
         self.inner >> Self::RAW_INDEX_SHIFT
@@ -73,9 +84,9 @@ impl NodeType {
         }
     }
 
-    pub(crate) const fn unknown_branch() -> Self {
+    pub(crate) const fn terminal_value_in_branch(index: usize) -> Self {
         Self {
-            inner: Self::UNREFERENCED_PATH,
+            inner: (index << Self::RAW_INDEX_SHIFT) | Self::TERMINAL_VALUE_IN_BRANCH_NODE,
         }
     }
 
@@ -97,9 +108,9 @@ impl NodeType {
         }
     }
 
-    pub(crate) const fn unreferenced_path(index: usize) -> Self {
+    pub(crate) const fn unreferenced_value_in_branch(index: usize) -> Self {
         Self {
-            inner: (index << Self::RAW_INDEX_SHIFT) | Self::UNREFERENCED_PATH,
+            inner: (index << Self::RAW_INDEX_SHIFT) | Self::UNREFERENCED_VALUE_IN_BRANCH_NODE,
         }
     }
 
@@ -119,43 +130,23 @@ impl NodeType {
         self.inner & Self::TYPE_MASK == Self::BRANCH_TYPE_MARKER
     }
 
-    pub(crate) fn is_unreferenced_path(&self) -> bool {
-        self.inner & Self::TYPE_MASK == Self::UNREFERENCED_PATH
+    pub(crate) fn is_unreferenced_value_in_branch(&self) -> bool {
+        self.inner & Self::TYPE_MASK == Self::UNREFERENCED_VALUE_IN_BRANCH_NODE
     }
 
     pub(crate) fn is_unlinked(&self) -> bool {
         self.inner & Self::TYPE_MASK == Self::UNLINKED_MARKER
     }
-}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct PathSegment<'a> {
-    path: Path<'a>,
-    segment_len: usize,
-}
-
-impl<'a> PathSegment<'a> {
-    pub(crate) fn is_empty(&self) -> bool {
-        self.segment().is_empty()
-    }
-
-    pub(crate) const fn prefix_len(&self) -> usize {
-        self.path.prefix_len()
-    }
-
-    pub(crate) fn segment(&self) -> &'a [u8] {
-        &self.path.remaining_path()[..self.segment_len]
-    }
-
-    pub(crate) fn prefix(&self) -> &'a [u8] {
-        self.path.prefix()
+    pub(crate) fn is_terminal_value_in_branch(&self) -> bool {
+        self.inner & Self::TYPE_MASK == Self::TERMINAL_VALUE_IN_BRANCH_NODE
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Path<'a> {
-    path: &'a [u8],
-    prefix_len: usize,
+    pub(crate) path: &'a [u8],
+    pub(crate) prefix_len: usize,
 }
 
 impl<'a> Path<'a> {
@@ -170,17 +161,6 @@ impl<'a> Path<'a> {
         self.remaining_path().is_empty()
     }
 
-    pub(crate) const fn prefix_len(&self) -> usize {
-        self.prefix_len
-    }
-
-    pub(crate) fn into_prefix_only(&self) -> Self {
-        Self {
-            path: self.prefix(),
-            prefix_len: self.prefix_len,
-        }
-    }
-
     pub(crate) fn prefix(&self) -> &'a [u8] {
         &self.path[..self.prefix_len]
     }
@@ -193,6 +173,27 @@ impl<'a> Path<'a> {
         &self.path[self.prefix_len..]
     }
 
+    pub(crate) fn seek_to_end(&mut self) {
+        self.prefix_len = self.path.len();
+    }
+
+    pub(crate) fn ascend(&mut self, path_segment: &[u8]) {
+        let Some(..) = self.prefix().strip_suffix(path_segment) else {
+            panic!()
+        };
+        self.prefix_len -= path_segment.len();
+    }
+
+    pub(crate) fn ascend_branch(&mut self) -> Result<usize, ()> {
+        if let Some(last) = self.prefix().last().copied() {
+            self.prefix_len -= 1;
+
+            Ok(last as usize)
+        } else {
+            Err(())
+        }
+    }
+
     #[inline]
     pub(crate) fn follow(&mut self, path_segment: &[u8]) -> Result<bool, ()> {
         if self.remaining_path().len() < path_segment.len() {
@@ -200,7 +201,9 @@ impl<'a> Path<'a> {
             return Err(());
         }
         let follows = self.remaining_path().starts_with(path_segment);
-        self.prefix_len += path_segment.len();
+        if follows {
+            self.prefix_len += path_segment.len();
+        }
 
         Ok(follows)
     }
@@ -218,54 +221,35 @@ impl<'a> Path<'a> {
 
 // One of the hard topics is how to easily identify nodes. We need to define some types that
 // would be unique enough, to guarantee that even if we somehow encounter
-
-// TODO: manually check that derives first compare keys
-// TODO: consider if pointer equality is enough. Most likely yes
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct LeafNode<'a> {
-    // pub(crate) key: &'a [u8], // NOTE: only used when tree is being constructed from proofs. Invalid after updates
-    // pub(crate) prefix: &'a [u8],
     pub(crate) path_segment: &'a [u8],
     pub(crate) parent_node: NodeType,
     pub(crate) raw_nibbles_encoding: &'a [u8], // RLP, not even internals. Handy for updates
-    // pub(crate) raw_encoding: &'a [u8], // of full node (including prefix)
-    pub(crate) value: &'a [u8], // fully parsed
+    pub(crate) value: RLPSlice<'a>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct ExtensionNode<'a> {
-    // pub(crate) key: &'a [u8], // NOTE: only used when tree is being constructed from proofs. Invalid after updates
-    // pub(crate) prefix: &'a [u8],
     pub(crate) path_segment: &'a [u8],
     pub(crate) parent_node: NodeType,
     pub(crate) child_node: NodeType,
     pub(crate) raw_nibbles_encoding: &'a [u8], // RLP, not even internals. Handy for updates
-    // pub(crate) raw_encoding: &'a [u8], // of full node (including prefix)
-    pub(crate) next_node_key: &'a [u8], // fully parsed, and if any update will happen we can benefit from it
+    pub(crate) next_node_key: RLPSlice<'a>,
 }
 
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-// pub(crate) struct UnreferencedPath<'a> {
-//     pub(crate) key: &'a [u8],
-//     pub(crate) path: PathSegment<'a>,
-//     pub(crate) parent_node: NodeType,
-//     pub(crate) raw_encoding: &'a [u8],
-// }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct OpaqueValue<'a> {
+    pub(crate) parent_node: NodeType,
+    pub(crate) branch_index: usize,
+    pub(crate) encoding: RLPSlice<'a>,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct BranchNode<'a> {
-    // pub(crate) key: &'a [u8],  // NOTE: only used when tree is being constructed from proofs. Invalid after updates
-    // pub(crate) prefix: &'a [u8],
     pub(crate) parent_node: NodeType,
     pub(crate) child_nodes: [NodeType; 16],
-    pub(crate) branches_encodings_concatenation: &'a [u8],
-    pub(crate) child_encoding_lengths: [u8; 16], // can not be more than 33 anyway
-
-                                                 // pub(crate) child_nodes_raw_encodings: [&'a [u8]; 16], // allows to avoid storing raw encodings in other node types
-                                                 // pub(crate) raw_encoding: &'a [u8],
-                                                 // in practice branch nodes can not have value - consensus forbids branch nodes with 0 or 1 children,
-                                                 // and all storage slot keys are fixed 32 bytes, so branch node can not be "passthrough"
+    pub(crate) _marker: core::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> core::fmt::Debug for BranchNode<'a> {
@@ -288,18 +272,34 @@ impl<'a> BranchNode<'a> {
 
         occupied
     }
+}
 
-    pub(crate) fn encoding_of_branch(&self, branch_index: usize) -> &'a [u8] {
-        let mut raw_encoding_slice = self.branches_encodings_concatenation;
-        for idx in 0..16 {
-            let len = self.child_encoding_lengths[idx] as usize;
-            let (child, rest) = raw_encoding_slice.split_at(len);
-            if branch_index == idx {
-                return child;
-            }
-            raw_encoding_slice = rest;
+pub(crate) fn write_nibbles(buffer: &mut impl ByteBuffer, is_leaf: bool, path: &[u8]) {
+    let num_nibbles = path.len();
+    let (mut byte, mut write_high) = if num_nibbles % 2 == 1 {
+        if is_leaf {
+            (0x30, false)
+        } else {
+            (0x10, false)
         }
-
-        unreachable!("branch index is too high: {}", branch_index);
+    } else {
+        if is_leaf {
+            (0x20, true)
+        } else {
+            (0x00, true)
+        }
+    };
+    for el in path.iter() {
+        if write_high {
+            buffer.write_byte(byte);
+            byte = *el << 4;
+            write_high = false;
+        } else {
+            byte |= *el;
+            write_high = true;
+        }
+    }
+    if write_high {
+        buffer.write_byte(byte);
     }
 }

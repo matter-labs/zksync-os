@@ -1,53 +1,45 @@
 use super::*;
 
 impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
-    pub(crate) fn delete_leaf_node<D: MiniDigest>(
+    pub(crate) fn delete_leaf_node(
         &mut self,
         node: NodeType,
-        full_path: &[u8],
-        interner: &'_ mut (impl Interner<'a> + 'a),
-        hasher: &mut D,
-    ) -> Result<&'a [u8], ()>
-    where
-        D::HashOutput: AsRef<[u8]>,
-    {
-        let (short_index, existing_leaf) = self
-            .leaf_nodes
-            .remove_persisted(node.index())
-            .expect("must be existing");
-        dbg!(hex::encode(short_index.node_prefix));
-        dbg!(hex::encode(existing_leaf.path_segment));
-        let Some(remaining_prefix) = full_path.strip_suffix(existing_leaf.path_segment) else {
-            return Err(());
-        };
+        mut path: Path<'_>,
+        preimages_oracle: &mut impl PreimagesOracle,
+        interner: &mut (impl Interner<'a> + 'a),
+        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+    ) -> Result<(), ()> {
+        // path is no longer known
+        self.keys_cache.remove(&node);
+
+        path.seek_to_end();
+        let existing_leaf = &self.leaf_nodes[node.index()];
+        path.ascend(&existing_leaf.path_segment);
+        let remaining_prefix = path.prefix();
 
         if remaining_prefix.is_empty() {
+            assert_eq!(node, self.root);
+            assert!(existing_leaf.parent_node.is_empty());
+            self.root = NodeType::empty();
+
             // Done
-            assert!(self.root == NodeType::empty());
-            // emply slice encodes empty state
-            return Ok(&[]);
+            Ok(())
         } else {
-            // walk up
-            if remaining_prefix.is_empty() {
-                return Err(());
-            }
             let parent_node = existing_leaf.parent_node;
+            debug_assert!(parent_node.is_empty() == false);
             if parent_node.is_branch() {
-                let branch_index = *remaining_prefix.last().unwrap() as usize;
                 return self.delete_from_branch_node(
                     parent_node,
-                    remaining_prefix,
-                    branch_index,
+                    path,
+                    preimages_oracle,
                     interner,
                     hasher,
                 );
             } else if parent_node.is_extension() {
-                return Err(());
+                Err(())
             } else {
-                return Err(());
+                Err(())
             }
         }
-
-        Err(())
     }
 }

@@ -1,10 +1,9 @@
 mod nodes;
-mod trie;
-// mod nibbles;
 mod parse_node;
-mod rlp;
-// mod updates;
 mod preimages;
+mod rlp;
+mod trie;
+mod updates;
 
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
@@ -19,24 +18,14 @@ pub(crate) use self::trie::*;
 pub use self::preimages::*;
 pub use self::trie::EthereumMPT;
 
-pub const EMPTY_ROOT_HASH: Bytes32 = Bytes32::from_hex("39bef1777deb3dfb14f64b9f81ced092c501fee72f90e93d03bb95ee89df9837");
+pub(crate) const EMPTY_SLICE_ENCODING: &'static [u8] = &[0x80];
+
+// Hash of RLP encoded empty slice
+pub const EMPTY_ROOT_HASH: Bytes32 =
+    Bytes32::from_hex("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421");
 
 #[cfg(test)]
 mod tests;
-
-pub(crate) const EMPTY_LIST_ENCODING: &'static [u8] = &[0x80];
-
-pub(crate) fn path_char_to_digit(c: u8) -> u8 {
-    // c
-    match c {
-        b'A'..=b'F' => c - b'A' + 10,
-        b'a'..=b'f' => c - b'a' + 10,
-        b'0'..=b'9' => c - b'0',
-        _ => {
-            unreachable!()
-        }
-    }
-}
 
 #[inline]
 pub(crate) fn consume<'a>(src: &mut &'a [u8], bytes: usize) -> Result<&'a [u8], ()> {
@@ -70,6 +59,19 @@ pub(crate) fn rlp_parse_short_bytes<'a>(src: &'a [u8]) -> Result<&'a [u8], ()> {
     }
 }
 
+#[track_caller]
+pub(crate) fn common_prefix_len(a: &[u8], b: &[u8]) -> usize {
+    assert_eq!(a.len(), b.len());
+    debug_assert!(a.len() > 0);
+    for i in 0..a.len() {
+        if a[i] != b[i] {
+            return i;
+        }
+    }
+
+    a.len()
+}
+
 pub trait ByteBuffer {
     fn write_byte(&mut self, byte: u8);
     fn write_slice(&mut self, slice: &[u8]);
@@ -91,6 +93,7 @@ impl<T: MiniDigest> ByteBuffer for T {
 
 pub trait InterningBuffer<'a>: ByteBuffer {
     fn flush(self) -> &'a [u8];
+    fn flush_mut(self) -> &'a mut [u8];
 }
 
 pub trait InterningWordBuffer<'a>: WordBuffer {
@@ -148,6 +151,12 @@ impl<'a> ByteBuffer for MaybeUninitByteBuffer<'a> {
 impl<'a> InterningBuffer<'a> for MaybeUninitByteBuffer<'a> {
     fn flush(self) -> &'a [u8] {
         unsafe { core::slice::from_raw_parts(self.buffer.as_ptr().cast(), self.num_written) }
+    }
+
+    fn flush_mut(self) -> &'a mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(self.buffer.as_mut_ptr().cast(), self.num_written)
+        }
     }
 }
 
@@ -212,8 +221,7 @@ impl<'a, A: Allocator + 'a> Interner<'a> for BoxInterner<A> {
         A: 'a,
     {
         let next_multiple = capacity.next_multiple_of(core::mem::size_of::<usize>());
-        let word_capacity = next_multiple
-            / core::mem::size_of::<usize>();
+        let word_capacity = next_multiple / core::mem::size_of::<usize>();
         if self.used + word_capacity > self.buffer.len() {
             return Err(());
         }
@@ -251,7 +259,21 @@ impl<'a, A: Allocator + 'a> Interner<'a> for BoxInterner<A> {
 }
 
 // Some generic convenience function
-pub trait InternerExt<'a>: Interner<'a> {
+pub trait ETHMPTInternerExt<'a>: Interner<'a> {
+    fn intern_slice(&'_ mut self, slice: &'_ [u8]) -> Result<&'a [u8], ()> {
+        let mut buffer = self.get_buffer(slice.len())?;
+        buffer.write_slice(slice);
+
+        Ok(buffer.flush())
+    }
+
+    fn intern_slice_mut(&'_ mut self, slice: &'_ [u8]) -> Result<&'a mut [u8], ()> {
+        let mut buffer = self.get_buffer(slice.len())?;
+        buffer.write_slice(slice);
+
+        Ok(buffer.flush_mut())
+    }
+
     fn intern_nibbles(&'_ mut self, nibbles_encoding: &'_ [u8]) -> Result<(&'a [u8], bool), ()> {
         if nibbles_encoding.len() < 1 {
             return Err(());
@@ -308,19 +330,101 @@ pub trait InternerExt<'a>: Interner<'a> {
         Ok((path_segment, is_leaf))
     }
 
-    fn update_leaf_value<D: MiniDigest>(
+    // will return key
+    fn make_leaf_key(
         &mut self,
-        existing_leaf_node: &LeafNode<'_>,
-        new_raw_value: &[u8],
-        hasher: &mut D,
-    ) -> Result<&'a [u8], ()>
-    where
-        D::HashOutput: AsRef<[u8]>,
-    {
+        path_for_nibbles: &[u8],
+        pre_encoded_value: &[u8],
+        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+    ) -> Result<&'a [u8], ()> {
+        debug_assert!(path_for_nibbles.len() > 0);
         // we need to make an RLP of the leaf and intern a new key (we are not interested in value actually)
+        let num_nibbles = path_for_nibbles.len();
+        let num_bytes_to_encode_nibbles = if num_nibbles % 2 == 1 {
+            (num_nibbles + 1) / 2
+        } else {
+            (num_nibbles / 2) + 1
+        };
+        debug_assert!(num_bytes_to_encode_nibbles >= 1);
+        let rlp_prefix_len = if num_nibbles == 1 {
+            // only possible values are 0x1X, so it's always byte itself
+            0
+        } else {
+            // max length is 17 bytes, so 1 byte
+            1
+        };
+        let nibbles_encoding_len = num_bytes_to_encode_nibbles + rlp_prefix_len;
+        let mut total_list_concatenated_len = nibbles_encoding_len;
+        total_list_concatenated_len += pre_encoded_value.len();
+        // total_list_concatenated_len += slice_encoding_prefix_len(pre_encoded_value);
+        let total_len =
+            total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
 
-        let mut total_list_concatenated_len = existing_leaf_node.raw_nibbles_encoding.len();
-        total_list_concatenated_len += new_raw_value.len();
+        if total_len < 32 {
+            let mut buffer = self.get_buffer(1 + total_len)?;
+            let writer = &mut buffer;
+            // we need to RLP it on top - it is short
+            writer.write_byte(0x80 + (total_len as u8));
+
+            encode_list_len_into_buffer(writer, total_list_concatenated_len);
+            if rlp_prefix_len > 0 {
+                writer.write_byte(0x80 + (num_bytes_to_encode_nibbles as u8));
+            }
+            write_nibbles(writer, true, path_for_nibbles);
+            writer.write_slice(pre_encoded_value);
+            let result = buffer.flush();
+
+            Ok(result)
+        } else {
+            let writer = hasher;
+            encode_list_len_into_buffer(writer, total_list_concatenated_len);
+            if rlp_prefix_len > 0 {
+                writer.write_byte(0x80 + (num_bytes_to_encode_nibbles as u8));
+            }
+            write_nibbles(writer, true, path_for_nibbles);
+            writer.write_slice(pre_encoded_value);
+            // encode_slice_into_buffer(writer, pre_encoded_value);
+            let key = writer.finalize_reset();
+
+            let mut buffer = self.get_buffer(33)?;
+            buffer.write_byte(0x80 + 32);
+            buffer.write_slice(key.as_ref());
+
+            Ok(buffer.flush())
+        }
+    }
+
+    // will return key
+    fn make_extension_key(
+        &mut self,
+        path_for_nibbles: &[u8],
+        maybe_preencoded_nibbles: &[u8],
+        pre_encoded_value: &[u8],
+        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+    ) -> Result<&'a [u8], ()> {
+        // we will ignore pre-encoded nibbles, and only assert basic consistency
+        debug_assert!(path_for_nibbles.len() > 0);
+        // we need to make an RLP of the leaf and intern a new key (we are not interested in value actually)
+        let num_nibbles = path_for_nibbles.len();
+        let num_bytes_to_encode_nibbles = if num_nibbles % 2 == 1 {
+            (num_nibbles + 1) / 2
+        } else {
+            (num_nibbles / 2) + 1
+        };
+        debug_assert!(num_bytes_to_encode_nibbles >= 1);
+        let rlp_prefix_len = if num_nibbles == 1 {
+            // possible values are 0x3X, so it's always byte itself
+            0
+        } else {
+            // max length is 17 bytes, so 1 byte
+            1
+        };
+        let nibbles_encoding_len = num_bytes_to_encode_nibbles + rlp_prefix_len;
+        if maybe_preencoded_nibbles.len() > 0 {
+            assert_eq!(maybe_preencoded_nibbles.len(), nibbles_encoding_len);
+        }
+        let mut total_list_concatenated_len = nibbles_encoding_len;
+        total_list_concatenated_len += pre_encoded_value.len();
         let total_len =
             total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
 
@@ -332,32 +436,22 @@ pub trait InternerExt<'a>: Interner<'a> {
             writer.write_byte(0x80 + (total_len as u8));
 
             encode_list_len_into_buffer(writer, total_list_concatenated_len);
-            // now encode two elements, by taking their raw encodings
-            writer.write_slice(existing_leaf_node.raw_nibbles_encoding);
-            writer.write_slice(new_raw_value);
+            if rlp_prefix_len > 0 {
+                writer.write_byte(0x80 + (num_bytes_to_encode_nibbles as u8));
+            }
+            write_nibbles(writer, false, path_for_nibbles);
+            writer.write_slice(pre_encoded_value);
             let result = buffer.flush();
-            dbg!(hex::encode(result));
 
             Ok(result)
         } else {
-            // {
-            //     let mut buffer = self.get_buffer(total_len)?;
-            //     let writer = &mut buffer;
-
-            //     encode_list_len_into_buffer(writer, total_list_concatenated_len);
-            //     // now encode two elements, by taking their raw encodings
-            //     writer.write_slice(existing_leaf_node.raw_nibbles_encoding);
-            //     writer.write_slice(new_raw_value);
-            //     let result = buffer.flush();
-            //     dbg!(hex::encode(result));
-            // }
-
-            // we need to do the same into hasher
             let writer = hasher;
             encode_list_len_into_buffer(writer, total_list_concatenated_len);
-            // now encode two elements
-            writer.update(existing_leaf_node.raw_nibbles_encoding);
-            writer.update(new_raw_value);
+            if rlp_prefix_len > 0 {
+                writer.write_byte(0x80 + (num_bytes_to_encode_nibbles as u8));
+            }
+            write_nibbles(writer, false, path_for_nibbles);
+            writer.write_slice(pre_encoded_value);
             let key = writer.finalize_reset();
 
             let mut buffer = self.get_buffer(33)?;
@@ -368,21 +462,15 @@ pub trait InternerExt<'a>: Interner<'a> {
         }
     }
 
-    fn update_branch_node<D: MiniDigest>(
+    fn make_branch_key(
         &mut self,
-        existing_branch_node: &mut BranchNode<'a>,
-        branch_index: usize,
-        new_raw_value: &[u8],
-        hasher: &mut D,
-    ) -> Result<&'a [u8], ()>
-    where
-        D::HashOutput: AsRef<[u8]>,
-    {
-        let mut total_list_concatenated_len =
-            existing_branch_node.branches_encodings_concatenation.len();
-        total_list_concatenated_len -=
-            existing_branch_node.child_encoding_lengths[branch_index] as usize;
-        total_list_concatenated_len += new_raw_value.len();
+        child_keys: &[&'_ [u8]; 16],
+        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+    ) -> Result<&'a [u8], ()> {
+        let mut total_list_concatenated_len = 0usize;
+        for child_key in child_keys.iter() {
+            total_list_concatenated_len += child_key.len();
+        }
         // and empty value
         total_list_concatenated_len += 1;
 
@@ -395,81 +483,21 @@ pub trait InternerExt<'a>: Interner<'a> {
             let writer = &mut buffer;
 
             encode_list_len_into_buffer(writer, total_list_concatenated_len);
-            let encoding_offset = list_encoding_prefix_len(total_list_concatenated_len);
-            let mut new_encoding_len = 0usize;
-            let mut raw_encoding_slice = existing_branch_node.branches_encodings_concatenation;
-            for idx in 0..16 {
-                let len = existing_branch_node.child_encoding_lengths[idx] as usize;
-                let (child, rest) = raw_encoding_slice.split_at(len);
-                raw_encoding_slice = rest;
-                if branch_index == idx {
-                    existing_branch_node.child_encoding_lengths[idx] = new_raw_value.len() as u8;
-                    writer.write_slice(new_raw_value);
-                    new_encoding_len += new_raw_value.len();
-                } else {
-                    writer.write_slice(child);
-                    new_encoding_len += child.len();
-                }
+            for child_key in child_keys.iter() {
+                writer.write_slice(*child_key);
             }
             // empty value
             writer.write_byte(0x80);
             let result = buffer.flush();
 
-            // update encoding part using interned buffer
-            existing_branch_node.branches_encodings_concatenation =
-                &result[encoding_offset..][..new_encoding_len];
-
             Ok(result)
         } else {
-            // {
-            //     let mut buffer = self.get_buffer(3 + total_len)?;
-            //     let writer = &mut buffer;
-
-            //     encode_list_len_into_buffer(writer, total_list_concatenated_len);
-            //     let mut raw_encoding_slice = existing_branch_node.branches_encodings_concatenation;
-            //     for idx in 0..16 {
-            //         let len = existing_branch_node.child_encoding_lengths[idx] as usize;
-            //         let (child, rest) = raw_encoding_slice.split_at(len);
-            //         raw_encoding_slice = rest;
-            //         if branch_index == idx {
-            //             writer.write_slice(new_raw_value);
-            //         } else {
-            //             writer.write_slice(child);
-            //         }
-            //     }
-            //     writer.write_byte(0x80);
-            //     let result = buffer.flush();
-            //     dbg!(hex::encode(result));
-            // }
-
-            // Here we actually have to do double-interning, and update both concatenation,
-            // lengths of individual leaf encodings, and compute a key
-
-            {
-                // we only need a buffer that is as long as concatenation of branches
-                let mut buffer = self.get_buffer(total_list_concatenated_len)?;
-                let writer = &mut buffer;
-                let mut raw_encoding_slice = existing_branch_node.branches_encodings_concatenation;
-                for idx in 0..16 {
-                    let len = existing_branch_node.child_encoding_lengths[idx] as usize;
-                    let (child, rest) = raw_encoding_slice.split_at(len);
-                    raw_encoding_slice = rest;
-                    if branch_index == idx {
-                        existing_branch_node.child_encoding_lengths[idx] =
-                            new_raw_value.len() as u8;
-                        writer.write_slice(new_raw_value);
-                    } else {
-                        writer.write_slice(child);
-                    }
-                }
-                let result = buffer.flush();
-                existing_branch_node.branches_encodings_concatenation = result;
-            }
-
             let writer = hasher;
             encode_list_len_into_buffer(writer, total_list_concatenated_len);
-            // we updated it above
-            writer.write_slice(existing_branch_node.branches_encodings_concatenation);
+            // branches
+            for child_key in child_keys.iter() {
+                writer.write_slice(*child_key);
+            }
             // empty value
             writer.write_byte(0x80);
             let key = writer.finalize_reset();
@@ -482,117 +510,23 @@ pub trait InternerExt<'a>: Interner<'a> {
         }
     }
 
-    fn update_extension_value<D: MiniDigest>(
+    // will return key
+    fn make_terminal_branch_value_key(
         &mut self,
-        existing_extension_node: &ExtensionNode<'_>,
-        new_raw_value: &[u8],
-        hasher: &mut D,
-    ) -> Result<&'a [u8], ()>
-    where
-        D::HashOutput: AsRef<[u8]>,
-    {
-        // we need to make an RLP of the leaf and intern a new key (we are not interested in value actually)
-
-        let mut total_list_concatenated_len = existing_extension_node.raw_nibbles_encoding.len();
-        total_list_concatenated_len += new_raw_value.len();
-        let total_len =
-            total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
-
+        pre_encoded_value: &[u8],
+        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+    ) -> Result<&'a [u8], ()> {
+        let total_len = pre_encoded_value.len();
         if total_len < 32 {
-            // we need RLP of RLP
-            let mut buffer = self.get_buffer(1 + total_len)?;
+            let mut buffer = self.get_buffer(total_len)?;
             let writer = &mut buffer;
-            // we need to RLP it on top - it is short
-            writer.write_byte(0x80 + (total_len as u8));
-
-            encode_list_len_into_buffer(writer, total_list_concatenated_len);
-            // now encode two elements, by taking their raw encodings
-            writer.write_slice(existing_extension_node.raw_nibbles_encoding);
-            writer.write_slice(new_raw_value);
+            writer.write_slice(pre_encoded_value);
             let result = buffer.flush();
 
             Ok(result)
         } else {
-            {
-                let mut buffer = self.get_buffer(total_len)?;
-                let writer = &mut buffer;
-
-                encode_list_len_into_buffer(writer, total_list_concatenated_len);
-                // now encode two elements, by taking their raw encodings
-                writer.write_slice(existing_extension_node.raw_nibbles_encoding);
-                writer.write_slice(new_raw_value);
-                let result = buffer.flush();
-                dbg!(hex::encode(result));
-            }
-
-            // we need to do the same into hasher
             let writer = hasher;
-            encode_list_len_into_buffer(writer, total_list_concatenated_len);
-            // now encode two elements
-            writer.update(existing_extension_node.raw_nibbles_encoding);
-            writer.update(new_raw_value);
-            let key = writer.finalize_reset();
-
-            let mut buffer = self.get_buffer(33)?;
-            buffer.write_byte(0x80 + 32);
-            buffer.write_slice(key.as_ref());
-
-            Ok(buffer.flush())
-        }
-    }
-
-    fn convert_branch_value_into_leaf<D: MiniDigest>(
-        &mut self,
-        branch_index: usize,
-        raw_value: &[u8],
-        hasher: &mut D,
-    ) -> Result<&'a [u8], ()>
-    where
-        D::HashOutput: AsRef<[u8]>,
-    {
-        // we need to make an RLP of the leaf and intern a new key (we are not interested in value actually)
-
-        // nibbles encoding is always short in this case - single byte
-        let nibbles = [0x30 + (branch_index as u8)];
-        let mut total_list_concatenated_len = 1;
-        total_list_concatenated_len += raw_value.len();
-        let total_len =
-            total_list_concatenated_len + list_encoding_prefix_len(total_list_concatenated_len);
-
-        if total_len < 32 {
-            // we need RLP of RLP
-            let mut buffer = self.get_buffer(1 + total_len)?;
-            let writer = &mut buffer;
-            // we need to RLP it on top - it is short
-            writer.write_byte(0x80 + (total_len as u8));
-
-            encode_list_len_into_buffer(writer, total_list_concatenated_len);
-            // now encode two elements, by taking their raw encodings
-            writer.write_slice(&nibbles);
-            writer.write_slice(raw_value);
-            let result = buffer.flush();
-            dbg!(hex::encode(result));
-
-            Ok(result)
-        } else {
-            // {
-            //     let mut buffer = self.get_buffer(total_len)?;
-            //     let writer = &mut buffer;
-
-            //     encode_list_len_into_buffer(writer, total_list_concatenated_len);
-            //     // now encode two elements, by taking their raw encodings
-            //     writer.write_slice(existing_leaf_node.raw_nibbles_encoding);
-            //     writer.write_slice(new_raw_value);
-            //     let result = buffer.flush();
-            //     dbg!(hex::encode(result));
-            // }
-
-            // we need to do the same into hasher
-            let writer = hasher;
-            encode_list_len_into_buffer(writer, total_list_concatenated_len);
-            // now encode two elements
-            writer.update(&nibbles);
-            writer.update(raw_value);
+            writer.write_slice(pre_encoded_value);
             let key = writer.finalize_reset();
 
             let mut buffer = self.get_buffer(33)?;
@@ -605,4 +539,4 @@ pub trait InternerExt<'a>: Interner<'a> {
 }
 
 // Default impl
-impl<'a, T: Interner<'a>> InternerExt<'a> for T {}
+impl<'a, T: Interner<'a>> ETHMPTInternerExt<'a> for T {}

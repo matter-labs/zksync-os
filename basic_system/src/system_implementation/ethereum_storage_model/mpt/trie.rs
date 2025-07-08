@@ -6,30 +6,59 @@ use core::fmt::Debug;
 use crypto::MiniDigest;
 use zk_ee::utils::Bytes32;
 
-enum ProofPath<'a> {
-    Diverged {
-        allocated_node: NodeType,
+pub(crate) enum DescendPath<'a> {
+    PathDiverged,
+    EmptyBranchTaken {
+        branch_node: NodeType,
+        branch_index: usize,
     },
     Follow {
-        allocated_node: NodeType,
-        next_key: &'a [u8],
+        next_node: NodeType,
     },
-    BranchTaken {
-        allocated_node: NodeType,
+    LeafReached {
+        final_node: NodeType,
+        value: RLPSlice<'a>,
+    },
+    BranchReached {
+        final_branch_node: NodeType,
         branch_index: usize,
-        next_key: &'a [u8],
-    },
-    EndReached {
-        allocated_node: NodeType,
-        value: &'a [u8],
+        value: RLPSlice<'a>,
     },
     UnreferencedPathEncountered {
         last_known_node: NodeType,
         branch_index: usize,
-        next_key: &'a [u8],
+        next_key: RLPSlice<'a>,
     },
 }
 
+pub(crate) enum AppendPath<'a> {
+    PathDiverged {
+        allocated_node: NodeType,
+    },
+    EmptyBranchTaken {
+        allocated_node: NodeType,
+    },
+    Follow {
+        allocated_node: NodeType,
+        next_key: RLPSlice<'a>,
+    },
+    BranchTaken {
+        allocated_node: NodeType,
+        branch_index: usize,
+        next_key: RLPSlice<'a>,
+    },
+    LeafReached {
+        allocated_node: NodeType,
+        value: RLPSlice<'a>,
+    },
+    BranchReached {
+        final_branch_node: NodeType,
+        value: RLPSlice<'a>,
+    },
+}
+
+/// Ethereum MPT implementation, that assumes constant-length paths of length at most 64 characters,
+/// and hash function that outputs 32 bytes
 #[derive(Debug)]
 pub struct EthereumMPT<'a, A: Allocator + Clone> {
     pub(crate) root: NodeType,
@@ -38,8 +67,11 @@ pub struct EthereumMPT<'a, A: Allocator + Clone> {
     pub(crate) leaf_nodes: Vec<LeafNode<'a>, A>,
     pub(crate) extension_nodes: Vec<ExtensionNode<'a>, A>,
     pub(crate) branch_nodes: Vec<BranchNode<'a>, A>,
+    pub(crate) branch_unreferenced_values: Vec<OpaqueValue<'a>, A>,
+    pub(crate) branch_terminal_values: Vec<OpaqueValue<'a>, A>,
     // We will cache preimages
     pub(crate) preimages_cache: BTreeMap<Bytes32, &'a [u8], A>,
+    pub(crate) keys_cache: BTreeMap<NodeType, &'a [u8], A>,
 }
 
 impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
@@ -48,9 +80,8 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         interner: &mut (impl Interner<'a> + 'a),
         allocator: A,
     ) -> Result<Self, ()> {
-        let mut buffer = interner.get_buffer(32)?;
-        buffer.write_slice(initial_root);
-        let interned_root_hash = buffer.flush();
+        assert_eq!(initial_root.len(), 32);
+        let interned_root_hash = interner.intern_slice(initial_root)?;
 
         let new = Self {
             root: NodeType::empty(),
@@ -58,79 +89,87 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             leaf_nodes: Vec::new_in(allocator.clone()),
             extension_nodes: Vec::new_in(allocator.clone()),
             branch_nodes: Vec::new_in(allocator.clone()),
+            branch_unreferenced_values: Vec::new_in(allocator.clone()),
+            branch_terminal_values: Vec::new_in(allocator.clone()),
             preimages_cache: BTreeMap::new_in(allocator.clone()),
+            keys_cache: BTreeMap::new_in(allocator.clone()),
         };
 
         Ok(new)
     }
 
     // we will not use a separate pre-fill of the tree to avoid
-    pub fn access_initial_value(
+    pub fn get(
         &mut self,
         mut path: Path<'_>,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
         hasher: &mut crypto::sha3::Keccak256,
     ) -> Result<&'a [u8], ()> {
-        if path.remaining_path().len() != 64 {
-            return Err(());
+        if self.interned_root_hash == EMPTY_ROOT_HASH.as_u8_ref() {
+            return Ok(&[]);
         }
 
-        // TODO: change to constant
         if self.root.is_empty() {
-            if self.interned_root_hash == EMPTY_ROOT_HASH.as_u8_ref() {
-                return Ok(&[]);
-            } else {
-                // allocate root, special case once
-                self.root = self.allocate_node_from_oracle(
-                    self.interned_root_hash,
-                    NodeType::empty(),
-                    preimages_oracle,
-                    interner,
-                    hasher,
-                )?;
-            }
+            // allocate root, special case once
+            self.root = self.allocate_root_node_from_oracle(
+                self.interned_root_hash,
+                NodeType::empty(),
+                preimages_oracle,
+                interner,
+                hasher,
+            )?;
+            // rare exception - it's 32 bytes, not 33
+            self.keys_cache.insert(self.root, self.interned_root_hash);
         }
+
+        debug_assert!(self.root.is_empty() == false);
 
         // descend
         let mut current_node = self.root;
-        let (mut key, mut parent_branch_index)  = loop {
+        let (mut key, mut parent_branch_index) = loop {
+            debug_assert!(current_node.is_empty() == false);
             match self.descend_through_existing_nodes(&mut path, current_node)? {
-                ProofPath::Diverged { allocated_node } => {
+                DescendPath::PathDiverged => {
                     return Ok(&[]);
                 }
-                ProofPath::BranchTaken {
-                    allocated_node,
-                    branch_index,
-                    next_key,
-                } => {
-                    current_node = allocated_node;
+                DescendPath::EmptyBranchTaken { branch_node, .. } => {
+                    debug_assert_eq!(current_node, branch_node);
+                    return Ok(&[]);
                 }
-                ProofPath::EndReached {
-                    allocated_node,
+                DescendPath::LeafReached { final_node, value } => {
+                    debug_assert_eq!(current_node, final_node);
+                    return Ok(value.data());
+                }
+                DescendPath::BranchReached {
+                    final_branch_node,
                     value,
+                    ..
                 } => {
-                    return Ok(value);
+                    debug_assert_eq!(current_node, final_branch_node);
+                    return Ok(value.data());
                 }
-                ProofPath::UnreferencedPathEncountered {
+                DescendPath::UnreferencedPathEncountered {
                     last_known_node,
                     branch_index,
                     next_key,
                 } => {
+                    debug_assert_eq!(current_node, last_known_node);
                     current_node = last_known_node;
                     break (next_key, branch_index);
                 }
-                ProofPath::Follow {
-                    allocated_node,
-                    next_key,
-                } => {
-                    current_node = allocated_node;
+                DescendPath::Follow { next_node, .. } => {
+                    debug_assert_ne!(current_node, next_node);
+                    current_node = next_node;
                 }
             }
         };
 
+        debug_assert!(self.root.is_empty() == false);
+
         // continue to descend, but use oracle and verify proofs now
         loop {
+            debug_assert!(current_node.is_empty() == false);
             match self.descend_through_proof(
                 &mut path,
                 key,
@@ -139,38 +178,50 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 interner,
                 hasher,
             )? {
-                ProofPath::Diverged { allocated_node } => {
+                AppendPath::PathDiverged { allocated_node } => {
+                    debug_assert_ne!(current_node, allocated_node);
                     self.link_if_needed(current_node, parent_branch_index, allocated_node)?;
                     return Ok(&[]);
                 }
-                ProofPath::BranchTaken {
+                AppendPath::EmptyBranchTaken { allocated_node, .. } => {
+                    debug_assert_ne!(current_node, allocated_node);
+                    self.link_if_needed(current_node, parent_branch_index, allocated_node)?;
+                    return Ok(&[]);
+                }
+                AppendPath::BranchTaken {
                     allocated_node,
                     branch_index,
                     next_key,
                 } => {
+                    debug_assert_ne!(current_node, allocated_node);
                     self.link_if_needed(current_node, parent_branch_index, allocated_node)?;
                     current_node = allocated_node;
                     parent_branch_index = branch_index;
                     key = next_key;
                 }
-                ProofPath::EndReached {
+                AppendPath::LeafReached {
                     allocated_node,
                     value,
                 } => {
+                    debug_assert_ne!(current_node, allocated_node);
                     self.link_if_needed(current_node, parent_branch_index, allocated_node)?;
-                    return Ok(value);
+                    return Ok(value.data());
                 }
-                ProofPath::UnreferencedPathEncountered {
-                    last_known_node,
-                    branch_index,
-                    next_key,
+                AppendPath::BranchReached {
+                    final_branch_node,
+                    value,
+                    ..
                 } => {
-                    return Err(());
+                    debug_assert_ne!(current_node, final_branch_node);
+                    self.link_if_needed(current_node, parent_branch_index, final_branch_node)?;
+                    return Ok(value.data());
                 }
-                ProofPath::Follow {
+                AppendPath::Follow {
                     allocated_node,
                     next_key,
                 } => {
+                    self.link_if_needed(current_node, parent_branch_index, allocated_node)?;
+                    debug_assert_ne!(current_node, allocated_node);
                     current_node = allocated_node;
                     key = next_key;
                 }
@@ -178,15 +229,19 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         }
     }
 
-    fn descend_through_existing_nodes(
+    // Descend returns fully RLP-stripped slices - either final value,
+    // or branch/extension raw key
+    pub(crate) fn descend_through_existing_nodes(
         &self,
         path: &mut Path<'_>,
         current_node: NodeType,
-    ) -> Result<ProofPath<'a>, ()> {
+    ) -> Result<DescendPath<'a>, ()> {
         if path.remaining_path().len() > 64 {
             return Err(());
         }
-
+        if path.remaining_path().len() == 64 {
+            debug_assert_eq!(current_node, self.root);
+        }
         if current_node.is_leaf() {
             // we need to follow the path
             let existing_leaf = &self.leaf_nodes[current_node.index()];
@@ -195,15 +250,13 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 if path.is_empty() == false {
                     Err(())
                 } else {
-                    Ok(ProofPath::EndReached {
-                        allocated_node: current_node,
+                    Ok(DescendPath::LeafReached {
+                        final_node: current_node,
                         value: existing_leaf.value,
                     })
                 }
             } else {
-                return Ok(ProofPath::Diverged {
-                    allocated_node: current_node,
-                });
+                return Ok(DescendPath::PathDiverged);
             }
         } else if current_node.is_extension() {
             let existing_extension = &self.extension_nodes[current_node.index()];
@@ -212,41 +265,67 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 if path.is_empty() {
                     Err(())
                 } else {
-                    Ok(ProofPath::Follow { 
-                        allocated_node: current_node, 
-                        next_key: existing_extension.next_node_key, 
-                    })
+                    let child_node = existing_extension.child_node;
+                    if child_node.is_unlinked() {
+                        Ok(DescendPath::UnreferencedPathEncountered {
+                            last_known_node: current_node,
+                            branch_index: 0,
+                            next_key: existing_extension.next_node_key,
+                        })
+                    } else {
+                        Ok(DescendPath::Follow {
+                            next_node: child_node,
+                        })
+                    }
                 }
             } else {
-                return Ok(ProofPath::Diverged {
-                    allocated_node: current_node,
-                });
+                return Ok(DescendPath::PathDiverged);
             }
         } else if current_node.is_branch() {
             let existing_branch = &self.branch_nodes[current_node.index()];
             let branch_index = path.take_branch()?;
             let child_node = existing_branch.child_nodes[branch_index];
-            if child_node.is_empty() {
-                return Ok(ProofPath::Diverged {
-                    allocated_node: child_node,
-                });
+            if path.is_empty() {
+                if child_node.is_empty() {
+                    Ok(DescendPath::BranchReached {
+                        final_branch_node: current_node,
+                        branch_index: branch_index,
+                        value: RLPSlice::empty(),
+                    })
+                } else if child_node.is_terminal_value_in_branch() {
+                    let opaque = &self.branch_terminal_values[child_node.index()];
+                    Ok(DescendPath::BranchReached {
+                        final_branch_node: current_node,
+                        branch_index: branch_index,
+                        value: opaque.encoding,
+                    })
+                } else {
+                    Err(())
+                }
             } else {
-                let branch_raw_encoding = existing_branch.encoding_of_branch(branch_index);
-                let next_key_encoding = rlp_parse_short_bytes(branch_raw_encoding)?;
-                if child_node.is_unreferenced_path() {
-                    // we should continue via oracle and proofs
-                    Ok(
-                        ProofPath::UnreferencedPathEncountered {
+                if child_node.is_empty() {
+                    Ok(DescendPath::EmptyBranchTaken {
+                        branch_node: current_node,
+                        branch_index: branch_index,
+                    })
+                } else {
+                    if child_node.is_unreferenced_value_in_branch() {
+                        let opaque = &self.branch_unreferenced_values[child_node.index()];
+                        Ok(DescendPath::UnreferencedPathEncountered {
                             last_known_node: current_node,
                             branch_index,
-                            next_key: next_key_encoding,
-                        }
-                    )
-                } else {
-                    Ok(ProofPath::Follow { 
-                        allocated_node: current_node, 
-                        next_key: next_key_encoding, 
-                    })
+                            next_key: opaque.encoding,
+                        })
+                    } else if child_node.is_branch()
+                        || child_node.is_extension()
+                        || child_node.is_leaf()
+                    {
+                        Ok(DescendPath::Follow {
+                            next_node: child_node,
+                        })
+                    } else {
+                        Err(())
+                    }
                 }
             }
         } else {
@@ -259,7 +338,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         key: &'a [u8],
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut crypto::sha3::Keccak256,
+        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
     ) -> Result<&'a [u8], ()> {
         if key.len() < 32 {
             Ok(key)
@@ -281,7 +360,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         }
     }
 
-    fn allocate_node_from_oracle(
+    fn allocate_root_node_from_oracle(
         &mut self,
         key: &'a [u8],
         parent_node: NodeType,
@@ -290,48 +369,71 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         hasher: &mut crypto::sha3::Keccak256,
     ) -> Result<NodeType, ()> {
         let raw_encoding = self.consult_cache_or_oracle(key, preimages_oracle, interner, hasher)?;
-        match parse_node_from_bytes(raw_encoding, interner)? {
+        let (parsed_node, pieces) = parse_node_from_bytes(raw_encoding, interner)?;
+        match parsed_node {
             ParsedNode::Leaf(mut leaf) => {
-                let index = self.leaf_nodes.len();
+                assert_eq!(leaf.path_segment.len(), 64);
                 leaf.parent_node = parent_node;
-                self.leaf_nodes.push(leaf);
+                let node_type = self.push_leaf(leaf);
+                self.keys_cache.insert(node_type, key);
 
-                Ok(NodeType::leaf(index))
+                Ok(node_type)
             }
             ParsedNode::Extension(mut extension) => {
-                let index = self.extension_nodes.len();
+                assert_eq!(extension.path_segment.len(), 64);
                 extension.parent_node = parent_node;
-                self.extension_nodes.push(extension);
+                let node_type = self.push_extension(extension);
+                self.keys_cache.insert(node_type, key);
 
-                Ok(NodeType::extension(index))
+                Ok(node_type)
             }
             ParsedNode::Branch(mut branch) => {
-                let index = self.branch_nodes.len();
+                for (branch_index, (child, encoding)) in
+                    branch.child_nodes.iter_mut().zip(pieces.iter()).enumerate()
+                {
+                    if encoding.is_empty() {
+                        *child = NodeType::empty()
+                    } else {
+                        // cache
+                        let opaque = OpaqueValue {
+                            parent_node,
+                            branch_index,
+                            encoding: *encoding,
+                        };
+                        let index = self.branch_unreferenced_values.len();
+                        self.branch_unreferenced_values.push(opaque);
+                        let node_type = NodeType::unreferenced_value_in_branch(index);
+                        self.keys_cache.insert(node_type, encoding.full_encoding());
+                        *child = node_type;
+                    }
+                }
                 branch.parent_node = parent_node;
-                self.branch_nodes.push(branch);
+                let node_type = self.push_branch(branch);
+                self.keys_cache.insert(node_type, key);
 
-                Ok(NodeType::branch(index))
+                Ok(node_type)
             }
         }
     }
 
     // we return node type, and it's parsed "value", that is either terminal value,
     // or a "key" for next node
-    fn descend_through_proof(
+    pub(crate) fn descend_through_proof(
         &mut self,
         path: &mut Path<'_>,
-        key: &'a [u8],
+        key: RLPSlice<'a>,
         parent_node: NodeType,
         preimages_oracle: &mut impl PreimagesOracle,
         interner: &mut (impl Interner<'a> + 'a),
-        hasher: &mut crypto::sha3::Keccak256,
-    ) -> Result<ProofPath<'a>, ()> {
+        hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
+    ) -> Result<AppendPath<'a>, ()> {
         if path.remaining_path().len() > 64 {
             return Err(());
         }
-        let raw_encoding = self.consult_cache_or_oracle(key, preimages_oracle, interner, hasher)?;
-
-        match parse_node_from_bytes(raw_encoding, interner)? {
+        let raw_encoding =
+            self.consult_cache_or_oracle(key.data(), preimages_oracle, interner, hasher)?;
+        let (parsed_node, pieces) = parse_node_from_bytes(raw_encoding, interner)?;
+        match parsed_node {
             ParsedNode::Leaf(mut leaf) => {
                 if !(parent_node.is_empty()
                     || parent_node.is_branch()
@@ -346,14 +448,15 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 let index = self.leaf_nodes.len();
                 self.leaf_nodes.push(leaf);
                 let node_type = NodeType::leaf(index);
+                self.keys_cache.insert(node_type, key.full_encoding());
 
                 if follows {
-                    Ok(ProofPath::EndReached {
+                    Ok(AppendPath::LeafReached {
                         allocated_node: node_type,
                         value: leaf_value,
                     })
                 } else {
-                    Ok(ProofPath::Diverged {
+                    Ok(AppendPath::PathDiverged {
                         allocated_node: node_type,
                     })
                 }
@@ -369,53 +472,134 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 let index = self.extension_nodes.len();
                 self.extension_nodes.push(extension);
                 let node_type = NodeType::extension(index);
+                self.keys_cache.insert(node_type, key.full_encoding());
 
                 if follows {
-                    Ok(ProofPath::Follow {
+                    Ok(AppendPath::Follow {
                         allocated_node: node_type,
                         next_key: next_node_key,
                     })
                 } else {
-                    Ok(ProofPath::Diverged {
+                    Ok(AppendPath::PathDiverged {
                         allocated_node: node_type,
                     })
                 }
             }
             ParsedNode::Branch(mut branch) => {
+                if !(parent_node.is_empty()
+                    || parent_node.is_extension()
+                    || parent_node.is_branch())
+                {
+                    return Err(());
+                }
                 branch.parent_node = parent_node;
                 let branch_index = path.take_branch()?;
                 if branch_index >= 16 {
                     return Err(());
                 }
-                let child_node = branch.child_nodes[branch_index];
                 let index = self.branch_nodes.len();
-                if child_node.is_empty() {
+                let inserted_node = NodeType::branch(index);
+                if path.is_empty() {
+                    let mut final_value = RLPSlice::empty();
+                    // we still need to enumerate all branches
+                    for (idx, (child_node, encoding)) in branch
+                        .child_nodes
+                        .iter_mut()
+                        .zip(pieces[..16].iter())
+                        .enumerate()
+                    {
+                        if encoding.is_empty() {
+                            *child_node = NodeType::empty();
+                        } else {
+                            if idx == branch_index {
+                                final_value = *encoding;
+                            }
+                            let index = self.branch_terminal_values.len();
+                            let opaque = OpaqueValue {
+                                parent_node: inserted_node,
+                                branch_index: idx,
+                                encoding: *encoding,
+                            };
+                            self.branch_terminal_values.push(opaque);
+                            let node_type = NodeType::terminal_value_in_branch(index);
+                            self.keys_cache.insert(node_type, encoding.full_encoding());
+                            *child_node = node_type;
+                        }
+                    }
                     self.branch_nodes.push(branch);
-                    let node_type = NodeType::branch(index);
-                    Ok(ProofPath::Diverged {
-                        allocated_node: node_type
+                    self.keys_cache.insert(inserted_node, key.full_encoding());
+
+                    Ok(AppendPath::BranchReached {
+                        final_branch_node: inserted_node,
+                        value: final_value,
                     })
                 } else {
-                    debug_assert!(child_node.is_unreferenced_path());
-                    let next_node_key = rlp_parse_short_bytes(branch.encoding_of_branch(branch_index))?;
+                    let mut next_node_key = RLPSlice::empty();
+                    // we still need to enumerate all branches
+                    for (idx, (child_node, encoding)) in branch
+                        .child_nodes
+                        .iter_mut()
+                        .zip(pieces[..16].iter())
+                        .enumerate()
+                    {
+                        if encoding.is_empty() {
+                            *child_node = NodeType::empty();
+                        } else {
+                            if idx == branch_index {
+                                next_node_key = *encoding;
+                            }
+                            let index = self.branch_unreferenced_values.len();
+                            let opaque = OpaqueValue {
+                                parent_node: inserted_node,
+                                branch_index: idx,
+                                encoding: *encoding,
+                            };
+                            self.branch_unreferenced_values.push(opaque);
+                            let node_type = NodeType::unreferenced_value_in_branch(index);
+                            self.keys_cache.insert(node_type, encoding.full_encoding());
+                            *child_node = node_type;
+                        }
+                    }
                     self.branch_nodes.push(branch);
-                    let node_type = NodeType::branch(index);
+                    self.keys_cache.insert(inserted_node, key.full_encoding());
 
-                    Ok(ProofPath::BranchTaken {
-                        allocated_node: node_type,
-                        branch_index,
-                        next_key: next_node_key,
-                    })
+                    if next_node_key.is_empty() {
+                        Ok(AppendPath::EmptyBranchTaken {
+                            allocated_node: inserted_node,
+                        })
+                    } else {
+                        Ok(AppendPath::BranchTaken {
+                            allocated_node: inserted_node,
+                            branch_index,
+                            next_key: next_node_key,
+                        })
+                    }
                 }
             }
         }
     }
 
-    pub fn root(&self) -> &'a [u8] {
-        self.interned_root_hash
+    pub fn root(&self, hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>) -> [u8; 32] {
+        if self.root.is_empty() {
+            // use default-provided. It can be not empty internally, but we never checked
+            self.interned_root_hash.try_into().unwrap()
+        } else {
+            if self.interned_root_hash.len() == 32 {
+                self.interned_root_hash.try_into().unwrap()
+            } else if self.interned_root_hash.len() == 33 {
+                rlp_parse_short_bytes(self.interned_root_hash)
+                    .unwrap()
+                    .try_into()
+                    .unwrap()
+            } else {
+                debug_assert!(self.interned_root_hash.len() < 32);
+                hasher.update(self.interned_root_hash);
+                hasher.finalize_reset()
+            }
+        }
     }
 
-    fn link_if_needed(
+    pub(crate) fn link_if_needed(
         &mut self,
         parent_node: NodeType,
         parent_branch_index: usize,
@@ -425,7 +609,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             // link
             let parent_branch_node = &mut self.branch_nodes[parent_node.index()];
             let branch_child = parent_branch_node.child_nodes[parent_branch_index];
-            if branch_child.is_unlinked() || branch_child.is_unreferenced_path() {
+            if branch_child.is_unreferenced_value_in_branch() {
                 parent_branch_node.child_nodes[parent_branch_index] = child_node;
             } else {
                 if child_node != branch_child {
@@ -446,5 +630,26 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         }
 
         Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn push_leaf(&mut self, new_leaf: LeafNode<'a>) -> NodeType {
+        let index = self.leaf_nodes.len();
+        self.leaf_nodes.push(new_leaf);
+        NodeType::leaf(index)
+    }
+
+    #[inline(always)]
+    pub(crate) fn push_extension(&mut self, new_branch: ExtensionNode<'a>) -> NodeType {
+        let index = self.extension_nodes.len();
+        self.extension_nodes.push(new_branch);
+        NodeType::extension(index)
+    }
+
+    #[inline(always)]
+    pub(crate) fn push_branch(&mut self, new_branch: BranchNode<'a>) -> NodeType {
+        let index = self.branch_nodes.len();
+        self.branch_nodes.push(new_branch);
+        NodeType::branch(index)
     }
 }

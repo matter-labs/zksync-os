@@ -1,24 +1,50 @@
+mod basic;
+mod prestate;
 mod serialization;
 
+use alloy::primitives::U256;
+use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
-use num_bigint::BigUint;
-use num_traits::Zero;
-use zk_ee::utils::Bytes32;
-use std::collections::BTreeSet;
+use ruint::aliases::B160;
+use std::collections::{BTreeSet, HashMap};
 use std::{alloc::Global, collections::BTreeMap};
+use zk_ee::utils::Bytes32;
 
 use super::*;
 use crate::system_implementation::ethereum_storage_model::mpt::BoxInterner;
 
+use self::prestate::*;
 use self::serialization::*;
 
-fn decode_address_data<'a>(
-    mut data: &'a [u8],
-) -> [RLPSlice<'a>; 4] {
+pub(crate) fn path_char_to_digit(c: u8) -> u8 {
+    match c {
+        b'A'..=b'F' => c - b'A' + 10,
+        b'a'..=b'f' => c - b'a' + 10,
+        b'0'..=b'9' => c - b'0',
+        _ => {
+            unreachable!()
+        }
+    }
+}
+
+pub(crate) fn byte_path_to_path_digits(byte_path: &[u8; 32]) -> Vec<u8> {
+    hex::encode(byte_path)
+        .as_bytes()
+        .iter()
+        .map(|el| path_char_to_digit(*el))
+        .collect()
+}
+
+pub(crate) fn hex_path_to_path_digits(hex: &str) -> Vec<u8> {
+    hex.as_bytes()
+        .iter()
+        .map(|el| path_char_to_digit(*el))
+        .collect()
+}
+
+fn decode_address_data<'a>(mut data: &'a [u8]) -> [RLPSlice<'a>; 4] {
     let b0 = consume(&mut data, 1).unwrap();
     let b0 = b0[0];
-    // we can not make any conclusion based on the first byte. At best we can make a decision that it's a list,
-    // but not even the number of elements in it...
     if b0 < 0xc0 {
         panic!();
     }
@@ -66,60 +92,34 @@ fn decode_address_data<'a>(
     }
 }
 
-// pub(crate) fn read_test_vectors() -> BTreeMap<Vec<u8>, (AccountProof, AccountProof)> {
-//     let paths = std::fs::read_dir("./proofs").unwrap();
+fn decode_prestate_and_diffs() -> (prestate::PrestateTrace, prestate::DiffTrace) {
+    let prestate =
+        serde_json::from_reader(std::fs::File::open("./prestatetrace.json").unwrap()).unwrap();
+    let diffs = serde_json::from_reader(std::fs::File::open("./difftrace.json").unwrap()).unwrap();
 
-//     let mut mapping: BTreeMap<Vec<u8>, BTreeMap<u64, AccountProof>> = BTreeMap::new();
-
-//     for path in paths {
-//         if let Ok(path) = path {
-//             let pp = path.path();
-//             let p = pp.strip_prefix("./proofs/").unwrap();
-//             let full_name = p
-//                 .file_name()
-//                 .unwrap()
-//                 .to_string_lossy()
-//                 .to_owned()
-//                 .into_owned();
-//             let t = full_name.strip_suffix(".json").unwrap();
-//             let mut it = t.split("_");
-//             let key = it.next().unwrap();
-//             let key = hex::decode(key).unwrap();
-//             let block_number = it.next().unwrap();
-//             let block_number = u64::from_str_radix(block_number, 16).unwrap();
-
-//             let content = std::fs::File::open(path.path()).unwrap();
-//             let data: TestJsonResponse<AccountProof> = serde_json::from_reader(content).unwrap();
-//             let entry: &mut BTreeMap<u64, AccountProof> = mapping.entry(key).or_default();
-//             entry.insert(block_number, data.result);
-//         }
-//     }
-
-//     let mut result = BTreeMap::new();
-//     for (key, values) in mapping.into_iter() {
-//         assert_eq!(values.len(), 2);
-//         let mut it = values.into_iter();
-//         let (_, a) = it.next().unwrap();
-//         let (_, b) = it.next().unwrap();
-//         result.insert(key, (a, b));
-//     }
-
-//     result
-// }
+    (prestate, diffs)
+}
 
 struct ParsedWitness {
     oracle: BTreeMap<Bytes32, Vec<u8>>,
     addresses_to_trie_pos: BTreeMap<Vec<u8>, Bytes32>,
     all_storage_trie_pos: BTreeMap<Vec<u8>, Bytes32>,
-    // keys_to_trie_pos: BTreeMap<Vec<u8>, Bytes32>,
-    // trie_pos_to_key: BTreeMap<Bytes32, Vec<u8>>,
+    coinbase: [u8; 20],
     initial_root: Vec<u8>,
 }
 
 fn read_execution_witness() -> ParsedWitness {
     let content = std::fs::File::open("./block_witness_15c7f5c.json").unwrap();
-    let result: TestJsonResponse<alloy_rpc_types_debug::ExecutionWitness> = serde_json::from_reader(content).unwrap();
+
+    let result: TestJsonResponse<alloy_rpc_types_debug::ExecutionWitness> =
+        serde_json::from_reader(content).unwrap();
     let result = result.result;
+
+    let mut headers = alloy::rlp::Rlp::new(&result.headers[0]).unwrap();
+    let _ = headers.get_next::<[u8; 32]>().unwrap();
+    let _ = headers.get_next::<[u8; 32]>().unwrap();
+    let coinbase = headers.get_next::<[u8; 20]>().unwrap().unwrap();
+    let initial_root = headers.get_next::<[u8; 32]>().unwrap().unwrap();
 
     let mut oracle = BTreeMap::new();
     let mut addresses_to_trie_pos = BTreeMap::new();
@@ -127,519 +127,416 @@ fn read_execution_witness() -> ParsedWitness {
 
     // make an oracle
     for el in result.state.iter() {
-        // assert!(el.len() >= 32);
         let hash = crypto::sha3::Keccak256::digest(el);
-        // dbg!(hex::encode(&hash));
-        let existing = oracle.insert(Bytes32::from_array(hash), el.to_vec());        
-        assert!(existing.is_none());
+        oracle.insert(Bytes32::from_array(hash), el.to_vec());
     }
 
     for el in result.keys.iter() {
         if el.len() == 20 {
-            // println!("address");
             let hash = crypto::sha3::Keccak256::digest(el);
-            let _ = oracle.insert(Bytes32::from_array(hash), el.to_vec());      
-            addresses_to_trie_pos.insert(el.to_vec(), Bytes32::from_array(hash)); 
+            oracle.insert(Bytes32::from_array(hash), el.to_vec());
+            addresses_to_trie_pos.insert(el.to_vec(), Bytes32::from_array(hash));
         } else if el.len() == 32 {
-            // println!("storage key");
             let hash = crypto::sha3::Keccak256::digest(el);
-            let _ = oracle.insert(Bytes32::from_array(hash), el.to_vec());      
-            all_storage_trie_pos.insert(el.to_vec(), Bytes32::from_array(hash)); 
+            oracle.insert(Bytes32::from_array(hash), el.to_vec());
+            all_storage_trie_pos.insert(el.to_vec(), Bytes32::from_array(hash));
         } else {
             panic!("unknown length {}", el.len())
-        }      
+        }
     }
 
     for el in result.codes.iter() {
         let hash = crypto::sha3::Keccak256::digest(el);
-        // dbg!(hex::encode(&hash));       
-        let existing = oracle.insert(Bytes32::from_array(hash), el.to_vec());        
-        assert!(existing.is_none());
+        oracle.insert(Bytes32::from_array(hash), el.to_vec());
     }
-
-    // dbg!(hex::encode(&result.headers[0]));
-
-    let initial_root = hex::decode("3d7cc711f7fe1d2e4cdcc5c4763d18612b976736dbd7631e9c232aa592e2f011").unwrap();
 
     ParsedWitness {
         oracle,
         addresses_to_trie_pos,
         all_storage_trie_pos,
-        initial_root,
-    }
-}
-
-fn encode_integer_as_rlp_slice(value: &BigUint) -> Vec<u8> {
-    assert!(value.is_zero() == false);
-    let be_encoding = value.to_bytes_be();
-    assert!(be_encoding.len() <= 32);
-    if be_encoding.len() == 1 && be_encoding[0] < 0x80 {
-        return be_encoding;
-    } else {
-        let mut result = vec![0x80 + (be_encoding.len()) as u8];
-        result.extend(be_encoding);
-
-        result
+        coinbase,
+        initial_root: initial_root.to_vec(),
     }
 }
 
 fn rlp_encode_short_slice(slice: &[u8]) -> Vec<u8> {
     if slice.len() == 1 {
-        return slice.to_vec();
+        if slice[0] < 0x80 {
+            return slice.to_vec();
+        }
     }
-    assert!(slice.len() <= 55);
-    let mut result = vec![0x80 + (slice.len() as u8)];
-    result.extend_from_slice(slice);
 
-    result
+    if slice.len() <= 55 {
+        let mut result = vec![0x80 + (slice.len() as u8)];
+        result.extend_from_slice(slice);
+
+        result
+    } else {
+        assert!(slice.len() < 256);
+        let mut result = vec![0xb8, (slice.len() as u8)];
+        result.extend_from_slice(slice);
+
+        result
+    }
 }
 
-fn encode_integer_as_raw_terminal_value(value: &BigUint) -> Vec<u8> {
-    rlp_encode_short_slice(&encode_integer_as_rlp_slice(value))
-}
+// fn encode_account_state(
+//     nonce: u64,
+//     balance: Vec<u8>,
+//     code: Vec<u8>,
+//     storage_root: Vec<u8>,
+// ) -> Vec<u8> {
+//     assert!(storage_root.len() == 0 || storage_root.len() == 32);
+//     let nonce = U256::from(nonce).to_be_bytes_trimmed_vec();
+//     let mut result = vec![];
+//     let mut concatenated = rlp_encode_short_slice(&nonce);
+//     concatenated.extend(rlp_encode_short_slice(&balance));
+//     concatenated.extend(rlp_encode_short_slice(&storage_root));
+//     concatenated.extend(rlp_encode_short_slice(&Keccak256::digest(&code)));
 
+//     if concatenated.len() <= 55 {
+//         result.push(0xc0 + (concatenated.len() as u8));
+//         result.extend(concatenated);
+//     } else {
+//         assert!(concatenated.len() < 256);
+//         // it fits into 1 byte
+//         result.push(0xf8);
+//         result.push(concatenated.len() as u8);
+//         result.extend(concatenated);
+//     }
+
+//     result
+// }
 
 #[test]
 fn test_from_execution_witness() {
     let data = read_execution_witness();
-    let mut interner = BoxInterner::with_capacity_in(1 << 20, Global);
+    let mut interner = BoxInterner::with_capacity_in(1 << 26, Global);
     let mut hasher = crypto::sha3::Keccak256::new();
+    let (prestate, diffs) = decode_prestate_and_diffs();
+
+    let account_proofs_at_block_end = std::fs::File::open("./account_proofs.json").unwrap();
+    let account_proofs_at_block_end: HashMap<B160, AccountProof> =
+        serde_json::from_reader(account_proofs_at_block_end).unwrap();
+
     let ParsedWitness {
         oracle,
         addresses_to_trie_pos,
+        initial_root,
+        coinbase,
         all_storage_trie_pos,
-        initial_root 
     } = data;
+    let _ = all_storage_trie_pos;
 
     let mut trie = EthereumMPT::new_in(&initial_root, &mut interner, Global).unwrap();
 
-    let mut state_roots = BTreeMap::new();
+    let mut initial_state_roots = BTreeMap::new();
+    let mut encoded_accounts = BTreeMap::new();
     let mut oracle = oracle;
+    let mut new_state_roots = BTreeMap::new();
+    let mut initially_empty_accounts = BTreeSet::new();
 
-    for (address, key) in addresses_to_trie_pos.iter() {
+    let (initial_state, final_state) = compute_initial_and_final_states(prestate, diffs);
+
+    for (address_key, account_state) in initial_state.0.iter() {
+        let address = address_key.0.to_be_bytes_vec();
         assert_eq!(address.len(), 20);
-        // ignore precompiles
-        if address.iter().filter(|el| **el != 0).count() < 2 {
-            continue;
-        }
-        let trie_pos_digits_string = hex::encode(key.as_u8_array_ref()).as_bytes().to_vec();
-        let trie_pos_digits: Vec<_> = trie_pos_digits_string
-            .iter()
-            .map(|el| path_char_to_digit(*el))
-            .collect();
+        let key = addresses_to_trie_pos[&address];
+        let trie_pos_digits = byte_path_to_path_digits(key.as_u8_array_ref());
         let path = Path::new(&trie_pos_digits);
-        // if hex::encode(address) == "000000000022d473030f116ddee9f6b43ac78ba3" {
-        //     println!("DEBUG");
-        // }
-        if let Ok(account_data) = trie.access_initial_value(
-            path,
-            &mut oracle,
-            &mut interner,
-            &mut hasher
-        ) {
+        if let Ok(account_data) = trie.get(path, &mut oracle, &mut interner, &mut hasher) {
             if account_data.is_empty() {
-                println!("Account 0x{} is empty", hex::encode(address));
-                state_roots.insert(address.clone(), EMPTY_ROOT_HASH.as_u8_array_ref().to_vec());
+                initially_empty_accounts.insert(*address_key);
+                if let Some(storage) = account_state.storage.as_ref() {
+                    if storage.is_empty() == false {
+                        for (_, v) in storage.iter() {
+                            // particularity of our prestate
+                            assert!(v.into_inner().is_zero());
+                        }
+                    }
+                }
             } else {
+                encoded_accounts.insert(*address_key, account_data.to_vec());
                 let data = decode_address_data(account_data);
-                println!("Data for address 0x{}", hex::encode(address));
-                println!("Nonce = 0x{}", hex::encode(data[0].data()));
-                println!("Balance = 0x{}", hex::encode(data[1].data()));
-                println!("Storage root = 0x{}", hex::encode(data[2].data()));
-                println!("Code hash = 0x{}", hex::encode(data[3].data()));
-                state_roots.insert(address.clone(), data[2].data().to_vec());
+                initial_state_roots.insert(address_key.clone(), data[2].data().to_vec());
+
+                if let Some(nonce) = account_state.nonce.as_ref() {
+                    let encoding = nonce.to_be_bytes();
+                    let expected = data[0].data();
+                    if expected != &encoding[(8 - expected.len())..] {
+                        println!("Account 0x{}: prestate nonce is dirty: storage has 0x{}, prestate has 0x{:x}", hex::encode(&address), hex::encode(data[0].data()), nonce);
+                    }
+                }
+                // There are fee-related divergences
+                if let Some(balance) = account_state.balance.as_ref() {
+                    if &address != &coinbase {
+                        // unclear why
+                        if &balance.to_be_bytes_trimmed_vec() != data[1].data() {
+                            println!(
+                                "Account 0x{}: prestate balance is dirty",
+                                hex::encode(&address)
+                            );
+                        }
+                    }
+                }
+                if let Some(code) = account_state.code.as_ref() {
+                    assert_eq!(&Keccak256::digest(code), data[3].data());
+                }
+
+                if let Some(storage) = account_state.storage.as_ref() {
+                    if data[2].data().is_empty() || data[2].data() == EMPTY_ROOT_HASH.as_u8_ref() {
+                        assert!(storage.is_empty())
+                    } else {
+                        assert!(storage.is_empty() == false);
+                    }
+                }
             }
         } else {
-            println!("Failed to get account data for address 0x{}", hex::encode(address));
+            panic!(
+                "Failed to get account data for address 0x{}",
+                hex::encode(address)
+            );
         }
     }
 
-    // for (address, (initial_state, final_state)) in map.iter() {
-    //     if initial_state.storage_proof.is_empty() {
-    //         continue;
-    //     }
-    //     // dbg!(hex::encode(address));
+    let mut account_storage_tries = BTreeMap::new();
 
-    //     if hex::encode(address) != "14fee680690900ba0cccfc76ad70fd1b95d10e16" {
-    //         continue;
-    //     }
+    for (address, root) in initial_state_roots.into_iter() {
+        let initial_storage = initial_state.0.get(&address).unwrap();
+        let mut storage_trie = EthereumMPT::new_in(&root, &mut interner, Global).unwrap();
 
-    //     let mut trie = EthereumMPT::new_in(Global);
-    //     let mut initial_values = BTreeMap::new();
-    //     for el in initial_state.storage_proof.iter() {
-    //         let key_like = &el.key;
-    //         assert_eq!(key_like.trie_pos_digits.len(), 64);
-    //         // println!(
-    //         //     "Checking proofs for key {}, expected value 0x{:x}",
-    //         //     hex::encode(&key_like.key),
-    //         //     &el.value
-    //         // );
-    //         // println!(
-    //         //     "Trie position is {}",
-    //         //     std::str::from_utf8(&key_like.trie_pos_digits_string).unwrap()
-    //         // );
-    //         if el.value.is_zero() == false {
-    //             initial_values.insert(el.key.clone(), el.value.clone());
-    //         }
+        if let Some(storage) = initial_storage.storage.as_ref() {
+            for (k, v) in storage {
+                if storage_trie.interned_root_hash == EMPTY_ROOT_HASH.as_u8_array_ref() {
+                    assert!(v.into_inner().is_zero());
+                }
+                let key = crypto::sha3::Keccak256::digest(&k.to_be_bytes::<32>());
+                let trie_pos_digits = byte_path_to_path_digits(&key);
+                let path = Path::new(&trie_pos_digits);
+                if let Ok(slot_value) =
+                    storage_trie.get(path, &mut oracle, &mut interner, &mut hasher)
+                {
+                    let integer_encoding = if slot_value.len() > 0 {
+                        rlp_parse_short_bytes(slot_value).unwrap()
+                    } else {
+                        slot_value
+                    };
+                    assert_eq!(integer_encoding, &v.into_inner().to_be_bytes_trimmed_vec());
+                } else {
+                    panic!(
+                        "For address 0x{}: failed to get slot 0x{:x} (key 0x{})",
+                        hex::encode(address.0.to_be_bytes_vec()),
+                        k,
+                        hex::encode(key)
+                    );
+                }
+            }
+        }
+        let existing = account_storage_tries.insert(address, storage_trie);
+        assert!(existing.is_none());
+    }
 
-    //         let proof = el.proof.iter().map(|el| &el[..]);
-    //         let val = trie
-    //             .insert_proof(&key_like.trie_pos_digits, proof, &mut interner)
-    //             .unwrap();
-    //         if val.is_empty() {
-    //             assert!(el.value.is_zero());
-    //         } else {
-    //             let be_integer_encoding = rlp_parse_short_bytes(val).unwrap();
-    //             let returned = BigUint::from_bytes_be(be_integer_encoding);
+    let mut accounts_with_unchanged_state = BTreeSet::new();
+    let mut left_empty_untouched_accounts = BTreeSet::new();
+    // let mut expected_account_proofs = HashMap::new();
+
+    let mut initial_state_t = initial_state.clone();
+    for (address, final_storage) in final_state.0.iter() {
+        let _ = initial_state_t.0.remove(address).unwrap();
+
+        let mut updates = BTreeMap::new();
+        let mut deletes = BTreeMap::new();
+        let mut inserts = BTreeMap::new();
+
+        let initial_storage = initial_state
+            .0
+            .get(address)
+            .cloned()
+            .unwrap_or_default()
+            .storage
+            .unwrap_or_default();
+        let final_storage = final_storage.storage.clone().unwrap_or_default();
+
+        for (k, final_value) in final_storage.into_iter() {
+            let key = Keccak256::digest(k.to_be_bytes::<32>());
+            if let Some(initial_value) = initial_storage.get(&k) {
+                if initial_value.into_inner().is_zero() == false {
+                    if final_value.into_inner().is_zero() {
+                        deletes.insert(key, k);
+                    } else {
+                        if initial_value.into_inner() != final_value.into_inner() {
+                            updates.insert(key, (k, (*initial_value, final_value)));
+                        }
+                    }
+                } else {
+                    // potentially insert
+                    if final_value.into_inner().is_zero() == false {
+                        inserts.insert(key, (k, final_value));
+                    }
+                }
+            } else {
+                if final_value.into_inner().is_zero() == false {
+                    inserts.insert(key, (k, final_value));
+                }
+            }
+        }
+        let reads_only = updates.is_empty() && deletes.is_empty() && inserts.is_empty();
+
+        if updates.is_empty() == false {
+            // updates
+            let storage_trie = account_storage_tries.get_mut(address).unwrap();
+            assert!(storage_trie.root.is_empty() == false);
+            assert!(storage_trie.interned_root_hash != EMPTY_ROOT_HASH.as_u8_array_ref());
+
+            for (k, (_plain_k, (old_v, new_v))) in updates.iter() {
+                assert!(old_v.into_inner().is_zero() == false);
+                assert!(new_v.into_inner().is_zero() == false);
+                assert!(old_v.into_inner() != new_v.into_inner());
+                let trie_pos_digits = byte_path_to_path_digits(k);
+                let path = Path::new(&trie_pos_digits);
+                let value_be = new_v.into_inner().to_be_bytes_trimmed_vec();
+                let new_value = rlp_encode_short_slice(&rlp_encode_short_slice(&value_be));
+                storage_trie
+                    .update(path, &new_value, &mut interner, &mut hasher)
+                    .unwrap();
+            }
+        }
+        if deletes.is_empty() == false {
+            // deletes
+            let storage_trie = account_storage_tries.get_mut(address).unwrap();
+            assert!(storage_trie.root.is_empty() == false);
+            assert!(storage_trie.interned_root_hash != EMPTY_ROOT_HASH.as_u8_array_ref());
+            for (k, _plain_k) in deletes.iter() {
+                let trie_pos_digits = byte_path_to_path_digits(k);
+                let path = Path::new(&trie_pos_digits);
+                storage_trie
+                    .delete(path, &mut oracle, &mut interner, &mut hasher)
+                    .unwrap();
+            }
+        }
+        if inserts.is_empty() == false {
+            // inserts
+            let storage_trie = account_storage_tries.entry(*address).or_insert_with(|| {
+                EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_ref(), &mut interner, Global).unwrap()
+            });
+            for (k, (_plain_k, new_v)) in inserts.iter() {
+                let trie_pos_digits = byte_path_to_path_digits(k);
+                let path = Path::new(&trie_pos_digits);
+                let value_be = new_v.into_inner().to_be_bytes_trimmed_vec();
+                let new_value = rlp_encode_short_slice(&rlp_encode_short_slice(&value_be));
+                storage_trie
+                    .insert(path, &new_value, &mut oracle, &mut interner, &mut hasher)
+                    .unwrap();
+            }
+        }
+        if reads_only && initially_empty_accounts.contains(address) {
+            // will leave empty as-is
+            left_empty_untouched_accounts.insert(*address);
+        } else {
+            let storage_trie = account_storage_tries.get_mut(address).unwrap();
+            let old_root = storage_trie.root(&mut hasher);
+            storage_trie.recompute(&mut interner, &mut hasher).unwrap();
+            let new_root = storage_trie.root(&mut hasher);
+            if reads_only {
+                assert_eq!(old_root, new_root);
+                accounts_with_unchanged_state.insert(*address);
+            } else {
+                assert_ne!(old_root, new_root);
+            }
+
+            let account_proof = &account_proofs_at_block_end[&address.0];
+            assert_eq!(
+                new_root,
+                account_proof.storage_hash.0,
+                "account storage root diverged for address 0x{:040x}",
+                address.0.into_inner()
+            );
+
+            new_state_roots.insert(*address, storage_trie.root(&mut hasher).to_vec());
+        }
+    }
+
+    let _ = new_state_roots;
+
+    // let dst = std::fs::File::create("account_proofs.json").unwrap();
+    // serde_json::to_writer(dst, &expected_account_proofs).unwrap();
+
+    // folding everything back will not work, as there are other dirty values that we do not know
+
+    // // fold everything back
+    // for (address_key, account_state) in final_state.0.iter() {
+    //     println!("===================================");
+    //     println!(
+    //         "Will update global state trie with account 0x{:040x}",
+    //         address_key.0.into_inner()
+    //     );
+
+    //     let address = address_key.0.to_be_bytes_vec();
+    //     assert_eq!(address.len(), 20);
+    //     let key = addresses_to_trie_pos[&address];
+    //     let trie_pos_digits = byte_path_to_path_digits(key.as_u8_array_ref());
+    //     let path = Path::new(&trie_pos_digits);
+    //     let state_root = new_state_roots
+    //         .get(address_key)
+    //         .cloned()
+    //         .unwrap_or(EMPTY_ROOT_HASH.as_u8_array_ref().to_vec());
+    //     if account_state.is_empty() {
+    //         assert_eq!(&state_root, EMPTY_ROOT_HASH.as_u8_array_ref());
+    //         if let Some(initial_encoded_account) = encoded_accounts.get(address_key) {
     //             assert_eq!(
-    //                 &returned, &el.value,
-    //                 "parsed 0x{:x}, expected 0x{:x}",
-    //                 &returned, &el.value
+    //                 initial_encoded_account,
+    //                 &encode_account_state(0, vec![], vec![], vec![])
     //             );
+    //             assert!(accounts_with_unchanged_state.contains(address_key));
+    //         } else {
+    //             todo!();
     //         }
-    //     }
-    //     let mut updates = BTreeMap::new();
-    //     let mut deletes = BTreeSet::new();
-    //     let mut inserts = BTreeMap::new();
-    //     for el in final_state.storage_proof.iter() {
-    //         let key_like = &el.key;
-    //         if let Some(initial) = initial_values.get(&el.key) {
-    //             if el.value.is_zero() {
-    //                 // println!("Will delete value for key {}", hex::encode(&key_like.key),);
-    //                 // println!(
-    //                 //     "Trie position is {}",
-    //                 //     std::str::from_utf8(&key_like.trie_pos_digits_string).unwrap()
-    //                 // );
-    //                 deletes.insert(el.key.clone());
-    //             } else if initial != &el.value {
-    //                 // println!(
-    //                 //     "Will update new value for key {}, new value 0x{:x}",
-    //                 //     hex::encode(&key_like.key),
-    //                 //     &el.value
-    //                 // );
-    //                 // println!(
-    //                 //     "Trie position is {}",
-    //                 //     std::str::from_utf8(&key_like.trie_pos_digits_string).unwrap()
-    //                 // );
-    //                 updates.insert(el.key.clone(), el.value.clone());
+    //     } else {
+    //         let nonce = account_state.nonce.unwrap();
+    //         let balance = account_state.balance.unwrap().to_be_bytes_trimmed_vec();
+    //         let code = account_state
+    //             .code
+    //             .as_ref()
+    //             .map(|el| el.to_vec())
+    //             .unwrap_or_default();
+
+    //         let data = encode_account_state(nonce, balance, code.clone(), state_root.clone());
+    //         let raw_leaf_value = rlp_encode_short_slice(&data);
+
+    //         if let Some(initial_encoded_account) = encoded_accounts.get(address_key) {
+    //             if initial_encoded_account != &data {
+    //                 trie.update(path, &raw_leaf_value, &mut interner, &mut hasher)
+    //                     .unwrap();
+    //             } else {
+    //                 // unchanged
     //             }
     //         } else {
-    //             if el.value.is_zero() == false {
-    //                 // println!(
-    //                 //     "Will insert new value for key {}, inserted value 0x{:x}",
-    //                 //     hex::encode(&key_like.key),
-    //                 //     &el.value
-    //                 // );
-    //                 // println!(
-    //                 //     "Trie position is {}",
-    //                 //     std::str::from_utf8(&key_like.trie_pos_digits_string).unwrap()
-    //                 // );
-    //                 inserts.insert(el.key.clone(), el.value.clone());
+    //             if initially_empty_accounts.contains(address_key) {
+    //                 trie.insert(
+    //                     path,
+    //                     &raw_leaf_value,
+    //                     &mut oracle,
+    //                     &mut interner,
+    //                     &mut hasher,
+    //                 )
+    //                 .unwrap();
+    //             } else {
+    //                 // still update as balance and nonce may change without storage
+    //                 trie.update(path, &raw_leaf_value, &mut interner, &mut hasher)
+    //                     .unwrap();
     //             }
     //         }
-    //     }
-    //     let mut new_root = &[][..];
-
-    //     // if updates.is_empty() == false && deletes.is_empty() && inserts.is_empty() {
-
-    //     // } else {
-    //     //     continue;
-    //     // }
-
-    //     if deletes.is_empty() {
-    //         continue;
-    //     }
-
-    //     if updates.is_empty() == false || deletes.is_empty() == false && inserts.is_empty() {
-    //     } else {
-    //         continue;
-    //     }
-
-    //     dbg!(hex::encode(address));
-    //     let mut hasher = crypto::sha3::Keccak256::new();
-
-    //     // perform updates
-    //     if updates.is_empty() && inserts.is_empty() && deletes.is_empty() {
-    //         // nothing
-    //     } else {
-    //         for (k, v) in updates.iter() {
-    //             println!(
-    //                 "Will update new value for key {}, new value 0x{:x}",
-    //                 hex::encode(&k.key),
-    //                 &v
-    //             );
-    //             println!(
-    //                 "Trie position is {}",
-    //                 std::str::from_utf8(&k.trie_pos_digits_string).unwrap()
-    //             );
-    //             let new_value = encode_integer_as_raw_terminal_value(&v);
-    //             new_root = trie
-    //                 .update(&k.trie_pos_digits, &new_value, &mut interner, &mut hasher)
-    //                 .unwrap();
-    //         }
-    //         for k in deletes.iter() {
-    //             println!("Will delete value for key {}", hex::encode(&k.key),);
-    //             println!(
-    //                 "Trie position is {}",
-    //                 std::str::from_utf8(&k.trie_pos_digits_string).unwrap()
-    //             );
-    //             new_root = trie
-    //                 .delete(&k.trie_pos_digits, &mut interner, &mut hasher)
-    //                 .unwrap();
-    //         }
-    //     }
-
-    //     // recheck the proofs
-    //     let mut final_trie = EthereumMPT::new_in(Global);
-    //     for el in final_state.storage_proof.iter() {
-    //         let key_like = &el.key;
-    //         assert_eq!(key_like.trie_pos_digits.len(), 64);
-    //         // println!(
-    //         //     "Checking proofs for key {}, expected value 0x{:x}",
-    //         //     hex::encode(&key_like.key),
-    //         //     &el.value
-    //         // );
-    //         // println!(
-    //         //     "Trie position is {}",
-    //         //     std::str::from_utf8(&key_like.trie_pos_digits_string).unwrap()
-    //         // );
-    //         if el.value.is_zero() == false {
-    //             initial_values.insert(el.key.clone(), el.value.clone());
-    //         }
-    //         let proof = el.proof.iter().map(|el| &el[..]);
-    //         let val = final_trie
-    //             .insert_proof(&key_like.trie_pos_digits, proof, &mut interner)
-    //             .unwrap();
-    //         if val.is_empty() {
-    //             assert!(el.value.is_zero());
-    //         } else {
-    //             let be_integer_encoding = rlp_parse_short_bytes(val).unwrap();
-    //             let returned = BigUint::from_bytes_be(be_integer_encoding);
-    //             assert_eq!(
-    //                 &returned, &el.value,
-    //                 "parsed 0x{:x}, expected 0x{:x}",
-    //                 &returned, &el.value
-    //             );
-    //         }
-    //     }
-    //     // compare roots
-    //     if updates.is_empty() == false || deletes.is_empty() == false && inserts.is_empty() {
-    //         dbg!(hex::encode(new_root));
-    //         dbg!(hex::encode(final_trie.root()));
-    //         dbg!(hex::encode(crypto::sha3::Keccak256::digest(
-    //             final_trie.root()
-    //         )));
-    //         if new_root.len() == 33 {
-    //             assert_eq!(
-    //                 &new_root[1..],
-    //                 &crypto::sha3::Keccak256::digest(final_trie.root())
-    //             );
-    //         } else {
-    //             assert_eq!(&new_root[1..], final_trie.root());
-    //         }
-    //         // dbg!(hex::encode(new_root));
-    //         // dbg!(hex::encode(final_trie.root()));
-    //         // dbg!(hex::encode(crypto::sha3::Keccak256::digest(final_trie.root())));
-    //         // todo!()
-    //     } else {
-    //         // nothing for now
     //     }
     // }
+
+    // for (address, _) in initial_state_t.0.iter() {
+    //     panic!(
+    //         "Address 0x{:040x} is in the initial, but not final state",
+    //         address.0.into_inner()
+    //     );
+    // }
+
+    // trie.recompute(&mut interner, &mut hasher).unwrap();
+    // let new_root = trie.root(&mut hasher);
+    // dbg!(hex::encode(new_root));
 }
-
-// #[test]
-// fn parse_pre_states() {
-//     let map = read_test_vectors();
-//     let mut interner = BoxInterner::with_capacity_in(1 << 20, Global);
-//     for (address, (initial_state, final_state)) in map.iter() {
-//         if initial_state.storage_proof.is_empty() {
-//             continue;
-//         }
-//         // dbg!(hex::encode(address));
-
-//         if hex::encode(address) != "14fee680690900ba0cccfc76ad70fd1b95d10e16" {
-//             continue;
-//         }
-
-//         let mut trie = EthereumMPT::new_in(Global);
-//         let mut initial_values = BTreeMap::new();
-//         for el in initial_state.storage_proof.iter() {
-//             let key_like = &el.key;
-//             assert_eq!(key_like.trie_pos_digits.len(), 64);
-//             // println!(
-//             //     "Checking proofs for key {}, expected value 0x{:x}",
-//             //     hex::encode(&key_like.key),
-//             //     &el.value
-//             // );
-//             // println!(
-//             //     "Trie position is {}",
-//             //     std::str::from_utf8(&key_like.trie_pos_digits_string).unwrap()
-//             // );
-//             if el.value.is_zero() == false {
-//                 initial_values.insert(el.key.clone(), el.value.clone());
-//             }
-
-//             let proof = el.proof.iter().map(|el| &el[..]);
-//             let val = trie
-//                 .insert_proof(&key_like.trie_pos_digits, proof, &mut interner)
-//                 .unwrap();
-//             if val.is_empty() {
-//                 assert!(el.value.is_zero());
-//             } else {
-//                 let be_integer_encoding = rlp_parse_short_bytes(val).unwrap();
-//                 let returned = BigUint::from_bytes_be(be_integer_encoding);
-//                 assert_eq!(
-//                     &returned, &el.value,
-//                     "parsed 0x{:x}, expected 0x{:x}",
-//                     &returned, &el.value
-//                 );
-//             }
-//         }
-//         let mut updates = BTreeMap::new();
-//         let mut deletes = BTreeSet::new();
-//         let mut inserts = BTreeMap::new();
-//         for el in final_state.storage_proof.iter() {
-//             let key_like = &el.key;
-//             if let Some(initial) = initial_values.get(&el.key) {
-//                 if el.value.is_zero() {
-//                     // println!("Will delete value for key {}", hex::encode(&key_like.key),);
-//                     // println!(
-//                     //     "Trie position is {}",
-//                     //     std::str::from_utf8(&key_like.trie_pos_digits_string).unwrap()
-//                     // );
-//                     deletes.insert(el.key.clone());
-//                 } else if initial != &el.value {
-//                     // println!(
-//                     //     "Will update new value for key {}, new value 0x{:x}",
-//                     //     hex::encode(&key_like.key),
-//                     //     &el.value
-//                     // );
-//                     // println!(
-//                     //     "Trie position is {}",
-//                     //     std::str::from_utf8(&key_like.trie_pos_digits_string).unwrap()
-//                     // );
-//                     updates.insert(el.key.clone(), el.value.clone());
-//                 }
-//             } else {
-//                 if el.value.is_zero() == false {
-//                     // println!(
-//                     //     "Will insert new value for key {}, inserted value 0x{:x}",
-//                     //     hex::encode(&key_like.key),
-//                     //     &el.value
-//                     // );
-//                     // println!(
-//                     //     "Trie position is {}",
-//                     //     std::str::from_utf8(&key_like.trie_pos_digits_string).unwrap()
-//                     // );
-//                     inserts.insert(el.key.clone(), el.value.clone());
-//                 }
-//             }
-//         }
-//         let mut new_root = &[][..];
-
-//         // if updates.is_empty() == false && deletes.is_empty() && inserts.is_empty() {
-
-//         // } else {
-//         //     continue;
-//         // }
-
-//         if deletes.is_empty() {
-//             continue;
-//         }
-
-//         if updates.is_empty() == false || deletes.is_empty() == false && inserts.is_empty() {
-//         } else {
-//             continue;
-//         }
-
-//         dbg!(hex::encode(address));
-//         let mut hasher = crypto::sha3::Keccak256::new();
-
-//         // perform updates
-//         if updates.is_empty() && inserts.is_empty() && deletes.is_empty() {
-//             // nothing
-//         } else {
-//             for (k, v) in updates.iter() {
-//                 println!(
-//                     "Will update new value for key {}, new value 0x{:x}",
-//                     hex::encode(&k.key),
-//                     &v
-//                 );
-//                 println!(
-//                     "Trie position is {}",
-//                     std::str::from_utf8(&k.trie_pos_digits_string).unwrap()
-//                 );
-//                 let new_value = encode_integer_as_raw_terminal_value(&v);
-//                 new_root = trie
-//                     .update(&k.trie_pos_digits, &new_value, &mut interner, &mut hasher)
-//                     .unwrap();
-//             }
-//             for k in deletes.iter() {
-//                 println!("Will delete value for key {}", hex::encode(&k.key),);
-//                 println!(
-//                     "Trie position is {}",
-//                     std::str::from_utf8(&k.trie_pos_digits_string).unwrap()
-//                 );
-//                 new_root = trie
-//                     .delete(&k.trie_pos_digits, &mut interner, &mut hasher)
-//                     .unwrap();
-//             }
-//         }
-
-//         // recheck the proofs
-//         let mut final_trie = EthereumMPT::new_in(Global);
-//         for el in final_state.storage_proof.iter() {
-//             let key_like = &el.key;
-//             assert_eq!(key_like.trie_pos_digits.len(), 64);
-//             // println!(
-//             //     "Checking proofs for key {}, expected value 0x{:x}",
-//             //     hex::encode(&key_like.key),
-//             //     &el.value
-//             // );
-//             // println!(
-//             //     "Trie position is {}",
-//             //     std::str::from_utf8(&key_like.trie_pos_digits_string).unwrap()
-//             // );
-//             if el.value.is_zero() == false {
-//                 initial_values.insert(el.key.clone(), el.value.clone());
-//             }
-//             let proof = el.proof.iter().map(|el| &el[..]);
-//             let val = final_trie
-//                 .insert_proof(&key_like.trie_pos_digits, proof, &mut interner)
-//                 .unwrap();
-//             if val.is_empty() {
-//                 assert!(el.value.is_zero());
-//             } else {
-//                 let be_integer_encoding = rlp_parse_short_bytes(val).unwrap();
-//                 let returned = BigUint::from_bytes_be(be_integer_encoding);
-//                 assert_eq!(
-//                     &returned, &el.value,
-//                     "parsed 0x{:x}, expected 0x{:x}",
-//                     &returned, &el.value
-//                 );
-//             }
-//         }
-//         // compare roots
-//         if updates.is_empty() == false || deletes.is_empty() == false && inserts.is_empty() {
-//             dbg!(hex::encode(new_root));
-//             dbg!(hex::encode(final_trie.root()));
-//             dbg!(hex::encode(crypto::sha3::Keccak256::digest(
-//                 final_trie.root()
-//             )));
-//             if new_root.len() == 33 {
-//                 assert_eq!(
-//                     &new_root[1..],
-//                     &crypto::sha3::Keccak256::digest(final_trie.root())
-//                 );
-//             } else {
-//                 assert_eq!(&new_root[1..], final_trie.root());
-//             }
-//             // dbg!(hex::encode(new_root));
-//             // dbg!(hex::encode(final_trie.root()));
-//             // dbg!(hex::encode(crypto::sha3::Keccak256::digest(final_trie.root())));
-//             // todo!()
-//         } else {
-//             // nothing for now
-//         }
-//     }
-// }

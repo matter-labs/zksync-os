@@ -31,7 +31,6 @@ impl<A: Allocator + Clone> PreimagesOracle for BTreeMap<Bytes32, Vec<u8, A>, A> 
 
             Ok(buffer.flush())
         } else {
-            // panic!("Unknown preimage for hash 0x{}", hex::encode(key.as_u8_array_ref()));
             Err(())
         }
     }
