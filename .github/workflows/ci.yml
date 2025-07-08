@@ -38,8 +38,6 @@ jobs:
               (cd "$dir" && ./build.sh)
             fi
           done
-      - name: Compile for forward running
-        run: cargo build --release
       - name: Run rust tests
         run: cargo test --release -j 3 -- --skip binary_checker
 
