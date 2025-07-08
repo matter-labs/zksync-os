@@ -15,13 +15,13 @@ use system_hooks::*;
 use zk_ee::common_structs::CalleeParameters;
 use zk_ee::common_structs::TransferInfo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::internal_error;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::{
     errors::{InternalError, SystemError, UpdateQueryError},
     logger::Logger,
     *,
 };
+use zk_ee::{internal_error, out_of_ergs_error};
 
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
@@ -420,7 +420,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 )
             }) {
                 Ok(()) => (),
-                Err(UpdateQueryError::System(SystemError::OutOfErgs)) => {
+                Err(UpdateQueryError::System(SystemError::OutOfErgs(_))) => {
                     return Err(internal_error!("Our of ergs on infinite").into());
                 }
                 Err(UpdateQueryError::System(SystemError::Internal(e))) => {
@@ -780,7 +780,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         ));
                         (true, deployment_result)
                     }
-                    Err(SystemError::OutOfErgs) => {
+                    Err(SystemError::OutOfErgs(_)) => {
                         let deployment_result = DeploymentResult::Failed {
                             return_values: self.copy_into_return_memory(return_values),
                             execution_reverted: false,
@@ -885,7 +885,7 @@ where
         transfer_to_perform,
     } = match r {
         Ok(x) => x,
-        Err(SystemError::OutOfErgs) => {
+        Err(SystemError::OutOfErgs(_)) => {
             return Ok(CallPreparationResult::Failure {
                 resources_returned: resources_available,
             });
@@ -962,11 +962,11 @@ where
             .with_nominal_token_balance(),
     ) {
         Ok(account_properties) => account_properties,
-        Err(SystemError::OutOfErgs) => {
+        Err(SystemError::OutOfErgs(_)) => {
             let _ = system.get_logger().write_fmt(format_args!(
                 "Call failed: insufficient resources to read callee account data\n",
             ));
-            return Err(SystemError::OutOfErgs);
+            return Err(out_of_ergs_error!());
         }
         Err(SystemError::OutOfNativeResources(loc)) => {
             return Err(SystemError::OutOfNativeResources(loc))
@@ -1021,7 +1021,7 @@ where
                     "Call failed: positive value with modifier {:?}\n",
                     call_request.modifier
                 ));
-                return Err(SystemError::OutOfErgs);
+                return Err(out_of_ergs_error!());
             }
             // Adjust transfer target due to CALLCODE
             let target = match call_request.modifier {

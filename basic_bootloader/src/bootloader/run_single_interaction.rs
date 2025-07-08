@@ -85,7 +85,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                     )
                 })
                 .map_err(|e| match e {
-                    SystemError::OutOfErgs => unreachable!("OOG on infinite resources"),
+                    SystemError::OutOfErgs(_) => unreachable!("OOG on infinite resources"),
                     SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
                     SystemError::Internal(e) => FatalError::Internal(e),
                 })?

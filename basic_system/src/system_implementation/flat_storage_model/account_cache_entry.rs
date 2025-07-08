@@ -356,7 +356,9 @@ impl AccountProperties {
                         oracle,
                     )
                     .map_err(|err| match err {
-                        SystemError::OutOfErgs => internal_error!("Out of ergs on infinite ergs"),
+                        SystemError::OutOfErgs(_) => {
+                            internal_error!("Out of ergs on infinite ergs")
+                        }
                         SystemError::OutOfNativeResources(_) => {
                             internal_error!("Out of native on infinite")
                         }

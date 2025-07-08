@@ -63,7 +63,7 @@ pub fn pure_system_function_hook_impl<'a, F: SystemFunction<S::Resources>, S: Et
                 rest,
             ))
         }
-        Err(SystemFunctionError::System(SystemError::OutOfErgs))
+        Err(SystemFunctionError::System(SystemError::OutOfErgs(_)))
         | Err(SystemFunctionError::InvalidInput) => {
             let _ = system
                 .get_logger()

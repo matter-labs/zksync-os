@@ -160,7 +160,7 @@ impl TxError {
 impl From<SystemError> for TxError {
     fn from(e: SystemError) -> Self {
         match e {
-            SystemError::OutOfErgs => {
+            SystemError::OutOfErgs(_) => {
                 TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
             }
             SystemError::OutOfNativeResources(_) => {

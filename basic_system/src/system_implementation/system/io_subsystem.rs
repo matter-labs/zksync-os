@@ -21,6 +21,7 @@ use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::BasicIOImplementerFSM;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
 use zk_ee::internal_error;
+use zk_ee::out_of_ergs_error;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::{
     common_structs::{EventsStorage, LogsStorage},
@@ -163,9 +164,7 @@ where
                 let topic_cost = LOGTOPIC * (topics.len() as u64);
                 let len_cost = (data.len() as u64) * LOGDATA;
                 let cost = static_cost + topic_cost + len_cost;
-                let ergs = cost
-                    .checked_mul(ERGS_PER_GAS)
-                    .ok_or(SystemError::OutOfErgs)?;
+                let ergs = cost.checked_mul(ERGS_PER_GAS).ok_or(out_of_ergs_error!())?;
                 Ergs(ergs)
             }
             _ => return Err(internal_error!("Unsupported EE").into()),

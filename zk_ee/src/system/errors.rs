@@ -10,7 +10,7 @@ pub enum SystemError {
     /// System execution exhausted the native resources passed.
     OutOfNativeResources(ErrorLocation),
     /// Execution exhausted the EE resource.
-    OutOfErgs,
+    OutOfErgs(ErrorLocation),
     /// Internal error.
     /// Note that currently it means internal error in terms of whole zksync_os program execution.
     /// Not the component/function internal error.
@@ -47,7 +47,7 @@ impl SystemError {
         match self {
             SystemError::Internal(e) => FatalError::Internal(e),
             SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
-            SystemError::OutOfErgs => unreachable!(),
+            SystemError::OutOfErgs(_) => unreachable!(),
         }
     }
 }
@@ -133,6 +133,15 @@ macro_rules! out_of_native_resources_system_error {
 macro_rules! out_of_native_resources_fatal_error {
     () => {
         $crate::system::errors::FatalError::OutOfNativeResources(
+            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
+        )
+    };
+}
+
+#[macro_export]
+macro_rules! out_of_ergs_error {
+    () => {
+        $crate::system::errors::SystemError::OutOfErgs(
             $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
         )
     };
