@@ -370,7 +370,7 @@ where
                     current.value(),
                     current.metadata().not_publish_bytecode,
                 )
-                    .unwrap();
+                .unwrap();
             }
         }
 
