@@ -448,11 +448,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ) {
         let mut account_properties = self.get_account_properties(&address);
         if let Some(bytecode) = bytecode {
-            account_properties = evm_bytecode_into_account_properties(&bytecode);
+            let (props, bytecode_and_artifacts) = evm_bytecode_into_account_properties(&bytecode);
+            account_properties = props;
             // Save bytecode preimage
             self.preimage_source
                 .inner
-                .insert(account_properties.bytecode_hash, bytecode);
+                .insert(account_properties.bytecode_hash, bytecode_and_artifacts);
         }
         if let Some(nominal_token_balance) = balance {
             account_properties.balance = nominal_token_balance;
@@ -525,7 +526,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     /// **Note, that other account fields will be zeroed out(balance, code).**
     ///
     pub fn set_evm_bytecode(&mut self, address: B160, bytecode: &[u8]) -> &mut Self {
-        let account_properties = evm_bytecode_into_account_properties(bytecode);
+        let (account_properties, bytecode_and_artifacts) =
+            evm_bytecode_into_account_properties(bytecode);
         let encoding = account_properties.encoding();
         let properties_hash = account_properties.compute_hash();
 
@@ -541,7 +543,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             .insert(&flat_key, &properties_hash);
         self.preimage_source
             .inner
-            .insert(account_properties.bytecode_hash, bytecode.to_vec());
+            .insert(account_properties.bytecode_hash, bytecode_and_artifacts);
         self.preimage_source
             .inner
             .insert(properties_hash, encoding.to_vec());

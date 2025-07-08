@@ -276,7 +276,8 @@ fn zksync_os_output_into_account_state(
                 entry.balance = Some(props.balance);
                 entry.nonce = Some(props.nonce);
                 if let Some(bytecode) = preimages.get(&props.bytecode_hash.as_u8_array()) {
-                    let owned = bytecode.clone();
+                    let owned: Vec<u8> =
+                        bytecode[..props.observable_bytecode_len as usize].to_owned();
                     entry.code = Some(owned.into());
                 }
             }
