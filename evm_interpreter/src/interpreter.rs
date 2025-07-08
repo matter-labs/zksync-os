@@ -388,14 +388,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     // It's responsibility of the System/IO to properly charge,
                     // so we just construct the structure
 
-                    let bytecode = return_values.returndata;
+                    let deployed_code = return_values.returndata;
                     return_values.returndata = &[];
-                    let bytecode_len = bytecode.len() as u32;
-                    let artifacts_len = 0u32;
+
                     DeploymentResult::Successful {
-                        bytecode,
-                        bytecode_len,
-                        artifacts_len,
+                        deployed_code,
                         return_values,
                         deployed_at: self.address,
                     }

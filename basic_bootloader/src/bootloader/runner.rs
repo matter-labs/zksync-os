@@ -8,6 +8,7 @@ use errors::FatalError;
 use evm_interpreter::gas_constants::CALLVALUE;
 use evm_interpreter::gas_constants::CALL_STIPEND;
 use evm_interpreter::gas_constants::NEWACCOUNT;
+use evm_interpreter::BytecodePreprocessingData;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
@@ -323,9 +324,12 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                             ..call_request
                         },
                         environment_parameters: EnvironmentParameters {
-                            decommitted_bytecode: bytecode,
-                            bytecode_len,
-                            scratch_space_len: artifacts_len,
+                            bytecode: Bytecode::Decommitted {
+                                bytecode,
+                                unpadded_code_len,
+                                artifacts_len,
+                            },
+                            scratch_space_len: 0,
                         },
                     },
                     heap,
@@ -749,48 +753,54 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         let (deployment_success, deployment_result) = match deployment_result {
             DeploymentResult::Successful {
-                bytecode,
-                bytecode_len,
-                artifacts_len,
+                deployed_code,
                 return_values,
                 deployed_at,
             } => {
-                // it's responsibility of the system to finish deployment. We continue to use resources from deployment frame
-                match self.system.deploy_bytecode(
-                    ee_type,
-                    &mut resources_returned,
-                    &deployed_at,
-                    bytecode,
-                    bytecode_len,
-                    artifacts_len,
-                ) {
-                    Ok(bytecode) => {
-                        let deployment_result = DeploymentResult::Successful {
-                            bytecode,
-                            bytecode_len,
-                            artifacts_len,
-                            return_values: ReturnValues::empty(),
-                            deployed_at,
-                        };
-                        // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
-                        #[cfg(not(target_arch = "riscv32"))]
-                        let _ = self.system.get_logger().write_fmt(format_args!(
-                            "Successfully deployed contract at {:?} \n",
-                            deployed_at
-                        ));
-                        (true, deployment_result)
+                match ee_type {
+                    ExecutionEnvironmentType::EVM => {
+                        let artifacts = BytecodePreprocessingData::create_artifacts(
+                            self.system.get_allocator(),
+                            deployed_code,
+                            &mut resources_returned,
+                        )?;
+
+                        // it's responsibility of the system to finish deployment. We continue to use resources from deployment frame
+                        match self.system.deploy_bytecode(
+                            ee_type,
+                            &mut resources_returned,
+                            &deployed_at,
+                            deployed_code,
+                            artifacts.as_slice(),
+                        ) {
+                            Ok(deployed_code) => {
+                                let deployment_result = DeploymentResult::Successful {
+                                    deployed_code,
+                                    return_values: ReturnValues::empty(),
+                                    deployed_at,
+                                };
+                                // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
+                                #[cfg(not(target_arch = "riscv32"))]
+                                let _ = self.system.get_logger().write_fmt(format_args!(
+                                    "Successfully deployed contract at {:?} \n",
+                                    deployed_at
+                                ));
+                                (true, deployment_result)
+                            }
+                            Err(SystemError::OutOfErgs(_)) => {
+                                let deployment_result = DeploymentResult::Failed {
+                                    return_values: self.copy_into_return_memory(return_values),
+                                    execution_reverted: false,
+                                };
+                                (false, deployment_result)
+                            }
+                            Err(SystemError::OutOfNativeResources(loc)) => {
+                                return Err(FatalError::OutOfNativeResources(loc))
+                            }
+                            Err(SystemError::Internal(e)) => return Err(e.into()),
+                        }
                     }
-                    Err(SystemError::OutOfErgs(_)) => {
-                        let deployment_result = DeploymentResult::Failed {
-                            return_values: self.copy_into_return_memory(return_values),
-                            execution_reverted: false,
-                        };
-                        (false, deployment_result)
-                    }
-                    Err(SystemError::OutOfNativeResources(loc)) => {
-                        return Err(FatalError::OutOfNativeResources(loc))
-                    }
-                    Err(SystemError::Internal(e)) => return Err(e.into()),
+                    _ => return Err(internal_error!("Unsupported EE")),
                 }
             }
             DeploymentResult::Failed {

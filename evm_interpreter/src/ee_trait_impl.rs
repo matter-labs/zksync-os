@@ -49,7 +49,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         let gas = Gas::new();
         let stack_space = EvmStack::new_in(system.get_allocator());
         let empty_address = <S::IOTypes as SystemIOTypesConfig>::Address::default();
-        let empty_preprocessing = BytecodePreprocessingData::<S>::empty(system);
+        let empty_preprocessing = BytecodePreprocessingData::empty();
 
         Ok(Self {
             instruction_pointer: 0,
@@ -93,13 +93,9 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         assert!(call_scratch_space.is_none());
 
         let EnvironmentParameters {
-            decommitted_bytecode,
-            bytecode_len,
-            scratch_space_len,
+            bytecode,
+            scratch_space_len: _,
         } = environment_parameters;
-        if scratch_space_len != 0 || decommitted_bytecode.len() != bytecode_len as usize {
-            panic!("invalid bytecode supplied, expected padding");
-        }
 
         let mut is_static = false;
         let mut is_constructor = false;
@@ -150,17 +146,33 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
 
         // we need to set bytecode, address of self and caller, static state
         // and calldata
-        let original_bytecode_len = bytecode_len;
-        let bytecode_preprocessing = BytecodePreprocessingData::<S>::from_raw_bytecode(
-            decommitted_bytecode,
-            original_bytecode_len,
-            system,
-            &mut available_resources,
-        )?;
+
+        match bytecode {
+            Bytecode::Constructor(constructor_code) => {
+                let bytecode_preprocessing = BytecodePreprocessingData::create_artifacts(
+                    system.get_allocator(),
+                    constructor_code,
+                    &mut available_resources,
+                )?;
+                self.bytecode = constructor_code;
+                self.bytecode_preprocessing = bytecode_preprocessing;
+            }
+            Bytecode::Decommitted {
+                bytecode,
+                artifacts_len,
+                unpadded_code_len,
+            } => {
+                let (code, bytecode_preprocessing) = BytecodePreprocessingData::parse_bytecode(
+                    bytecode,
+                    unpadded_code_len as usize,
+                    artifacts_len as usize,
+                );
+                self.bytecode = code;
+                self.bytecode_preprocessing = bytecode_preprocessing;
+            }
+        }
 
         *self.gas.resources_mut() = available_resources;
-        self.bytecode = decommitted_bytecode;
-        self.bytecode_preprocessing = bytecode_preprocessing;
         self.address = this_address;
         self.caller = caller_address;
         self.is_static = is_static;
@@ -464,10 +476,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         // resources from deployer.
         deployer_remaining_resources.give_native_to(&mut resources_for_constructor);
 
-        let deployment_code_len = deployment_code.len();
         let environment_parameters = EnvironmentParameters {
-            decommitted_bytecode: deployment_code,
-            bytecode_len: deployment_code_len as u32,
+            bytecode: Bytecode::Constructor(deployment_code),
             scratch_space_len: 0u32,
         };
 

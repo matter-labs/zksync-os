@@ -5,9 +5,17 @@ use crate::{
 
 use super::ReturnValues;
 
+pub enum Bytecode<'a> {
+    Decommitted {
+        bytecode: &'a [u8],
+        unpadded_code_len: u32,
+        artifacts_len: u32,
+    },
+    Constructor(&'a [u8]),
+}
+
 pub struct EnvironmentParameters<'a> {
-    pub decommitted_bytecode: &'a [u8],
-    pub bytecode_len: u32,
+    pub bytecode: Bytecode<'a>,
     pub scratch_space_len: u32,
 }
 
@@ -35,9 +43,7 @@ pub enum DeploymentResult<'a, S: SystemTypes> {
     },
     /// Deployment succeeded.
     Successful {
-        bytecode: &'a [u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
+        deployed_code: &'a [u8],
         return_values: ReturnValues<'a, S>,
         deployed_at: <S::IOTypes as SystemIOTypesConfig>::Address,
     },

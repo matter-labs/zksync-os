@@ -53,6 +53,7 @@ fn test_set_bytecode_details_evm() {
 
     let expected_account_hash =
         rig::utils::evm_bytecode_into_account_properties(&[0x01, 0x23, 0x45, 0x67, 0x89])
+            .0
             .compute_hash();
     let actual_hash = output
         .storage_writes
