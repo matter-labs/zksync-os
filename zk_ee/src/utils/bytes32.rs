@@ -78,7 +78,7 @@ impl Bytes32 {
         unsafe {
             if array.as_ptr().addr() % core::mem::align_of::<usize>() == 0 {
                 Self {
-                    inner: core::mem::transmute(array),
+                    inner: core::mem::transmute::<[u8; 32], [usize; BYTES32_USIZE_SIZE]>(array),
                 }
             } else {
                 let mut result = Self::uninit();
@@ -92,6 +92,7 @@ impl Bytes32 {
         }
     }
 
+    #[allow(clippy::needless_as_bytes)]
     pub const fn from_hex(input: &str) -> Self {
         const fn hex_to_digit(c: u8) -> u8 {
             match c {
@@ -105,7 +106,7 @@ impl Bytes32 {
         }
 
         assert!(input.len() == 64);
-        assert!(input.as_bytes().len() == 64);
+        assert!(input.as_bytes().len() == 64); // ASCII check in essence
         let mut result = Self::ZERO;
         let mut idx = 0;
         let dst = result.as_u8_array_mut();
