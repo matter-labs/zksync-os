@@ -26,7 +26,6 @@ members = [
     "tests/instances/precompiles",
     "tests/instances/bench",
     "tests/instances/unit",
-    "tests/instances/eth_runner",
     "tests/instances/system_hooks",
     "cycle_marker", 
     "tests/binary_checker"
@@ -45,6 +44,7 @@ exclude = [
     "tests/contracts_wasm/c_erc20",
     "tests/contracts_wasm/bench",
     "tests/contracts_wasm/unit",
+    "tests/instances/eth_runner",
 ]
 
 [workspace.package]

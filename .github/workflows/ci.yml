@@ -6,6 +6,9 @@ on:
   pull_request:
 permissions: read-all
 
+env:
+  CARGO_INCREMENTAL: 0
+
 jobs:
   tests:
     name: tests
