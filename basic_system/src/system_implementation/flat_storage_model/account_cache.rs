@@ -331,7 +331,7 @@ where
                     preimage_type: PreimageType::AccountData,
                 }),
                 &mut inf_resources,
-                &encoding,
+                &[&encoding],
             )?;
 
             storage.write_special_account_property::<AccountAggregateDataHash>(

@@ -244,7 +244,7 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
         _ee_type: ExecutionEnvironmentType,
         preimage_type: &Self::PreimageRequest,
         resources: &mut Self::Resources,
-        preimage: &[u8],
+        preimage: &[&[u8]],
     ) -> Result<&'static [u8], SystemError> {
         use crate::system_implementation::flat_storage_model::cost_constants::PREIMAGE_CACHE_SET_NATIVE_COST;
         use zk_ee::system::Computational;
@@ -259,9 +259,10 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
             preimage_type,
         } = preimage_type;
 
-        let boxed_data = UsizeAlignedByteBox::from_slice_in(preimage, self.allocator.clone());
+        let preimage_len = preimage.iter().fold(0, |acc, chunk| acc + chunk.len());
+        let boxed_data = UsizeAlignedByteBox::from_slices_in(preimage, self.allocator.clone());
 
-        assert_eq!(*expected_preimage_len_in_bytes, preimage.len() as u32);
+        assert_eq!(*expected_preimage_len_in_bytes, preimage_len as u32);
         self.insert_verified_preimage(*preimage_type, hash, boxed_data)
     }
 }
