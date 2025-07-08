@@ -1,9 +1,7 @@
 use crate::bootloader::EVM_EE_BYTE;
 use errors::FatalError;
 use zk_ee::{
-    execution_environment_type::ExecutionEnvironmentType,
-    memory::slice_vec::SliceVec,
-    system::{errors::InternalError, *},
+    execution_environment_type::ExecutionEnvironmentType, internal_error, memory::slice_vec::SliceVec, system::{errors::InternalError, *}
 };
 
 #[allow(type_alias_bounds)]
@@ -45,14 +43,14 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
                     desired_ergs_to_pass,
                 )
             }
-            _ => Err(InternalError("Unsupported EE").into()),
+            _ => Err(internal_error!("Unsupported EE").into()),
         }
     }
 
     pub fn create_initial(ee_version: u8, system: &mut System<S>) -> Result<Self, InternalError> {
         match ee_version {
             a if a == EVM_EE_BYTE => SystemBoundEVMInterpreter::new(system).map(Self::EVM),
-            _ => Err(InternalError("Unknown EE")),
+            _ => Err(internal_error!("Unknown EE")),
         }
     }
 
@@ -116,7 +114,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
                     deployment_parameters,
                 )
             }
-            _ => Err(InternalError("Unsupported EE").into()),
+            _ => Err(internal_error!("Unsupported EE").into()),
         }
     }
 

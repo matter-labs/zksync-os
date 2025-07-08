@@ -1,3 +1,7 @@
+use location::ErrorLocation;
+
+pub mod location;
+
 ///
 /// Possible errors raised by the system.
 ///
@@ -86,7 +90,14 @@ impl From<SystemError> for SystemFunctionError {
 /// Internal error, should not be triggered by user input.
 ///
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct InternalError(pub &'static str);
+pub struct InternalError(pub &'static str, pub ErrorLocation);
+
+#[macro_export]
+macro_rules! internal_error {
+    ($msg:expr $(,)?) => {
+        $crate::system::errors::InternalError($msg, $crate::system::errors::location::ErrorLocation { file: file!(), line: line!() })
+    };
+}
 
 impl From<InternalError> for SystemError {
     fn from(e: InternalError) -> Self {

@@ -18,9 +18,10 @@ use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::internal_error;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::{
-    errors::{InternalError, SystemError, UpdateQueryError},
+    errors::{SystemError, UpdateQueryError},
     logger::Logger,
     EthereumLikeTypes, System, SystemTypes, *,
 };
@@ -138,7 +139,7 @@ where
         }
 
         let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
-            .ok_or(InternalError("Invalid ecrecover return value"))?;
+            .ok_or(internal_error!("Invalid ecrecover return value"))?;
 
         if recovered_from != from {
             return Err(InvalidTransaction::IncorrectFrom {
@@ -326,7 +327,7 @@ where
             .max_fee_per_gas
             .read()
             .checked_mul(transaction.gas_limit.read() as u128)
-            .ok_or(InternalError("mfpg*gl"))?;
+            .ok_or(internal_error!("mfpg*gl"))?;
         let amount = U256::from(amount);
         system
             .io
@@ -567,7 +568,7 @@ where
         ExecutionEnvironmentType::EVM => {
             SystemBoundEVMInterpreter::<S>::default_ee_deployment_options(system)
         }
-        _ => return Err(InternalError("Unsupported EE").into()),
+        _ => return Err(internal_error!("Unsupported EE").into()),
     };
 
     let deployment_parameters = DeploymentPreparationParameters {
@@ -594,7 +595,7 @@ where
         deployment_result,
     }) = final_state
     else {
-        return Err(InternalError("attempt to deploy ended up in invalid state").into());
+        return Err(internal_error!("attempt to deploy ended up in invalid state").into());
     };
 
     let (deployment_success, reverted, return_values, at) = match deployment_result {

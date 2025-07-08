@@ -1,6 +1,7 @@
 use constants::{CALLDATA_NON_ZERO_BYTE_GAS_COST, CALLDATA_ZERO_BYTE_GAS_COST};
 use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
 use evm_interpreter::ERGS_PER_GAS;
+use zk_ee::internal_error;
 use zk_ee::system::errors::InternalError;
 use zk_ee::system::{Computational, Resources};
 
@@ -37,7 +38,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     // Charge pubdata overhead
     let intrinsic_pubdata_overhead = u256_to_u64_saturated(&native_per_pubdata)
         .checked_mul(intrinsic_pubdata as u64)
-        .ok_or(InternalError("npp*ip"))?;
+        .ok_or(internal_error!("npp*ip"))?;
     let native_limit =
         native_limit
             .checked_sub(intrinsic_pubdata_overhead)
@@ -85,7 +86,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
 
     let total_gas_to_charge = (calldata_gas as u64)
         .checked_add(intrinsic_overhead)
-        .ok_or(InternalError("tuo+io"))?;
+        .ok_or(internal_error!("tuo+io"))?;
 
     if total_gas_to_charge > gas_limit {
         Err(TxError::Validation(
@@ -95,7 +96,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         let gas_limit_for_tx = gas_limit - total_gas_to_charge;
         let ergs = gas_limit_for_tx
             .checked_mul(ERGS_PER_GAS)
-            .ok_or(InternalError("glft*EPF"))?;
+            .ok_or(internal_error!("glft*EPF"))?;
         let resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
         Ok((resources, withheld_resources))
     }
@@ -108,16 +109,16 @@ pub fn cost_for_calldata(calldata: &[u8]) -> Result<(usize, u64), InternalError>
     let non_zero_bytes = calldata.len() - zero_bytes;
     let zero_cost = zero_bytes
         .checked_mul(CALLDATA_ZERO_BYTE_GAS_COST)
-        .ok_or(InternalError("zb*CZBGC"))?;
+        .ok_or(internal_error!("zb*CZBGC"))?;
     let non_zero_cost = non_zero_bytes
         .checked_mul(CALLDATA_NON_ZERO_BYTE_GAS_COST)
-        .ok_or(InternalError("nzb*CNZBGC"))?;
+        .ok_or(internal_error!("nzb*CNZBGC"))?;
     let gas_cost = zero_cost
         .checked_add(non_zero_cost)
-        .ok_or(InternalError("zc+nzc"))?;
+        .ok_or(internal_error!("zc+nzc"))?;
     let native_cost = (calldata.len() as u64)
         .checked_mul(COPY_BYTE_NATIVE_COST)
-        .ok_or(InternalError("cl*CBNC"))?;
+        .ok_or(internal_error!("cl*CBNC"))?;
     Ok((gas_cost, native_cost))
 }
 
@@ -135,7 +136,7 @@ pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
     let native_per_pubdata = u256_to_u64_saturated(&native_per_pubdata);
     let native = current_pubdata_spent
         .checked_mul(native_per_pubdata)
-        .ok_or(InternalError("cps*epp"))?;
+        .ok_or(internal_error!("cps*epp"))?;
     let native = <S::Resources as zk_ee::system::Resources>::Native::from_computational(native);
     Ok((current_pubdata_spent, S::Resources::from_native(native)))
 }

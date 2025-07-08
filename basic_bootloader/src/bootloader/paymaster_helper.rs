@@ -6,7 +6,8 @@ use constants::{PAYMASTER_VALIDATE_AND_PAY_SELECTOR, TX_CALLDATA_OFFSET};
 use errors::InvalidTransaction;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
-use zk_ee::system::errors::{FatalError, InternalError};
+use zk_ee::internal_error;
+use zk_ee::system::errors::FatalError;
 use zk_ee::system::{EthereumLikeTypes, System};
 
 // Helpers for paymaster flow.
@@ -117,7 +118,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         //     system
         // )?;
         // let rounded_context_len = Self::length_rounded_by_words(context_len)
-        //     .ok_or(InternalError("rounding context length"))?;
+        //     .ok_or(internal_error!("rounding context length"))?;
         // require!(
         //     rounded_context_len <= U256::from(MAX_PAYMASTER_CONTEXT_LEN_BYTES),
         //     AAValidationError(InvalidAA::PaymasterReturnDataTooShort),
@@ -201,7 +202,7 @@ where {
 
         // let unpadded_context_length = U256::from_be_slice(&pre_tx_buffer[..32]);
         // let context_length = Self::length_rounded_by_words(unpadded_context_length)
-        //     .ok_or(InternalError("Rounding context length"))?;
+        //     .ok_or(internal_error!("Rounding context length"))?;
         // let context_length_u = u256_to_u64_saturated(&context_length) as usize;
         // // Selector + Initial offsets + fixed sized fields
         // let header_length = 4 + U256::BYTES * 6;
@@ -339,7 +340,7 @@ where {
         let calldata_start = TX_OFFSET - header_length;
         let calldata_end = calldata_start
             .checked_add(transaction.tx_body_length())
-            .ok_or(InternalError("overflow"))?;
+            .ok_or(internal_error!("overflow"))?;
 
         let pre_tx_buffer = transaction.pre_tx_buffer();
         Self::write_calldata_prefix(

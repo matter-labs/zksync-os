@@ -20,6 +20,7 @@ use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::BasicIOImplementerFSM;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
+use zk_ee::internal_error;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::{
     common_structs::{EventsStorage, LogsStorage},
@@ -88,7 +89,7 @@ where
         if TRANSIENT {
             let ergs = match ee_type {
                 ExecutionEnvironmentType::EVM => Ergs(TLOAD * ERGS_PER_GAS),
-                _ => return Err(InternalError("Unsupported EE").into()),
+                _ => return Err(internal_error!("Unsupported EE").into()),
             };
             let native = R::Native::from_computational(WARM_TSTORAGE_READ_NATIVE_COST);
             resources.charge(&R::from_ergs_and_native(ergs, native))?;
@@ -119,7 +120,7 @@ where
         if TRANSIENT {
             let ergs = match ee_type {
                 ExecutionEnvironmentType::EVM => Ergs(TSTORE * ERGS_PER_GAS),
-                _ => return Err(InternalError("Unsupported EE").into()),
+                _ => return Err(internal_error!("Unsupported EE").into()),
             };
             let native = R::Native::from_computational(WARM_TSTORAGE_WRITE_NATIVE_COST);
             resources.charge(&R::from_ergs_and_native(ergs, native))?;
@@ -167,7 +168,7 @@ where
                     .ok_or(SystemError::OutOfErgs)?;
                 Ergs(ergs)
             }
-            _ => return Err(InternalError("Unsupported EE").into()),
+            _ => return Err(internal_error!("Unsupported EE").into()),
         };
         let native = R::Native::from_computational(
             EVENT_STORAGE_BASE_NATIVE_COST

@@ -2,6 +2,7 @@ use crate::bootloader::constants::SPECIAL_ADDRESS_SPACE_BOUND;
 use crate::bootloader::supported_ees::SupportedEEVMState;
 use crate::bootloader::DEBUG_OUTPUT;
 use alloc::boxed::Box;
+use zk_ee::internal_error;
 use core::fmt::Write;
 use core::mem::MaybeUninit;
 use errors::FatalError;
@@ -363,7 +364,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 ) => {
                     self.system
                         .finish_global_frame(reverted.then_some(&rollback_handle))
-                        .map_err(|_| InternalError("must finish execution frame"))?;
+                        .map_err(|_| internal_error!("must finish execution frame"))?;
 
                     let returndata_iter = return_values.returndata.iter().copied();
                     let _ = self
@@ -387,7 +388,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 ExecutionEnvironmentPreemptionPoint::End(
                     TransactionEndPoint::CompletedDeployment(_),
                 ) => {
-                    return Err(FatalError::Internal(InternalError(
+                    return Err(FatalError::Internal(internal_error!(
                         "returned from external call as if it was a deployment",
                     )))
                 }
@@ -420,7 +421,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             }) {
                 Ok(()) => (),
                 Err(UpdateQueryError::System(SystemError::OutOfErgs)) => {
-                    return Err(InternalError("Our of ergs on infinite").into());
+                    return Err(internal_error!("Our of ergs on infinite").into());
                 }
                 Err(UpdateQueryError::System(SystemError::Internal(e))) => {
                     return Err(FatalError::Internal(e))
@@ -441,7 +442,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                                 return_values: ReturnValues::empty(),
                             }));
                         }
-                        _ => return Err(InternalError("Unsupported EE").into()),
+                        _ => return Err(internal_error!("Unsupported EE").into()),
                     }
                 }
             }
@@ -567,7 +568,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 } else {
                     None
                 })
-                .map_err(|_| InternalError("must finish execution frame"))?;
+                .map_err(|_| internal_error!("must finish execution frame"))?;
 
             resources_returned.reclaim(resources_to_return_from_preparation);
             Ok((
@@ -585,7 +586,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             ));
             self.system
                 .finish_global_frame(None)
-                .map_err(|_| InternalError("must finish execution frame"))?;
+                .map_err(|_| internal_error!("must finish execution frame"))?;
 
             actual_resources_to_pass.reclaim(resources_to_return_from_preparation);
             Ok((
@@ -656,7 +657,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let constructor_rollback_handle = self
             .system
             .start_global_frame()
-            .map_err(|_| InternalError("must start a new frame for init code"))?;
+            .map_err(|_| internal_error!("must start a new frame for init code"))?;
 
         // EE made all the preparations and we are in callee's frame already
         let mut constructor = create_ee(ee_type as u8, self.system)?;
@@ -683,7 +684,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 UpdateQueryError::System(SystemError::OutOfNativeResources) => {
                     FatalError::OutOfNativeResources
                 }
-                _ => InternalError("Failed to set deployed nonce to 1").into(),
+                _ => internal_error!("Failed to set deployed nonce to 1").into(),
             })?;
 
         if nominal_token_value != U256::ZERO {
@@ -703,7 +704,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     UpdateQueryError::System(SystemError::OutOfNativeResources) => {
                         FatalError::OutOfNativeResources
                     }
-                    _ => InternalError(
+                    _ => internal_error!(
                         "Must transfer value on deployment after check in preparation",
                     )
                     .into(),
@@ -736,7 +737,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 ExecutionEnvironmentPreemptionPoint::End(end) => {
                     break match end {
                         TransactionEndPoint::CompletedExecution(_) => {
-                            return Err(FatalError::Internal(InternalError(
+                            return Err(FatalError::Internal(internal_error!(
                                 "returned from deployment as if it was an external call",
                             )))
                         }
@@ -1002,7 +1003,7 @@ where
 
                 stipend
             }
-            _ => return Err(InternalError("Unsupported EE").into()),
+            _ => return Err(internal_error!("Unsupported EE").into()),
         }
     } else {
         None

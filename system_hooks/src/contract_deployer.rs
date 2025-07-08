@@ -8,6 +8,7 @@ use core::fmt::Write;
 use evm_interpreter::MAX_CODE_SIZE;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::internal_error;
 use zk_ee::system::errors::SystemError;
 use zk_ee::utils::Bytes32;
 
@@ -40,7 +41,7 @@ where
     match modifier {
         CallModifier::Constructor => {
             return Err(
-                InternalError("Contract deployer hook called with constructor modifier").into(),
+                internal_error!("Contract deployer hook called with constructor modifier").into(),
             )
         }
         CallModifier::Delegate
@@ -148,7 +149,7 @@ where
                 ));
             }
             let address = B160::try_from_be_slice(&calldata[12..32]).ok_or(
-                SystemError::Internal(InternalError("Failed to create B160 from 20 byte array")),
+                SystemError::Internal(internal_error!("Failed to create B160 from 20 byte array")),
             )?;
 
             let bytecode_hash =

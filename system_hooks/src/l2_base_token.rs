@@ -8,6 +8,7 @@ use core::fmt::Write;
 use errors::UpdateQueryError;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::internal_error;
 use zk_ee::system::errors::SystemError;
 use zk_ee::system::logger::Logger;
 
@@ -38,7 +39,7 @@ where
     let mut is_static = false;
     match modifier {
         CallModifier::Constructor => {
-            return Err(InternalError("L2 base token hook called with constructor modifier").into())
+            return Err(internal_error!("L2 base token hook called with constructor modifier").into())
         }
         CallModifier::Delegate
         | CallModifier::DelegateStatic
@@ -152,7 +153,7 @@ where
             ) {
                 Ok(_) => Ok(()),
                 Err(UpdateQueryError::NumericBoundsError) => Err(SystemError::Internal(
-                    InternalError("L2 base token must have withdrawal amount"),
+                    internal_error!("L2 base token must have withdrawal amount"),
                 )),
                 Err(UpdateQueryError::System(e)) => Err(e),
             }?;
@@ -251,7 +252,7 @@ where
             ) {
                 Ok(_) => Ok(()),
                 Err(UpdateQueryError::NumericBoundsError) => Err(SystemError::Internal(
-                    InternalError("L2 base token must have withdrawal amount"),
+                    internal_error!("L2 base token must have withdrawal amount"),
                 )),
                 Err(UpdateQueryError::System(e)) => Err(e),
             }?;

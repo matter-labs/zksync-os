@@ -1,5 +1,5 @@
-use super::{errors::InternalError, Resources};
-use crate::system::errors::SystemFunctionError;
+use super::Resources;
+use crate::{internal_error, system::errors::SystemFunctionError};
 
 ///
 /// System function implementation.
@@ -24,7 +24,7 @@ impl<R: Resources> SystemFunction<R> for MissingSystemFunction {
         _: &mut R,
         _: A,
     ) -> Result<(), SystemFunctionError> {
-        Err(InternalError("This system function is not defined for this system").into())
+        Err(internal_error!("This system function is not defined for this system").into())
     }
 }
 

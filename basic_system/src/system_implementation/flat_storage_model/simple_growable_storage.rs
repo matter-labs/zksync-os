@@ -20,6 +20,7 @@ use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use zk_ee::internal_error;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use either::Either;
@@ -1160,7 +1161,7 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
                 };
                 Ok(new)
             }
-            _ => Err(InternalError("ReadValueWithProof deserialization failed")),
+            _ => Err(internal_error!("ReadValueWithProof deserialization failed")),
         }
     }
 }
@@ -1212,7 +1213,7 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
                 let new = Self::New { proof };
                 Ok(new)
             }
-            _ => Err(InternalError("WriteValueWithProof deserialization failed")),
+            _ => Err(internal_error!("WriteValueWithProof deserialization failed")),
         }
     }
 }

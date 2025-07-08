@@ -1,5 +1,5 @@
 use ruint::aliases::{B160, U256};
-use zk_ee::system::errors::{FatalError, InternalError, SystemError, SystemFunctionError};
+use zk_ee::{internal_error, system::errors::{FatalError, InternalError, SystemError, SystemFunctionError}};
 
 // Taken from revm, contains changes
 ///
@@ -172,7 +172,7 @@ impl From<SystemFunctionError> for TxError {
     fn from(e: SystemFunctionError) -> Self {
         match e {
             SystemFunctionError::InvalidInput => {
-                TxError::Internal(InternalError("Invalid system function input"))
+                TxError::Internal(internal_error!("Invalid system function input"))
             }
             SystemFunctionError::System(e) => e.into(),
         }
@@ -234,7 +234,7 @@ macro_rules! require_internal {
                 .get_logger()
                 .write_fmt(format_args!("Check failed: {}\n", $s))
                 .expect("Failed to write log");
-            Err(InternalError($s))
+            Err(zk_ee::internal_error!($s))
         }
     };
 }

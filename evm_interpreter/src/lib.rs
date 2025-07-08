@@ -29,7 +29,7 @@ use zk_ee::system::errors::{FatalError, InternalError, SystemError};
 use zk_ee::system::{EthereumLikeTypes, Resource, System, SystemTypes};
 
 use alloc::vec::Vec;
-use zk_ee::types_config::*;
+use zk_ee::{internal_error, types_config::*};
 use zk_ee::utils::*;
 
 mod ee_trait_impl;
@@ -128,12 +128,12 @@ impl<S: SystemTypes> BytecodePreprocessingData<S> {
             .map_err(|e| match e {
                 SystemError::Internal(e) => FatalError::Internal(e),
                 SystemError::OutOfErgs => {
-                    FatalError::Internal(InternalError("OOE when charging only native"))
+                    FatalError::Internal(internal_error!("OOE when charging only native"))
                 }
                 SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
             })?;
         let jump_map = analyze::<S>(padded_bytecode, system)
-            .map_err(|_| InternalError("Could not preprocess bytecode"))?;
+            .map_err(|_| internal_error!("Could not preprocess bytecode"))?;
         let new = Self {
             original_bytecode_len: original_len as usize,
             jumpdest_bitmap: jump_map,
