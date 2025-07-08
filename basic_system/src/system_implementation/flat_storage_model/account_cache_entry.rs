@@ -242,9 +242,10 @@ impl AccountProperties {
                     + 4 // observable bytecode len
             })
         } else {
-            // the diff shouldn't be included at all in such case
             if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
-                return Ok(0);
+                return Err(InternalError(
+                    "Account properties diff compression shouldn't be called for same values",
+                ));
             }
             let mut length = 1u32; // metadata byte
             if initial.nonce != r#final.nonce {

@@ -363,12 +363,15 @@ where
             let current = element_history.current();
             let initial = element_history.initial();
 
-            pubdata_used += AccountProperties::diff_compression_length(
-                initial.value(),
-                current.value(),
-                current.metadata().not_publish_bytecode,
-            )
-            .unwrap();
+            if current.value() != initial.value() {
+                pubdata_used += 32; // key
+                pubdata_used += AccountProperties::diff_compression_length(
+                    initial.value(),
+                    current.value(),
+                    current.metadata().not_publish_bytecode,
+                )
+                    .unwrap();
+            }
         }
 
         pubdata_used
