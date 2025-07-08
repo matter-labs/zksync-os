@@ -150,7 +150,7 @@ impl TxError {
     pub fn oon_as_validation(e: FatalError) -> Self {
         match e {
             FatalError::Internal(e) => Self::Internal(e),
-            FatalError::OutOfNativeResources => {
+            FatalError::OutOfNativeResources(_) => {
                 Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
             }
         }
@@ -163,7 +163,7 @@ impl From<SystemError> for TxError {
             SystemError::OutOfErgs => {
                 TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
             }
-            SystemError::OutOfNativeResources => {
+            SystemError::OutOfNativeResources(_) => {
                 Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
             }
             SystemError::Internal(e) => TxError::Internal(e),

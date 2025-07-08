@@ -130,7 +130,7 @@ impl<S: SystemTypes> BytecodePreprocessingData<S> {
                 SystemError::OutOfErgs => {
                     FatalError::Internal(internal_error!("OOE when charging only native"))
                 }
-                SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+                SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
             })?;
         let jump_map = analyze::<S>(padded_bytecode, system)
             .map_err(|_| internal_error!("Could not preprocess bytecode"))?;
@@ -277,7 +277,9 @@ impl From<SystemError> for ExitCode {
     fn from(e: SystemError) -> Self {
         match e {
             SystemError::Internal(e) => Self::FatalError(FatalError::Internal(e)),
-            SystemError::OutOfNativeResources => Self::FatalError(FatalError::OutOfNativeResources),
+            SystemError::OutOfNativeResources(loc) => {
+                Self::FatalError(FatalError::OutOfNativeResources(loc))
+            }
             SystemError::OutOfErgs => Self::OutOfGas,
         }
     }

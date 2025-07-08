@@ -426,8 +426,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 Err(UpdateQueryError::System(SystemError::Internal(e))) => {
                     return Err(FatalError::Internal(e))
                 }
-                Err(UpdateQueryError::System(SystemError::OutOfNativeResources)) => {
-                    return Err(FatalError::OutOfNativeResources);
+                Err(UpdateQueryError::System(SystemError::OutOfNativeResources(loc))) => {
+                    return Err(FatalError::OutOfNativeResources(loc));
                 }
                 Err(UpdateQueryError::NumericBoundsError) => {
                     // Insufficient balance
@@ -627,8 +627,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         },
                     })
                 }
-                Err(FatalError::OutOfNativeResources) => {
-                    return Err(FatalError::OutOfNativeResources)
+                Err(FatalError::OutOfNativeResources(loc)) => {
+                    return Err(FatalError::OutOfNativeResources(loc))
                 }
                 Err(FatalError::Internal(e)) => return Err(e.into()),
             };
@@ -681,8 +681,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 )
             })
             .map_err(|e| match e {
-                UpdateQueryError::System(SystemError::OutOfNativeResources) => {
-                    FatalError::OutOfNativeResources
+                UpdateQueryError::System(SystemError::OutOfNativeResources(loc)) => {
+                    FatalError::OutOfNativeResources(loc)
                 }
                 _ => internal_error!("Failed to set deployed nonce to 1").into(),
             })?;
@@ -701,8 +701,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     )
                 })
                 .map_err(|e| match e {
-                    UpdateQueryError::System(SystemError::OutOfNativeResources) => {
-                        FatalError::OutOfNativeResources
+                    UpdateQueryError::System(SystemError::OutOfNativeResources(loc)) => {
+                        FatalError::OutOfNativeResources(loc)
                     }
                     _ => internal_error!(
                         "Must transfer value on deployment after check in preparation",
@@ -787,8 +787,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         };
                         (false, deployment_result)
                     }
-                    Err(SystemError::OutOfNativeResources) => {
-                        return Err(FatalError::OutOfNativeResources)
+                    Err(SystemError::OutOfNativeResources(loc)) => {
+                        return Err(FatalError::OutOfNativeResources(loc))
                     }
                     Err(SystemError::Internal(e)) => return Err(e.into()),
                 }
@@ -890,7 +890,9 @@ where
                 resources_returned: resources_available,
             });
         }
-        Err(SystemError::OutOfNativeResources) => return Err(FatalError::OutOfNativeResources),
+        Err(SystemError::OutOfNativeResources(loc)) => {
+            return Err(FatalError::OutOfNativeResources(loc))
+        }
         Err(SystemError::Internal(e)) => return Err(e.into()),
     };
 
@@ -906,8 +908,8 @@ where
                 call_request.ergs_to_pass,
             ) {
                 Ok(x) => x,
-                Err(FatalError::OutOfNativeResources) => {
-                    return Err(FatalError::OutOfNativeResources)
+                Err(FatalError::OutOfNativeResources(loc)) => {
+                    return Err(FatalError::OutOfNativeResources(loc))
                 }
                 Err(FatalError::Internal(error)) => {
                     return Err(error.into());
@@ -966,7 +968,9 @@ where
             ));
             return Err(SystemError::OutOfErgs);
         }
-        Err(SystemError::OutOfNativeResources) => return Err(SystemError::OutOfNativeResources),
+        Err(SystemError::OutOfNativeResources(loc)) => {
+            return Err(SystemError::OutOfNativeResources(loc))
+        }
         Err(SystemError::Internal(e)) => return Err(e.into()),
     };
 
