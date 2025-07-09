@@ -147,7 +147,7 @@ where
             match transaction.calculate_hash(chain_id, &mut resources) {
                 Ok(h) => (h.into(), false),
                 Err(FatalError::Internal(e)) => return Err(e.into()),
-                Err(FatalError::OutOfNativeResources) => {
+                Err(FatalError::OutOfNativeResources(_)) => {
                     resources.exhaust_ergs();
                     // We need to compute the hash anyways, we do with inf resources
                     let mut inf_resources = S::Resources::FORMAL_INFINITE;
@@ -191,7 +191,7 @@ where
                 }
                 // Out of native is converted to a top-level revert and
                 // gas is exhausted.
-                Err(FatalError::OutOfNativeResources) => {
+                Err(FatalError::OutOfNativeResources(_)) => {
                     resources.exhaust_ergs();
                     system.finish_global_frame(Some(&rollback_handle))?;
                     ExecutionResult::Revert { output: &[] }
@@ -229,8 +229,8 @@ where
             &mut inf_resources,
         )
         .map_err(|e| match e {
-            SystemError::OutOfErgs => internal_error!("Out of ergs on infinite ergs"),
-            SystemError::OutOfNativeResources => internal_error!("Out of native on infinite"),
+            SystemError::OutOfErgs(_) => internal_error!("Out of ergs on infinite ergs"),
+            SystemError::OutOfNativeResources(_) => internal_error!("Out of native on infinite"),
             SystemError::Internal(i) => i,
         })?;
 
@@ -270,8 +270,10 @@ where
                 &mut inf_resources,
             )
             .map_err(|e| match e {
-                SystemError::OutOfErgs => internal_error!("Out of ergs on infinite ergs"),
-                SystemError::OutOfNativeResources => internal_error!("Out of native on infinite"),
+                SystemError::OutOfErgs(_) => internal_error!("Out of ergs on infinite ergs"),
+                SystemError::OutOfNativeResources(_) => {
+                    internal_error!("Out of native on infinite")
+                }
                 SystemError::Internal(i) => i,
             })?;
         }
@@ -327,10 +329,10 @@ where
                     BasicBootloader::mint_token(system, &value, &from, inf_resources)
                 })
                 .map_err(|e| match e {
-                    SystemError::OutOfErgs => {
+                    SystemError::OutOfErgs(_) => {
                         FatalError::Internal(internal_error!("Out of ergs on infinite ergs"))
                     }
-                    SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+                    SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
                     SystemError::Internal(i) => FatalError::Internal(i),
                 })?;
         }
@@ -551,7 +553,7 @@ where
             }
             // Out of native is converted to a top-level revert and
             // gas is exhausted.
-            Err(FatalError::OutOfNativeResources) => {
+            Err(FatalError::OutOfNativeResources(_)) => {
                 let _ = system
                     .get_logger()
                     .write_fmt(format_args!("Transaction ran out of native resource\n"));
@@ -992,10 +994,10 @@ where
                 UpdateQueryError::NumericBoundsError => {
                     internal_error!("Bootloader cannot pay for refund")
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs) => {
+                UpdateQueryError::System(SystemError::OutOfErgs(_)) => {
                     internal_error!("should transfer refund")
                 }
-                UpdateQueryError::System(SystemError::OutOfNativeResources) => {
+                UpdateQueryError::System(SystemError::OutOfNativeResources(_)) => {
                     internal_error!("should transfer refund")
                 }
                 UpdateQueryError::System(SystemError::Internal(e)) => e,

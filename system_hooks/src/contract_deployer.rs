@@ -80,13 +80,15 @@ where
                     .write_fmt(format_args!("Revert: {:?}\n", e));
                 make_error_return_state(resources)
             }
-            Err(SystemError::OutOfErgs) => {
+            Err(SystemError::OutOfErgs(_)) => {
                 let _ = system
                     .get_logger()
                     .write_fmt(format_args!("Out of gas during system hook\n"));
                 make_error_return_state(resources)
             }
-            Err(SystemError::OutOfNativeResources) => return Err(FatalError::OutOfNativeResources),
+            Err(SystemError::OutOfNativeResources(loc)) => {
+                return Err(FatalError::OutOfNativeResources(loc))
+            }
             Err(SystemError::Internal(e)) => return Err(e.into()),
         },
         return_memory,

@@ -18,7 +18,6 @@ use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::internal_error;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::{
     errors::{SystemError, UpdateQueryError},
@@ -26,6 +25,7 @@ use zk_ee::system::{
     EthereumLikeTypes, System, SystemTypes, *,
 };
 use zk_ee::utils::{b160_to_u256, u256_to_b160_checked};
+use zk_ee::{internal_error, out_of_native_resources_fatal_error};
 
 macro_rules! require_or_revert {
     ($b:expr, $m:expr, $s:expr, $system:expr) => {
@@ -95,12 +95,12 @@ where
                     ));
                 }
             }
-            Err(SystemError::OutOfErgs) => {
+            Err(SystemError::OutOfErgs(_)) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfGasDuringValidation,
                 ))
             }
-            Err(SystemError::OutOfNativeResources) => {
+            Err(SystemError::OutOfNativeResources(_)) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfNativeResourcesDuringValidation,
                 ))
@@ -353,11 +353,11 @@ where
                         Err(e) => e.into(),
                     }
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs) => {
+                UpdateQueryError::System(SystemError::OutOfErgs(_)) => {
                     TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
                 }
-                UpdateQueryError::System(SystemError::OutOfNativeResources) => {
-                    TxError::oon_as_validation(FatalError::OutOfNativeResources)
+                UpdateQueryError::System(SystemError::OutOfNativeResources(_)) => {
+                    TxError::oon_as_validation(out_of_native_resources_fatal_error!())
                 }
                 UpdateQueryError::System(SystemError::Internal(e)) => e.into(),
             })?;
@@ -494,13 +494,15 @@ where
             let ergs_to_spend = Ergs(initcode_gas_cost.saturating_mul(ERGS_PER_GAS));
             match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
                 Ok(_) => (),
-                Err(SystemError::OutOfErgs) => {
+                Err(SystemError::OutOfErgs(_)) => {
                     return Err(TxError::Validation(
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(SystemError::OutOfNativeResources) => {
-                    return Err(TxError::oon_as_validation(FatalError::OutOfNativeResources))
+                Err(SystemError::OutOfNativeResources(_)) => {
+                    return Err(TxError::oon_as_validation(
+                        out_of_native_resources_fatal_error!(),
+                    ))
                 }
                 Err(SystemError::Internal(e)) => return Err(TxError::Internal(e)),
             };
@@ -544,7 +546,7 @@ where
     let ergs_to_spend = Ergs(extra_gas_cost.saturating_mul(ERGS_PER_GAS));
     match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
         Ok(_) => (),
-        Err(SystemError::OutOfErgs) => {
+        Err(SystemError::OutOfErgs(_)) => {
             return Ok(TxExecutionResult {
                 return_values: ReturnValues::empty(),
                 resources_returned: S::Resources::empty(),
@@ -552,7 +554,9 @@ where
                 deployed_address: DeployedAddress::RevertedNoAddress,
             })
         }
-        Err(SystemError::OutOfNativeResources) => return Err(FatalError::OutOfNativeResources),
+        Err(SystemError::OutOfNativeResources(loc)) => {
+            return Err(FatalError::OutOfNativeResources(loc))
+        }
         Err(SystemError::Internal(e)) => return Err(e.into()),
     };
     // Next check max initcode size

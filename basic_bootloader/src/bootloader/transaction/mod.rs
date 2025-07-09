@@ -1198,9 +1198,9 @@ fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), Fata
     resources
         .charge(&R::from_native(native_cost))
         .map_err(|e| match e {
-            SystemError::OutOfErgs => unreachable!(),
+            SystemError::OutOfErgs(_) => unreachable!(),
             SystemError::Internal(e) => FatalError::Internal(e),
-            SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+            SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
         })
 }
 
