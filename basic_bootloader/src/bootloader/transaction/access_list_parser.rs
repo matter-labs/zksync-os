@@ -17,11 +17,26 @@ impl AccessListParser {
     }
 }
 
+// Used to enforce strict encoding
+struct PreviousItemInfo {
+    offset: usize,
+    nb_keys: usize,
+}
+
+impl PreviousItemInfo {
+    fn next_expected_offset(&self) -> usize {
+        // Next expected offset is equal to:
+        // offset + len(address, keys_offset, keys_len, keys)
+        self.offset + 32 * (3 + self.nb_keys)
+    }
+}
+
 pub struct AccessListIter<'a> {
     slice: &'a [u8],
     pub(crate) count: usize,
     head_start: usize,
     index: usize,
+    prev_item_info: Option<PreviousItemInfo>,
 }
 
 impl<'a> AccessListIter<'a> {
@@ -35,6 +50,15 @@ impl<'a> AccessListIter<'a> {
         }
         let value = u32::from_be_bytes(bytes[28..32].try_into().unwrap());
         Ok(value as usize)
+    }
+
+    // Check an offset is the expected value, to enforce strict encoding.
+    fn check_offset(offset: usize, expected: usize) -> Result<(), ()> {
+        if offset != expected {
+            Err(())
+        } else {
+            Ok(())
+        }
     }
 
     fn new(slice: &'a [u8], offset: usize) -> Result<Self, ()> {
@@ -51,12 +75,15 @@ impl<'a> AccessListIter<'a> {
                 count: 0,
                 head_start: offset + 32,
                 index: 0,
+                prev_item_info: None,
             });
         }
         let offset = offset + 32;
 
         // For now, it only has the access list
+        // First, parse the tuple offset
         let outer_offset = Self::parse_u32(slice, offset)?;
+        Self::check_offset(outer_offset, 32)?;
         let outer_base = offset + outer_offset;
         let outer_len = Self::parse_u32(slice, outer_base)?;
         if outer_len != 1 {
@@ -64,6 +91,8 @@ impl<'a> AccessListIter<'a> {
         }
 
         let access_list_rel_offset = Self::parse_u32(slice, outer_base + 32)?;
+        Self::check_offset(access_list_rel_offset, 32)?;
+
         let access_list_base = outer_base + 32 + access_list_rel_offset;
         let count = Self::parse_u32(slice, access_list_base)?;
         let head_start = access_list_base + 32;
@@ -73,6 +102,7 @@ impl<'a> AccessListIter<'a> {
             count,
             head_start,
             index: 0,
+            prev_item_info: None,
         })
     }
 
@@ -80,13 +110,26 @@ impl<'a> AccessListIter<'a> {
         // Assume index < count, checked by iterator impl
         let offset = self.head_start + self.index.checked_mul(32).ok_or(())?;
         let item_ptr_offset = Self::parse_u32(self.slice, offset)?;
+        Self::check_offset(
+            item_ptr_offset,
+            self.prev_item_info
+                .as_ref()
+                .map_or(32 * self.count, |p| p.next_expected_offset()),
+        )?;
         let item_offset = self.head_start + item_ptr_offset;
         let address_bytes = &self.slice.get(item_offset..item_offset + 32).ok_or(())?[12..];
         let address = B160::try_from_be_slice(address_bytes).unwrap();
         let keys_ptr_offset = Self::parse_u32(self.slice, item_offset + 32)?;
+        // Always 64 = len(offset, keys_len)
+        Self::check_offset(keys_ptr_offset, 64)?;
         let keys_offset = item_offset + keys_ptr_offset;
         let keys_len = Self::parse_u32(self.slice, keys_offset)?;
         let keys_slice = self.slice.get(keys_offset + 32..).ok_or(())?;
+
+        self.prev_item_info = Some(PreviousItemInfo {
+            offset: item_ptr_offset,
+            nb_keys: keys_len,
+        });
 
         Ok((
             address,
