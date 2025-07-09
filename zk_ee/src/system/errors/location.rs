@@ -1,10 +1,11 @@
+use super::InternalError;
+
 pub trait IError: Clone + core::fmt::Debug + Eq + Sized {
     fn get_message() -> &'static str;
 }
 
-#[cfg(feature = "error_origins")]
 pub trait Localizable {
-    fn get_location() -> ErrorLocation;
+    fn get_location(&self) -> ErrorLocation;
 }
 
 #[cfg(feature = "error_origins")]
@@ -29,5 +30,12 @@ impl ErrorLocation {
         {
             Self {}
         }
+    }
+}
+
+impl Localizable for InternalError {
+    fn get_location(&self) -> ErrorLocation {
+        let InternalError(_, location) = self;
+        *location
     }
 }
