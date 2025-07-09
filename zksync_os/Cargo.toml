@@ -51,7 +51,7 @@ debug = true
 [features]
 scalloc = ["proof_running_system/scalloc"]
 no_exception_handling = []
-print_debug_info = ["proof_running_system/global-alloc"]
+print_debug_info = ["proof_running_system/global-alloc", "proof_running_system/error_origins"]
 single_round_with_control = ["crypto", "crypto/single_round_with_control"]
 bigint_delegation = ["crypto", "crypto/bigint_ops"]
 delegation = ["bigint_delegation", "single_round_with_control"]

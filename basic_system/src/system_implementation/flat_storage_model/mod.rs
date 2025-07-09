@@ -23,6 +23,7 @@ use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageCacheModel;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ValueDiffCompressionStrategy};
+use zk_ee::internal_error;
 use zk_ee::system::errors::InternalError;
 use zk_ee::system::Resources;
 use zk_ee::{
@@ -203,7 +204,7 @@ where
                 }
                 Ok(())
             })
-            .map_err(|_| InternalError("Failed to compute pubdata"))?;
+            .map_err(|_| internal_error!("Failed to compute pubdata"))?;
 
         // 3. Verify/apply reads and writes
         cycle_marker::wrap!("verify_and_apply_batch", {

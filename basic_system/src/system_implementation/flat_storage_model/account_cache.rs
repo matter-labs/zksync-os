@@ -26,6 +26,7 @@ use zk_ee::common_structs::history_map::HistoryMap;
 use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 use zk_ee::common_structs::PreimageType;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackCtor;
 use zk_ee::system::Computational;
 use zk_ee::system::Resource;
@@ -115,7 +116,7 @@ where
                     WARM_PROPERTIES_ACCESS_COST_ERGS
                 }
             }
-            _ => return Err(InternalError("Unsupported EE").into()),
+            _ => return Err(internal_error!("Unsupported EE").into()),
         };
         let native = R::Native::from_computational(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST);
         resources.charge(&R::from_ergs_and_native(ergs, native))?;
@@ -143,7 +144,7 @@ where
                         };
                         resources.charge(&cost)?;
                     }
-                    _ => return Err(InternalError("Unsupported EE").into()),
+                    _ => return Err(internal_error!("Unsupported EE").into()),
                 }
 
                 // to avoid divergence we read as-if infinite ergs
@@ -175,7 +176,7 @@ where
 
                         let props =
                             AccountProperties::decode(preimage.try_into().map_err(|_| {
-                                InternalError("Unexpected preimage length for AccountProperties")
+                                internal_error!("Unexpected preimage length for AccountProperties")
                             })?);
 
                         (props, Appearance::Retrieved)
@@ -211,7 +212,7 @@ where
                                 };
                                 resources.charge(&cost)?;
                             }
-                            _ => return Err(InternalError("Unsupported EE").into()),
+                            _ => return Err(internal_error!("Unsupported EE").into()),
                         }
                     }
 
@@ -409,12 +410,12 @@ where
             ExecutionEnvironmentType::EVM => {
                 resources.charge(&R::from_ergs(KNOWN_TO_BE_WARM_PROPERTIES_ACCESS_COST_ERGS))?
             }
-            _ => return Err(InternalError("Unsupported EE").into()),
+            _ => return Err(internal_error!("Unsupported EE").into()),
         }
 
         match self.cache.get(address.into()) {
             Some(cache_item) => Ok(cache_item.current().value().balance),
-            None => Err(InternalError("Balance assumed warm but not in cache").into()),
+            None => Err(internal_error!("Balance assumed warm but not in cache").into()),
         }
     }
 
@@ -682,7 +683,7 @@ where
                 Bytes32::from_array(digest)
             }
             _ => {
-                return Err(InternalError("Unsupported EE").into());
+                return Err(internal_error!("Unsupported EE").into());
             }
         };
 
@@ -695,7 +696,7 @@ where
                 Bytes32::from_array(digest)
             }
             _ => {
-                return Err(InternalError("Unsupported EE").into());
+                return Err(internal_error!("Unsupported EE").into());
             }
         };
 
@@ -856,7 +857,7 @@ where
             )
             .map_err(|e| match e {
                 UpdateQueryError::NumericBoundsError => {
-                    InternalError("Impossible, not enough balance in deconstruction").into()
+                    internal_error!("Impossible, not enough balance in deconstruction").into()
                 }
                 UpdateQueryError::System(e) => e,
             })?
@@ -876,7 +877,7 @@ where
                 ExecutionEnvironmentType::EVM => {
                     let entry = match self.cache.get(nominal_token_beneficiary.into()) {
                         Some(entry) => Ok(entry),
-                        None => Err(InternalError("Account assumed warm but not in cache")),
+                        None => Err(internal_error!("Account assumed warm but not in cache")),
                     }?;
                     let beneficiary_properties = entry.current().value();
 
@@ -891,7 +892,7 @@ where
                         resources.charge(&R::from_ergs(ergs_to_spend))?;
                     }
                 }
-                _ => return Err(InternalError("Unsupported EE").into()),
+                _ => return Err(internal_error!("Unsupported EE").into()),
             }
         }
 

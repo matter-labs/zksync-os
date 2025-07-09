@@ -309,15 +309,15 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
         assert!(call_scratch_space.is_none());
         let Some(ee_specific_deployment_processing_data) = ee_specific_deployment_processing_data
         else {
-            return Err(FatalError::Internal(InternalError(
-                "We need deployment scheme!",
+            return Err(FatalError::Internal(internal_error!(
+                "We need deployment scheme!"
             )));
         };
         let Ok(scheme) = <CreateScheme as EEDeploymentExtraParameters<S>>::from_box_dyn(
             ee_specific_deployment_processing_data,
         ) else {
-            return Err(FatalError::Internal(InternalError(
-                "Unknown EE specific deployment data",
+            return Err(FatalError::Internal(internal_error!(
+                "Unknown EE specific deployment data"
             )));
         };
 
@@ -402,10 +402,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                         )
                     })
                     .map_err(|e| match e {
-                        SystemFunctionError::System(SystemError::OutOfNativeResources) => {
-                            FatalError::OutOfNativeResources
+                        SystemFunctionError::System(SystemError::OutOfNativeResources(loc)) => {
+                            FatalError::OutOfNativeResources(loc)
                         }
-                        _ => InternalError("Keccak in create2 cannot fail").into(),
+                        _ => internal_error!("Keccak in create2 cannot fail").into(),
                     })?;
                 let initcode_hash = Bytes32::from_array(initcode_hash.build());
 

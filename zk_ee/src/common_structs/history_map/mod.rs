@@ -4,6 +4,7 @@ mod element_pool;
 pub mod element_with_history;
 
 use crate::common_structs::history_map::element_with_history::HistoryRecord;
+use crate::internal_error;
 use crate::{system::errors::InternalError, utils::stack_linked_list::StackLinkedList};
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
@@ -121,12 +122,14 @@ where
     /// Rollbacks the data to the state at the provided `snapshot_id`.
     pub fn rollback(&mut self, snapshot_id: CacheSnapshotId) -> Result<(), InternalError> {
         if snapshot_id < self.state.frozen_snapshot_id {
-            return Err(InternalError("History map: rollback below frozen snapshot"));
+            return Err(internal_error!(
+                "History map: rollback below frozen snapshot"
+            ));
         }
 
         if snapshot_id >= self.state.next_snapshot_id {
-            return Err(InternalError(
-                "History map: rollback to non-existent snapshot",
+            return Err(internal_error!(
+                "History map: rollback to non-existent snapshot"
             ));
         }
 

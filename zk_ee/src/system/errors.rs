@@ -1,12 +1,16 @@
+use location::ErrorLocation;
+
+pub mod location;
+
 ///
 /// Possible errors raised by the system.
 ///
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SystemError {
     /// System execution exhausted the native resources passed.
-    OutOfNativeResources,
+    OutOfNativeResources(ErrorLocation),
     /// Execution exhausted the EE resource.
-    OutOfErgs,
+    OutOfErgs(ErrorLocation),
     /// Internal error.
     /// Note that currently it means internal error in terms of whole zksync_os program execution.
     /// Not the component/function internal error.
@@ -19,7 +23,7 @@ pub enum SystemError {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum FatalError {
     /// EE execution exhausted the resources passed.
-    OutOfNativeResources,
+    OutOfNativeResources(ErrorLocation),
     Internal(InternalError),
 }
 
@@ -27,7 +31,7 @@ impl From<FatalError> for SystemError {
     fn from(e: FatalError) -> Self {
         match e {
             FatalError::Internal(e) => Self::Internal(e),
-            FatalError::OutOfNativeResources => Self::OutOfNativeResources,
+            FatalError::OutOfNativeResources(loc) => Self::OutOfNativeResources(loc),
         }
     }
 }
@@ -42,8 +46,8 @@ impl SystemError {
     pub fn into_fatal(self) -> FatalError {
         match self {
             SystemError::Internal(e) => FatalError::Internal(e),
-            SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
-            SystemError::OutOfErgs => unreachable!(),
+            SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
+            SystemError::OutOfErgs(_) => unreachable!(),
         }
     }
 }
@@ -86,7 +90,17 @@ impl From<SystemError> for SystemFunctionError {
 /// Internal error, should not be triggered by user input.
 ///
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct InternalError(pub &'static str);
+pub struct InternalError(pub &'static str, pub ErrorLocation);
+
+#[macro_export]
+macro_rules! internal_error {
+    ($msg:expr $(,)?) => {
+        $crate::system::errors::InternalError(
+            $msg,
+            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
+        )
+    };
+}
 
 impl From<InternalError> for SystemError {
     fn from(e: InternalError) -> Self {
@@ -104,4 +118,31 @@ impl From<InternalError> for SystemFunctionError {
     fn from(e: InternalError) -> Self {
         SystemError::Internal(e).into()
     }
+}
+
+#[macro_export]
+macro_rules! out_of_native_resources_system_error {
+    () => {
+        $crate::system::errors::SystemError::OutOfNativeResources(
+            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
+        )
+    };
+}
+
+#[macro_export]
+macro_rules! out_of_native_resources_fatal_error {
+    () => {
+        $crate::system::errors::FatalError::OutOfNativeResources(
+            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
+        )
+    };
+}
+
+#[macro_export]
+macro_rules! out_of_ergs_error {
+    () => {
+        $crate::system::errors::SystemError::OutOfErgs(
+            $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
+        )
+    };
 }

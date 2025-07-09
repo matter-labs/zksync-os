@@ -1,5 +1,5 @@
-use crate::system::errors::InternalError;
 use crate::utils::Bytes32;
+use crate::{internal_error, system::errors::InternalError};
 use alloc::alloc::Global;
 use core::alloc::Allocator;
 
@@ -34,7 +34,7 @@ impl PreimagesPublicationStorageValue {
             self.num_uses = num_uses;
             Ok(())
         } else {
-            Err(InternalError("Overflow in num_uses"))
+            Err(internal_error!("Overflow in num_uses"))
         }
     }
 }

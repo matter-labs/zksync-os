@@ -22,6 +22,7 @@ use gas_helpers::check_enough_resources_for_pubdata;
 use gas_helpers::get_resources_to_charge_for_pubdata;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
+use zk_ee::internal_error;
 use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
 use zk_ee::system::{EthereumLikeTypes, Resources};
 
@@ -113,7 +114,7 @@ where
         };
         let native_per_pubdata = U256::from(gas_per_pubdata)
             .checked_mul(native_per_gas)
-            .ok_or(InternalError("gpp*npg"))?;
+            .ok_or(internal_error!("gpp*npg"))?;
 
         let (mut resources, withheld_resources) = get_resources_for_tx::<S>(
             gas_limit,
@@ -127,12 +128,12 @@ where
 
         let tx_internal_cost = gas_price
             .checked_mul(gas_limit as u128)
-            .ok_or(InternalError("gp*gl"))?;
+            .ok_or(internal_error!("gp*gl"))?;
         let value = transaction.value.read();
         let total_deposited = transaction.reserved[0].read();
         let needed_amount = value
             .checked_add(U256::from(tx_internal_cost))
-            .ok_or(InternalError("v+tic"))?;
+            .ok_or(internal_error!("v+tic"))?;
         require_internal!(
             total_deposited >= needed_amount,
             "Deposited amount too low",
@@ -146,7 +147,7 @@ where
             match transaction.calculate_hash(chain_id, &mut resources) {
                 Ok(h) => (h.into(), false),
                 Err(FatalError::Internal(e)) => return Err(e.into()),
-                Err(FatalError::OutOfNativeResources) => {
+                Err(FatalError::OutOfNativeResources(_)) => {
                     resources.exhaust_ergs();
                     // We need to compute the hash anyways, we do with inf resources
                     let mut inf_resources = S::Resources::FORMAL_INFINITE;
@@ -190,7 +191,7 @@ where
                 }
                 // Out of native is converted to a top-level revert and
                 // gas is exhausted.
-                Err(FatalError::OutOfNativeResources) => {
+                Err(FatalError::OutOfNativeResources(_)) => {
                     resources.exhaust_ergs();
                     system.finish_global_frame(Some(&rollback_handle))?;
                     ExecutionResult::Revert { output: &[] }
@@ -218,7 +219,7 @@ where
         // We already checked that total_gas_refund <= gas_limit
         let pay_to_operator = U256::from(gas_used)
             .checked_mul(U256::from(gas_price))
-            .ok_or(InternalError("gu*gp"))?;
+            .ok_or(internal_error!("gu*gp"))?;
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
 
         BasicBootloader::mint_token(
@@ -228,8 +229,8 @@ where
             &mut inf_resources,
         )
         .map_err(|e| match e {
-            SystemError::OutOfErgs => InternalError("Out of ergs on infinite ergs"),
-            SystemError::OutOfNativeResources => InternalError("Out of native on infinite"),
+            SystemError::OutOfErgs(_) => internal_error!("Out of ergs on infinite ergs"),
+            SystemError::OutOfNativeResources(_) => internal_error!("Out of native on infinite"),
             SystemError::Internal(i) => i,
         })?;
 
@@ -245,7 +246,7 @@ where
                 // that the user has deposited to the refund recipient
                 total_deposited
                     .checked_sub(pay_to_operator)
-                    .ok_or(InternalError("td-pto"))
+                    .ok_or(internal_error!("td-pto"))
             }
             ExecutionResult::Success { .. } => {
                 // If the transaction succeeds, then it is assumed that msg.value
@@ -254,10 +255,10 @@ where
                 // the refund recipient.
                 let value_plus_fee = value
                     .checked_add(pay_to_operator)
-                    .ok_or(InternalError("v+pto"))?;
+                    .ok_or(internal_error!("v+pto"))?;
                 total_deposited
                     .checked_sub(value_plus_fee)
-                    .ok_or(InternalError("td-vpf"))
+                    .ok_or(internal_error!("td-vpf"))
             }
         }?;
         if to_refund_recipient > U256::ZERO {
@@ -269,8 +270,10 @@ where
                 &mut inf_resources,
             )
             .map_err(|e| match e {
-                SystemError::OutOfErgs => InternalError("Out of ergs on infinite ergs"),
-                SystemError::OutOfNativeResources => InternalError("Out of native on infinite"),
+                SystemError::OutOfErgs(_) => internal_error!("Out of ergs on infinite ergs"),
+                SystemError::OutOfNativeResources(_) => {
+                    internal_error!("Out of native on infinite")
+                }
                 SystemError::Internal(i) => i,
             })?;
         }
@@ -326,10 +329,10 @@ where
                     BasicBootloader::mint_token(system, &value, &from, inf_resources)
                 })
                 .map_err(|e| match e {
-                    SystemError::OutOfErgs => {
-                        FatalError::Internal(InternalError("Out of ergs on infinite ergs"))
+                    SystemError::OutOfErgs(_) => {
+                        FatalError::Internal(internal_error!("Out of ergs on infinite ergs"))
                     }
-                    SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+                    SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
                     SystemError::Internal(i) => FatalError::Internal(i),
                 })?;
         }
@@ -429,7 +432,7 @@ where
             transaction.max_priority_fee_per_gas.read(),
         )?;
         if native_price.is_zero() {
-            return Err(InternalError("Native price cannot be 0").into());
+            return Err(internal_error!("Native price cannot be 0").into());
         };
         let native_per_gas = if cfg!(feature = "resources_for_tester") {
             U256::from(crate::bootloader::constants::TESTER_NATIVE_PER_GAS)
@@ -440,7 +443,7 @@ where
         };
         let native_per_pubdata = U256::from(gas_per_pubdata)
             .checked_mul(native_per_gas)
-            .ok_or(InternalError("gpp*npg"))?;
+            .ok_or(internal_error!("gpp*npg"))?;
 
         let (mut resources, withheld_resources) = get_resources_for_tx::<S>(
             gas_limit,
@@ -550,7 +553,7 @@ where
             }
             // Out of native is converted to a top-level revert and
             // gas is exhausted.
-            Err(FatalError::OutOfNativeResources) => {
+            Err(FatalError::OutOfNativeResources(_)) => {
                 let _ = system
                     .get_logger()
                     .write_fmt(format_args!("Transaction ran out of native resource\n"));
@@ -791,7 +794,7 @@ where
         })?;
         let required_funds = gas_price
             .checked_mul(U256::from(transaction.gas_limit.read()))
-            .ok_or(InternalError("gp*gl"))?;
+            .ok_or(internal_error!("gp*gl"))?;
         // First we charge the fees, then we verify the bootloader got
         // the funds.
         // Paymaster flow is only allowed when AA is enabled.
@@ -852,7 +855,7 @@ where
         })?;
         let bootloader_received_funds = bootloader_balance_after
             .checked_sub(bootloader_balance_before)
-            .ok_or(InternalError("bba-bbb"))?;
+            .ok_or(internal_error!("bba-bbb"))?;
         // If the amount of funds provided to the bootloader is less than the minimum required one
         // then this transaction should be rejected.
         require!(
@@ -865,7 +868,7 @@ where
         )?;
         let excessive_funds = bootloader_received_funds
             .checked_sub(required_funds)
-            .ok_or(InternalError("brf-rf"))?;
+            .ok_or(internal_error!("brf-rf"))?;
         if excessive_funds > U256::ZERO {
             resources
                 .with_infinite_ergs(|inf_resources| {
@@ -878,7 +881,7 @@ where
                     )
                 })
                 .map_err(|e| match e {
-                    UpdateQueryError::NumericBoundsError => SystemError::Internal(InternalError(
+                    UpdateQueryError::NumericBoundsError => SystemError::Internal(internal_error!(
                         "Bootloader cannot return excessive funds",
                     )),
                     UpdateQueryError::System(e) => e,
@@ -976,7 +979,7 @@ where
         )?;
         let token_to_refund = total_gas_refund
             .checked_mul(gas_price)
-            .ok_or(InternalError("tgf*gp"))?;
+            .ok_or(internal_error!("tgf*gp"))?;
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
         system
             .io
@@ -989,13 +992,13 @@ where
             )
             .map_err(|e| match e {
                 UpdateQueryError::NumericBoundsError => {
-                    InternalError("Bootloader cannot pay for refund")
+                    internal_error!("Bootloader cannot pay for refund")
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs) => {
-                    InternalError("should transfer refund")
+                UpdateQueryError::System(SystemError::OutOfErgs(_)) => {
+                    internal_error!("should transfer refund")
                 }
-                UpdateQueryError::System(SystemError::OutOfNativeResources) => {
-                    InternalError("should transfer refund")
+                UpdateQueryError::System(SystemError::OutOfNativeResources(_)) => {
+                    internal_error!("should transfer refund")
                 }
                 UpdateQueryError::System(SystemError::Internal(e)) => e,
             })?;
