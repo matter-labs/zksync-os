@@ -6,7 +6,7 @@ use crypto::modexp::modexp;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
 use zk_ee::{
-    internal_error,
+    internal_error, out_of_ergs_error,
     system::{
         errors::{SystemError, SystemFunctionError},
         Computational, Ergs, SystemFunction,
@@ -57,7 +57,7 @@ fn modexp_as_system_function_inner<D: ?Sized + Extend<u8>, A: Allocator + Clone,
     // Check at least we have min gas
     let minimal_resources = resources_from_ergs::<R>(MODEXP_MINIMAL_COST_ERGS);
     if !resources.has_enough(&minimal_resources) {
-        return Err(SystemError::OutOfErgs.into());
+        return Err(out_of_ergs_error!().into());
     }
 
     // The format of input is:
@@ -177,7 +177,7 @@ pub fn ergs_cost(
     let multiplication_complexity = {
         let max_length = core::cmp::max(base_size, mod_size);
         let words = max_length.div_ceil(8);
-        words.checked_mul(words).ok_or(SystemError::OutOfErgs)?
+        words.checked_mul(words).ok_or(out_of_ergs_error!())?
     };
     let iteration_count = {
         let ic = if exp_size <= 32 && exp_highp.is_zero() {
@@ -186,20 +186,18 @@ pub fn ergs_cost(
             exp_highp.bit_len() as u64 - 1
         } else {
             8u64.checked_mul(exp_size - 32)
-                .ok_or(SystemError::OutOfErgs)?
+                .ok_or(out_of_ergs_error!())?
                 .checked_add(core::cmp::max(1, exp_highp.bit_len() as u64) - 1)
-                .ok_or(SystemError::OutOfErgs)?
+                .ok_or(out_of_ergs_error!())?
         };
         core::cmp::max(1, ic)
     };
     let computed_gas = multiplication_complexity
         .checked_mul(iteration_count)
-        .ok_or(SystemError::OutOfErgs)?
+        .ok_or(out_of_ergs_error!())?
         .checked_div(3)
-        .ok_or(SystemError::OutOfErgs)?;
+        .ok_or(out_of_ergs_error!())?;
     let gas = core::cmp::max(200, computed_gas);
-    let ergs = gas
-        .checked_mul(ERGS_PER_GAS)
-        .ok_or(SystemError::OutOfErgs)?;
+    let ergs = gas.checked_mul(ERGS_PER_GAS).ok_or(out_of_ergs_error!())?;
     Ok(Ergs(ergs))
 }

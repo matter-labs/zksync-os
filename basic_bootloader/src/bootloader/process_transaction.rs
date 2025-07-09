@@ -229,7 +229,7 @@ where
             &mut inf_resources,
         )
         .map_err(|e| match e {
-            SystemError::OutOfErgs => internal_error!("Out of ergs on infinite ergs"),
+            SystemError::OutOfErgs(_) => internal_error!("Out of ergs on infinite ergs"),
             SystemError::OutOfNativeResources(_) => internal_error!("Out of native on infinite"),
             SystemError::Internal(i) => i,
         })?;
@@ -270,7 +270,7 @@ where
                 &mut inf_resources,
             )
             .map_err(|e| match e {
-                SystemError::OutOfErgs => internal_error!("Out of ergs on infinite ergs"),
+                SystemError::OutOfErgs(_) => internal_error!("Out of ergs on infinite ergs"),
                 SystemError::OutOfNativeResources(_) => {
                     internal_error!("Out of native on infinite")
                 }
@@ -329,7 +329,7 @@ where
                     BasicBootloader::mint_token(system, &value, &from, inf_resources)
                 })
                 .map_err(|e| match e {
-                    SystemError::OutOfErgs => {
+                    SystemError::OutOfErgs(_) => {
                         FatalError::Internal(internal_error!("Out of ergs on infinite ergs"))
                     }
                     SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
@@ -994,7 +994,7 @@ where
                 UpdateQueryError::NumericBoundsError => {
                     internal_error!("Bootloader cannot pay for refund")
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs) => {
+                UpdateQueryError::System(SystemError::OutOfErgs(_)) => {
                     internal_error!("should transfer refund")
                 }
                 UpdateQueryError::System(SystemError::OutOfNativeResources(_)) => {

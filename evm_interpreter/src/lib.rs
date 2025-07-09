@@ -127,7 +127,7 @@ impl<S: SystemTypes> BytecodePreprocessingData<S> {
             .charge(&S::Resources::from_native(native_cost))
             .map_err(|e| match e {
                 SystemError::Internal(e) => FatalError::Internal(e),
-                SystemError::OutOfErgs => {
+                SystemError::OutOfErgs(_) => {
                     FatalError::Internal(internal_error!("OOE when charging only native"))
                 }
                 SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
@@ -280,7 +280,7 @@ impl From<SystemError> for ExitCode {
             SystemError::OutOfNativeResources(loc) => {
                 Self::FatalError(FatalError::OutOfNativeResources(loc))
             }
-            SystemError::OutOfErgs => Self::OutOfGas,
+            SystemError::OutOfErgs(_) => Self::OutOfGas,
         }
     }
 }

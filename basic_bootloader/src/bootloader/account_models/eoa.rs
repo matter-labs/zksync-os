@@ -95,7 +95,7 @@ where
                     ));
                 }
             }
-            Err(SystemError::OutOfErgs) => {
+            Err(SystemError::OutOfErgs(_)) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfGasDuringValidation,
                 ))
@@ -353,7 +353,7 @@ where
                         Err(e) => e.into(),
                     }
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs) => {
+                UpdateQueryError::System(SystemError::OutOfErgs(_)) => {
                     TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
                 }
                 UpdateQueryError::System(SystemError::OutOfNativeResources(_)) => {
@@ -494,7 +494,7 @@ where
             let ergs_to_spend = Ergs(initcode_gas_cost.saturating_mul(ERGS_PER_GAS));
             match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
                 Ok(_) => (),
-                Err(SystemError::OutOfErgs) => {
+                Err(SystemError::OutOfErgs(_)) => {
                     return Err(TxError::Validation(
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
@@ -546,7 +546,7 @@ where
     let ergs_to_spend = Ergs(extra_gas_cost.saturating_mul(ERGS_PER_GAS));
     match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
         Ok(_) => (),
-        Err(SystemError::OutOfErgs) => {
+        Err(SystemError::OutOfErgs(_)) => {
             return Ok(TxExecutionResult {
                 return_values: ReturnValues::empty(),
                 resources_returned: S::Resources::empty(),
