@@ -4,6 +4,7 @@ use storage_models::common_structs::{snapshottable_io::SnapshottableIo, Preimage
 use zk_ee::{
     common_structs::{history_map::CacheSnapshotId, NewPreimagesPublicationStorage, PreimageType},
     execution_environment_type::ExecutionEnvironmentType,
+    internal_error,
     system::{
         errors::{InternalError, SystemError},
         IOResultKeeper, Resources,
@@ -119,7 +120,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                         };
 
                         if recomputed_hash != *hash {
-                            return Err(InternalError("Account hash mismatch").into());
+                            return Err(internal_error!("Account hash mismatch").into());
                         }
                     }
                     PreimageType::Bytecode => {
@@ -136,7 +137,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                         };
 
                         if recomputed_hash != *hash {
-                            return Err(InternalError("Bytecode hash mismatch").into());
+                            return Err(internal_error!("Bytecode hash mismatch").into());
                         }
                     }
                 };

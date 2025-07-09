@@ -3,6 +3,7 @@
 //! - user messages (sent via l1 messenger system hook).
 //! - l1 -> l2 txs logs, to prove execution result on l1.
 use super::history_list::HistoryList;
+use crate::internal_error;
 use crate::system::errors::InternalError;
 use crate::system::IOResultKeeper;
 use crate::{
@@ -268,7 +269,9 @@ where
         let total_pubdata_used = self.list.top().map_or(0, |(_, m)| *m);
 
         if total_pubdata_used < self.pubdata_used_by_committed_logs {
-            Err(InternalError("Pubdata used by logs unexpectedly decreased"))
+            Err(internal_error!(
+                "Pubdata used by logs unexpectedly decreased"
+            ))
         } else {
             Ok(total_pubdata_used - self.pubdata_used_by_committed_logs)
         }

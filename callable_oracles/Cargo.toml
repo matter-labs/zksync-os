@@ -13,7 +13,6 @@ categories.workspace = true
 zk_ee = { path = "../zk_ee", default-features = false }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 crypto = { path = "../crypto", default-features = false }
-ark-ff = { version = "0.5", default-features = false }
 oracle_provider = { path = "../oracle_provider" }
 
 risc_v_simulator = { workspace = true, optional = true }

@@ -19,6 +19,7 @@ use super::errors::InternalError;
 use super::system::System;
 use super::system::SystemTypes;
 use super::IOSubsystemExt;
+use crate::internal_error;
 use crate::memory::slice_vec::SliceVec;
 use crate::system::CallModifier;
 use crate::system::Ergs;
@@ -30,7 +31,7 @@ pub trait EEDeploymentExtraParameters<S: SystemTypes>: 'static + Sized + core::a
     fn from_box_dyn(src: alloc::boxed::Box<dyn Any, S::Allocator>) -> Result<Self, InternalError> {
         let box_self = src
             .downcast::<Self>()
-            .map_err(|_| InternalError("from_box_dyn"))?;
+            .map_err(|_| internal_error!("from_box_dyn"))?;
         Ok(alloc::boxed::Box::into_inner(box_self))
     }
 }

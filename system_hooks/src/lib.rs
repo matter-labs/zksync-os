@@ -38,7 +38,7 @@ use errors::FatalError;
 use precompiles::{pure_system_function_hook_impl, IdentityPrecompile};
 use zk_ee::{
     memory::slice_vec::SliceVec,
-    system::{errors::InternalError, EthereumLikeTypes, System, SystemTypes, *},
+    system::{EthereumLikeTypes, System, SystemTypes, *},
 };
 
 pub mod addresses_constants;

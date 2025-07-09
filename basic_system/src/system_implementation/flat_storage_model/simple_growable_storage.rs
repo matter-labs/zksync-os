@@ -26,6 +26,7 @@ use either::Either;
 use zk_ee::common_structs::derive_flat_storage_key_with_hasher;
 use zk_ee::common_structs::state_root_view::StateRootView;
 use zk_ee::common_structs::{WarmStorageKey, WarmStorageValue};
+use zk_ee::internal_error;
 use zk_ee::{
     kv_markers::{ExactSizeChain, ExactSizeChainN, UsizeDeserializable, UsizeSerializable},
     memory::stack_trait::Stack,
@@ -1160,7 +1161,7 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
                 };
                 Ok(new)
             }
-            _ => Err(InternalError("ReadValueWithProof deserialization failed")),
+            _ => Err(internal_error!("ReadValueWithProof deserialization failed")),
         }
     }
 }
@@ -1212,7 +1213,9 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
                 let new = Self::New { proof };
                 Ok(new)
             }
-            _ => Err(InternalError("WriteValueWithProof deserialization failed")),
+            _ => Err(internal_error!(
+                "WriteValueWithProof deserialization failed"
+            )),
         }
     }
 }

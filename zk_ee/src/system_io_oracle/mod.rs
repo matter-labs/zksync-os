@@ -10,8 +10,8 @@ pub mod dyn_usize_iterator;
 use core::num::NonZeroU32;
 
 use super::kv_markers::{ExactSizeChain, StorageAddress, UsizeDeserializable, UsizeSerializable};
-use super::system::errors::InternalError;
 use super::types_config::SystemIOTypesConfig;
+use crate::system::errors::InternalError;
 use crate::utils::Bytes32;
 
 ///
