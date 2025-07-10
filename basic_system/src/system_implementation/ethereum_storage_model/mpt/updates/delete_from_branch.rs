@@ -102,7 +102,70 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                     Err(())
                 }
             } else if surviving_node.is_extension() {
-                todo!();
+                // we will take existing extension, and grow it "up"
+                let extension_last_digit = surviving_branch as u8;
+                let (grand_parent, extension, grand_parent_branch_index) = if parent.is_extension()
+                {
+                    // we need to glue them
+                    let existing_extension = self.extension_nodes[parent.index()];
+                    debug_assert_eq!(existing_extension.child_node, branch_node);
+                    let _ = path.ascend(existing_extension.path_segment);
+                    let grand_parent_branch_index = path.ascend_branch()?;
+
+                    (
+                        existing_extension.parent_node,
+                        existing_extension.path_segment,
+                        grand_parent_branch_index,
+                    )
+                } else if parent.is_branch() {
+                    let grand_parent_branch_index = path.ascend_branch()?;
+                    (parent, &[][..], grand_parent_branch_index)
+                } else if parent.is_empty() {
+                    (parent, &[][..], 0)
+                } else {
+                    return Err(());
+                };
+                self.attach_extension_up(
+                    surviving_node,
+                    grand_parent,
+                    grand_parent_branch_index,
+                    extension,
+                    extension_last_digit,
+                    interner,
+                )
+            } else if surviving_node.is_branch() {
+                // we need to replace this branch node with length 1+ extension
+                let extension_last_digit = surviving_branch as u8;
+                let (grand_parent, extension, grand_parent_branch_index) = if parent.is_extension()
+                {
+                    // we need to glue them
+                    let existing_extension = self.extension_nodes[parent.index()];
+                    debug_assert_eq!(existing_extension.child_node, branch_node);
+                    let _ = path.ascend(existing_extension.path_segment);
+                    let grand_parent_branch_index = path.ascend_branch()?;
+
+                    (
+                        existing_extension.parent_node,
+                        existing_extension.path_segment,
+                        grand_parent_branch_index,
+                    )
+                } else if parent.is_branch() {
+                    let grand_parent_branch_index = path.ascend_branch()?;
+                    (parent, &[][..], grand_parent_branch_index)
+                } else if parent.is_empty() {
+                    (parent, &[][..], 0)
+                } else {
+                    return Err(());
+                };
+
+                self.attach_branch_though_extension(
+                    surviving_node,
+                    grand_parent,
+                    grand_parent_branch_index,
+                    extension,
+                    extension_last_digit,
+                    interner,
+                )
             } else {
                 Err(())
             }
@@ -200,6 +263,94 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 upper_extension_node
             );
             grand_parent_branch.child_nodes[grand_parent_branch_index] = new_leaf_node;
+
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    fn attach_branch_though_extension(
+        &mut self,
+        existing_branch: NodeType,
+        grand_parent: NodeType,
+        grand_parent_branch_index: usize,
+        extension: &[u8],
+        extension_last_digit: u8,
+        interner: &mut (impl Interner<'a> + 'a),
+    ) -> Result<(), ()> {
+        debug_assert_ne!(existing_branch, grand_parent);
+
+        self.keys_cache.remove(&existing_branch);
+        self.keys_cache.remove(&grand_parent);
+
+        // first create an extension
+        let mut buffer = interner.get_buffer(1 + extension.len())?;
+        buffer.write_slice(extension);
+        buffer.write_byte(extension_last_digit);
+        let path_segment = buffer.flush();
+
+        let extension = ExtensionNode {
+            parent_node: grand_parent,
+            path_segment,
+            child_node: existing_branch,
+            raw_nibbles_encoding: &[],
+            next_node_key: RLPSlice::empty(),
+        };
+        let extension_node = self.push_extension(extension);
+        self.branch_nodes[existing_branch.index()].parent_node = extension_node;
+
+        if grand_parent.is_branch() {
+            self.branch_nodes[grand_parent.index()].child_nodes[grand_parent_branch_index] =
+                extension_node;
+
+            Ok(())
+        } else if grand_parent.is_empty() {
+            debug_assert_eq!(grand_parent_branch_index, 0);
+
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    fn attach_extension_up(
+        &mut self,
+        existing_extension_node: NodeType,
+        grand_parent: NodeType,
+        grand_parent_branch_index: usize,
+        extension: &[u8],
+        extension_last_digit: u8,
+        interner: &mut (impl Interner<'a> + 'a),
+    ) -> Result<(), ()> {
+        debug_assert_ne!(existing_extension_node, grand_parent);
+
+        self.keys_cache.remove(&existing_extension_node);
+        self.keys_cache.remove(&grand_parent);
+
+        // we extend existing extension's path segment "up"
+
+        let existing_extension = &mut self.extension_nodes[existing_extension_node.index()];
+
+        // first create an extension
+        let mut buffer =
+            interner.get_buffer(1 + extension.len() + existing_extension.path_segment.len())?;
+        buffer.write_slice(extension);
+        buffer.write_byte(extension_last_digit);
+        buffer.write_slice(existing_extension.path_segment);
+        let path_segment = buffer.flush();
+
+        existing_extension.parent_node = grand_parent;
+        existing_extension.path_segment = path_segment;
+        existing_extension.raw_nibbles_encoding = &[];
+
+        if grand_parent.is_branch() {
+            self.branch_nodes[grand_parent.index()].child_nodes[grand_parent_branch_index] =
+                existing_extension_node;
+
+            Ok(())
+        } else if grand_parent.is_empty() {
+            debug_assert_eq!(grand_parent_branch_index, 0);
 
             Ok(())
         } else {

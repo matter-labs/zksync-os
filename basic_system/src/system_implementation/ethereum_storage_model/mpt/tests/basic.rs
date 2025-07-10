@@ -4,7 +4,8 @@ use super::*;
 fn insert_close_to_make_branch() {
     let mut interner = BoxInterner::with_capacity_in(1 << 26, Global);
     let mut hasher = Keccak256::new();
-    let mut trie = EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_ref(), &mut interner, Global).unwrap();
+    let mut trie =
+        EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_array(), &mut interner, Global).unwrap();
     let mut preimages_oracle = BTreeMap::new();
 
     let path_1 = hex_path_to_path_digits("123");
@@ -56,7 +57,8 @@ fn insert_close_to_make_branch() {
 fn insert_close_to_make_extension_branch_leaf() {
     let mut interner = BoxInterner::with_capacity_in(1 << 26, Global);
     let mut hasher = Keccak256::new();
-    let mut trie = EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_ref(), &mut interner, Global).unwrap();
+    let mut trie =
+        EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_array(), &mut interner, Global).unwrap();
     let mut preimages_oracle = BTreeMap::new();
 
     let path_1 = hex_path_to_path_digits("143");
@@ -109,7 +111,8 @@ fn insert_close_to_make_extension_branch_leaf() {
 fn insert_compute_delete_compute() {
     let mut interner = BoxInterner::with_capacity_in(1 << 26, Global);
     let mut hasher = Keccak256::new();
-    let mut trie = EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_ref(), &mut interner, Global).unwrap();
+    let mut trie =
+        EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_array(), &mut interner, Global).unwrap();
     let mut preimages_oracle = BTreeMap::new();
 
     let path_1 = hex_path_to_path_digits("143");
@@ -153,14 +156,15 @@ fn insert_compute_delete_compute() {
 
     let _ = trie.recompute(&mut interner, &mut hasher);
     assert!(trie.root.is_empty());
-    assert_eq!(&trie.root(&mut hasher,), EMPTY_ROOT_HASH.as_u8_ref());
+    assert_eq!(&trie.root(&mut hasher), EMPTY_ROOT_HASH.as_u8_ref());
 }
 
 #[test]
 fn update_back_and_forth() {
     let mut interner = BoxInterner::with_capacity_in(1 << 26, Global);
     let mut hasher = Keccak256::new();
-    let mut trie = EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_ref(), &mut interner, Global).unwrap();
+    let mut trie =
+        EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_array(), &mut interner, Global).unwrap();
     let mut preimages_oracle = BTreeMap::new();
 
     let path_1 = hex_path_to_path_digits("123");
@@ -187,7 +191,6 @@ fn update_back_and_forth() {
 
     let _ = trie.recompute(&mut interner, &mut hasher);
     let initial_root = trie.root(&mut hasher);
-    // dbg!(hex::encode(trie.get_node_key(trie.root, &mut interner, &mut hasher).unwrap().1));
 
     let value_1_tmp = rlp_encode_short_slice(&[0xff, 0xff]);
     let value_2_tmp = rlp_encode_short_slice(&[0x11, 0x11]);

@@ -45,7 +45,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         loop {
             self.keys_cache.remove(&current_node);
             match self.descend_through_existing_nodes(&mut path, current_node)? {
-                DescendPath::PathDiverged => return Err(()),
+                DescendPath::PathDiverged { .. } => return Err(()),
                 DescendPath::EmptyBranchTaken { .. } => return Err(()),
                 DescendPath::LeafReached { final_node, .. } => {
                     debug_assert_eq!(current_node, final_node);
@@ -77,26 +77,25 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         &self,
         path: &Path<'_>,
         alternative_node: NodeType,
+        common_prefix_len: usize,
     ) -> Result<ValueInsertionStrategy, ()> {
         // we have another extension/leaf node as the nearest neighbour,
         // and we need to understand whether we diverge at the first path element
         // immediately (so we just make branch), or make extension + branch
-        let remaining_path = path.remaining_path();
-        let (parent, alternative_path) = if alternative_node.is_extension() {
+        let parent = if alternative_node.is_extension() {
             let node = &self.extension_nodes[alternative_node.index()];
-            (node.parent_node, node.path_segment)
+            node.parent_node
         } else if alternative_node.is_leaf() {
             let node = &self.leaf_nodes[alternative_node.index()];
-            (node.parent_node, node.path_segment)
+            node.parent_node
         } else {
             return Err(());
         };
-        let common_len = common_prefix_len(remaining_path, alternative_path);
         let branch_index = if parent.is_empty() {
             debug_assert_eq!(self.root, alternative_node);
             0
         } else if parent.is_branch() {
-            *path.prefix().last().expect("parent branch index") as usize
+            path.prefix()[path.prefix_len - common_prefix_len - 1] as usize
         } else {
             return Err(());
         };
@@ -104,7 +103,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             alternative_path: alternative_node,
             parent_branch_or_empty: parent,
             branch_index,
-            extension_len: common_len,
+            extension_len: common_prefix_len,
         })
     }
 
@@ -121,8 +120,11 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         let (mut key, mut parent_branch_index) = loop {
             self.keys_cache.remove(&current_node);
             match self.descend_through_existing_nodes(path, current_node)? {
-                DescendPath::PathDiverged => {
-                    return self.make_diverging_case(&*path, current_node);
+                DescendPath::PathDiverged {
+                    alternative_node,
+                    common_prefix_len,
+                } => {
+                    return self.make_diverging_case(&*path, alternative_node, common_prefix_len);
                 }
                 DescendPath::EmptyBranchTaken {
                     branch_node,
@@ -322,6 +324,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             return Ok(());
         }
 
+        let original_path = path;
         // Path is now "eaten" to reflect anything that may exist in the trie before
         let insertion_strategy =
             self.find_insertion_strategy(&mut path, preimages_oracle, interner, hasher)?;
@@ -341,15 +344,25 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 parent_branch_or_empty,
                 branch_index,
                 extension_len,
-            } => self.make_branch_and_extension(
-                parent_branch_or_empty,
-                branch_index,
-                alternative_path,
-                extension_len,
-                path,
-                pre_encoded_value,
-                interner,
-            ),
+            } => {
+                // it's recursive!()
+                let extension = &path.prefix()[(path.prefix_len - extension_len)..];
+                let _ = self.termorary_split_existing_as_extension_and_branch(
+                    parent_branch_or_empty,
+                    branch_index,
+                    alternative_path,
+                    extension,
+                    interner,
+                )?;
+
+                self.insert(
+                    original_path,
+                    pre_encoded_value,
+                    preimages_oracle,
+                    interner,
+                    hasher,
+                )
+            }
             ValueInsertionStrategy::WriteIntoBranchValue {
                 branch,
                 branch_index,
@@ -386,8 +399,8 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             return Ok(());
         }
         let (_, new_root) = self.get_node_key(self.root, interner, hasher)?;
-        debug_assert!(new_root.len() <= 33);
-        self.interned_root_hash = new_root;
+        debug_assert!(new_root.len() < 32 || new_root.len() == 33);
+        self.interned_root_node_key = new_root;
 
         Ok(())
     }
@@ -408,9 +421,17 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             self.get_unreferenced_branch_key(node)?
         } else if node.is_terminal_value_in_branch() {
             self.get_terminal_branch_value_key(node, interner, hasher)?
+        } else if node.is_opaque_nontrivial_root() {
+            (false, self.interned_root_node_key)
         } else {
             return Err(());
         };
+
+        debug_assert!(
+            key.len() < 32 || key.len() == 33,
+            "key len is invalid for node {:?}",
+            node
+        );
 
         Ok((is_new, key))
     }
@@ -422,6 +443,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
     ) -> Result<(bool, &'a [u8]), ()> {
         if let Some(known_key) = self.keys_cache.get(&leaf_node).copied() {
+            debug_assert_ne!(known_key.len(), 32);
             Ok((false, known_key))
         } else {
             let leaf = &self.leaf_nodes[leaf_node.index()];
@@ -441,16 +463,11 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
     ) -> Result<(bool, &'a [u8]), ()> {
         if let Some(known_key) = self.keys_cache.get(&extension_node).copied() {
+            debug_assert_ne!(known_key.len(), 32);
             Ok((false, known_key))
         } else {
             let child_node = self.extension_nodes[extension_node.index()].child_node;
-            let (child_key_is_new, child_key) = self.get_node_key(child_node, interner, hasher)?;
-            if child_key_is_new == false {
-                panic!(
-                    "Key is missing from cache for node {:?} for pristine path",
-                    extension_node
-                );
-            }
+            let (_child_key_is_new, child_key) = self.get_node_key(child_node, interner, hasher)?;
 
             let extension = &self.extension_nodes[extension_node.index()];
             let new_key = interner.make_extension_key(
@@ -473,6 +490,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
     ) -> Result<(bool, &'a [u8]), ()> {
         if let Some(known_key) = self.keys_cache.get(&terminal_branch_value).copied() {
+            debug_assert_ne!(known_key.len(), 32);
             Ok((false, known_key))
         } else {
             let existing_terminal_branch_value =
@@ -498,6 +516,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 unreferenced_branch_value
             );
         };
+        debug_assert_ne!(known_key.len(), 32);
 
         Ok((false, known_key))
     }
@@ -510,6 +529,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
     ) -> Result<(bool, &'a [u8]), ()> {
         // maybe it was never touched
         if let Some(known_key) = self.keys_cache.get(&branch_node).copied() {
+            debug_assert_ne!(known_key.len(), 32);
             Ok((false, known_key))
         } else {
             // walk over the children
@@ -518,6 +538,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             for (idx, child_node) in child_nodes.into_iter().enumerate() {
                 if child_node.is_empty() == false {
                     let (_, child_key) = self.get_node_key(child_node, interner, hasher)?;
+                    debug_assert_ne!(child_key.len(), 32);
                     new_keys[idx] = child_key;
                 }
             }

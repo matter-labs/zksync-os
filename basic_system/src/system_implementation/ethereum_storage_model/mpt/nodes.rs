@@ -47,9 +47,8 @@ impl core::fmt::Debug for NodeType {
                 .finish()
         } else if self.is_unlinked() {
             f.debug_tuple("Node: Unlinked").finish()
-        // } else if self.is_terminal_value_in_branch() {
-        //     f.debug_tuple("Node: Terminal value inside of branch node")
-        //         .finish()
+        } else if self.is_opaque_nontrivial_root() {
+            f.debug_tuple("Node: Opaque non-trivial root").finish()
         } else {
             unreachable!()
         }
@@ -66,7 +65,7 @@ impl NodeType {
     const UNREFERENCED_VALUE_IN_BRANCH_NODE: usize = 0b100;
     const UNLINKED_MARKER: usize = 0b101;
     const TERMINAL_VALUE_IN_BRANCH_NODE: usize = 0b110;
-    // const OPAQUE_VALUE: usize = 0b111;
+    const OPAQUE_NONTRIVIAL_ROOT: usize = 0b111;
 
     pub(crate) const fn index(&self) -> usize {
         self.inner >> Self::RAW_INDEX_SHIFT
@@ -82,6 +81,16 @@ impl NodeType {
         Self {
             inner: Self::UNLINKED_MARKER,
         }
+    }
+
+    pub(crate) const fn opaque_nontrivial_root() -> Self {
+        Self {
+            inner: Self::OPAQUE_NONTRIVIAL_ROOT,
+        }
+    }
+
+    pub(crate) const fn is_opaque_nontrivial_root(&self) -> bool {
+        self.inner & Self::TYPE_MASK == Self::OPAQUE_NONTRIVIAL_ROOT
     }
 
     pub(crate) const fn terminal_value_in_branch(index: usize) -> Self {
@@ -114,31 +123,31 @@ impl NodeType {
         }
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(&self) -> bool {
         self.inner & Self::TYPE_MASK == Self::EMPTY_TYPE_MARKER
     }
 
-    pub(crate) fn is_leaf(&self) -> bool {
+    pub(crate) const fn is_leaf(&self) -> bool {
         self.inner & Self::TYPE_MASK == Self::LEAF_TYPE_MARKER
     }
 
-    pub(crate) fn is_extension(&self) -> bool {
+    pub(crate) const fn is_extension(&self) -> bool {
         self.inner & Self::TYPE_MASK == Self::EXTENSION_TYPE_MARKER
     }
 
-    pub(crate) fn is_branch(&self) -> bool {
+    pub(crate) const fn is_branch(&self) -> bool {
         self.inner & Self::TYPE_MASK == Self::BRANCH_TYPE_MARKER
     }
 
-    pub(crate) fn is_unreferenced_value_in_branch(&self) -> bool {
+    pub(crate) const fn is_unreferenced_value_in_branch(&self) -> bool {
         self.inner & Self::TYPE_MASK == Self::UNREFERENCED_VALUE_IN_BRANCH_NODE
     }
 
-    pub(crate) fn is_unlinked(&self) -> bool {
+    pub(crate) const fn is_unlinked(&self) -> bool {
         self.inner & Self::TYPE_MASK == Self::UNLINKED_MARKER
     }
 
-    pub(crate) fn is_terminal_value_in_branch(&self) -> bool {
+    pub(crate) const fn is_terminal_value_in_branch(&self) -> bool {
         self.inner & Self::TYPE_MASK == Self::TERMINAL_VALUE_IN_BRANCH_NODE
     }
 }
@@ -206,6 +215,24 @@ impl<'a> Path<'a> {
         }
 
         Ok(follows)
+    }
+
+    #[track_caller]
+    pub(crate) fn follow_common_prefix(&mut self, path_segment: &[u8]) -> Result<usize, ()> {
+        let remaining = self.remaining_path();
+        if remaining.len() < path_segment.len() {
+            // try to follow too far
+            return Err(());
+        }
+        let max_len = path_segment.len();
+        for i in 0..max_len {
+            if remaining[i] != path_segment[i] {
+                return Ok(i);
+            }
+            self.prefix_len += 1;
+        }
+
+        Ok(max_len)
     }
 
     pub(crate) fn take_branch(&mut self) -> Result<usize, ()> {

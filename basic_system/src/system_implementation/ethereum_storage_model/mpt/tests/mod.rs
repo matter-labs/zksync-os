@@ -1,5 +1,6 @@
 mod basic;
 mod prestate;
+mod reth_trie;
 mod serialization;
 
 use alloy::primitives::U256;
@@ -180,34 +181,6 @@ fn rlp_encode_short_slice(slice: &[u8]) -> Vec<u8> {
     }
 }
 
-// fn encode_account_state(
-//     nonce: u64,
-//     balance: Vec<u8>,
-//     code: Vec<u8>,
-//     storage_root: Vec<u8>,
-// ) -> Vec<u8> {
-//     assert!(storage_root.len() == 0 || storage_root.len() == 32);
-//     let nonce = U256::from(nonce).to_be_bytes_trimmed_vec();
-//     let mut result = vec![];
-//     let mut concatenated = rlp_encode_short_slice(&nonce);
-//     concatenated.extend(rlp_encode_short_slice(&balance));
-//     concatenated.extend(rlp_encode_short_slice(&storage_root));
-//     concatenated.extend(rlp_encode_short_slice(&Keccak256::digest(&code)));
-
-//     if concatenated.len() <= 55 {
-//         result.push(0xc0 + (concatenated.len() as u8));
-//         result.extend(concatenated);
-//     } else {
-//         assert!(concatenated.len() < 256);
-//         // it fits into 1 byte
-//         result.push(0xf8);
-//         result.push(concatenated.len() as u8);
-//         result.extend(concatenated);
-//     }
-
-//     result
-// }
-
 #[test]
 fn test_from_execution_witness() {
     let data = read_execution_witness();
@@ -228,7 +201,8 @@ fn test_from_execution_witness() {
     } = data;
     let _ = all_storage_trie_pos;
 
-    let mut trie = EthereumMPT::new_in(&initial_root, &mut interner, Global).unwrap();
+    let mut trie =
+        EthereumMPT::new_in(initial_root.try_into().unwrap(), &mut interner, Global).unwrap();
 
     let mut initial_state_roots = BTreeMap::new();
     let mut encoded_accounts = BTreeMap::new();
@@ -303,11 +277,12 @@ fn test_from_execution_witness() {
 
     for (address, root) in initial_state_roots.into_iter() {
         let initial_storage = initial_state.0.get(&address).unwrap();
-        let mut storage_trie = EthereumMPT::new_in(&root, &mut interner, Global).unwrap();
+        let mut storage_trie =
+            EthereumMPT::new_in(root.try_into().unwrap(), &mut interner, Global).unwrap();
 
         if let Some(storage) = initial_storage.storage.as_ref() {
             for (k, v) in storage {
-                if storage_trie.interned_root_hash == EMPTY_ROOT_HASH.as_u8_array_ref() {
+                if storage_trie.root(&mut hasher) == EMPTY_ROOT_HASH.as_u8_array() {
                     assert!(v.into_inner().is_zero());
                 }
                 let key = crypto::sha3::Keccak256::digest(&k.to_be_bytes::<32>());
@@ -386,7 +361,7 @@ fn test_from_execution_witness() {
             // updates
             let storage_trie = account_storage_tries.get_mut(address).unwrap();
             assert!(storage_trie.root.is_empty() == false);
-            assert!(storage_trie.interned_root_hash != EMPTY_ROOT_HASH.as_u8_array_ref());
+            assert!(storage_trie.root(&mut hasher) != EMPTY_ROOT_HASH.as_u8_array());
 
             for (k, (_plain_k, (old_v, new_v))) in updates.iter() {
                 assert!(old_v.into_inner().is_zero() == false);
@@ -405,7 +380,7 @@ fn test_from_execution_witness() {
             // deletes
             let storage_trie = account_storage_tries.get_mut(address).unwrap();
             assert!(storage_trie.root.is_empty() == false);
-            assert!(storage_trie.interned_root_hash != EMPTY_ROOT_HASH.as_u8_array_ref());
+            assert!(storage_trie.root(&mut hasher) != EMPTY_ROOT_HASH.as_u8_array());
             for (k, _plain_k) in deletes.iter() {
                 let trie_pos_digits = byte_path_to_path_digits(k);
                 let path = Path::new(&trie_pos_digits);
@@ -417,7 +392,7 @@ fn test_from_execution_witness() {
         if inserts.is_empty() == false {
             // inserts
             let storage_trie = account_storage_tries.entry(*address).or_insert_with(|| {
-                EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_ref(), &mut interner, Global).unwrap()
+                EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_array(), &mut interner, Global).unwrap()
             });
             for (k, (_plain_k, new_v)) in inserts.iter() {
                 let trie_pos_digits = byte_path_to_path_digits(k);
@@ -434,6 +409,7 @@ fn test_from_execution_witness() {
             left_empty_untouched_accounts.insert(*address);
         } else {
             let storage_trie = account_storage_tries.get_mut(address).unwrap();
+            storage_trie.ensure_linked();
             let old_root = storage_trie.root(&mut hasher);
             storage_trie.recompute(&mut interner, &mut hasher).unwrap();
             let new_root = storage_trie.root(&mut hasher);
@@ -458,85 +434,5 @@ fn test_from_execution_witness() {
 
     let _ = new_state_roots;
 
-    // let dst = std::fs::File::create("account_proofs.json").unwrap();
-    // serde_json::to_writer(dst, &expected_account_proofs).unwrap();
-
     // folding everything back will not work, as there are other dirty values that we do not know
-
-    // // fold everything back
-    // for (address_key, account_state) in final_state.0.iter() {
-    //     println!("===================================");
-    //     println!(
-    //         "Will update global state trie with account 0x{:040x}",
-    //         address_key.0.into_inner()
-    //     );
-
-    //     let address = address_key.0.to_be_bytes_vec();
-    //     assert_eq!(address.len(), 20);
-    //     let key = addresses_to_trie_pos[&address];
-    //     let trie_pos_digits = byte_path_to_path_digits(key.as_u8_array_ref());
-    //     let path = Path::new(&trie_pos_digits);
-    //     let state_root = new_state_roots
-    //         .get(address_key)
-    //         .cloned()
-    //         .unwrap_or(EMPTY_ROOT_HASH.as_u8_array_ref().to_vec());
-    //     if account_state.is_empty() {
-    //         assert_eq!(&state_root, EMPTY_ROOT_HASH.as_u8_array_ref());
-    //         if let Some(initial_encoded_account) = encoded_accounts.get(address_key) {
-    //             assert_eq!(
-    //                 initial_encoded_account,
-    //                 &encode_account_state(0, vec![], vec![], vec![])
-    //             );
-    //             assert!(accounts_with_unchanged_state.contains(address_key));
-    //         } else {
-    //             todo!();
-    //         }
-    //     } else {
-    //         let nonce = account_state.nonce.unwrap();
-    //         let balance = account_state.balance.unwrap().to_be_bytes_trimmed_vec();
-    //         let code = account_state
-    //             .code
-    //             .as_ref()
-    //             .map(|el| el.to_vec())
-    //             .unwrap_or_default();
-
-    //         let data = encode_account_state(nonce, balance, code.clone(), state_root.clone());
-    //         let raw_leaf_value = rlp_encode_short_slice(&data);
-
-    //         if let Some(initial_encoded_account) = encoded_accounts.get(address_key) {
-    //             if initial_encoded_account != &data {
-    //                 trie.update(path, &raw_leaf_value, &mut interner, &mut hasher)
-    //                     .unwrap();
-    //             } else {
-    //                 // unchanged
-    //             }
-    //         } else {
-    //             if initially_empty_accounts.contains(address_key) {
-    //                 trie.insert(
-    //                     path,
-    //                     &raw_leaf_value,
-    //                     &mut oracle,
-    //                     &mut interner,
-    //                     &mut hasher,
-    //                 )
-    //                 .unwrap();
-    //             } else {
-    //                 // still update as balance and nonce may change without storage
-    //                 trie.update(path, &raw_leaf_value, &mut interner, &mut hasher)
-    //                     .unwrap();
-    //             }
-    //         }
-    //     }
-    // }
-
-    // for (address, _) in initial_state_t.0.iter() {
-    //     panic!(
-    //         "Address 0x{:040x} is in the initial, but not final state",
-    //         address.0.into_inner()
-    //     );
-    // }
-
-    // trie.recompute(&mut interner, &mut hasher).unwrap();
-    // let new_root = trie.root(&mut hasher);
-    // dbg!(hex::encode(new_root));
 }

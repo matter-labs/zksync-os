@@ -21,6 +21,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             assert_eq!(node, self.root);
             assert!(existing_leaf.parent_node.is_empty());
             self.root = NodeType::empty();
+            self.interned_root_node_key = EMPTY_SLICE_ENCODING;
 
             // Done
             Ok(())

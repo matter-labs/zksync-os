@@ -60,19 +60,6 @@ pub(crate) fn rlp_parse_short_bytes<'a>(src: &'a [u8]) -> Result<&'a [u8], ()> {
     }
 }
 
-#[track_caller]
-pub(crate) fn common_prefix_len(a: &[u8], b: &[u8]) -> usize {
-    assert_eq!(a.len(), b.len());
-    debug_assert!(a.len() > 0);
-    for i in 0..a.len() {
-        if a[i] != b[i] {
-            return i;
-        }
-    }
-
-    a.len()
-}
-
 pub trait ByteBuffer {
     fn write_byte(&mut self, byte: u8);
     fn write_slice(&mut self, slice: &[u8]);

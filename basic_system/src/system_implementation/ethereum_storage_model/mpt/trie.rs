@@ -8,7 +8,10 @@ use crypto::MiniDigest;
 use zk_ee::utils::Bytes32;
 
 pub(crate) enum DescendPath<'a> {
-    PathDiverged,
+    PathDiverged {
+        alternative_node: NodeType,
+        common_prefix_len: usize,
+    },
     EmptyBranchTaken {
         branch_node: NodeType,
         branch_index: usize,
@@ -63,7 +66,7 @@ pub(crate) enum AppendPath<'a> {
 #[derive(Debug)]
 pub struct EthereumMPT<'a, A: Allocator + Clone> {
     pub(crate) root: NodeType,
-    pub(crate) interned_root_hash: &'a [u8],
+    pub(crate) interned_root_node_key: &'a [u8], // We follow the same logic here - either hash, or short key
     // we want to store nodes separately
     pub(crate) leaf_nodes: Vec<LeafNode<'a>, A>,
     pub(crate) extension_nodes: Vec<ExtensionNode<'a>, A>,
@@ -77,16 +80,29 @@ pub struct EthereumMPT<'a, A: Allocator + Clone> {
 
 impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
     pub fn new_in(
-        initial_root: &[u8],
+        root_hash: [u8; 32],
         interner: &mut (impl Interner<'a> + 'a),
         allocator: A,
     ) -> Result<Self, ()> {
-        assert_eq!(initial_root.len(), 32);
-        let interned_root_hash = interner.intern_slice(initial_root)?;
+        let root = if root_hash == EMPTY_ROOT_HASH.as_u8_array() {
+            NodeType::empty()
+        } else {
+            NodeType::opaque_nontrivial_root()
+        };
+
+        let interned_root_node_key = if root.is_empty() {
+            EMPTY_SLICE_ENCODING
+        } else {
+            let mut buffer = interner.get_buffer(33)?;
+            buffer.write_byte(0x80 + 32);
+            buffer.write_slice(&root_hash);
+
+            buffer.flush()
+        };
 
         let new = Self {
-            root: NodeType::empty(),
-            interned_root_hash,
+            root,
+            interned_root_node_key,
             leaf_nodes: Vec::new_in(allocator.clone()),
             extension_nodes: Vec::new_in(allocator.clone()),
             branch_nodes: Vec::new_in(allocator.clone()),
@@ -107,31 +123,32 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         interner: &mut (impl Interner<'a> + 'a),
         hasher: &mut crypto::sha3::Keccak256,
     ) -> Result<&'a [u8], ()> {
-        if self.interned_root_hash == EMPTY_ROOT_HASH.as_u8_ref() {
+        if self.root.is_empty() {
             return Ok(&[]);
         }
 
-        if self.root.is_empty() {
+        if self.root.is_opaque_nontrivial_root() {
             // allocate root, special case once
+            let key = rlp_parse_short_bytes(self.interned_root_node_key)?;
             self.root = self.allocate_root_node_from_oracle(
-                self.interned_root_hash,
+                key,
                 NodeType::empty(),
                 preimages_oracle,
                 interner,
                 hasher,
             )?;
-            // rare exception - it's 32 bytes, not 33
-            self.keys_cache.insert(self.root, self.interned_root_hash);
+            self.keys_cache
+                .insert(self.root, self.interned_root_node_key);
         }
 
-        debug_assert!(self.root.is_empty() == false);
+        debug_assert_ne!(self.root, NodeType::empty());
 
         // descend
         let mut current_node = self.root;
         let (mut key, mut parent_branch_index) = loop {
             debug_assert!(current_node.is_empty() == false);
             match self.descend_through_existing_nodes(&mut path, current_node)? {
-                DescendPath::PathDiverged => {
+                DescendPath::PathDiverged { .. } => {
                     return Ok(&[]);
                 }
                 DescendPath::EmptyBranchTaken { branch_node, .. } => {
@@ -246,26 +263,27 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         if current_node.is_leaf() {
             // we need to follow the path
             let existing_leaf = &self.leaf_nodes[current_node.index()];
-            let follows = path.follow(&existing_leaf.path_segment)?;
-            if follows {
-                if path.is_empty() == false {
-                    Err(())
-                } else {
-                    Ok(DescendPath::LeafReached {
-                        final_node: current_node,
-                        value: existing_leaf.value,
-                    })
-                }
+            let common_prefix_len = path.follow_common_prefix(&existing_leaf.path_segment)?;
+            if path.is_empty() {
+                Ok(DescendPath::LeafReached {
+                    final_node: current_node,
+                    value: existing_leaf.value,
+                })
             } else {
-                return Ok(DescendPath::PathDiverged);
+                Ok(DescendPath::PathDiverged {
+                    alternative_node: current_node,
+                    common_prefix_len,
+                })
             }
         } else if current_node.is_extension() {
             let existing_extension = &self.extension_nodes[current_node.index()];
-            let follows = path.follow(&existing_extension.path_segment)?;
-            if follows {
-                if path.is_empty() {
-                    Err(())
-                } else {
+            let common_prefix_len = path.follow_common_prefix(&existing_extension.path_segment)?;
+            if path.is_empty() {
+                // Terminating extension
+                Err(())
+            } else {
+                if common_prefix_len == existing_extension.path_segment.len() {
+                    // we went thought all the extension
                     let child_node = existing_extension.child_node;
                     if child_node.is_unlinked() {
                         Ok(DescendPath::UnreferencedPathEncountered {
@@ -278,9 +296,12 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                             next_node: child_node,
                         })
                     }
+                } else {
+                    Ok(DescendPath::PathDiverged {
+                        alternative_node: current_node,
+                        common_prefix_len,
+                    })
                 }
-            } else {
-                return Ok(DescendPath::PathDiverged);
             }
         } else if current_node.is_branch() {
             let existing_branch = &self.branch_nodes[current_node.index()];
@@ -376,7 +397,6 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 assert_eq!(leaf.path_segment.len(), 64);
                 leaf.parent_node = parent_node;
                 let node_type = self.push_leaf(leaf);
-                self.keys_cache.insert(node_type, key);
 
                 Ok(node_type)
             }
@@ -384,7 +404,6 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 assert_eq!(extension.path_segment.len(), 64);
                 extension.parent_node = parent_node;
                 let node_type = self.push_extension(extension);
-                self.keys_cache.insert(node_type, key);
 
                 Ok(node_type)
             }
@@ -410,7 +429,6 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 }
                 branch.parent_node = parent_node;
                 let node_type = self.push_branch(branch);
-                self.keys_cache.insert(node_type, key);
 
                 Ok(node_type)
             }
@@ -581,22 +599,19 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
     }
 
     pub fn root(&self, hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>) -> [u8; 32] {
-        if self.root.is_empty() {
-            // use default-provided. It can be not empty internally, but we never checked
-            self.interned_root_hash.try_into().unwrap()
+        if self.interned_root_node_key.len() == 33 {
+            rlp_parse_short_bytes(self.interned_root_node_key)
+                .unwrap()
+                .try_into()
+                .unwrap()
         } else {
-            if self.interned_root_hash.len() == 32 {
-                self.interned_root_hash.try_into().unwrap()
-            } else if self.interned_root_hash.len() == 33 {
-                rlp_parse_short_bytes(self.interned_root_hash)
-                    .unwrap()
-                    .try_into()
-                    .unwrap()
-            } else {
-                debug_assert!(self.interned_root_hash.len() < 32);
-                hasher.update(self.interned_root_hash);
-                hasher.finalize_reset()
-            }
+            debug_assert!(
+                self.interned_root_node_key.len() < 32,
+                "root key len is {}",
+                self.interned_root_node_key.len()
+            );
+            hasher.update(self.interned_root_node_key);
+            hasher.finalize_reset()
         }
     }
 
@@ -652,5 +667,41 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         let index = self.branch_nodes.len();
         self.branch_nodes.push(new_branch);
         NodeType::branch(index)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn ensure_linked(&self) {
+        if self.root.is_empty() || self.root.is_opaque_nontrivial_root() {
+            return;
+        }
+        self.ensure_linked_pair(NodeType::empty(), self.root);
+    }
+
+    #[cfg(test)]
+    fn ensure_linked_pair(&self, parent: NodeType, child_node: NodeType) {
+        if child_node.is_empty() {
+            // nothing
+            return;
+        }
+        let index = child_node.index();
+        if child_node.is_leaf() {
+            assert_eq!(self.leaf_nodes[index].parent_node, parent);
+        } else if child_node.is_extension() {
+            assert_eq!(self.extension_nodes[index].parent_node, parent);
+            self.ensure_linked_pair(child_node, self.extension_nodes[index].child_node);
+        } else if child_node.is_unlinked() {
+            assert!(parent.is_extension())
+        } else if child_node.is_branch() {
+            assert_eq!(self.branch_nodes[index].parent_node, parent);
+            for next_child in self.branch_nodes[index].child_nodes.into_iter() {
+                self.ensure_linked_pair(child_node, next_child);
+            }
+        } else if child_node.is_terminal_value_in_branch() {
+            assert!(parent.is_branch())
+        } else if child_node.is_unreferenced_value_in_branch() {
+            assert!(parent.is_branch())
+        } else {
+            panic!("Unknown pair {:?} -> {:?}", parent, child_node);
+        }
     }
 }
