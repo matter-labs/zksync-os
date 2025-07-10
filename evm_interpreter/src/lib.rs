@@ -48,6 +48,12 @@ pub mod utils;
 
 pub(crate) const THIS_EE_TYPE: ExecutionEnvironmentType = ExecutionEnvironmentType::EVM;
 
+/// No artifacts cached
+pub const DEFAULT_CODE_VERSION_BYTE: u8 = 0u8;
+
+/// Artifacts cached
+pub const ARTIFACTS_CACHING_CODE_VERSION_BYTE: u8 = 1u8;
+
 // this is the interpreter that can be found in Reth itself, modified for purposes of having abstract view
 // on memory and resources
 pub struct Interpreter<'a, S: EthereumLikeTypes> {

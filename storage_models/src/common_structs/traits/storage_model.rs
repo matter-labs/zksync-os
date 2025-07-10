@@ -64,6 +64,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         ArtifactsLen: Maybe<u32>,
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
+        CodeVersion: Maybe<u8>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -80,6 +81,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
                 ArtifactsLen,
                 NominalTokenBalance,
                 Bytecode,
+                CodeVersion,
             >,
         >,
         oracle: &mut impl IOOracle,
@@ -94,6 +96,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
             ArtifactsLen,
             NominalTokenBalance,
             Bytecode,
+            CodeVersion,
         >,
         SystemError,
     >;

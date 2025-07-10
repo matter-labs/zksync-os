@@ -10,6 +10,7 @@ pub enum Bytecode<'a> {
         bytecode: &'a [u8],
         unpadded_code_len: u32,
         artifacts_len: u32,
+        code_version: u8,
     },
     Constructor(&'a [u8]),
 }

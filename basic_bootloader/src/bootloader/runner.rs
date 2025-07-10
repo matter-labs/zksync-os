@@ -268,6 +268,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             Ok(CallPreparationResult::Success {
                 next_ee_version,
                 bytecode,
+                code_version,
                 unpadded_code_len,
                 artifacts_len,
                 mut actual_resources_to_pass,
@@ -327,6 +328,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                                 bytecode,
                                 unpadded_code_len,
                                 artifacts_len,
+                                code_version,
                             },
                             scratch_space_len: 0,
                         },
@@ -823,6 +825,7 @@ pub enum CallPreparationResult<'a, S: SystemTypes> {
     Success {
         next_ee_version: u8,
         bytecode: &'a [u8],
+        code_version: u8,
         unpadded_code_len: u32,
         artifacts_len: u32,
         actual_resources_to_pass: S::Resources,
@@ -876,6 +879,7 @@ where
     let CalleeParameters {
         next_ee_version,
         bytecode,
+        code_version,
         unpadded_code_len,
         artifacts_len,
         stipend,
@@ -924,6 +928,7 @@ where
     Ok(CallPreparationResult::Success {
         next_ee_version,
         bytecode,
+        code_version,
         unpadded_code_len,
         artifacts_len,
         actual_resources_to_pass,
@@ -956,7 +961,8 @@ where
             .with_artifacts_len()
             .with_bytecode()
             .with_nonce()
-            .with_nominal_token_balance(),
+            .with_nominal_token_balance()
+            .with_code_version(),
     ) {
         Ok(account_properties) => account_properties,
         Err(SystemError::OutOfErgs(_)) => {
@@ -1034,18 +1040,26 @@ where
         };
 
     // Read required data to perform a call
-    let (next_ee_version, bytecode, unpadded_code_len, artifacts_len) = {
+    let (next_ee_version, bytecode, code_version, unpadded_code_len, artifacts_len) = {
         let ee_version = account_properties.ee_version.0;
         let unpadded_code_len = account_properties.unpadded_code_len.0;
         let artifacts_len = account_properties.artifacts_len.0;
         let bytecode = account_properties.bytecode.0;
+        let code_version = account_properties.code_version.0;
 
-        (ee_version, bytecode, unpadded_code_len, artifacts_len)
+        (
+            ee_version,
+            bytecode,
+            code_version,
+            unpadded_code_len,
+            artifacts_len,
+        )
     };
 
     Ok(CalleeParameters {
         next_ee_version,
         bytecode,
+        code_version,
         unpadded_code_len,
         artifacts_len,
         stipend,

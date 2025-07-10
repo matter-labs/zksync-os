@@ -814,6 +814,7 @@ where
         ArtifactsLen: Maybe<u32>,
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
+        CodeVersion: Maybe<u8>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -830,6 +831,7 @@ where
                 ArtifactsLen,
                 NominalTokenBalance,
                 Bytecode,
+                CodeVersion,
             >,
         >,
     ) -> Result<
@@ -843,6 +845,7 @@ where
             ArtifactsLen,
             NominalTokenBalance,
             Bytecode,
+            CodeVersion,
         >,
         SystemError,
     > {

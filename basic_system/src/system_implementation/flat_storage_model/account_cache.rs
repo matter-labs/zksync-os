@@ -9,7 +9,6 @@ use crate::system_implementation::flat_storage_model::bytecode_padding_len;
 use crate::system_implementation::flat_storage_model::cost_constants::*;
 use crate::system_implementation::flat_storage_model::PreimageRequest;
 use crate::system_implementation::flat_storage_model::StorageAccessPolicy;
-use crate::system_implementation::flat_storage_model::DEFAULT_CODE_VERSION_BYTE;
 use crate::system_implementation::system::ExtraCheck;
 use alloc::collections::BTreeSet;
 use core::alloc::Allocator;
@@ -455,6 +454,7 @@ where
         ArtifactsLen: Maybe<u32>,
         NominalTokenBalance: Maybe<<EthereumIOTypesConfig as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
+        CodeVersion: Maybe<u8>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -471,6 +471,7 @@ where
                 ArtifactsLen,
                 NominalTokenBalance,
                 Bytecode,
+                CodeVersion,
             >,
         >,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
@@ -487,6 +488,7 @@ where
             ArtifactsLen,
             NominalTokenBalance,
             Bytecode,
+            CodeVersion,
         >,
         SystemError,
     > {
@@ -544,6 +546,7 @@ where
                     )
                 }
             })?,
+            code_version: Maybe::construct(|| full_data.versioning_data.code_version()),
         })
     }
 
@@ -708,8 +711,7 @@ where
         };
         let observable_bytecode_len = deployed_code.len() as u32;
 
-        // match from_ee
-        let (deployed_code, bytecode_hash, artifacts_len) = match from_ee {
+        let (deployed_code, bytecode_hash, artifacts_len, code_version) = match from_ee {
             ExecutionEnvironmentType::EVM => {
                 let artifacts = evm_interpreter::BytecodePreprocessingData::create_artifacts(
                     alloc,
@@ -736,7 +738,12 @@ where
                     resources,
                     &[deployed_code, padding, artifacts],
                 )?;
-                (deployed_code, bytecode_hash, artifacts_len)
+                (
+                    deployed_code,
+                    bytecode_hash,
+                    artifacts_len,
+                    evm_interpreter::ARTIFACTS_CACHING_CODE_VERSION_BYTE,
+                )
             }
             _ => return Err(internal_error!("Unsupported EE type").into()),
         };
@@ -754,8 +761,7 @@ where
                 v.artifacts_len = artifacts_len;
                 v.versioning_data.set_as_deployed();
                 v.versioning_data.set_ee_version(from_ee as u8);
-                v.versioning_data
-                    .set_code_version(DEFAULT_CODE_VERSION_BYTE);
+                v.versioning_data.set_code_version(code_version);
 
                 m.deployed_in_tx = Some(cur_tx);
                 // This is unlikely to happen, this case shouldn't be reachable by higher level logic
@@ -769,12 +775,13 @@ where
         Ok(deployed_code)
     }
 
+    /// Assumes [code_hash] is of default version.
     pub fn set_bytecode_details<const PROOF_ENV: bool>(
         &mut self,
         resources: &mut R,
         at_address: &B160,
         ee: ExecutionEnvironmentType,
-        bytecode_hash: Bytes32,
+        code_hash: Bytes32,
         unpadded_bytecode_len: u32,
         artifacts_len: u32,
         observable_bytecode_hash: Bytes32,
@@ -784,6 +791,7 @@ where
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError> {
         let cur_tx = self.current_tx_number;
+        let alloc = self.alloc.clone();
 
         let mut account_data = resources.with_infinite_ergs(|inf_resources| {
             self.materialize_element::<PROOF_ENV>(
@@ -798,6 +806,53 @@ where
             )
         })?;
 
+        let request = PreimageRequest {
+            hash: code_hash,
+            expected_preimage_len_in_bytes: unpadded_bytecode_len,
+            preimage_type: PreimageType::Bytecode,
+        };
+        let deployed_code =
+            preimages_cache.get_preimage::<PROOF_ENV>(ee, &request, resources, oracle)?;
+
+        let (_deployed_code, bytecode_hash, artifacts_len, code_version) = match ee {
+            ExecutionEnvironmentType::EVM => {
+                // For EVM, default code version doesn't cache artifacts
+                assert_eq!(artifacts_len, 0);
+                let artifacts = evm_interpreter::BytecodePreprocessingData::create_artifacts(
+                    alloc,
+                    deployed_code,
+                    resources,
+                )?;
+                let artifacts = artifacts.as_slice();
+                let bytecode_hash = Self::compute_bytecode_hash(ee, deployed_code, artifacts)?;
+                let artifacts_len = artifacts.len() as u32;
+                let padding_len = bytecode_padding_len(deployed_code.len());
+                let bytecode_len = observable_bytecode_len + (padding_len as u32) + artifacts_len;
+
+                // TODO(EVM-1073): compute preimage len using bytecode and artifacts len, and EE type
+                let padding = [0u8; core::mem::size_of::<u64>() - 1];
+                let padding = &padding[..padding_len];
+                // save bytecode
+                let deployed_code = preimages_cache.record_preimage::<PROOF_ENV>(
+                    ee,
+                    &(PreimageRequest {
+                        hash: bytecode_hash,
+                        expected_preimage_len_in_bytes: bytecode_len,
+                        preimage_type: PreimageType::Bytecode,
+                    }),
+                    resources,
+                    &[deployed_code, padding, artifacts],
+                )?;
+                (
+                    deployed_code,
+                    bytecode_hash,
+                    artifacts_len,
+                    evm_interpreter::ARTIFACTS_CACHING_CODE_VERSION_BYTE,
+                )
+            }
+            _ => return Err(internal_error!("Unsupported EE type").into()),
+        };
+
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
@@ -811,8 +866,7 @@ where
                 v.artifacts_len = artifacts_len;
                 v.versioning_data.set_as_deployed();
                 v.versioning_data.set_ee_version(ee as u8);
-                v.versioning_data
-                    .set_code_version(DEFAULT_CODE_VERSION_BYTE);
+                v.versioning_data.set_code_version(code_version);
 
                 m.deployed_in_tx = Some(cur_tx);
                 m.not_publish_bytecode = true;

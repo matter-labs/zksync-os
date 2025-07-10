@@ -8,9 +8,7 @@ use alloy::network::TxSignerSync;
 use alloy::primitives::Signature;
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
-use basic_system::system_implementation::flat_storage_model::{
-    bytecode_padding_len, DEFAULT_CODE_VERSION_BYTE,
-};
+use basic_system::system_implementation::flat_storage_model::bytecode_padding_len;
 use ethers::abi::{AbiEncode, Token, Uint};
 use ethers::types::transaction::eip2718::TypedTransaction;
 use ethers::types::U256;
@@ -453,7 +451,7 @@ pub fn evm_bytecode_into_account_properties(deployed_code: &[u8]) -> (AccountPro
         .set_ee_version(ExecutionEnvironmentType::EVM as u8);
     result
         .versioning_data
-        .set_code_version(DEFAULT_CODE_VERSION_BYTE);
+        .set_code_version(evm_interpreter::ARTIFACTS_CACHING_CODE_VERSION_BYTE);
     result.unpadded_code_len = unpadded_code_len as u32;
     result.artifacts_len = artifacts_len as u32;
     result.observable_bytecode_len = unpadded_code_len as u32;

@@ -161,15 +161,29 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                 bytecode,
                 artifacts_len,
                 unpadded_code_len,
-            } => {
-                let (code, bytecode_preprocessing) = BytecodePreprocessingData::parse_bytecode(
-                    bytecode,
-                    unpadded_code_len as usize,
-                    artifacts_len as usize,
-                );
-                self.bytecode = code;
-                self.bytecode_preprocessing = bytecode_preprocessing;
-            }
+                code_version,
+            } => match code_version {
+                DEFAULT_CODE_VERSION_BYTE => {
+                    assert_eq!(artifacts_len, 0);
+                    let bytecode_preprocessing = BytecodePreprocessingData::create_artifacts(
+                        system.get_allocator(),
+                        bytecode,
+                        &mut available_resources,
+                    )?;
+                    self.bytecode = bytecode;
+                    self.bytecode_preprocessing = bytecode_preprocessing;
+                }
+                ARTIFACTS_CACHING_CODE_VERSION_BYTE => {
+                    let (code, bytecode_preprocessing) = BytecodePreprocessingData::parse_bytecode(
+                        bytecode,
+                        unpadded_code_len as usize,
+                        artifacts_len as usize,
+                    );
+                    self.bytecode = code;
+                    self.bytecode_preprocessing = bytecode_preprocessing;
+                }
+                _ => return Err(internal_error!("Unknown code version").into()),
+            },
         }
 
         *self.gas.resources_mut() = available_resources;
