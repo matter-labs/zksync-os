@@ -76,21 +76,34 @@ impl Bytes32 {
     #[inline(always)]
     pub fn from_array(array: [u8; 32]) -> Self {
         unsafe {
-            if array.as_ptr().addr() % core::mem::align_of::<usize>() == 0 {
-                Self {
-                    inner: core::mem::transmute::<[u8; 32], [usize; BYTES32_USIZE_SIZE]>(array),
-                }
-            } else {
-                let mut result = Self::uninit();
-                core::ptr::copy_nonoverlapping(
-                    array.as_ptr(),
-                    addr_of_mut!((*result.as_mut_ptr()).inner).cast(),
-                    32,
-                );
-                result.assume_init()
-            }
+            let mut result = Self::uninit();
+            core::ptr::copy_nonoverlapping(
+                array.as_ptr(),
+                addr_of_mut!((*result.as_mut_ptr()).inner).cast(),
+                32,
+            );
+            result.assume_init()
         }
     }
+
+    // #[inline(always)]
+    // pub fn from_array(array: [u8; 32]) -> Self {
+    //     unsafe {
+    //         if array.as_ptr().addr() % core::mem::align_of::<usize>() == 0 {
+    //             Self {
+    //                 inner: core::mem::transmute::<[u8; 32], [usize; BYTES32_USIZE_SIZE]>(array),
+    //             }
+    //         } else {
+    //             let mut result = Self::uninit();
+    //             core::ptr::copy_nonoverlapping(
+    //                 array.as_ptr(),
+    //                 addr_of_mut!((*result.as_mut_ptr()).inner).cast(),
+    //                 32,
+    //             );
+    //             result.assume_init()
+    //         }
+    //     }
+    // }
 
     #[allow(clippy::needless_as_bytes)]
     pub const fn from_hex(input: &str) -> Self {
