@@ -7,6 +7,7 @@ use ruint::aliases::U256;
 use storage_models::common_structs::PreimageCacheModel;
 use zk_ee::common_structs::{PreimageType, ValueDiffCompressionStrategy};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::internal_error;
 use zk_ee::system::errors::{InternalError, SystemError};
 use zk_ee::system::{IOResultKeeper, Resources};
 use zk_ee::system_io_oracle::IOOracle;
@@ -226,7 +227,7 @@ impl AccountProperties {
             Ok(if not_publish_bytecode {
                 1u32 // metadata byte
                     + 8 // versioning data
-                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?) as u32 // nonce diff
+                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?) as u32 // nonce diff
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
                     + 32 // bytecode hash
                     + 4 // artifacts len
@@ -234,7 +235,7 @@ impl AccountProperties {
             } else {
                 1u32 // metadata byte
                     + 8 // versioning data
-                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| InternalError("u64 into U256"))?) as u32 // nonce diff
+                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?) as u32 // nonce diff
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
                     + 4 // bytecode len
                     + r#final.bytecode_len // bytecode
@@ -252,11 +253,11 @@ impl AccountProperties {
                     initial
                         .nonce
                         .try_into()
-                        .map_err(|_| InternalError("u64 into U256"))?,
+                        .map_err(|_| internal_error!("u64 into U256"))?,
                     r#final
                         .nonce
                         .try_into()
-                        .map_err(|_| InternalError("u64 into U256"))?,
+                        .map_err(|_| internal_error!("u64 into U256"))?,
                 ) as u32; // nonce diff
             }
             if initial.balance != r#final.balance {
@@ -320,11 +321,11 @@ impl AccountProperties {
                 initial
                     .nonce
                     .try_into()
-                    .map_err(|_| InternalError("u64 into U256"))?,
+                    .map_err(|_| internal_error!("u64 into U256"))?,
                 r#final
                     .nonce
                     .try_into()
-                    .map_err(|_| InternalError("u64 into U256"))?,
+                    .map_err(|_| internal_error!("u64 into U256"))?,
                 hasher,
                 result_keeper,
             );
@@ -355,9 +356,11 @@ impl AccountProperties {
                         oracle,
                     )
                     .map_err(|err| match err {
-                        SystemError::OutOfErgs => InternalError("Out of ergs on infinite ergs"),
-                        SystemError::OutOfNativeResources => {
-                            InternalError("Out of native on infinite")
+                        SystemError::OutOfErgs(_) => {
+                            internal_error!("Out of ergs on infinite ergs")
+                        }
+                        SystemError::OutOfNativeResources(_) => {
+                            internal_error!("Out of native on infinite")
                         }
                         SystemError::Internal(i) => i,
                     })?;
@@ -372,7 +375,7 @@ impl AccountProperties {
             Ok(())
         } else {
             if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
-                return Err(InternalError(
+                return Err(internal_error!(
                     "Account properties diff compression shouldn't be called for same values",
                 ));
             }
@@ -390,11 +393,11 @@ impl AccountProperties {
                     initial
                         .nonce
                         .try_into()
-                        .map_err(|_| InternalError("u64 into U256"))?,
+                        .map_err(|_| internal_error!("u64 into U256"))?,
                     r#final
                         .nonce
                         .try_into()
-                        .map_err(|_| InternalError("u64 into U256"))?,
+                        .map_err(|_| internal_error!("u64 into U256"))?,
                     hasher,
                     result_keeper,
                 );

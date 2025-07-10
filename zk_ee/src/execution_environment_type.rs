@@ -1,3 +1,4 @@
+use crate::internal_error;
 use crate::kv_markers::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::InternalError;
 
@@ -33,7 +34,7 @@ impl ExecutionEnvironmentType {
             Self::EVM_EE_BYTE => Ok(Self::EVM),
             Self::ERA_VM_EE_BYTE => Ok(Self::EraVM),
             Self::IWASM_EE_BYTE => Ok(Self::IWasm),
-            _ => Err(InternalError("Unknown EE type")),
+            _ => Err(internal_error!("Unknown EE type")),
         }
     }
 }
@@ -57,7 +58,7 @@ impl UsizeDeserializable for ExecutionEnvironmentType {
             Self::ERA_VM_EE_BYTE => Ok(Self::EraVM),
             Self::EVM_EE_BYTE => Ok(Self::EVM),
             Self::IWASM_EE_BYTE => Ok(Self::IWasm),
-            _ => Err(InternalError("Unknown EE type")),
+            _ => Err(internal_error!("Unknown EE type")),
         }
     }
 }

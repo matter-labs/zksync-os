@@ -9,6 +9,7 @@ use errors::FatalError;
 use ruint::aliases::{B160, U256};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
+    internal_error,
     kv_markers::MAX_EVENT_TOPICS,
     system::{
         errors::SystemError, logger::Logger, CallModifier, CompletedExecution, ExternalCallRequest,
@@ -44,7 +45,9 @@ where
     let mut is_static = false;
     match modifier {
         CallModifier::Constructor => {
-            return Err(InternalError("L1 messenger hook called with constructor modifier").into())
+            return Err(
+                internal_error!("L1 messenger hook called with constructor modifier").into(),
+            )
         }
         CallModifier::Delegate
         | CallModifier::DelegateStatic
@@ -90,13 +93,13 @@ where
                 .write_fmt(format_args!("Revert: {:?}\n", e));
             Ok((make_error_return_state(resources), return_memory))
         }
-        Err(SystemError::OutOfErgs) => {
+        Err(SystemError::OutOfErgs(_)) => {
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Out of gas during system hook\n"));
             Ok((make_error_return_state(resources), return_memory))
         }
-        Err(SystemError::OutOfNativeResources) => Err(FatalError::OutOfNativeResources),
+        Err(SystemError::OutOfNativeResources(loc)) => Err(FatalError::OutOfNativeResources(loc)),
         Err(SystemError::Internal(e)) => Err(e.into()),
     }
 }

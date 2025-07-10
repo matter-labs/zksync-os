@@ -1,5 +1,5 @@
 [package]
-name = "solidity_abi"
+name = "delegated_u256"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,9 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
-solidity_abi_derive = { path = "../solidity_abi_derive"}
-const_keccak256 = { path = "../keccak"}
+ruint = {version = "1.15.0", default-features=false}
+serde = { version = "1.0", default-features = false, features = ["derive"] }
 
-[dev-dependencies]
-hex = "*"
+
+[features]
+serde = []

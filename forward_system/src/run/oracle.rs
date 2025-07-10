@@ -3,6 +3,7 @@ use basic_system::system_implementation::flat_storage_model::*;
 use serde::{Deserialize, Serialize};
 use zk_ee::common_structs::derive_flat_storage_key;
 use zk_ee::common_structs::BasicIOImplementerFSM;
+use zk_ee::internal_error;
 use zk_ee::kv_markers::StorageAddress;
 use zk_ee::oracle::*;
 use zk_ee::system::errors::InternalError;
@@ -134,7 +135,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
             }
             a if a == core::any::TypeId::of::<NewTxContentIterator>() => {
                 let Some(tx) = self.next_tx.take() else {
-                    return Err(InternalError(
+                    return Err(internal_error!(
                         "trying to read next tx content before size query or after seal response",
                     ));
                 };
@@ -199,7 +200,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
                 let preimage = self
                     .preimage_source
                     .get_preimage(hash)
-                    .ok_or(InternalError("must know a preimage for hash"))?;
+                    .ok_or(internal_error!("must know a preimage for hash"))?;
 
                 let iterator = DynUsizeIterator::from_constructor(preimage, |inner_ref| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
@@ -244,7 +245,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
                 let iterator = DynUsizeIterator::from_owned(prev_index);
                 Ok(Box::new(iterator))
             }
-            _ => Err(InternalError("Invalid marker")),
+            _ => Err(internal_error!("Invalid marker")),
         }
     }
 }
@@ -302,7 +303,7 @@ impl<S: ReadStorage, PS: PreimageSource, TS: TxSource> CallSimulationOracle<S, P
             }
             a if a == core::any::TypeId::of::<NewTxContentIterator>() => {
                 let Some(tx) = self.next_tx.take() else {
-                    return Err(InternalError(
+                    return Err(internal_error!(
                         "trying to read next tx content before size query or after seal response",
                     ));
                 };
@@ -367,7 +368,7 @@ impl<S: ReadStorage, PS: PreimageSource, TS: TxSource> CallSimulationOracle<S, P
                 let preimage = self
                     .preimage_source
                     .get_preimage(hash)
-                    .ok_or(InternalError("must know a preimage for hash"))?;
+                    .ok_or(internal_error!("must know a preimage for hash"))?;
 
                 let iterator = DynUsizeIterator::from_constructor(preimage, |inner_ref| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
@@ -375,7 +376,7 @@ impl<S: ReadStorage, PS: PreimageSource, TS: TxSource> CallSimulationOracle<S, P
 
                 Ok(Box::new(iterator))
             }
-            _ => Err(InternalError("Invalid marker")),
+            _ => Err(internal_error!("Invalid marker")),
         }
     }
 }

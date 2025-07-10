@@ -1,8 +1,9 @@
 name: Update app.bin
 
 on:
-  pull_request:
-      types: [synchronize, opened]
+  push:
+    branches:
+      - main
 
 
 permissions:

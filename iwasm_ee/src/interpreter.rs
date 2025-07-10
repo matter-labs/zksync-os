@@ -578,7 +578,7 @@ impl<S: EthereumLikeSystem> ExecutionEnvironment<S> for IWasmInterpreter<S> {
         let mut formal_infinite_resources =
             zk_ee::system::reference_implementations::FORMAL_INFINITE_BASE_RESOURCES;
         let old_deployer_nonce = nonce_already_updated
-            .ok_or(InternalError("Deployer nonce should have been updated"))?;
+            .ok_or(internal_error!("Deployer nonce should have been updated"))?;
 
         let (deployed_address, ergs_cost) = match &scheme {
             CreateScheme::Create => {
@@ -684,10 +684,10 @@ impl<S: EthereumLikeSystem> ExecutionEnvironment<S> for IWasmInterpreter<S> {
                     };
                 },
             )
-            .map_err(|_| InternalError("iwasm: validator parsing failed"))?;
+            .map_err(|_| internal_error!("iwasm: validator parsing failed"))?;
         for el in function_to_sidetable_mapping[..].iter() {
             if *el > u8::MAX as u32 {
-                return Err(InternalError("iwasm: element out of range in mapping").into());
+                return Err(internal_error!("iwasm: element out of range in mapping").into());
             }
         }
         let deployment_artifacts = IWasmDeploymentArtifact {
