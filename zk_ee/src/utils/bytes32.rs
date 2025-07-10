@@ -14,6 +14,11 @@ pub struct Bytes32 {
     inner: [usize; BYTES32_USIZE_SIZE],
 }
 
+const _: () = const {
+    assert!(core::mem::size_of::<Bytes32>() == 32);
+    assert!(core::mem::align_of::<Bytes32>() >= core::mem::align_of::<usize>());
+};
+
 // we compare as integers to avoid any potential ambiguity
 
 impl Ord for Bytes32 {
@@ -75,33 +80,19 @@ impl Bytes32 {
 
     #[inline(always)]
     pub fn from_array(array: [u8; 32]) -> Self {
-        unsafe {
-            let mut result = Self::uninit();
-            core::ptr::copy_nonoverlapping(
-                array.as_ptr(),
-                addr_of_mut!((*result.as_mut_ptr()).inner).cast(),
-                32,
-            );
-            result.assume_init()
-        }
+        unsafe { core::mem::transmute_copy(&array) }
     }
 
     // #[inline(always)]
     // pub fn from_array(array: [u8; 32]) -> Self {
     //     unsafe {
-    //         if array.as_ptr().addr() % core::mem::align_of::<usize>() == 0 {
-    //             Self {
-    //                 inner: core::mem::transmute::<[u8; 32], [usize; BYTES32_USIZE_SIZE]>(array),
-    //             }
-    //         } else {
-    //             let mut result = Self::uninit();
-    //             core::ptr::copy_nonoverlapping(
-    //                 array.as_ptr(),
-    //                 addr_of_mut!((*result.as_mut_ptr()).inner).cast(),
-    //                 32,
-    //             );
-    //             result.assume_init()
-    //         }
+    //         let mut result = Self::uninit();
+    //         core::ptr::copy_nonoverlapping(
+    //             array.as_ptr(),
+    //             addr_of_mut!((*result.as_mut_ptr()).inner).cast(),
+    //             32,
+    //         );
+    //         result.assume_init()
     //     }
     // }
 
