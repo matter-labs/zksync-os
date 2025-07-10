@@ -551,6 +551,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         self
     }
 
+    /// Set a preimage, used to test forced deployments
+    pub fn set_preimage(&mut self, hash: Bytes32, preimage: &[u8]) -> &mut Self {
+        self.preimage_source.inner.insert(hash, preimage.to_vec());
+        self
+    }
+
     ///
     /// Generates random ethers local wallet(private key) with chain id.
     ///
