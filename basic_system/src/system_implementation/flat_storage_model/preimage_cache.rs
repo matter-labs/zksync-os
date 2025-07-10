@@ -14,9 +14,7 @@ use zk_ee::{
     utils::{Bytes32, UsizeAlignedByteBox},
 };
 
-use crate::system_implementation::flat_storage_model::cost_constants::{
-    BLAKE2S_BASE_NATIVE_COST, BLAKE2S_CHUNK_SIZE, BLAKE2S_ROUND_NATIVE_COST,
-};
+use crate::system_implementation::flat_storage_model::cost_constants::blake2s_native_cost;
 
 use super::cost_constants::PREIMAGE_CACHE_GET_NATIVE_COST;
 
@@ -98,10 +96,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             // truncate
             buffered.truncated_to_byte_length(expected_preimage_len_in_bytes);
 
-            let num_rounds = (expected_preimage_len_in_bytes as u64).div_ceil(BLAKE2S_CHUNK_SIZE);
-            let native_cost = num_rounds
-                .saturating_mul(BLAKE2S_ROUND_NATIVE_COST)
-                .saturating_add(BLAKE2S_BASE_NATIVE_COST);
+            let native_cost = blake2s_native_cost(expected_preimage_len_in_bytes);
             resources.charge(&R::from_native(R::Native::from_computational(native_cost)))?;
 
             if PROOF_ENV {

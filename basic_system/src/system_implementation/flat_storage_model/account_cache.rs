@@ -4,6 +4,7 @@
 use super::AccountPropertiesMetadata;
 use super::BytecodeAndAccountDataPreimagesStorage;
 use super::NewStorageWithAccountPropertiesUnderHash;
+use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_implementation::flat_storage_model::account_cache_entry::AccountProperties;
 use crate::system_implementation::flat_storage_model::bytecode_padding_len;
 use crate::system_implementation::flat_storage_model::cost_constants::*;
@@ -28,7 +29,6 @@ use zk_ee::common_structs::PreimageType;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackCtor;
-use zk_ee::system::errors::FatalError;
 use zk_ee::system::Computational;
 use zk_ee::system::Resource;
 use zk_ee::utils::BitsOrd;
@@ -635,15 +635,21 @@ where
         )
     }
 
-    pub fn compute_bytecode_hash(
+    fn compute_bytecode_hash(
         from_ee: ExecutionEnvironmentType,
         observable_bytecode: &[u8],
         artifacts: &[u8],
-    ) -> Result<Bytes32, FatalError> {
+        resources: &mut R,
+    ) -> Result<Bytes32, SystemError> {
         match from_ee {
             ExecutionEnvironmentType::EVM => {
                 use crypto::blake2s::Blake2s256;
                 use crypto::MiniDigest;
+                let preimage_len = observable_bytecode.len()
+                    + bytecode_padding_len(observable_bytecode.len())
+                    + artifacts.len();
+                let native_cost = blake2s_native_cost(preimage_len);
+                resources.charge(&R::from_native(R::Native::from_computational(native_cost)))?;
                 let mut hasher = Blake2s256::new();
                 let padding = [0u8; core::mem::size_of::<u64>() - 1];
                 hasher.update(observable_bytecode);
@@ -699,6 +705,8 @@ where
         // compute observable and true hashes of bytecode
         let observable_bytecode_hash = match from_ee {
             ExecutionEnvironmentType::EVM => {
+                let native_cost = keccak256_native_cost::<R>(deployed_code.len());
+                resources.charge(&R::from_native(native_cost))?;
                 use crypto::sha3::Keccak256;
                 use crypto::MiniDigest;
                 let digest = Keccak256::digest(deployed_code);
@@ -718,7 +726,8 @@ where
                     resources,
                 )?;
                 let artifacts = artifacts.as_slice();
-                let bytecode_hash = Self::compute_bytecode_hash(from_ee, deployed_code, artifacts)?;
+                let bytecode_hash =
+                    Self::compute_bytecode_hash(from_ee, deployed_code, artifacts, resources)?;
                 let artifacts_len = artifacts.len() as u32;
                 let padding_len = bytecode_padding_len(deployed_code.len());
                 let bytecode_len = observable_bytecode_len + (padding_len as u32) + artifacts_len;
@@ -826,7 +835,8 @@ where
                     resources,
                 )?;
                 let artifacts = artifacts.as_slice();
-                let bytecode_hash = Self::compute_bytecode_hash(ee, deployed_code, artifacts)?;
+                let bytecode_hash =
+                    Self::compute_bytecode_hash(ee, deployed_code, artifacts, resources)?;
                 let artifacts_len = artifacts.len() as u32;
                 let padding_len = bytecode_padding_len(deployed_code.len());
                 let bytecode_len = observable_bytecode_len + (padding_len as u32) + artifacts_len;
