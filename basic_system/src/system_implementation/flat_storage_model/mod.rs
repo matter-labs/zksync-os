@@ -346,7 +346,6 @@ where
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        artifacts: &[u8],
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError> {
         self.account_data_cache.deploy_code::<PROOF_ENV>(
@@ -354,7 +353,6 @@ where
             resources,
             at_address,
             bytecode,
-            artifacts,
             &mut self.storage_cache,
             &mut self.preimages_cache,
             oracle,

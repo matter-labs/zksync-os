@@ -874,16 +874,9 @@ where
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        artifacts: &[u8],
     ) -> Result<&'static [u8], SystemError> {
-        self.storage.deploy_code(
-            from_ee,
-            resources,
-            at_address,
-            bytecode,
-            artifacts,
-            &mut self.oracle,
-        )
+        self.storage
+            .deploy_code(from_ee, resources, at_address, bytecode, &mut self.oracle)
     }
 
     fn set_bytecode_details(

@@ -159,7 +159,6 @@ pub trait StorageModel: Sized + SnapshottableIo {
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        artifacts: &[u8],
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError>;
 

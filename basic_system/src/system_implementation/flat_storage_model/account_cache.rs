@@ -658,23 +658,22 @@ where
         from_ee: ExecutionEnvironmentType,
         resources: &mut R,
         at_address: &B160,
-        observable_bytecode: &[u8],
-        artifacts: &[u8],
+        deployed_code: &[u8],
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError> {
+        let alloc = self.alloc.clone();
         // Charge for code deposit cost
         match from_ee {
             ExecutionEnvironmentType::NoEE => (),
             ExecutionEnvironmentType::EVM => {
                 use evm_interpreter::gas_constants::CODEDEPOSIT;
-                let code_deposit_cost =
-                    CODEDEPOSIT.saturating_mul(observable_bytecode.len() as u64);
+                let code_deposit_cost = CODEDEPOSIT.saturating_mul(deployed_code.len() as u64);
                 let ergs_to_spend = Ergs(code_deposit_cost.saturating_mul(ERGS_PER_GAS));
                 resources.charge(&R::from_ergs(ergs_to_spend))?;
             }
-            _ => todo!(),
+            _ => return Err(internal_error!("Unsupported EE type").into()),
         }
 
         // we charged for everything, and so all IO below will use infinite ergs
@@ -700,36 +699,47 @@ where
             ExecutionEnvironmentType::EVM => {
                 use crypto::sha3::Keccak256;
                 use crypto::MiniDigest;
-                let digest = Keccak256::digest(observable_bytecode);
+                let digest = Keccak256::digest(deployed_code);
                 Bytes32::from_array(digest)
             }
             _ => {
                 return Err(internal_error!("Unsupported EE").into());
             }
         };
+        let observable_bytecode_len = deployed_code.len() as u32;
 
-        let bytecode_hash = Self::compute_bytecode_hash(from_ee, observable_bytecode, artifacts)?;
+        // match from_ee
+        let (deployed_code, bytecode_hash, artifacts_len) = match from_ee {
+            ExecutionEnvironmentType::EVM => {
+                let artifacts = evm_interpreter::BytecodePreprocessingData::create_artifacts(
+                    alloc,
+                    deployed_code,
+                    resources,
+                )?;
+                let artifacts = artifacts.as_slice();
+                let bytecode_hash = Self::compute_bytecode_hash(from_ee, deployed_code, artifacts)?;
+                let artifacts_len = artifacts.len() as u32;
+                let padding_len = bytecode_padding_len(deployed_code.len());
+                let bytecode_len = observable_bytecode_len + (padding_len as u32) + artifacts_len;
 
-        // save bytecode
-
-        let observable_bytecode_len = observable_bytecode.len() as u32;
-        let artifacts_len = artifacts.len() as u32;
-        let padding_len = bytecode_padding_len(observable_bytecode.len());
-        let bytecode_len = observable_bytecode_len + (padding_len as u32) + artifacts_len;
-
-        // TODO(EVM-1073): compute preimage len using bytecode and artifacts len, and EE type
-        let padding = [0u8; core::mem::size_of::<u64>() - 1];
-        let padding = &padding[..padding_len];
-        let bytecode = preimages_cache.record_preimage::<PROOF_ENV>(
-            from_ee,
-            &(PreimageRequest {
-                hash: bytecode_hash,
-                expected_preimage_len_in_bytes: bytecode_len,
-                preimage_type: PreimageType::Bytecode,
-            }),
-            resources,
-            &[observable_bytecode, padding, artifacts],
-        )?;
+                // TODO(EVM-1073): compute preimage len using bytecode and artifacts len, and EE type
+                let padding = [0u8; core::mem::size_of::<u64>() - 1];
+                let padding = &padding[..padding_len];
+                // save bytecode
+                let deployed_code = preimages_cache.record_preimage::<PROOF_ENV>(
+                    from_ee,
+                    &(PreimageRequest {
+                        hash: bytecode_hash,
+                        expected_preimage_len_in_bytes: bytecode_len,
+                        preimage_type: PreimageType::Bytecode,
+                    }),
+                    resources,
+                    &[deployed_code, padding, artifacts],
+                )?;
+                (deployed_code, bytecode_hash, artifacts_len)
+            }
+            _ => return Err(internal_error!("Unsupported EE type").into()),
+        };
 
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
@@ -756,7 +766,7 @@ where
             })
         })?;
 
-        Ok(bytecode)
+        Ok(deployed_code)
     }
 
     pub fn set_bytecode_details<const PROOF_ENV: bool>(
