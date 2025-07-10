@@ -113,7 +113,7 @@ fn run_block(
     info!("Running block: {}", block_number);
     info!("Block gas used: {}", block.result.header.gas_used);
 
-    let miner = block.result.header.miner;
+    let miner = block.result.header.beneficiary;
     let block_context = block.get_block_context();
     let (transactions, skipped) = block.get_transactions(&call);
     let receipts: Vec<TransactionReceipt> = receipts
