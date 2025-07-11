@@ -204,7 +204,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let mut file = File::create(&path).expect("should create file");
             file.write_all(&serialized_oracle)
                 .expect("should write to file");
-            info!("Successfully wrote oracle dumo to: {}", path);
+            info!("Successfully wrote oracle dump to: {}", path);
         }
 
         // forward run
