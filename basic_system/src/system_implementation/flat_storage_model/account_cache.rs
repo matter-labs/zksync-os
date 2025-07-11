@@ -532,7 +532,6 @@ where
                     Ok(res)
                 } else {
                     // can try to get preimage
-                    // TODO(EVM-1073): compute preimage len using artifacts and bytecode len, and EE type in our model
                     let preimage_type = PreimageRequest {
                         hash: full_data.bytecode_hash,
                         expected_preimage_len_in_bytes: full_data.full_bytecode_len(),
@@ -724,7 +723,6 @@ where
                 let padding_len = bytecode_padding_len(deployed_code.len());
                 let bytecode_len = observable_bytecode_len + (padding_len as u32) + artifacts_len;
 
-                // TODO(EVM-1073): compute preimage len using bytecode and artifacts len, and EE type
                 let padding = [0u8; core::mem::size_of::<u64>() - 1];
                 let padding = &padding[..padding_len];
                 // save bytecode
@@ -829,7 +827,6 @@ where
                 let padding_len = bytecode_padding_len(deployed_code.len());
                 let bytecode_len = observable_bytecode_len + (padding_len as u32) + artifacts_len;
 
-                // TODO(EVM-1073): compute preimage len using bytecode and artifacts len, and EE type
                 let padding = [0u8; core::mem::size_of::<u64>() - 1];
                 let padding = &padding[..padding_len];
                 // save bytecode
