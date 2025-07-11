@@ -773,7 +773,11 @@ where
         Ok(deployed_code)
     }
 
-    /// Assumes [code_hash] is of default version.
+    /// Assumes [code_hash] is of default version, which does not contain
+    /// artifacts cached in the bytecode.
+    /// As this storage model caches artifacts, this function decommitts
+    /// the code from [code_hash], computes the artifacts and re-hashes
+    /// to get the actual [bytecode_hash] for the account.
     pub fn set_bytecode_details<const PROOF_ENV: bool>(
         &mut self,
         resources: &mut R,
