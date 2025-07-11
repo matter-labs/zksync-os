@@ -49,6 +49,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     // EVM tester requires high native limits, so for it we never hold off resources.
     // But for the real world, we bound the available resources.
 
+    #[allow(unused_variables)]
     let withheld_resources = S::Resources::from_ergs(Ergs(0));
 
     #[cfg(not(feature = "resources_for_tester"))]
