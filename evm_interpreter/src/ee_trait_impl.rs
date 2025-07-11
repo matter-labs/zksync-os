@@ -178,7 +178,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S> for Interpreter<'ee
                         bytecode,
                         unpadded_code_len as usize,
                         artifacts_len as usize,
-                    );
+                    )?;
                     self.bytecode = code;
                     self.bytecode_preprocessing = bytecode_preprocessing;
                 }

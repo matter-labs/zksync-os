@@ -137,8 +137,14 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
         bytecode: &'a [u8],
         deployed_len: usize,
         artifacts_len: usize,
-    ) -> (&'a [u8], Self) {
-        let padding = bytecode.len() - deployed_len - artifacts_len;
+    ) -> Result<(&'a [u8], Self), InternalError> {
+        let Some(padding) = bytecode
+            .len()
+            .checked_sub(deployed_len)
+            .and_then(|l| l.checked_sub(artifacts_len))
+        else {
+            return Err(internal_error!("Underflow when computing bytecode padding"));
+        };
         let (code, rest) = bytecode.split_at(deployed_len);
         let bitmap_slice = &rest[padding..];
 
@@ -146,7 +152,7 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
             original_bytecode_len: deployed_len,
             jumpdest_bitmap: Either::Left(BitMap::from_raw(bitmap_slice)),
         };
-        (code, preprocessing)
+        Ok((code, preprocessing))
     }
 
     ///
