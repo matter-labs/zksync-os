@@ -134,8 +134,7 @@ fn fuzz(input: FuzzInput) {
                 ForwardRunningSystem<InMemoryTree, InMemoryPreimageSource, TxListSource>,
             > = ExecutionEnvironmentLaunchParams {
                 environment_parameters: EnvironmentParameters {
-                    decommitted_bytecode,
-                    bytecode_len,
+                    bytecode: zk_ee::system::Bytecode::Constructor(&bytecode),
                     scratch_space_len: 0,
                 },
                 external_call: ExternalCallRequest {
@@ -208,9 +207,7 @@ fn fuzz(input: FuzzInput) {
                     execution_reverted,
                 },
                 _ => DeploymentResult::Successful {
-                    bytecode: decommitted_bytecode,
-                    bytecode_len,
-                    artifacts_len: 0,
+                    deployed_code: decommitted_bytecode,
                     return_values: return_values_successful,
                     deployed_at,
                 },

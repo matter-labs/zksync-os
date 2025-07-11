@@ -64,11 +64,6 @@ fn fuzz(input: FuzzInput) {
 
     let inf_resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-    // wrap bytecode
-    // let decommitted_bytecode = &bytecode;
-
-    let bytecode_len = bytecode.len() as u32;
-
     let Ok(_) = system.start_global_frame() else {
         return;
     };
@@ -83,8 +78,7 @@ fn fuzz(input: FuzzInput) {
         ForwardRunningSystem<InMemoryTree, InMemoryPreimageSource, TxListSource>,
     > = ExecutionEnvironmentLaunchParams {
         environment_parameters: EnvironmentParameters {
-            decommitted_bytecode: &bytecode,
-            bytecode_len,
+            bytecode: zk_ee::system::Bytecode::Constructor(&bytecode),
             scratch_space_len: 0,
         },
         external_call: ExternalCallRequest {
