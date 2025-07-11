@@ -134,6 +134,7 @@ pub struct AccountProperties {
     pub unpadded_code_len: u32,
     pub artifacts_len: u32,
     pub observable_bytecode_hash: Bytes32,
+    // TODO(EVM-1116): document the need for observable_bytecode_len
     pub observable_bytecode_len: u32,
 }
 
