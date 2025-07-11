@@ -254,8 +254,8 @@ impl AccountProperties {
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?) as u32 // nonce diff
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
                     + 4 // unpadded code len
-                    + r#final.full_bytecode_len() // bytecode
                     + 4 // artifacts len
+                    + r#final.full_bytecode_len() // bytecode
                     + 4 // observable bytecode len
             })
         } else {
@@ -295,8 +295,9 @@ impl AccountProperties {
     /// 5 most significant bits of metadata byte can be used to save additional info for encoding type.
     ///
     /// For account data we have following encoding formats(index encoded in the 5 most significant bits of the metadata byte, 3 less significant == 4):
-    /// 0(full data): `versioning_data(8 BE bytes) & nonce_diff(using storage value strategy) & balance_diff & unpadded_code_len(4 BE bytes)
-    /// & bytecode & artifacts_len (4 BE bytes) & observable_len (4 BE bytes)`
+    /// 0(full data): `versioning_data(8 BE bytes) & nonce_diff(using storage value strategy)
+    /// & balance_diff & unpadded_code_len(4 BE bytes) &  artifacts_len (4 BE bytes) &
+    /// & bytecode & observable_len (4 BE bytes)`
     /// 1: `nonce_diff (using storage value strategy)`
     /// 2: `balance_diff (using storage value strategy)`
     /// 3: `nonce_diff (using storage value strategy) & balance_diff (using storage value strategy)`
@@ -358,6 +359,8 @@ impl AccountProperties {
             } else {
                 hasher.update(r#final.unpadded_code_len.to_be_bytes());
                 result_keeper.pubdata(&r#final.unpadded_code_len.to_be_bytes());
+                hasher.update(r#final.artifacts_len.to_be_bytes());
+                result_keeper.pubdata(&r#final.artifacts_len.to_be_bytes());
                 let preimage_type = PreimageRequest {
                     hash: r#final.bytecode_hash,
                     expected_preimage_len_in_bytes: r#final.full_bytecode_len(),
@@ -383,8 +386,6 @@ impl AccountProperties {
                 hasher.update(bytecode);
                 result_keeper.pubdata(bytecode);
             }
-            hasher.update(r#final.artifacts_len.to_be_bytes());
-            result_keeper.pubdata(&r#final.artifacts_len.to_be_bytes());
             hasher.update(r#final.observable_bytecode_len.to_be_bytes());
             result_keeper.pubdata(&r#final.observable_bytecode_len.to_be_bytes());
             Ok(())
@@ -590,8 +591,8 @@ mod tests {
         expected.push(0b00001010); // balance: sub 0xff
         expected.push(0xff); // balance: sub 0xff
         expected.extend((code_len as u32).to_be_bytes());
-        expected.extend_from_slice(&bytecode);
         expected.extend([0, 0, 0, 0]); // arifacts len
+        expected.extend_from_slice(&bytecode);
         expected.extend((code_len as u32).to_be_bytes()); // observable
 
         assert_eq!(compression, expected);
