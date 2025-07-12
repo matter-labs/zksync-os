@@ -8,7 +8,7 @@ use std::collections::HashSet;
 #[allow(dead_code)]
 pub struct CallTraceItem {
     pub from: Address,
-    pub to: Address,
+    pub to: Option<Address>,
     pub value: Option<U256>,
     pub gas: U256,
     pub gas_used: U256,
@@ -46,7 +46,9 @@ impl CallTraceItem {
         if matches!(self.call_type.as_deref(), Some("CREATE") | Some("CREATE2"))
             && self.error.is_none()
         {
-            acc.insert(self.to);
+            if let Some(to) = self.to {
+                acc.insert(to);
+            }
         }
 
         if let Some(ref calls) = self.calls {
@@ -57,8 +59,9 @@ impl CallTraceItem {
     }
 
     pub fn has_call_to_unsupported_precompile(&self) -> bool {
-        self.to == Address::from_hex("0000000000000000000000000000000000000009").unwrap()
-            || self.to == Address::from_hex("000000000000000000000000000000000000000a").unwrap()
+        self.to == Some(Address::from_hex("0000000000000000000000000000000000000009").unwrap())
+            || self.to
+                == Some(Address::from_hex("000000000000000000000000000000000000000a").unwrap())
             || self
                 .calls
                 .as_ref()
