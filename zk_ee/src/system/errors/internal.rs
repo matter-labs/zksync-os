@@ -2,7 +2,7 @@ use super::{location::Localizable, ErrorLocation, UpdateQueryError};
 
 ///
 /// Internal error, should not be triggered by user input.
-/// Do not construct it expicitly; instead, use the macro [`internal_error`].
+/// Do not construct it explicitly; instead, use the macro [`internal_error`].
 ///
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct InternalError(pub &'static str, pub ErrorLocation);
