@@ -52,6 +52,10 @@ pub use zk_ee::system::metadata::BlockMetadataFromOracle as BatchContext;
 
 pub type StorageCommitment = FlatStorageCommitment<{ TREE_HEIGHT }>;
 
+#[cfg_attr(
+    any(feature = "error_origins", not(target_arch = "riscv32")),
+    allow(clippy::result_large_err)
+)]
 pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxResultCallback>(
     batch_context: BatchContext,
     tree: T,
@@ -74,6 +78,10 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     Ok(result_keeper.into())
 }
 
+#[cfg_attr(
+    any(feature = "error_origins", not(target_arch = "riscv32")),
+    allow(clippy::result_large_err)
+)]
 // TODO: we should run it on native arch and it should return pubdata and other outputs via result keeper
 pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
     zk_os_program_path: PathBuf,
@@ -104,6 +112,10 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
 
     Ok(std::rc::Rc::try_unwrap(items).unwrap().into_inner())
 }
+#[cfg_attr(
+    any(feature = "error_origins", not(target_arch = "riscv32")),
+    allow(clippy::result_large_err)
+)]
 pub fn run_batch_with_oracle_dump<
     T: ReadStorageTree + Clone + serde::Serialize,
     PS: PreimageSource + Clone + serde::Serialize,
@@ -139,6 +151,10 @@ pub fn run_batch_with_oracle_dump<
     Ok(result_keeper.into())
 }
 
+#[cfg_attr(
+    any(feature = "error_origins", not(target_arch = "riscv32")),
+    allow(clippy::result_large_err)
+)]
 pub fn run_batch_from_oracle_dump<
     T: ReadStorageTree + Clone + serde::de::DeserializeOwned,
     PS: PreimageSource + Clone + serde::de::DeserializeOwned,
@@ -169,6 +185,10 @@ pub fn run_batch_from_oracle_dump<
 /// Needed for `eth_call` and `eth_estimateGas`.
 ///
 // TODO: we need to have simplified version of oracle and config to disable tree validation, so we can use `ReadStorage` here
+#[cfg_attr(
+    any(feature = "error_origins", not(target_arch = "riscv32")),
+    allow(clippy::result_large_err)
+)]
 pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     transaction: Vec<u8>,
     batch_context: BatchContext,
