@@ -16,10 +16,9 @@ use super::*;
 use core::fmt::Write;
 use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::{
-    internal_error,
+    define_subsystem, internal_error,
     system::{
         errors::{
-            no_errors::NoErrors,
             root_cause::{GetRootCause, RootCause},
             runtime::RuntimeError,
             subsystem::SubsystemError,
@@ -92,33 +91,10 @@ where
     }
 }
 
-/// as there is no system function for identity(memcopy)
-/// we define one following the system functions interface
-/// to use same logic as for other hooks
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum IdentityPrecompileInterfaceError {}
-
-impl zk_ee::system::errors::interface::InterfaceErrorKind for IdentityPrecompileInterfaceError {
-    fn get_name(&self) -> &'static str {
-        match *self {}
-    }
-}
-
-impl Into<&'static str> for IdentityPrecompileInterfaceError {
-    fn into(self) -> &'static str {
-        match self {}
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IdentityPrecompileErrors;
-
-impl Subsystem for IdentityPrecompileErrors {
-    const SUBSYSTEM_NAME: &'static str = "IdentityPrecompile";
-    type Interface = IdentityPrecompileInterfaceError;
-    type Cascaded = NoErrors;
-}
+// as there is no system function for identity(memcopy)
+// we define one following the system functions interface
+// to use same logic as for other hooks
+define_subsystem!(IdentityPrecompile);
 
 pub struct IdentityPrecompile;
 const ID_STATIC_COST_ERGS: Ergs = Ergs(15 * ERGS_PER_GAS);
