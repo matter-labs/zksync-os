@@ -1,10 +1,12 @@
+use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use errors::BootloaderSubsystemError;
 use system_hooks::HooksStorage;
-use zk_ee::internal_error;
-use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError, UpdateQueryError};
+use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::CallModifier;
 use zk_ee::system::{EthereumLikeTypes, System};
+use zk_ee::{interface_error, internal_error, wrap_error};
 
 use super::*;
 
@@ -17,7 +19,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         nominal_token_value: &U256,
         to: &B160,
         resources: &mut S::Resources,
-    ) -> Result<(), SystemError>
+    ) -> Result<(), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -37,11 +39,18 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 nominal_token_value,
                 false,
             )
-            .map_err(|e| match e {
-                UpdateQueryError::NumericBoundsError => {
-                    internal_error!("Insufficient balance while minting").into()
+            .map_err(|e| -> BootloaderSubsystemError {
+                match e {
+                    SubsystemError::LeafUsage(balance_error) => {
+                        let _ = system
+                            .get_logger()
+                            .write_fmt(format_args!("Error while minting: {balance_error:?}"));
+                        SubsystemError::LeafUsage(interface_error!(
+                            BootloaderInterfaceError::InsufficientBalanceMinting
+                        ))
+                    }
+                    _ => wrap_error!(e),
                 }
-                UpdateQueryError::System(e) => e,
             })?;
 
         Ok(())

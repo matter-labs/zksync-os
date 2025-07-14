@@ -5,6 +5,7 @@ use crate::bootloader::account_models::ExecutionResult;
 use crate::bootloader::account_models::AA;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
+use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::RunnerMemoryBuffers;
@@ -23,12 +24,17 @@ use gas_helpers::check_enough_resources_for_pubdata;
 use gas_helpers::get_resources_to_charge_for_pubdata;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
+use zk_ee::interface_error;
 use zk_ee::internal_error;
+use zk_ee::system::errors::cascade::CascadedError;
+use zk_ee::system::errors::interface::InterfaceError;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
-use zk_ee::system::errors::{internal::InternalError, system::SystemError, UpdateQueryError};
+use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::{EthereumLikeTypes, Resources};
+use zk_ee::wrap_error;
 
 /// Return value of validation step
 #[derive(Default)]
@@ -268,14 +274,14 @@ where
             &BOOTLOADER_FORMAL_ADDRESS,
             &mut inf_resources,
         )
-        .map_err(|e| match e {
-            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
-                internal_error!("Out of ergs on infinite ergs")
+        .map_err(|e| match e.root_cause() {
+            RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
+                internal_error!("Out of ergs on infinite ergs").into()
             }
-            SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
-                internal_error!("Out of native on infinite")
+            RootCause::Runtime(RuntimeError::OutOfNativeResources(_)) => {
+                internal_error!("Out of native on infinite").into()
             }
-            SystemError::LeafDefect(i) => i,
+            _ => e,
         })?;
 
         // Refund
@@ -313,14 +319,16 @@ where
                 &refund_recipient,
                 &mut inf_resources,
             )
-            .map_err(|e| match e {
-                SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
-                    internal_error!("Out of ergs on infinite ergs")
+            .map_err(|e| -> BootloaderSubsystemError {
+                match e.root_cause() {
+                    RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
+                        internal_error!("Out of ergs on infinite ergs").into()
+                    }
+                    RootCause::Runtime(RuntimeError::OutOfNativeResources(_)) => {
+                        internal_error!("Out of native on infinite").into()
+                    }
+                    _ => e,
                 }
-                SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
-                    internal_error!("Out of native on infinite")
-                }
-                SystemError::LeafDefect(i) => i,
             })?;
         }
 
@@ -375,8 +383,8 @@ where
                 .with_infinite_ergs(|inf_resources| {
                     BasicBootloader::mint_token(system, &value, &from, inf_resources)
                 })
-                .map_err(|e| match e {
-                    SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                .map_err(|e| match e.root_cause() {
+                    RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
                         let _ = system.get_logger().write_fmt(format_args!(
                             "Out of ergs on infinite ergs: inner error was {e:?}"
                         ));
@@ -384,7 +392,7 @@ where
                             "Out of ergs on infinite ergs"
                         ))
                     }
-                    other => other.into(),
+                    _ => e,
                 })?;
         }
 
@@ -944,12 +952,7 @@ where
                         &excessive_funds,
                     )
                 })
-                .map_err(|e| match e {
-                    UpdateQueryError::NumericBoundsError => SystemError::LeafDefect(
-                        internal_error!("Bootloader cannot return excessive funds",),
-                    ),
-                    UpdateQueryError::System(e) => e,
-                })?;
+                .map_err(|e| TxError::Internal(wrap_error!(e)))?;
         }
         Ok(())
     }
@@ -996,7 +999,7 @@ where
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
         to_charge_for_pubdata: Option<S::Resources>,
-    ) -> Result<u64, InternalError> {
+    ) -> Result<u64, BootloaderSubsystemError> {
         let paymaster = transaction.paymaster.read();
         let _ = system
             .get_logger()
@@ -1062,18 +1065,17 @@ where
                 &token_to_refund,
             )
             .map_err(|e| match e {
-                UpdateQueryError::NumericBoundsError => {
-                    internal_error!("Bootloader cannot pay for refund")
-                }
-                UpdateQueryError::System(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-                    internal_error!("should transfer refund")
-                }
-                UpdateQueryError::System(SystemError::LeafRuntime(
-                    RuntimeError::OutOfNativeResources(_),
-                )) => {
-                    internal_error!("should transfer refund")
-                }
-                UpdateQueryError::System(SystemError::LeafDefect(e)) => e,
+                // Balance errors can not be cascaded
+                SubsystemError::Cascaded(CascadedError(inner, _)) => match inner {},
+                SubsystemError::LeafUsage(InterfaceError(ie, _)) => match ie {
+                    BalanceError::InsufficientBalance => {
+                        interface_error!(BootloaderInterfaceError::CantPayRefundInsufficientBalance)
+                    }
+                    BalanceError::Overflow => {
+                        interface_error!(BootloaderInterfaceError::CantPayRefundOverflow)
+                    }
+                },
+                other => wrap_error!(other),
             })?;
         Ok(gas_used)
     }

@@ -1,4 +1,4 @@
-use super::{location::Localizable, ErrorLocation, UpdateQueryError};
+use super::location::{ErrorLocation, Localizable};
 
 ///
 /// Internal error, should not be triggered by user input.
@@ -18,12 +18,5 @@ impl Localizable for InternalError {
     fn get_location(&self) -> ErrorLocation {
         let InternalError(_, location) = self;
         *location
-    }
-}
-
-//TODO migrate away
-impl From<InternalError> for UpdateQueryError {
-    fn from(e: InternalError) -> Self {
-        UpdateQueryError::System(e.into())
     }
 }

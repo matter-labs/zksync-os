@@ -21,7 +21,7 @@ use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::{
-    errors::{runtime::RuntimeError, system::SystemError, UpdateQueryError},
+    errors::{runtime::RuntimeError, system::SystemError},
     logger::Logger,
     EthereumLikeTypes, System, SystemTypes, *,
 };
@@ -339,7 +339,10 @@ where
                 &amount,
             )
             .map_err(|e| match e {
-                UpdateQueryError::NumericBoundsError => {
+                SubsystemError::LeafUsage(interface_error) => {
+                    let _ = system
+                        .get_logger()
+                        .write_fmt(format_args!("{interface_error:?}"));
                     match system
                         .io
                         .get_nominal_token_balance(caller_ee_type, resources, &from)
@@ -353,13 +356,16 @@ where
                         Err(e) => e.into(),
                     }
                 }
-                UpdateQueryError::System(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-                    TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
-                }
-                UpdateQueryError::System(SystemError::LeafRuntime(
-                    RuntimeError::OutOfNativeResources(_),
-                )) => TxError::oon_as_validation(out_of_native_resources!().into()),
-                UpdateQueryError::System(SystemError::LeafDefect(e)) => e.into(),
+                SubsystemError::LeafDefect(internal_error) => internal_error.into(),
+                SubsystemError::LeafRuntime(runtime_error) => match runtime_error {
+                    RuntimeError::OutOfNativeResources(_) => {
+                        TxError::oon_as_validation(out_of_native_resources!().into())
+                    }
+                    RuntimeError::OutOfErgs(_) => {
+                        TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
+                    }
+                },
+                SubsystemError::Cascaded(cascaded_error) => match cascaded_error {},
             })?;
         Ok(())
     }

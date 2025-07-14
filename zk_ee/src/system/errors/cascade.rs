@@ -1,4 +1,7 @@
-use super::{location::ErrorLocation, root_cause::GetRootCause, Localizable};
+use super::{
+    location::{ErrorLocation, Localizable},
+    root_cause::GetRootCause,
+};
 
 pub trait ICascadedInner: core::fmt::Debug + Clone + Eq + Sized + GetRootCause {}
 

@@ -19,6 +19,7 @@ use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::BasicIOImplementerFSM;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
+use zk_ee::interface_error;
 use zk_ee::out_of_ergs_error;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::{
@@ -26,9 +27,8 @@ use zk_ee::{
     kv_markers::UsizeDeserializable,
     memory::ArrayBuilder,
     system::{
-        errors::{system::SystemError, UpdateQueryError},
-        AccountData, AccountDataRequest, EthereumLikeIOSubsystem, IOResultKeeper, IOSubsystem,
-        IOSubsystemExt, Maybe,
+        errors::system::SystemError, AccountData, AccountDataRequest, EthereumLikeIOSubsystem,
+        IOResultKeeper, IOSubsystem, IOSubsystemExt, Maybe,
     },
     system_io_oracle::InitializeIOImplementerIterator,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
@@ -338,7 +338,7 @@ where
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         in_constructor: bool,
-    ) -> Result<(), SystemError> {
+    ) -> Result<(), DeconstructionSubsystemError> {
         self.storage.mark_for_deconstruction(
             from_ee,
             resources,
@@ -854,7 +854,7 @@ where
         from: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         to: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         amount: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
-    ) -> Result<(), UpdateQueryError> {
+    ) -> Result<(), BalanceSubsystemError> {
         self.storage.transfer_nominal_token_value(
             ee_type,
             resources,
@@ -939,14 +939,17 @@ where
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         diff: &ruint::aliases::U256,
         should_subtract: bool,
-    ) -> Result<ruint::aliases::U256, UpdateQueryError> {
+    ) -> Result<ruint::aliases::U256, BalanceSubsystemError> {
         let update_fn = move |old_value: &ruint::aliases::U256| {
-            let new_value = if should_subtract {
-                old_value.checked_sub(*diff)
+            if should_subtract {
+                old_value
+                    .checked_sub(*diff)
+                    .ok_or(interface_error! {BalanceError::InsufficientBalance})
             } else {
-                old_value.checked_add(*diff)
-            };
-            new_value.ok_or(UpdateQueryError::NumericBoundsError)
+                old_value
+                    .checked_add(*diff)
+                    .ok_or(interface_error! {BalanceError::Overflow})
+            }
         };
         self.storage.update_nominal_token_value(
             ee_type,

@@ -5,7 +5,7 @@ use gas_constants::{CALL_STIPEND, INITCODE_WORD_COST, SHA3WORD};
 
 use native_resource_constants::*;
 use zk_ee::kv_markers::MAX_EVENT_TOPICS;
-use zk_ee::system::*;
+use zk_ee::{system::*, wrap_error};
 
 use super::*;
 
@@ -217,13 +217,16 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         let beneficiary = u256_to_b160(self.stack.pop_1()?);
 
-        system.io.mark_for_deconstruction(
-            THIS_EE_TYPE,
-            self.gas.resources_mut(),
-            &self.address,
-            &beneficiary,
-            self.is_constructor,
-        )?;
+        system
+            .io
+            .mark_for_deconstruction(
+                THIS_EE_TYPE,
+                self.gas.resources_mut(),
+                &self.address,
+                &beneficiary,
+                self.is_constructor,
+            )
+            .map_err(wrap_error!())?;
 
         Err(ExitCode::SelfDestruct)
     }

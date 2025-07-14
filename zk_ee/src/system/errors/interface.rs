@@ -1,4 +1,4 @@
-use super::{location::ErrorLocation, Localizable};
+use super::location::{ErrorLocation, Localizable};
 
 pub trait InterfaceErrorKind: Clone + core::fmt::Debug + Eq + Sized + Into<&'static str> {
     fn get_name(&self) -> &'static str;

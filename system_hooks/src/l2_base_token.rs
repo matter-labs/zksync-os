@@ -8,7 +8,7 @@ use core::fmt::Write;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
-use zk_ee::system::errors::UpdateQueryError;
+use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::logger::Logger;
 
@@ -154,10 +154,13 @@ where
                 true,
             ) {
                 Ok(_) => Ok(()),
-                Err(UpdateQueryError::NumericBoundsError) => Err(SystemError::LeafDefect(
-                    internal_error!("L2 base token must have withdrawal amount"),
-                )),
-                Err(UpdateQueryError::System(e)) => Err(e),
+                // TODO this has to be properly propagated
+                Err(SubsystemError::LeafUsage(_)) => Err(SystemError::LeafDefect(internal_error!(
+                    "L2 base token must have withdrawal amount"
+                ))),
+                Err(SubsystemError::LeafRuntime(e)) => Err(e.into()),
+                Err(SubsystemError::LeafDefect(e)) => Err(e.into()),
+                Err(SubsystemError::Cascaded(e)) => match e {},
             }?;
 
             // Emit log
@@ -253,10 +256,13 @@ where
                 true,
             ) {
                 Ok(_) => Ok(()),
-                Err(UpdateQueryError::NumericBoundsError) => Err(SystemError::LeafDefect(
-                    internal_error!("L2 base token must have withdrawal amount"),
-                )),
-                Err(UpdateQueryError::System(e)) => Err(e),
+                // TODO this has to be properly propagated
+                Err(SubsystemError::LeafUsage(_)) => Err(SystemError::LeafDefect(internal_error!(
+                    "L2 base token must have withdrawal amount"
+                ))),
+                Err(SubsystemError::LeafRuntime(e)) => Err(e.into()),
+                Err(SubsystemError::LeafDefect(e)) => Err(e.into()),
+                Err(SubsystemError::Cascaded(e)) => match e {},
             }?;
 
             // Emit log

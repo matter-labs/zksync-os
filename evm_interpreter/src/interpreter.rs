@@ -23,7 +23,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let exit_code = self.run(system, &mut external_call)?;
 
         if let ExitCode::FatalError(e) = exit_code {
-            return Err(e.into());
+            return Err(e);
         }
 
         if let Some(call) = external_call {

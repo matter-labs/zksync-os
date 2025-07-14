@@ -1,9 +1,9 @@
 use super::{
     cascade::CascadedError,
+    internal::InternalError,
     location::{ErrorLocation, Localizable},
     runtime::RuntimeError,
     subsystem::{Subsystem, SubsystemError},
-    InternalError,
 };
 
 #[derive(Clone, Copy, Debug)]

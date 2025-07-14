@@ -18,11 +18,7 @@ use zk_ee::interface_error;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
-use zk_ee::system::{
-    errors::{system::SystemError, UpdateQueryError},
-    logger::Logger,
-    *,
-};
+use zk_ee::system::{errors::system::SystemError, logger::Logger, *};
 use zk_ee::wrap_error;
 use zk_ee::{internal_error, out_of_ergs_error};
 
@@ -436,37 +432,38 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 )
             }) {
                 Ok(()) => (),
-                Err(UpdateQueryError::System(SystemError::LeafRuntime(
-                    RuntimeError::OutOfErgs(_),
-                ))) => {
-                    return Err(internal_error!("Our of ergs on infinite").into());
-                }
-                Err(UpdateQueryError::System(SystemError::LeafDefect(e))) => return Err(e.into()),
-                Err(UpdateQueryError::System(SystemError::LeafRuntime(
-                    RuntimeError::OutOfNativeResources(loc),
-                ))) => {
-                    return Err(RuntimeError::OutOfNativeResources(loc).into());
-                }
-                Err(UpdateQueryError::NumericBoundsError) => {
-                    // Insufficient balance
-                    match ee_type {
-                        ExecutionEnvironmentType::NoEE => {
-                            return Err(interface_error!(
-                                BootloaderInterfaceError::TopLevelInsufficientBalance
-                            ))
+                Err(e) => {
+                    match e {
+                        SubsystemError::LeafUsage(_interface_error) => {
+                            // TODO log this error, but logger is unavailable
+                            // Insufficient balance
+                            match ee_type {
+                                ExecutionEnvironmentType::NoEE => {
+                                    return Err(interface_error!(
+                                        BootloaderInterfaceError::TopLevelInsufficientBalance
+                                    ))
+                                }
+                                ExecutionEnvironmentType::EVM => {
+                                    // Following EVM, a call with insufficient balance is not a revert,
+                                    // but rather a normal failing call.
+                                    return Ok(Some(CallResult::Failed {
+                                        return_values: ReturnValues::empty(),
+                                    }));
+                                }
+                            }
                         }
-                        ExecutionEnvironmentType::EVM => {
-                            // Following EVM, a call with insufficient balance is not a revert,
-                            // but rather a normal failing call.
-                            return Ok(Some(CallResult::Failed {
-                                return_values: ReturnValues::empty(),
-                            }));
-                        }
+                        SubsystemError::LeafDefect(_) => return Err(wrap_error!(e)),
+                        SubsystemError::LeafRuntime(runtime_error) => match runtime_error {
+                            RuntimeError::OutOfNativeResources(_) => return Err(wrap_error!(e)),
+                            RuntimeError::OutOfErgs(_) => {
+                                return Err(internal_error!("Out of ergs on infinite ergs").into())
+                            }
+                        },
+                        SubsystemError::Cascaded(cascaded_error) => match cascaded_error {},
                     }
                 }
             }
         }
-
         // Calls to EOAs succeed with empty return value
         if is_eoa {
             return Ok(Some(CallResult::Successful {
@@ -647,7 +644,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     })
                 }
                 Err(e) => {
-                    return Err(e.wrap(zk_ee::location!()));
+                    return Err(wrap_error!(e));
                 }
             };
 
@@ -722,13 +719,15 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })
                 .map_err(|e| -> BootloaderSubsystemError {
                     match e {
-                        UpdateQueryError::System(SystemError::LeafRuntime(
-                            RuntimeError::OutOfNativeResources(loc),
-                        )) => RuntimeError::OutOfNativeResources(loc).into(),
-                        _ => internal_error!(
-                            "Must transfer value on deployment after check in preparation",
-                        )
-                        .into(),
+                        SubsystemError::LeafUsage(_interface_error) => {
+                            // TODO must log the error, but logger is unavailable
+                            // TODO must be interface error
+                            internal_error!(
+                                "Must transfer value on deployment after check in preparation"
+                            )
+                            .into()
+                        }
+                        e => wrap_error!(e),
                     }
                 })?;
         }

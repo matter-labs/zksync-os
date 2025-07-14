@@ -1,6 +1,8 @@
 use zk_ee::{
     define_subsystem,
-    system::{CallModifier, NonceSubsystemError},
+    system::{
+        BalanceSubsystemError, CallModifier, DeconstructionSubsystemError, NonceSubsystemError,
+    },
 };
 
 define_subsystem!(
@@ -13,5 +15,7 @@ define_subsystem!(
     },
     cascade EvmCascadedError {
         Nonce(NonceSubsystemError),
+        Balance(BalanceSubsystemError),
+        Deconstruction(DeconstructionSubsystemError),
     }
 );

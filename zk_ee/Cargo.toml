@@ -28,6 +28,7 @@ testing = ["serde", "ruint/serde"]
 default = ["testing", "error_origins"]
 cycle_marker = ["cycle_marker/log_to_file"]
 error_origins = []
+detailed_errors = []
 prevrandao = []
 
 [dev-dependencies]
