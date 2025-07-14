@@ -190,3 +190,28 @@ pub fn run_proving_inner<
 
     public_input.as_u32_array()
 }
+
+pub fn run_proving_batch_inner<
+    O: IOOracle,
+    I: NonDeterminismCSRSourceImplementation,
+    L: Logger + Default,
+>(
+    oracle: O,
+) -> [u32; 8] {
+    let _ = L::default().write_fmt(format_args!("IO implementer init is complete"));
+
+    // Load all transactions from oracle and apply them.
+    let (mut oracle, public_input) = ProvingBootloader::<O, L>::run_prepared::<
+        BasicBootloaderProvingExecutionConfig,
+    >(oracle, &mut NopResultKeeper)
+        .expect("Tried to prove a failing batch");
+
+    // disconnect oracle before returning
+    // TODO: check this is the intended behaviour (ignoring the result)
+    #[allow(unused_must_use)]
+    oracle
+        .create_oracle_access_iterator::<DisconnectOracleFormalIterator>(())
+        .expect("must disconnect an oracle before performing arbitrary CSR access");
+
+    public_input.as_u32_array()
+}
