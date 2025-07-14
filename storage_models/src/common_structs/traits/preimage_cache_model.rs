@@ -21,6 +21,6 @@ pub trait PreimageCacheModel: Sized + SnapshottableIo {
         ee_type: ExecutionEnvironmentType,
         preimage_type: &Self::PreimageRequest,
         resources: &mut Self::Resources,
-        preimage: &[u8],
+        preimage: &[&[u8]],
     ) -> Result<&'static [u8], SystemError>;
 }

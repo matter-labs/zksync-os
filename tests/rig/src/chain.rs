@@ -1,6 +1,7 @@
 use crate::utils::evm_bytecode_into_account_properties;
 use crate::{colors, init_logger};
 use alloy::signers::local::PrivateKeySigner;
+use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
 use basic_bootloader::bootloader::config::BasicBootloaderForwardSimulationConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use basic_system::system_implementation::flat_storage_model::FlatStorageCommitment;
@@ -152,6 +153,76 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let result = items.borrow().clone();
         result
+    }
+
+    ///
+    /// Simulate block, do not validate transactions
+    ///
+    pub fn simulate_block(
+        &mut self,
+        transactions: Vec<Vec<u8>>,
+        block_context: Option<BlockContext>,
+    ) -> BatchOutput {
+        let block_context = block_context.unwrap_or_default();
+        let block_metadata = BlockMetadataFromOracle {
+            chain_id: self.chain_id,
+            block_number: self.block_number + 1,
+            block_hashes: BlockHashes(self.block_hashes),
+            timestamp: block_context.timestamp,
+            eip1559_basefee: block_context.eip1559_basefee,
+            gas_per_pubdata: block_context.gas_per_pubdata,
+            native_price: block_context.native_price,
+            coinbase: block_context.coinbase,
+            gas_limit: block_context.gas_limit,
+            mix_hash: block_context.mix_hash,
+        };
+        let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
+            root: *self.state_tree.storage_tree.root(),
+            next_free_slot: self.state_tree.storage_tree.next_free_slot,
+        };
+        let tx_source = TxListSource {
+            transactions: transactions.into(),
+        };
+
+        let oracle = ForwardRunningOracle {
+            io_implementer_init_data: Some(io_implementer_init_data(Some(state_commitment))),
+            preimage_source: self.preimage_source.clone(),
+            tree: self.state_tree.clone(),
+            block_metadata,
+            next_tx: None,
+            tx_source: tx_source.clone(),
+        };
+
+        // dump oracle if env variable set
+        if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
+            let aux_oracle: ForwardRunningOracleAux<
+                InMemoryTree<RANDOMIZED_TREE>,
+                InMemoryPreimageSource,
+                TxListSource,
+            > = oracle.clone().into();
+            let serialized_oracle = bincode::serialize(&aux_oracle).expect("should serialize");
+            let mut file = File::create(&path).expect("should create file");
+            file.write_all(&serialized_oracle)
+                .expect("should write to file");
+            info!("Successfully wrote oracle dump to: {}", path);
+        }
+
+        // forward run
+        let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
+
+        run_forward::<BasicBootloaderCallSimulationConfig, _, _, _>(
+            oracle.clone(),
+            &mut result_keeper,
+        );
+
+        let block_output: BatchOutput = result_keeper.into();
+        trace!(
+            "{}Block output:{} \n{:#?}",
+            colors::MAGENTA,
+            colors::RESET,
+            block_output.tx_results
+        );
+        block_output
     }
 
     ///
@@ -377,11 +448,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ) {
         let mut account_properties = self.get_account_properties(&address);
         if let Some(bytecode) = bytecode {
-            account_properties = evm_bytecode_into_account_properties(&bytecode);
+            let (props, bytecode_and_artifacts) = evm_bytecode_into_account_properties(&bytecode);
+            account_properties = props;
             // Save bytecode preimage
             self.preimage_source
                 .inner
-                .insert(account_properties.bytecode_hash, bytecode);
+                .insert(account_properties.bytecode_hash, bytecode_and_artifacts);
         }
         if let Some(nominal_token_balance) = balance {
             account_properties.balance = nominal_token_balance;
@@ -454,7 +526,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     /// **Note, that other account fields will be zeroed out(balance, code).**
     ///
     pub fn set_evm_bytecode(&mut self, address: B160, bytecode: &[u8]) -> &mut Self {
-        let account_properties = evm_bytecode_into_account_properties(bytecode);
+        let (account_properties, bytecode_and_artifacts) =
+            evm_bytecode_into_account_properties(bytecode);
         let encoding = account_properties.encoding();
         let properties_hash = account_properties.compute_hash();
 
@@ -470,11 +543,17 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             .insert(&flat_key, &properties_hash);
         self.preimage_source
             .inner
-            .insert(account_properties.bytecode_hash, bytecode.to_vec());
+            .insert(account_properties.bytecode_hash, bytecode_and_artifacts);
         self.preimage_source
             .inner
             .insert(properties_hash, encoding.to_vec());
 
+        self
+    }
+
+    /// Set a preimage, used to test forced deployments
+    pub fn set_preimage(&mut self, hash: Bytes32, preimage: &[u8]) -> &mut Self {
+        self.preimage_source.inner.insert(hash, preimage.to_vec());
         self
     }
 
@@ -504,9 +583,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
     let app = app_name.as_deref().unwrap_or("app");
     let filename = format!("{}.{}", app, extension);
-    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
-        .join("zksync_os")
-        .join(filename)
+    let zksync_os_path = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap()).join("zksync_os")
+        });
+    zksync_os_path.join(filename)
 }
 
 fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {

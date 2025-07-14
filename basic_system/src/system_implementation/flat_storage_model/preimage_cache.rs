@@ -4,6 +4,7 @@ use storage_models::common_structs::{snapshottable_io::SnapshottableIo, Preimage
 use zk_ee::{
     common_structs::{history_map::CacheSnapshotId, NewPreimagesPublicationStorage, PreimageType},
     execution_environment_type::ExecutionEnvironmentType,
+    internal_error,
     system::{
         errors::{InternalError, SystemError},
         IOResultKeeper, Resources,
@@ -13,9 +14,7 @@ use zk_ee::{
     utils::{Bytes32, UsizeAlignedByteBox},
 };
 
-use crate::system_implementation::flat_storage_model::cost_constants::{
-    BLAKE2S_BASE_NATIVE_COST, BLAKE2S_CHUNK_SIZE, BLAKE2S_ROUND_NATIVE_COST,
-};
+use crate::system_implementation::flat_storage_model::cost_constants::blake2s_native_cost;
 
 use super::cost_constants::PREIMAGE_CACHE_GET_NATIVE_COST;
 
@@ -97,10 +96,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             // truncate
             buffered.truncated_to_byte_length(expected_preimage_len_in_bytes);
 
-            let num_rounds = (expected_preimage_len_in_bytes as u64).div_ceil(BLAKE2S_CHUNK_SIZE);
-            let native_cost = num_rounds
-                .saturating_mul(BLAKE2S_ROUND_NATIVE_COST)
-                .saturating_add(BLAKE2S_BASE_NATIVE_COST);
+            let native_cost = blake2s_native_cost(expected_preimage_len_in_bytes);
             resources.charge(&R::from_native(R::Native::from_computational(native_cost)))?;
 
             if PROOF_ENV {
@@ -119,7 +115,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                         };
 
                         if recomputed_hash != *hash {
-                            return Err(InternalError("Account hash mismatch").into());
+                            return Err(internal_error!("Account hash mismatch").into());
                         }
                     }
                     PreimageType::Bytecode => {
@@ -136,7 +132,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                         };
 
                         if recomputed_hash != *hash {
-                            return Err(InternalError("Bytecode hash mismatch").into());
+                            return Err(internal_error!("Bytecode hash mismatch").into());
                         }
                     }
                 };
@@ -243,7 +239,7 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
         _ee_type: ExecutionEnvironmentType,
         preimage_type: &Self::PreimageRequest,
         resources: &mut Self::Resources,
-        preimage: &[u8],
+        preimage: &[&[u8]],
     ) -> Result<&'static [u8], SystemError> {
         use crate::system_implementation::flat_storage_model::cost_constants::PREIMAGE_CACHE_SET_NATIVE_COST;
         use zk_ee::system::Computational;
@@ -258,9 +254,10 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
             preimage_type,
         } = preimage_type;
 
-        let boxed_data = UsizeAlignedByteBox::from_slice_in(preimage, self.allocator.clone());
+        let preimage_len = preimage.iter().fold(0, |acc, chunk| acc + chunk.len());
+        let boxed_data = UsizeAlignedByteBox::from_slices_in(preimage, self.allocator.clone());
 
-        assert_eq!(*expected_preimage_len_in_bytes, preimage.len() as u32);
+        assert_eq!(*expected_preimage_len_in_bytes, preimage_len as u32);
         self.insert_verified_preimage(*preimage_type, hash, boxed_data)
     }
 }

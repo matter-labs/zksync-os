@@ -11,13 +11,14 @@ use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, 
 use rig::forward_system::system::system::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::reference_implementations::FORMAL_INFINITE_BASE_RESOURCES;
+use zk_ee::memory::slice_vec::SliceVec;
+use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
 use zk_ee::system::CallModifier;
 use zk_ee::system::ExecutionEnvironmentLaunchParams;
 use zk_ee::system::NopResultKeeper;
 use zk_ee::system::{
     CallResult, DeploymentPreparationParameters, DeploymentResult, EnvironmentParameters,
-    ExecutionEnvironment, ExternalCallRequest, MemorySubsystemExt, ReturnValues, System,
+    ExecutionEnvironment, ExternalCallRequest, Resource, Resources, ReturnValues, System,
 };
 use zk_ee::utils::Bytes32;
 
@@ -64,9 +65,9 @@ fn fuzz(input: FuzzInput) {
     >::init_from_oracle(mock_oracle())
     .expect("Failed to initialize the mock system");
 
-    let Ok(mut vm_state) = SupportedEEVMState::create_initial(input.ee_version, &mut system) else {
-        return;
-    };
+    pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27;
+    let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
+    let heap = SliceVec::new(&mut heaps);
 
     // choose a CallModifier
     let modifier = match input.modifier {
@@ -97,13 +98,7 @@ fn fuzz(input: FuzzInput) {
     }
 
     // wrap calldata
-    let calldata = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                input.raw_calldata,
-            ))
-    };
+    let calldata = input.raw_calldata;
 
     let mut bytecode = input.raw_bytecode.to_vec();
     if bytecode.len() > 0 && bytecode[0] == 91 {
@@ -111,25 +106,17 @@ fn fuzz(input: FuzzInput) {
     }
 
     // wrap bytecode
-    let decommitted_bytecode = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                &bytecode,
-            ))
-    };
+    let decommitted_bytecode = &bytecode;
 
     let bytecode_len = decommitted_bytecode.len() as u32;
 
-    let empty = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(&[]))
-    };
+    let empty = &[];
 
     let Ok(_) = system.start_global_frame() else {
         return;
     };
+
+    let inf_resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
     match selector {
         0 => {
@@ -147,12 +134,12 @@ fn fuzz(input: FuzzInput) {
                 ForwardRunningSystem<InMemoryTree, InMemoryPreimageSource, TxListSource>,
             > = ExecutionEnvironmentLaunchParams {
                 environment_parameters: EnvironmentParameters {
-                    decommitted_bytecode,
-                    bytecode_len,
+                    bytecode: zk_ee::system::Bytecode::Constructor(&bytecode),
                     scratch_space_len: 0,
                 },
                 external_call: ExternalCallRequest {
-                    resources_to_pass: FORMAL_INFINITE_BASE_RESOURCES,
+                    available_resources: inf_resources.clone(),
+                    ergs_to_pass: inf_resources.ergs(),
                     callers_caller,
                     caller,
                     callee,
@@ -163,16 +150,31 @@ fn fuzz(input: FuzzInput) {
                 },
             };
 
-            let _ = vm_state.start_executing_frame(&mut system, ee_launch_params);
+            let Ok(mut vm_state) =
+                SupportedEEVMState::create_initial(input.ee_version, &mut system)
+            else {
+                return;
+            };
+
+            let _ = vm_state.start_executing_frame(&mut system, ee_launch_params, heap);
         }
         1 => {
             // Fuzz-test SupportedEEVMState::continue_after_external_call
-            let return_values = ReturnValues::from_immutable_slice(calldata);
+            let return_values = ReturnValues {
+                returndata: calldata,
+                return_scratch_space: None,
+            };
 
             let call_result = match input.call_deployment_result {
                 0 => CallResult::CallFailedToExecute,
                 1 => CallResult::Failed { return_values },
                 _ => CallResult::Successful { return_values },
+            };
+
+            let Ok(mut vm_state) =
+                SupportedEEVMState::create_initial(input.ee_version, &mut system)
+            else {
+                return;
             };
 
             // set bytecode
@@ -185,20 +187,19 @@ fn fuzz(input: FuzzInput) {
                 _ => (),
             }
 
-            let _ = vm_state.continue_after_external_call(
-                &mut system,
-                FORMAL_INFINITE_BASE_RESOURCES,
-                call_result,
-            );
+            let _ = vm_state.continue_after_external_call(&mut system, inf_resources, call_result);
         }
         2 => {
             // Fuzz-test SupportedEEVMState::continue_after_deployment
             let deployed_at = B160::from_be_bytes(input.address1);
             let execution_reverted = input.bool_1;
 
-            let return_values = ReturnValues::from_immutable_slice(calldata);
+            let return_values = ReturnValues {
+                returndata: calldata,
+                return_scratch_space: None,
+            };
 
-            let return_values_successful = ReturnValues::from_immutable_slice(empty);
+            let return_values_successful = ReturnValues::empty();
 
             let deployment_result = match input.call_deployment_result {
                 0 => DeploymentResult::Failed {
@@ -206,19 +207,20 @@ fn fuzz(input: FuzzInput) {
                     execution_reverted,
                 },
                 _ => DeploymentResult::Successful {
-                    bytecode: decommitted_bytecode,
-                    bytecode_len,
-                    artifacts_len: 0,
+                    deployed_code: decommitted_bytecode,
                     return_values: return_values_successful,
                     deployed_at,
                 },
             };
 
-            let _ = vm_state.continue_after_deployment(
-                &mut system,
-                FORMAL_INFINITE_BASE_RESOURCES,
-                deployment_result,
-            );
+            let Ok(mut vm_state) =
+                SupportedEEVMState::create_initial(input.ee_version, &mut system)
+            else {
+                return;
+            };
+
+            let _ =
+                vm_state.continue_after_deployment(&mut system, inf_resources, deployment_result);
         }
         3 => {
             // Fuzz-test SupportedEEVMState::prepare_for_deployment
@@ -244,7 +246,7 @@ fn fuzz(input: FuzzInput) {
                     constructor_parameters: empty,
                     deployment_code: calldata,
                     ee_specific_deployment_processing_data,
-                    deployer_full_resources: FORMAL_INFINITE_BASE_RESOURCES,
+                    deployer_full_resources: inf_resources,
                     deployer_nonce: None,
                     nominal_token_value,
                 },
@@ -257,7 +259,12 @@ fn fuzz(input: FuzzInput) {
         return;
     };
 
-    system.finish(Bytes32::default(), Bytes32::default(), &mut NopResultKeeper);
+    system.finish(
+        Bytes32::default(),
+        Bytes32::default(),
+        Bytes32::default(),
+        &mut NopResultKeeper,
+    );
 }
 
 fuzz_target!(|input: FuzzInput| {

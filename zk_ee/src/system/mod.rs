@@ -85,7 +85,15 @@ impl<S: SystemTypes> System<S> {
     }
 
     pub fn get_mix_hash(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.mix_hash
+        #[cfg(feature = "prevrandao")]
+        {
+            self.metadata.block_level_metadata.mix_hash
+        }
+
+        #[cfg(not(feature = "prevrandao"))]
+        {
+            ruint::aliases::U256::ONE
+        }
     }
 
     pub fn get_blockhash(&self, block_number: u64) -> ruint::aliases::U256 {
@@ -256,19 +264,12 @@ where
         resources: &mut S::Resources,
         at_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
     ) -> Result<&'static [u8], SystemError> {
         // IO is fully responsible to to deploy
         // and at the end we just need to remap slice
-        let bytecode = self.io.deploy_code(
-            for_ee,
-            resources,
-            at_address,
-            &bytecode,
-            bytecode_len,
-            artifacts_len,
-        )?;
+        let bytecode = self
+            .io
+            .deploy_code(for_ee, resources, at_address, &bytecode)?;
 
         Ok(bytecode)
     }

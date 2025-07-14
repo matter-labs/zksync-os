@@ -20,6 +20,8 @@ use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::BasicIOImplementerFSM;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
+use zk_ee::internal_error;
+use zk_ee::out_of_ergs_error;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::{
     common_structs::{EventsStorage, LogsStorage},
@@ -88,7 +90,7 @@ where
         if TRANSIENT {
             let ergs = match ee_type {
                 ExecutionEnvironmentType::EVM => Ergs(TLOAD * ERGS_PER_GAS),
-                _ => return Err(InternalError("Unsupported EE").into()),
+                _ => return Err(internal_error!("Unsupported EE").into()),
             };
             let native = R::Native::from_computational(WARM_TSTORAGE_READ_NATIVE_COST);
             resources.charge(&R::from_ergs_and_native(ergs, native))?;
@@ -119,7 +121,7 @@ where
         if TRANSIENT {
             let ergs = match ee_type {
                 ExecutionEnvironmentType::EVM => Ergs(TSTORE * ERGS_PER_GAS),
-                _ => return Err(InternalError("Unsupported EE").into()),
+                _ => return Err(internal_error!("Unsupported EE").into()),
             };
             let native = R::Native::from_computational(WARM_TSTORAGE_WRITE_NATIVE_COST);
             resources.charge(&R::from_ergs_and_native(ergs, native))?;
@@ -162,12 +164,10 @@ where
                 let topic_cost = LOGTOPIC * (topics.len() as u64);
                 let len_cost = (data.len() as u64) * LOGDATA;
                 let cost = static_cost + topic_cost + len_cost;
-                let ergs = cost
-                    .checked_mul(ERGS_PER_GAS)
-                    .ok_or(SystemError::OutOfErgs)?;
+                let ergs = cost.checked_mul(ERGS_PER_GAS).ok_or(out_of_ergs_error!())?;
                 Ergs(ergs)
             }
-            _ => return Err(InternalError("Unsupported EE").into()),
+            _ => return Err(internal_error!("Unsupported EE").into()),
         };
         let native = R::Native::from_computational(
             EVENT_STORAGE_BASE_NATIVE_COST
@@ -814,6 +814,7 @@ where
         ArtifactsLen: Maybe<u32>,
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
+        CodeVersion: Maybe<u8>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -830,6 +831,7 @@ where
                 ArtifactsLen,
                 NominalTokenBalance,
                 Bytecode,
+                CodeVersion,
             >,
         >,
     ) -> Result<
@@ -843,6 +845,7 @@ where
             ArtifactsLen,
             NominalTokenBalance,
             Bytecode,
+            CodeVersion,
         >,
         SystemError,
     > {
@@ -874,18 +877,9 @@ where
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
     ) -> Result<&'static [u8], SystemError> {
-        self.storage.deploy_code(
-            from_ee,
-            resources,
-            at_address,
-            bytecode,
-            bytecode_len,
-            artifacts_len,
-            &mut self.oracle,
-        )
+        self.storage
+            .deploy_code(from_ee, resources, at_address, bytecode, &mut self.oracle)
     }
 
     fn set_bytecode_details(

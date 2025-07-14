@@ -6,10 +6,13 @@ on:
   pull_request:
 permissions: read-all
 
+env:
+  CARGO_INCREMENTAL: 0
+
 jobs:
   tests:
     name: tests
-    runs-on: [matterlabs-ci-runner]
+    runs-on: [matterlabs-ci-runner-high-performance]
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -38,8 +41,8 @@ jobs:
               (cd "$dir" && ./build.sh)
             fi
           done
-      - name: Compile for forward running
-        run: cargo build --release
+      - name: Compile
+        run: cargo test --release --no-run
       - name: Run rust tests
         run: cargo test --release -j 3 -- --skip binary_checker
 
@@ -189,3 +192,28 @@ jobs:
       - uses: crate-ci/typos@master
         with:
           config: ./.github/typos.toml
+  
+  run_fuzzer_regressions:
+    name: Run fuzzer regressions
+    runs-on: [matterlabs-ci-runner]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: Compile for RISC-V
+        working-directory: ./zksync_os
+        run: |
+          rustup target add riscv32i-unknown-none-elf
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          rustup component add rust-src
+          ./dump_bin.sh
+      - name: Run regression tests
+        working-directory: ./tests/fuzzer
+        run: |
+          ./fuzz.sh install
+          ./fuzz.sh regression

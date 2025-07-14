@@ -23,8 +23,10 @@ cycle_marker = { path = "../cycle_marker" }
 
 [features]
 testing = ["serde", "ruint/serde"]
-default = ["testing"]
+default = ["testing", "error_origins"]
 cycle_marker = []
+error_origins = []
+prevrandao = []
 
 [dev-dependencies]
 

@@ -10,7 +10,10 @@ use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use errors::InvalidTransaction;
 use ruint::aliases::U256;
-use zk_ee::system::errors::{FatalError, InternalError, SystemError};
+use zk_ee::{
+    internal_error,
+    system::errors::{FatalError, InternalError, SystemError},
+};
 
 mod abi_utils;
 pub mod access_list_parser;
@@ -390,9 +393,9 @@ impl<'a> ZkSyncTransaction<'a> {
             Self::EIP_2930_TX_TYPE => self.eip2930_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_1559_TX_TYPE => self.eip1559_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_signed_hash(chain_id, resources),
-            _ => {
-                Err(InternalError("Invalid type for signed hash, most likely l1 or upgrade").into())
-            }
+            _ => Err(
+                internal_error!("Invalid type for signed hash, most likely l1 or upgrade").into(),
+            ),
         }
     }
 
@@ -413,7 +416,7 @@ impl<'a> ZkSyncTransaction<'a> {
             Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_hash(chain_id, resources),
             Self::L1_L2_TX_TYPE => self.l1_tx_calculate_hash(resources),
             Self::UPGRADE_TX_TYPE => self.l1_tx_calculate_hash(resources),
-            _ => Err(InternalError("Type should be validated").into()),
+            _ => Err(internal_error!("Type should be validated").into()),
         }
     }
 
@@ -648,7 +651,7 @@ impl<'a> ZkSyncTransaction<'a> {
 
         let access_list_raw_length = self
             .estimate_access_list_raw_length()
-            .map_err(|()| InternalError("Access list format must have been validated before"))?;
+            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
 
         total_list_len +=
             rlp::estimate_number_encoding_len(self.value.encoding(&self.underlying_buffer))
@@ -707,7 +710,7 @@ impl<'a> ZkSyncTransaction<'a> {
         );
         rlp::apply_bytes_encoding_to_hash(self.data.encoding(&self.underlying_buffer), &mut hasher);
         self.apply_access_list_encoding_to_hash(access_list_raw_length, &mut hasher)
-            .map_err(|()| InternalError("Access list format must have been validated before"))?;
+            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
 
         // Add signature if not signed hash
         if !signed {
@@ -768,7 +771,7 @@ impl<'a> ZkSyncTransaction<'a> {
 
         let access_list_raw_length = self
             .estimate_access_list_raw_length()
-            .map_err(|()| InternalError("Access list format must have been validated before"))?;
+            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
 
         total_list_len +=
             rlp::estimate_number_encoding_len(self.value.encoding(&self.underlying_buffer))
@@ -832,7 +835,7 @@ impl<'a> ZkSyncTransaction<'a> {
         );
         rlp::apply_bytes_encoding_to_hash(self.data.encoding(&self.underlying_buffer), &mut hasher);
         self.apply_access_list_encoding_to_hash(access_list_raw_length, &mut hasher)
-            .map_err(|()| InternalError("Access list format must have been validated before"))?;
+            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
         // Add signature if not signed hash
         if !signed {
             // r
@@ -1018,19 +1021,19 @@ impl<'a> ZkSyncTransaction<'a> {
                 .max_fee_per_gas
                 .read()
                 .checked_mul(self.gas_limit.read() as u128)
-                .ok_or(InternalError("mfpg*gl"))?;
+                .ok_or(internal_error!("mfpg*gl"))?;
             self.value
                 .read()
                 .checked_add(U256::from(fee_amount))
-                .ok_or(InternalError("fa+v"))
+                .ok_or(internal_error!("fa+v"))
         }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct ParsedValue<T: 'static + Clone + Copy + core::fmt::Debug> {
-    value: T,
-    range: Range<usize>,
+    pub value: T,
+    pub range: Range<usize>,
 }
 
 impl<T: 'static + Clone + Copy + core::fmt::Debug> ParsedValue<T> {
@@ -1195,9 +1198,9 @@ fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), Fata
     resources
         .charge(&R::from_native(native_cost))
         .map_err(|e| match e {
-            SystemError::OutOfErgs => unreachable!(),
+            SystemError::OutOfErgs(_) => unreachable!(),
             SystemError::Internal(e) => FatalError::Internal(e),
-            SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+            SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
         })
 }
 

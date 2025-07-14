@@ -64,8 +64,11 @@ jobs:
       - name: run benchmarks on base branch
         shell: bash
         run: |
-          MARKER_PATH=$(pwd)/base_block.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker -- single-run --block-dir tests/instances/eth_runner/blocks/22244135 > base_block.out
-          MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker -p precompiles -- test_precompiles
+          for dir in tests/instances/eth_runner/blocks/*; do
+            blk=$(basename "$dir")
+            MARKER_PATH=$(pwd)/base_block_${blk}.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" > base_block_${blk}.out
+          done
+          MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
 
       - name: checkout PR
         run: |
@@ -85,17 +88,27 @@ jobs:
         shell: bash
         id: comparison
         run: |
-          MARKER_PATH=$(pwd)/head_block.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker -- single-run --block-dir tests/instances/eth_runner/blocks/22244135  > head_block.out
-          MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker -p precompiles -- test_precompiles
+          mkdir -p bench_results
+          pairs=""
+          for dir in tests/instances/eth_runner/blocks/*; do
+            blk=$(basename "$dir")
+            MARKER_PATH=$(pwd)/head_block_${blk}.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" > head_block_${blk}.out
+            python3 bench_scripts/parse_opcodes.py base_block_${blk}.out bench_results/base_block_${blk}.csv bench_results/base_block_${blk}.png
+            python3 bench_scripts/parse_opcodes.py head_block_${blk}.out bench_results/head_block_${blk}.csv bench_results/head_block_${blk}.png
+            if [ -z "$pairs" ]; then
+              pairs="(\"block_${blk}\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"run_prepared\")"
+            else
+              pairs="${pairs},(\"block_${blk}\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"run_prepared\")"
+            fi
+          done
+          MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+          pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
           # Output all lines from the benchmark result starting from the "## ..." comparison header.
           # Since the output spans multiple lines, we use a heredoc declaration.
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "result<<$EOF" >> $GITHUB_OUTPUT
-          python3 bench_scripts/compare_bench.py '[("block", "base_block.bench", "head_block.bench", "run_prepared"),("precompiles", "base_precompiles.bench", "head_precompiles.bench")]' >> $GITHUB_OUTPUT
+          python3 bench_scripts/compare_bench.py "[${pairs}]" >> $GITHUB_OUTPUT
           echo "$EOF" >> $GITHUB_OUTPUT
-          mkdir bench_results
-          python3 bench_scripts/parse_opcodes.py base_block.out bench_results/base_block.csv bench_results/base_block.png
-          python3 bench_scripts/parse_opcodes.py head_block.out bench_results/head_block.csv bench_results/head_block.png
 
       - uses: actions/upload-artifact@v4
         with:

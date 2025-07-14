@@ -17,4 +17,4 @@ cycle_marker = { path = "../../../cycle_marker" }
 
 [features]
 cycle_marker = ["rig/cycle_marker"]
-default = ["rig/resources_for_tester"]
+default = []

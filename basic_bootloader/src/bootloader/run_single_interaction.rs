@@ -1,6 +1,7 @@
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use system_hooks::HooksStorage;
-use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
+use zk_ee::internal_error;
+use zk_ee::system::errors::{FatalError, SystemError, UpdateQueryError};
 use zk_ee::system::CallModifier;
 use zk_ee::system::{EthereumLikeTypes, System};
 
@@ -37,7 +38,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             )
             .map_err(|e| match e {
                 UpdateQueryError::NumericBoundsError => {
-                    InternalError("Insufficient balance while minting").into()
+                    internal_error!("Insufficient balance while minting").into()
                 }
                 UpdateQueryError::System(e) => e,
             })?;
@@ -84,8 +85,8 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                     )
                 })
                 .map_err(|e| match e {
-                    SystemError::OutOfErgs => unreachable!("OOG on infinite resources"),
-                    SystemError::OutOfNativeResources => FatalError::OutOfNativeResources,
+                    SystemError::OutOfErgs(_) => unreachable!("OOG on infinite resources"),
+                    SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
                     SystemError::Internal(e) => FatalError::Internal(e),
                 })?
                 .ee_version
@@ -97,7 +98,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             .then(|| {
                 system
                     .start_global_frame()
-                    .map_err(|_| InternalError("must start a frame before execution"))
+                    .map_err(|_| internal_error!("must start a frame before execution"))
             })
             .transpose()?;
 
@@ -125,13 +126,13 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             reverted,
         }) = final_state
         else {
-            return Err(InternalError("attempt to run ended up in invalid state").into());
+            return Err(internal_error!("attempt to run ended up in invalid state").into());
         };
 
         if let Some(ref rollback_handle) = rollback_handle {
             system
                 .finish_global_frame(reverted.then_some(rollback_handle))
-                .map_err(|_| InternalError("must finish execution frame"))?;
+                .map_err(|_| internal_error!("must finish execution frame"))?;
         }
         Ok(CompletedExecution {
             return_values,
