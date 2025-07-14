@@ -261,7 +261,7 @@ impl AccountProperties {
             })
         } else {
             if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
-                return Err(InternalError(
+                return Err(internal_error!(
                     "Account properties diff compression shouldn't be called for same values",
                 ));
             }
