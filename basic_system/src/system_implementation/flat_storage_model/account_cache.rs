@@ -119,7 +119,6 @@ where
                     WARM_PROPERTIES_ACCESS_COST_ERGS
                 }
             }
-            _ => return Err(internal_error!("Unsupported EE").into()),
         };
         let native = R::Native::from_computational(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST);
         resources.charge(&R::from_ergs_and_native(ergs, native))?;
@@ -147,7 +146,6 @@ where
                         };
                         resources.charge(&cost)?;
                     }
-                    _ => return Err(internal_error!("Unsupported EE").into()),
                 }
 
                 // to avoid divergence we read as-if infinite ergs
@@ -215,7 +213,6 @@ where
                                 };
                                 resources.charge(&cost)?;
                             }
-                            _ => return Err(internal_error!("Unsupported EE").into()),
                         }
                     }
 
@@ -416,7 +413,6 @@ where
             ExecutionEnvironmentType::EVM => {
                 resources.charge(&R::from_ergs(KNOWN_TO_BE_WARM_PROPERTIES_ACCESS_COST_ERGS))?
             }
-            _ => return Err(internal_error!("Unsupported EE").into()),
         }
 
         match self.cache.get(address.into()) {
@@ -647,6 +643,9 @@ where
         resources: &mut R,
     ) -> Result<Bytes32, SystemError> {
         match from_ee {
+            ExecutionEnvironmentType::NoEE => {
+                Err(internal_error!("Deployment cannot happen in NoEE").into())
+            }
             ExecutionEnvironmentType::EVM => {
                 use crypto::blake2s::Blake2s256;
                 use crypto::MiniDigest;
@@ -662,7 +661,6 @@ where
                 hasher.update(artifacts);
                 Ok(Bytes32::from_array(hasher.finalize()))
             }
-            _ => Err(internal_error!("Unsupported EE").into()),
         }
     }
 
@@ -686,7 +684,6 @@ where
                 let ergs_to_spend = Ergs(code_deposit_cost.saturating_mul(ERGS_PER_GAS));
                 resources.charge(&R::from_ergs(ergs_to_spend))?;
             }
-            _ => return Err(internal_error!("Unsupported EE type").into()),
         }
 
         // we charged for everything, and so all IO below will use infinite ergs
@@ -709,6 +706,9 @@ where
 
         // compute observable and true hashes of bytecode
         let observable_bytecode_hash = match from_ee {
+            ExecutionEnvironmentType::NoEE => {
+                return Err(internal_error!("Deployment cannot happen in NoEE").into())
+            }
             ExecutionEnvironmentType::EVM => {
                 let native_cost = keccak256_native_cost::<R>(deployed_code.len());
                 resources.charge(&R::from_native(native_cost))?;
@@ -717,13 +717,13 @@ where
                 let digest = Keccak256::digest(deployed_code);
                 Bytes32::from_array(digest)
             }
-            _ => {
-                return Err(internal_error!("Unsupported EE").into());
-            }
         };
         let observable_bytecode_len = deployed_code.len() as u32;
 
         let (deployed_code, bytecode_hash, artifacts_len, code_version) = match from_ee {
+            ExecutionEnvironmentType::NoEE => {
+                return Err(internal_error!("Deployment cannot happen in NoEE").into())
+            }
             ExecutionEnvironmentType::EVM => {
                 let artifacts = evm_interpreter::BytecodePreprocessingData::create_artifacts(
                     alloc,
@@ -757,7 +757,6 @@ where
                     evm_interpreter::ARTIFACTS_CACHING_CODE_VERSION_BYTE,
                 )
             }
-            _ => return Err(internal_error!("Unsupported EE type").into()),
         };
 
         resources.charge(&R::from_native(R::Native::from_computational(
@@ -831,6 +830,9 @@ where
             preimages_cache.get_preimage::<PROOF_ENV>(ee, &request, resources, oracle)?;
 
         let (_deployed_code, bytecode_hash, artifacts_len, code_version) = match ee {
+            ExecutionEnvironmentType::NoEE => {
+                return Err(internal_error!("Deployment cannot happen in NoEE").into())
+            }
             ExecutionEnvironmentType::EVM => {
                 // For EVM, default code version doesn't cache artifacts
                 assert_eq!(artifacts_len, 0);
@@ -866,7 +868,6 @@ where
                     evm_interpreter::ARTIFACTS_CACHING_CODE_VERSION_BYTE,
                 )
             }
-            _ => return Err(internal_error!("Unsupported EE type").into()),
         };
 
         resources.charge(&R::from_native(R::Native::from_computational(
@@ -989,7 +990,6 @@ where
                         resources.charge(&R::from_ergs(ergs_to_spend))?;
                     }
                 }
-                _ => return Err(internal_error!("Unsupported EE").into()),
             }
         }
 

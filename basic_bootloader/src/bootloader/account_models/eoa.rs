@@ -190,8 +190,6 @@ where
 
         let to_ee_type = if !transaction.reserved[1].read().is_zero() {
             Some(ExecutionEnvironmentType::EVM)
-        } else if to == SPECIAL_ADDRESS_TO_WASM_DEPLOY {
-            Some(ExecutionEnvironmentType::IWasm)
         } else {
             None
         };
@@ -567,10 +565,12 @@ where
         });
     }
     let ee_specific_deployment_processing_data = match to_ee_type {
+        ExecutionEnvironmentType::NoEE => {
+            return Err(internal_error!("Deployment cannot target NoEE").into())
+        }
         ExecutionEnvironmentType::EVM => {
             SystemBoundEVMInterpreter::<S>::default_ee_deployment_options(system)
         }
-        _ => return Err(internal_error!("Unsupported EE").into()),
     };
 
     let deployment_parameters = DeploymentPreparationParameters {

@@ -45,10 +45,6 @@ use zk_ee::system::*;
 use zk_ee::utils::*;
 
 pub(crate) const EVM_EE_BYTE: u8 = ExecutionEnvironmentType::EVM_EE_BYTE;
-#[allow(dead_code)]
-pub(crate) const ERA_VM_EE_BYTE: u8 = ExecutionEnvironmentType::ERA_VM_EE_BYTE;
-#[allow(dead_code)]
-pub(crate) const IWASM_EE_BYTE: u8 = ExecutionEnvironmentType::IWASM_EE_BYTE;
 pub const DEBUG_OUTPUT: bool = false;
 
 pub struct BasicBootloader<S: EthereumLikeTypes> {

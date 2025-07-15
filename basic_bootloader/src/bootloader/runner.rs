@@ -457,7 +457,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                                 return_values: ReturnValues::empty(),
                             }));
                         }
-                        _ => return Err(internal_error!("Unsupported EE").into()),
                     }
                 }
             }
@@ -993,6 +992,9 @@ where
     // Now we charge for the rest of the CALL related costs
     let stipend = if !is_entry_frame {
         match ee_version {
+            ExecutionEnvironmentType::NoEE => {
+                return Err(internal_error!("Cannot be NoEE deep in the callstack").into())
+            }
             ExecutionEnvironmentType::EVM => {
                 let is_delegate = call_request.is_delegate();
                 let is_callcode = call_request.is_callcode();
@@ -1023,7 +1025,6 @@ where
 
                 stipend
             }
-            _ => return Err(internal_error!("Unsupported EE").into()),
         }
     } else {
         None

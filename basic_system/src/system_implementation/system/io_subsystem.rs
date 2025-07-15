@@ -19,7 +19,6 @@ use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::BasicIOImplementerFSM;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
-use zk_ee::internal_error;
 use zk_ee::out_of_ergs_error;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::{
@@ -88,8 +87,8 @@ where
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError> {
         if TRANSIENT {
             let ergs = match ee_type {
+                ExecutionEnvironmentType::NoEE => Ergs::empty(),
                 ExecutionEnvironmentType::EVM => Ergs(TLOAD * ERGS_PER_GAS),
-                _ => return Err(internal_error!("Unsupported EE").into()),
             };
             let native = R::Native::from_computational(WARM_TSTORAGE_READ_NATIVE_COST);
             resources.charge(&R::from_ergs_and_native(ergs, native))?;
@@ -119,8 +118,8 @@ where
     ) -> Result<(), SystemError> {
         if TRANSIENT {
             let ergs = match ee_type {
+                ExecutionEnvironmentType::NoEE => Ergs::empty(),
                 ExecutionEnvironmentType::EVM => Ergs(TSTORE * ERGS_PER_GAS),
-                _ => return Err(internal_error!("Unsupported EE").into()),
             };
             let native = R::Native::from_computational(WARM_TSTORAGE_WRITE_NATIVE_COST);
             resources.charge(&R::from_ergs_and_native(ergs, native))?;
@@ -158,6 +157,7 @@ where
     ) -> Result<(), SystemError> {
         // Charge resources
         let ergs = match ee_type {
+            ExecutionEnvironmentType::NoEE => Ergs::empty(),
             ExecutionEnvironmentType::EVM => {
                 let static_cost = LOG;
                 let topic_cost = LOGTOPIC * (topics.len() as u64);
@@ -166,7 +166,6 @@ where
                 let ergs = cost.checked_mul(ERGS_PER_GAS).ok_or(out_of_ergs_error!())?;
                 Ergs(ergs)
             }
-            _ => return Err(internal_error!("Unsupported EE").into()),
         };
         let native = R::Native::from_computational(
             EVENT_STORAGE_BASE_NATIVE_COST
