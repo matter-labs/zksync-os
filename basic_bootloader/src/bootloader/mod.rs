@@ -31,7 +31,7 @@ use core::fmt::Write;
 use core::mem::MaybeUninit;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
-use zk_ee::oracle::*;
+use zk_ee::{internal_error, oracle::*};
 
 use crate::bootloader::account_models::{ExecutionOutput, ExecutionResult, TxProcessingResult};
 use crate::bootloader::block_header::BlockHeader;
@@ -348,6 +348,9 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let consensus_random = Bytes32::from_u256_be(&system.get_mix_hash());
         let base_fee_per_gas = system.get_eip1559_basefee();
         // TODO: add gas_per_pubdata and native price
+        let base_fee_per_gas = base_fee_per_gas
+            .try_into()
+            .map_err(|_| internal_error!("base_fee_per_gas exceeds max u64"))?;
         let block_header = BlockHeader::new(
             Bytes32::from(previous_block_hash.to_be_bytes::<32>()),
             beneficiary,
@@ -357,7 +360,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             gas_used,
             timestamp,
             consensus_random,
-            base_fee_per_gas.try_into().unwrap(),
+            base_fee_per_gas,
         );
         let block_hash = Bytes32::from(block_header.hash());
         result_keeper.block_sealed(block_header);
