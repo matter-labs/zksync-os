@@ -173,7 +173,10 @@ where
                 }
             };
 
-        let result = if !preparation_out_of_resources {
+        // to_charge_for_pubdata can be cached to used in the refund step
+        // only if the execution succeeded. Otherwise, this value needs
+        // to be recomputed after reverting state changes.
+        let (result, to_charge_for_pubdata) = if !preparation_out_of_resources {
             // Take a snapshot in case we need to revert due to out of native.
             let rollback_handle = system.start_global_frame()?;
 
@@ -192,14 +195,18 @@ where
                 &mut resources,
                 withheld_resources,
             ) {
-                Ok(r) => {
-                    match r {
-                        ExecutionResult::Success { .. } => system.finish_global_frame(None)?,
-                        ExecutionResult::Revert { .. } => {
-                            system.finish_global_frame(Some(&rollback_handle))?
+                Ok((r, to_charge_for_pubdata)) => {
+                    let to_charge_for_pubdata = match r {
+                        ExecutionResult::Success { .. } => {
+                            system.finish_global_frame(None)?;
+                            Some(to_charge_for_pubdata)
                         }
-                    }
-                    r
+                        ExecutionResult::Revert { .. } => {
+                            system.finish_global_frame(Some(&rollback_handle))?;
+                            None
+                        }
+                    };
+                    (r, to_charge_for_pubdata)
                 }
                 Err(e) => {
                     match e.root_cause() {
@@ -211,20 +218,26 @@ where
                             ));
                             resources.exhaust_ergs();
                             system.finish_global_frame(Some(&rollback_handle))?;
-                            ExecutionResult::Revert { output: &[] }
+                            (ExecutionResult::Revert { output: &[] }, None)
                         }
                         _ => return Err(e.into()),
                     }
                 }
             }
         } else {
-            ExecutionResult::Revert { output: &[] }
+            (ExecutionResult::Revert { output: &[] }, None)
         };
 
         // Compute gas to refund
         // TODO: consider operator refund
-        let (_pubdata_spent, to_charge_for_pubdata) =
-            get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
+        let to_charge_for_pubdata = match to_charge_for_pubdata {
+            Some(r) => r,
+            None => {
+                let (_pubdata_spent, to_charge_for_pubdata) =
+                    get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
+                to_charge_for_pubdata
+            }
+        };
         #[allow(unused_variables)]
         let (_, gas_used) = Self::compute_gas_refund(
             system,
@@ -325,6 +338,7 @@ where
         })
     }
 
+    // Returns (execution_result, to_charge_for_pubdata)
     fn execute_l1_transaction_and_notify_result<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
@@ -336,7 +350,7 @@ where
         native_per_pubdata: U256,
         resources: &mut S::Resources,
         withheld_resources: S::Resources,
-    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
+    ) -> Result<(ExecutionResult<'a>, S::Resources), BootloaderSubsystemError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Executing L1 transaction\n"));
@@ -414,17 +428,18 @@ where
         // resources could be spent for pubdata.
         resources.reclaim_withheld(withheld_resources);
 
-        let execution_result =
-            if !check_enough_resources_for_pubdata(system, native_per_pubdata, resources, None)? {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Not enough gas for pubdata after execution\n"));
-                execution_result.reverted()
-            } else {
-                execution_result
-            };
+        let (enough, to_charge_for_pubdata) =
+            check_enough_resources_for_pubdata(system, native_per_pubdata, resources, None)?;
+        let execution_result = if !enough {
+            let _ = system
+                .get_logger()
+                .write_fmt(format_args!("Not enough gas for pubdata after execution\n"));
+            execution_result.reverted()
+        } else {
+            execution_result
+        };
 
-        Ok(execution_result)
+        Ok((execution_result, to_charge_for_pubdata))
     }
 
     fn process_l2_transaction<'a, Config: BasicBootloaderExecutionConfig>(
@@ -558,7 +573,10 @@ where
         // Take a snapshot in case we need to revert due to out of native.
         let rollback_handle = system.start_global_frame()?;
 
-        let execution_result = match Self::transaction_execution(
+        // to_charge_for_pubdata can be cached to used in the refund step
+        // only if the execution succeeded. Otherwise, this value needs
+        // to be recomputed after reverting state changes.
+        let (execution_result, to_charge_for_pubdata) = match Self::transaction_execution(
             system,
             system_functions,
             memories,
@@ -571,14 +589,18 @@ where
             caller_nonce,
             &mut resources,
         ) {
-            Ok(r) => {
-                match r {
-                    ExecutionResult::Success { .. } => system.finish_global_frame(None)?,
-                    ExecutionResult::Revert { .. } => {
-                        system.finish_global_frame(Some(&rollback_handle))?
+            Ok((r, to_charge_for_pubdata)) => {
+                let to_charge_for_pubdata = match r {
+                    ExecutionResult::Success { .. } => {
+                        system.finish_global_frame(None)?;
+                        Some(to_charge_for_pubdata)
                     }
-                }
-                r
+                    ExecutionResult::Revert { .. } => {
+                        system.finish_global_frame(Some(&rollback_handle))?;
+                        None
+                    }
+                };
+                (r, to_charge_for_pubdata)
             }
             // Out of native is converted to a top-level revert and
             // gas is exhausted.
@@ -589,7 +611,7 @@ where
                     ));
                     resources.exhaust_ergs();
                     system.finish_global_frame(Some(&rollback_handle))?;
-                    ExecutionResult::Revert { output: &[] }
+                    (ExecutionResult::Revert { output: &[] }, None)
                 }
                 _ => return Err(e.into()),
             },
@@ -616,6 +638,7 @@ where
                 validation_pubdata,
                 caller_ee_type,
                 &mut resources,
+                to_charge_for_pubdata,
             )?
         } else {
             0
@@ -748,6 +771,7 @@ where
         Ok(ValidationResult { validation_pubdata })
     }
 
+    // Returns (execution_result, to_charge_for_pubdata)
     #[allow(clippy::too_many_arguments)]
     fn transaction_execution<'a>(
         system: &mut System<S>,
@@ -761,7 +785,7 @@ where
         validation_pubdata: u64,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
+    ) -> Result<(ExecutionResult<'a>, S::Resources), BootloaderSubsystemError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Start of execution\n"));
@@ -784,18 +808,19 @@ where
             .get_logger()
             .write_fmt(format_args!("Transaction execution completed\n"));
 
-        if !check_enough_resources_for_pubdata(
+        let (has_enough, to_charge_for_pubdata) = check_enough_resources_for_pubdata(
             system,
             native_per_pubdata,
             resources,
             Some(validation_pubdata),
-        )? {
+        )?;
+        if !has_enough {
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Not enough gas for pubdata after execution\n"));
-            Ok(execution_result.reverted())
+            Ok((execution_result.reverted(), to_charge_for_pubdata))
         } else {
-            Ok(execution_result)
+            Ok((execution_result, to_charge_for_pubdata))
         }
     }
 
@@ -962,6 +987,7 @@ where
         validation_pubdata: u64,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        to_charge_for_pubdata: Option<S::Resources>,
     ) -> Result<u64, InternalError> {
         let paymaster = transaction.paymaster.read();
         let _ = system
@@ -996,11 +1022,17 @@ where
 
         // Pubdata for validation has been charged already,
         // we charge for the rest now.
-        let (_pubdata_spent, to_charge_for_pubdata) = get_resources_to_charge_for_pubdata(
-            system,
-            native_per_pubdata,
-            Some(validation_pubdata),
-        )?;
+        let to_charge_for_pubdata = match to_charge_for_pubdata {
+            Some(r) => r,
+            None => {
+                let (_pubdata_spent, to_charge_for_pubdata) = get_resources_to_charge_for_pubdata(
+                    system,
+                    native_per_pubdata,
+                    Some(validation_pubdata),
+                )?;
+                to_charge_for_pubdata
+            }
+        };
         let (total_gas_refund, gas_used) = Self::compute_gas_refund(
             system,
             to_charge_for_pubdata,
