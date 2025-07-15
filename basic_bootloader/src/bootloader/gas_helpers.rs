@@ -127,13 +127,17 @@ pub fn cost_for_calldata(calldata: &[u8]) -> Result<(usize, u64), InternalError>
 /// Get current pubdata spent and ergs to be charged for it.
 /// If base_pubdata is Some, it's discounted from the current
 /// pubdata counter.
+/// Note: if base_pubdata is greater than the current counter, this function
+/// returns 0.
 ///
 pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
     system: &mut System<S>,
     native_per_pubdata: U256,
     base_pubdata: Option<u64>,
 ) -> Result<(u64, S::Resources), InternalError> {
-    let current_pubdata_spent = system.net_pubdata_used()? - base_pubdata.unwrap_or(0);
+    let current_pubdata_spent = system
+        .net_pubdata_used()?
+        .saturating_sub(base_pubdata.unwrap_or(0));
     let native_per_pubdata = u256_to_u64_saturated(&native_per_pubdata);
     let native = current_pubdata_spent
         .checked_mul(native_per_pubdata)
