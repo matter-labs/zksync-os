@@ -52,7 +52,7 @@ pub struct FlatStorageLeaf<const N: usize> {
 
 impl<const N: usize> UsizeSerializable for FlatStorageLeaf<N> {
     const USIZE_LEN: usize =
-        <Bytes32 as UsizeSerializable>::USIZE_LEN * 2 + <u64 as UsizeSerializable>::USIZE_LEN * 2;
+        <Bytes32 as UsizeSerializable>::USIZE_LEN * 2 + <u64 as UsizeSerializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
         ExactSizeChain::new(
