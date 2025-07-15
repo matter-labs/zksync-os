@@ -265,8 +265,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> IOOracle
 
 #[derive(Clone, Debug)]
 pub struct CallSimulationOracle<S: ReadStorage, PS: PreimageSource, TS: TxSource> {
-    pub io_implementer_init_data:
-        Option<BasicIOImplementerFSM<FlatStorageCommitment<TESTING_TREE_HEIGHT>>>,
+    pub io_implementer_init_data: Option<BasicIOImplementerFSM<FlatStorageCommitment<TREE_HEIGHT>>>,
     pub block_metadata: BlockMetadataFromOracle,
     pub storage: S,
     pub tx_source: TS,
