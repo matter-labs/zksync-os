@@ -322,6 +322,19 @@ impl<'a> ZkSyncTransaction<'a> {
             }
         }
 
+        // Reserved dynamic is empty unless access lists are supported
+        match tx_type {
+            Self::EIP_1559_TX_TYPE | Self::EIP_2930_TX_TYPE => {}
+            _ => {
+                if !self
+                    .reserved_dynamic
+                    .access_list_is_empty(&self.underlying_buffer)?
+                {
+                    return Err(());
+                }
+            }
+        }
+
         Ok(())
     }
 

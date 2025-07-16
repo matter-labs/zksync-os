@@ -56,6 +56,10 @@ impl ReservedDynamicParser {
             Some(parser) => parser.into_iter(slice),
         }
     }
+
+    pub fn access_list_is_empty<'a>(&self, slice: &'a [u8]) -> Result<bool, ()> {
+        Ok(self.access_list_iter(slice)?.next().is_none())
+    }
 }
 
 // Return usize for ease of use for indexing
