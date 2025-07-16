@@ -14,6 +14,8 @@ use crate::{
 };
 use alloc::alloc::Global;
 use core::alloc::Allocator;
+use core::ops::AddAssign;
+use arrayvec::ArrayVec;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
@@ -308,6 +310,26 @@ where
                 results_keeper.pubdata(data.as_slice());
             }
         })
+    }
+
+    pub fn apply_to_array_vec(&self, array_vec: &mut ArrayVec<Bytes32, 16384>) {
+        self.list.iter().for_each(|el| {
+            let log: L2ToL1Log = el.into();
+            array_vec.push(log.hash())
+        });
+    }
+
+    pub fn apply_l1_txs_to_commitment(&self, mut count: U256, mut rolling_keccak: Bytes32) -> (U256, Bytes32) {
+        for log in self.list.iter() {
+            if let GenericLogContentData::L1TxLog(l1_tx) = &log.data {
+                count.add_assign(U256::ONE);
+                let mut hasher = Keccak256::new();
+                hasher.update(rolling_keccak.as_u8_ref());
+                hasher.update(l1_tx.tx_hash.as_u8_ref());
+                rolling_keccak = hasher.finalize().into();
+            }
+        }
+        (count, rolling_keccak)
     }
 
     // we use it for tests to generate single block batches

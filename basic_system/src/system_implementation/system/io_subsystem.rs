@@ -36,6 +36,7 @@ use zk_ee::{
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::UsizeAlignedByteBox,
 };
+use crate::system_implementation::system::public_input::BatchPublicInputBuilder;
 
 pub struct FullIO<
     A: Allocator + Clone + Default,
@@ -449,7 +450,7 @@ where
 
 // In practice we will not use single block batches
 // This functionality is here only for the tests
-#[cfg(not(feature = "wrap-in-batch"))]
+#[cfg(all(not(feature = "wrap-in-batch"),not(feature = "multiblock-batch")))]
 impl<
         A: Allocator + Clone + Default,
         R: Resources,
@@ -679,6 +680,111 @@ where
         ));
 
         (self.oracle, public_input_hash)
+    }
+}
+
+#[cfg(feature = "multiblock-batch")]
+impl<
+    A: Allocator + Clone + Default,
+    R: Resources,
+    P: StorageAccessPolicy<R, Bytes32> + Default,
+    SC: StackCtor<SCC>,
+    SCC: const StackCtorConst,
+    O: IOOracle,
+> FinishIO for FullIO<A, R, P, SC, SCC, O, true>
+where
+    ExtraCheck<SCC, A>:,
+{
+    type FinalData = (FullIO<A, R, P, SC, SCC, O, true>, BlockMetadataFromOracle, Bytes32, Bytes32);
+    fn finish(
+        self,
+        block_metadata: BlockMetadataFromOracle,
+        current_block_hash: Bytes32,
+        _l1_to_l2_txs_hash: Bytes32,
+        upgrade_tx_hash: Bytes32,
+        _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
+        _logger: impl Logger,
+    ) -> Self::FinalData {
+        (self, block_metadata, current_block_hash, upgrade_tx_hash)
+    }
+}
+
+#[cfg(feature = "multiblock-batch")]
+impl<
+    A: Allocator + Clone + Default,
+    R: Resources,
+    P: StorageAccessPolicy<R, Bytes32> + Default,
+    SC: StackCtor<SCC>,
+    SCC: const StackCtorConst,
+    O: IOOracle,
+    const PROOF_ENV: bool,
+> FullIO<A, R, P, SC, SCC, O, PROOF_ENV>
+where
+    ExtraCheck<SCC, A>:,
+    Self: FinishIO,
+{
+    pub fn apply_to_batch(mut self,
+      block_metadata: BlockMetadataFromOracle,
+      current_block_hash: Bytes32,
+      upgrade_tx_hash: Bytes32,
+      builder: &mut BatchPublicInputBuilder
+    ) -> O {
+        let mut state_commitment = {
+            let mut initialization_iterator = self
+                .oracle
+                .create_oracle_access_iterator::<InitializeIOImplementerIterator>(())
+                .unwrap();
+            // TODO (EVM-989): read only state commitment
+            let fsm_state =
+                <BasicIOImplementerFSM::<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
+            assert_eq!(initialization_iterator.len(), 0);
+            fsm_state.state_root_view
+        };
+
+        // chain state before
+        // currently we generate simplified commitment(only to state) for tests.
+        let mut chain_state_hasher = Blake2s256::new();
+        chain_state_hasher.update(state_commitment.root.as_u8_ref());
+        chain_state_hasher.update(state_commitment.next_free_slot.to_be_bytes());
+        let chain_state_commitment_before = chain_state_hasher.finalize();
+
+        builder.pubdata_hasher.update(current_block_hash.as_u8_ref());
+
+        self.storage
+            .finish(
+                &mut self.oracle,
+                Some(&mut state_commitment),
+                &mut builder.pubdata_hasher,
+                &mut NopResultKeeper,
+                &mut NullLogger,
+            )
+            .expect("Failed to finish storage");
+
+        self.logs_storage
+            .apply_pubdata(&mut builder.pubdata_hasher, &mut NopResultKeeper);
+        self.logs_storage.apply_to_array_vec(&mut builder.logs_storage);
+        (builder.number_of_layer_1_txs, builder.l1_txs_rolling_hash) =
+        self.logs_storage.apply_l1_txs_to_commitment(
+            builder.number_of_layer_1_txs, builder.l1_txs_rolling_hash
+        );
+
+
+        // chain state after
+        // currently we generate simplified commitment(only to state) for tests.
+        let mut chain_state_hasher = Blake2s256::new();
+        chain_state_hasher.update(state_commitment.root.as_u8_ref());
+        chain_state_hasher.update(state_commitment.next_free_slot.to_be_bytes());
+        let chain_state_commitment_after = chain_state_hasher.finalize();
+
+        builder.apply_block(
+            chain_state_commitment_before.into(),
+            chain_state_commitment_after.into(),
+            block_metadata.timestamp,
+            U256::try_from(block_metadata.chain_id).unwrap(),
+            upgrade_tx_hash
+        );
+
+        self.oracle
     }
 }
 

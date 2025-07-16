@@ -4,9 +4,11 @@ use alloc::alloc::{GlobalAlloc, Layout};
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
+use basic_system::system_implementation::system::BatchPublicInputBuilder;
 use zk_ee::memory::ZSTAllocator;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
 use zk_ee::system_io_oracle::{DisconnectOracleFormalIterator, IOOracle};
+use zk_ee::utils::Bytes32;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ProxyAllocator;
@@ -166,6 +168,7 @@ pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default
     run_proving_inner::<_, I, L>(oracle)
 }
 
+#[cfg(not(feature = "multiblock-batch"))]
 pub fn run_proving_inner<
     O: IOOracle,
     I: NonDeterminismCSRSourceImplementation,
@@ -191,20 +194,27 @@ pub fn run_proving_inner<
     public_input.as_u32_array()
 }
 
-pub fn run_proving_batch_inner<
+#[cfg(feature = "multiblock-batch")]
+pub fn run_proving_inner<
     O: IOOracle,
     I: NonDeterminismCSRSourceImplementation,
     L: Logger + Default,
 >(
-    oracle: O,
+    mut oracle: O,
 ) -> [u32; 8] {
     let _ = L::default().write_fmt(format_args!("IO implementer init is complete"));
 
+    let count = I::csr_read_impl();
+    let mut batch_pi_builder = BatchPublicInputBuilder::new();
+    for _ in 0..count {
+        let (io, block_metadata, current_block_hash, upgrade_tx_hash) = ProvingBootloader::<O, L>::run_prepared::<
+            BasicBootloaderProvingExecutionConfig,
+        >(oracle, &mut NopResultKeeper)
+            .expect("Tried to prove a failing batch");
+        oracle = io.apply_to_batch(block_metadata, current_block_hash, upgrade_tx_hash, &mut batch_pi_builder)
+    }
     // Load all transactions from oracle and apply them.
-    let (mut oracle, public_input) = ProvingBootloader::<O, L>::run_prepared::<
-        BasicBootloaderProvingExecutionConfig,
-    >(oracle, &mut NopResultKeeper)
-        .expect("Tried to prove a failing batch");
+
 
     // disconnect oracle before returning
     // TODO: check this is the intended behaviour (ignoring the result)
@@ -213,5 +223,8 @@ pub fn run_proving_batch_inner<
         .create_oracle_access_iterator::<DisconnectOracleFormalIterator>(())
         .expect("must disconnect an oracle before performing arbitrary CSR access");
 
-    public_input.as_u32_array()
+    Bytes32::from_array(batch_pi_builder
+        .into_public_input()
+        .hash())
+        .as_u32_array()
 }

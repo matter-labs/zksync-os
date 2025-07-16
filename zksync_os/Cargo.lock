@@ -182,10 +182,8 @@ dependencies = [
  "basic_system",
  "crypto",
  "cycle_marker",
- "either",
  "evm_interpreter",
  "ruint",
- "seq-macro",
  "system_hooks",
  "zk_ee",
 ]
@@ -195,15 +193,12 @@ name = "basic_system"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
- "cfg-if",
- "const_for",
  "crypto",
  "cycle_marker",
  "either",
  "evm_interpreter",
  "ruint",
  "storage_models",
- "system_hooks",
  "zk_ee",
 ]
 
@@ -915,10 +910,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "storage_models"
 version = "0.1.0"
 dependencies = [
- "arrayvec",
  "crypto",
- "either",
- "ruint",
  "zk_ee",
 ]
 
@@ -955,7 +947,6 @@ name = "system_hooks"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
- "crypto",
  "cycle_marker",
  "evm_interpreter",
  "ruint",

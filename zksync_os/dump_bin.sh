@@ -13,7 +13,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking]"
+      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|multiblock-batch]"
       exit 1
       ;;
   esac
@@ -57,12 +57,18 @@ case "$TYPE" in
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
     ;;
+  multiblock-batch)
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/multiblock-batch"
+    BIN_NAME="multiblock_batch.bin"
+    ELF_NAME="multiblock_batch.elf"
+    TEXT_NAME="multiblock_batch.text"
+    ;;
   default)
     # leave defaults
     ;;
   *)
     echo "Invalid --type: $TYPE"
-    echo "Valid types are: default, server, server-logging-enabled"
+    echo "Valid types are: default, server, server-logging-enabled, multiblock-batch"
     exit 1
     ;;
 esac
