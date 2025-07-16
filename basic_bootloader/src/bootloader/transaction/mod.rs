@@ -16,6 +16,7 @@ use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, syst
 
 mod abi_utils;
 pub mod access_list_parser;
+pub mod authorization_list_parser;
 pub mod reserved_dynamic_parser;
 use self::access_list_parser::*;
 
@@ -78,12 +79,15 @@ pub struct ZkSyncTransaction<'a> {
     /// The input to the paymaster.
     pub paymaster_input: ParsedValue<()>,
     /// Field used for extra functionality.
-    /// Currently, it's only used for the access list.
-    /// The field is encoded as the ABI encoding of a bytestring
-    /// containing the ABI encoding of `tuple(address, bytes32[])[][]`,
-    /// i.e. a list of lists of (address, keys) pairs.
-    /// We use the outer list to be able to extend the use of this field,
-    /// but for now it should only have 1 element.
+    /// Currently, it's used for access and authorization lists.
+    /// The field is encoded as a list, to be able to extend it in the
+    /// future. The field is encoded a the ABI encoding of a bytestring
+    /// containing the ABI encoding of the list itself.
+    /// Currently the list contains 2 elements:
+    /// 1. The access list: encoded as `tuple(address, bytes32[])[]`,
+    ///    i.e. a list of (address, keys) pairs.
+    /// 2. The authorization list: encoded as
+    ///    `tuple(chain_id, address, nonce, y_parity, r, s)[]`.
     pub reserved_dynamic: ReservedDynamicParser,
 }
 

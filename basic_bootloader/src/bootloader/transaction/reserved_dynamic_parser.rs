@@ -3,12 +3,21 @@
 //! See [ZkSyncTransaction] for more details on encoding format.
 //!
 
-use super::{AccessListIter, AccessListParser};
-use crate::bootloader::TX_OFFSET;
+use super::{
+    authorization_list_parser::{AuthorizationListIter, AuthorizationListParser},
+    AccessListIter, AccessListParser,
+};
+use ruint::aliases::{B160, U256};
 
 #[derive(Clone, Copy, Debug)]
+
+pub struct Parsers {
+    access_list_parser: AccessListParser,
+    authorization_list_parser: AuthorizationListParser,
+}
+#[derive(Clone, Copy, Debug)]
 pub struct ReservedDynamicParser {
-    access_list_parser: Option<AccessListParser>,
+    parsers: Option<Parsers>,
 }
 
 impl ReservedDynamicParser {
@@ -18,9 +27,7 @@ impl ReservedDynamicParser {
         let bytestring_len = parse_u32(slice, offset)?;
         if bytestring_len == 0 {
             // If empty bytestring, interpret as empty list
-            return Ok(Self {
-                access_list_parser: None,
-            });
+            return Ok(Self { parsers: None });
         }
         let offset = offset + 32;
 
@@ -44,21 +51,45 @@ impl ReservedDynamicParser {
         let authorization_list_base = outer_base + 32 + authorization_list_rel_offset;
 
         Ok(Self {
-            access_list_parser: Some(AccessListParser {
-                offset: access_list_base,
+            parsers: Some(Parsers {
+                access_list_parser: AccessListParser {
+                    offset: access_list_base,
+                },
+                authorization_list_parser: AuthorizationListParser {
+                    offset: authorization_list_base,
+                },
             }),
         })
     }
 
     pub fn access_list_iter<'a>(&self, slice: &'a [u8]) -> Result<AccessListIter<'a>, ()> {
-        match self.access_list_parser {
+        match self.parsers {
             None => Ok(AccessListIter::empty(slice)),
-            Some(parser) => parser.into_iter(slice),
+            Some(Parsers {
+                access_list_parser, ..
+            }) => access_list_parser.into_iter(slice),
         }
     }
 
     pub fn access_list_is_empty<'a>(&self, slice: &'a [u8]) -> Result<bool, ()> {
         Ok(self.access_list_iter(slice)?.next().is_none())
+    }
+
+    pub fn authorization_list_iter<'a>(
+        &self,
+        slice: &'a [u8],
+    ) -> Result<AuthorizationListIter<'a>, ()> {
+        match self.parsers {
+            None => Ok(AuthorizationListIter::empty(slice)),
+            Some(Parsers {
+                authorization_list_parser,
+                ..
+            }) => authorization_list_parser.into_iter(slice),
+        }
+    }
+
+    pub fn authorization_list_is_empty<'a>(&self, slice: &'a [u8]) -> Result<bool, ()> {
+        Ok(self.authorization_list_iter(slice)?.next().is_none())
     }
 }
 
@@ -72,6 +103,45 @@ pub(crate) fn parse_u32<'a>(slice: &'a [u8], offset: usize) -> Result<usize, ()>
     }
     let value = u32::from_be_bytes(bytes[28..32].try_into().unwrap());
     Ok(value as usize)
+}
+
+pub(crate) fn parse_u8<'a>(slice: &'a [u8], offset: usize) -> Result<u8, ()> {
+    let bytes = slice.get(offset..(offset + 32)).ok_or(())?;
+    for byte in bytes.iter().take(31) {
+        if *byte != 0 {
+            return Err(());
+        }
+    }
+    let value = u8::from_be_bytes(bytes[31..32].try_into().unwrap());
+    Ok(value)
+}
+
+pub(crate) fn parse_u64<'a>(slice: &'a [u8], offset: usize) -> Result<u64, ()> {
+    let bytes = slice.get(offset..(offset + 32)).ok_or(())?;
+    for byte in bytes.iter().take(24) {
+        if *byte != 0 {
+            return Err(());
+        }
+    }
+    let value = u64::from_be_bytes(bytes[24..32].try_into().unwrap());
+    Ok(value)
+}
+
+pub(crate) fn parse_address<'a>(slice: &'a [u8], offset: usize) -> Result<B160, ()> {
+    let bytes = slice.get(offset..(offset + 32)).ok_or(())?;
+    for byte in bytes.iter().take(12) {
+        if *byte != 0 {
+            return Err(());
+        }
+    }
+    let value = B160::from_be_bytes::<20>(bytes[12..32].try_into().unwrap());
+    Ok(value)
+}
+
+pub(crate) fn parse_u256<'a>(slice: &'a [u8], offset: usize) -> Result<U256, ()> {
+    let bytes = slice.get(offset..(offset + 32)).ok_or(())?;
+    let value = U256::from_be_bytes::<32>(bytes.try_into().unwrap());
+    Ok(value)
 }
 
 // Check an offset is the expected value, to enforce strict encoding.
@@ -172,6 +242,34 @@ mod tests {
             .expect("Must have second")
             .expect("Must parse second");
         assert_eq!(keys2.count, 2);
+        assert!(iter.next().is_none());
+        // Check authorization list is empty
+        assert!(parser
+            .authorization_list_is_empty(&encoded)
+            .expect("Must parse"));
+    }
+
+    // Also use an access list
+    #[test]
+    fn test_authorization_list_2() {
+        // Access list with 2 elements, each with 2 keys
+        // Authorization list with 2 elements
+        let encoded = hex::decode("00000000000000000000000000000000000000000000000000000000000003c000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001e00000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000001111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000022222222222222222222222222222222222222222222222222222222222222222333333333333333333333333333333333333333333333333333333333333333300000000000000000000000010101010101010101010101010101010101010100000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000244444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000030000000000000000000000000101010101010101010101010101010101010101000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002a000000000000000000000000000000000000000000000000000000000000002b00000000000000000000000000000000000000000000000000000000000000030000000000000000000000000101010101010101010101010101010101010101000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002a000000000000000000000000000000000000000000000000000000000000002b").unwrap();
+
+        let parser = ReservedDynamicParser::new(&encoded, 0).expect("Must create parser");
+        let mut iter = parser
+            .authorization_list_iter(&encoded)
+            .expect("Must parse authorization list");
+        // Check list has 2 items:
+        assert_eq!(iter.count, 2);
+        let _ = iter
+            .next()
+            .expect("Must have first")
+            .expect("Must parse first");
+        let _ = iter
+            .next()
+            .expect("Must have second")
+            .expect("Must parse second");
         assert!(iter.next().is_none())
     }
 }

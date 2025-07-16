@@ -7,6 +7,8 @@ use crate::bootloader::transaction::reserved_dynamic_parser::{check_offset, pars
 use crate::bootloader::Bytes32;
 use ruint::aliases::B160;
 
+use super::reserved_dynamic_parser::parse_address;
+
 #[derive(Clone, Copy, Debug)]
 pub struct AccessListParser {
     pub offset: usize,
@@ -76,8 +78,7 @@ impl<'a> AccessListIter<'a> {
                 .map_or(32 * self.count, |p| p.next_expected_offset()),
         )?;
         let item_offset = self.head_start + item_ptr_offset;
-        let address_bytes = &self.slice.get(item_offset..item_offset + 32).ok_or(())?[12..];
-        let address = B160::try_from_be_slice(address_bytes).unwrap();
+        let address = parse_address(self.slice, item_offset)?;
         let keys_ptr_offset = parse_u32(self.slice, item_offset + 32)?;
         // Always 64 = len(offset, keys_len)
         check_offset(keys_ptr_offset, 64)?;
