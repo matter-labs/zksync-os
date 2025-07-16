@@ -120,7 +120,8 @@ pub fn sign_and_encode_alloy_tx(
                 })
                 .collect()
         });
-    let reserved_dynamic = access_list.map(encode_access_list);
+
+    let reserved_dynamic = access_list.map(encode_reserved_dynamic);
 
     encode_tx(
         tx_type,
@@ -177,8 +178,7 @@ pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> Vec<u8> {
                     })
                     .collect()
             });
-    let reserved_dynamic = access_list.map(encode_access_list);
-
+    let reserved_dynamic = access_list.map(encode_reserved_dynamic);
     encode_tx(
         tx_type,
         from,
@@ -335,8 +335,8 @@ pub fn encode_l1_tx(tx: TransactionRequest) -> Vec<u8> {
     )
 }
 
-fn encode_access_list(list: Vec<([u8; 20], Vec<[u8; 32]>)>) -> Vec<u8> {
-    let inner: Vec<Token> = list
+fn encode_reserved_dynamic(access_list: Vec<([u8; 20], Vec<[u8; 32]>)>) -> Vec<u8> {
+    let access_list: Vec<Token> = access_list
         .into_iter()
         .map(|(addr, keys)| {
             let address_token = Token::Address(addr.into());
@@ -348,9 +348,13 @@ fn encode_access_list(list: Vec<([u8; 20], Vec<[u8; 32]>)>) -> Vec<u8> {
             Token::Tuple(vec![address_token, keys_token])
         })
         .collect();
+    let authorization_list: Vec<Token> = vec![];
 
-    // Single element list to be able to extend reserved_dynamic
-    let outer = Token::Array(vec![Token::Array(inner)]);
+    // 2-element list to be able to extend reserved_dynamic
+    let outer = Token::Array(vec![
+        Token::Array(access_list),
+        Token::Array(authorization_list),
+    ]);
     ethers::abi::encode(&[outer])
 }
 
@@ -425,12 +429,11 @@ fn encode_tx(
 #[cfg(test)]
 mod tests {
 
-    use super::encode_access_list;
-    use basic_bootloader::bootloader::constants::TX_OFFSET;
+    use super::encode_reserved_dynamic;
     use ruint::aliases::B160;
     use zk_ee::utils::Bytes32;
     #[test]
-    fn test_encode_access_list() {
+    fn test_encode_reserved_dynamic() {
         use basic_bootloader::bootloader::transaction::reserved_dynamic_parser::ReservedDynamicParser;
         use ethers::abi::Token;
         let address0 = [0x11u8; 20];
@@ -444,16 +447,13 @@ mod tests {
             (address1, storage_keys1.clone()),
         ];
 
-        let encoded_list = encode_access_list(access_list);
+        let encoded_list = encode_reserved_dynamic(access_list);
         let encoded = ethers::abi::encode(&[Token::Bytes(encoded_list)]);
-        // Prepend TX_OFFSET bytes, as those are then ignored by the parser.
-        let mut full_buffer = vec![0u8; TX_OFFSET];
-        full_buffer.extend(encoded);
+        println!("Encoded: {}", hex::encode(encoded.clone()));
+
         // Offset is 32 to skip the initial offset for the bytes encoding
-        let parser = ReservedDynamicParser::new(&full_buffer, 32).expect("Must create parser");
-        let mut iter = parser
-            .access_list_iter(&full_buffer)
-            .expect("Must create iter");
+        let parser = ReservedDynamicParser::new(&encoded, 32).expect("Must create parser");
+        let mut iter = parser.access_list_iter(&encoded).expect("Must create iter");
         let (address, mut keys_iter) = iter
             .next()
             .expect("Must have first")
