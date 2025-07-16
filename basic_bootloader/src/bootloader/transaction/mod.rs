@@ -9,12 +9,14 @@ use core::ops::Range;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use errors::{BootloaderSubsystemError, InvalidTransaction};
+use reserved_dynamic_parser::ReservedDynamicParser;
 use ruint::aliases::U256;
 use zk_ee::internal_error;
 use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, system::SystemError};
 
 mod abi_utils;
 pub mod access_list_parser;
+pub mod reserved_dynamic_parser;
 use self::access_list_parser::*;
 
 #[cfg(test)]
@@ -82,7 +84,7 @@ pub struct ZkSyncTransaction<'a> {
     /// i.e. a list of lists of (address, keys) pairs.
     /// We use the outer list to be able to extend the use of this field,
     /// but for now it should only have 1 element.
-    pub reserved_dynamic: AccessListParser,
+    pub reserved_dynamic: ReservedDynamicParser,
 }
 
 #[allow(dead_code)]
@@ -180,9 +182,7 @@ impl<'a> ZkSyncTransaction<'a> {
             return Err(());
         }
 
-        let reserved_dynamic = AccessListParser {
-            offset: reserved_dynamic_offset.value as usize,
-        };
+        let reserved_dynamic = ReservedDynamicParser::new(slice, parser.offset)?;
         // "Consume bytes"
         parser.parse_bytes()?;
 
@@ -542,7 +542,9 @@ impl<'a> ZkSyncTransaction<'a> {
     /// Estimates the length of the payload of the access list encoding
     ///
     fn estimate_access_list_raw_length(&self) -> Result<usize, ()> {
-        let iter = self.reserved_dynamic.into_iter(&self.underlying_buffer)?;
+        let iter = self
+            .reserved_dynamic
+            .access_list_iter(&self.underlying_buffer)?;
         let mut sum = 0;
         for res in iter {
             let (_, keys) = res?;
@@ -560,7 +562,9 @@ impl<'a> ZkSyncTransaction<'a> {
         total_access_list_length: usize,
         hasher: &mut Keccak256,
     ) -> Result<(), ()> {
-        let iter = self.reserved_dynamic.into_iter(&self.underlying_buffer)?;
+        let iter = self
+            .reserved_dynamic
+            .access_list_iter(&self.underlying_buffer)?;
         // Length of access list
         apply_list_length_encoding_to_hash(total_access_list_length, hasher);
         for res in iter {
@@ -596,7 +600,7 @@ impl<'a> ZkSyncTransaction<'a> {
     {
         let iter = self
             .reserved_dynamic
-            .into_iter(&self.underlying_buffer)
+            .access_list_iter(&self.underlying_buffer)
             .map_err(|()| InvalidTransaction::InvalidStructure)?;
         for res in iter {
             let (address, keys) = res.map_err(|()| InvalidTransaction::InvalidStructure)?;

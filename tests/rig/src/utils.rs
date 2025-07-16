@@ -431,7 +431,7 @@ mod tests {
     use zk_ee::utils::Bytes32;
     #[test]
     fn test_encode_access_list() {
-        use basic_bootloader::bootloader::transaction::access_list_parser::AccessListParser;
+        use basic_bootloader::bootloader::transaction::reserved_dynamic_parser::ReservedDynamicParser;
         use ethers::abi::Token;
         let address0 = [0x11u8; 20];
         let address1 = [0x10u8; 20];
@@ -450,8 +450,10 @@ mod tests {
         let mut full_buffer = vec![0u8; TX_OFFSET];
         full_buffer.extend(encoded);
         // Offset is 32 to skip the initial offset for the bytes encoding
-        let parser = AccessListParser { offset: 32 };
-        let mut iter = parser.into_iter(&full_buffer).expect("Must create iter");
+        let parser = ReservedDynamicParser::new(&full_buffer, 32).expect("Must create parser");
+        let mut iter = parser
+            .access_list_iter(&full_buffer)
+            .expect("Must create iter");
         let (address, mut keys_iter) = iter
             .next()
             .expect("Must have first")
