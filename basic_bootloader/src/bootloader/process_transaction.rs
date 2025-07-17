@@ -173,31 +173,36 @@ where
         // TODO: l1 transaction preparation (marking factory deps)
         let chain_id = system.get_chain_id();
 
-        let (tx_hash, preparation_out_of_resources): (Bytes32, bool) =
-            match transaction.calculate_hash(chain_id, &mut resources) {
-                Ok(h) => (h.into(), false),
-                Err(e) => {
-                    match e.root_cause() {
-                        RootCause::Runtime(_) => {
-                            let _ = system.get_logger().write_fmt(format_args!(
-                                "Transaction preparation exhausted native resources: {e:?}\n"
-                            ));
+        let (tx_hash, preparation_out_of_resources): (Bytes32, bool) = match transaction
+            .calculate_hash(chain_id, &mut resources)
+        {
+            Ok(h) => (h.into(), false),
+            Err(e) => {
+                match e {
+                    TxError::Internal(e) if !matches!(e.root_cause(), RootCause::Runtime(_)) => {
+                        return Err(e.into());
+                    }
+                    // Only way hashing of L1 tx can fail due to Validation or Runtime is
+                    // due to running out of native.
+                    _ => {
+                        let _ = system.get_logger().write_fmt(format_args!(
+                            "Transaction preparation exhausted native resources: {e:?}\n"
+                        ));
 
-                            resources.exhaust_ergs();
-                            // We need to compute the hash anyways, we do with inf resources
-                            let mut inf_resources = S::Resources::FORMAL_INFINITE;
-                            (
-                                transaction
-                                    .calculate_hash(chain_id, &mut inf_resources)
-                                    .expect("must succeed")
-                                    .into(),
-                                true,
-                            )
-                        }
-                        _ => return Err(e.into()),
+                        resources.exhaust_ergs();
+                        // We need to compute the hash anyways, we do with inf resources
+                        let mut inf_resources = S::Resources::FORMAL_INFINITE;
+                        (
+                            transaction
+                                .calculate_hash(chain_id, &mut inf_resources)
+                                .expect("must succeed")
+                                .into(),
+                            true,
+                        )
                     }
                 }
-            };
+            }
+        };
 
         // pubdata_info = (pubdata_used, to_charge_for_pubdata) can be cached
         // to used in the refund step only if the execution succeeded.
@@ -579,18 +584,11 @@ where
         let chain_id = system.get_chain_id();
 
         // Process access list
-        // Note: this operation should be performed before the hashing of the
-        // transaction, as the latter assumes the transaction structure has
-        // already been validated.
         transaction.parse_and_warm_up_access_list(system, &mut resources)?;
 
-        let tx_hash: Bytes32 = transaction
-            .calculate_hash(chain_id, &mut resources)
-            .map_err(TxError::oon_as_validation)?
-            .into();
+        let tx_hash: Bytes32 = transaction.calculate_hash(chain_id, &mut resources)?.into();
         let suggested_signed_hash: Bytes32 = transaction
-            .calculate_signed_hash(chain_id, &mut resources)
-            .map_err(TxError::oon_as_validation)?
+            .calculate_signed_hash(chain_id, &mut resources)?
             .into();
 
         let ValidationResult { validation_pubdata } = if !Config::ONLY_SIMULATE {

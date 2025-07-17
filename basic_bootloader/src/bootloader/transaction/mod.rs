@@ -437,7 +437,7 @@ impl<'a> ZkSyncTransaction<'a> {
         &self,
         chain_id: u64,
         resources: &mut R,
-    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+    ) -> Result<[u8; 32], TxError> {
         let tx_type = self.tx_type.read();
         match tx_type {
             Self::LEGACY_TX_TYPE => self.legacy_tx_calculate_hash(chain_id, true, resources),
@@ -459,7 +459,7 @@ impl<'a> ZkSyncTransaction<'a> {
         &self,
         chain_id: u64,
         resources: &mut R,
-    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+    ) -> Result<[u8; 32], TxError> {
         let tx_type = self.tx_type.read();
         match tx_type {
             Self::LEGACY_TX_TYPE => self.legacy_tx_calculate_hash(chain_id, false, resources),
@@ -487,7 +487,7 @@ impl<'a> ZkSyncTransaction<'a> {
         chain_id: u64,
         signed: bool,
         resources: &mut R,
-    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+    ) -> Result<[u8; 32], TxError> {
         let mut total_list_len =
             rlp::estimate_number_encoding_len(self.nonce.encoding(&self.underlying_buffer))
                 + rlp::estimate_number_encoding_len(
@@ -741,15 +741,12 @@ impl<'a> ZkSyncTransaction<'a> {
     /// If signed == `true` calculate signed tx hash(the one that should be signed by the sender):
     /// Keccak256(0x01 || RLP(chain_id, nonce, gas_price, gas_limit, destination, amount, data, access_list))
     ///
-    /// Note that this function assumes that if the transaction has an access list,
-    /// this field has been validated previously by [parse_and_warm_up_access_list].
-    ///
     pub fn eip2930_tx_calculate_hash<R: Resources>(
         &self,
         chain_id: u64,
         signed: bool,
         resources: &mut R,
-    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+    ) -> Result<[u8; 32], TxError> {
         let mut total_list_len = rlp::estimate_number_encoding_len(&chain_id.to_be_bytes())
             + rlp::estimate_number_encoding_len(self.nonce.encoding(&self.underlying_buffer))
             + rlp::estimate_number_encoding_len(
@@ -766,7 +763,7 @@ impl<'a> ZkSyncTransaction<'a> {
 
         let access_list_raw_length = self
             .estimate_access_list_raw_length()
-            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
+            .map_err(|()| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
 
         total_list_len +=
             rlp::estimate_number_encoding_len(self.value.encoding(&self.underlying_buffer))
@@ -825,7 +822,7 @@ impl<'a> ZkSyncTransaction<'a> {
         );
         rlp::apply_bytes_encoding_to_hash(self.data.encoding(&self.underlying_buffer), &mut hasher);
         self.apply_access_list_encoding_to_hash(access_list_raw_length, &mut hasher)
-            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
+            .map_err(|()| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
 
         // Add signature if not signed hash
         if !signed {
@@ -856,16 +853,12 @@ impl<'a> ZkSyncTransaction<'a> {
     /// If signed == `true` calculate signed tx hash(the one that should be signed by the sender):
     /// Keccak256(0x02 || RLP(chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, destination, amount, data, access_list))
     ///
-    /// Note that this function assumes that if the transaction has an access list,
-    /// this field has been validated previously by
-    /// [parse_and_warm_up_access_list].
-    ///
     pub fn eip1559_tx_calculate_hash<R: Resources>(
         &self,
         chain_id: u64,
         signed: bool,
         resources: &mut R,
-    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+    ) -> Result<[u8; 32], TxError> {
         let mut total_list_len = rlp::estimate_number_encoding_len(&chain_id.to_be_bytes())
             + rlp::estimate_number_encoding_len(self.nonce.encoding(&self.underlying_buffer))
             + rlp::estimate_number_encoding_len(
@@ -886,7 +879,7 @@ impl<'a> ZkSyncTransaction<'a> {
 
         let access_list_raw_length = self
             .estimate_access_list_raw_length()
-            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
+            .map_err(|()| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
 
         total_list_len +=
             rlp::estimate_number_encoding_len(self.value.encoding(&self.underlying_buffer))
@@ -950,7 +943,7 @@ impl<'a> ZkSyncTransaction<'a> {
         );
         rlp::apply_bytes_encoding_to_hash(self.data.encoding(&self.underlying_buffer), &mut hasher);
         self.apply_access_list_encoding_to_hash(access_list_raw_length, &mut hasher)
-            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
+            .map_err(|()| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
         // Add signature if not signed hash
         if !signed {
             // r
@@ -980,15 +973,12 @@ impl<'a> ZkSyncTransaction<'a> {
     /// If signed == `true` calculate signed tx hash(the one that should be signed by the sender):
     /// Keccak256(0x04 || RLP(chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, destination, amount, data, access_list, access_list))
     ///
-    /// Note that this function assumes that if the transaction has an access list or
-    /// authorization list, these field has been validated previously.
-    ///
     pub fn eip7702_tx_calculate_hash<R: Resources>(
         &self,
         chain_id: u64,
         signed: bool,
         resources: &mut R,
-    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+    ) -> Result<[u8; 32], TxError> {
         let mut total_list_len = rlp::estimate_number_encoding_len(&chain_id.to_be_bytes())
             + rlp::estimate_number_encoding_len(self.nonce.encoding(&self.underlying_buffer))
             + rlp::estimate_number_encoding_len(
@@ -1009,13 +999,11 @@ impl<'a> ZkSyncTransaction<'a> {
 
         let access_list_raw_length = self
             .estimate_access_list_raw_length()
-            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
+            .map_err(|()| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
 
-        let authorization_list_raw_length =
-            self.estimate_authorization_list_raw_length()
-                .map_err(|()| {
-                    internal_error!("Authorization list format must have been validated before")
-                })?;
+        let authorization_list_raw_length = self
+            .estimate_authorization_list_raw_length()
+            .map_err(|()| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
 
         total_list_len +=
             rlp::estimate_number_encoding_len(self.value.encoding(&self.underlying_buffer))
@@ -1081,11 +1069,9 @@ impl<'a> ZkSyncTransaction<'a> {
         );
         rlp::apply_bytes_encoding_to_hash(self.data.encoding(&self.underlying_buffer), &mut hasher);
         self.apply_access_list_encoding_to_hash(access_list_raw_length, &mut hasher)
-            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
+            .map_err(|()| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
         self.apply_authorization_list_encoding_to_hash(authorization_list_raw_length, &mut hasher)
-            .map_err(|()| {
-                internal_error!("Authorization list format must have been validated before")
-            })?;
+            .map_err(|()| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
         // Add signature if not signed hash
         if !signed {
             // r
@@ -1136,7 +1122,7 @@ impl<'a> ZkSyncTransaction<'a> {
     fn domain_hash_struct<R: Resources>(
         chain_id: u64,
         resources: &mut R,
-    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+    ) -> Result<[u8; 32], TxError> {
         let len = Self::DOMAIN_TYPE_HASH.len()
             + Self::DOMAIN_NAME_HASH.len()
             + Self::DOMAIN_VERSION_HASH.len()
@@ -1160,10 +1146,7 @@ impl<'a> ZkSyncTransaction<'a> {
         0xaa, 0xc8,
     ];
 
-    fn hash_struct<R: Resources>(
-        &self,
-        resources: &mut R,
-    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+    fn hash_struct<R: Resources>(&self, resources: &mut R) -> Result<[u8; 32], TxError> {
         let len = U256::BYTES * 14;
         charge_keccak(len, resources)?;
 
@@ -1210,7 +1193,7 @@ impl<'a> ZkSyncTransaction<'a> {
         &self,
         chain_id: u64,
         resources: &mut R,
-    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+    ) -> Result<[u8; 32], TxError> {
         let domain_separator = Self::domain_hash_struct(chain_id, resources)?;
         let hs = self.hash_struct(resources)?;
         charge_keccak(2 + 2 * U256::BYTES, resources)?;
@@ -1230,7 +1213,7 @@ impl<'a> ZkSyncTransaction<'a> {
         &self,
         chain_id: u64,
         resources: &mut R,
-    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+    ) -> Result<[u8; 32], TxError> {
         let signed_hash = self.eip712_tx_calculate_signed_hash(chain_id, resources)?;
         charge_keccak(U256::BYTES * 2 + self.signature.range.len(), resources)?;
         let signature_hash =
@@ -1247,10 +1230,7 @@ impl<'a> ZkSyncTransaction<'a> {
     /// Calculate l1 tx hash:
     /// Keccak256(abi.encode(transaction))
     ///
-    fn l1_tx_calculate_hash<R: Resources>(
-        &self,
-        resources: &mut R,
-    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+    fn l1_tx_calculate_hash<R: Resources>(&self, resources: &mut R) -> Result<[u8; 32], TxError> {
         charge_keccak(32 + self.underlying_buffer[TX_OFFSET..].len(), resources)?;
         let mut hasher = Keccak256::new();
         // Note, that the correct ABI encoding of the Transaction structure starts with 0x20
@@ -1445,10 +1425,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn charge_keccak<R: Resources>(
-    len: usize,
-    resources: &mut R,
-) -> Result<(), BootloaderSubsystemError> {
+fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), TxError> {
     let native_cost = basic_system::system_functions::keccak256::keccak256_native_cost::<R>(len);
     resources
         .charge(&R::from_native(native_cost))
@@ -1461,6 +1438,7 @@ fn charge_keccak<R: Resources>(
                 BootloaderSubsystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))
             }
         })
+        .map_err(TxError::oon_as_validation)
 }
 
 /// Returns (full_item_length, item_raw_length, keys_raw_length)
