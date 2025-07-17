@@ -28,7 +28,7 @@ ZKsyncOS expects transactions with the following fields:
 | `0x0`   | Legacy transaction.                                                                              |
 | `0x1`   | EIP-2930 transaction.                                                                            |
 | `0x2`   | EIP-1559 transaction.                                                                            |
-| `0x4`   | EIP-1559 transaction.                                                                            |
+| `0x4`   | EIP-7702 transaction.                                                                            |
 | `0x71`  | EIP-712 transaction following the [Era format](https://docs.zksync.io/zksync-protocol/rollup/transaction-lifecycle#eip-712-0x71). |
 | `0xFF`  | L1 -> L2 transaction.                                                                            |
 
