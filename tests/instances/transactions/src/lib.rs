@@ -6,6 +6,7 @@ use alloy::consensus::{TxEip1559, TxEip2930, TxLegacy};
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
 use hex::FromHex;
+use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, FixedBytes};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::ethers::types::Address;
@@ -447,7 +448,6 @@ fn test_withdrawal() {
 }
 
 #[test]
-
 fn test_tx_with_access_list() {
     let mut chain = Chain::empty(None);
 
@@ -480,6 +480,65 @@ fn test_tx_with_access_list() {
             value: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
             access_list,
+        };
+        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+    };
+
+    let transactions = vec![encoded_mint_tx];
+
+    let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
+    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+
+    chain.set_balance(
+        B160::from_be_bytes(from.0),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    let output = chain.run_block(transactions, None, None);
+
+    // Assert all txs succeeded
+    let result0 = output.tx_results.first().unwrap().clone();
+    assert!(result0.is_ok_and(|o| o.is_success()));
+}
+
+#[test]
+fn test_tx_with_authorization_list() {
+    use rig::alloy::eips::eip7702::*;
+    let mut chain = Chain::empty(None);
+
+    let wallet = PrivateKeySigner::from_str(
+        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
+    )
+    .unwrap();
+    let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
+
+    let from = wallet_ethers.address();
+
+    let to = address!("0000000000000000000000000000000000010002");
+
+    let encoded_mint_tx = {
+        // Taken from alloy tests
+        let authorization = Authorization {
+            chain_id: U256::from(1u64),
+            address: rig::alloy::primitives::Address::left_padding_from(&[6]),
+            nonce: 1,
+        };
+        #[allow(deprecated)]
+        let sig =  rig::alloy::signers::Signature::from_str("48b55bfa915ac795c431978d8a6a992b628d557da5ff759b307d495a36649353efffd310ac743f371de3b9f7f9cb56c0b28ad43601b4ab949f53faa07bd2c8041b").unwrap()
+        ;
+        let signed = authorization.into_signed(sig);
+        let authorization_list = vec![signed];
+        let mint_tx = TxEip7702 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 75_000,
+            to,
+            value: Default::default(),
+            input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
+            access_list: Default::default(),
+            authorization_list,
         };
         rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
     };

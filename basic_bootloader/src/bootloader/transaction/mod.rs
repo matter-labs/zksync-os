@@ -5,6 +5,7 @@
 
 use self::u256be_ptr::U256BEPtr;
 use crate::bootloader::rlp;
+use authorization_list_parser::AuthorizationListItem;
 use core::ops::Range;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
@@ -99,6 +100,8 @@ impl<'a> ZkSyncTransaction<'a> {
     pub const EIP_2930_TX_TYPE: u8 = 0x01;
     /// The type id of EIP1559 transactions.
     pub const EIP_1559_TX_TYPE: u8 = 0x02;
+    /// The type id of EIP7702 transactions.
+    pub const EIP_7702_TX_TYPE: u8 = 0x04;
     /// The type id of EIP712 transactions.
     pub const EIP_712_TX_TYPE: u8 = 0x71;
     /// The type id of protocol upgrade transactions.
@@ -230,6 +233,7 @@ impl<'a> ZkSyncTransaction<'a> {
             Self::LEGACY_TX_TYPE
             | Self::EIP_2930_TX_TYPE
             | Self::EIP_1559_TX_TYPE
+            | Self::EIP_7702_TX_TYPE
             | Self::EIP_712_TX_TYPE
             | Self::UPGRADE_TX_TYPE
             | Self::L1_L2_TX_TYPE => {}
@@ -326,9 +330,9 @@ impl<'a> ZkSyncTransaction<'a> {
             }
         }
 
-        // Reserved dynamic is empty unless access lists are supported
+        // Access list is empty except for txs that support it
         match tx_type {
-            Self::EIP_1559_TX_TYPE | Self::EIP_2930_TX_TYPE => {}
+            Self::EIP_1559_TX_TYPE | Self::EIP_2930_TX_TYPE | Self::EIP_7702_TX_TYPE => {}
             _ => {
                 if !self
                     .reserved_dynamic
@@ -337,6 +341,38 @@ impl<'a> ZkSyncTransaction<'a> {
                     return Err(());
                 }
             }
+        }
+
+        // Authorization list is empty except for txs that support it
+        // For EIP 7702, authorization list cannot be empty
+        match tx_type {
+            Self::EIP_7702_TX_TYPE => {
+                if self
+                    .reserved_dynamic
+                    .authorization_list_is_empty(&self.underlying_buffer)?
+                {
+                    return Err(());
+                }
+            }
+            _ => {
+                if !self
+                    .reserved_dynamic
+                    .authorization_list_is_empty(&self.underlying_buffer)?
+                {
+                    return Err(());
+                }
+            }
+        }
+
+        // Null destination is not allowed for some transactions
+        #[allow(clippy::single_match)]
+        match tx_type {
+            Self::EIP_7702_TX_TYPE => {
+                if self.to.read() == B160::ZERO {
+                    return Err(());
+                }
+            }
+            _ => {}
         }
 
         Ok(())
@@ -407,6 +443,7 @@ impl<'a> ZkSyncTransaction<'a> {
             Self::LEGACY_TX_TYPE => self.legacy_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_2930_TX_TYPE => self.eip2930_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_1559_TX_TYPE => self.eip1559_tx_calculate_hash(chain_id, true, resources),
+            Self::EIP_7702_TX_TYPE => self.eip7702_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_signed_hash(chain_id, resources),
             _ => Err(
                 internal_error!("Invalid type for signed hash, most likely l1 or upgrade").into(),
@@ -428,6 +465,7 @@ impl<'a> ZkSyncTransaction<'a> {
             Self::LEGACY_TX_TYPE => self.legacy_tx_calculate_hash(chain_id, false, resources),
             Self::EIP_2930_TX_TYPE => self.eip2930_tx_calculate_hash(chain_id, false, resources),
             Self::EIP_1559_TX_TYPE => self.eip1559_tx_calculate_hash(chain_id, false, resources),
+            Self::EIP_7702_TX_TYPE => self.eip7702_tx_calculate_hash(chain_id, false, resources),
             Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_hash(chain_id, resources),
             Self::L1_L2_TX_TYPE => self.l1_tx_calculate_hash(resources),
             Self::UPGRADE_TX_TYPE => self.l1_tx_calculate_hash(resources),
@@ -599,6 +637,64 @@ impl<'a> ZkSyncTransaction<'a> {
                 let key = key?;
                 rlp::apply_bytes_encoding_to_hash(key.as_u8_ref(), hasher);
             }
+        }
+        Ok(())
+    }
+
+    ///
+    /// Estimates the length of the payload of the access list encoding
+    ///
+    fn estimate_authorization_list_raw_length(&self) -> Result<usize, ()> {
+        let iter = self
+            .reserved_dynamic
+            .authorization_list_iter(&self.underlying_buffer)?;
+        let mut sum = 0;
+        for res in iter {
+            let item = res?;
+            let item_payload_length = estimate_authorization_list_item_length(&item);
+            let item_length =
+                rlp::estimate_length_encoding_len(item_payload_length) + item_payload_length;
+            sum += item_length
+        }
+        Ok(sum)
+    }
+
+    ///
+    /// Applies hash of the access list
+    ///
+    fn apply_authorization_list_encoding_to_hash(
+        &self,
+        total_authorization_list_length: usize,
+        hasher: &mut Keccak256,
+    ) -> Result<(), ()> {
+        let iter = self
+            .reserved_dynamic
+            .authorization_list_iter(&self.underlying_buffer)?;
+        // Length of authorization list
+        apply_list_length_encoding_to_hash(total_authorization_list_length, hasher);
+        for res in iter {
+            let item = res?;
+            let item_raw_length = estimate_authorization_list_item_length(&item);
+            apply_list_length_encoding_to_hash(item_raw_length, hasher);
+            let AuthorizationListItem {
+                chain_id,
+                address,
+                nonce,
+                y_parity,
+                r,
+                s,
+            } = item;
+            let y_parity = if y_parity <= 1 {
+                y_parity + 27
+            } else {
+                y_parity
+            };
+            rlp::apply_number_encoding_to_hash(&chain_id.to_be_bytes::<32>(), hasher);
+            rlp::apply_bytes_encoding_to_hash(&address.to_be_bytes::<{ B160::BYTES }>(), hasher);
+            rlp::apply_number_encoding_to_hash(&nonce.to_be_bytes(), hasher);
+            rlp::apply_number_encoding_to_hash(&y_parity.to_be_bytes(), hasher);
+            rlp::apply_number_encoding_to_hash(&r.to_be_bytes::<32>(), hasher);
+            rlp::apply_number_encoding_to_hash(&s.to_be_bytes::<32>(), hasher);
         }
         Ok(())
     }
@@ -874,6 +970,140 @@ impl<'a> ZkSyncTransaction<'a> {
             );
         }
 
+        Ok(hasher.finalize())
+    }
+
+    ///
+    /// If signed == `false` calculate tx hash with signature(to be used in the explorer):
+    /// Keccak256(0x04 || RLP(chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, destination, amount, data, access_list, authorization_list, r, s, v))
+    ///
+    /// If signed == `true` calculate signed tx hash(the one that should be signed by the sender):
+    /// Keccak256(0x04 || RLP(chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, destination, amount, data, access_list, access_list))
+    ///
+    /// Note that this function assumes that if the transaction has an access list or
+    /// authorization list, these field has been validated previously.
+    ///
+    pub fn eip7702_tx_calculate_hash<R: Resources>(
+        &self,
+        chain_id: u64,
+        signed: bool,
+        resources: &mut R,
+    ) -> Result<[u8; 32], BootloaderSubsystemError> {
+        let mut total_list_len = rlp::estimate_number_encoding_len(&chain_id.to_be_bytes())
+            + rlp::estimate_number_encoding_len(self.nonce.encoding(&self.underlying_buffer))
+            + rlp::estimate_number_encoding_len(
+                self.max_priority_fee_per_gas
+                    .encoding(&self.underlying_buffer),
+            )
+            + rlp::estimate_number_encoding_len(
+                self.max_fee_per_gas.encoding(&self.underlying_buffer),
+            )
+            + rlp::estimate_number_encoding_len(self.gas_limit.encoding(&self.underlying_buffer));
+
+        // Handle `to` == null, indicates EVM deployment transaction
+        if self.reserved[1].read().is_zero() {
+            total_list_len += rlp::ADDRESS_ENCODING_LEN;
+        } else {
+            total_list_len += rlp::estimate_bytes_encoding_len(&[]);
+        }
+
+        let access_list_raw_length = self
+            .estimate_access_list_raw_length()
+            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
+
+        let authorization_list_raw_length =
+            self.estimate_authorization_list_raw_length()
+                .map_err(|()| {
+                    internal_error!("Authorization list format must have been validated before")
+                })?;
+
+        total_list_len +=
+            rlp::estimate_number_encoding_len(self.value.encoding(&self.underlying_buffer))
+                + rlp::estimate_bytes_encoding_len(self.data.encoding(&self.underlying_buffer))
+                + rlp::estimate_length_encoding_len(access_list_raw_length)
+                + access_list_raw_length
+                + rlp::estimate_length_encoding_len(authorization_list_raw_length)
+                + authorization_list_raw_length;
+
+        // Add signature if not signed hash
+        if !signed {
+            // r
+            total_list_len += rlp::estimate_number_encoding_len(
+                &self.signature.encoding(&self.underlying_buffer)[0..32],
+            );
+            // s
+            total_list_len += rlp::estimate_number_encoding_len(
+                &self.signature.encoding(&self.underlying_buffer)[32..64],
+            );
+            // v
+            total_list_len += rlp::estimate_number_encoding_len(
+                &self.signature.encoding(&self.underlying_buffer)[64..65],
+            );
+        }
+
+        let encoding_length = rlp::estimate_length_encoding_len(total_list_len) + total_list_len;
+        charge_keccak(encoding_length, resources)?;
+
+        let mut hasher = Keccak256::new();
+        hasher.update([0x04]);
+        rlp::apply_list_length_encoding_to_hash(total_list_len, &mut hasher);
+        rlp::apply_number_encoding_to_hash(&chain_id.to_be_bytes(), &mut hasher);
+        rlp::apply_number_encoding_to_hash(
+            self.nonce.encoding(&self.underlying_buffer),
+            &mut hasher,
+        );
+        rlp::apply_number_encoding_to_hash(
+            self.max_priority_fee_per_gas
+                .encoding(&self.underlying_buffer),
+            &mut hasher,
+        );
+        rlp::apply_number_encoding_to_hash(
+            self.max_fee_per_gas.encoding(&self.underlying_buffer),
+            &mut hasher,
+        );
+        rlp::apply_number_encoding_to_hash(
+            self.gas_limit.encoding(&self.underlying_buffer),
+            &mut hasher,
+        );
+
+        if self.reserved[1].read().is_zero() {
+            rlp::apply_bytes_encoding_to_hash(
+                &self.to.encoding(&self.underlying_buffer)[12..],
+                &mut hasher,
+            );
+        } else {
+            rlp::apply_bytes_encoding_to_hash(&[], &mut hasher);
+        }
+
+        rlp::apply_number_encoding_to_hash(
+            self.value.encoding(&self.underlying_buffer),
+            &mut hasher,
+        );
+        rlp::apply_bytes_encoding_to_hash(self.data.encoding(&self.underlying_buffer), &mut hasher);
+        self.apply_access_list_encoding_to_hash(access_list_raw_length, &mut hasher)
+            .map_err(|()| internal_error!("Access list format must have been validated before"))?;
+        self.apply_authorization_list_encoding_to_hash(authorization_list_raw_length, &mut hasher)
+            .map_err(|()| {
+                internal_error!("Authorization list format must have been validated before")
+            })?;
+        // Add signature if not signed hash
+        if !signed {
+            // r
+            rlp::apply_number_encoding_to_hash(
+                &self.signature.encoding(&self.underlying_buffer)[0..32],
+                &mut hasher,
+            );
+            // s
+            rlp::apply_number_encoding_to_hash(
+                &self.signature.encoding(&self.underlying_buffer)[32..64],
+                &mut hasher,
+            );
+            // v
+            rlp::apply_number_encoding_to_hash(
+                &self.signature.encoding(&self.underlying_buffer)[64..65],
+                &mut hasher,
+            );
+        }
         Ok(hasher.finalize())
     }
 
@@ -1246,4 +1476,21 @@ fn estimate_access_list_item_length(nb_keys: usize) -> (usize, usize, usize) {
         item_raw_length,
         keys_raw_length,
     )
+}
+
+fn estimate_authorization_list_item_length(item: &AuthorizationListItem) -> usize {
+    let AuthorizationListItem {
+        chain_id,
+        address: _,
+        nonce,
+        y_parity,
+        r,
+        s,
+    } = item;
+    rlp::estimate_number_encoding_len(&chain_id.to_be_bytes::<32>())
+        + ADDRESS_ENCODING_LEN
+        + rlp::estimate_number_encoding_len(&nonce.to_be_bytes())
+        + rlp::estimate_number_encoding_len(&y_parity.to_be_bytes())
+        + rlp::estimate_number_encoding_len(&r.to_be_bytes::<32>())
+        + rlp::estimate_number_encoding_len(&s.to_be_bytes::<32>())
 }
