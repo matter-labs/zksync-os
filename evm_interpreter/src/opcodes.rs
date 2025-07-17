@@ -280,7 +280,7 @@ pub const OPCODE_JUMPMAP: [Option<&'static str>; 256] = [
     /* 0x5a */ Some("GAS"),
     /* 0x5b */ Some("JUMPDEST"),
     /* 0x5c */ Some("TLOAD"),
-    /* 0x5d */ Some("STORE"),
+    /* 0x5d */ Some("TSTORE"),
     /* 0x5e */ Some("MCOPY"),
     /* 0x5f */ Some("PUSH0"),
     /* 0x60 */ Some("PUSH1"),
