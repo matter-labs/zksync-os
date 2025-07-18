@@ -599,6 +599,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 // bunch of internal utility methods
 fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
     let app = app_name.as_deref().unwrap_or("app");
+    // let app = app_name.as_deref().unwrap_or("app_debug");
     let filename = format!("{}.{}", app, extension);
     let zksync_os_path = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
         .map(PathBuf::from)

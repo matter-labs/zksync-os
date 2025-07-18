@@ -52,30 +52,35 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
 
         const { assert!(8 == core::mem::size_of::<usize>()) };
         assert!(arg.a_ptr > 0);
-        assert!(arg.a_len > 0);
         let mut n = read_memory_as_u64(memory, arg.a_ptr, arg.a_len * 4).unwrap();
         assert_eq!(arg.b_ptr, 0);
         assert_eq!(arg.b_len, 0);
         assert!(arg.modulus_ptr > 0);
         assert!(arg.modulus_len > 0);
         let mut d = read_memory_as_u64(memory, arg.modulus_ptr, arg.modulus_len * 4).unwrap();
+
         ruint::algorithms::div(&mut n, &mut d);
 
         // Trim zeros
-        let quotient = if let Some(i) = n.iter().rposition(|&n| n != 0) {
-            &n[..=i]
-        } else {
-            &n[..]
-        };
-
-        let remainder = if let Some(i) = d.iter().rposition(|&n| n != 0) {
-            &d[..=i]
-        } else {
-            &d[..]
-        };
+        fn strip_leading_zeroes(input: &[u64]) -> &[u64] {
+            let mut digits = input.len();
+            for el in input.iter().rev() {
+                if *el == 0 {
+                    digits -= 1;
+                } else {
+                    break;
+                }
+            }
+            &input[..digits]
+        }
+        let quotient = strip_leading_zeroes(&n);
+        let remainder = strip_leading_zeroes(&d);
 
         // account for usize being u64 here
-        let header = [((quotient.len() as u64 * 2) << 32) | remainder.len() as u64 * 2];
+        let q_len_in_u32_words = quotient.len() * 2;
+        let r_len_in_u32_words = remainder.len() * 2;
+        // account for LE, and we will ask quotient first, then remainder
+        let header = [(q_len_in_u32_words as u64) | ((r_len_in_u32_words as u64) << 32)];
 
         let r = header
             .iter()

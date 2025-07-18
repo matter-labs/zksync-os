@@ -739,30 +739,22 @@ fn write_bigint(
         assert!(core::mem::size_of::<usize>() == 4);
     }
     unsafe {
+        let num_digits = to_consume.next_multiple_of(8) / 8;
         let dst_capacity = dst.clear_as_capacity_mut();
-        let mut digits = 0;
-        for dst in dst_capacity.iter_mut() {
+        for dst in dst_capacity[..num_digits].iter_mut() {
             let dst: *mut u32 = dst.as_mut_ptr().cast::<[u32; 8]>().cast();
-            let mut exhausted = false;
             for i in 0..8 {
                 if to_consume > 0 {
                     to_consume -= 1;
                     let digit = it.next().unwrap();
                     dst.add(i).write(digit as u32);
-                    if i == 0 {
-                        digits += 1;
-                    }
                 } else {
                     dst.add(i).write(0);
-                    exhausted = true;
                 }
-            }
-            if exhausted {
-                break;
             }
         }
         assert_eq!(to_consume, 0);
-        dst.set_num_digits(digits);
+        dst.set_num_digits(num_digits);
     }
 }
 
@@ -808,7 +800,6 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
         let r_len = it.next().expect("remainder length");
 
         write_bigint(&mut it, q_len, quotient_dst);
-
         write_bigint(&mut it, r_len, remainder_dst);
 
         assert!(it.next().is_none());

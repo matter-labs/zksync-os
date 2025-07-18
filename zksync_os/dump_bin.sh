@@ -13,7 +13,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking]"
+      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|debug-in-simulator]"
       exit 1
       ;;
   esac
@@ -44,6 +44,12 @@ case "$TYPE" in
     BIN_NAME="app.bin"
     ELF_NAME="app.elf"
     TEXT_NAME="app.text"
+    ;;
+  debug-in-simulator)
+    FEATURES="$FEATURES,print_debug_info,proof_running_system/cycle_marker,proof_running_system/unlimited_native,proof_running_system/p256_precompile"
+    BIN_NAME="app_debug.bin"
+    ELF_NAME="app_debug.elf"
+    TEXT_NAME="app_debug.text"
     ;;
   evm-replay)
     FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/prevrandao"
