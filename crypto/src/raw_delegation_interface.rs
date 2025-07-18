@@ -8,7 +8,9 @@ pub enum BigIntOps {
     MemCpy = 7,
 }
 
-/// # Safety requires pointers to be 32-byte alligned, and point to RAM based allocation of at least 32 byte size
+/// # Safety
+///
+/// Requires pointers to be 32-byte alligned, and point to RAM based allocation of at least 32 byte size
 #[inline(always)]
 pub unsafe fn bigint_op_delegation_raw(a: *mut (), b: *const (), op: BigIntOps) -> u32 {
     crate::bigint_delegation::delegation::bigint_op_delegation_with_carry_bit_by_ptr(
@@ -19,7 +21,9 @@ pub unsafe fn bigint_op_delegation_raw(a: *mut (), b: *const (), op: BigIntOps) 
     )
 }
 
-/// # Safety requires pointers to be 32-byte alligned, and point to RAM based allocation of at least 32 byte size
+/// # Safety
+///
+/// Requires pointers to be 32-byte alligned, and point to RAM based allocation of at least 32 byte size
 #[inline(always)]
 pub unsafe fn bigint_op_delegation_with_carry_bit_raw(
     a: *mut (),
