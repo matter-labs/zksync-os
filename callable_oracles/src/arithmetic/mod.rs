@@ -61,13 +61,26 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
         let mut d = read_memory_as_u64(memory, arg.modulus_ptr, arg.modulus_len * 4).unwrap();
         ruint::algorithms::div(&mut n, &mut d);
 
+        // Trim zeros
+        let quotient = if let Some(i) = n.iter().rposition(|&n| n != 0) {
+            &n[..=i]
+        } else {
+            &n[..]
+        };
+
+        let remainder = if let Some(i) = d.iter().rposition(|&n| n != 0) {
+            &d[..=i]
+        } else {
+            &d[..]
+        };
+
         // account for usize being u64 here
-        let header = [((d.len() as u64 * 2) << 32) | n.len() as u64 * 2];
+        let header = [((quotient.len() as u64 * 2) << 32) | remainder.len() as u64 * 2];
 
         let r = header
             .iter()
-            .chain(n.iter())
-            .chain(d.iter())
+            .chain(quotient.iter())
+            .chain(remainder.iter())
             .map(|x| *x as usize)
             .collect::<Vec<_>>();
         let r = Vec::into_boxed_slice(r);
