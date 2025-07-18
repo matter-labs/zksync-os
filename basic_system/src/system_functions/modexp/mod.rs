@@ -2,7 +2,6 @@ use super::*;
 
 use crate::cost_constants::{MODEXP_MINIMAL_COST_ERGS, MODEXP_WORST_CASE_NATIVE_PER_GAS};
 use alloc::vec::Vec;
-use crypto::modexp::modexp;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
 use zk_ee::system::logger::Logger;
@@ -17,12 +16,8 @@ use zk_ee::{
     },
 };
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
 mod delegation;
-#[cfg(target_arch = "riscv32")]
-mod mpnat;
-#[cfg(target_arch = "riscv32")]
-use mpnat::MPNatU256;
 
 ///
 /// modexp system function implementation.
@@ -188,21 +183,21 @@ fn modexp_as_system_function_inner<
 
     // Call the modexp.
 
-    #[cfg(not(target_arch = "riscv32"))]
-    let output = modexp(
-        base.as_slice(),
-        exponent.as_slice(),
-        modulus.as_slice(),
-        allocator,
-    );
-
-    #[cfg(target_arch = "riscv32")]
-    let output = mpnat::modexp(
+    #[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
+    let output = self::delegation::modexp(
         base.as_slice(),
         exponent.as_slice(),
         modulus.as_slice(),
         oracle,
         logger,
+        allocator,
+    );
+
+    #[cfg(not(any(all(target_arch = "riscv32", feature = "proving"), test)))]
+    let output = ::modexp::modexp(
+        base.as_slice(),
+        exponent.as_slice(),
+        modulus.as_slice(),
         allocator,
     );
 

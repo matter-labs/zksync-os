@@ -3,11 +3,22 @@
 #![allow(static_mut_refs)]
 #![allow(clippy::uninit_assumed_init)]
 #![allow(clippy::new_without_default)]
+#![feature(allocator_api)]
 
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
+#[cfg(any(
+    all(target_arch = "riscv32", feature = "bigint_ops"),
+    feature = "proving",
+    feature = "testing",
+    test
+))]
 mod ark_ff_delegation;
 #[allow(unused_imports)]
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
+#[cfg(any(
+    all(target_arch = "riscv32", feature = "bigint_ops"),
+    feature = "proving",
+    feature = "testing",
+    test
+))]
 mod bigint_delegation;
 #[allow(unexpected_cfgs)]
 pub mod blake2s;
@@ -16,7 +27,6 @@ pub mod bls12_381;
 #[allow(clippy::all)]
 pub mod bn254;
 pub mod k256;
-pub mod modexp;
 pub mod p256;
 pub mod ripemd160;
 pub mod secp256k1;
@@ -29,6 +39,15 @@ pub use blake2 as blake2_ext;
 pub use ark_ec;
 pub use ark_ff;
 pub use ark_serialize;
+
+#[cfg(any(
+    all(target_arch = "riscv32", feature = "bigint_ops"),
+    feature = "proving",
+    feature = "testing"
+))]
+pub use self::bigint_delegation::{
+    bigint_op_delegation_raw, bigint_op_delegation_with_carry_bit_raw, BigIntOps,
+};
 
 pub fn init_lib() {
     #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]

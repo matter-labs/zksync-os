@@ -207,8 +207,8 @@ pub struct ArithmeticsParam {
     pub a_len: u32,
     pub b_ptr: u32,
     pub b_len: u32,
-    pub c_ptr: u32,
-    pub c_len: u32,
+    pub modulus_ptr: u32,
+    pub modulus_len: u32,
 }
 
 ///

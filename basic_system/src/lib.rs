@@ -25,6 +25,7 @@
 #![allow(clippy::result_unit_err)]
 #![allow(clippy::double_must_use)]
 #![allow(clippy::explicit_auto_deref)]
+#![feature(slice_as_chunks)]
 
 extern crate alloc;
 
