@@ -182,6 +182,14 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError>;
 
+    fn set_delegation(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        delegate: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        oracle: &mut impl IOOracle,
+    ) -> Result<(), SystemError>;
+
     fn mark_for_deconstruction(
         &mut self,
         from_ee: ExecutionEnvironmentType,

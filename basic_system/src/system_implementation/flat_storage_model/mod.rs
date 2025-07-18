@@ -392,6 +392,23 @@ where
         )
     }
 
+    fn set_delegation(
+        &mut self,
+        resources: &mut R,
+        at_address: &B160,
+        delegate: &B160,
+        oracle: &mut impl IOOracle,
+    ) -> Result<(), SystemError> {
+        self.account_data_cache.set_delegation::<PROOF_ENV>(
+            resources,
+            at_address,
+            delegate,
+            &mut self.storage_cache,
+            &mut self.preimages_cache,
+            oracle,
+        )
+    }
+
     fn mark_for_deconstruction(
         &mut self,
         from_ee: ExecutionEnvironmentType,

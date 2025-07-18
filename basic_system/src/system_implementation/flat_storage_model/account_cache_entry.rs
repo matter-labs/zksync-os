@@ -53,6 +53,10 @@ impl<const DEPLOYED: u8, const DELEGATED: u8> VersioningData<DEPLOYED, DELEGATED
         self.0 = self.0 & 0x00ffffff_ffffffff | ((DELEGATED as u64) << 56)
     }
 
+    pub fn unset_deployment_status(&mut self) {
+        self.0 &= 0x00ff_ffff_ffff_ffff;
+    }
+
     pub const fn ee_version(&self) -> u8 {
         (self.0 >> 48) as u8
     }

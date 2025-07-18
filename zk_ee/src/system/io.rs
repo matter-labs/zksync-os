@@ -452,6 +452,14 @@ pub trait IOSubsystemExt: IOSubsystem {
         observable_bytecode_len: u32,
     ) -> Result<(), SystemError>;
 
+    /// Special method used for EIP-7702
+    fn set_delegation(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        delegate: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+    ) -> Result<(), SystemError>;
+
     fn finish(
         self,
         block_metadata: BlockMetadataFromOracle,

@@ -928,6 +928,16 @@ where
         )
     }
 
+    fn set_delegation(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        delegate: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+    ) -> Result<(), SystemError> {
+        self.storage
+            .set_delegation(resources, at_address, delegate, &mut self.oracle)
+    }
+
     fn finish(
         self,
         block_metadata: BlockMetadataFromOracle,
