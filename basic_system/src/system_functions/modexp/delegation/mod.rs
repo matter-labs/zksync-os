@@ -121,4 +121,39 @@ mod test {
 
         assert!(output.is_empty());
     }
+
+    #[test]
+    fn test_3() {
+        // Test {
+        //     input: "\
+        //     0000000000000000000000000000000000000000000000000000000000000001\
+        //     0000000000000000000000000000000000000000000000000000000000000020\
+        //     0000000000000000000000000000000000000000000000000000000000000020\
+        //     03\
+        //     fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e\
+        //     ffffffffffffffffffffffffffffffffffffffffff2f",
+        //     expected: "162ead82cadefaeaf6e9283248fdf2f2845f6396f6f17c4d5a39f820b6f6b5f9",
+        //     name: "eth_tests_create2callPrecompiles_test0_berlin",
+        //     precompile_id: "0000000000000000000000000000000000000005",
+        // }
+
+        let base = hex::decode("03").unwrap();
+        assert_eq!(base.len(), 1);
+
+        let exp = hex::decode("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e")
+            .unwrap();
+        assert_eq!(exp.len(), 32);
+
+        let encoding = "ffffffffffffffffffffffffffffffffffffffffff2f";
+        let mut modulus = hex::decode(encoding).unwrap();
+        modulus.resize(32, 0u8);
+
+        let output = invoke_precompile_no_prepadding(&modulus, &base, &exp);
+
+        let expected =
+            hex::decode("162ead82cadefaeaf6e9283248fdf2f2845f6396f6f17c4d5a39f820b6f6b5f9")
+                .unwrap();
+
+        assert_eq!(output, expected);
+    }
 }

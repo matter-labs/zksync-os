@@ -61,13 +61,15 @@ fn resources_from_ergs<R: Resources>(ergs: Ergs) -> R {
 }
 
 fn read_padded(dst: &mut Vec<u8, impl Allocator>, src: &mut &[u8], provided_len: usize) {
-    let padding = provided_len.saturating_sub(src.len());
-    dst.resize(padding, 0);
-
-    let to_take = src.len().saturating_sub(provided_len);
+    let source_len = src.len();
+    let to_take = core::cmp::min(source_len, provided_len);
     let (bytes, rest) = (*src).split_at(to_take);
     *src = rest;
     dst.extend_from_slice(&bytes);
+
+    if provided_len > source_len {
+        dst.resize(provided_len, 0);
+    }
 }
 
 // Based on https://github.com/bluealloy/revm/blob/main/crates/precompile/src/modexp.rs

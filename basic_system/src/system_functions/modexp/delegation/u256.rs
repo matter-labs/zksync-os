@@ -13,9 +13,20 @@ pub(crate) fn init() {
 }
 
 #[allow(clippy::derived_hash_with_manual_eq)]
-#[derive(Hash, Default, Debug)]
+#[derive(Hash, Default)]
 #[repr(align(32))]
 pub(crate) struct DelegatedU256([u64; 4]);
+
+impl core::fmt::Debug for DelegatedU256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "0x")?;
+        for digit in self.0.iter().rev() {
+            write!(f, "{:016x}", digit)?;
+        }
+
+        Ok(())
+    }
+}
 
 impl DelegatedU256 {
     pub(crate) const ZERO: Self = Self([0; 4]);

@@ -221,29 +221,28 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         // we will go BE case to quickly strip leading zeroes
         let mut first_found = false;
         // Exp is BE, so do not need to reverse iterator
-        for byte in exp.iter() {
+        for &byte in exp.iter() {
             // But here we should go from MSB
             for i in (0..8).rev() {
                 let bit = byte & (1 << i) > 0;
                 if first_found {
+                    (current, (scratch_0, scratch_1, scratch_2, scratch_3)) = Self::square_step(
+                        current,
+                        &modulus,
+                        scratch_0,
+                        scratch_1,
+                        scratch_2,
+                        scratch_3,
+                        &mut digit_scratch_0,
+                        &mut digit_scratch_1,
+                        &mut digit_scratch_2,
+                        &mut digit_carry_propagation_scratch,
+                        advisor,
+                    );
                     if bit {
                         (current, (scratch_0, scratch_1, scratch_2, scratch_3)) = Self::mul_step(
                             current,
                             &base,
-                            &modulus,
-                            scratch_0,
-                            scratch_1,
-                            scratch_2,
-                            scratch_3,
-                            &mut digit_scratch_0,
-                            &mut digit_scratch_1,
-                            &mut digit_scratch_2,
-                            &mut digit_carry_propagation_scratch,
-                            advisor,
-                        );
-                    } else {
-                        (current, (scratch_0, scratch_1, scratch_2, scratch_3)) = Self::square_step(
-                            current,
                             &modulus,
                             scratch_0,
                             scratch_1,
@@ -264,10 +263,21 @@ impl<A: Allocator + Clone> BigintRepr<A> {
             }
         }
 
-        // at the very end we assert full reduction
-        current.assert_fully_reduced(modulus);
+        if first_found {
+            // at the very end we assert full reduction
+            current.assert_fully_reduced(modulus);
 
-        current
+            current
+        } else {
+            // anything in 0s power is 1
+            let mut result = Vec::with_capacity_in(1, allocator);
+            result.push(DelegatedU256::ONE);
+
+            Self {
+                backing: result,
+                digits: 1,
+            }
+        }
     }
 
     // We assume everything coarsely reduced, so sizes of quotient and remainder can not have more digits
@@ -401,8 +411,8 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                 digit_scratch_2,
                 digit_carry_propagation_scratch,
             );
-
             advisor.get_reduction_op_advise(&scratch_2, modulus, &mut scratch_0, &mut scratch_1);
+
             // now we should enforce everything backwards
             assert!(scratch_0.digits <= modulus.digits);
             assert!(scratch_1.digits <= modulus.digits);
@@ -429,9 +439,16 @@ impl<A: Allocator + Clone> BigintRepr<A> {
     }
 
     fn assert_eq(a: &Self, b: &Self) {
-        assert_eq!(a.digits, b.digits);
-        for (a, b) in a.digits_ref().iter().zip(b.digits_ref().iter()) {
-            assert!(a.eq(b));
+        let meaningful_digits_floor = core::cmp::min(a.digits, b.digits);
+        for (a_digit, b_digit) in a.digits_ref().iter().zip(b.digits_ref().iter()) {
+            assert!(a_digit.eq(b_digit));
+        }
+        for input in [a, b] {
+            if input.digits > meaningful_digits_floor {
+                for el in input.digits_ref()[meaningful_digits_floor..].iter() {
+                    assert!(el.is_zero());
+                }
+            }
         }
     }
 
@@ -467,11 +484,15 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         a: &Self,
         b: &Self,
         c: Option<&Self>,
-        scratch_0: &mut DelegatedU256,
-        scratch_1: &mut DelegatedU256,
+        scratch_0: &mut DelegatedU256, // these three are just scratch space, we must write to them
+        scratch_1: &mut DelegatedU256, // before trying to read
         scratch_2: &mut DelegatedU256,
-        carry_propagation_scratch: &mut DelegatedU256,
+        carry_propagation_scratch: &mut DelegatedU256, // this one has top limbs to be 0s
     ) {
+        debug_assert_eq!(carry_propagation_scratch.as_limbs_mut()[1], 0);
+        debug_assert_eq!(carry_propagation_scratch.as_limbs_mut()[2], 0);
+        debug_assert_eq!(carry_propagation_scratch.as_limbs_mut()[3], 0);
+
         let dst_scratch_capacity = dst_scratch.clear_as_capacity_mut();
         // schoolbook
 
@@ -497,53 +518,70 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                 let a_digit = a.backing.get_unchecked(a_digit_idx);
                 let dst_digit = a_digit_idx + b_digit_idx;
 
-                // double-width a * b
-                write_into_ptr_unchecked(scratch_low, a_digit);
-                write_into_ptr_unchecked(scratch_high, a_digit);
-                let _ =
-                    bigint_op_delegation_raw(scratch_low.cast(), b_digit.cast(), BigIntOps::MulLow);
-                let _ = bigint_op_delegation_raw(
-                    scratch_high.cast(),
-                    b_digit.cast(),
-                    BigIntOps::MulHigh,
-                );
-
                 assert!(next_to_init_digit >= dst_digit);
 
                 if dst_digit == next_to_init_digit {
-                    // scratch is uninit, so we consider it as 0
+                    // scratch is uninit, so we consider it as 0 and can materialize low result directly there
+                    // for double-width a * b
+
+                    // scratch low and high are written if we were in the cycle at least once
+                    write_into_ptr_unchecked(
+                        dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
+                        a_digit,
+                    );
+                    write_into_ptr_unchecked(scratch_high, a_digit);
                     let _ = bigint_op_delegation_raw(
                         dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
-                        scratch_low.cast(),
-                        BigIntOps::MemCpy,
+                        b_digit.cast(),
+                        BigIntOps::MulLow,
+                    );
+                    let _ = bigint_op_delegation_raw(
+                        scratch_high.cast(),
+                        b_digit.cast(),
+                        BigIntOps::MulHigh,
                     );
                     next_to_init_digit = dst_digit + 1;
-                    let of_1 = if a_digit_idx > 0 {
+                    if a_digit_idx > 0 {
                         // also add carry that we propagate while walking over "a" digits
-                        bigint_op_delegation_raw(
+                        let of = bigint_op_delegation_raw(
                             dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
                             carry_scratch.cast(),
                             BigIntOps::Add,
-                        )
-                    } else {
-                        0u32
-                    };
-                    if of_1 > 0 {
-                        // and put this carry into high
-                        carry_propagation_scratch.as_limbs_mut()[0] = of_1 as u64;
-                        // no carry is possible here
-                        let _ = bigint_op_delegation_raw(
-                            scratch_high.cast(),
-                            (carry_propagation_scratch as *const DelegatedU256).cast(),
-                            BigIntOps::Add,
                         );
+
+                        if of > 0 {
+                            // and put this carry into high
+                            carry_propagation_scratch.as_limbs_mut()[0] = of as u64;
+                            // no carry is possible here
+                            let _ = bigint_op_delegation_raw(
+                                scratch_high.cast(),
+                                (carry_propagation_scratch as *const DelegatedU256).cast(),
+                                BigIntOps::Add,
+                            );
+                        }
                     }
 
-                    // and renumerate
+                    // and renumerate - high is our new carry propagation
                     let t = carry_scratch;
                     carry_scratch = scratch_high;
                     scratch_high = t;
                 } else {
+                    // double-width a * b
+
+                    // scratch low and high are written if we were in the cycle at least once
+                    write_into_ptr_unchecked(scratch_low, a_digit);
+                    write_into_ptr_unchecked(scratch_high, a_digit);
+                    let _ = bigint_op_delegation_raw(
+                        scratch_low.cast(),
+                        b_digit.cast(),
+                        BigIntOps::MulLow,
+                    );
+                    let _ = bigint_op_delegation_raw(
+                        scratch_high.cast(),
+                        b_digit.cast(),
+                        BigIntOps::MulHigh,
+                    );
+
                     // then we will add something from accumulator - it'll also write directly into destination
                     let of_0 = bigint_op_delegation_raw(
                         dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
@@ -577,26 +615,27 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                     scratch_high = t;
                 }
             }
-            // make final carry write - if can also initialize
-            let dst_digit = a.digits + b_digit_idx;
-            assert!(next_to_init_digit >= dst_digit);
-            if dst_digit == next_to_init_digit {
-                let _ = bigint_op_delegation_raw(
-                    dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
-                    carry_scratch.cast(),
-                    BigIntOps::MemCpy,
-                );
-                next_to_init_digit = dst_digit + 1;
-            } else {
-                let of = bigint_op_delegation_raw(
-                    dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
-                    carry_scratch.cast(),
-                    BigIntOps::Add,
-                );
-                assert_eq!(of, 0);
+            if a.digits > 0 {
+                // make final carry write - if can also initialize
+                let dst_digit = a.digits + b_digit_idx;
+                assert!(next_to_init_digit >= dst_digit);
+                if dst_digit == next_to_init_digit {
+                    let _ = bigint_op_delegation_raw(
+                        dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
+                        carry_scratch.cast(),
+                        BigIntOps::MemCpy,
+                    );
+                    next_to_init_digit = dst_digit + 1;
+                } else {
+                    let of = bigint_op_delegation_raw(
+                        dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
+                        carry_scratch.cast(),
+                        BigIntOps::Add,
+                    );
+                    assert_eq!(of, 0);
+                }
             }
         }
-        assert_eq!(next_to_init_digit, a.digits + b.digits);
 
         dst_scratch.set_num_digits(next_to_init_digit);
     }
@@ -640,6 +679,7 @@ pub(crate) mod naive_advisor {
             let mut digits = 0;
             for dst in dst_capacity.iter_mut() {
                 let dst: *mut u64 = dst.as_mut_ptr().cast::<[u64; 4]>().cast();
+                let mut exhausted = false;
                 for i in 0..4 {
                     if let Some(digit) = src.next() {
                         dst.add(i).write(digit);
@@ -647,8 +687,12 @@ pub(crate) mod naive_advisor {
                             digits += 1;
                         }
                     } else {
-                        break;
+                        dst.add(i).write(0);
+                        exhausted = true;
                     }
+                }
+                if exhausted {
+                    break;
                 }
             }
             assert!(src.next().is_none());
@@ -675,6 +719,7 @@ pub(crate) mod naive_advisor {
 
             use num_traits::ops::euclid::Euclid;
             let (q, r) = a.div_rem_euclid(&m);
+
             write_bigint(q, quotient_dst);
             write_bigint(r, remainder_dst);
         }
@@ -698,6 +743,7 @@ fn write_bigint(
         let mut digits = 0;
         for dst in dst_capacity.iter_mut() {
             let dst: *mut u32 = dst.as_mut_ptr().cast::<[u32; 8]>().cast();
+            let mut exhausted = false;
             for i in 0..8 {
                 if to_consume > 0 {
                     to_consume -= 1;
@@ -707,8 +753,12 @@ fn write_bigint(
                         digits += 1;
                     }
                 } else {
-                    break;
+                    dst.add(i).write(0);
+                    exhausted = true;
                 }
+            }
+            if exhausted {
+                break;
             }
         }
         assert_eq!(to_consume, 0);
