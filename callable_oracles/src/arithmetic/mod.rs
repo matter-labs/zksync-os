@@ -60,7 +60,12 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
         // account for usize being u64 here
         let header = [((d.len() as u64 * 2) << 32) | n.len() as u64 * 2];
 
-        let r = header.iter().chain(n.iter()).chain(d.iter()).map(|x| *x as usize).collect::<Vec<_>>();
+        let r = header
+            .iter()
+            .chain(n.iter())
+            .chain(d.iter())
+            .map(|x| *x as usize)
+            .collect::<Vec<_>>();
         let r = Vec::into_boxed_slice(r);
 
         let n = UsizeSliceIteratorOwned::new(r);
