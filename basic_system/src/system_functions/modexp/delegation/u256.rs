@@ -1,8 +1,8 @@
 use core::mem::MaybeUninit;
-use crypto::{bigint_op_delegation_raw, bigint_op_delegation_with_carry_bit_raw, BigIntOps};
+use crypto::{bigint_op_delegation_raw, BigIntOps};
 
-pub static mut ZERO: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
-pub static mut ONE: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
+static mut ZERO: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
+static mut ONE: MaybeUninit<DelegatedU256> = MaybeUninit::uninit();
 
 pub(crate) fn init() {
     #[allow(static_mut_refs)]
@@ -35,26 +35,6 @@ impl DelegatedU256 {
         }
     }
 
-    pub(crate) const fn from_be_bytes(input: &[u8; 32]) -> Self {
-        unsafe {
-            #[allow(invalid_value)]
-            #[allow(clippy::uninit_assumed_init)]
-            // `result.assume_init()` may trigger stack-to-stack copy, so we can't do it later
-            // This is safe because there are no references to result and it's initialized immediately
-            // (and on RISC-V all memory is init by default)
-            let mut result: DelegatedU256 = MaybeUninit::uninit().assume_init();
-            let ptr = &mut result.0[0] as *mut u64;
-            let src: *const [u8; 8] = input.as_ptr_range().end.cast();
-
-            ptr.write(u64::from_be_bytes(src.sub(1).read()));
-            ptr.add(1).write(u64::from_be_bytes(src.sub(2).read()));
-            ptr.add(2).write(u64::from_be_bytes(src.sub(3).read()));
-            ptr.add(3).write(u64::from_be_bytes(src.sub(4).read()));
-
-            result
-        }
-    }
-
     pub(crate) unsafe fn from_be_bytes_in_place(input: &[u8; 32], place: &mut MaybeUninit<Self>) {
         unsafe {
             let ptr = place.as_mut_ptr().cast::<u64>();
@@ -71,10 +51,6 @@ impl DelegatedU256 {
         let mut res = self.clone();
         res.bytereverse();
         unsafe { core::mem::transmute(res) }
-    }
-
-    pub(crate) const fn as_limbs(&self) -> &[u64; 4] {
-        &self.0
     }
 
     pub(crate) const fn as_limbs_mut(&mut self) -> &mut [u64; 4] {
@@ -103,17 +79,6 @@ impl DelegatedU256 {
         }
     }
 
-    pub(crate) fn write_one(&mut self) {
-        #[allow(static_mut_refs)]
-        unsafe {
-            let _ = bigint_op_delegation_raw(
-                (self as *mut Self).cast(),
-                ONE.as_ptr().cast(),
-                BigIntOps::MemCpy,
-            );
-        }
-    }
-
     pub(crate) fn is_zero(&self) -> bool {
         #[allow(static_mut_refs)]
         unsafe {
@@ -127,34 +92,6 @@ impl DelegatedU256 {
             eq != 0
         }
     }
-
-    // pub(crate) fn overflowing_add_assign(&mut self, rhs: &Self) -> bool {
-    //     unsafe {
-    //         with_ram_operand(rhs as *const Self, |rhs_ptr| {
-    //             let carry = bigint_op_delegation::<ADD_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
-    //             carry != 0
-    //         })
-    //     }
-    // }
-
-    // pub(crate) fn overflowing_sub_assign(&mut self, rhs: &Self) -> bool {
-    //     unsafe {
-    //         with_ram_operand(rhs as *const Self, |rhs_ptr| {
-    //             let borrow = bigint_op_delegation::<SUB_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
-
-    //             borrow != 0
-    //         })
-    //     }
-    // }
-
-    // pub(crate) fn widening_mul_assign_into(&mut self, high: &mut Self, rhs: &Self) {
-    //     unsafe {
-    //         with_ram_operand(rhs as *const Self, |rhs_ptr| {
-    //             bigint_op_delegation::<MUL_LOW_OP_BIT_IDX>(self as *mut Self, rhs_ptr);
-    //             bigint_op_delegation::<MUL_HIGH_OP_BIT_IDX>(high as *mut Self, rhs_ptr);
-    //         })
-    //     }
-    // }
 }
 
 impl Clone for DelegatedU256 {

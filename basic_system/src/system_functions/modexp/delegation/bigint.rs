@@ -624,16 +624,6 @@ impl<A: Allocator + Clone> BigintRepr<A> {
 }
 
 pub(crate) trait ModexpAdvisor {
-    // // get advice for let (q,r) = div_rem(a * b, m)
-    // fn get_mul_op_advise<A: Allocator + Clone>(
-    //     &mut self,
-    //     a: &BigintRepr<A>,
-    //     b: &BigintRepr<A>,
-    //     m: &BigintRepr<A>,
-    //     quotient_dst: &mut BigintRepr<A>,
-    //     remainder_dst: &mut BigintRepr<A>,
-    // );
-
     // get advice for let (q,r) = div_rem(a, m)
     fn get_reduction_op_advise<A: Allocator + Clone>(
         &mut self,
@@ -677,30 +667,6 @@ pub(crate) mod naive_advisor {
     pub(crate) struct NaiveAdvisor;
 
     impl ModexpAdvisor for NaiveAdvisor {
-        // fn get_mul_op_advise<A: Allocator + Clone>(
-        //     &mut self,
-        //     a: &BigintRepr<A>,
-        //     b: &BigintRepr<A>,
-        //     m: &BigintRepr<A>,
-        //     quotient_dst: &mut BigintRepr<A>,
-        //     remainder_dst: &mut BigintRepr<A>,
-        // ) {
-        //     let a = a.to_big_endian(Global);
-        //     let a = BigUint::from_bytes_be(&a);
-
-        //     let b = b.to_big_endian(Global);
-        //     let b = BigUint::from_bytes_be(&b);
-
-        //     let m = m.to_big_endian(Global);
-        //     let m = BigUint::from_bytes_be(&m);
-
-        //     let t = a * b;
-        //     use num_traits::ops::euclid::Euclid;
-        //     let (q, r) = t.div_rem_euclid(&m);
-        //     write_bigint(q, quotient_dst);
-        //     write_bigint(r, remainder_dst);
-        // }
-
         fn get_reduction_op_advise<A: Allocator + Clone>(
             &mut self,
             a: &BigintRepr<A>,
@@ -758,60 +724,6 @@ fn write_bigint(
 }
 
 impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
-    // fn get_mul_op_advise<A: Allocator + Clone>(
-    //     &mut self,
-    //     a: &BigintRepr<A>,
-    //     b: &BigintRepr<A>,
-    //     m: &BigintRepr<A>,
-    //     quotient_dst: &mut BigintRepr<A>,
-    //     remainder_dst: &mut BigintRepr<A>,
-    // ) {
-    //     let arg: ArithmeticsParam = {
-    //         let a_len = a.digits;
-    //         let a_ptr = a.backing.as_ptr();
-
-    //         let b_len = b.digits;
-    //         let b_ptr = b.backing.as_ptr();
-
-    //         let modulus_len = m.digits;
-    //         let modulus_ptr = m.backing.as_ptr();
-
-    //         let arg = ArithmeticsParam {
-    //             op: 0,
-    //             a_ptr: a_ptr.addr() as u32,
-    //             a_len: a_len as u32,
-    //             b_ptr: b_ptr.addr() as u32,
-    //             b_len: b_len as u32,
-    //             modulus_ptr: modulus_ptr.addr() as u32,
-    //             modulus_len: modulus_len as u32,
-    //         };
-
-    //         arg
-    //     };
-
-    //     // We assume that oracle's response is well-formed lengths-wise, and we will check value-wise separately
-    //     let mut it = self.inner
-    //         .create_oracle_access_iterator::<Arithmetics>((&arg as *const ArithmeticsParam).addr() as u32)
-    //         .unwrap();
-
-    //     let q_len = it.next().expect("quotient length");
-    //     let r_len = it.next().expect("remainder length");
-
-    //     write_bigint(
-    //         &mut it,
-    //         q_len,
-    //         quotient_dst,
-    //     );
-
-    //     write_bigint(
-    //         &mut it,
-    //         r_len,
-    //         remainder_dst,
-    //     );
-
-    //     assert!(it.next().is_none());
-    // }
-
     fn get_reduction_op_advise<A: Allocator + Clone>(
         &mut self,
         a: &BigintRepr<A>,
