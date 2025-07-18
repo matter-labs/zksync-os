@@ -183,6 +183,10 @@ fn modexp_as_system_function_inner<
         .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
     read_padded(&mut modulus, &mut input, mod_len);
 
+    debug_assert_eq!(base.len(), base_len);
+    debug_assert_eq!(exponent.len(), exp_len);
+    debug_assert_eq!(modulus.len(), mod_len);
+
     // Call the modexp.
 
     #[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
@@ -203,7 +207,12 @@ fn modexp_as_system_function_inner<
         allocator,
     );
 
-    dst.extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output));
+    if output.len() >= mod_len {
+        // truncate
+        dst.extend(output[(output.len() - mod_len)..].iter().copied());
+    } else {
+        dst.extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output));
+    }
 
     Ok(())
 }
