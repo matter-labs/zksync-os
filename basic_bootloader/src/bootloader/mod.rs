@@ -206,6 +206,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         let mut first_tx = true;
         let mut upgrade_tx_hash = Bytes32::zero();
+        let mut block_gas_used = 0;
 
         // now we can run every transaction
         while let Some(next_tx_data_len_bytes) = {
@@ -274,6 +275,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                         },
                         ExecutionResult::Revert { output } => (false, output, None),
                     };
+                    block_gas_used += tx_processing_result.gas_used;
                     result_keeper.tx_processed(Ok(TxProcessingOutput {
                         status,
                         output: &output,
@@ -343,7 +345,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         // TODO: Gas limit should be constant
         let gas_limit = system.get_gas_limit();
         // TODO: gas used shouldn't be zero
-        let gas_used = 0;
         let timestamp = system.get_timestamp();
         let consensus_random = Bytes32::from_u256_be(&system.get_mix_hash());
         let base_fee_per_gas = system.get_eip1559_basefee();
@@ -357,7 +358,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             tx_rolling_hash.into(),
             block_number,
             gas_limit,
-            gas_used,
+            block_gas_used,
             timestamp,
             consensus_random,
             base_fee_per_gas,
