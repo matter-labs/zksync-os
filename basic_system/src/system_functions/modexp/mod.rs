@@ -60,6 +60,16 @@ fn resources_from_ergs<R: Resources>(ergs: Ergs) -> R {
     R::from_ergs_and_native(ergs, native)
 }
 
+fn read_padded(dst: &mut Vec<u8, impl Allocator>, src: &mut &[u8], provided_len: usize) {
+    let padding = provided_len.saturating_sub(src.len());
+    dst.resize(padding, 0);
+
+    let to_take = src.len().saturating_sub(provided_len);
+    let (bytes, rest) = (*src).split_at(to_take);
+    *src = rest;
+    dst.extend_from_slice(&bytes);
+}
+
 // Based on https://github.com/bluealloy/revm/blob/main/crates/precompile/src/modexp.rs
 #[allow(unused_variables)]
 fn modexp_as_system_function_inner<
@@ -142,7 +152,7 @@ fn modexp_as_system_function_inner<
     // Used to extract ADJUSTED_EXPONENT_LENGTH.
     let exp_highp_len = core::cmp::min(exp_len, 32);
 
-    let input = input.get(HEADER_LENGTH..).unwrap_or_default();
+    let mut input = input.get(HEADER_LENGTH..).unwrap_or_default();
 
     let exp_highp = {
         // get right padded bytes so if data.len is less then exp_len we will get right padded zeroes.
@@ -159,27 +169,17 @@ fn modexp_as_system_function_inner<
     let ergs = ergs_cost(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
     resources.charge(&resources_from_ergs::<R>(ergs))?;
 
-    let mut input_it = input.iter();
     let mut base = Vec::try_with_capacity_in(base_len, allocator.clone())
         .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
-    base.resize(base_len, 0);
-    for (dst, src) in base.iter_mut().zip(&mut input_it) {
-        *dst = *src;
-    }
+    read_padded(&mut base, &mut input, base_len);
 
     let mut exponent = Vec::try_with_capacity_in(exp_len, allocator.clone())
         .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
-    exponent.resize(exp_len, 0);
-    for (dst, src) in exponent.iter_mut().zip(&mut input_it) {
-        *dst = *src;
-    }
+    read_padded(&mut exponent, &mut input, exp_len);
 
     let mut modulus = Vec::try_with_capacity_in(mod_len, allocator.clone())
         .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
-    modulus.resize(mod_len, 0);
-    for (dst, src) in modulus.iter_mut().zip(&mut input_it) {
-        *dst = *src;
-    }
+    read_padded(&mut modulus, &mut input, mod_len);
 
     // Call the modexp.
 
