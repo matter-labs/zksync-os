@@ -18,6 +18,11 @@ pub fn get_nonce(account: &AccountProperties) -> u64 {
     account.nonce
 }
 
+/// Get unpadded code from full bytecode with artifacts.
+pub fn get_unpadded_code<'a>(full_bytecode: &'a [u8], account: &AccountProperties) -> &'a [u8] {
+    &full_bytecode[0..account.unpadded_code_len as usize]
+}
+
 /// Retrieves code for an account.
 /// This function returns unpadded code, without artifacts.
 pub fn get_code<P: PreimageSource>(
@@ -26,7 +31,7 @@ pub fn get_code<P: PreimageSource>(
 ) -> Vec<u8> {
     match preimage_source.get_preimage(account.bytecode_hash) {
         None => vec![],
-        Some(full_bytecode) => full_bytecode[0..account.unpadded_code_len as usize].to_vec(),
+        Some(full_bytecode) => get_unpadded_code(&full_bytecode, account).to_vec(),
     }
 }
 
