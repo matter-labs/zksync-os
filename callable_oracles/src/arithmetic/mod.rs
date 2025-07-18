@@ -51,9 +51,13 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
         let arg = unsafe { read_struct::<ArithmeticsParam, _>(memory, arg_ptr as u32) }.unwrap();
 
         const { assert!(8 == core::mem::size_of::<usize>()) };
+        assert!(arg.a_ptr > 0);
+        assert!(arg.a_len > 0);
         let mut n = read_memory_as_u64(memory, arg.a_ptr, arg.a_len * 4).unwrap();
         assert_eq!(arg.b_ptr, 0);
         assert_eq!(arg.b_len, 0);
+        assert!(arg.modulus_ptr > 0);
+        assert!(arg.modulus_len > 0);
         let mut d = read_memory_as_u64(memory, arg.modulus_ptr, arg.modulus_len * 4).unwrap();
         ruint::algorithms::div(&mut n, &mut d);
 
