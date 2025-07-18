@@ -6,6 +6,7 @@
 #![feature(allocator_api)]
 
 #[allow(clippy::all)]
+#[allow(unused_imports, dead_code)]
 #[cfg(any(
     all(target_arch = "riscv32", feature = "bigint_ops"),
     feature = "proving",
@@ -14,6 +15,7 @@
 ))]
 mod ark_ff_delegation;
 #[allow(clippy::all)]
+#[allow(unused_imports, dead_code)]
 #[cfg(any(
     all(target_arch = "riscv32", feature = "bigint_ops"),
     feature = "proving",
