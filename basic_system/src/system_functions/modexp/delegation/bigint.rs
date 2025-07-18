@@ -93,9 +93,19 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         if remainder.is_empty() == false {
             capacity += 1;
         }
-        let mut digits = capacity;
+        let max_digits = capacity;
         capacity *= 2;
 
+        Self::from_big_endian(remainder, digits_bytes, max_digits, capacity, allocator)
+    }
+
+    fn from_big_endian(
+        remainder: &[u8],
+        digits_bytes: &[[u8; 32]],
+        max_digits: usize,
+        capacity: usize,
+        allocator: A,
+    ) -> Self {
         let mut backing = Vec::with_capacity_in(capacity, allocator);
         for (dst, digit) in backing.spare_capacity_mut()[..digits_bytes.len()]
             .iter_mut()
@@ -114,17 +124,23 @@ impl<A: Allocator + Clone> BigintRepr<A> {
             }
         }
         unsafe {
-            backing.set_len(digits);
+            backing.set_len(max_digits);
         }
 
-        if digits == 1 {
-            if DelegatedU256::is_zero(&mut backing[0]) {
-                digits = 0;
-                backing.clear();
+        let mut meaningful_digits = max_digits;
+        for digit in backing.iter().rev() {
+            if digit.is_zero() {
+                meaningful_digits -= 1;
+            } else {
+                break;
             }
         }
+        backing.truncate(meaningful_digits);
 
-        Self { backing, digits }
+        Self {
+            backing,
+            digits: meaningful_digits,
+        }
     }
 
     pub(crate) fn from_big_endian_with_double_capacity_or_min_capacity(
@@ -141,38 +157,11 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         if remainder.is_empty() == false {
             capacity += 1;
         }
-        let mut digits = capacity;
+        let max_digits = capacity;
         capacity *= 2;
         capacity = core::cmp::max(min_capacity, capacity);
 
-        let mut backing = Vec::with_capacity_in(capacity, allocator);
-        for (dst, digit) in backing.spare_capacity_mut()[..digits_bytes.len()]
-            .iter_mut()
-            .zip(digits_bytes.iter().rev())
-        {
-            unsafe {
-                DelegatedU256::from_be_bytes_in_place(digit, dst);
-            }
-        }
-        if remainder.is_empty() == false {
-            let dst = &mut backing.spare_capacity_mut()[digits_bytes.len()];
-            let mut buffer = [0u8; 32];
-            buffer[(32 - remainder.len())..].copy_from_slice(remainder);
-            unsafe {
-                DelegatedU256::from_be_bytes_in_place(&buffer, dst);
-            }
-        }
-        unsafe {
-            backing.set_len(digits);
-        }
-
-        if backing.len() == 1 {
-            if DelegatedU256::is_zero(&mut backing[0]) {
-                digits = 0;
-            }
-        }
-
-        Self { backing, digits }
+        Self::from_big_endian(remainder, digits_bytes, max_digits, capacity, allocator)
     }
 
     pub(crate) fn modpow(
@@ -680,6 +669,7 @@ pub(crate) mod naive_advisor {
             let a = a.to_big_endian(Global);
             let a = BigUint::from_bytes_be(&a);
 
+            assert!(m.digits > 0);
             let m = m.to_big_endian(Global);
             let m = BigUint::from_bytes_be(&m);
 
@@ -740,6 +730,8 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
 
             let modulus_len = m.digits;
             let modulus_ptr = m.backing.as_ptr();
+
+            assert!(modulus_len > 0);
 
             let arg = ArithmeticsParam {
                 op: 0,
