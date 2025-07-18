@@ -8,7 +8,9 @@ use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
 use rig::forward_system::run::ExecutionResult;
 use rig::ruint::aliases::B160;
-use rig::utils::{address_into_special_storage_key, ACCOUNT_PROPERTIES_STORAGE_ADDRESS};
+use rig::utils::{
+    address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
+};
 use rig::zk_ee::utils::Bytes32;
 use rig::{alloy, Chain};
 
@@ -59,10 +61,10 @@ fn test_set_bytecode_details_evm() {
         success
     }));
 
-    let expected_account_hash =
-        rig::utils::evm_bytecode_into_account_properties(&[0x01, 0x23, 0x45, 0x67, 0x89])
-            .0
-            .compute_hash();
+    let mut account = AccountProperties::default();
+    rig::zksync_os_api::helpers::set_properties_code(&mut account, &[0x01, 0x23, 0x45, 0x67, 0x89]);
+    let expected_account_hash = account.compute_hash();
+
     let actual_hash = output
         .storage_writes
         .iter()

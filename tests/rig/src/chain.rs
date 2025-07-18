@@ -1,4 +1,3 @@
-use crate::utils::evm_bytecode_into_account_properties;
 use crate::{colors, init_logger};
 use alloy::signers::local::PrivateKeySigner;
 use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
@@ -446,20 +445,20 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         nonce: Option<u64>,
         bytecode: Option<Vec<u8>>,
     ) {
+        use zksync_os_api::helpers::*;
         let mut account_properties = self.get_account_properties(&address);
         if let Some(bytecode) = bytecode {
-            let (props, bytecode_and_artifacts) = evm_bytecode_into_account_properties(&bytecode);
-            account_properties = props;
+            let bytecode_and_artifacts = set_properties_code(&mut account_properties, &bytecode);
             // Save bytecode preimage
             self.preimage_source
                 .inner
                 .insert(account_properties.bytecode_hash, bytecode_and_artifacts);
         }
         if let Some(nominal_token_balance) = balance {
-            account_properties.balance = nominal_token_balance;
+            set_properties_balance(&mut account_properties, nominal_token_balance);
         }
         if let Some(nonce) = nonce {
-            account_properties.nonce = nonce;
+            set_properties_nonce(&mut account_properties, nonce);
         }
 
         let encoding = account_properties.encoding();
@@ -526,10 +525,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     /// **Note, that other account fields will be zeroed out(balance, code).**
     ///
     pub fn set_evm_bytecode(&mut self, address: B160, bytecode: &[u8]) -> &mut Self {
-        let (account_properties, bytecode_and_artifacts) =
-            evm_bytecode_into_account_properties(bytecode);
-        let encoding = account_properties.encoding();
-        let properties_hash = account_properties.compute_hash();
+        use zksync_os_api::helpers::*;
+        let mut account = AccountProperties::default();
+        let bytecode_and_artifacts = set_properties_code(&mut account, bytecode);
+        let encoding = account.encoding();
+        let properties_hash = account.compute_hash();
 
         let key = address_into_special_storage_key(&address);
         let flat_key = derive_flat_storage_key(&ACCOUNT_PROPERTIES_STORAGE_ADDRESS, &key);
@@ -543,7 +543,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             .insert(&flat_key, &properties_hash);
         self.preimage_source
             .inner
-            .insert(account_properties.bytecode_hash, bytecode_and_artifacts);
+            .insert(account.bytecode_hash, bytecode_and_artifacts);
         self.preimage_source
             .inner
             .insert(properties_hash, encoding.to_vec());

@@ -21,6 +21,7 @@ zksync_os_runner = { path = "../../zksync_os_runner"}
 system_hooks = { path = "../../system_hooks"}
 crypto = { path = "../../crypto" }
 cycle_marker = { path = "../../cycle_marker", optional = true }
+zksync_os_api = { path = "../../api" }
 
 prover_examples = { workspace = true, optional=true}
 
