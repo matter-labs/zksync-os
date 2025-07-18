@@ -1,5 +1,5 @@
 use super::u256::U256;
-use crate::raw_delegation_interface::*;
+use crate::BigIntOps;
 
 #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
 const CARRY_BIT_IDX: usize = 6;
