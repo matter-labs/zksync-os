@@ -1,12 +1,4 @@
-pub enum BigIntOps {
-    Add = 0,
-    Sub = 1,
-    SubAndNegate = 2,
-    MulLow = 3,
-    MulHigh = 4,
-    Eq = 5,
-    MemCpy = 7,
-}
+use super::BigIntOps;
 
 /// # Safety
 ///

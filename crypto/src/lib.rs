@@ -5,7 +5,7 @@
 #![allow(clippy::new_without_default)]
 #![feature(allocator_api)]
 
-#[allow(unused_imports, dead_code)]
+#[allow(clippy::all)]
 #[cfg(any(
     all(target_arch = "riscv32", feature = "bigint_ops"),
     feature = "proving",
@@ -13,7 +13,7 @@
     test
 ))]
 mod ark_ff_delegation;
-#[allow(unused_imports, dead_code)]
+#[allow(clippy::all)]
 #[cfg(any(
     all(target_arch = "riscv32", feature = "bigint_ops"),
     feature = "proving",
@@ -38,7 +38,8 @@ pub mod sha3;
 #[cfg(any(
     all(target_arch = "riscv32", feature = "bigint_ops"),
     feature = "proving",
-    feature = "testing"
+    feature = "testing",
+    test
 ))]
 mod raw_delegation_interface;
 
@@ -51,10 +52,11 @@ pub use ark_serialize;
 #[cfg(any(
     all(target_arch = "riscv32", feature = "bigint_ops"),
     feature = "proving",
-    feature = "testing"
+    feature = "testing",
+    test
 ))]
 pub use self::raw_delegation_interface::{
-    bigint_op_delegation_raw, bigint_op_delegation_with_carry_bit_raw, BigIntOps,
+    bigint_op_delegation_raw, bigint_op_delegation_with_carry_bit_raw,
 };
 
 pub fn init_lib() {
@@ -66,6 +68,16 @@ pub fn init_lib() {
         bigint_delegation::init();
         secp256r1::init();
     }
+}
+
+pub enum BigIntOps {
+    Add = 0,
+    Sub = 1,
+    SubAndNegate = 2,
+    MulLow = 3,
+    MulHigh = 4,
+    Eq = 5,
+    MemCpy = 7,
 }
 
 pub trait MiniDigest: Sized {
