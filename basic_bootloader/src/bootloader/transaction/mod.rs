@@ -1263,6 +1263,18 @@ impl<'a> ZkSyncTransaction<'a> {
                 .ok_or(internal_error!("fa+v"))
         }
     }
+
+    ///
+    /// Parse length of authorization list.
+    ///
+    pub fn parse_authorization_list_length(&self) -> Result<u64, TxError> {
+        let iter = self
+            .reserved_dynamic
+            .authorization_list_iter(&self.underlying_buffer)
+            .map_err(|()| InvalidTransaction::InvalidStructure)?;
+        Ok(iter.count as u64)
+    }
+
 }
 
 #[derive(Clone, Debug)]

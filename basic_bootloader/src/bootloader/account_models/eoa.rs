@@ -520,6 +520,23 @@ where
                 Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
             };
         }
+        let authorization_list_length = transaction.parse_authorization_list_length()?;
+        let authorization_list_gas_cost =
+            authorization_list_length.saturating_mul(evm_interpreter::gas_constants::NEWACCOUNT);
+        let ergs_to_spend = Ergs(authorization_list_gas_cost.saturating_mul(ERGS_PER_GAS));
+        match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
+            Ok(_) => (),
+            Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
+                return Err(TxError::Validation(
+                    InvalidTransaction::OutOfGasDuringValidation,
+                ))
+            }
+            Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+                return Err(TxError::oon_as_validation(e.into()))
+            }
+            Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
+        };
+
         Ok(())
     }
 }
