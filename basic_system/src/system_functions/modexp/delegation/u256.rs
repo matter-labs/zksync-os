@@ -79,12 +79,12 @@ impl DelegatedU256 {
         }
     }
 
-    pub(crate) fn is_zero(&self) -> bool {
+    pub(crate) fn is_zero(&mut self) -> bool {
         #[allow(static_mut_refs)]
         unsafe {
             // equality is non-destructive, so we can cast
             let eq = bigint_op_delegation_raw(
-                (self as *const Self).cast_mut().cast(),
+                (self as *mut Self).cast(),
                 ZERO.as_ptr().cast(),
                 BigIntOps::Eq,
             );

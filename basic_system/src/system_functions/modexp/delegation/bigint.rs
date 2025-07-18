@@ -117,9 +117,10 @@ impl<A: Allocator + Clone> BigintRepr<A> {
             backing.set_len(digits);
         }
 
-        if backing.len() == 1 {
+        if digits == 1 {
             if DelegatedU256::is_zero(&mut backing[0]) {
                 digits = 0;
+                backing.clear();
             }
         }
 
@@ -181,6 +182,8 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         advisor: &mut impl ModexpAdvisor,
         allocator: A,
     ) -> Self {
+        assert!(modulus.digits > 0);
+
         // We need some buffers, that will be used through the modular exponentiation,
         // and can be larger backing capacity than necessary, but we will only use the scratch space up to aprioiri known
         // bound. Modulus is assumed pristine
