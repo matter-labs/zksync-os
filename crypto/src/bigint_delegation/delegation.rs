@@ -1,14 +1,5 @@
 use super::u256::U256;
-
-pub enum BigIntOps {
-    Add = 0,
-    Sub = 1,
-    SubAndNegate = 2,
-    MulLow = 3,
-    MulHigh = 4,
-    Eq = 5,
-    MemCpy = 7,
-}
+use crate::raw_delegation_interface::*;
 
 #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
 const CARRY_BIT_IDX: usize = 6;
@@ -103,7 +94,7 @@ fn bigint_op_delegation_with_carry_bit(a: &mut U256, b: &U256, carry: bool, op: 
 
 #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
 #[inline(always)]
-fn bigint_op_delegation_with_carry_bit_by_ptr(
+pub(crate) fn bigint_op_delegation_with_carry_bit_by_ptr(
     a: *mut U256,
     b: *const U256,
     carry: bool,
@@ -142,7 +133,7 @@ fn bigint_op_delegation_with_carry_bit(a: &mut U256, b: &U256, carry: bool, op: 
 
 #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
 #[inline(always)]
-fn bigint_op_delegation_with_carry_bit_by_ptr(
+pub(crate) fn bigint_op_delegation_with_carry_bit_by_ptr(
     _a_ptr: *mut U256,
     _b_ptr: *const U256,
     _carry: bool,
@@ -221,21 +212,4 @@ fn bigint_op_delegation_with_carry_bit_by_ptr(
 
     #[cfg(not(any(feature = "testing", test)))]
     unimplemented!()
-}
-
-/// Safery: requires pointers to be 32-byte alligned, and point to RAM based allocation of at least 32 byte size
-#[inline(always)]
-pub unsafe fn bigint_op_delegation_raw(a: *mut (), b: *const (), op: BigIntOps) -> u32 {
-    bigint_op_delegation_with_carry_bit_by_ptr(a.cast(), b.cast(), false, op)
-}
-
-/// Safery: requires pointers to be 32-byte alligned, and point to RAM based allocation of at least 32 byte size
-#[inline(always)]
-pub unsafe fn bigint_op_delegation_with_carry_bit_raw(
-    a: *mut (),
-    b: *const (),
-    carry: bool,
-    op: BigIntOps,
-) -> u32 {
-    bigint_op_delegation_with_carry_bit_by_ptr(a.cast(), b.cast(), carry, op)
 }

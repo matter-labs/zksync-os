@@ -843,6 +843,7 @@ impl<P: FpConfig<N>, const N: usize> MulAssign<&Self> for Fp<P, N> {
 
 /// Computes `self *= other.inverse()` if `other.inverse()` is `Some`, and
 /// panics otherwise.
+#[allow(clippy::suspicious_op_assign_impl)]
 impl<P: FpConfig<N>, const N: usize> DivAssign<&Self> for Fp<P, N> {
     #[inline(always)]
     fn div_assign(&mut self, other: &Self) {

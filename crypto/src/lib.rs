@@ -5,6 +5,7 @@
 #![allow(clippy::new_without_default)]
 #![feature(allocator_api)]
 
+#[allow(unused_imports, dead_code)]
 #[cfg(any(
     all(target_arch = "riscv32", feature = "bigint_ops"),
     feature = "proving",
@@ -12,7 +13,7 @@
     test
 ))]
 mod ark_ff_delegation;
-#[allow(unused_imports)]
+#[allow(unused_imports, dead_code)]
 #[cfg(any(
     all(target_arch = "riscv32", feature = "bigint_ops"),
     feature = "proving",
@@ -34,6 +35,13 @@ pub mod secp256r1;
 pub mod sha256;
 pub mod sha3;
 
+#[cfg(any(
+    all(target_arch = "riscv32", feature = "bigint_ops"),
+    feature = "proving",
+    feature = "testing"
+))]
+mod raw_delegation_interface;
+
 pub use blake2 as blake2_ext;
 
 pub use ark_ec;
@@ -45,7 +53,7 @@ pub use ark_serialize;
     feature = "proving",
     feature = "testing"
 ))]
-pub use self::bigint_delegation::{
+pub use self::raw_delegation_interface::{
     bigint_op_delegation_raw, bigint_op_delegation_with_carry_bit_raw, BigIntOps,
 };
 

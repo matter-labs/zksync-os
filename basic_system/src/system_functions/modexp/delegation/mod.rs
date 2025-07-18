@@ -13,10 +13,10 @@ pub(super) fn modexp<O: IOOracle, L: Logger, A: Allocator + Clone>(
     exp: &[u8],
     modulus: &[u8],
     oracle: &mut O,
-    logger: &mut L,
+    _logger: &mut L,
     allocator: A,
 ) -> Vec<u8, A> {
-    super::delegation::u256::init();
+    self::u256::init();
 
     let mut advisor = OracleAdvisor { inner: oracle };
 
@@ -45,6 +45,7 @@ mod test {
     use super::bigint::naive_advisor::NaiveAdvisor;
     use super::*;
 
+    // #[ignore = "depends on init and features"]
     #[test]
     fn test_on_vector() {
         // let test =
@@ -68,6 +69,8 @@ mod test {
         //     name: "nagydani_1_square",
         //     precompile_id: "0000000000000000000000000000000000000005",
         // };
+
+        super::u256::init();
 
         let base = hex::decode("e09ad9675465c53a109fac66a445c91b292d2bb2c5268addb30cd82f80fcb0033ff97c80a5fc6f39193ae969c6ede6710a6b7ac27078a06d90ef1c72e5c85fb5").unwrap();
         assert_eq!(base.len(), 64);
