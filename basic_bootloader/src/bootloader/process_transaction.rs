@@ -563,7 +563,8 @@ where
                         .with_ee_version()
                         .with_nonce()
                         .with_artifacts_len()
-                        .with_unpadded_code_len(),
+                        .with_unpadded_code_len()
+                        .with_is_delegated(),
                 )
             })?;
 

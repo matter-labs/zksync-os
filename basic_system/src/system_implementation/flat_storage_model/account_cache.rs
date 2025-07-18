@@ -472,6 +472,7 @@ where
         NominalTokenBalance: Maybe<<EthereumIOTypesConfig as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
         CodeVersion: Maybe<u8>,
+        IsDelegated: Maybe<bool>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -489,6 +490,7 @@ where
                 NominalTokenBalance,
                 Bytecode,
                 CodeVersion,
+                IsDelegated,
             >,
         >,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
@@ -506,6 +508,7 @@ where
             NominalTokenBalance,
             Bytecode,
             CodeVersion,
+            IsDelegated,
         >,
         SystemError,
     > {
@@ -563,6 +566,7 @@ where
                 }
             })?,
             code_version: Maybe::construct(|| full_data.versioning_data.code_version()),
+            is_delegated: Maybe::construct(|| full_data.versioning_data.is_delegated()),
         })
     }
 

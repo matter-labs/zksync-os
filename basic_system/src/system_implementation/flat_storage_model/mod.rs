@@ -267,6 +267,7 @@ where
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
         CodeVersion: Maybe<u8>,
+        IsDelegated: Maybe<bool>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -284,6 +285,7 @@ where
                 NominalTokenBalance,
                 Bytecode,
                 CodeVersion,
+                IsDelegated,
             >,
         >,
         oracle: &mut impl IOOracle,
@@ -299,11 +301,12 @@ where
             NominalTokenBalance,
             Bytecode,
             CodeVersion,
+            IsDelegated,
         >,
         SystemError,
     > {
         self.account_data_cache
-            .read_account_properties::<PROOF_ENV, _, _, _, _, _, _, _, _, _, _>(
+            .read_account_properties::<PROOF_ENV, _, _, _, _, _, _, _, _, _, _, _>(
                 ee_type,
                 resources,
                 address,

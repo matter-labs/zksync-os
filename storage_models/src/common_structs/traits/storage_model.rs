@@ -66,6 +66,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
         CodeVersion: Maybe<u8>,
+        IsDelegated: Maybe<bool>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -83,6 +84,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
                 NominalTokenBalance,
                 Bytecode,
                 CodeVersion,
+                IsDelegated,
             >,
         >,
         oracle: &mut impl IOOracle,
@@ -98,6 +100,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
             NominalTokenBalance,
             Bytecode,
             CodeVersion,
+            IsDelegated,
         >,
         SystemError,
     >;
