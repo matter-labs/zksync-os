@@ -104,6 +104,7 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
 
     Ok(std::rc::Rc::try_unwrap(items).unwrap().into_inner())
 }
+
 pub fn run_batch_with_oracle_dump<
     T: ReadStorageTree + Clone + serde::Serialize,
     PS: PreimageSource + Clone + serde::Serialize,
