@@ -7,13 +7,17 @@ use crate::bootloader::rlp;
 use crate::bootloader::transaction::reserved_dynamic_parser::{
     parse_address, parse_u256, parse_u32, parse_u64, parse_u8,
 };
-use ruint::aliases::{B160, U256};
+use ruint::aliases::{B1, B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
 use zk_ee::memory::ArrayBuilder;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::errors::UpdateQueryError;
-use zk_ee::system::{AccountDataRequest, EthereumLikeTypes, IOSubsystemExt, Resources, System};
+use zk_ee::system::{
+    AccountDataRequest, EthereumLikeTypes, IOSubsystemExt, Resources, System,
+    EIP7702_DELEGATION_MARKER,
+};
 
 use super::TxError;
 
@@ -259,4 +263,20 @@ impl AuthorizationListItem {
             ))
         }
     }
+}
+
+///
+/// Parse a delegation of the format: 0xef0100 || address
+///
+pub fn parse_delegation(delegation: &[u8]) -> Result<B160, InternalError> {
+    if delegation.len() != EIP7702_DELEGATION_MARKER.len() + B160::BYTES {
+        return Err(internal_error!("7702 delegation of incorrect length"));
+    }
+    if delegation[0..3] != EIP7702_DELEGATION_MARKER {
+        return Err(internal_error!("7702 delegation has invalid prefix"));
+    }
+    let Some(address) = B160::try_from_be_slice(&delegation[3..]) else {
+        return Err(internal_error!("7702 delegation has invalid address"));
+    };
+    Ok(address)
 }

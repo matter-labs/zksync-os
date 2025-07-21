@@ -23,6 +23,7 @@ use zk_ee::{internal_error, out_of_ergs_error};
 
 use super::errors::BootloaderInterfaceError;
 use super::errors::BootloaderSubsystemError;
+use super::transaction::authorization_list_parser::parse_delegation;
 
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
@@ -986,20 +987,47 @@ where
     S::IO: IOSubsystemExt,
 {
     // IO will follow the rules of the CALLER here to charge for execution
-    let account_properties = match system.io.read_account_properties(
-        ee_version,
-        resources,
-        &call_request.callee,
-        AccountDataRequest::empty()
-            .with_ee_version()
-            .with_unpadded_code_len()
-            .with_artifacts_len()
-            .with_bytecode()
-            .with_nonce()
-            .with_nominal_token_balance()
-            .with_code_version(),
-    ) {
-        Ok(account_properties) => account_properties,
+    let (account_properties, delegate_properties) = match system
+        .io
+        .read_account_properties(
+            ee_version,
+            resources,
+            &call_request.callee,
+            AccountDataRequest::empty()
+                .with_ee_version()
+                .with_unpadded_code_len()
+                .with_artifacts_len()
+                .with_bytecode()
+                .with_nonce()
+                .with_nominal_token_balance()
+                .with_code_version()
+                .with_is_delegated(),
+        )
+        .and_then(|account_properties| {
+            if account_properties.is_delegated.0 {
+                // Resolve delegation
+                let delegation = &account_properties.bytecode.0
+                    [..account_properties.unpadded_code_len.0 as usize];
+                let address = parse_delegation(delegation)?;
+                let delegate_properties = system.io.read_account_properties(
+                    ee_version,
+                    resources,
+                    &address,
+                    AccountDataRequest::empty()
+                        .with_ee_version()
+                        .with_unpadded_code_len()
+                        .with_artifacts_len()
+                        .with_bytecode()
+                        .with_code_version()
+                        .with_nonce()
+                        .with_nominal_token_balance(),
+                )?;
+                Ok((account_properties, Some(delegate_properties)))
+            } else {
+                Ok((account_properties, None))
+            }
+        }) {
+        Ok((account_properties, delegate)) => (account_properties, delegate),
         Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
             let _ = system.get_logger().write_fmt(format_args!(
                 "Call failed: insufficient resources to read callee account data\n",
@@ -1014,14 +1042,60 @@ where
         Err(SystemError::LeafDefect(e)) => return Err(e.into()),
     };
 
+    // Read required data to perform a call
+    let (
+        next_ee_version,
+        bytecode,
+        code_version,
+        unpadded_code_len,
+        artifacts_len,
+        nonce,
+        nominal_token_balance,
+    ) = if let Some(delegate_properties) = delegate_properties {
+        let ee_version = delegate_properties.ee_version.0;
+        let unpadded_code_len = delegate_properties.unpadded_code_len.0;
+        let artifacts_len = delegate_properties.artifacts_len.0;
+        let bytecode = delegate_properties.bytecode.0;
+        let code_version = delegate_properties.code_version.0;
+        let nonce = delegate_properties.nonce.0;
+        let nominal_token_balance = delegate_properties.nominal_token_balance.0;
+
+        (
+            ee_version,
+            bytecode,
+            code_version,
+            unpadded_code_len,
+            artifacts_len,
+            nonce,
+            nominal_token_balance,
+        )
+    } else {
+        let ee_version = account_properties.ee_version.0;
+        let unpadded_code_len = account_properties.unpadded_code_len.0;
+        let artifacts_len = account_properties.artifacts_len.0;
+        let bytecode = account_properties.bytecode.0;
+        let code_version = account_properties.code_version.0;
+        let nonce = account_properties.nonce.0;
+        let nominal_token_balance = account_properties.nominal_token_balance.0;
+        (
+            ee_version,
+            bytecode,
+            code_version,
+            unpadded_code_len,
+            artifacts_len,
+            nonce,
+            nominal_token_balance,
+        )
+    };
+
     Ok(CalleeAccountProperties {
-        next_ee_version: account_properties.ee_version.0,
-        bytecode: account_properties.bytecode.0,
-        nonce: account_properties.nonce.0,
-        nominal_token_balance: account_properties.nominal_token_balance.0,
-        code_version: account_properties.code_version.0,
-        unpadded_code_len: account_properties.unpadded_code_len.0,
-        artifacts_len: account_properties.artifacts_len.0,
+        next_ee_version,
+        bytecode,
+        code_version,
+        unpadded_code_len,
+        artifacts_len,
+        nonce,
+        nominal_token_balance,
     })
 }
 
