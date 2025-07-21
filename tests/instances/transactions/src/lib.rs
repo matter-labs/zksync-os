@@ -505,6 +505,7 @@ fn test_tx_with_access_list() {
 #[test]
 fn test_tx_with_authorization_list() {
     use rig::alloy::eips::eip7702::*;
+    use rig::alloy::signers::SignerSync;
     let mut chain = Chain::empty(None);
 
     let wallet = PrivateKeySigner::from_str(
@@ -513,20 +514,24 @@ fn test_tx_with_authorization_list() {
     .unwrap();
     let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
 
-    let from = wallet_ethers.address();
+    let delegate = PrivateKeySigner::from_str(
+        "a226d3a5c8c408741c3446c762aee8dff742f21e381a0e5ab85a96c5c00100be",
+    )
+    .unwrap();
 
-    let to = address!("0000000000000000000000000000000000010002");
+    let from = wallet_ethers.address();
+    let to = delegate.address();
+
+    let erc_20_contract = address!("0000000000000000000000000000000000010002");
 
     let encoded_mint_tx = {
-        // Taken from alloy tests
         let authorization = Authorization {
-            chain_id: U256::from(1u64),
-            address: rig::alloy::primitives::Address::left_padding_from(&[6]),
-            nonce: 1,
+            chain_id: U256::from(37u64),
+            address: erc_20_contract,
+            nonce: 0,
         };
-        #[allow(deprecated)]
-        let sig =  rig::alloy::signers::Signature::from_str("48b55bfa915ac795c431978d8a6a992b628d557da5ff759b307d495a36649353efffd310ac743f371de3b9f7f9cb56c0b28ad43601b4ab949f53faa07bd2c8041b").unwrap()
-        ;
+        let signed_hash = authorization.signature_hash();
+        let sig = delegate.sign_hash_sync(&signed_hash).expect("must sign");
         let signed = authorization.into_signed(sig);
         let authorization_list = vec![signed];
         let mint_tx = TxEip7702 {
@@ -534,7 +539,7 @@ fn test_tx_with_authorization_list() {
             nonce: 0,
             max_fee_per_gas: 1000,
             max_priority_fee_per_gas: 1000,
-            gas_limit: 75_000,
+            gas_limit: 100_000,
             to,
             value: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
@@ -547,7 +552,7 @@ fn test_tx_with_authorization_list() {
     let transactions = vec![encoded_mint_tx];
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_be_bytes(erc_20_contract.into_array()), &bytecode);
 
     chain.set_balance(
         B160::from_be_bytes(from.0),

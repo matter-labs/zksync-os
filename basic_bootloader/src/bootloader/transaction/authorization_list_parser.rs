@@ -7,7 +7,7 @@ use crate::bootloader::rlp;
 use crate::bootloader::transaction::reserved_dynamic_parser::{
     parse_address, parse_u256, parse_u32, parse_u64, parse_u8,
 };
-use ruint::aliases::{B1, B160, U256};
+use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
 use zk_ee::memory::ArrayBuilder;
