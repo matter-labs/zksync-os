@@ -118,7 +118,7 @@ impl zk_ee::system_io_oracle::IOOracle for DummyOracle {
         &'a mut self,
         _init_value: M::Params,
     ) -> Result<Self::MarkerTiedIterator<'a>, zk_ee::system::errors::internal::InternalError> {
-        todo!()
+        unreachable!("oracle should not be consulted on native targets");
     }
 }
 
