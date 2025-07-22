@@ -1,7 +1,7 @@
 pub mod cache_record;
 pub mod callee_parameters;
 pub mod events_storage;
-pub mod generic_ethereum_like_fsm_state;
+pub mod proof_data;
 pub mod history_list;
 pub mod history_map;
 pub mod logs_storage;
@@ -13,7 +13,7 @@ pub mod warm_storage_value;
 
 pub use self::callee_parameters::*;
 pub use self::events_storage::*;
-pub use self::generic_ethereum_like_fsm_state::*;
+pub use self::proof_data::*;
 pub use self::logs_storage::*;
 pub use self::new_preimages_publication_storage::*;
 pub use self::pubdata_compression::*;

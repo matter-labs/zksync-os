@@ -19,7 +19,7 @@ use errors::ForwardSubsystemError;
 use oracle::CallSimulationOracle;
 pub use oracle::ForwardRunningOracle;
 pub use oracle::ForwardRunningOracleAux;
-use zk_ee::common_structs::BasicIOImplementerFSM;
+use zk_ee::common_structs::ProofData;
 use zk_ee::utils::Bytes32;
 
 pub use tree::LeafProof;
@@ -60,7 +60,7 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     tx_result_callback: TR,
 ) -> Result<BatchOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
-        io_implementer_init_data: None,
+        proof_data: None,
         block_metadata: batch_context,
         tree,
         preimage_source,
@@ -78,13 +78,13 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
 pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
     zk_os_program_path: PathBuf,
     batch_context: BatchContext,
-    storage_commitment: StorageCommitment,
+    proof_data: ProofData<StorageCommitment>,
     tree: T,
     preimage_source: PS,
     tx_source: TS,
 ) -> Result<Vec<u32>, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
-        io_implementer_init_data: Some(io_implementer_init_data(Some(storage_commitment))),
+        proof_data: Some(proof_data),
         block_metadata: batch_context,
         tree,
         preimage_source,
@@ -117,7 +117,7 @@ pub fn run_batch_with_oracle_dump<
     tx_result_callback: TR,
 ) -> Result<BatchOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
-        io_implementer_init_data: None,
+        proof_data: None,
         block_metadata: batch_context,
         tree,
         preimage_source,
@@ -180,7 +180,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     };
 
     let oracle = CallSimulationOracle {
-        io_implementer_init_data: None,
+        proof_data: None,
         block_metadata: batch_context,
         storage,
         preimage_source,
@@ -197,21 +197,4 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     .map_err(wrap_error!())?;
     let mut batch_output: BatchOutput = result_keeper.into();
     Ok(batch_output.tx_results.remove(0))
-}
-
-pub fn io_implementer_init_data(
-    storage_commitment: Option<StorageCommitment>,
-) -> BasicIOImplementerFSM<StorageCommitment> {
-    BasicIOImplementerFSM {
-        state_root_view: match storage_commitment {
-            Some(storage_commitment) => storage_commitment,
-            None => StorageCommitment {
-                root: Default::default(),
-                next_free_slot: 0,
-            },
-        },
-        pubdata_diffs_log_hash: Bytes32::ZERO,
-        num_pubdata_diffs_logs: 0,
-        block_functionality_is_completed: false,
-    }
 }

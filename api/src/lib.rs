@@ -3,7 +3,6 @@
 use std::{path::PathBuf, str::FromStr};
 
 use forward_system::run::{
-    io_implementer_init_data,
     test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource},
     BatchContext, EthereumIOTypesConfig, ForwardRunningOracle, StorageCommitment,
 };
@@ -12,6 +11,7 @@ pub mod helpers;
 
 /// Runs the batch, and returns the output (that contains gas usage, transaction status etc.).
 pub use forward_system::run::run_batch;
+use zk_ee::common_structs::ProofData;
 
 /// Runs a batch in riscV - using zksync_os binary - and returns the
 /// witness that can be passed to the prover subsystem.
@@ -20,12 +20,12 @@ pub fn run_batch_generate_witness(
     tree: InMemoryTree,
     preimage_source: InMemoryPreimageSource,
     tx_source: TxListSource,
-    storage_commitment: StorageCommitment,
+    proof_data: ProofData<StorageCommitment>,
     zksync_os_bin_path: &str,
 ) -> Vec<u32> {
     let oracle: ForwardRunningOracle<InMemoryTree, InMemoryPreimageSource, TxListSource> =
         ForwardRunningOracle {
-            io_implementer_init_data: Some(io_implementer_init_data(Some(storage_commitment))),
+            proof_data: Some(proof_data),
             block_metadata: batch_context,
             tree,
             preimage_source,

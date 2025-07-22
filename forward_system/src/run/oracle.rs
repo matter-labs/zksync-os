@@ -2,7 +2,7 @@ use crate::run::{NextTxResponse, PreimageSource, ReadStorageTree, TxSource};
 use basic_system::system_implementation::flat_storage_model::*;
 use serde::{Deserialize, Serialize};
 use zk_ee::common_structs::derive_flat_storage_key;
-use zk_ee::common_structs::BasicIOImplementerFSM;
+use zk_ee::common_structs::ProofData;
 use zk_ee::internal_error;
 use zk_ee::kv_markers::StorageAddress;
 use zk_ee::oracle::*;
@@ -17,7 +17,7 @@ use super::ReadStorage;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ForwardRunningOracleAux<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> {
-    pub storage_commitment: Option<FlatStorageCommitment<TREE_HEIGHT>>,
+    pub proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
     pub block_metadata: BlockMetadataFromOracle,
     pub tree: T,
     pub tx_source: TS,
@@ -30,7 +30,7 @@ impl<T: ReadStorageTree + Clone, PS: PreimageSource + Clone, TS: TxSource + Clon
 {
     fn clone(&self) -> Self {
         ForwardRunningOracleAux {
-            storage_commitment: self.storage_commitment,
+            proof_data: self.proof_data,
             block_metadata: self.block_metadata,
             tree: self.tree.clone(),
             tx_source: self.tx_source.clone(),
@@ -45,7 +45,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> From<ForwardRunningOr
 {
     fn from(oracle: ForwardRunningOracle<T, PS, TS>) -> Self {
         ForwardRunningOracleAux {
-            storage_commitment: oracle.io_implementer_init_data.map(|x| x.state_root_view),
+            proof_data: oracle.proof_data,
             block_metadata: oracle.block_metadata,
             tree: oracle.tree,
             tx_source: oracle.tx_source,
@@ -60,18 +60,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> From<ForwardRunningOr
 {
     fn from(oracle: ForwardRunningOracleAux<T, PS, TS>) -> Self {
         ForwardRunningOracle {
-            io_implementer_init_data: Some(BasicIOImplementerFSM {
-                state_root_view: match oracle.storage_commitment {
-                    Some(storage_commitment) => storage_commitment,
-                    None => FlatStorageCommitment {
-                        root: Default::default(),
-                        next_free_slot: 0,
-                    },
-                },
-                pubdata_diffs_log_hash: Bytes32::ZERO,
-                num_pubdata_diffs_logs: 0,
-                block_functionality_is_completed: false,
-            }),
+            proof_data: oracle.proof_data,
             block_metadata: oracle.block_metadata,
             tree: oracle.tree,
             tx_source: oracle.tx_source,
@@ -83,7 +72,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> From<ForwardRunningOr
 
 #[derive(Debug)]
 pub struct ForwardRunningOracle<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> {
-    pub io_implementer_init_data: Option<BasicIOImplementerFSM<FlatStorageCommitment<TREE_HEIGHT>>>,
+    pub proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
     pub block_metadata: BlockMetadataFromOracle,
     pub tree: T,
     pub tx_source: TS,
@@ -96,7 +85,7 @@ impl<T: ReadStorageTree + Clone, PS: PreimageSource + Clone, TS: TxSource + Clon
 {
     fn clone(&self) -> Self {
         ForwardRunningOracle {
-            io_implementer_init_data: self.io_implementer_init_data,
+            proof_data: self.proof_data,
             block_metadata: self.block_metadata,
             tree: self.tree.clone(),
             tx_source: self.tx_source.clone(),
@@ -146,9 +135,9 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
 
                 Ok(Box::new(iterator))
             }
-            a if a == core::any::TypeId::of::<InitializeIOImplementerIterator>() => {
+            a if a == core::any::TypeId::of::<ProofDataIterator>() => {
                 let iterator = DynUsizeIterator::from_owned(
-                    self.io_implementer_init_data
+                    self.proof_data
                         .take()
                         .expect("io implementer data is none (second read or not set initially)"),
                 );
@@ -265,7 +254,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> IOOracle
 
 #[derive(Clone, Debug)]
 pub struct CallSimulationOracle<S: ReadStorage, PS: PreimageSource, TS: TxSource> {
-    pub io_implementer_init_data: Option<BasicIOImplementerFSM<FlatStorageCommitment<TREE_HEIGHT>>>,
+    pub proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
     pub block_metadata: BlockMetadataFromOracle,
     pub storage: S,
     pub tx_source: TS,
@@ -313,9 +302,9 @@ impl<S: ReadStorage, PS: PreimageSource, TS: TxSource> CallSimulationOracle<S, P
 
                 Ok(Box::new(iterator))
             }
-            a if a == core::any::TypeId::of::<InitializeIOImplementerIterator>() => {
+            a if a == core::any::TypeId::of::<ProofDataIterator>() => {
                 let iterator = DynUsizeIterator::from_owned(
-                    self.io_implementer_init_data
+                    self.proof_data
                         .take()
                         .expect("reading io implementer init data twice"),
                 );

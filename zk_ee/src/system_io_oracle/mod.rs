@@ -45,8 +45,8 @@ impl OracleIteratorTypeMarker for NewTxContentIterator {
 ///
 /// IO Implementer initial data query type.
 ///
-pub struct InitializeIOImplementerIterator;
-impl OracleIteratorTypeMarker for InitializeIOImplementerIterator {
+pub struct ProofDataIterator;
+impl OracleIteratorTypeMarker for ProofDataIterator {
     const ID: u32 = 2;
     type Params = ();
 }
