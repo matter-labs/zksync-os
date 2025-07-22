@@ -567,7 +567,11 @@ where
                 }
             })?,
             code_version: Maybe::construct(|| full_data.versioning_data.code_version()),
-            is_delegated: Maybe::construct(|| full_data.versioning_data.is_delegated()),
+            is_delegated: Maybe::construct(|| {
+                // Only EVM accounts can be delegated
+                full_data.versioning_data.ee_version() == ExecutionEnvironmentType::EVM_EE_BYTE
+                    && full_data.versioning_data.is_delegated()
+            }),
         })
     }
 
@@ -1013,13 +1017,18 @@ where
                 v.bytecode_hash = bytecode_hash;
                 v.unpadded_code_len = observable_bytecode_len;
                 v.artifacts_len = artifacts_len;
+
                 if delegated {
-                    v.versioning_data.set_as_delegated()
+                    v.versioning_data.set_as_delegated();
+                    // We set EVM as EE, as it's the only EE supported currently.
+                    v.versioning_data
+                        .set_ee_version(ExecutionEnvironmentType::EVM_EE_BYTE);
                 } else {
-                    v.versioning_data.unset_deployment_status()
+                    v.versioning_data.unset_deployment_status();
+                    v.versioning_data
+                        .set_ee_version(ExecutionEnvironmentType::NO_EE_BYTE);
                 }
-                v.versioning_data
-                    .set_ee_version(ExecutionEnvironmentType::NO_EE_BYTE);
+
                 v.versioning_data.set_code_version(code_version);
 
                 // This is unlikely to happen, this case shouldn't be reachable by higher level logic
