@@ -20,6 +20,11 @@ crypto = { path = "../crypto" }
 basic_system = { path = "../basic_system" }
 evm_interpreter = { path = "../evm_interpreter" }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+zksync_types = { git = "https://github.com/matter-labs/zksync-era", rev = "core-v28.7.0" }
+ethers = "2.0.0" # ethers 2.0.0 is required due to dependency conflict TODO: replace with alloy
+alloy = { version = "=1", features = ["full", "eip712", "consensus"]}
+
+
 
 
 [features]

@@ -2,19 +2,15 @@
 //! This module contains bunch of standalone utility methods, useful for testing.
 //!
 
-use alloy::consensus::{SignableTransaction, Transaction};
-use alloy::network::TxSignerSync;
-#[allow(deprecated)]
-use alloy::primitives::Signature;
+use alloy::consensus::Transaction;
 use alloy::rpc::types::TransactionRequest;
-use alloy::signers::local::PrivateKeySigner;
-use ethers::abi::{AbiEncode, Token, Uint};
+use ethers::abi::AbiEncode;
 use ethers::types::transaction::eip2718::TypedTransaction;
 use ethers::types::U256;
 use std::io::Read;
-use std::ops::Add;
 use std::path::PathBuf;
 use std::str::FromStr;
+pub use zksync_os_api::helpers::*;
 use zksync_web3_rs::eip712::{Eip712Transaction, Eip712TransactionRequest};
 use zksync_web3_rs::signers::Signer;
 use zksync_web3_rs::zks_utils::EIP712_TX_TYPE;
@@ -76,91 +72,6 @@ pub fn construct_calldata(selector: &str, data: &[&str]) -> Vec<u8> {
     }
 
     cd
-}
-
-///
-/// Sign and encode alloy transaction using provided `wallet`.
-///
-#[allow(deprecated)]
-pub fn sign_and_encode_alloy_tx(
-    mut tx: impl SignableTransaction<Signature>,
-    wallet: &PrivateKeySigner,
-) -> Vec<u8> {
-    let mut signature = wallet
-        .sign_transaction_sync(&mut tx)
-        .unwrap()
-        .as_bytes()
-        .to_vec();
-
-    // seems that it's a case for the legacy txs
-    if signature[64] <= 1 {
-        signature[64] += 27;
-    }
-    let tx_type = tx.ty();
-    let from = wallet.address().into_array();
-    let to = tx.to().map(|to| to.into_array());
-    let gas_limit = tx.gas_limit() as u128;
-    let max_fee_per_gas = tx.max_fee_per_gas();
-    let max_priority_fee_per_gas = tx.max_priority_fee_per_gas();
-    let nonce = tx.nonce() as u128;
-    let value = tx.value().to_be_bytes();
-    let data = tx.input().to_vec();
-
-    let access_list = tx
-        .access_list()
-        .map(|access_list: &alloy::rpc::types::AccessList| {
-            access_list
-                .clone()
-                .0
-                .into_iter()
-                .map(|item| {
-                    let address = item.address.into_array();
-                    let keys: Vec<[u8; 32]> = item.storage_keys.into_iter().map(|k| k.0).collect();
-                    (address, keys)
-                })
-                .collect()
-        });
-
-    let authorization_list = tx.authorization_list().map(|authorization_list| {
-        authorization_list
-            .iter()
-            .map(|authorization| {
-                let auth = authorization.inner();
-                let y_parity = authorization.y_parity();
-                let r = authorization.r();
-                let s = authorization.s();
-                (
-                    U256::from_big_endian(&auth.chain_id.to_be_bytes::<32>()),
-                    auth.address.into_array(),
-                    auth.nonce,
-                    y_parity,
-                    U256::from_big_endian(&r.to_be_bytes::<32>()),
-                    U256::from_big_endian(&s.to_be_bytes::<32>()),
-                )
-            })
-            .collect()
-    });
-    let reserved_dynamic = access_list.map(|access_list| {
-        encode_reserved_dynamic(access_list, authorization_list.unwrap_or_default())
-    });
-
-    encode_tx(
-        tx_type,
-        from,
-        to,
-        gas_limit,
-        None,
-        max_fee_per_gas,
-        max_priority_fee_per_gas,
-        None,
-        nonce,
-        value,
-        data,
-        signature,
-        None,
-        reserved_dynamic,
-        true,
-    )
 }
 
 #[allow(deprecated)]
@@ -384,116 +295,9 @@ pub fn encode_l1_tx(tx: TransactionRequest) -> Vec<u8> {
     )
 }
 
-fn encode_reserved_dynamic(
-    access_list: Vec<([u8; 20], Vec<[u8; 32]>)>,
-    authorization_list: Vec<(U256, [u8; 20], u64, u8, U256, U256)>,
-) -> Vec<u8> {
-    let access_list: Vec<Token> = access_list
-        .into_iter()
-        .map(|(addr, keys)| {
-            let address_token = Token::Address(addr.into());
-            let keys_token = Token::Array(
-                keys.into_iter()
-                    .map(|k| Token::FixedBytes(k.to_vec()))
-                    .collect(),
-            );
-            Token::Tuple(vec![address_token, keys_token])
-        })
-        .collect();
-
-    let authorization_list: Vec<Token> = authorization_list
-        .into_iter()
-        .map(|(chain_id, address, nonce, y_parity, r, s)| {
-            let chain_id = Token::Uint(chain_id);
-            let address = Token::Address(address.into());
-            let nonce = Token::Uint(U256::from(nonce));
-            let y_parity = Token::Uint(U256::from(y_parity));
-            let r = Token::Uint(r);
-            let s = Token::Uint(s);
-            Token::Tuple(vec![chain_id, address, nonce, y_parity, r, s])
-        })
-        .collect();
-
-    // 2-element list to be able to extend reserved_dynamic
-    let outer = Token::Array(vec![
-        Token::Array(access_list),
-        Token::Array(authorization_list),
-    ]);
-    ethers::abi::encode(&[outer])
-}
-
-///
-/// Internal tx encoding method.
-///
-#[allow(clippy::too_many_arguments)]
-fn encode_tx(
-    tx_type: u8,
-    from: [u8; 20],
-    to: Option<[u8; 20]>,
-    gas_limit: u128,
-    gas_per_pubdata_byte_limit: Option<u128>,
-    max_fee_per_gas: u128,
-    max_priority_fee_per_gas: Option<u128>,
-    paymaster: Option<[u8; 20]>,
-    nonce: u128,
-    value: [u8; 32],
-    data: Vec<u8>,
-    signature: Vec<u8>,
-    paymaster_input: Option<Vec<u8>>,
-    reserved_dynamic: Option<Vec<u8>>,
-    is_eip155: bool,
-) -> Vec<u8> {
-    fn address_to_uint(address: &[u8; 20]) -> Uint {
-        let mut padded = [0u8; 32];
-        padded[12..].copy_from_slice(address.as_slice());
-        Uint::from(padded)
-    }
-
-    ethers::abi::encode(&[
-        Token::Uint(tx_type.into()),
-        Token::Uint(address_to_uint(&from)),
-        Token::Uint(address_to_uint(&to.unwrap_or_default())),
-        Token::Uint(gas_limit.into()),
-        Token::Uint(gas_per_pubdata_byte_limit.unwrap_or_default().into()),
-        Token::Uint(max_fee_per_gas.into()),
-        Token::Uint(max_priority_fee_per_gas.unwrap_or(max_fee_per_gas).into()),
-        Token::Uint(address_to_uint(&paymaster.unwrap_or_default())),
-        Token::Uint(U256::from(nonce)),
-        Token::Uint(U256::from(value)),
-        Token::FixedArray(vec![
-            Token::Uint(if tx_type == 0 {
-                if is_eip155 {
-                    U256::one()
-                } else {
-                    U256::zero()
-                }
-            } else if tx_type == 255 {
-                U256::from(value).add(gas_limit * max_fee_per_gas)
-            } else {
-                U256::zero()
-            }),
-            Token::Uint(if to.is_none() {
-                U256::one()
-            } else {
-                U256::zero()
-            }),
-            Token::Uint(U256::zero()),
-            Token::Uint(U256::zero()),
-        ]),
-        Token::Bytes(data),
-        Token::Bytes(signature),
-        // factory deps not supported for now
-        Token::Array(vec![]),
-        Token::Bytes(paymaster_input.unwrap_or_default()),
-        Token::Bytes(reserved_dynamic.unwrap_or_default()),
-    ])
-    .to_vec()
-}
-
 #[cfg(test)]
 mod tests {
 
-    use super::encode_reserved_dynamic;
     use super::U256;
     use ruint::aliases::B160;
     use zk_ee::utils::Bytes32;
@@ -531,7 +335,8 @@ mod tests {
             ),
         ];
 
-        let encoded_list = encode_reserved_dynamic(access_list, authorization_list);
+        let encoded_list =
+            zksync_os_api::helpers::encode_reserved_dynamic(access_list, authorization_list);
         let encoded = ethers::abi::encode(&[Token::Bytes(encoded_list)]);
 
         // Offset is 32 to skip the initial offset for the bytes encoding
