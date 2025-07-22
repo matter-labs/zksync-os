@@ -75,6 +75,12 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError> {
         use zk_ee::system::Computational;
+
+        // Special case, for 0 hash we return an empty slice.
+        if hash.is_zero() {
+            return Ok(&[]);
+        }
+
         resources.charge(&R::from_native(R::Native::from_computational(
             PREIMAGE_CACHE_GET_NATIVE_COST,
         )))?;
