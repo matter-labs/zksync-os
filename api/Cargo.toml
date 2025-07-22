@@ -16,6 +16,11 @@ oracle_provider = { path = "../oracle_provider" }
 callable_oracles = { path = "../callable_oracles/" }
 zksync_os_runner = { path = "../zksync_os_runner"}
 risc_v_simulator = { workspace = true }
+zk_ee = { path = "../zk_ee" }
+crypto = { path = "../crypto" }
+basic_system = { path = "../basic_system" }
+evm_interpreter = { path = "../evm_interpreter" }
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 
 
 [features]

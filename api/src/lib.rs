@@ -1,3 +1,5 @@
+#![feature(allocator_api)]
+
 use std::{path::PathBuf, str::FromStr};
 
 use forward_system::run::{
@@ -6,6 +8,7 @@ use forward_system::run::{
     BatchContext, EthereumIOTypesConfig, ForwardRunningOracle, StorageCommitment,
 };
 use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
+pub mod helpers;
 
 /// Runs the batch, and returns the output (that contains gas usage, transaction status etc.).
 pub use forward_system::run::run_batch;

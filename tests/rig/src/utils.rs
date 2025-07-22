@@ -8,17 +8,13 @@ use alloy::network::TxSignerSync;
 use alloy::primitives::Signature;
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
-use basic_system::system_implementation::flat_storage_model::bytecode_padding_len;
 use ethers::abi::{AbiEncode, Token, Uint};
 use ethers::types::transaction::eip2718::TypedTransaction;
 use ethers::types::U256;
-use std::alloc::Global;
 use std::io::Read;
 use std::ops::Add;
 use std::path::PathBuf;
 use std::str::FromStr;
-use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::utils::Bytes32;
 use zksync_web3_rs::eip712::{Eip712Transaction, Eip712TransactionRequest};
 use zksync_web3_rs::signers::Signer;
 use zksync_web3_rs::zks_utils::EIP712_TX_TYPE;
@@ -421,42 +417,6 @@ fn encode_tx(
         Token::Bytes(reserved_dynamic.unwrap_or_default()),
     ])
     .to_vec()
-}
-
-pub fn evm_bytecode_into_account_properties(deployed_code: &[u8]) -> (AccountProperties, Vec<u8>) {
-    use crypto::blake2s::Blake2s256;
-    use crypto::sha3::Keccak256;
-    use crypto::MiniDigest;
-
-    let unpadded_code_len = deployed_code.len();
-    let artifacts =
-        evm_interpreter::BytecodePreprocessingData::create_artifacts_inner(Global, deployed_code);
-    let artifacts = artifacts.as_slice();
-    let artifacts_len = artifacts.len();
-    let padding_len = bytecode_padding_len(unpadded_code_len);
-    let full_len = unpadded_code_len + padding_len + artifacts_len;
-    let mut bytecode_and_artifacts: Vec<u8> = vec![0u8; full_len];
-    bytecode_and_artifacts[..unpadded_code_len].copy_from_slice(deployed_code);
-    let bitmap_offset = unpadded_code_len + padding_len;
-    bytecode_and_artifacts[bitmap_offset..].copy_from_slice(artifacts);
-
-    let observable_bytecode_hash = Bytes32::from_array(Keccak256::digest(deployed_code));
-    let bytecode_hash = Bytes32::from_array(Blake2s256::digest(&bytecode_and_artifacts));
-    let mut result = AccountProperties::TRIVIAL_VALUE;
-    result.observable_bytecode_hash = observable_bytecode_hash;
-    result.bytecode_hash = bytecode_hash;
-    result.versioning_data.set_as_deployed();
-    result
-        .versioning_data
-        .set_ee_version(ExecutionEnvironmentType::EVM as u8);
-    result
-        .versioning_data
-        .set_code_version(evm_interpreter::ARTIFACTS_CACHING_CODE_VERSION_BYTE);
-    result.unpadded_code_len = unpadded_code_len as u32;
-    result.artifacts_len = artifacts_len as u32;
-    result.observable_bytecode_len = unpadded_code_len as u32;
-
-    (result, bytecode_and_artifacts)
 }
 
 #[cfg(test)]
