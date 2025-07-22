@@ -4,7 +4,7 @@ use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::utils::Bytes32;
 use zk_ee::{
     system::{
-        errors::{InternalError, SystemError, UpdateQueryError},
+        errors::{internal::InternalError, system::SystemError, UpdateQueryError},
         logger::Logger,
         AccountData, AccountDataRequest, IOResultKeeper, Maybe, Resources,
     },
@@ -64,6 +64,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         ArtifactsLen: Maybe<u32>,
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
+        CodeVersion: Maybe<u8>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -80,6 +81,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
                 ArtifactsLen,
                 NominalTokenBalance,
                 Bytecode,
+                CodeVersion,
             >,
         >,
         oracle: &mut impl IOOracle,
@@ -94,6 +96,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
             ArtifactsLen,
             NominalTokenBalance,
             Bytecode,
+            CodeVersion,
         >,
         SystemError,
     >;
@@ -159,8 +162,6 @@ pub trait StorageModel: Sized + SnapshottableIo {
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError>;
 

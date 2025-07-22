@@ -4,6 +4,9 @@
 
 use basic_bootloader::bootloader::transaction::ZkSyncTransaction;
 use rig::forward_system::system::system::ForwardRunningSystem;
+use zk_ee::reference_implementations::BaseResources;
+use zk_ee::reference_implementations::DecreasingNative;
+use zk_ee::system::Resource;
 use zk_ee::system::System;
 
 use common::mock_oracle;
@@ -23,11 +26,12 @@ fn fuzz(data: &[u8]) {
         }
         return;
     };
+    let mut inf_resources = BaseResources::<DecreasingNative>::FORMAL_INFINITE;
 
     let system = System::<ForwardRunningSystem<_, _, _>>::init_from_oracle(mock_oracle())
         .expect("Failed to initialize the mock system");
     let chain_id = system.get_chain_id();
-    let _ = tx.calculate_signed_hash(chain_id);
+    let _ = tx.calculate_signed_hash(chain_id, &mut inf_resources);
 }
 
 fuzz_target!(|data: &[u8]| {

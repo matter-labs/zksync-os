@@ -1,4 +1,4 @@
-use crate::system::errors::InternalError;
+use crate::system::errors::internal::InternalError;
 use crate::system::logger::Logger;
 use crate::{
     kv_markers::{UsizeDeserializable, UsizeSerializable},

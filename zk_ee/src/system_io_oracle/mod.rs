@@ -11,7 +11,7 @@ use core::num::NonZeroU32;
 
 use super::kv_markers::{ExactSizeChain, StorageAddress, UsizeDeserializable, UsizeSerializable};
 use super::types_config::SystemIOTypesConfig;
-use crate::system::errors::InternalError;
+use crate::system::errors::internal::InternalError;
 use crate::utils::Bytes32;
 
 ///

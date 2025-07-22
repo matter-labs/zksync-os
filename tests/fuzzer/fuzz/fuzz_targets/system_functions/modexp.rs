@@ -5,8 +5,10 @@ use arbitrary::{Arbitrary, Unstructured};
 use basic_system::system_functions::modexp::ModExpImpl;
 use libfuzzer_sys::fuzz_target;
 use std::convert::TryInto;
-use zk_ee::reference_implementations::{BaseComputationalResources, BaseResources};
+use zk_ee::reference_implementations::BaseResources;
 use zk_ee::system::SystemFunction;
+use zk_ee::system::Resource;
+use zk_ee::reference_implementations::DecreasingNative;
 
 #[derive(Debug)]
 struct ModexpInput {
@@ -91,9 +93,7 @@ fn fuzz(data: &[u8]) {
     }
 
     let allocator = std::alloc::Global;
-    let mut resource = BaseResources {
-        spendable: BaseComputationalResources { ergs: u64::MAX },
-    };
+    let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
     let mut dst = dst.clone();
 

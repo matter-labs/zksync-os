@@ -1,9 +1,8 @@
 name: Update app.bin
 
 on:
-  push:
-    branches:
-      - main
+  pull_request:
+    types: [ synchronize, opened ]
 
 
 permissions:
@@ -33,9 +32,9 @@ jobs:
             git diff --name-only
 
             git stash push -m "local-changes"
-            git fetch origin ${{ github.ref }}
-            git checkout ${{ github.ref }}
+            git fetch origin ${{ github.head_ref }}
+            git checkout ${{ github.head_ref }}
             git stash pop || echo "Nothing to pop"
             git commit -a -m "chore: auto-update app.bin file"
-            git push origin HEAD:${{ github.ref }}
+            git push origin HEAD:${{ github.head_ref }}
           fi

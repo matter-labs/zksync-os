@@ -1,15 +1,15 @@
 use alloc::vec::Vec;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
+use errors::BootloaderSubsystemError;
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
-use zk_ee::system::errors::InternalError;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
 pub mod run_single_interaction;
-mod runner;
+pub mod runner;
 pub mod supported_ees;
 
 mod account_models;
@@ -31,7 +31,7 @@ use core::fmt::Write;
 use core::mem::MaybeUninit;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
-use zk_ee::oracle::*;
+use zk_ee::{internal_error, oracle::*};
 
 use crate::bootloader::account_models::{ExecutionOutput, ExecutionResult, TxProcessingResult};
 use crate::bootloader::block_header::BlockHeader;
@@ -45,10 +45,6 @@ use zk_ee::system::*;
 use zk_ee::utils::*;
 
 pub(crate) const EVM_EE_BYTE: u8 = ExecutionEnvironmentType::EVM_EE_BYTE;
-#[allow(dead_code)]
-pub(crate) const ERA_VM_EE_BYTE: u8 = ExecutionEnvironmentType::ERA_VM_EE_BYTE;
-#[allow(dead_code)]
-pub(crate) const IWASM_EE_BYTE: u8 = ExecutionEnvironmentType::IWASM_EE_BYTE;
 pub const DEBUG_OUTPUT: bool = false;
 
 pub struct BasicBootloader<S: EthereumLikeTypes> {
@@ -171,7 +167,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
         oracle: <S::IO as IOSubsystemExt>::IOOracle,
         result_keeper: &mut impl ResultKeeperExt,
-    ) -> Result<<S::IO as IOSubsystemExt>::FinalData, InternalError>
+    ) -> Result<<S::IO as IOSubsystemExt>::FinalData, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -188,12 +184,10 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
         let mut return_data =
             Box::new_uninit_slice_in(MAX_RETURN_BUFFER_SIZE, system.get_allocator());
-        //let callstack = Box::new_uninit_slice_in(MAX_CALLSTACK_DEPTH, system.get_allocator());
 
         let mut memories = RunnerMemoryBuffers {
             heaps: &mut heaps,
             return_data: &mut return_data,
-            //callstack: &mut callstack,
         };
 
         let mut system_functions = HooksStorage::new_in(system.get_allocator());
@@ -212,6 +206,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         let mut first_tx = true;
         let mut upgrade_tx_hash = Bytes32::zero();
+        let mut block_gas_used = 0;
 
         // now we can run every transaction
         while let Some(next_tx_data_len_bytes) = {
@@ -280,6 +275,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                         },
                         ExecutionResult::Revert { output } => (false, output, None),
                     };
+                    block_gas_used += tx_processing_result.gas_used;
                     result_keeper.tx_processed(Ok(TxProcessingOutput {
                         status,
                         output: &output,
@@ -349,21 +345,23 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         // TODO: Gas limit should be constant
         let gas_limit = system.get_gas_limit();
         // TODO: gas used shouldn't be zero
-        let gas_used = 0;
         let timestamp = system.get_timestamp();
         let consensus_random = Bytes32::from_u256_be(&system.get_mix_hash());
         let base_fee_per_gas = system.get_eip1559_basefee();
         // TODO: add gas_per_pubdata and native price
+        let base_fee_per_gas = base_fee_per_gas
+            .try_into()
+            .map_err(|_| internal_error!("base_fee_per_gas exceeds max u64"))?;
         let block_header = BlockHeader::new(
             Bytes32::from(previous_block_hash.to_be_bytes::<32>()),
             beneficiary,
             tx_rolling_hash.into(),
             block_number,
             gas_limit,
-            gas_used,
+            block_gas_used,
             timestamp,
             consensus_random,
-            base_fee_per_gas.try_into().unwrap(),
+            base_fee_per_gas,
         );
         let block_hash = Bytes32::from(block_header.hash());
         result_keeper.block_sealed(block_header);

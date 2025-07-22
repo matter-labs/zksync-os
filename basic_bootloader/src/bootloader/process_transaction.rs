@@ -17,13 +17,17 @@ use constants::{
     L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_PUBDATA, L2_TX_INTRINSIC_GAS, L2_TX_INTRINSIC_PUBDATA,
     MAX_BLOCK_GAS_LIMIT,
 };
+use errors::BootloaderSubsystemError;
 use evm_interpreter::ERGS_PER_GAS;
 use gas_helpers::check_enough_resources_for_pubdata;
 use gas_helpers::get_resources_to_charge_for_pubdata;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::internal_error;
-use zk_ee::system::errors::{FatalError, InternalError, SystemError, UpdateQueryError};
+use zk_ee::system::errors::root_cause::GetRootCause;
+use zk_ee::system::errors::root_cause::RootCause;
+use zk_ee::system::errors::runtime::RuntimeError;
+use zk_ee::system::errors::{internal::InternalError, system::SystemError, UpdateQueryError};
 use zk_ee::system::{EthereumLikeTypes, Resources};
 
 /// Return value of validation step
@@ -146,22 +150,33 @@ where
         let (tx_hash, preparation_out_of_resources): (Bytes32, bool) =
             match transaction.calculate_hash(chain_id, &mut resources) {
                 Ok(h) => (h.into(), false),
-                Err(FatalError::Internal(e)) => return Err(e.into()),
-                Err(FatalError::OutOfNativeResources(_)) => {
-                    resources.exhaust_ergs();
-                    // We need to compute the hash anyways, we do with inf resources
-                    let mut inf_resources = S::Resources::FORMAL_INFINITE;
-                    (
-                        transaction
-                            .calculate_hash(chain_id, &mut inf_resources)
-                            .expect("must succeed")
-                            .into(),
-                        true,
-                    )
+                Err(e) => {
+                    match e.root_cause() {
+                        RootCause::Runtime(_) => {
+                            let _ = system.get_logger().write_fmt(format_args!(
+                                "Transaction preparation exhausted native resources: {e:?}\n"
+                            ));
+
+                            resources.exhaust_ergs();
+                            // We need to compute the hash anyways, we do with inf resources
+                            let mut inf_resources = S::Resources::FORMAL_INFINITE;
+                            (
+                                transaction
+                                    .calculate_hash(chain_id, &mut inf_resources)
+                                    .expect("must succeed")
+                                    .into(),
+                                true,
+                            )
+                        }
+                        _ => return Err(e.into()),
+                    }
                 }
             };
 
-        let result = if !preparation_out_of_resources {
+        // to_charge_for_pubdata can be cached to used in the refund step
+        // only if the execution succeeded. Otherwise, this value needs
+        // to be recomputed after reverting state changes.
+        let (result, to_charge_for_pubdata) = if !preparation_out_of_resources {
             // Take a snapshot in case we need to revert due to out of native.
             let rollback_handle = system.start_global_frame()?;
 
@@ -180,32 +195,49 @@ where
                 &mut resources,
                 withheld_resources,
             ) {
-                Ok(r) => {
-                    match r {
-                        ExecutionResult::Success { .. } => system.finish_global_frame(None)?,
-                        ExecutionResult::Revert { .. } => {
-                            system.finish_global_frame(Some(&rollback_handle))?
+                Ok((r, to_charge_for_pubdata)) => {
+                    let to_charge_for_pubdata = match r {
+                        ExecutionResult::Success { .. } => {
+                            system.finish_global_frame(None)?;
+                            Some(to_charge_for_pubdata)
                         }
+                        ExecutionResult::Revert { .. } => {
+                            system.finish_global_frame(Some(&rollback_handle))?;
+                            None
+                        }
+                    };
+                    (r, to_charge_for_pubdata)
+                }
+                Err(e) => {
+                    match e.root_cause() {
+                        // Out of native is converted to a top-level revert and
+                        // gas is exhausted.
+                        RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
+                            let _ = system.get_logger().write_fmt(format_args!(
+                                "L1 transaction ran out of native resources {e:?}\n"
+                            ));
+                            resources.exhaust_ergs();
+                            system.finish_global_frame(Some(&rollback_handle))?;
+                            (ExecutionResult::Revert { output: &[] }, None)
+                        }
+                        _ => return Err(e.into()),
                     }
-                    r
                 }
-                // Out of native is converted to a top-level revert and
-                // gas is exhausted.
-                Err(FatalError::OutOfNativeResources(_)) => {
-                    resources.exhaust_ergs();
-                    system.finish_global_frame(Some(&rollback_handle))?;
-                    ExecutionResult::Revert { output: &[] }
-                }
-                Err(FatalError::Internal(e)) => return Err(e.into()),
             }
         } else {
-            ExecutionResult::Revert { output: &[] }
+            (ExecutionResult::Revert { output: &[] }, None)
         };
 
         // Compute gas to refund
         // TODO: consider operator refund
-        let (_pubdata_spent, to_charge_for_pubdata) =
-            get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
+        let to_charge_for_pubdata = match to_charge_for_pubdata {
+            Some(r) => r,
+            None => {
+                let (_pubdata_spent, to_charge_for_pubdata) =
+                    get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
+                to_charge_for_pubdata
+            }
+        };
         #[allow(unused_variables)]
         let (_, gas_used) = Self::compute_gas_refund(
             system,
@@ -229,9 +261,13 @@ where
             &mut inf_resources,
         )
         .map_err(|e| match e {
-            SystemError::OutOfErgs(_) => internal_error!("Out of ergs on infinite ergs"),
-            SystemError::OutOfNativeResources(_) => internal_error!("Out of native on infinite"),
-            SystemError::Internal(i) => i,
+            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                internal_error!("Out of ergs on infinite ergs")
+            }
+            SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
+                internal_error!("Out of native on infinite")
+            }
+            SystemError::LeafDefect(i) => i,
         })?;
 
         // Refund
@@ -270,11 +306,13 @@ where
                 &mut inf_resources,
             )
             .map_err(|e| match e {
-                SystemError::OutOfErgs(_) => internal_error!("Out of ergs on infinite ergs"),
-                SystemError::OutOfNativeResources(_) => {
+                SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                    internal_error!("Out of ergs on infinite ergs")
+                }
+                SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
                     internal_error!("Out of native on infinite")
                 }
-                SystemError::Internal(i) => i,
+                SystemError::LeafDefect(i) => i,
             })?;
         }
 
@@ -300,6 +338,7 @@ where
         })
     }
 
+    // Returns (execution_result, to_charge_for_pubdata)
     fn execute_l1_transaction_and_notify_result<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
@@ -311,7 +350,7 @@ where
         native_per_pubdata: U256,
         resources: &mut S::Resources,
         withheld_resources: S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError> {
+    ) -> Result<(ExecutionResult<'a>, S::Resources), BootloaderSubsystemError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Executing L1 transaction\n"));
@@ -329,11 +368,15 @@ where
                     BasicBootloader::mint_token(system, &value, &from, inf_resources)
                 })
                 .map_err(|e| match e {
-                    SystemError::OutOfErgs(_) => {
-                        FatalError::Internal(internal_error!("Out of ergs on infinite ergs"))
+                    SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                        let _ = system.get_logger().write_fmt(format_args!(
+                            "Out of ergs on infinite ergs: inner error was {e:?}"
+                        ));
+                        BootloaderSubsystemError::LeafDefect(internal_error!(
+                            "Out of ergs on infinite ergs"
+                        ))
                     }
-                    SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
-                    SystemError::Internal(i) => FatalError::Internal(i),
+                    other => other.into(),
                 })?;
         }
 
@@ -385,17 +428,18 @@ where
         // resources could be spent for pubdata.
         resources.reclaim_withheld(withheld_resources);
 
-        let execution_result =
-            if !check_enough_resources_for_pubdata(system, native_per_pubdata, resources, None)? {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Not enough gas for pubdata after execution\n"));
-                execution_result.reverted()
-            } else {
-                execution_result
-            };
+        let (enough, to_charge_for_pubdata) =
+            check_enough_resources_for_pubdata(system, native_per_pubdata, resources, None)?;
+        let execution_result = if !enough {
+            let _ = system
+                .get_logger()
+                .write_fmt(format_args!("Not enough gas for pubdata after execution\n"));
+            execution_result.reverted()
+        } else {
+            execution_result
+        };
 
-        Ok(execution_result)
+        Ok((execution_result, to_charge_for_pubdata))
     }
 
     fn process_l2_transaction<'a, Config: BasicBootloaderExecutionConfig>(
@@ -469,7 +513,7 @@ where
                         .with_ee_version()
                         .with_nonce()
                         .with_artifacts_len()
-                        .with_bytecode_len(),
+                        .with_unpadded_code_len(),
                 )
             })?;
 
@@ -529,7 +573,10 @@ where
         // Take a snapshot in case we need to revert due to out of native.
         let rollback_handle = system.start_global_frame()?;
 
-        let execution_result = match Self::transaction_execution(
+        // to_charge_for_pubdata can be cached to used in the refund step
+        // only if the execution succeeded. Otherwise, this value needs
+        // to be recomputed after reverting state changes.
+        let (execution_result, to_charge_for_pubdata) = match Self::transaction_execution(
             system,
             system_functions,
             memories,
@@ -542,26 +589,32 @@ where
             caller_nonce,
             &mut resources,
         ) {
-            Ok(r) => {
-                match r {
-                    ExecutionResult::Success { .. } => system.finish_global_frame(None)?,
-                    ExecutionResult::Revert { .. } => {
-                        system.finish_global_frame(Some(&rollback_handle))?
+            Ok((r, to_charge_for_pubdata)) => {
+                let to_charge_for_pubdata = match r {
+                    ExecutionResult::Success { .. } => {
+                        system.finish_global_frame(None)?;
+                        Some(to_charge_for_pubdata)
                     }
-                }
-                r
+                    ExecutionResult::Revert { .. } => {
+                        system.finish_global_frame(Some(&rollback_handle))?;
+                        None
+                    }
+                };
+                (r, to_charge_for_pubdata)
             }
             // Out of native is converted to a top-level revert and
             // gas is exhausted.
-            Err(FatalError::OutOfNativeResources(_)) => {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Transaction ran out of native resource\n"));
-                resources.exhaust_ergs();
-                system.finish_global_frame(Some(&rollback_handle))?;
-                ExecutionResult::Revert { output: &[] }
-            }
-            Err(FatalError::Internal(e)) => return Err(e.into()),
+            Err(e) => match e.root_cause() {
+                RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
+                    let _ = system.get_logger().write_fmt(format_args!(
+                        "Transaction ran out of native resources: {e:?}\n"
+                    ));
+                    resources.exhaust_ergs();
+                    system.finish_global_frame(Some(&rollback_handle))?;
+                    (ExecutionResult::Revert { output: &[] }, None)
+                }
+                _ => return Err(e.into()),
+            },
         };
 
         let resources_before_refund = resources.clone();
@@ -585,6 +638,7 @@ where
                 validation_pubdata,
                 caller_ee_type,
                 &mut resources,
+                to_charge_for_pubdata,
             )?
         } else {
             0
@@ -717,6 +771,7 @@ where
         Ok(ValidationResult { validation_pubdata })
     }
 
+    // Returns (execution_result, to_charge_for_pubdata)
     #[allow(clippy::too_many_arguments)]
     fn transaction_execution<'a>(
         system: &mut System<S>,
@@ -730,7 +785,7 @@ where
         validation_pubdata: u64,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError> {
+    ) -> Result<(ExecutionResult<'a>, S::Resources), BootloaderSubsystemError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Start of execution\n"));
@@ -753,18 +808,19 @@ where
             .get_logger()
             .write_fmt(format_args!("Transaction execution completed\n"));
 
-        if !check_enough_resources_for_pubdata(
+        let (has_enough, to_charge_for_pubdata) = check_enough_resources_for_pubdata(
             system,
             native_per_pubdata,
             resources,
             Some(validation_pubdata),
-        )? {
+        )?;
+        if !has_enough {
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Not enough gas for pubdata after execution\n"));
-            Ok(execution_result.reverted())
+            Ok((execution_result.reverted(), to_charge_for_pubdata))
         } else {
-            Ok(execution_result)
+            Ok((execution_result, to_charge_for_pubdata))
         }
     }
 
@@ -881,9 +937,9 @@ where
                     )
                 })
                 .map_err(|e| match e {
-                    UpdateQueryError::NumericBoundsError => SystemError::Internal(internal_error!(
-                        "Bootloader cannot return excessive funds",
-                    )),
+                    UpdateQueryError::NumericBoundsError => SystemError::LeafDefect(
+                        internal_error!("Bootloader cannot return excessive funds",),
+                    ),
                     UpdateQueryError::System(e) => e,
                 })?;
         }
@@ -931,6 +987,7 @@ where
         validation_pubdata: u64,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        to_charge_for_pubdata: Option<S::Resources>,
     ) -> Result<u64, InternalError> {
         let paymaster = transaction.paymaster.read();
         let _ = system
@@ -965,11 +1022,17 @@ where
 
         // Pubdata for validation has been charged already,
         // we charge for the rest now.
-        let (_pubdata_spent, to_charge_for_pubdata) = get_resources_to_charge_for_pubdata(
-            system,
-            native_per_pubdata,
-            Some(validation_pubdata),
-        )?;
+        let to_charge_for_pubdata = match to_charge_for_pubdata {
+            Some(r) => r,
+            None => {
+                let (_pubdata_spent, to_charge_for_pubdata) = get_resources_to_charge_for_pubdata(
+                    system,
+                    native_per_pubdata,
+                    Some(validation_pubdata),
+                )?;
+                to_charge_for_pubdata
+            }
+        };
         let (total_gas_refund, gas_used) = Self::compute_gas_refund(
             system,
             to_charge_for_pubdata,
@@ -994,13 +1057,15 @@ where
                 UpdateQueryError::NumericBoundsError => {
                     internal_error!("Bootloader cannot pay for refund")
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs(_)) => {
+                UpdateQueryError::System(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                     internal_error!("should transfer refund")
                 }
-                UpdateQueryError::System(SystemError::OutOfNativeResources(_)) => {
+                UpdateQueryError::System(SystemError::LeafRuntime(
+                    RuntimeError::OutOfNativeResources(_),
+                )) => {
                     internal_error!("should transfer refund")
                 }
-                UpdateQueryError::System(SystemError::Internal(e)) => e,
+                UpdateQueryError::System(SystemError::LeafDefect(e)) => e,
             })?;
         Ok(gas_used)
     }

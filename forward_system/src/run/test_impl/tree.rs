@@ -1,5 +1,7 @@
 use crate::run::{LeafProof, ReadStorage, ReadStorageTree};
-use basic_system::system_implementation::flat_storage_model::TestingTree;
+use basic_system::system_implementation::flat_storage_model::{
+    Blake2sStorageHasher, FlatStorageBacking, TestingTree, TREE_HEIGHT,
+};
 use std::alloc::Global;
 use std::collections::HashMap;
 use zk_ee::utils::Bytes32;
@@ -8,7 +10,7 @@ use zk_ee::utils::Bytes32;
 pub struct InMemoryTree<const RANDOMIZED_TREE: bool = false> {
     /// Hash map from a pair of Address, slot into values.
     pub cold_storage: HashMap<Bytes32, Bytes32>,
-    pub storage_tree: TestingTree<RANDOMIZED_TREE>,
+    pub storage_tree: FlatStorageBacking<TREE_HEIGHT, Blake2sStorageHasher, RANDOMIZED_TREE>,
 }
 
 impl<const RANDOMIZED_TREE: bool> InMemoryTree<RANDOMIZED_TREE> {

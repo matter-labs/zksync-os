@@ -5,7 +5,8 @@
 
 use core::marker::PhantomData;
 
-use super::errors::{InternalError, SystemError, UpdateQueryError};
+use super::errors::internal::InternalError;
+use super::errors::{system::SystemError, UpdateQueryError};
 use super::logger::Logger;
 use super::{IOResultKeeper, Resources};
 use crate::execution_environment_type::ExecutionEnvironmentType;
@@ -168,31 +169,33 @@ pub struct AccountData<
     ObservableBytecodeLen,
     Nonce,
     BytecodeHash,
-    BytecodeLen,
+    UnpaddedCodeLen,
     ArtifactsLen,
     NominalTokenBalance,
     Bytecode,
+    CodeVersion,
 > {
     pub ee_version: EEVersion,
     pub observable_bytecode_hash: ObservableBytecodeHash,
     pub observable_bytecode_len: ObservableBytecodeLen,
     pub nonce: Nonce,
     pub bytecode_hash: BytecodeHash,
-    pub bytecode_len: BytecodeLen,
+    pub unpadded_code_len: UnpaddedCodeLen,
     pub artifacts_len: ArtifactsLen,
     pub nominal_token_balance: NominalTokenBalance,
     pub bytecode: Bytecode,
+    pub code_version: CodeVersion,
 }
 
-impl<A, B, C, D, E, F, G> AccountData<A, B, C, D, E, Just<u32>, Just<u32>, F, G> {
+impl<A, B, C, D, E, F, G, H> AccountData<A, B, C, D, E, Just<u32>, Just<u32>, F, G, H> {
     pub fn is_contract(&self) -> bool {
-        self.bytecode_len.0 > 0 || self.artifacts_len.0 > 0
+        self.unpadded_code_len.0 > 0 || self.artifacts_len.0 > 0
     }
 }
 
-impl<A, B, C, D, E, F> AccountData<A, B, C, Just<u64>, D, Just<u32>, Just<u32>, E, F> {
+impl<A, B, C, D, E, F, G> AccountData<A, B, C, Just<u64>, D, Just<u32>, Just<u32>, E, F, G> {
     pub fn can_deploy_into(&self) -> bool {
-        self.bytecode_len.0 == 0 && self.artifacts_len.0 == 0 && self.nonce.0 == 0
+        self.unpadded_code_len.0 == 0 && self.artifacts_len.0 == 0 && self.nonce.0 == 0
     }
 }
 
@@ -211,6 +214,7 @@ impl
             Nothing,
             Nothing,
             Nothing,
+            Nothing,
         >,
     >
 {
@@ -219,55 +223,63 @@ impl
     }
 }
 
-impl<A, B, C, D, E, F, G, H, I> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I>> {
+impl<A, B, C, D, E, F, G, H, I, J> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, J>> {
     pub fn with_ee_version(
         self,
-    ) -> AccountDataRequest<AccountData<Just<u8>, B, C, D, E, F, G, H, I>> {
+    ) -> AccountDataRequest<AccountData<Just<u8>, B, C, D, E, F, G, H, I, J>> {
         AccountDataRequest(PhantomData)
     }
     pub fn with_observable_bytecode_hash<T>(
         self,
-    ) -> AccountDataRequest<AccountData<A, Just<T>, C, D, E, F, G, H, I>> {
+    ) -> AccountDataRequest<AccountData<A, Just<T>, C, D, E, F, G, H, I, J>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_observable_bytecode_len(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, Just<u32>, D, E, F, G, H, I>> {
+    ) -> AccountDataRequest<AccountData<A, B, Just<u32>, D, E, F, G, H, I, J>> {
         AccountDataRequest(PhantomData)
     }
 
-    pub fn with_nonce(self) -> AccountDataRequest<AccountData<A, B, C, Just<u64>, E, F, G, H, I>> {
+    pub fn with_nonce(
+        self,
+    ) -> AccountDataRequest<AccountData<A, B, C, Just<u64>, E, F, G, H, I, J>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_bytecode_hash<T>(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, Just<T>, F, G, H, I>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, Just<T>, F, G, H, I, J>> {
         AccountDataRequest(PhantomData)
     }
 
-    pub fn with_bytecode_len(
+    pub fn with_unpadded_code_len(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, Just<u32>, G, H, I>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, Just<u32>, G, H, I, J>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_artifacts_len(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, Just<u32>, H, I>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, Just<u32>, H, I, J>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_nominal_token_balance<T>(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, Just<T>, I>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, Just<T>, I, J>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_bytecode(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, Just<&'static [u8]>>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, Just<&'static [u8]>, J>> {
+        AccountDataRequest(PhantomData)
+    }
+
+    pub fn with_code_version(
+        self,
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, Just<u8>>> {
         AccountDataRequest(PhantomData)
     }
 }
@@ -348,6 +360,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         ArtifactsLen: Maybe<u32>,
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
+        CodeVersion: Maybe<u8>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -364,6 +377,7 @@ pub trait IOSubsystemExt: IOSubsystem {
                 ArtifactsLen,
                 NominalTokenBalance,
                 Bytecode,
+                CodeVersion,
             >,
         >,
     ) -> Result<
@@ -377,6 +391,7 @@ pub trait IOSubsystemExt: IOSubsystem {
             ArtifactsLen,
             NominalTokenBalance,
             Bytecode,
+            CodeVersion,
         >,
         SystemError,
     >;
@@ -388,13 +403,12 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
     ) -> Result<&'static [u8], SystemError>;
 
     /// Special method that allows to set bytecode under address by hash.
     /// Also, pubdata for such bytecode will not be published.
     /// This method can be only triggered during special protocol upgrade txs.
+    /// Assumes bytecode is of default code version for the EE.
     fn set_bytecode_details(
         &mut self,
         resources: &mut Self::Resources,

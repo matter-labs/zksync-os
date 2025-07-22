@@ -1,5 +1,5 @@
 use super::{
-    errors::InternalError,
+    errors::internal::InternalError,
     kv_markers::{ExactSizeChain, UsizeDeserializable, UsizeSerializable},
     types_config::SystemIOTypesConfig,
 };

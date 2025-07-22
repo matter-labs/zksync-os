@@ -5,14 +5,15 @@
 use super::*;
 use arrayvec::ArrayVec;
 use core::fmt::Write;
-use errors::FatalError;
 use ruint::aliases::{B160, U256};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     internal_error,
     kv_markers::MAX_EVENT_TOPICS,
     system::{
-        errors::SystemError, logger::Logger, CallModifier, CompletedExecution, ExternalCallRequest,
+        errors::{runtime::RuntimeError, system::SystemError},
+        logger::Logger,
+        CallModifier, CompletedExecution, ExternalCallRequest,
     },
     utils::{b160_to_u256, Bytes32},
 };
@@ -22,7 +23,7 @@ pub fn l1_messenger_hook<'a, S: EthereumLikeTypes>(
     caller_ee: u8,
     system: &mut System<S>,
     return_memory: &'a mut [MaybeUninit<u8>],
-) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
 where
 {
     let ExternalCallRequest {
@@ -93,14 +94,14 @@ where
                 .write_fmt(format_args!("Revert: {:?}\n", e));
             Ok((make_error_return_state(resources), return_memory))
         }
-        Err(SystemError::OutOfErgs(_)) => {
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Out of gas during system hook\n"));
             Ok((make_error_return_state(resources), return_memory))
         }
-        Err(SystemError::OutOfNativeResources(loc)) => Err(FatalError::OutOfNativeResources(loc)),
-        Err(SystemError::Internal(e)) => Err(e.into()),
+        Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => Err(e),
+        Err(SystemError::LeafDefect(e)) => Err(e.into()),
     }
 }
 // sendToL1(bytes) - 62f84b24
@@ -219,7 +220,7 @@ where
             let message = &calldata[length_encoding_end..message_end];
             let message_hash = system.io.emit_l1_message(
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-                    .map_err(SystemError::Internal)?,
+                    .map_err(SystemError::LeafDefect)?,
                 resources,
                 &caller,
                 message,
@@ -232,7 +233,7 @@ where
 
             system.io.emit_event(
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-                    .map_err(SystemError::Internal)?,
+                    .map_err(SystemError::LeafDefect)?,
                 resources,
                 &L1_MESSENGER_ADDRESS,
                 &topics,

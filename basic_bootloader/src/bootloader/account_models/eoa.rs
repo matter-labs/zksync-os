@@ -4,15 +4,14 @@ use crate::bootloader::constants::PAYMASTER_APPROVAL_BASED_SELECTOR;
 use crate::bootloader::constants::PAYMASTER_GENERAL_SELECTOR;
 use crate::bootloader::constants::{DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS, ERC20_ALLOWANCE_SELECTOR};
 use crate::bootloader::constants::{SPECIAL_ADDRESS_TO_WASM_DEPLOY, TX_OFFSET};
-use crate::bootloader::errors::AAMethod;
 use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
+use crate::bootloader::errors::{AAMethod, BootloaderSubsystemError};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use core::fmt::Write;
-use errors::FatalError;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
@@ -20,12 +19,12 @@ use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::{
-    errors::{SystemError, UpdateQueryError},
+    errors::{runtime::RuntimeError, system::SystemError, UpdateQueryError},
     logger::Logger,
     EthereumLikeTypes, System, SystemTypes, *,
 };
 use zk_ee::utils::{b160_to_u256, u256_to_b160_checked};
-use zk_ee::{internal_error, out_of_native_resources_fatal_error};
+use zk_ee::{internal_error, out_of_native_resources};
 
 macro_rules! require_or_revert {
     ($b:expr, $m:expr, $s:expr, $system:expr) => {
@@ -95,17 +94,17 @@ where
                     ));
                 }
             }
-            Err(SystemError::OutOfErgs(_)) => {
+            Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfGasDuringValidation,
                 ))
             }
-            Err(SystemError::OutOfNativeResources(_)) => {
+            Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfNativeResourcesDuringValidation,
                 ))
             }
-            Err(SystemError::Internal(e)) => return Err(TxError::Internal(e)),
+            Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
         }
 
         let signature = transaction.signature();
@@ -128,7 +127,8 @@ where
             &mut ecrecover_output,
             resources,
             system.get_allocator(),
-        )?;
+        )
+        .map_err(SystemError::from)?;
 
         if ecrecover_output.is_empty() {
             return Err(InvalidTransaction::IncorrectFrom {
@@ -177,7 +177,7 @@ where
         // This data is read before bumping nonce
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError> {
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         // panic is not reachable, validated by the structure
         let from = transaction.from.read();
 
@@ -190,8 +190,6 @@ where
 
         let to_ee_type = if !transaction.reserved[1].read().is_zero() {
             Some(ExecutionEnvironmentType::EVM)
-        } else if to == SPECIAL_ADDRESS_TO_WASM_DEPLOY {
-            Some(ExecutionEnvironmentType::IWasm)
         } else {
             None
         };
@@ -353,13 +351,13 @@ where
                         Err(e) => e.into(),
                     }
                 }
-                UpdateQueryError::System(SystemError::OutOfErgs(_)) => {
+                UpdateQueryError::System(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                     TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
                 }
-                UpdateQueryError::System(SystemError::OutOfNativeResources(_)) => {
-                    TxError::oon_as_validation(out_of_native_resources_fatal_error!())
-                }
-                UpdateQueryError::System(SystemError::Internal(e)) => e.into(),
+                UpdateQueryError::System(SystemError::LeafRuntime(
+                    RuntimeError::OutOfNativeResources(_),
+                )) => TxError::oon_as_validation(out_of_native_resources!().into()),
+                UpdateQueryError::System(SystemError::LeafDefect(e)) => e.into(),
             })?;
         Ok(())
     }
@@ -494,17 +492,15 @@ where
             let ergs_to_spend = Ergs(initcode_gas_cost.saturating_mul(ERGS_PER_GAS));
             match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
                 Ok(_) => (),
-                Err(SystemError::OutOfErgs(_)) => {
+                Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                     return Err(TxError::Validation(
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(SystemError::OutOfNativeResources(_)) => {
-                    return Err(TxError::oon_as_validation(
-                        out_of_native_resources_fatal_error!(),
-                    ))
+                Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+                    return Err(TxError::oon_as_validation(e.into()))
                 }
-                Err(SystemError::Internal(e)) => return Err(TxError::Internal(e)),
+                Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
             };
         }
         Ok(())
@@ -537,7 +533,7 @@ fn process_deployment<'a, S: EthereumLikeTypes>(
     from: B160,
     nominal_token_value: U256,
     existing_nonce: u64,
-) -> Result<TxExecutionResult<'a, S>, FatalError>
+) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -546,7 +542,7 @@ where
     let ergs_to_spend = Ergs(extra_gas_cost.saturating_mul(ERGS_PER_GAS));
     match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
         Ok(_) => (),
-        Err(SystemError::OutOfErgs(_)) => {
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
             return Ok(TxExecutionResult {
                 return_values: ReturnValues::empty(),
                 resources_returned: S::Resources::empty(),
@@ -554,10 +550,10 @@ where
                 deployed_address: DeployedAddress::RevertedNoAddress,
             })
         }
-        Err(SystemError::OutOfNativeResources(loc)) => {
-            return Err(FatalError::OutOfNativeResources(loc))
+        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
+            return Err(RuntimeError::OutOfNativeResources(loc).into())
         }
-        Err(SystemError::Internal(e)) => return Err(e.into()),
+        Err(SystemError::LeafDefect(e)) => return Err(e.into()),
     };
     // Next check max initcode size
     if main_calldata.len() > MAX_INITCODE_SIZE {
@@ -569,10 +565,12 @@ where
         });
     }
     let ee_specific_deployment_processing_data = match to_ee_type {
+        ExecutionEnvironmentType::NoEE => {
+            return Err(internal_error!("Deployment cannot target NoEE").into())
+        }
         ExecutionEnvironmentType::EVM => {
             SystemBoundEVMInterpreter::<S>::default_ee_deployment_options(system)
         }
-        _ => return Err(internal_error!("Unsupported EE").into()),
     };
 
     let deployment_parameters = DeploymentPreparationParameters {

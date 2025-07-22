@@ -1,4 +1,4 @@
-use crate::{internal_error, system::errors::InternalError, utils::*};
+use crate::{internal_error, system::errors::internal::InternalError, utils::*};
 use ruint::aliases::B160;
 
 use super::*;

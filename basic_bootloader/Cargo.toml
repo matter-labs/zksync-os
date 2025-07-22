@@ -19,6 +19,8 @@ ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 crypto = { path = "../crypto", default-features = false }
 hex = {version = "*", optional = true}
 arrayvec = { version = "0.7.4", default-features = false }
+strum_macros = "0.27.1"
+paste = "1.0.15"
 
 [features]
 testing = ["zk_ee/testing", "evm_interpreter/testing", "hex"]
@@ -27,7 +29,7 @@ code_in_kernel_space = []
 transfers_to_kernel_space = []
 charge_priority_fee = []
 evm-compatibility = ["code_in_kernel_space", "transfers_to_kernel_space", "system_hooks/mock-unsupported-precompiles", "charge_priority_fee"]
-cycle_marker = ["system_hooks/cycle_marker"]
+cycle_marker = ["system_hooks/cycle_marker", "cycle_marker/log_to_file"]
 resources_for_tester = []
 unlimited_native = []
 report_native = []

@@ -110,18 +110,25 @@ fn run_block(
         block_number,
         U256::from_be_bytes(block.result.header.hash.0),
     )?;
+    info!("\n ===================");
     info!("Running block: {}", block_number);
-    info!("Block gas used: {}", block.result.header.gas_used);
 
     let miner = block.result.header.miner;
     let block_context = block.get_block_context();
     let (transactions, skipped) = block.get_transactions(&call);
+    info!("Transactions to run: {}", transactions.len());
+
     let receipts: Vec<TransactionReceipt> = receipts
         .result
         .into_iter()
         .enumerate()
         .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
         .collect();
+
+    let total_gas_used = receipts
+        .iter()
+        .fold(U256::ZERO, |acc, r| r.gas_used.wrapping_add(acc));
+    info!("Reference gas used: {}", total_gas_used);
 
     let ps_trace = PrestateTrace {
         result: prestate
@@ -169,6 +176,8 @@ fn run_block(
         output_path,
         Some("evm_replay".to_string()),
     );
+
+    info!("Actual gas used: {}", output.header.gas_used);
 
     if let Some(ratio) = compute_ratio(stats) {
         db.set_block_ratio(block_number, ratio)?;

@@ -1,3 +1,5 @@
+use errors::subsystem::Subsystem;
+
 use super::*;
 pub mod base_system_functions;
 pub mod call_modifiers;
@@ -28,7 +30,7 @@ use core::alloc::Allocator;
 use core::fmt::Write;
 
 use self::{
-    errors::{InternalError, SystemError},
+    errors::{internal::InternalError, system::SystemError},
     logger::Logger,
     metadata::{BlockMetadataFromOracle, Metadata},
 };
@@ -141,7 +143,11 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_level_metadata.timestamp
     }
 
-    pub fn storage_code_version_for_execution_environment<'a, EE: ExecutionEnvironment<'a, S>>(
+    pub fn storage_code_version_for_execution_environment<
+        'a,
+        Es: Subsystem,
+        EE: ExecutionEnvironment<'a, S, Es>,
+    >(
         &self,
     ) -> Result<u8, InternalError> {
         // TODO
@@ -264,19 +270,12 @@ where
         resources: &mut S::Resources,
         at_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
     ) -> Result<&'static [u8], SystemError> {
         // IO is fully responsible to to deploy
         // and at the end we just need to remap slice
-        let bytecode = self.io.deploy_code(
-            for_ee,
-            resources,
-            at_address,
-            &bytecode,
-            bytecode_len,
-            artifacts_len,
-        )?;
+        let bytecode = self
+            .io
+            .deploy_code(for_ee, resources, at_address, &bytecode)?;
 
         Ok(bytecode)
     }

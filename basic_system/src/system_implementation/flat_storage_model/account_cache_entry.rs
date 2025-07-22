@@ -8,7 +8,7 @@ use storage_models::common_structs::PreimageCacheModel;
 use zk_ee::common_structs::{PreimageType, ValueDiffCompressionStrategy};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
-use zk_ee::system::errors::{InternalError, SystemError};
+use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, system::SystemError};
 use zk_ee::system::{IOResultKeeper, Resources};
 use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::types_config::EthereumIOTypesConfig;
@@ -119,7 +119,7 @@ impl AccountPropertiesMetadata {
 /// nonce:                        u64, BE @ [8..16]
 /// balance:                     U256, BE @ [16..48]
 /// bytecode_hash:            Bytes32,    @ [48..80]
-/// bytecode_len:                 u32, BE @ [80..84]
+/// unpadded_code_len:                 u32, BE @ [80..84]
 /// artifacts_len:                u32, BE @ [84..88]
 /// observable_bytecode_hash: Bytes32,    @ [88..120]
 /// observable_bytecode_len:      u32, BE @ [120..124]
@@ -131,10 +131,22 @@ pub struct AccountProperties {
     pub nonce: u64,
     pub balance: U256,
     pub bytecode_hash: Bytes32,
-    pub bytecode_len: u32,
+    pub unpadded_code_len: u32,
     pub artifacts_len: u32,
     pub observable_bytecode_hash: Bytes32,
+    // TODO(EVM-1116): document the need for observable_bytecode_len
     pub observable_bytecode_len: u32,
+}
+
+#[inline(always)]
+pub const fn bytecode_padding_len(deployed_len: usize) -> usize {
+    let word = evm_interpreter::BYTECODE_ALIGNMENT;
+    let rem = deployed_len % word;
+    if rem == 0 {
+        0
+    } else {
+        word - rem
+    }
 }
 
 impl AccountProperties {
@@ -143,11 +155,16 @@ impl AccountProperties {
         nonce: 0,
         balance: U256::ZERO,
         bytecode_hash: Bytes32::ZERO,
-        bytecode_len: 0,
+        unpadded_code_len: 0,
         artifacts_len: 0,
         observable_bytecode_hash: Bytes32::ZERO,
         observable_bytecode_len: 0,
     };
+
+    pub fn full_bytecode_len(&self) -> u32 {
+        let padding = bytecode_padding_len(self.unpadded_code_len as usize);
+        self.unpadded_code_len + (padding as u32) + self.artifacts_len
+    }
 }
 
 impl Default for AccountProperties {
@@ -165,7 +182,7 @@ impl AccountProperties {
         buffer[8..16].copy_from_slice(&self.nonce.to_be_bytes());
         buffer[16..48].copy_from_slice(&self.balance.to_be_bytes::<32>());
         buffer[48..80].copy_from_slice(self.bytecode_hash.as_u8_ref());
-        buffer[80..84].copy_from_slice(&self.bytecode_len.to_be_bytes());
+        buffer[80..84].copy_from_slice(&self.unpadded_code_len.to_be_bytes());
         buffer[84..88].copy_from_slice(&self.artifacts_len.to_be_bytes());
         buffer[88..120].copy_from_slice(self.observable_bytecode_hash.as_u8_ref());
         buffer[120..124].copy_from_slice(&self.observable_bytecode_len.to_be_bytes());
@@ -182,7 +199,7 @@ impl AccountProperties {
             bytecode_hash: Bytes32::from(
                 <&[u8] as TryInto<[u8; 32]>>::try_into(&input[48..80]).unwrap(),
             ),
-            bytecode_len: u32::from_be_bytes(input[80..84].try_into().unwrap()),
+            unpadded_code_len: u32::from_be_bytes(input[80..84].try_into().unwrap()),
             artifacts_len: u32::from_be_bytes(input[84..88].try_into().unwrap()),
             observable_bytecode_hash: Bytes32::from(
                 <&[u8] as TryInto<[u8; 32]>>::try_into(&input[88..120]).unwrap(),
@@ -200,7 +217,7 @@ impl AccountProperties {
         hasher.update(self.nonce.to_be_bytes());
         hasher.update(self.balance.to_be_bytes::<32>());
         hasher.update(self.bytecode_hash.as_u8_ref());
-        hasher.update(self.bytecode_len.to_be_bytes());
+        hasher.update(self.unpadded_code_len.to_be_bytes());
         hasher.update(self.artifacts_len.to_be_bytes());
         hasher.update(self.observable_bytecode_hash.as_u8_ref());
         hasher.update(self.observable_bytecode_len.to_be_bytes());
@@ -219,7 +236,7 @@ impl AccountProperties {
         // if something except nonce and balance changed, we'll encode full diff, for all the fields
         let full_diff = initial.versioning_data != r#final.versioning_data
             || initial.bytecode_hash != r#final.bytecode_hash
-            || initial.bytecode_len != r#final.bytecode_len
+            || initial.unpadded_code_len != r#final.unpadded_code_len
             || initial.artifacts_len != r#final.artifacts_len
             || initial.observable_bytecode_len != r#final.observable_bytecode_len
             || initial.observable_bytecode_hash != r#final.observable_bytecode_hash;
@@ -237,15 +254,16 @@ impl AccountProperties {
                     + 8 // versioning data
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?) as u32 // nonce diff
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
-                    + 4 // bytecode len
-                    + r#final.bytecode_len // bytecode
+                    + 4 // unpadded code len
                     + 4 // artifacts len
+                    + r#final.full_bytecode_len() // bytecode
                     + 4 // observable bytecode len
             })
         } else {
-            // the diff shouldn't be included at all in such case
             if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
-                return Ok(0);
+                return Err(internal_error!(
+                    "Account properties diff compression shouldn't be called for same values",
+                ));
             }
             let mut length = 1u32; // metadata byte
             if initial.nonce != r#final.nonce {
@@ -279,8 +297,9 @@ impl AccountProperties {
     /// 5 most significant bits of metadata byte can be used to save additional info for encoding type.
     ///
     /// For account data we have following encoding formats(index encoded in the 5 most significant bits of the metadata byte, 3 less significant == 4):
-    /// 0(full data): `versioning_data(8 BE bytes) & nonce_diff(using storage value strategy) & balance_diff & bytecode_len(4 BE bytes)
-    /// & bytecode & artifacts_len (4 BE bytes) & observable_len (4 BE bytes)`
+    /// 0(full data): `versioning_data(8 BE bytes) & nonce_diff(using storage value strategy)
+    /// & balance_diff & unpadded_code_len(4 BE bytes) &  artifacts_len (4 BE bytes) &
+    /// & bytecode & observable_len (4 BE bytes)`
     /// 1: `nonce_diff (using storage value strategy)`
     /// 2: `balance_diff (using storage value strategy)`
     /// 3: `nonce_diff (using storage value strategy) & balance_diff (using storage value strategy)`
@@ -300,7 +319,7 @@ impl AccountProperties {
         // if something except nonce and balance changed, we'll encode full diff, for all the fields
         let full_diff = initial.versioning_data != r#final.versioning_data
             || initial.bytecode_hash != r#final.bytecode_hash
-            || initial.bytecode_len != r#final.bytecode_len
+            || initial.unpadded_code_len != r#final.unpadded_code_len
             || initial.artifacts_len != r#final.artifacts_len
             || initial.observable_bytecode_len != r#final.observable_bytecode_len
             || initial.observable_bytecode_hash != r#final.observable_bytecode_hash;
@@ -340,11 +359,13 @@ impl AccountProperties {
                 hasher.update(r#final.bytecode_hash.as_u8_ref());
                 result_keeper.pubdata(r#final.bytecode_hash.as_u8_ref());
             } else {
-                hasher.update(r#final.bytecode_len.to_be_bytes());
-                result_keeper.pubdata(&r#final.bytecode_len.to_be_bytes());
+                hasher.update(r#final.unpadded_code_len.to_be_bytes());
+                result_keeper.pubdata(&r#final.unpadded_code_len.to_be_bytes());
+                hasher.update(r#final.artifacts_len.to_be_bytes());
+                result_keeper.pubdata(&r#final.artifacts_len.to_be_bytes());
                 let preimage_type = PreimageRequest {
                     hash: r#final.bytecode_hash,
-                    expected_preimage_len_in_bytes: r#final.bytecode_len,
+                    expected_preimage_len_in_bytes: r#final.full_bytecode_len(),
                     preimage_type: PreimageType::Bytecode,
                 };
                 let mut resources = R::FORMAL_INFINITE;
@@ -356,20 +377,17 @@ impl AccountProperties {
                         oracle,
                     )
                     .map_err(|err| match err {
-                        SystemError::OutOfErgs(_) => {
+                        SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
                             internal_error!("Out of ergs on infinite ergs")
                         }
-                        SystemError::OutOfNativeResources(_) => {
+                        SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
                             internal_error!("Out of native on infinite")
                         }
-                        SystemError::Internal(i) => i,
+                        SystemError::LeafDefect(i) => i,
                     })?;
                 hasher.update(bytecode);
                 result_keeper.pubdata(bytecode);
             }
-
-            hasher.update(r#final.artifacts_len.to_be_bytes());
-            result_keeper.pubdata(&r#final.artifacts_len.to_be_bytes());
             hasher.update(r#final.observable_bytecode_len.to_be_bytes());
             result_keeper.pubdata(&r#final.observable_bytecode_len.to_be_bytes());
             Ok(())
@@ -430,7 +448,7 @@ mod tests {
     use zk_ee::common_structs::PreimageType;
     use zk_ee::execution_environment_type::ExecutionEnvironmentType;
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
-    use zk_ee::system::errors::InternalError;
+    use zk_ee::system::errors::internal::InternalError;
     use zk_ee::system::IOResultKeeper;
     use zk_ee::system::Resource;
     use zk_ee::system_io_oracle::{IOOracle, OracleIteratorTypeMarker};
@@ -504,14 +522,19 @@ mod tests {
         let mut initial = AccountProperties::TRIVIAL_VALUE;
         initial.balance = U256::try_from(0xFF00000000FFu64).unwrap();
 
-        let bytecode = vec![1u8, 2, 3, 4, 5];
-        let blake = Blake2s256::digest(&bytecode);
+        let mut bytecode = vec![1u8, 2, 3, 4, 5];
         let keccak = Keccak256::digest(&bytecode);
+        let code_len = bytecode.len();
+
+        // Add padding
+        bytecode.append(&mut vec![0u8, 0u8, 0u8]);
+        let blake = Blake2s256::digest(&bytecode);
+
         let mut r#final = AccountProperties::TRIVIAL_VALUE;
         r#final.versioning_data = VersioningData::empty_deployed();
         r#final.balance = U256::try_from(0xFF0000000000u64).unwrap();
-        r#final.bytecode_len = bytecode.len() as u32;
-        r#final.observable_bytecode_len = bytecode.len() as u32;
+        r#final.unpadded_code_len = code_len as u32;
+        r#final.observable_bytecode_len = code_len as u32;
         r#final.bytecode_hash = blake.into();
         r#final.observable_bytecode_hash = keccak.into();
 
@@ -529,11 +552,11 @@ mod tests {
                 ExecutionEnvironmentType::EVM,
                 &(PreimageRequest {
                     hash: r#final.bytecode_hash,
-                    expected_preimage_len_in_bytes: r#final.bytecode_len,
+                    expected_preimage_len_in_bytes: r#final.full_bytecode_len(),
                     preimage_type: PreimageType::Bytecode,
                 }),
                 &mut resources,
-                &bytecode,
+                &[&bytecode],
             )
             .unwrap();
         let mut test_oracle = TestOracle;
@@ -569,10 +592,10 @@ mod tests {
         expected.push(0b00000001); // nonce: add,initial == final == 0
         expected.push(0b00001010); // balance: sub 0xff
         expected.push(0xff); // balance: sub 0xff
-        expected.extend((bytecode.len() as u32).to_be_bytes());
-        expected.extend_from_slice(&bytecode);
+        expected.extend((code_len as u32).to_be_bytes());
         expected.extend([0, 0, 0, 0]); // arifacts len
-        expected.extend((bytecode.len() as u32).to_be_bytes()); // observable
+        expected.extend_from_slice(&bytecode);
+        expected.extend((code_len as u32).to_be_bytes()); // observable
 
         assert_eq!(compression, expected);
     }

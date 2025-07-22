@@ -4,7 +4,7 @@ use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
 use zk_ee::common_traits::key_like_with_bounds::KeyLikeWithBounds;
-use zk_ee::system::errors::{InternalError, SystemError};
+use zk_ee::system::errors::{internal::InternalError, system::SystemError};
 use zk_ee::{
     common_structs::history_map::{CacheSnapshotId, HistoryMap},
     memory::stack_trait::{StackCtor, StackCtorConst},
@@ -90,7 +90,7 @@ where
             *x = value.clone();
             Ok(())
         })
-        .map_err(SystemError::Internal)
+        .map_err(SystemError::LeafRuntime)
     }
 
     #[track_caller]

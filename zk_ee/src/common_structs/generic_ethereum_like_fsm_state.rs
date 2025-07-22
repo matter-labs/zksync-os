@@ -1,5 +1,5 @@
 use crate::kv_markers::*;
-use crate::system::errors::InternalError;
+use crate::system::errors::internal::InternalError;
 use crate::types_config::EthereumIOTypesConfig;
 use crate::utils::*;
 

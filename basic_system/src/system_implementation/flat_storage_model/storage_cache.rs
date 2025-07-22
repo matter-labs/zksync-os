@@ -11,12 +11,12 @@ use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel
 use zk_ee::common_structs::cache_record::{Appearance, CacheRecord};
 use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::system::errors::InternalError;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{
     common_structs::{WarmStorageKey, WarmStorageValue},
     kv_markers::{StorageAddress, UsizeDeserializable},
     memory::stack_trait::{StackCtor, StackCtorConst},
-    system::{errors::SystemError, Resources},
+    system::{errors::system::SystemError, Resources},
     system_io_oracle::{IOOracle, InitialStorageSlotData, InitialStorageSlotDataIterator},
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::Bytes32,

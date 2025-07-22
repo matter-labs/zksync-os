@@ -4,11 +4,11 @@
 //! - l1 -> l2 txs logs, to prove execution result on l1.
 use super::history_list::HistoryList;
 use crate::internal_error;
-use crate::system::errors::InternalError;
+use crate::system::errors::internal::InternalError;
 use crate::system::IOResultKeeper;
 use crate::{
     memory::stack_trait::{StackCtor, StackCtorConst},
-    system::errors::SystemError,
+    system::errors::system::SystemError,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::{Bytes32, UsizeAlignedByteBox},
 };

@@ -8,12 +8,10 @@ use crate::bootloader::rlp;
 use core::ops::Range;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
-use errors::InvalidTransaction;
+use errors::{BootloaderSubsystemError, InvalidTransaction};
 use ruint::aliases::U256;
-use zk_ee::{
-    internal_error,
-    system::errors::{FatalError, InternalError, SystemError},
-};
+use zk_ee::internal_error;
+use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, system::SystemError};
 
 mod abi_utils;
 pub mod access_list_parser;
@@ -386,7 +384,7 @@ impl<'a> ZkSyncTransaction<'a> {
         &self,
         chain_id: u64,
         resources: &mut R,
-    ) -> Result<[u8; 32], FatalError> {
+    ) -> Result<[u8; 32], BootloaderSubsystemError> {
         let tx_type = self.tx_type.read();
         match tx_type {
             Self::LEGACY_TX_TYPE => self.legacy_tx_calculate_hash(chain_id, true, resources),
@@ -407,7 +405,7 @@ impl<'a> ZkSyncTransaction<'a> {
         &self,
         chain_id: u64,
         resources: &mut R,
-    ) -> Result<[u8; 32], FatalError> {
+    ) -> Result<[u8; 32], BootloaderSubsystemError> {
         let tx_type = self.tx_type.read();
         match tx_type {
             Self::LEGACY_TX_TYPE => self.legacy_tx_calculate_hash(chain_id, false, resources),
@@ -434,7 +432,7 @@ impl<'a> ZkSyncTransaction<'a> {
         chain_id: u64,
         signed: bool,
         resources: &mut R,
-    ) -> Result<[u8; 32], FatalError> {
+    ) -> Result<[u8; 32], BootloaderSubsystemError> {
         let mut total_list_len =
             rlp::estimate_number_encoding_len(self.nonce.encoding(&self.underlying_buffer))
                 + rlp::estimate_number_encoding_len(
@@ -634,7 +632,7 @@ impl<'a> ZkSyncTransaction<'a> {
         chain_id: u64,
         signed: bool,
         resources: &mut R,
-    ) -> Result<[u8; 32], FatalError> {
+    ) -> Result<[u8; 32], BootloaderSubsystemError> {
         let mut total_list_len = rlp::estimate_number_encoding_len(&chain_id.to_be_bytes())
             + rlp::estimate_number_encoding_len(self.nonce.encoding(&self.underlying_buffer))
             + rlp::estimate_number_encoding_len(
@@ -750,7 +748,7 @@ impl<'a> ZkSyncTransaction<'a> {
         chain_id: u64,
         signed: bool,
         resources: &mut R,
-    ) -> Result<[u8; 32], FatalError> {
+    ) -> Result<[u8; 32], BootloaderSubsystemError> {
         let mut total_list_len = rlp::estimate_number_encoding_len(&chain_id.to_be_bytes())
             + rlp::estimate_number_encoding_len(self.nonce.encoding(&self.underlying_buffer))
             + rlp::estimate_number_encoding_len(
@@ -887,7 +885,7 @@ impl<'a> ZkSyncTransaction<'a> {
     fn domain_hash_struct<R: Resources>(
         chain_id: u64,
         resources: &mut R,
-    ) -> Result<[u8; 32], FatalError> {
+    ) -> Result<[u8; 32], BootloaderSubsystemError> {
         let len = Self::DOMAIN_TYPE_HASH.len()
             + Self::DOMAIN_NAME_HASH.len()
             + Self::DOMAIN_VERSION_HASH.len()
@@ -911,7 +909,10 @@ impl<'a> ZkSyncTransaction<'a> {
         0xaa, 0xc8,
     ];
 
-    fn hash_struct<R: Resources>(&self, resources: &mut R) -> Result<[u8; 32], FatalError> {
+    fn hash_struct<R: Resources>(
+        &self,
+        resources: &mut R,
+    ) -> Result<[u8; 32], BootloaderSubsystemError> {
         let len = U256::BYTES * 14;
         charge_keccak(len, resources)?;
 
@@ -958,7 +959,7 @@ impl<'a> ZkSyncTransaction<'a> {
         &self,
         chain_id: u64,
         resources: &mut R,
-    ) -> Result<[u8; 32], FatalError> {
+    ) -> Result<[u8; 32], BootloaderSubsystemError> {
         let domain_separator = Self::domain_hash_struct(chain_id, resources)?;
         let hs = self.hash_struct(resources)?;
         charge_keccak(2 + 2 * U256::BYTES, resources)?;
@@ -978,7 +979,7 @@ impl<'a> ZkSyncTransaction<'a> {
         &self,
         chain_id: u64,
         resources: &mut R,
-    ) -> Result<[u8; 32], FatalError> {
+    ) -> Result<[u8; 32], BootloaderSubsystemError> {
         let signed_hash = self.eip712_tx_calculate_signed_hash(chain_id, resources)?;
         charge_keccak(U256::BYTES * 2 + self.signature.range.len(), resources)?;
         let signature_hash =
@@ -998,7 +999,7 @@ impl<'a> ZkSyncTransaction<'a> {
     fn l1_tx_calculate_hash<R: Resources>(
         &self,
         resources: &mut R,
-    ) -> Result<[u8; 32], FatalError> {
+    ) -> Result<[u8; 32], BootloaderSubsystemError> {
         charge_keccak(32 + self.underlying_buffer[TX_OFFSET..].len(), resources)?;
         let mut hasher = Keccak256::new();
         // Note, that the correct ABI encoding of the Transaction structure starts with 0x20
@@ -1032,8 +1033,8 @@ impl<'a> ZkSyncTransaction<'a> {
 
 #[derive(Clone, Debug)]
 pub struct ParsedValue<T: 'static + Clone + Copy + core::fmt::Debug> {
-    value: T,
-    range: Range<usize>,
+    pub value: T,
+    pub range: Range<usize>,
 }
 
 impl<T: 'static + Clone + Copy + core::fmt::Debug> ParsedValue<T> {
@@ -1193,14 +1194,21 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), FatalError> {
+fn charge_keccak<R: Resources>(
+    len: usize,
+    resources: &mut R,
+) -> Result<(), BootloaderSubsystemError> {
     let native_cost = basic_system::system_functions::keccak256::keccak256_native_cost::<R>(len);
     resources
         .charge(&R::from_native(native_cost))
         .map_err(|e| match e {
-            SystemError::OutOfErgs(_) => unreachable!(),
-            SystemError::Internal(e) => FatalError::Internal(e),
-            SystemError::OutOfNativeResources(loc) => FatalError::OutOfNativeResources(loc),
+            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                internal_error!("Charging for keccak is not supposed to consume ergs").into()
+            }
+            SystemError::LeafDefect(e) => BootloaderSubsystemError::LeafDefect(e),
+            SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc)) => {
+                BootloaderSubsystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))
+            }
         })
 }
 

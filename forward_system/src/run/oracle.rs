@@ -6,7 +6,7 @@ use zk_ee::common_structs::BasicIOImplementerFSM;
 use zk_ee::internal_error;
 use zk_ee::kv_markers::StorageAddress;
 use zk_ee::oracle::*;
-use zk_ee::system::errors::InternalError;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::system_io_oracle::dyn_usize_iterator::DynUsizeIterator;
 use zk_ee::system_io_oracle::*;
@@ -265,8 +265,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> IOOracle
 
 #[derive(Clone, Debug)]
 pub struct CallSimulationOracle<S: ReadStorage, PS: PreimageSource, TS: TxSource> {
-    pub io_implementer_init_data:
-        Option<BasicIOImplementerFSM<FlatStorageCommitment<TESTING_TREE_HEIGHT>>>,
+    pub io_implementer_init_data: Option<BasicIOImplementerFSM<FlatStorageCommitment<TREE_HEIGHT>>>,
     pub block_metadata: BlockMetadataFromOracle,
     pub storage: S,
     pub tx_source: TS,

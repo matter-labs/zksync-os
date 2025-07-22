@@ -1,4 +1,4 @@
-use zk_ee::system::errors::InternalError;
+use zk_ee::system::errors::internal::InternalError;
 
 /// TODO
 pub trait SnapshottableIo {

@@ -2,15 +2,16 @@ use crate::cost_constants::{
     SHA256_BASE_NATIVE_COST, SHA256_CHUNK_SIZE, SHA256_PER_WORD_COST_ERGS,
     SHA256_ROUND_NATIVE_COST, SHA256_STATIC_COST_ERGS,
 };
-use zk_ee::system::errors::SystemFunctionError;
-use zk_ee::system::{Computational, Resources, SystemFunction};
+use zk_ee::system::base_system_functions::{Sha256Errors, SystemFunction};
+use zk_ee::system::errors::{subsystem::SubsystemError, system::SystemError};
+use zk_ee::system::{Computational, Resources};
 
 ///
 /// SHA-256 system function implementation.
 ///
 pub struct Sha256Impl;
 
-impl<R: Resources> SystemFunction<R> for Sha256Impl {
+impl<R: Resources> SystemFunction<R, Sha256Errors> for Sha256Impl {
     /// If output len less than needed(32) returns `InternalError`.
     /// Returns `OutOfGas` if not enough resources provided.
     fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
@@ -18,10 +19,10 @@ impl<R: Resources> SystemFunction<R> for Sha256Impl {
         dst: &mut D,
         resources: &mut R,
         _: A,
-    ) -> Result<(), SystemFunctionError> {
-        cycle_marker::wrap_with_resources!("sha256", resources, {
+    ) -> Result<(), SubsystemError<Sha256Errors>> {
+        Ok(cycle_marker::wrap_with_resources!("sha256", resources, {
             sha256_as_system_function_inner(src, dst, resources)
-        })
+        })?)
     }
 }
 
@@ -40,7 +41,7 @@ fn sha256_as_system_function_inner<D: ?Sized + Extend<u8>, R: Resources>(
     src: &[u8],
     dst: &mut D,
     resources: &mut R,
-) -> Result<(), SystemFunctionError> {
+) -> Result<(), SystemError> {
     let word_size = src.len().div_ceil(32);
     let ergs_cost = SHA256_STATIC_COST_ERGS + SHA256_PER_WORD_COST_ERGS.times(word_size as u64);
     let native_cost = SHA256_BASE_NATIVE_COST + nb_rounds(src.len()) * SHA256_ROUND_NATIVE_COST;

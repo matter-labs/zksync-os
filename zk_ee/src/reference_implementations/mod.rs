@@ -5,8 +5,8 @@
 //! - Native resource: model for prover complexity.
 
 use crate::{
-    out_of_native_resources_system_error,
-    system::{errors::SystemError, Computational, Ergs, Resource, Resources},
+    out_of_native_resources,
+    system::{errors::system::SystemError, Computational, Ergs, Resource, Resources},
 };
 
 /// Native resource that counts down, as done for ergs.
@@ -27,7 +27,7 @@ impl Resource for DecreasingNative {
     fn charge(&mut self, to_charge: &Self) -> Result<(), SystemError> {
         if self.0 < to_charge.0 {
             self.0 = 0;
-            return Err(out_of_native_resources_system_error!());
+            return Err(out_of_native_resources!().into());
         }
         self.0 -= to_charge.0;
         Ok(())

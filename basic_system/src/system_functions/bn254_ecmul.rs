@@ -5,15 +5,18 @@ use crate::{
     cost_constants::BN254_ECMUL_COST_ERGS, system_functions::bn254_ecadd::serialize_projective,
 };
 use crypto::ark_serialize::Valid;
-use zk_ee::system::errors::SystemFunctionError;
-use zk_ee::system::SystemFunction;
+use zk_ee::interface_error;
+use zk_ee::system::base_system_functions::{
+    Bn254MulErrors, Bn254MulInterfaceError, SystemFunction,
+};
+use zk_ee::system::errors::subsystem::SubsystemError;
 
 ///
 /// bn254 ecmul system function implementation.
 ///
 pub struct Bn254MulImpl;
 
-impl<R: Resources> SystemFunction<R> for Bn254MulImpl {
+impl<R: Resources> SystemFunction<R, Bn254MulErrors> for Bn254MulImpl {
     /// If the input size is less than expected - it will be padded with zeroes.
     /// If the input size is greater - redundant bytes will be ignored.
     ///
@@ -24,7 +27,7 @@ impl<R: Resources> SystemFunction<R> for Bn254MulImpl {
         output: &mut D,
         resources: &mut R,
         _allocator: A,
-    ) -> Result<(), SystemFunctionError> {
+    ) -> Result<(), SubsystemError<Bn254MulErrors>> {
         cycle_marker::wrap_with_resources!("bn254_ecmul", resources, {
             bn254_ecmul_as_system_function_inner(input, output, resources)
         })
@@ -39,7 +42,7 @@ fn bn254_ecmul_as_system_function_inner<
     src: &S,
     dst: &mut D,
     resources: &mut R,
-) -> Result<(), SystemFunctionError> {
+) -> Result<(), SubsystemError<Bn254MulErrors>> {
     resources.charge(&R::from_ergs_and_native(
         BN254_ECMUL_COST_ERGS,
         <R::Native as zk_ee::system::Computational>::from_computational(BN254_ECMUL_NATIVE_COST),
@@ -56,7 +59,9 @@ fn bn254_ecmul_as_system_function_inner<
         let y0 = it.next().unwrap_unchecked();
         let scalar = it.next().unwrap_unchecked();
 
-        bn254_ecmul_inner(x0, y0, scalar).map_err(|_| SystemFunctionError::InvalidInput)?
+        bn254_ecmul_inner(x0, y0, scalar).map_err(|_| -> SubsystemError<_> {
+            interface_error!(Bn254MulInterfaceError::InvalidPoint)
+        })?
     };
 
     dst.extend(serialized_result);

@@ -11,7 +11,7 @@ use zk_ee::common_structs::{
     derive_flat_storage_key, GenericEventContent, L2ToL1Log, PreimageType,
 };
 use zk_ee::kv_markers::MAX_EVENT_TOPICS;
-use zk_ee::system::errors::InternalError;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
 

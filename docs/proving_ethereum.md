@@ -17,7 +17,7 @@ TL;DR:
 
 mkdir /tmp/witness
 
-cargo run -p eth_runner --release --features rig/no_print,rig/unlimited_native -- single-run --block-dir tests/instances/eth_runner/blocks/19299001 --randomized --witness-output-dir /tmp/witness
+cargo run -p eth_runner --release --features rig/no_print,evm_replay -- single-run --block-dir tests/instances/eth_runner/blocks/19299001 --randomized --witness-output-dir /tmp/witness
 ```
 
 Now, clone [zksync-airbender](https://github.com/matter-labs/zksync-airbender/tree/main) (suggested version v0.3.0).

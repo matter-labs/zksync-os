@@ -29,6 +29,7 @@ thread_local! {
   /// Forward run collects the labels, so that we don't incur in more RISC-V cycles
   static LABELS: std::cell::RefCell<Vec<Label>> = const { std::cell::RefCell::new(Vec::new()) };
 
+  #[cfg(feature="log_to_file")]
   static MARKER_FILE: std::cell::RefCell<std::fs::File> = std::cell::RefCell::new(init_marker_file());
 }
 
@@ -40,7 +41,10 @@ fn init_marker_file() -> std::fs::File {
 }
 
 #[allow(dead_code)]
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(all(not(feature = "log_to_file"), not(target_arch = "riscv32")))]
+pub fn log_marker(_msg: &str) {}
+
+#[cfg(all(feature = "log_to_file", not(target_arch = "riscv32")))]
 pub fn log_marker(msg: &str) {
     use std::io::Write;
     MARKER_FILE.with(|f| {
