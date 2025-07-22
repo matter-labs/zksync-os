@@ -68,7 +68,7 @@ case "$TYPE" in
     ;;
   *)
     echo "Invalid --type: $TYPE"
-    echo "Valid types are: default, server, server-logging-enabled"
+    echo "Valid types are: default, server, server-logging-enabled, evm-replay, benchmarking, evm-replay-benchmarking, debug-in-simulator"
     exit 1
     ;;
 esac

@@ -20,31 +20,12 @@ impl ExactSizeIterator for UsizeSliceIteratorOwned {
         core::assert_eq!(upper, Some(lower));
         lower
     }
-
-    // fn is_empty(&self) -> bool {
-    //     self.len() == 0
-    // }
 }
 
 impl Iterator for UsizeSliceIteratorOwned {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // if self.cursor == 0 {
-        //     self.cursor += 1;
-        //
-        //     return Some(self.slice.len());
-        // }
-        //
-        // if self.cursor -1 == self.slice.len() as u32 { return None; }
-        //
-        // let r = self.slice[self.cursor as usize - 1 ];
-        //
-        // self.cursor += 1;
-        //
-        // Some(r)
-        //
-
         if self.cursor == self.slice.len() as u32 {
             return None;
         }
@@ -57,9 +38,6 @@ impl Iterator for UsizeSliceIteratorOwned {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        // let consumed = if self.cursor == 0 { 0 } else { self.cursor };
-        // let r = self.slice.len() + 1 - consumed as usize;
-        // (r, Some(r))
         let r = self.slice.len() - self.cursor as usize;
 
         (r, Some(r))

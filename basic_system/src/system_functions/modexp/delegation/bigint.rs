@@ -736,7 +736,7 @@ fn write_bigint(
     dst: &mut BigintRepr<impl Allocator + Clone>,
 ) {
     const {
-        assert!(core::mem::size_of::<usize>() == 4);
+        assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
     }
     unsafe {
         let num_digits = to_consume.next_multiple_of(8) / 8;
@@ -798,6 +798,18 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
 
         let q_len = it.next().expect("quotient length");
         let r_len = it.next().expect("remainder length");
+
+        let max_quotient_digits = a.digits + 1 - m.digits;
+        let max_remainder_digits = m.digits;
+
+        const {
+            assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
+        }
+
+        // check that hint is "sane" in upper bound
+
+        assert!(q_len.next_multiple_of(8) / 8 <= max_quotient_digits);
+        assert!(r_len.next_multiple_of(8) / 8 <= max_remainder_digits);
 
         write_bigint(&mut it, q_len, quotient_dst);
         write_bigint(&mut it, r_len, remainder_dst);
