@@ -4,7 +4,7 @@
 //!
 
 #[cfg(feature = "pectra")]
-use super::authorization_list_parser::{AuthorizationListIter, AuthorizationListParser};
+use super::authorization_list::{AuthorizationListIter, AuthorizationListParser};
 use super::{AccessListIter, AccessListParser};
 use ruint::aliases::{B160, U256};
 

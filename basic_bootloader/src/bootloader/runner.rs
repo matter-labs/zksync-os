@@ -23,7 +23,7 @@ use zk_ee::{internal_error, out_of_ergs_error};
 
 use super::errors::BootloaderInterfaceError;
 use super::errors::BootloaderSubsystemError;
-use super::transaction::authorization_list_parser::parse_delegation;
+use super::transaction::authorization_list::parse_delegation;
 
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.

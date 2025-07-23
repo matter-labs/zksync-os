@@ -6,7 +6,7 @@
 use self::u256be_ptr::U256BEPtr;
 use crate::bootloader::rlp;
 #[cfg(feature = "pectra")]
-use authorization_list_parser::AuthorizationListItem;
+use authorization_list::AuthorizationListItem;
 use core::ops::Range;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
@@ -19,7 +19,7 @@ use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, syst
 mod abi_utils;
 pub mod access_list_parser;
 #[cfg(feature = "pectra")]
-pub mod authorization_list_parser;
+pub mod authorization_list;
 pub mod reserved_dynamic_parser;
 use self::access_list_parser::*;
 
