@@ -384,7 +384,7 @@ impl From<SystemError> for ExitCode {
     }
 }
 
-/// TODO this is a workaround. We need to containt ExitCode better inside EVM
+/// TODO this is a workaround. We need to contain ExitCode better inside EVM
 /// interpreter but it requires a bit of untangling.
 impl From<EvmSubsystemError> for ExitCode {
     fn from(e: EvmSubsystemError) -> Self {
