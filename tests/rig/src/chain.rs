@@ -111,7 +111,7 @@ impl Chain<true> {
 
 #[derive(Debug)]
 pub struct BlockExtraStats {
-    pub native_used: Option<u64>,
+    pub computational_native_used: Option<u64>,
     pub effective_used: Option<u64>,
 }
 
@@ -309,7 +309,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         );
         #[allow(unused_mut)]
         let mut stats = BlockExtraStats {
-            native_used: None,
+            computational_native_used: None,
             effective_used: None,
         };
 
@@ -320,11 +320,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 .iter()
                 .map(|res| {
                     res.as_ref()
-                        .map(|tx_out| tx_out.native_used)
+                        .map(|tx_out| tx_out.computational_native_used)
                         .unwrap_or_default()
                 })
                 .sum::<u64>();
-            stats.native_used = Some(native_used);
+            stats.computational_native_used = Some(native_used);
         }
 
         if let Some(path) = witness_output_file {

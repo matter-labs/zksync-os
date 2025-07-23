@@ -22,6 +22,7 @@ use errors::BootloaderSubsystemError;
 use evm_interpreter::ERGS_PER_GAS;
 use gas_helpers::check_enough_resources_for_pubdata;
 use gas_helpers::get_resources_to_charge_for_pubdata;
+use gas_helpers::ResourcesForTx;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::interface_error;
@@ -134,7 +135,11 @@ where
             .checked_mul(native_per_gas)
             .ok_or(internal_error!("gpp*npg"))?;
 
-        let (mut resources, withheld_resources) = get_resources_for_tx::<S>(
+        let ResourcesForTx {
+            main_resources: mut resources,
+            withheld: withheld_resources,
+            intrinsic_computational_native_charged,
+        } = get_resources_for_tx::<S>(
             gas_limit,
             native_per_pubdata,
             native_per_gas,
@@ -143,6 +148,8 @@ where
             L1_TX_INTRINSIC_PUBDATA,
             L1_TX_INTRINSIC_NATIVE_COST,
         )?;
+        // Just used for computing native used
+        let initial_resources = resources.clone();
 
         let tx_internal_cost = gas_price
             .checked_mul(gas_limit as u128)
@@ -252,6 +259,8 @@ where
                 to_charge_for_pubdata
             }
         };
+        // Just used for computing native used
+        let resources_before_refund = resources.clone();
         #[allow(unused_variables)]
         let (_, gas_used) = Self::compute_gas_refund(
             system,
@@ -342,6 +351,14 @@ where
             success,
         )?;
 
+        // Add back the intrinsic native charged in [get_resources_for_tx],
+        // as initial_resources doesn't include them.
+        let computational_native_used = resources_before_refund
+            .diff(initial_resources)
+            .native()
+            .as_u64()
+            + intrinsic_computational_native_charged;
+
         Ok(TxProcessingResult {
             result,
             tx_hash,
@@ -350,7 +367,7 @@ where
             gas_used,
             gas_refunded: 0,
             #[cfg(feature = "report_native")]
-            native_used: 0,
+            computational_native_used,
         })
     }
 
@@ -505,7 +522,11 @@ where
             .checked_mul(native_per_gas)
             .ok_or(internal_error!("gpp*npg"))?;
 
-        let (mut resources, withheld_resources) = get_resources_for_tx::<S>(
+        let ResourcesForTx {
+            main_resources: mut resources,
+            withheld: withheld_resources,
+            intrinsic_computational_native_charged,
+        } = get_resources_for_tx::<S>(
             gas_limit,
             native_per_pubdata,
             native_per_gas,
@@ -514,6 +535,7 @@ where
             L2_TX_INTRINSIC_PUBDATA,
             L2_TX_INTRINSIC_NATIVE_COST,
         )?;
+        // Just used for computing native used
         let initial_resources = resources.clone();
 
         // we will read all account properties needed for future execution
@@ -633,6 +655,7 @@ where
             },
         };
 
+        // Just used for computing native used
         let resources_before_refund = resources.clone();
         // After the transaction is executed, we reclaim the withheld resources.
         // This is needed to ensure correct "gas_used" calculation, also these
@@ -660,6 +683,14 @@ where
             0
         };
 
+        // Add back the intrinsic native charged in [get_resources_for_tx],
+        // as initial_resources doesn't include them.
+        let computational_native_used = resources_before_refund
+            .diff(initial_resources)
+            .native()
+            .as_u64()
+            + intrinsic_computational_native_charged;
+
         #[cfg(not(target_arch = "riscv32"))]
         cycle_marker::log_marker(
             format!(
@@ -672,11 +703,7 @@ where
         cycle_marker::log_marker(
             format!(
                 "Spent native for [process_transaction]: {}",
-                resources_before_refund
-                    .clone()
-                    .diff(initial_resources.clone())
-                    .native()
-                    .as_u64()
+                computational_native_used
             )
             .as_str(),
         );
@@ -689,10 +716,7 @@ where
             gas_used,
             gas_refunded: 0,
             #[cfg(feature = "report_native")]
-            native_used: resources_before_refund
-                .diff(initial_resources)
-                .native()
-                .as_u64(),
+            computational_native_used,
         })
     }
 
@@ -1099,12 +1123,13 @@ where
             // Adjust gas_used with difference with used native
             let native_per_gas = u256_to_u64_saturated(&native_per_gas);
             let full_native_limit = gas_limit.saturating_mul(native_per_gas);
-            let native_used = full_native_limit - resources.native().remaining().as_u64();
+            let computational_native_used =
+                full_native_limit - resources.native().remaining().as_u64();
 
             let delta_gas = if native_per_gas == 0 {
                 0
             } else {
-                (native_used / native_per_gas) as i64 - (gas_used as i64)
+                (computational_native_used / native_per_gas) as i64 - (gas_used as i64)
             };
 
             if delta_gas > 0 {
