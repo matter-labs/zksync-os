@@ -528,7 +528,6 @@ mod tests {
 
         let encoded_list = encode_reserved_dynamic(access_list, authorization_list);
         let encoded = ethers::abi::encode(&[Token::Bytes(encoded_list)]);
-        // println!("Encoded: {}", hex::encode(encoded.clone()));
 
         // Offset is 32 to skip the initial offset for the bytes encoding
         let parser = ReservedDynamicParser::new(&encoded, 32).expect("Must create parser");

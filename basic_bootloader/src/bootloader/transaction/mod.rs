@@ -684,11 +684,6 @@ impl<'a> ZkSyncTransaction<'a> {
                 r,
                 s,
             } = item;
-            let y_parity = if y_parity <= 1 {
-                y_parity + 27
-            } else {
-                y_parity
-            };
             rlp::apply_number_encoding_to_hash(&chain_id.to_be_bytes::<32>(), hasher);
             rlp::apply_bytes_encoding_to_hash(&address.to_be_bytes::<{ B160::BYTES }>(), hasher);
             rlp::apply_number_encoding_to_hash(&nonce.to_be_bytes(), hasher);
@@ -990,12 +985,7 @@ impl<'a> ZkSyncTransaction<'a> {
             )
             + rlp::estimate_number_encoding_len(self.gas_limit.encoding(&self.underlying_buffer));
 
-        // Handle `to` == null, indicates EVM deployment transaction
-        if self.reserved[1].read().is_zero() {
-            total_list_len += rlp::ADDRESS_ENCODING_LEN;
-        } else {
-            total_list_len += rlp::estimate_bytes_encoding_len(&[]);
-        }
+        total_list_len += rlp::ADDRESS_ENCODING_LEN;
 
         let access_list_raw_length = self
             .estimate_access_list_raw_length()
