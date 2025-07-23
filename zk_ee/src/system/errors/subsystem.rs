@@ -91,6 +91,16 @@ macro_rules! define_cascade_error {
                 }
             }
         }
+        impl core::fmt::Display for $name {
+
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                match self {
+                    $(
+                        Self::$variant(e) => write!(f, "{e}"),
+                    )*
+                }
+            }
+        }
 
         impl $crate::system::errors::cascade::ICascadedInner for $name {}
     };

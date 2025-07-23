@@ -254,3 +254,12 @@ cascade WrappedError {
     EEError(EESubsystemError),
     Nonce(NonceSubsystemError),
 });
+
+// We don't need anything more than Debug here -- the error should be passed to
+// the sequencer, converted to an appropriate public error through zksync-error
+// framework and then passed to the clients.
+impl core::fmt::Display for InvalidTransaction {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
