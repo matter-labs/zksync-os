@@ -14,6 +14,7 @@ use system_hooks::*;
 use zk_ee::common_structs::CalleeParameters;
 use zk_ee::common_structs::TransferInfo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::interface_error;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
@@ -25,6 +26,7 @@ use zk_ee::system::{
 use zk_ee::wrap_error;
 use zk_ee::{internal_error, out_of_ergs_error};
 
+use super::errors::BootloaderInterfaceError;
 use super::errors::BootloaderSubsystemError;
 
 /// Main execution loop.
@@ -449,7 +451,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     // Insufficient balance
                     match ee_type {
                         ExecutionEnvironmentType::NoEE => {
-                            unreachable!("Cannot be in NoEE deep in the callstack")
+                            return Err(interface_error!(
+                                BootloaderInterfaceError::TopLevelInsufficientBalance
+                            ))
                         }
                         ExecutionEnvironmentType::EVM => {
                             // Following EVM, a call with insufficient balance is not a revert,

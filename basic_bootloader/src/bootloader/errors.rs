@@ -243,7 +243,11 @@ macro_rules! require_internal {
 }
 
 zk_ee::define_subsystem!(Bootloader,
-cascade WrappedError {
-    EEError(EESubsystemError),
-    Nonce(NonceSubsystemError),
-});
+      interface BootloaderInterfaceError {
+          TopLevelInsufficientBalance,
+      },
+      cascade WrappedError {
+          EEError(EESubsystemError),
+          Nonce(NonceSubsystemError),
+      }
+);
