@@ -12,6 +12,7 @@ use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use core::fmt::Write;
+use crypto::secp256k1::SECP256K1N_HALF;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
@@ -44,15 +45,6 @@ macro_rules! require_or_revert {
         }
     };
 }
-
-/// The order of the secp256k1 curve, divided by two. Signatures that should be checked according
-/// to EIP-2 should have an S value less than or equal to this.
-///
-/// `57896044618658097711785492504343953926418782139537452191302581570759080747168`
-const SECP256K1N_HALF: U256 = U256::from_be_bytes([
-    0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-    0x5D, 0x57, 0x6E, 0x73, 0x57, 0xA4, 0x50, 0x1D, 0xDF, 0xE9, 0x2F, 0x46, 0x68, 0x1B, 0x20, 0xA0,
-]);
 
 pub struct EOA;
 
@@ -115,7 +107,7 @@ where
         let r = &signature[..32];
         let s = &signature[32..64];
         let v = &signature[64];
-        if U256::from_be_slice(s) > SECP256K1N_HALF {
+        if U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
             return Err(InvalidTransaction::MalleableSignature.into());
         }
 

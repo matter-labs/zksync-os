@@ -615,6 +615,9 @@ where
             ValidationResult::default()
         };
 
+        // Parse, validate and apply authorization list, following EIP-7702
+        transaction.parse_authorization_list_and_apply_delegations(system, &mut resources)?;
+
         // Take a snapshot in case we need to revert due to out of native.
         let rollback_handle = system.start_global_frame()?;
 

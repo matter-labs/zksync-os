@@ -1275,6 +1275,32 @@ impl<'a> ZkSyncTransaction<'a> {
         Ok(iter.count as u64)
     }
 
+    ///
+    /// Parse and validate authorization list, while applying delegations.
+    ///
+    pub fn parse_authorization_list_and_apply_delegations<S: EthereumLikeTypes>(
+        &self,
+        system: &mut System<S>,
+        resources: &mut S::Resources,
+    ) -> Result<(), TxError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        let iter = self
+            .reserved_dynamic
+            .authorization_list_iter(&self.underlying_buffer)
+            .map_err(|()| InvalidTransaction::InvalidStructure)?;
+        for res in iter {
+            let authorization = res.map_err(|()| InvalidTransaction::InvalidStructure)?;
+            let success = authorization.validate_and_apply_delegation(system, resources)?;
+            let _ = system
+                .get_logger()
+                .write_fmt(format_args!("Delegation success: {success}\n"));
+
+            if !success {}
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
