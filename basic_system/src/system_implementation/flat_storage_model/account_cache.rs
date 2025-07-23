@@ -567,11 +567,22 @@ where
                 }
             })?,
             code_version: Maybe::construct(|| full_data.versioning_data.code_version()),
-            is_delegated: Maybe::construct(|| {
-                // Only EVM accounts can be delegated
-                full_data.versioning_data.ee_version() == ExecutionEnvironmentType::EVM_EE_BYTE
-                    && full_data.versioning_data.is_delegated()
-            }),
+            is_delegated: Maybe::try_construct(|| {
+                let delegated = full_data.versioning_data.is_delegated();
+                // Delegated accounts can only be of EVM EE type.
+                // Note that delegates can be of any EE type, the restriction
+                // is just on the delegated account itself.
+                if delegated
+                    && full_data.versioning_data.ee_version()
+                        != ExecutionEnvironmentType::EVM_EE_BYTE
+                {
+                    Err(SystemError::from(internal_error!(
+                        "Delegated account is not EVM"
+                    )))
+                } else {
+                    Ok(delegated)
+                }
+            })?,
         })
     }
 
@@ -950,14 +961,7 @@ where
             code_version,
             delegated,
         ) = if delegate == &B160::ZERO {
-            (
-                Bytes32::ZERO,
-                0,
-                Bytes32::ZERO,
-                0,
-                evm_interpreter::DEFAULT_CODE_VERSION_BYTE,
-                false,
-            )
+            (Bytes32::ZERO, 0, Bytes32::ZERO, 0, 0u8, false)
         } else {
             // Bytecode is: 0xef0100 || address
             let mut code = [0u8; 23];
@@ -1020,7 +1024,9 @@ where
 
                 if delegated {
                     v.versioning_data.set_as_delegated();
-                    // We set EVM as EE, as it's the only EE supported currently.
+                    // Delegated accounts can only be of EVM EE type.
+                    // Note that delegates can be of any EE type, the restriction
+                    // is just on the delegated account itself.
                     v.versioning_data
                         .set_ee_version(ExecutionEnvironmentType::EVM_EE_BYTE);
                 } else {

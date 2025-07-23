@@ -997,6 +997,8 @@ where
                 .with_ee_version()
                 .with_unpadded_code_len()
                 .with_artifacts_len()
+                // If the account is delegated, the bytecode will
+                // contain the address of the delegate.
                 .with_bytecode()
                 .with_nonce()
                 .with_nominal_token_balance()
@@ -1005,7 +1007,8 @@ where
         )
         .and_then(|account_properties| {
             if account_properties.is_delegated.0 {
-                // Resolve delegation
+                // Resolve delegation following EIP-7702 (only one level
+                // of delegation is allowed).
                 let delegation = &account_properties.bytecode.0
                     [..account_properties.unpadded_code_len.0 as usize];
                 let address = parse_delegation(delegation)?;
