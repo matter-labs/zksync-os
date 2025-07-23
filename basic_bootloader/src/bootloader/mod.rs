@@ -284,6 +284,8 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                         gas_refunded: tx_processing_result.gas_refunded,
                         #[cfg(feature = "report_native")]
                         computational_native_used: tx_processing_result.computational_native_used,
+                        #[cfg(feature = "report_pubdata")]
+                        pubdata_used: tx_processing_result.pubdata_used,
                     }));
 
                     let mut keccak = Keccak256::new();

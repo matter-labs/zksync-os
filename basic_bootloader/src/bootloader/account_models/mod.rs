@@ -63,6 +63,8 @@ pub struct TxProcessingResult<'a> {
     pub gas_refunded: u64,
     #[cfg(feature = "report_native")]
     pub computational_native_used: u64,
+    #[cfg(feature = "report_pubdata")]
+    pub pubdata_used: u64,
 }
 
 pub trait AccountModel<S: EthereumLikeTypes>

@@ -167,21 +167,21 @@ pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
 /// spent pubdata.
 /// If base_pubdata is Some, it's discounted from the current
 /// pubdata counter.
-/// Returns if the check succeeded and the resources to charge
-/// for pubdata.
+/// Returns if the check succeeded, the resources to charge
+/// for pubdata and the net pubdata used.
 ///
 pub fn check_enough_resources_for_pubdata<S: EthereumLikeTypes>(
     system: &mut System<S>,
     native_per_pubdata: U256,
     resources: &S::Resources,
     base_pubdata: Option<u64>,
-) -> Result<(bool, S::Resources), InternalError> {
-    let (_, resources_for_pubdata) =
+) -> Result<(bool, S::Resources, u64), InternalError> {
+    let (pubdata_used, resources_for_pubdata) =
         get_resources_to_charge_for_pubdata(system, native_per_pubdata, base_pubdata)?;
     let _ = system.get_logger().write_fmt(format_args!(
         "Checking gas for pubdata, resources_for_pubdata: {:?}, resources: {:?}\n",
         resources_for_pubdata, resources
     ));
     let enough = resources.has_enough(&resources_for_pubdata);
-    Ok((enough, resources_for_pubdata))
+    Ok((enough, resources_for_pubdata, pubdata_used))
 }
