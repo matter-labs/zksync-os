@@ -680,7 +680,18 @@ where
                 to_charge_for_pubdata,
             )?
         } else {
-            0
+            // Compute gas used following the same logic as in normal execution
+            // TODO: remove when simulation flow is simplified
+            let (_pubdata_spent, to_charge_for_pubdata) =
+                get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
+            let (_gas_refund, gas_used) = Self::compute_gas_refund(
+                system,
+                to_charge_for_pubdata,
+                gas_limit,
+                native_per_gas,
+                &mut resources,
+            )?;
+            gas_used
         };
 
         // Add back the intrinsic native charged in [get_resources_for_tx],
