@@ -27,6 +27,14 @@
 #![allow(clippy::len_without_is_empty)]
 #![allow(clippy::needless_return)]
 #![allow(clippy::wrong_self_convention)]
+#![cfg_attr(
+    any(feature = "error_origins", not(target_arch = "riscv32")),
+    allow(clippy::result_large_err)
+)]
+#![cfg_attr(
+    any(feature = "error_origins", not(target_arch = "riscv32")),
+    allow(clippy::large_enum_variant)
+)]
 
 extern crate alloc;
 

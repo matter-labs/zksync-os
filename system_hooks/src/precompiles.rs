@@ -85,7 +85,7 @@ where
                 Ok((make_error_return_state(resources), rest))
             }
             RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
-                Err(Into::<SystemError>::into(*e))
+                Err(Into::<SystemError>::into(e.clone()))
             }
         },
     }

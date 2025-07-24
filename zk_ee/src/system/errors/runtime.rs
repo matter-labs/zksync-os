@@ -1,16 +1,19 @@
 use strum_macros::IntoStaticStr;
 
-use super::location::ErrorLocation;
+use super::metadata::Metadata;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, IntoStaticStr)]
+#[cfg_attr(target_arch = "riscv32", derive(Copy))]
+#[derive(Clone, Debug, PartialEq, Eq, IntoStaticStr)]
 pub enum RuntimeError {
-    OutOfNativeResources(ErrorLocation),
-    OutOfErgs(ErrorLocation),
+    OutOfNativeResources(Metadata),
+    OutOfErgs(Metadata),
 }
 
 #[macro_export]
 macro_rules! out_of_native_resources {
     () => {
-        $crate::system::errors::runtime::RuntimeError::OutOfNativeResources($crate::location!())
+        $crate::system::errors::runtime::RuntimeError::OutOfNativeResources(
+            $crate::location!().into(),
+        )
     };
 }

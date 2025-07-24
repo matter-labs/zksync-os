@@ -3,6 +3,7 @@ pub mod display;
 pub mod interface;
 pub mod internal;
 pub mod location;
+pub mod metadata;
 pub mod no_errors;
 pub mod root_cause;
 pub mod runtime;

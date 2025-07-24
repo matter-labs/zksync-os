@@ -434,7 +434,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     .map_err(|e| -> EvmSubsystemError {
                         match e.root_cause() {
                             RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
-                                (*e).into()
+                                e.clone().into()
                             }
                             _ => internal_error!("Keccak in create2 cannot fail").into(),
                         }

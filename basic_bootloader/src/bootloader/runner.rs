@@ -453,7 +453,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                             }
                         }
                         SubsystemError::LeafDefect(_) => return Err(wrap_error!(e)),
-                        SubsystemError::LeafRuntime(runtime_error) => match runtime_error {
+                        SubsystemError::LeafRuntime(ref runtime_error) => match runtime_error {
                             RuntimeError::OutOfNativeResources(_) => return Err(wrap_error!(e)),
                             RuntimeError::OutOfErgs(_) => {
                                 return Err(internal_error!("Out of ergs on infinite ergs").into())
