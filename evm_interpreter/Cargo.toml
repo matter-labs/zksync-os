@@ -26,4 +26,4 @@ paste = "1.0.15"
 eip-7645 = []
 default = []
 testing = ["zk_ee/testing"]
-cycle_marker = []
+cycle_marker = ["cycle_marker/log_to_file"]

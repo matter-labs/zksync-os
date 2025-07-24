@@ -30,6 +30,7 @@ paste = "1.0.15"
 [features]
 testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "basic_bootloader/testing", "hex"]
 default = ["testing"]
+error_origins = ["zk_ee/error_origins"]
 no_print = []
 unlimited_native = ["basic_bootloader/unlimited_native"]
 evm-compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-compatibility"]

@@ -87,7 +87,7 @@ jobs:
           ./download_ethereum_fixtures.sh
       - name: Run EVM state tests
         working-directory: ./era-evm-tester
-        run: cargo run --bin evm-tester --features zksync_os_forward_system/no_print -- --environment=ZKsyncOS --spec_tests
+        run: cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print -- --environment=ZKsyncOS --spec_tests
 
 
   verify_binary:

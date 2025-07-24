@@ -1,5 +1,6 @@
 use super::snapshottable_io::SnapshottableIo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::system::NonceSubsystemError;
 use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::utils::Bytes32;
 use zk_ee::{
@@ -117,7 +118,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         increment_by: u64,
         oracle: &mut impl zk_ee::system_io_oracle::IOOracle,
-    ) -> Result<u64, UpdateQueryError>;
+    ) -> Result<u64, NonceSubsystemError>;
 
     fn update_nominal_token_value(
         &mut self,

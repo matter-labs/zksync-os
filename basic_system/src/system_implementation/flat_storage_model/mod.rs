@@ -25,6 +25,7 @@ use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ValueDiffCompressionStrategy};
 use zk_ee::internal_error;
 use zk_ee::system::errors::internal::InternalError;
+use zk_ee::system::NonceSubsystemError;
 use zk_ee::system::Resources;
 use zk_ee::{
     common_structs::{
@@ -416,7 +417,7 @@ where
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         increment_by: u64,
         oracle: &mut impl IOOracle,
-    ) -> Result<u64, UpdateQueryError> {
+    ) -> Result<u64, NonceSubsystemError> {
         self.account_data_cache.increment_nonce::<PROOF_ENV>(
             ee_type,
             resources,

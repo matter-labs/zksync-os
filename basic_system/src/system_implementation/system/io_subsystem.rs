@@ -777,7 +777,7 @@ where
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         increment_by: u64,
-    ) -> Result<u64, UpdateQueryError> {
+    ) -> Result<u64, NonceSubsystemError> {
         self.storage
             .increment_nonce(ee_type, resources, address, increment_by, &mut self.oracle)
     }

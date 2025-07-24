@@ -29,9 +29,12 @@ use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 use zk_ee::common_structs::PreimageType;
 use zk_ee::define_subsystem;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::interface_error;
 use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackCtor;
 use zk_ee::system::Computational;
+use zk_ee::system::NonceError;
+use zk_ee::system::NonceSubsystemError;
 use zk_ee::system::Resource;
 use zk_ee::utils::BitsOrd;
 use zk_ee::utils::Bytes32;
@@ -559,7 +562,7 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-    ) -> Result<u64, UpdateQueryError> {
+    ) -> Result<u64, NonceSubsystemError> {
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             ee_type,
             resources,
@@ -584,7 +587,7 @@ where
                 })
             })?;
         } else {
-            return Err(UpdateQueryError::NumericBoundsError);
+            return Err(interface_error!(NonceError::NonceOverflow));
         }
 
         Ok(nonce)

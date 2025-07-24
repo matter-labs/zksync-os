@@ -65,7 +65,7 @@ where
                 if !is_first_tx {
                     Err(Validation(InvalidTransaction::UpgradeTxNotFirst))
                 } else {
-                    Self::process_l1_transaction(
+                    Self::process_l1_transaction::<Config>(
                         system,
                         system_functions,
                         memories,
@@ -74,9 +74,13 @@ where
                     )
                 }
             }
-            ZkSyncTransaction::L1_L2_TX_TYPE => {
-                Self::process_l1_transaction(system, system_functions, memories, transaction, true)
-            }
+            ZkSyncTransaction::L1_L2_TX_TYPE => Self::process_l1_transaction::<Config>(
+                system,
+                system_functions,
+                memories,
+                transaction,
+                true,
+            ),
             _ => Self::process_l2_transaction::<Config>(
                 system,
                 system_functions,
@@ -86,7 +90,7 @@ where
         }
     }
 
-    fn process_l1_transaction<'a>(
+    fn process_l1_transaction<'a, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
@@ -112,7 +116,11 @@ where
         // For L1->L2 txs, we use a constant native price to avoid censorship.
         let native_price = L1_TX_NATIVE_PRICE;
         let native_per_gas = if is_priority_op {
-            U256::from(gas_price).div_ceil(native_price)
+            if Config::ONLY_SIMULATE {
+                SIMULATION_NATIVE_PER_GAS
+            } else {
+                U256::from(gas_price).div_ceil(native_price)
+            }
         } else {
             UPGRADE_TX_NATIVE_PER_GAS
         };

@@ -9,6 +9,7 @@ use super::errors::internal::InternalError;
 use super::errors::{system::SystemError, UpdateQueryError};
 use super::logger::Logger;
 use super::{IOResultKeeper, Resources};
+use crate::define_subsystem;
 use crate::execution_environment_type::ExecutionEnvironmentType;
 use crate::kv_markers::MAX_EVENT_TOPICS;
 use crate::system::metadata::BlockMetadataFromOracle;
@@ -328,7 +329,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         increment_by: u64,
-    ) -> Result<u64, UpdateQueryError>;
+    ) -> Result<u64, NonceSubsystemError>;
 
     /// Perform a transfer of token balance.
     fn transfer_nominal_token_value(
@@ -452,3 +453,8 @@ pub trait IOSubsystemExt: IOSubsystem {
 }
 
 pub trait EthereumLikeIOSubsystem: IOSubsystem<IOTypes = EthereumIOTypesConfig> {}
+
+define_subsystem!(Nonce,
+interface NonceError {
+    NonceOverflow
+});
