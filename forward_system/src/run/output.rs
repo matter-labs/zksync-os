@@ -47,9 +47,9 @@ pub struct TxOutput {
     pub gas_used: u64,
     /// Amount of refunded gas
     pub gas_refunded: u64,
-    #[cfg(feature = "report_native")]
+
     pub computational_native_used: u64,
-    #[cfg(feature = "report_pubdata")]
+
     pub pubdata_used: u64,
     /// Deployed contract address
     /// - `Some(address)` for the deployment transaction
@@ -185,9 +185,9 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
                     TxOutput {
                         gas_used: output.gas_used,
                         gas_refunded: output.gas_refunded,
-                        #[cfg(feature = "report_native")]
+
                         computational_native_used: output.computational_native_used,
-                        #[cfg(feature = "report_pubdata")]
+
                         pubdata_used: output.pubdata_used,
                         contract_address: output.contract_address,
                         logs: events

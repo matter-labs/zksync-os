@@ -282,9 +282,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                         contract_address,
                         gas_used: tx_processing_result.gas_used,
                         gas_refunded: tx_processing_result.gas_refunded,
-                        #[cfg(feature = "report_native")]
                         computational_native_used: tx_processing_result.computational_native_used,
-                        #[cfg(feature = "report_pubdata")]
                         pubdata_used: tx_processing_result.pubdata_used,
                     }));
 

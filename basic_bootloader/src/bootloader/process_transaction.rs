@@ -364,9 +364,9 @@ where
             is_upgrade_tx: !is_priority_op,
             gas_used,
             gas_refunded: 0,
-            #[cfg(feature = "report_native")]
+
             computational_native_used,
-            #[cfg(feature = "report_pubdata")]
+
             pubdata_used: pubdata_used + L1_TX_INTRINSIC_PUBDATA as u64,
         })
     }
@@ -728,9 +728,9 @@ where
             is_upgrade_tx: false,
             gas_used,
             gas_refunded: 0,
-            #[cfg(feature = "report_native")]
+
             computational_native_used,
-            #[cfg(feature = "report_pubdata")]
+
             pubdata_used: pubdata_used + L2_TX_INTRINSIC_PUBDATA as u64,
         })
     }
@@ -1042,7 +1042,7 @@ where
         validation_pubdata: u64,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
-        to_charge_for_pubdata: Option<(u64, S::Resources)>,
+        pubdata_info: Option<(u64, S::Resources)>,
     ) -> Result<(u64, u64), BootloaderSubsystemError> {
         let paymaster = transaction.paymaster.read();
         let _ = system

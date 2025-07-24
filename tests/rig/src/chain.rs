@@ -313,7 +313,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             effective_used: None,
         };
 
-        #[cfg(feature = "report_native")]
         {
             let native_used: u64 = block_output
                 .tx_results
