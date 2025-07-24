@@ -382,6 +382,10 @@ where
 
         Ok(())
     }
+
+    fn get_refund_counter(&self) -> u32 {
+        self.storage.get_refund_counter()
+    }
 }
 
 pub trait FinishIO {

@@ -477,6 +477,15 @@ where
                 oracle,
             )
     }
+
+    fn get_refund_counter(&self) -> u32 {
+        *self
+            .storage_cache
+            .0
+            .evm_refunds_counter
+            .value()
+            .unwrap_or(&0)
+    }
 }
 
 impl<
