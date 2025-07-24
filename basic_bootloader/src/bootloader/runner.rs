@@ -721,7 +721,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     match e {
                         SubsystemError::LeafUsage(_interface_error) => {
                             // TODO must log the error, but logger is unavailable
-                            // TODO must be interface error
                             internal_error!(
                                 "Must transfer value on deployment after check in preparation"
                             )

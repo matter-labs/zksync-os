@@ -247,10 +247,7 @@ interface BootloaderInterfaceError {
     CantPayRefundInsufficientBalance,
     CantPayRefundOverflow,
     InsufficientBalanceMinting,
-    ShouldTransferRefundOOGas,
-    ShouldTransferRefundOONative,
     TopLevelInsufficientBalance,
-    UnsupportedEE,
 },
 cascade WrappedError {
     Balance(BalanceSubsystemError),
