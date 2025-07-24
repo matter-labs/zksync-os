@@ -12,8 +12,6 @@ pub(crate) fn init() {
     }
 }
 
-#[allow(clippy::derived_hash_with_manual_eq)]
-#[derive(Hash, Default)]
 #[repr(align(32))]
 pub(crate) struct DelegatedU256([u64; 4]);
 
