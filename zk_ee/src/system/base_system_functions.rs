@@ -70,7 +70,7 @@ pub trait SystemFunction<R: Resources, E: Subsystem> {
 }
 
 ///
-/// System function implementation.
+/// Extended system function implementation for cases when IO oracle access is needed
 ///
 pub trait SystemFunctionExt<R: Resources, E: Subsystem> {
     /// Writes result to the `output` and returns actual output slice length that was used.
