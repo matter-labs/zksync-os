@@ -246,7 +246,7 @@ zk_ee::define_subsystem!(Bootloader,
 interface BootloaderInterfaceError {
     CantPayRefundInsufficientBalance,
     CantPayRefundOverflow,
-    InsufficientBalanceMinting,
+    MintingBalanceOverflow,
     TopLevelInsufficientBalance,
 },
 cascade WrappedError {
