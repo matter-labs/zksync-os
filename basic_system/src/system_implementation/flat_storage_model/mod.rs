@@ -75,7 +75,7 @@ pub struct FlatTreeWithAccountsUnderHashesStorageModel<
 }
 
 pub struct FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
-    storage: (CacheSnapshotId, usize),
+    storage: StorageSnapshotId,
     account_data: CacheSnapshotId,
     preimages: CacheSnapshotId,
 }

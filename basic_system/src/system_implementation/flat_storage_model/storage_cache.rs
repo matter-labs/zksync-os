@@ -10,6 +10,7 @@ use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
 use zk_ee::common_structs::cache_record::{Appearance, CacheRecord};
 use zk_ee::common_structs::history_counter::HistoryCounter;
+use zk_ee::common_structs::history_counter::HistoryCounterSnapshotId;
 use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::internal::InternalError;
@@ -33,7 +34,10 @@ type AddressItem<'a, K, V, A> =
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub struct TransactionId(pub u32);
 
-pub type StorageSnapshotId = (CacheSnapshotId, usize);
+pub struct StorageSnapshotId {
+    pub cache: CacheSnapshotId,
+    pub counter: HistoryCounterSnapshotId,
+}
 
 /// EE-specific IO charging.
 pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
@@ -144,7 +148,10 @@ where
 
     #[track_caller]
     pub fn start_frame(&mut self) -> StorageSnapshotId {
-        (self.cache.snapshot(), self.evm_refunds_counter.snapshot())
+        StorageSnapshotId {
+            cache: self.cache.snapshot(),
+            counter: self.evm_refunds_counter.snapshot(),
+        }
     }
 
     #[track_caller]
@@ -154,8 +161,8 @@ where
         rollback_handle: Option<&StorageSnapshotId>,
     ) -> Result<(), InternalError> {
         if let Some(x) = rollback_handle {
-            self.evm_refunds_counter.rollback(x.1);
-            self.cache.rollback(x.0)
+            self.evm_refunds_counter.rollback(x.counter);
+            self.cache.rollback(x.cache)
         } else {
             Ok(())
         }
