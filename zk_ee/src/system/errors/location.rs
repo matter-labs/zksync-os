@@ -35,6 +35,7 @@ macro_rules! location {
 }
 
 impl core::fmt::Display for ErrorLocation {
+    #[cfg_attr(not(feature = "error_origins"), allow(unused_variables))]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         #[cfg(feature = "error_origins")]
         {

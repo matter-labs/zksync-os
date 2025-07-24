@@ -1,5 +1,6 @@
 use super::{
     cascade::{CascadedError, ICascadedInner},
+    context::{contextualized::Contextualized, ErrorContext},
     interface::{InterfaceError, InterfaceErrorKind},
     internal::InternalError,
     location::ErrorLocation,
@@ -32,7 +33,7 @@ impl<F: Subsystem> SubsystemError<F> {
         self,
         loc: ErrorLocation,
     ) -> SubsystemError<T> {
-        SubsystemError::Cascaded(CascadedError(self.into(), loc))
+        SubsystemError::Cascaded(CascadedError(self.into(), loc.into()))
     }
 }
 
@@ -221,5 +222,28 @@ impl<S: Subsystem> From<RuntimeError> for SubsystemError<S> {
 impl<S: Subsystem> From<InternalError> for SubsystemError<S> {
     fn from(v: InternalError) -> Self {
         SubsystemError::LeafDefect(v)
+    }
+}
+
+impl<S: Subsystem, E> Contextualized<SubsystemError<S>> for E
+where
+    E: Into<SubsystemError<S>>,
+{
+    fn with_context_inner<F>(self, f: F) -> SubsystemError<S>
+    where
+        F: FnOnce() -> ErrorContext,
+    {
+        match Into::into(self) {
+            SubsystemError::Cascaded(e) => SubsystemError::Cascaded(e.with_context(f)),
+            SubsystemError::LeafUsage(interface_error) => {
+                SubsystemError::LeafUsage(interface_error.with_context(f))
+            }
+            SubsystemError::LeafDefect(internal_error) => {
+                SubsystemError::LeafDefect(internal_error.with_context(f))
+            }
+            SubsystemError::LeafRuntime(runtime_error) => {
+                SubsystemError::LeafRuntime(runtime_error.with_context(f))
+            }
+        }
     }
 }

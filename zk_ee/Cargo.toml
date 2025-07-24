@@ -25,7 +25,7 @@ paste = "1.0.15"
 
 [features]
 testing = ["serde", "ruint/serde"]
-default = ["testing", "error_origins"]
+default = ["testing", "error_origins", "detailed_errors"]
 cycle_marker = ["cycle_marker/log_to_file"]
 error_origins = []
 detailed_errors = []

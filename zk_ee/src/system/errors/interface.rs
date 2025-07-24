@@ -1,4 +1,5 @@
 use super::{
+    context::{contextualized::Contextualized, ErrorContext},
     location::{ErrorLocation, Localizable},
     metadata::Metadata,
 };
@@ -18,12 +19,19 @@ macro_rules! interface_error {
     };
 }
 
-#[derive(Debug)]
-pub struct AsInterfaceError<E>(pub E);
-
 impl<T: InterfaceErrorKind> Localizable for InterfaceError<T> {
     fn get_location(&self) -> ErrorLocation {
         let InterfaceError(_, meta) = self;
         meta.location
+    }
+}
+
+impl<T: InterfaceErrorKind> Contextualized<InterfaceError<T>> for InterfaceError<T> {
+    fn with_context_inner<F>(self, f: F) -> InterfaceError<T>
+    where
+        F: FnOnce() -> ErrorContext,
+    {
+        let Self(e, meta) = self;
+        Self(e, meta.replace_context(f()))
     }
 }

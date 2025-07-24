@@ -1,4 +1,5 @@
 use super::{
+    context::{contextualized::Contextualized, ErrorContext},
     location::{ErrorLocation, Localizable},
     metadata::Metadata,
 };
@@ -22,5 +23,14 @@ impl Localizable for InternalError {
     fn get_location(&self) -> ErrorLocation {
         let InternalError(_, meta) = self;
         meta.location
+    }
+}
+impl Contextualized<InternalError> for InternalError {
+    fn with_context_inner<F>(self, f: F) -> InternalError
+    where
+        F: FnOnce() -> ErrorContext,
+    {
+        let Self(e, meta) = self;
+        Self(e, meta.replace_context(f()))
     }
 }
