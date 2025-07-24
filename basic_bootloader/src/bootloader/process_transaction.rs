@@ -349,7 +349,7 @@ where
             success,
         )?;
 
-        // Add back the intrinsic native charged in [get_resources_for_tx],
+        // Add back the intrinsic native charged in get_resources_for_tx,
         // as initial_resources doesn't include them.
         let computational_native_used = resources_before_refund
             .diff(initial_resources)
@@ -683,7 +683,7 @@ where
             )?
         } else {
             // Compute gas used following the same logic as in normal execution
-            // TODO: remove when simulation flow is simplified
+            // TODO: remove when simulation flow runs validation
             let (pubdata_spent, to_charge_for_pubdata) =
                 get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
             let (_gas_refund, gas_used) = Self::compute_gas_refund(
@@ -696,7 +696,7 @@ where
             (gas_used, pubdata_spent)
         };
 
-        // Add back the intrinsic native charged in [get_resources_for_tx],
+        // Add back the intrinsic native charged in get_resources_for_tx,
         // as initial_resources doesn't include them.
         let computational_native_used = resources_before_refund
             .diff(initial_resources)
