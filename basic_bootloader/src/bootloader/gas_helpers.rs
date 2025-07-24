@@ -8,11 +8,12 @@ use zk_ee::system::{Computational, Resources};
 use super::*;
 
 pub struct ResourcesForTx<S: EthereumLikeTypes> {
-    // Resources to run the transaction
+    // Resources to run the transaction.
+    // These will be capped to MAX_NATIVE_COMPUTATIONAL, to prevent
+    // transaction from using too many native computational resources.
     pub main_resources: S::Resources,
-    /// Resources that are withheld from the transaction's
-    /// execution to ensure that it does not use too many native computational resources.
-    /// They are reclaimed at the end of the transaction and used to charge the pubdata.
+    /// Resources in excess of MAX_NATIVE_COMPUTATIONAL.
+    /// These resources can only be used for paying for pubdata.
     pub withheld: S::Resources,
     /// Computational native charged for as intrinsic
     pub intrinsic_computational_native_charged: u64,
