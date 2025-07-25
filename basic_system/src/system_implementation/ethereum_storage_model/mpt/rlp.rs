@@ -18,18 +18,16 @@ pub(crate) fn encode_list_len_into_buffer(
 ) {
     if list_concatenation_len <= 55 {
         buffer.write_byte(0xc0 + (list_concatenation_len as u8));
+    } else if list_concatenation_len < 1 << 8 {
+        buffer.write_slice(&[0xf8, list_concatenation_len as u8]);
+    } else if list_concatenation_len < 1 << 16 {
+        buffer.write_slice(&[
+            0xf9,
+            (list_concatenation_len >> 8) as u8,
+            list_concatenation_len as u8,
+        ]);
     } else {
-        if list_concatenation_len < 1 << 8 {
-            buffer.write_slice(&[0xf8, list_concatenation_len as u8]);
-        } else if list_concatenation_len < 1 << 16 {
-            buffer.write_slice(&[
-                0xf9,
-                (list_concatenation_len >> 8) as u8,
-                list_concatenation_len as u8,
-            ]);
-        } else {
-            unreachable!()
-        }
+        unreachable!()
     }
 }
 

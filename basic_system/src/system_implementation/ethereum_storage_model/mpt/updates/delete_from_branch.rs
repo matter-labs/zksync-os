@@ -141,7 +141,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                     // we need to glue them
                     let existing_extension = self.extension_nodes[parent.index()];
                     debug_assert_eq!(existing_extension.child_node, branch_node);
-                    let _ = path.ascend(existing_extension.path_segment);
+                    path.ascend(existing_extension.path_segment);
                     let grand_parent_branch_index = path.ascend_branch()?;
 
                     (

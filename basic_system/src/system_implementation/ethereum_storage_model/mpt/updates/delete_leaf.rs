@@ -30,8 +30,6 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             debug_assert!(parent_node.is_empty() == false);
             if parent_node.is_branch() {
                 self.delete_from_branch_node(parent_node, path, preimages_oracle, interner, hasher)
-            } else if parent_node.is_extension() {
-                Err(())
             } else {
                 Err(())
             }

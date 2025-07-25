@@ -281,27 +281,25 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             if path.is_empty() {
                 // Terminating extension
                 Err(())
-            } else {
-                if common_prefix_len == existing_extension.path_segment.len() {
-                    // we went thought all the extension
-                    let child_node = existing_extension.child_node;
-                    if child_node.is_unlinked() {
-                        Ok(DescendPath::UnreferencedPathEncountered {
-                            last_known_node: current_node,
-                            branch_index: 0,
-                            next_key: existing_extension.next_node_key,
-                        })
-                    } else {
-                        Ok(DescendPath::Follow {
-                            next_node: child_node,
-                        })
-                    }
+            } else if common_prefix_len == existing_extension.path_segment.len() {
+                // we went thought all the extension
+                let child_node = existing_extension.child_node;
+                if child_node.is_unlinked() {
+                    Ok(DescendPath::UnreferencedPathEncountered {
+                        last_known_node: current_node,
+                        branch_index: 0,
+                        next_key: existing_extension.next_node_key,
+                    })
                 } else {
-                    Ok(DescendPath::PathDiverged {
-                        alternative_node: current_node,
-                        common_prefix_len,
+                    Ok(DescendPath::Follow {
+                        next_node: child_node,
                     })
                 }
+            } else {
+                Ok(DescendPath::PathDiverged {
+                    alternative_node: current_node,
+                    common_prefix_len,
+                })
             }
         } else if current_node.is_branch() {
             let existing_branch = &self.branch_nodes[current_node.index()];
@@ -324,31 +322,24 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 } else {
                     Err(())
                 }
+            } else if child_node.is_empty() {
+                Ok(DescendPath::EmptyBranchTaken {
+                    branch_node: current_node,
+                    branch_index,
+                })
+            } else if child_node.is_unreferenced_value_in_branch() {
+                let opaque = &self.branch_unreferenced_values[child_node.index()];
+                Ok(DescendPath::UnreferencedPathEncountered {
+                    last_known_node: current_node,
+                    branch_index,
+                    next_key: opaque.encoding,
+                })
+            } else if child_node.is_branch() || child_node.is_extension() || child_node.is_leaf() {
+                Ok(DescendPath::Follow {
+                    next_node: child_node,
+                })
             } else {
-                if child_node.is_empty() {
-                    Ok(DescendPath::EmptyBranchTaken {
-                        branch_node: current_node,
-                        branch_index,
-                    })
-                } else {
-                    if child_node.is_unreferenced_value_in_branch() {
-                        let opaque = &self.branch_unreferenced_values[child_node.index()];
-                        Ok(DescendPath::UnreferencedPathEncountered {
-                            last_known_node: current_node,
-                            branch_index,
-                            next_key: opaque.encoding,
-                        })
-                    } else if child_node.is_branch()
-                        || child_node.is_extension()
-                        || child_node.is_leaf()
-                    {
-                        Ok(DescendPath::Follow {
-                            next_node: child_node,
-                        })
-                    } else {
-                        Err(())
-                    }
-                }
+                Err(())
             }
         } else {
             Err(())

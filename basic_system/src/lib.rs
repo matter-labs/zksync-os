@@ -28,6 +28,9 @@
 #![allow(clippy::result_unit_err)]
 #![allow(clippy::double_must_use)]
 #![allow(clippy::explicit_auto_deref)]
+#![allow(clippy::manual_div_ceil)]
+#![allow(clippy::len_zero)]
+#![allow(clippy::comparison_chain)]
 
 extern crate alloc;
 
