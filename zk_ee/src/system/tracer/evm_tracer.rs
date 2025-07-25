@@ -7,12 +7,12 @@ pub trait EvmTracer<S: SystemTypes> {
     fn before_evm_interpreter_execution_step(
         &mut self,
         opcode: u8,
-        interpreter_state: &impl EvmFrameInterface<S>,
+        frame_state: &impl EvmFrameInterface<S>,
     );
     fn after_evm_interpreter_execution_step(
         &mut self,
         opcode: u8,
-        interpreter_state: &impl EvmFrameInterface<S>,
+        frame_state: &impl EvmFrameInterface<S>,
     );
 }
 
@@ -33,7 +33,7 @@ impl<S: SystemTypes> EvmTracer<S> for NopEvmTracer {
     fn before_evm_interpreter_execution_step(
         &mut self,
         _opcode: u8,
-        _interpreter_state: &impl EvmFrameInterface<S>,
+        _frame_state: &impl EvmFrameInterface<S>,
     ) {
         unreachable!()
     }
@@ -41,7 +41,7 @@ impl<S: SystemTypes> EvmTracer<S> for NopEvmTracer {
     fn after_evm_interpreter_execution_step(
         &mut self,
         _opcode: u8,
-        _interpreter_state: &impl EvmFrameInterface<S>,
+        _frame_state: &impl EvmFrameInterface<S>,
     ) {
         unreachable!()
     }
