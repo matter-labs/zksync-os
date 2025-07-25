@@ -181,7 +181,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             }
 
             if tracer.should_call_before_evm_execution_step() {
-                tracer.before_interpreter_execution_step(opcode, EvmStateForTracer::from(&*self));
+                tracer.before_interpreter_execution_step(opcode, EvmFrameForTracer::from(&*self));
             }
 
             self.instruction_pointer += 1;
@@ -344,7 +344,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 });
 
             if tracer.should_call_after_evm_execution_step() {
-                tracer.after_interpreter_execution_step(opcode, EvmStateForTracer::from(&*self));
+                tracer.after_interpreter_execution_step(opcode, EvmFrameForTracer::from(&*self));
             }
 
             if Self::PRINT_OPCODES {

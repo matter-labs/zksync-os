@@ -5,7 +5,7 @@
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use zk_ee::system::{
-    tracer::{evm_state_for_tracer::EvmStateForTracer, Tracer},
+    tracer::{evm_state_for_tracer::EvmFrameForTracer, Tracer},
     CallModifier, CallOrDeployResultRef, EthereumLikeTypes, ExecutionEnvironmentLaunchParams,
     Resources, SystemTypes,
 };
@@ -78,12 +78,12 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
     }
 
     #[inline(always)]
-    fn should_call_on_call_or_deployment(&self) -> bool {
+    fn should_call_on_new_execution_frame(&self) -> bool {
         true
     }
 
     #[inline(always)]
-    fn should_call_after_call_or_deployment(&self) -> bool {
+    fn should_call_after_execution_frame_completed(&self) -> bool {
         true
     }
 
@@ -100,18 +100,18 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
     fn before_interpreter_execution_step(
         &mut self,
         _opcode: u8,
-        _interpreter_state: EvmStateForTracer<S>,
+        _interpreter_state: EvmFrameForTracer<S>,
     ) {
     }
 
     fn after_interpreter_execution_step(
         &mut self,
         _opcode: u8,
-        _interpreter_state: EvmStateForTracer<S>,
+        _interpreter_state: EvmFrameForTracer<S>,
     ) {
     }
 
-    fn external_call_or_deployment(&mut self, initial_state: &ExecutionEnvironmentLaunchParams<S>) {
+    fn on_new_execution_frame(&mut self, initial_state: &ExecutionEnvironmentLaunchParams<S>) {
         self.current_call_depth += 1;
 
         self.unfinished_calls.push(Call {
@@ -129,7 +129,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         })
     }
 
-    fn external_call_or_deployment_completed(
+    fn after_execution_frame_completed(
         &mut self,
         result: Option<(&S::Resources, CallOrDeployResultRef<S>)>,
     ) {

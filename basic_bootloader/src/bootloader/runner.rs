@@ -257,9 +257,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         // resources are checked and spent, so we continue with actual transition of control flow
 
-        if tracer.should_call_on_call_or_deployment() {
+        if tracer.should_call_on_new_execution_frame() {
             // Note that for tracing we treat failure on preparation step as failure before external call started
-            tracer.external_call_or_deployment(&external_call_launch_params);
+            tracer.on_new_execution_frame(&external_call_launch_params);
         }
 
         // We create a new frame for callee, should include transfer and
@@ -301,8 +301,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             )
         };
 
-        if tracer.should_call_after_call_or_deployment() {
-            tracer.external_call_or_deployment_completed(
+        if tracer.should_call_after_execution_frame_completed() {
+            tracer.after_execution_frame_completed(
                 callee_frame_execution_result
                     .as_ref()
                     .map(|(resources_returned, call_result)| {
@@ -675,8 +675,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })?;
         }
 
-        if tracer.should_call_on_call_or_deployment() {
-            tracer.external_call_or_deployment(&launch_params);
+        if tracer.should_call_on_new_execution_frame() {
+            tracer.on_new_execution_frame(&launch_params);
         }
 
         match self.deployment_execute_constructor_frame(ee_type, launch_params, heap, tracer) {
@@ -690,9 +690,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     "Return from constructor call, success = {deployment_success}\n",
                 ));
 
-                if tracer.should_call_after_call_or_deployment() {
+                if tracer.should_call_after_execution_frame_completed() {
                     // TODO resources
-                    tracer.external_call_or_deployment_completed(Some((
+                    tracer.after_execution_frame_completed(Some((
                         &resources_returned,
                         CallOrDeployResultRef::DeploymentResult(&deployment_result),
                     )));
@@ -706,8 +706,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })
             }
             Err(e) => {
-                if tracer.should_call_after_call_or_deployment() {
-                    tracer.external_call_or_deployment_completed(None);
+                if tracer.should_call_after_execution_frame_completed() {
+                    tracer.after_execution_frame_completed(None);
                 }
                 Err(e)
             }

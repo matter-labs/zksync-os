@@ -7,7 +7,7 @@ use ruint::aliases::U256;
 use serde::Serialize;
 use zk_ee::{
     system::{
-        tracer::{evm_state_for_tracer::EvmStateForTracer, Tracer},
+        tracer::{evm_state_for_tracer::EvmFrameForTracer, Tracer},
         CallOrDeployResultRef, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources,
         SystemTypes,
     },
@@ -114,12 +114,12 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
     }
 
     #[inline(always)]
-    fn should_call_on_call_or_deployment(&self) -> bool {
+    fn should_call_on_new_execution_frame(&self) -> bool {
         true
     }
 
     #[inline(always)]
-    fn should_call_after_call_or_deployment(&self) -> bool {
+    fn should_call_after_execution_frame_completed(&self) -> bool {
         true
     }
 
@@ -136,7 +136,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
     fn before_interpreter_execution_step(
         &mut self,
         opcode: u8,
-        interpreter_state: EvmStateForTracer<S>,
+        interpreter_state: EvmFrameForTracer<S>,
     ) {
         if self.limit != 0 && self.steps_counter > self.limit {
             return;
@@ -210,11 +210,11 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
     fn after_interpreter_execution_step(
         &mut self,
         _opcode: u8,
-        _interpreter_state: EvmStateForTracer<S>,
+        _interpreter_state: EvmFrameForTracer<S>,
     ) {
     }
 
-    fn external_call_or_deployment(&mut self, _request: &ExecutionEnvironmentLaunchParams<S>) {
+    fn on_new_execution_frame(&mut self, _request: &ExecutionEnvironmentLaunchParams<S>) {
         self.current_call_depth += 1;
 
         if self.enable_storage {
@@ -227,7 +227,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
         }
     }
 
-    fn external_call_or_deployment_completed(
+    fn after_execution_frame_completed(
         &mut self,
         _result: Option<(&S::Resources, CallOrDeployResultRef<S>)>,
     ) {

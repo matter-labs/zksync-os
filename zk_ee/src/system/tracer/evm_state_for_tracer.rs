@@ -6,7 +6,7 @@ use crate::{memory::slice_vec::SliceVec, types_config::SystemIOTypesConfig};
 
 use super::SystemTypes;
 
-pub struct EvmStateForTracer<'a, S: SystemTypes> {
+pub struct EvmFrameForTracer<'a, S: SystemTypes> {
     /// Instruction pointer
     pub instruction_pointer: usize,
     /// Resources left
