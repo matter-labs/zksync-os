@@ -6,8 +6,8 @@ use crate::STACK_SIZE;
 use alloc::boxed::Box;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use ruint::aliases::U256;
+use zk_ee::system::evm::EvmStackInterface;
 use zk_ee::system::logger::Logger;
-use zk_ee::system::tracer::evm_tracer::EvmStackForTracer;
 
 pub struct EvmStack<A: Allocator> {
     buffer: Box<[MaybeUninit<U256>; STACK_SIZE], A>,
@@ -336,9 +336,31 @@ impl<A: Allocator> EvmStack<A> {
     }
 }
 
-impl<'a, A: Allocator> From<&'a EvmStack<A>> for EvmStackForTracer<'a> {
-    fn from(stack: &'a EvmStack<A>) -> Self {
-        unsafe { EvmStackForTracer::from_parts(&stack.buffer, stack.len) }
+impl<A: Allocator> EvmStackInterface for EvmStack<A> {
+    fn to_slice(&self) -> &[U256] {
+        unsafe { core::slice::from_raw_parts(self.buffer.as_ptr().cast::<U256>(), self.len) }
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn peek_n(&self, index: usize) -> Result<&U256, zk_ee::system::evm::EvmStackError> {
+        unsafe {
+            if self.len < index + 1 {
+                return Err(zk_ee::system::evm::EvmStackError::StackUnderflow);
+            }
+            let offset = self.len - (index + 1);
+            let p0 = self
+                .buffer
+                .as_ptr()
+                .add(offset)
+                .as_ref()
+                .expect("Should not be null")
+                .assume_init_ref();
+
+            Ok(p0)
+        }
     }
 }
 

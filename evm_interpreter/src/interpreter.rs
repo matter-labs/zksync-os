@@ -3,6 +3,7 @@ use core::fmt::Write;
 use core::ops::Range;
 use errors::EvmSubsystemError;
 use native_resource_constants::STEP_NATIVE_COST;
+use zk_ee::system::evm::{EvmFrameInterface, EvmStackInterface};
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{
@@ -184,7 +185,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             if tracer.evm_tracer().is_on_evm_execution_step_enabled() {
                 tracer
                     .evm_tracer()
-                    .before_evm_interpreter_execution_step(opcode, EvmFrameForTracer::from(&*self));
+                    .before_evm_interpreter_execution_step(opcode, self);
             }
 
             self.instruction_pointer += 1;
@@ -349,7 +350,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             if tracer.evm_tracer().is_after_evm_execution_step_enabled() {
                 tracer
                     .evm_tracer()
-                    .after_evm_interpreter_execution_step(opcode, EvmFrameForTracer::from(&*self));
+                    .after_evm_interpreter_execution_step(opcode, self);
             }
 
             if Self::PRINT_OPCODES {

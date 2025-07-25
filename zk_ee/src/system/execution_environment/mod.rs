@@ -6,6 +6,7 @@
 
 pub mod call_params;
 pub mod environment_state;
+pub mod evm;
 pub mod interaction_params;
 use alloc::boxed::Box;
 use core::any::Any;

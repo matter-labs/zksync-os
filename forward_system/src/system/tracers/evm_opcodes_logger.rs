@@ -1,16 +1,14 @@
 // Reference implementation of EVM opcodes logger. Not feature complete for production
 
-use std::{collections::HashMap, marker::PhantomData, ops::Deref};
+use std::{collections::HashMap, marker::PhantomData};
 
 use evm_interpreter::{opcodes::OpCode, ERGS_PER_GAS};
 use ruint::aliases::U256;
 use serde::Serialize;
 use zk_ee::{
     system::{
-        tracer::{
-            evm_tracer::{EvmFrameForTracer, EvmTracer},
-            Tracer,
-        },
+        evm::{EvmFrameInterface, EvmStackInterface},
+        tracer::{evm_tracer::EvmTracer, Tracer},
         CallOrDeployResultRef, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources,
         SystemTypes,
     },
@@ -119,7 +117,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
     fn before_evm_interpreter_execution_step(
         &mut self,
         opcode: u8,
-        interpreter_state: EvmFrameForTracer<S>,
+        interpreter_state: &impl EvmFrameInterface<S>,
     ) {
         if self.limit != 0 && self.steps_counter > self.limit {
             return;
@@ -131,19 +129,19 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
         let opcode_decoded = OpCode::try_from_u8(opcode).map(|x| x.as_str().to_owned());
 
         let memory = if self.enable_memory {
-            Some(interpreter_state.heap.deref().to_vec())
+            Some(interpreter_state.heap().to_vec())
         } else {
             None
         };
 
         let stack = if self.enable_stack {
-            Some(interpreter_state.stack.to_slice().to_vec())
+            Some(interpreter_state.stack().to_slice().to_vec())
         } else {
             None
         };
 
         let return_data = if self.enable_returndata {
-            Some(interpreter_state.returndata.to_vec())
+            Some(interpreter_state.return_data().to_vec())
         } else {
             None
         };
@@ -175,12 +173,12 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
         };
 
         tx_log.steps.push(EvmExecutionStep {
-            pc: interpreter_state.instruction_pointer,
+            pc: interpreter_state.instruction_pointer(),
             opcode_raw: opcode,
             opcode: opcode_decoded,
-            gas: interpreter_state.resources.ergs().0 / ERGS_PER_GAS,
+            gas: interpreter_state.resources().ergs().0 / ERGS_PER_GAS,
             memory,
-            mem_size: interpreter_state.heap.len(),
+            mem_size: interpreter_state.heap().len(),
             stack,
             return_data,
             storage,
@@ -193,7 +191,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
     fn after_evm_interpreter_execution_step(
         &mut self,
         _opcode: u8,
-        _interpreter_state: EvmFrameForTracer<S>,
+        _interpreter_state: &impl EvmFrameInterface<S>,
     ) {
         unreachable!()
     }

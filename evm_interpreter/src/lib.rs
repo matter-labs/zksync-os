@@ -31,7 +31,7 @@ use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::{internal::InternalError, system::SystemError};
-use zk_ee::system::tracer::evm_tracer::{EvmFrameForTracer, EvmStackForTracer};
+use zk_ee::system::evm::{EvmFrameInterface, EvmStackInterface};
 use zk_ee::system::{EthereumLikeTypes, Resource, Resources, System, SystemTypes};
 
 use alloc::vec::Vec;
@@ -90,6 +90,56 @@ pub struct Interpreter<'a, S: SystemTypes> {
     pub is_static: bool,
     /// Is interpreter call executing construction code.
     pub is_constructor: bool,
+}
+
+impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for Interpreter<'ee, S> {
+    fn instruction_pointer(&self) -> usize {
+        self.instruction_pointer
+    }
+
+    fn resources(&self) -> &<S as SystemTypes>::Resources {
+        &self.gas.resources
+    }
+
+    fn stack(&self) -> &impl EvmStackInterface {
+        &self.stack
+    }
+
+    fn caller(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
+        self.caller
+    }
+
+    fn address(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
+        self.address
+    }
+
+    fn calldata(&self) -> &[u8] {
+        &self.calldata
+    }
+
+    fn return_data(&self) -> &[u8] {
+        &self.returndata
+    }
+
+    fn heap(&self) -> &[u8] {
+        &self.heap
+    }
+
+    fn bytecode(&self) -> &[u8] {
+        &self.bytecode
+    }
+
+    fn call_value(&self) -> &U256 {
+        &self.call_value
+    }
+
+    fn is_static(&self) -> bool {
+        self.is_static
+    }
+
+    fn is_constructor(&self) -> bool {
+        self.is_constructor
+    }
 }
 
 pub const STACK_SIZE: usize = 1024;
@@ -429,25 +479,5 @@ impl ExitCode {
                 | Self::CreateContractStartingWithEF
                 | Self::CreateInitcodeSizeLimit
         )
-    }
-}
-
-impl<'a, S: SystemTypes> From<&'a Interpreter<'a, S>> for EvmFrameForTracer<'a, S> {
-    fn from(interpreter: &'a Interpreter<'a, S>) -> Self {
-        Self {
-            instruction_pointer: interpreter.instruction_pointer,
-            resources: &interpreter.gas.resources,
-            stack: EvmStackForTracer::from(&interpreter.stack),
-            caller: interpreter.caller,
-            address: interpreter.address,
-            calldata: interpreter.calldata,
-            returndata: interpreter.returndata,
-            heap: &interpreter.heap,
-            returndata_location: interpreter.returndata_location.clone(),
-            bytecode: interpreter.bytecode,
-            call_value: &interpreter.call_value,
-            is_static: interpreter.is_static,
-            is_constructor: interpreter.is_constructor,
-        }
     }
 }
