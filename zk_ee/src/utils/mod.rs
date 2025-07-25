@@ -1,6 +1,7 @@
 pub mod aligned_buffer;
 pub mod aligned_vector;
 pub mod bytes32;
+pub mod cheap_clone;
 pub mod convenience;
 pub mod integer_utils;
 pub mod stack_linked_list;
