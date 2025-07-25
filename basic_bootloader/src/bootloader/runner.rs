@@ -16,6 +16,7 @@ use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, logger::Logger, *};
 use zk_ee::wrap_error;
 use zk_ee::{internal_error, out_of_ergs_error};
@@ -31,6 +32,7 @@ pub fn run_till_completion<'a, S: EthereumLikeTypes>(
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
     initial_request: ExecutionEnvironmentSpawnRequest<S>,
+    tracer: &mut impl Tracer<S>,
 ) -> Result<TransactionEndPoint<'a, S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
@@ -176,6 +178,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         ee_type: ExecutionEnvironmentType,
         call_request: ExternalCallRequest<S>,
         heap: SliceVec<u8>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -254,6 +257,11 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         // resources are checked and spent, so we continue with actual transition of control flow
 
+        if tracer.should_call_on_call_or_deployment() {
+            // Note that for tracing we treat failure on preparation step as failure before external call started
+            tracer.external_call_or_deployment(&external_call_launch_params);
+        }
+
         // We create a new frame for callee, should include transfer and
         // callee execution
         let rollback_handle = self.system.start_global_frame()?;
@@ -289,8 +297,23 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 heap,
                 next_ee_version,
                 rollback_handle,
+                tracer,
             )
         };
+
+        if tracer.should_call_after_call_or_deployment() {
+            tracer.external_call_or_deployment_completed(
+                callee_frame_execution_result
+                    .as_ref()
+                    .map(|(resources_returned, call_result)| {
+                        Some((
+                            resources_returned,
+                            CallOrDeployResultRef::CallResult(call_result),
+                        ))
+                    })
+                    .unwrap_or_default(),
+            );
+        }
 
         let (resources_returned_from_callee, call_result) = callee_frame_execution_result?;
         resources_in_caller_frame.reclaim(resources_returned_from_callee);
@@ -392,6 +415,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         heap: SliceVec<u8>,
         next_ee_version: u8,
         rollback_handle: SystemFrameSnapshot<S>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -401,7 +425,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let new_ee_type = new_vm.ee_type();
 
         let mut preemption = new_vm
-            .start_executing_frame(self.system, external_call_launch_params, heap)
+            .start_executing_frame(self.system, external_call_launch_params, heap, tracer)
             .map_err(wrap_error!())?;
 
         loop {
@@ -543,6 +567,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         ee_type: ExecutionEnvironmentType,
         deployment_parameters: DeploymentPreparationParameters<S>,
         heap: SliceVec<u8>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<CompletedDeployment<'external, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -650,7 +675,11 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })?;
         }
 
-        match self.deployment_execute_constructor_frame(ee_type, launch_params, heap) {
+        if tracer.should_call_on_call_or_deployment() {
+            tracer.external_call_or_deployment(&launch_params);
+        }
+
+        match self.deployment_execute_constructor_frame(ee_type, launch_params, heap, tracer) {
             Ok((deployment_success, mut resources_returned, deployment_result)) => {
                 // Now finish constructor frame
                 self.system.finish_global_frame(
@@ -661,6 +690,14 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     "Return from constructor call, success = {deployment_success}\n",
                 ));
 
+                if tracer.should_call_after_call_or_deployment() {
+                    // TODO resources
+                    tracer.external_call_or_deployment_completed(Some((
+                        &resources_returned,
+                        CallOrDeployResultRef::DeploymentResult(&deployment_result),
+                    )));
+                }
+
                 resources_returned.reclaim(resources_for_deployer);
 
                 Ok(CompletedDeployment {
@@ -668,7 +705,12 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     deployment_result,
                 })
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                if tracer.should_call_after_call_or_deployment() {
+                    tracer.external_call_or_deployment_completed(None);
+                }
+                Err(e)
+            }
         }
     }
 
@@ -677,6 +719,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         ee_type: ExecutionEnvironmentType,
         launch_params: ExecutionEnvironmentLaunchParams<S>,
         heap: SliceVec<u8>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<
         (
             bool,
@@ -693,7 +736,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let constructor_ee_type = constructor.ee_type();
 
         let mut preemption = constructor
-            .start_executing_frame(self.system, launch_params, heap)
+            .start_executing_frame(self.system, launch_params, heap, tracer)
             .map_err(wrap_error!())?;
 
         let CompletedDeployment {

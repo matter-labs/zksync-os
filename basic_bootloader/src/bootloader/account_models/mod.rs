@@ -13,6 +13,7 @@ pub use abstract_account::AA;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::system::tracer::Tracer;
 use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system::System;
 use zk_ee::system::*;
@@ -83,6 +84,7 @@ where
         caller_is_code: bool,
         caller_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError>;
 
     /// Execute transaction
@@ -95,6 +97,7 @@ where
         transaction: &mut ZkSyncTransaction,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError>;
 
     ///
@@ -134,6 +137,7 @@ where
         from: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError>;
 
     ///
@@ -150,5 +154,6 @@ where
         paymaster: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError>;
 }

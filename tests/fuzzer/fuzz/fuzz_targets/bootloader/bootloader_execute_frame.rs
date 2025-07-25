@@ -16,6 +16,7 @@ use zk_ee::system::ExecutionEnvironmentLaunchParams;
 use zk_ee::system::NopResultKeeper;
 use zk_ee::system::{EnvironmentParameters, ExternalCallRequest, Resource, Resources, System};
 use zk_ee::utils::Bytes32;
+use zk_ee::system::tracer::NopTracer;
 
 extern crate alloc;
 
@@ -102,7 +103,7 @@ fn fuzz(input: FuzzInput) {
         return;
     };
 
-    let _ = vm_state.start_executing_frame(&mut system, ee_launch_params, heap);
+    let _ = vm_state.start_executing_frame(&mut system, ee_launch_params, heap, &mut NopTracer {});
 
     let Ok(_) = system.finish_global_frame(None) else {
         return;

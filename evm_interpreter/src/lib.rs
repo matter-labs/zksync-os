@@ -31,6 +31,7 @@ use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::{internal::InternalError, system::SystemError};
+use zk_ee::system::tracer::{EvmStackForTracer, EvmStateForTracer};
 use zk_ee::system::{EthereumLikeTypes, Resource, Resources, System, SystemTypes};
 
 use alloc::vec::Vec;
@@ -60,7 +61,7 @@ pub const ARTIFACTS_CACHING_CODE_VERSION_BYTE: u8 = 1u8;
 
 // this is the interpreter that can be found in Reth itself, modified for purposes of having abstract view
 // on memory and resources
-pub struct Interpreter<'a, S: EthereumLikeTypes> {
+pub struct Interpreter<'a, S: SystemTypes> {
     /// Instruction pointer.
     pub instruction_pointer: usize,
     /// Implementation of gas accounting on top of system resources.
@@ -428,5 +429,25 @@ impl ExitCode {
                 | Self::CreateContractStartingWithEF
                 | Self::CreateInitcodeSizeLimit
         )
+    }
+}
+
+impl<'a, S: SystemTypes> From<&'a Interpreter<'a, S>> for EvmStateForTracer<'a, S> {
+    fn from(interpreter: &'a Interpreter<'a, S>) -> Self {
+        Self {
+            instruction_pointer: interpreter.instruction_pointer,
+            resources: &interpreter.gas.resources,
+            stack: EvmStackForTracer::from(&interpreter.stack),
+            caller: interpreter.caller,
+            address: interpreter.address,
+            calldata: interpreter.calldata,
+            returndata: interpreter.returndata,
+            heap: &interpreter.heap,
+            returndata_location: interpreter.returndata_location.clone(),
+            bytecode: interpreter.bytecode,
+            call_value: &interpreter.call_value,
+            is_static: interpreter.is_static,
+            is_constructor: interpreter.is_constructor,
+        }
     }
 }

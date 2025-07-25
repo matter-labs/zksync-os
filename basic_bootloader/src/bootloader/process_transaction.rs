@@ -59,6 +59,7 @@ where
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
         is_first_tx: bool,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<TxProcessingResult<'a>, TxError> {
         let transaction = ZkSyncTransaction::try_from_slice(initial_calldata_buffer)
             .map_err(|_| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
@@ -78,6 +79,7 @@ where
                         memories,
                         transaction,
                         false,
+                        tracer,
                     )
                 }
             }
@@ -87,12 +89,14 @@ where
                 memories,
                 transaction,
                 true,
+                tracer,
             ),
             _ => Self::process_l2_transaction::<Config>(
                 system,
                 system_functions,
                 memories,
                 transaction,
+                tracer,
             ),
         }
     }
@@ -103,6 +107,7 @@ where
         memories: RunnerMemoryBuffers<'a>,
         transaction: ZkSyncTransaction,
         is_priority_op: bool,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<TxProcessingResult<'a>, TxError> {
         // The work done by the bootloader (outside of EE or EOA specific
         // computation) is charged as part of the intrinsic gas cost.
@@ -216,6 +221,7 @@ where
                 native_per_pubdata,
                 &mut resources,
                 withheld_resources,
+                tracer,
             ) {
                 Ok((r, pubdata_used, to_charge_for_pubdata)) => {
                     let pubdata_info = match r {
@@ -383,6 +389,7 @@ where
         native_per_pubdata: U256,
         resources: &mut S::Resources,
         withheld_resources: S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(ExecutionResult<'a>, u64, S::Resources), BootloaderSubsystemError> {
         let _ = system
             .get_logger()
@@ -436,6 +443,7 @@ where
             resources_for_tx,
             &value,
             false,
+            tracer,
         )?;
         *resources = resources_returned;
         system.finish_global_frame(reverted.then_some(&rollback_handle))?;
@@ -480,6 +488,7 @@ where
         system_functions: &mut HooksStorage<S, S::Allocator>,
         mut memories: RunnerMemoryBuffers<'a>,
         mut transaction: ZkSyncTransaction,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<TxProcessingResult<'a>, TxError> {
         let from = transaction.from.read();
         let gas_limit = transaction.gas_limit.read();
@@ -603,6 +612,7 @@ where
                 caller_is_code,
                 caller_nonce,
                 &mut resources,
+                tracer,
             )?
         } else {
             ValidationResult::default()
@@ -627,6 +637,7 @@ where
             validation_pubdata,
             caller_nonce,
             &mut resources,
+            tracer,
         ) {
             Ok((r, pubdata_used, to_charge_for_pubdata)) => {
                 let pubdata_info = match r {
@@ -748,6 +759,7 @@ where
         caller_is_code: bool,
         caller_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ValidationResult, TxError> {
         let _ = system
             .get_logger()
@@ -780,6 +792,7 @@ where
             caller_is_code,
             caller_nonce,
             resources,
+            tracer,
         )?;
 
         // Check nonce has been marked
@@ -808,6 +821,7 @@ where
             gas_price,
             caller_ee_type,
             resources,
+            tracer,
         )?;
 
         // Charge for validation pubdata
@@ -836,6 +850,7 @@ where
         validation_pubdata: u64,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(ExecutionResult<'a>, u64, S::Resources), BootloaderSubsystemError> {
         let _ = system
             .get_logger()
@@ -853,6 +868,7 @@ where
             transaction,
             current_tx_nonce,
             resources,
+            tracer,
         )?;
 
         let _ = system
@@ -892,6 +908,7 @@ where
         gas_price: U256,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         let paymaster = transaction.paymaster.read();
 
@@ -923,6 +940,7 @@ where
                 paymaster,
                 caller_ee_type,
                 resources,
+                tracer,
             )?;
 
             let return_values = Self::validate_and_pay_for_paymaster_transaction(
@@ -935,6 +953,7 @@ where
                 paymaster,
                 caller_ee_type,
                 resources,
+                tracer,
             )?;
             let pre_tx_buffer = transaction.pre_tx_buffer();
             Self::store_paymaster_context_and_check_magic(system, pre_tx_buffer, &return_values)?;
@@ -952,6 +971,7 @@ where
                 from,
                 caller_ee_type,
                 resources,
+                tracer,
             )?;
 
             from

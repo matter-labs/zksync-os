@@ -7,6 +7,7 @@ use alloc::boxed::Box;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use ruint::aliases::U256;
 use zk_ee::system::logger::Logger;
+use zk_ee::system::tracer::EvmStackForTracer;
 
 pub struct EvmStack<A: Allocator> {
     buffer: Box<[MaybeUninit<U256>; STACK_SIZE], A>,
@@ -332,6 +333,12 @@ impl<A: Allocator> EvmStack<A> {
         }
 
         Ok(())
+    }
+}
+
+impl<'a, A: Allocator> From<&'a EvmStack<A>> for EvmStackForTracer<'a> {
+    fn from(stack: &'a EvmStack<A>) -> Self {
+        unsafe { EvmStackForTracer::from_parts(&stack.buffer, stack.len) }
     }
 }
 
