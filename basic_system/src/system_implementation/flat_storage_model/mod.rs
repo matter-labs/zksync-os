@@ -478,6 +478,7 @@ where
             )
     }
 
+    #[cfg(feature = "evm_refunds")]
     fn get_refund_counter(&self) -> u32 {
         *self
             .storage_cache

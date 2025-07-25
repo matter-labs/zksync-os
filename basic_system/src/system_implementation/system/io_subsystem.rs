@@ -383,6 +383,7 @@ where
         Ok(())
     }
 
+    #[cfg(feature = "evm_refunds")]
     fn get_refund_counter(&self) -> u32 {
         self.storage.get_refund_counter()
     }

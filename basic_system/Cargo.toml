@@ -33,6 +33,7 @@ evm-compatibility = []
 default = ["testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
 wrap-in-batch = []
+evm_refunds = ["storage_models/evm_refunds"]
 
 [dev-dependencies]
 hex = {version = "0.4.3"}

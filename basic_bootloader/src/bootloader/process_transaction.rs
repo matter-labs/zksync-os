@@ -1,5 +1,3 @@
-use core::cmp::min;
-
 use super::gas_helpers::get_resources_for_tx;
 use super::transaction::ZkSyncTransaction;
 use super::*;
@@ -1138,11 +1136,16 @@ where
         resources.exhaust_ergs();
 
         // Following EIP-3529, refunds are capped to 1/5 of the gas used
+        #[cfg(feature = "evm_refunds")]
         let evm_refund = {
             let full_refund = system.io.get_refund_counter() as u64;
             let max_refund = gas_used / 5;
-            min(full_refund, max_refund)
+            core::cmp::min(full_refund, max_refund)
         };
+
+        #[cfg(not(feature = "evm_refunds"))]
+        let evm_refund = 0;
+
         gas_used -= evm_refund;
 
         #[cfg(not(feature = "unlimited_native"))]

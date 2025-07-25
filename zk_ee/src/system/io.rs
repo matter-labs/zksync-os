@@ -128,15 +128,16 @@ pub trait IOSubsystem: Sized {
     /// Returns a snapshot to which the system can rollback to on frame finish.
     fn start_io_frame(&mut self) -> Result<<Self as IOSubsystem>::StateSnapshot, InternalError>;
 
-    /// Get current gas refund counter
-    fn get_refund_counter(&self) -> u32;
-
     /// Finishes "local" frame, reverts I/O writes in case of revert.
     /// If `rollback_handle` is provided, will rollback to requested snapshot.
     fn finish_io_frame(
         &mut self,
         rollback_handle: Option<&<Self as IOSubsystem>::StateSnapshot>,
     ) -> Result<(), InternalError>;
+
+    #[cfg(feature = "evm_refunds")]
+    /// Get current gas refund counter
+    fn get_refund_counter(&self) -> u32;
 }
 
 pub trait Maybe<T> {
