@@ -211,7 +211,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         Ok(())
     }
 
-    pub fn log<const N: usize>(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn log<const N: usize>(
+        &mut self,
+        system: &mut System<S>,
+        tracer: &mut impl Tracer<S>,
+    ) -> InstructionResult {
         assert!(N <= MAX_EVENT_TOPICS);
         self.gas.spend_gas_and_native(0, LOG_NATIVE_COST)?;
 
@@ -230,6 +234,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // resize memory
         self.resize_heap(mem_offset, len)?;
         let data = &self.heap[mem_offset..mem_offset + len];
+
+        tracer.on_event(THIS_EE_TYPE, &self.address, &topics, data);
 
         system.io.emit_event(
             ExecutionEnvironmentType::EVM,

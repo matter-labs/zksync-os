@@ -7,7 +7,7 @@ use alloc::boxed::Box;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use ruint::aliases::U256;
 use zk_ee::system::logger::Logger;
-use zk_ee::system::tracer::evm_state_for_tracer::EvmStackForTracer;
+use zk_ee::system::tracer::evm_tracer::EvmStackForTracer;
 
 pub struct EvmStack<A: Allocator> {
     buffer: Box<[MaybeUninit<U256>; STACK_SIZE], A>,

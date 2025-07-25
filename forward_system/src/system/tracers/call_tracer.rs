@@ -5,7 +5,10 @@
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use zk_ee::system::{
-    tracer::{evm_state_for_tracer::EvmFrameForTracer, Tracer},
+    tracer::{
+        evm_tracer::{EvmTracer, NopEvmTracer},
+        Tracer,
+    },
     CallModifier, CallOrDeployResultRef, EthereumLikeTypes, ExecutionEnvironmentLaunchParams,
     Resources, SystemTypes,
 };
@@ -64,26 +67,27 @@ pub struct CallTracer {
     pub unfinished_calls: Vec<Call>,
     pub finished_calls: Vec<Call>,
     pub current_call_depth: usize,
+    nop_evm_tracer: NopEvmTracer,
 }
 
 impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
     #[inline(always)]
-    fn should_call_before_evm_execution_step(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn should_call_after_evm_execution_step(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn should_call_on_new_execution_frame(&self) -> bool {
+    fn is_begin_tx_enabled(&self) -> bool {
         true
     }
 
     #[inline(always)]
-    fn should_call_after_execution_frame_completed(&self) -> bool {
+    fn is_finish_tx_enabled(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn is_on_new_execution_frame_enabled(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn is_after_execution_frame_enabled(&self) -> bool {
         true
     }
 
@@ -97,18 +101,9 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         false
     }
 
-    fn before_interpreter_execution_step(
-        &mut self,
-        _opcode: u8,
-        _interpreter_state: EvmFrameForTracer<S>,
-    ) {
-    }
-
-    fn after_interpreter_execution_step(
-        &mut self,
-        _opcode: u8,
-        _interpreter_state: EvmFrameForTracer<S>,
-    ) {
+    #[inline(always)]
+    fn is_on_event_enabled(&self) -> bool {
+        false
     }
 
     fn on_new_execution_frame(&mut self, initial_state: &ExecutionEnvironmentLaunchParams<S>) {
@@ -189,7 +184,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         self.finished_calls.push(finished_call);
     }
 
-    fn begin_tx(&mut self) {
+    fn begin_tx(&mut self, _calldata: &[u8]) {
         self.current_call_depth = 0;
     }
 
@@ -210,6 +205,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         _key: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::StorageKey,
         _value: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::StorageValue,
     ) {
+        unreachable!()
     }
 
     fn on_storage_write(
@@ -220,5 +216,21 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         _key: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::StorageKey,
         _value: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::StorageValue,
     ) {
+        unreachable!()
+    }
+
+    fn on_event(
+        &mut self,
+        _ee_type: zk_ee::execution_environment_type::ExecutionEnvironmentType,
+        _address: &<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address,
+        _topics: &[<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::EventKey],
+        _data: &[u8],
+    ) {
+        unreachable!()
+    }
+
+    #[inline(always)]
+    fn evm_tracer(&mut self) -> &mut impl EvmTracer<S> {
+        &mut self.nop_evm_tracer
     }
 }

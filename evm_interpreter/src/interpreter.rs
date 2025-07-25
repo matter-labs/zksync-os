@@ -3,6 +3,7 @@ use core::fmt::Write;
 use core::ops::Range;
 use errors::EvmSubsystemError;
 use native_resource_constants::STEP_NATIVE_COST;
+use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{
     logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
@@ -180,8 +181,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 }
             }
 
-            if tracer.should_call_before_evm_execution_step() {
-                tracer.before_interpreter_execution_step(opcode, EvmFrameForTracer::from(&*self));
+            if tracer.evm_tracer().is_on_evm_execution_step_enabled() {
+                tracer
+                    .evm_tracer()
+                    .before_evm_interpreter_execution_step(opcode, EvmFrameForTracer::from(&*self));
             }
 
             self.instruction_pointer += 1;
@@ -331,11 +334,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::TSTORE => self.tstore(system, tracer),
                     opcodes::MCOPY => self.mcopy(),
                     opcodes::GAS => self.gas(),
-                    opcodes::LOG0 => self.log::<0>(system),
-                    opcodes::LOG1 => self.log::<1>(system),
-                    opcodes::LOG2 => self.log::<2>(system),
-                    opcodes::LOG3 => self.log::<3>(system),
-                    opcodes::LOG4 => self.log::<4>(system),
+                    opcodes::LOG0 => self.log::<0>(system, tracer),
+                    opcodes::LOG1 => self.log::<1>(system, tracer),
+                    opcodes::LOG2 => self.log::<2>(system, tracer),
+                    opcodes::LOG3 => self.log::<3>(system, tracer),
+                    opcodes::LOG4 => self.log::<4>(system, tracer),
                     opcodes::SELFDESTRUCT => self.selfdestruct(system),
                     opcodes::CHAINID => self.chainid(system),
                     opcodes::BLOBHASH => self.blobhash(system),
@@ -343,8 +346,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     _ => Err(ExitCode::OpcodeNotFound),
                 });
 
-            if tracer.should_call_after_evm_execution_step() {
-                tracer.after_interpreter_execution_step(opcode, EvmFrameForTracer::from(&*self));
+            if tracer.evm_tracer().is_after_evm_execution_step_enabled() {
+                tracer
+                    .evm_tracer()
+                    .after_evm_interpreter_execution_step(opcode, EvmFrameForTracer::from(&*self));
             }
 
             if Self::PRINT_OPCODES {

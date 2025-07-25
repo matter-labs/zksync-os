@@ -31,7 +31,7 @@ use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::{internal::InternalError, system::SystemError};
-use zk_ee::system::tracer::evm_state_for_tracer::{EvmFrameForTracer, EvmStackForTracer};
+use zk_ee::system::tracer::evm_tracer::{EvmFrameForTracer, EvmStackForTracer};
 use zk_ee::system::{EthereumLikeTypes, Resource, Resources, System, SystemTypes};
 
 use alloc::vec::Vec;

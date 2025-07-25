@@ -179,7 +179,7 @@ pub fn run_proving_inner<
     // Load all transactions from oracle and apply them.
     let (mut oracle, public_input) = ProvingBootloader::<O, L>::run_prepared::<
         BasicBootloaderProvingExecutionConfig,
-    >(oracle, &mut NopResultKeeper, &mut NopTracer {})
+    >(oracle, &mut NopResultKeeper, &mut NopTracer::default())
     .expect("Tried to prove a failing batch");
 
     // disconnect oracle before returning

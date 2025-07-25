@@ -7,7 +7,10 @@ use ruint::aliases::U256;
 use serde::Serialize;
 use zk_ee::{
     system::{
-        tracer::{evm_state_for_tracer::EvmFrameForTracer, Tracer},
+        tracer::{
+            evm_tracer::{EvmFrameForTracer, EvmTracer},
+            Tracer,
+        },
         CallOrDeployResultRef, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources,
         SystemTypes,
     },
@@ -102,38 +105,18 @@ impl<S: SystemTypes> EvmOpcodesLogger<S> {
     }
 }
 
-impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
+impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
     #[inline(always)]
-    fn should_call_before_evm_execution_step(&self) -> bool {
+    fn is_on_evm_execution_step_enabled(&self) -> bool {
         true
     }
 
     #[inline(always)]
-    fn should_call_after_evm_execution_step(&self) -> bool {
+    fn is_after_evm_execution_step_enabled(&self) -> bool {
         false
     }
 
-    #[inline(always)]
-    fn should_call_on_new_execution_frame(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn should_call_after_execution_frame_completed(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn is_on_storage_read_enabled(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn is_on_storage_write_enabled(&self) -> bool {
-        true
-    }
-
-    fn before_interpreter_execution_step(
+    fn before_evm_interpreter_execution_step(
         &mut self,
         opcode: u8,
         interpreter_state: EvmFrameForTracer<S>,
@@ -207,11 +190,49 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
         })
     }
 
-    fn after_interpreter_execution_step(
+    fn after_evm_interpreter_execution_step(
         &mut self,
         _opcode: u8,
         _interpreter_state: EvmFrameForTracer<S>,
     ) {
+        unreachable!()
+    }
+}
+
+impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
+    #[inline(always)]
+    fn is_begin_tx_enabled(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn is_finish_tx_enabled(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn is_on_new_execution_frame_enabled(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn is_after_execution_frame_enabled(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn is_on_storage_read_enabled(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn is_on_storage_write_enabled(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn is_on_event_enabled(&self) -> bool {
+        false
     }
 
     fn on_new_execution_frame(&mut self, _request: &ExecutionEnvironmentLaunchParams<S>) {
@@ -295,7 +316,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
         }
     }
 
-    fn begin_tx(&mut self) {
+    fn begin_tx(&mut self, _calldata: &[u8]) {
         self.transaction_logs.push(TransactionLog::default());
         self.current_call_depth = 0;
     }
@@ -304,5 +325,20 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
         assert_eq!(self.current_call_depth, 0);
         let tx_log = self.transaction_logs.last_mut().expect("Should exist");
         tx_log.finished = true;
+    }
+
+    fn on_event(
+        &mut self,
+        _ee_type: zk_ee::execution_environment_type::ExecutionEnvironmentType,
+        _address: &<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address,
+        _topics: &[<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::EventKey],
+        _data: &[u8],
+    ) {
+        unreachable!()
+    }
+
+    #[inline(always)]
+    fn evm_tracer(&mut self) -> &mut impl EvmTracer<S> {
+        self
     }
 }

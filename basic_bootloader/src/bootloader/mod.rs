@@ -232,10 +232,12 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             let _ = logger.write_fmt(format_args!("====================================\n"));
             let _ = logger.write_fmt(format_args!("TX execution begins\n"));
 
-            tracer.begin_tx();
-
             let initial_calldata_buffer =
                 initial_calldata_buffer.as_tx_buffer(next_tx_data_len_bytes);
+
+            if tracer.is_begin_tx_enabled() {
+                tracer.begin_tx(initial_calldata_buffer);
+            }
 
             // We will give the full buffer here, and internally we will use parts of it to give forward to EEs
             cycle_marker::start!("process_transaction");
@@ -251,7 +253,9 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
             cycle_marker::end!("process_transaction");
 
-            tracer.finish_tx();
+            if tracer.is_finish_tx_enabled() {
+                tracer.finish_tx();
+            }
 
             match tx_result {
                 Err(TxError::Internal(err)) => {

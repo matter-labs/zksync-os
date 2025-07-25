@@ -1,10 +1,57 @@
+use crate::system::SystemTypes;
+
 use core::{mem::MaybeUninit, ops::Range};
 
 use ruint::aliases::U256;
 
 use crate::{memory::slice_vec::SliceVec, types_config::SystemIOTypesConfig};
 
-use super::SystemTypes;
+pub trait EvmTracer<S: SystemTypes> {
+    fn is_on_evm_execution_step_enabled(&self) -> bool;
+    fn is_after_evm_execution_step_enabled(&self) -> bool;
+
+    fn before_evm_interpreter_execution_step(
+        &mut self,
+        opcode: u8,
+        interpreter_state: EvmFrameForTracer<S>,
+    );
+    fn after_evm_interpreter_execution_step(
+        &mut self,
+        opcode: u8,
+        interpreter_state: EvmFrameForTracer<S>,
+    );
+}
+
+#[derive(Default)]
+pub struct NopEvmTracer;
+
+impl<S: SystemTypes> EvmTracer<S> for NopEvmTracer {
+    #[inline(always)]
+    fn is_on_evm_execution_step_enabled(&self) -> bool {
+        false
+    }
+
+    #[inline(always)]
+    fn is_after_evm_execution_step_enabled(&self) -> bool {
+        false
+    }
+
+    fn before_evm_interpreter_execution_step(
+        &mut self,
+        _opcode: u8,
+        _interpreter_state: EvmFrameForTracer<S>,
+    ) {
+        unreachable!()
+    }
+
+    fn after_evm_interpreter_execution_step(
+        &mut self,
+        _opcode: u8,
+        _interpreter_state: EvmFrameForTracer<S>,
+    ) {
+        unreachable!()
+    }
+}
 
 pub struct EvmFrameForTracer<'a, S: SystemTypes> {
     /// Instruction pointer

@@ -257,7 +257,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         // resources are checked and spent, so we continue with actual transition of control flow
 
-        if tracer.should_call_on_new_execution_frame() {
+        if tracer.is_on_new_execution_frame_enabled() {
             // Note that for tracing we treat failure on preparation step as failure before external call started
             tracer.on_new_execution_frame(&external_call_launch_params);
         }
@@ -301,7 +301,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             )
         };
 
-        if tracer.should_call_after_execution_frame_completed() {
+        if tracer.is_after_execution_frame_enabled() {
             tracer.after_execution_frame_completed(
                 callee_frame_execution_result
                     .as_ref()
@@ -675,7 +675,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })?;
         }
 
-        if tracer.should_call_on_new_execution_frame() {
+        if tracer.is_on_new_execution_frame_enabled() {
             tracer.on_new_execution_frame(&launch_params);
         }
 
@@ -690,7 +690,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     "Return from constructor call, success = {deployment_success}\n",
                 ));
 
-                if tracer.should_call_after_execution_frame_completed() {
+                if tracer.is_after_execution_frame_enabled() {
                     // TODO resources
                     tracer.after_execution_frame_completed(Some((
                         &resources_returned,
@@ -706,7 +706,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })
             }
             Err(e) => {
-                if tracer.should_call_after_execution_frame_completed() {
+                if tracer.is_after_execution_frame_enabled() {
                     tracer.after_execution_frame_completed(None);
                 }
                 Err(e)
