@@ -140,10 +140,7 @@ pub trait Maybe<T> {
     fn construct(f: impl FnOnce() -> T) -> Self;
     fn try_construct<E>(f: impl FnOnce() -> Result<T, E>) -> Result<Self, E>
     where
-        Self: Sized,
-    {
-        f().map(|x| Self::construct(|| x))
-    }
+        Self: Sized;
 }
 
 pub struct Just<T>(pub T);
@@ -151,11 +148,26 @@ impl<T> Maybe<T> for Just<T> {
     fn construct(f: impl FnOnce() -> T) -> Self {
         Self(f())
     }
+
+    fn try_construct<E>(f: impl FnOnce() -> Result<T, E>) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        f().map(|x| Self::construct(|| x))
+    }
 }
+
 pub struct Nothing;
 impl<T> Maybe<T> for Nothing {
     fn construct(_: impl FnOnce() -> T) -> Self {
         Self
+    }
+
+    fn try_construct<E>(_f: impl FnOnce() -> Result<T, E>) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        Ok(Self)
     }
 }
 
