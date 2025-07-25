@@ -10,7 +10,6 @@ use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
 pub use abstract_account::AA;
-use errors::FatalError;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -19,6 +18,8 @@ use zk_ee::system::System;
 use zk_ee::system::*;
 
 use zk_ee::utils::Bytes32;
+
+use super::errors::BootloaderSubsystemError;
 
 /// The execution step output
 #[derive(Debug)]
@@ -92,7 +93,7 @@ where
         transaction: &mut ZkSyncTransaction,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<'a>, FatalError>;
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError>;
 
     ///
     /// Charge any additional intrinsic gas.

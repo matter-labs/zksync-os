@@ -16,6 +16,7 @@ tests/contracts_sol/*/ignition
 tests/contracts_sol/*/node_modules
 
 tests/instances/*/*.svg
+tests/instances/**/*.bench
 
 .DS_Store
 .idea

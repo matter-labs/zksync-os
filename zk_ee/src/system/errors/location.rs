@@ -1,9 +1,3 @@
-use super::InternalError;
-
-pub trait IError: Clone + core::fmt::Debug + Eq + Sized {
-    fn get_message() -> &'static str;
-}
-
 pub trait Localizable {
     fn get_location(&self) -> ErrorLocation;
 }
@@ -33,9 +27,23 @@ impl ErrorLocation {
     }
 }
 
-impl Localizable for InternalError {
-    fn get_location(&self) -> ErrorLocation {
-        let InternalError(_, location) = self;
-        *location
+#[macro_export]
+macro_rules! location {
+    () => {
+        $crate::system::errors::location::ErrorLocation::new(file!(), line!())
+    };
+}
+
+impl core::fmt::Display for ErrorLocation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        #[cfg(feature = "error_origins")]
+        {
+            let Self { line, file } = self;
+            write!(f, "{file}:{line}")
+        }
+        #[cfg(not(feature = "error_origins"))]
+        {
+            Ok(())
+        }
     }
 }

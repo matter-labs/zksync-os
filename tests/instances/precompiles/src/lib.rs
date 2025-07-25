@@ -4,6 +4,7 @@
 use bytes::Bytes;
 use rig::forward_system::run::BatchOutput;
 use rig::forward_system::run::ExecutionResult::Revert;
+use rig::BlockContext;
 use rig::{
     ethers::{abi::Address, signers::Signer, types::TransactionRequest},
     ruint::aliases::{B160, U256},
@@ -33,15 +34,20 @@ fn run_precompile(
         TransactionRequest::new()
             .to(addr)
             .gas(gas)
-            .gas_price(1000)
+            .gas_price(25_000)
             .data(input.to_vec())
             .nonce(0),
         &wallet,
     );
 
-    let batch_output = chain.run_block(vec![tx], None, None);
+    // We use a very high native per gas ratio
+    let block_context = BlockContext {
+        native_price: U256::ONE,
+        eip1559_basefee: U256::from(25_000),
+        ..Default::default()
+    };
 
-    batch_output
+    chain.run_block(vec![tx], Some(block_context), None)
 }
 
 struct Test {

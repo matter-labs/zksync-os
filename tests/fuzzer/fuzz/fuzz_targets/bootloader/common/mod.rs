@@ -1,4 +1,5 @@
 use basic_bootloader::bootloader::constants::TX_OFFSET;
+use basic_bootloader::bootloader::transaction::ParsedValue;
 use basic_bootloader::bootloader::transaction::ZkSyncTransaction;
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use basic_system::system_implementation::flat_storage_model::ACCOUNT_PROPERTIES_STORAGE_ADDRESS;
@@ -15,7 +16,10 @@ use std::collections::{HashMap, VecDeque};
 use std::convert::TryInto;
 use web3::ethabi::{encode, Address, Token, Uint};
 use zk_ee::common_structs::derive_flat_storage_key;
+use zk_ee::reference_implementations::BaseResources;
+use zk_ee::reference_implementations::DecreasingNative;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
+use zk_ee::system::Resource;
 use zk_ee::utils::Bytes32;
 
 // a test private key from anvil
@@ -55,12 +59,13 @@ pub(crate) struct TransactionData {
     pub(crate) data: Vec<u8>,
     pub(crate) signature: Vec<u8>,
     // The factory deps provided with the transaction.
-    // Whereas it has certain structure, we treat it as a raw bytes.
-    #[allow(unused)]
-    pub(crate) factory_deps: Vec<u8>,
+    // Note that *only hashes* of these bytecodes are signed by the user
+    // and they are used in the ABI encoding of the struct.
+    // TODO: include this into the tx signature as part of SMA-1010
+    pub(crate) factory_deps: Vec<Vec<u8>>,
     pub(crate) paymaster_input: Vec<u8>,
     pub(crate) reserved_dynamic: Vec<u8>,
-    //pub(crate) raw_bytes: Option<Vec<u8>>,
+    // pub(crate) raw_bytes: Option<Vec<u8>>,
 }
 
 // Copy from era-evm-tester.
@@ -82,12 +87,17 @@ impl TransactionData {
             }
             padded
         }
+        // reserved dynamic can be either a list of bytestrings or an empty bytestring
+        // For the empty list, we convert to empty bytestring
+        let reserved_dynamic = if self.reserved_dynamic == vec![0u8; 32] {
+            vec![]
+        } else {
+            self.reserved_dynamic
+        };
         // produce the actual encoding, as a mix of abi_encode
         // and custom serialization
         let mut res = encode(&[Token::Tuple(vec![
-            Token::Uint(Uint::from_big_endian(
-                u8::to_be_bytes(self.tx_type).as_slice(),
-            )),
+            Token::Uint(Uint::from_big_endian(&self.tx_type.to_be_bytes())),
             Token::Address(self.from),
             Token::Address(self.to.unwrap_or_default()),
             Token::Uint(u256_to_uint(&self.gas_limit)),
@@ -100,57 +110,18 @@ impl TransactionData {
             Token::FixedArray(
                 self.reserved
                     .iter()
-                    .copied()
-                    .map(|u| Token::Uint(u256_to_uint(&u)))
+                    .map(|u| Token::Uint(u256_to_uint(u)))
                     .collect(),
             ),
-        ])])
-        .to_vec();
+            Token::Bytes(self.data),
+            Token::Bytes(self.signature),
+            // todo: factory deps must be empty
+            Token::Array(Vec::new()),
+            Token::Bytes(self.paymaster_input),
+            Token::Bytes(reserved_dynamic),
+        ])]);
 
-        // pad the remaining fields, so we can compute their offsets
-        let padded_data = pad32(&self.data);
-        let padded_signature = pad32(&self.signature);
-        let padded_factory_deps = pad32(&self.factory_deps);
-        let padded_paymaster_input = pad32(&self.paymaster_input);
-        let padded_reserved_dynamic = pad32(&self.reserved_dynamic);
-
-        // the encoded data + 5 offsets
-        let data_offset = res.len() + 5 * U256::BYTES;
-        assert!(
-            data_offset == 19 * U256::BYTES,
-            "data offset is {}",
-            data_offset
-        );
-        let signature_offset = data_offset + U256::BYTES + padded_data.len();
-        let factory_deps_offset = signature_offset + U256::BYTES + padded_signature.len();
-        let paymaster_input_offset = factory_deps_offset + U256::BYTES + padded_factory_deps.len();
-        let reserved_dynamic_offset =
-            paymaster_input_offset + U256::BYTES + padded_paymaster_input.len();
-
-        // append the offsets
-        res.extend(U256::from(data_offset).to_be_bytes::<32>());
-        res.extend(U256::from(signature_offset).to_be_bytes::<32>());
-        res.extend(U256::from(factory_deps_offset).to_be_bytes::<32>());
-        res.extend(U256::from(paymaster_input_offset).to_be_bytes::<32>());
-        res.extend(U256::from(reserved_dynamic_offset).to_be_bytes::<32>());
-
-        // append the remaining fields
-        let data_len = U256::from(self.data.len()).to_be_bytes::<32>();
-        res.extend(data_len);
-        res.extend(padded_data);
-        let signature_len = U256::from(self.signature.len()).to_be_bytes::<32>();
-        res.extend(signature_len);
-        res.extend(padded_signature);
-        // note that this field is the number of array elements, the elements have u256
-        let num_elements = U256::from(self.factory_deps.len() / U256::BYTES).to_be_bytes::<32>();
-        res.extend(num_elements);
-        res.extend(padded_factory_deps);
-        let paymaster_input_len = U256::from(self.paymaster_input.len()).to_be_bytes::<32>();
-        res.extend(paymaster_input_len);
-        res.extend(padded_paymaster_input);
-        let reserved_dynamic_len = U256::from(self.reserved_dynamic.len()).to_be_bytes::<32>();
-        res.extend(reserved_dynamic_len);
-        res.extend(padded_reserved_dynamic);
+        res.drain(0..32);
         res
     }
 
@@ -184,9 +155,10 @@ impl From<&ZkSyncTransaction<'_>> for TransactionData {
                 .unwrap(),
             data: tx.encoding(tx.data.clone()).to_vec(),
             signature: tx.encoding(tx.signature.clone()).to_vec(),
-            factory_deps: tx.encoding(tx.factory_deps.clone()).to_vec(),
+            factory_deps: vec![tx.encoding(tx.factory_deps.clone().to_owned()).to_vec()],
             paymaster_input: tx.encoding(tx.paymaster_input.clone()).to_vec(),
-            reserved_dynamic: tx.encoding(tx.reserved_dynamic.clone()).to_vec(),
+            // TODO: actually parse access list
+            reserved_dynamic: vec![0; 32],
         }
     }
 }
@@ -309,8 +281,10 @@ pub fn mutate_transaction(data: &mut [u8], size: usize, max_size: usize, seed: u
         return size;
     }
 
+    let mut inf_resources = BaseResources::<DecreasingNative>::FORMAL_INFINITE;
+
     // generate a new signature from the signed hash and the private key
-    let signed_hash = if let Ok(h) = tx.calculate_signed_hash(CHAIN_ID) {
+    let signed_hash = if let Ok(h) = tx.calculate_signed_hash(CHAIN_ID, &mut inf_resources) {
         h
     } else {
         return size;

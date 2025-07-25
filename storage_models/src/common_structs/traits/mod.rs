@@ -6,7 +6,7 @@ mod storage_model;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::{
-    system::{errors::SystemError, Resources},
+    system::{errors::system::SystemError, Resources},
     types_config::SystemIOTypesConfig,
 };
 

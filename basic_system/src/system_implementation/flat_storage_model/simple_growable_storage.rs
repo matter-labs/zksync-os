@@ -30,7 +30,7 @@ use zk_ee::internal_error;
 use zk_ee::{
     kv_markers::{ExactSizeChain, ExactSizeChainN, UsizeDeserializable, UsizeSerializable},
     memory::stack_trait::Stack,
-    system::{errors::InternalError, logger::Logger},
+    system::{errors::internal::InternalError, logger::Logger},
     system_io_oracle::*,
     types_config::EthereumIOTypesConfig,
     utils::Bytes32,
@@ -52,7 +52,7 @@ pub struct FlatStorageLeaf<const N: usize> {
 
 impl<const N: usize> UsizeSerializable for FlatStorageLeaf<N> {
     const USIZE_LEN: usize =
-        <Bytes32 as UsizeSerializable>::USIZE_LEN * 2 + <u64 as UsizeSerializable>::USIZE_LEN * 2;
+        <Bytes32 as UsizeSerializable>::USIZE_LEN * 2 + <u64 as UsizeSerializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
         ExactSizeChain::new(
@@ -915,6 +915,17 @@ pub struct LeafProof<const N: usize, H: FlatStorageHasher, A: Allocator = Global
     pub leaf: FlatStorageLeaf<N>,
     pub path: Box<[Bytes32; N], A>,
     _marker: core::marker::PhantomData<H>,
+}
+
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> LeafProof<N, H, A> {
+    pub fn new(index: u64, leaf: FlatStorageLeaf<N>, path: Box<[Bytes32; N], A>) -> Self {
+        Self {
+            index,
+            leaf,
+            path,
+            _marker: core::marker::PhantomData,
+        }
+    }
 }
 
 impl<const N: usize, H: FlatStorageHasher, A: Allocator> core::fmt::Debug for LeafProof<N, H, A> {

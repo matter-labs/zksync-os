@@ -42,7 +42,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         if len.is_zero() {
             Ok((0, 0))
         } else {
-            let offset = Self::cast_to_usize(offset, error_to_set)?;
+            let offset = Self::cast_to_usize(offset, error_to_set.clone())?;
             let len = Self::cast_to_usize(len, error_to_set)?;
             Ok((offset, len))
         }

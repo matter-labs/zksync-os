@@ -1,6 +1,6 @@
 //! Wraps values with additional metadata used by IO caches
 
-use crate::system::errors::{InternalError, SystemError};
+use crate::system::errors::{internal::InternalError, system::SystemError};
 use core::fmt::Debug;
 
 #[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]

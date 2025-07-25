@@ -9,7 +9,6 @@ use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use crypto::blake2s::Blake2s256;
 use crypto::MiniDigest;
-use errors::SystemFunctionError;
 use evm_interpreter::gas_constants::LOG;
 use evm_interpreter::gas_constants::LOGDATA;
 use evm_interpreter::gas_constants::LOGTOPIC;
@@ -20,7 +19,7 @@ use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::BasicIOImplementerFSM;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
-use zk_ee::internal_error;
+use zk_ee::interface_error;
 use zk_ee::out_of_ergs_error;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::{
@@ -28,9 +27,8 @@ use zk_ee::{
     kv_markers::UsizeDeserializable,
     memory::ArrayBuilder,
     system::{
-        errors::{SystemError, UpdateQueryError},
-        AccountData, AccountDataRequest, EthereumLikeIOSubsystem, IOResultKeeper, IOSubsystem,
-        IOSubsystemExt, Maybe,
+        errors::system::SystemError, AccountData, AccountDataRequest, EthereumLikeIOSubsystem,
+        IOResultKeeper, IOSubsystem, IOSubsystemExt, Maybe,
     },
     system_io_oracle::InitializeIOImplementerIterator,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
@@ -89,8 +87,8 @@ where
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError> {
         if TRANSIENT {
             let ergs = match ee_type {
+                ExecutionEnvironmentType::NoEE => Ergs::empty(),
                 ExecutionEnvironmentType::EVM => Ergs(TLOAD * ERGS_PER_GAS),
-                _ => return Err(internal_error!("Unsupported EE").into()),
             };
             let native = R::Native::from_computational(WARM_TSTORAGE_READ_NATIVE_COST);
             resources.charge(&R::from_ergs_and_native(ergs, native))?;
@@ -120,8 +118,8 @@ where
     ) -> Result<(), SystemError> {
         if TRANSIENT {
             let ergs = match ee_type {
+                ExecutionEnvironmentType::NoEE => Ergs::empty(),
                 ExecutionEnvironmentType::EVM => Ergs(TSTORE * ERGS_PER_GAS),
-                _ => return Err(internal_error!("Unsupported EE").into()),
             };
             let native = R::Native::from_computational(WARM_TSTORAGE_WRITE_NATIVE_COST);
             resources.charge(&R::from_ergs_and_native(ergs, native))?;
@@ -159,6 +157,7 @@ where
     ) -> Result<(), SystemError> {
         // Charge resources
         let ergs = match ee_type {
+            ExecutionEnvironmentType::NoEE => Ergs::empty(),
             ExecutionEnvironmentType::EVM => {
                 let static_cost = LOG;
                 let topic_cost = LOGTOPIC * (topics.len() as u64);
@@ -167,7 +166,6 @@ where
                 let ergs = cost.checked_mul(ERGS_PER_GAS).ok_or(out_of_ergs_error!())?;
                 Ergs(ergs)
             }
-            _ => return Err(internal_error!("Unsupported EE").into()),
         };
         let native = R::Native::from_computational(
             EVENT_STORAGE_BASE_NATIVE_COST
@@ -216,12 +214,8 @@ where
         // TODO(EVM-1078): for Era backward compatibility we may need to add events for l2 to l1 log and l1 message
 
         let mut data_hash = ArrayBuilder::default();
-        Keccak256Impl::execute(&data, &mut data_hash, resources, self.allocator.clone()).map_err(
-            |e| match e {
-                SystemFunctionError::InvalidInput => unreachable!(),
-                SystemFunctionError::System(e) => e,
-            },
-        )?;
+        Keccak256Impl::execute(&data, &mut data_hash, resources, self.allocator.clone())
+            .map_err(SystemError::from)?;
         let data_hash = Bytes32::from_array(data_hash.build());
         let data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
         self.logs_storage
@@ -344,7 +338,7 @@ where
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         in_constructor: bool,
-    ) -> Result<(), SystemError> {
+    ) -> Result<(), DeconstructionSubsystemError> {
         self.storage.mark_for_deconstruction(
             from_ee,
             resources,
@@ -783,7 +777,7 @@ where
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         increment_by: u64,
-    ) -> Result<u64, UpdateQueryError> {
+    ) -> Result<u64, NonceSubsystemError> {
         self.storage
             .increment_nonce(ee_type, resources, address, increment_by, &mut self.oracle)
     }
@@ -814,6 +808,7 @@ where
         ArtifactsLen: Maybe<u32>,
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
+        CodeVersion: Maybe<u8>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -830,6 +825,7 @@ where
                 ArtifactsLen,
                 NominalTokenBalance,
                 Bytecode,
+                CodeVersion,
             >,
         >,
     ) -> Result<
@@ -843,6 +839,7 @@ where
             ArtifactsLen,
             NominalTokenBalance,
             Bytecode,
+            CodeVersion,
         >,
         SystemError,
     > {
@@ -857,7 +854,7 @@ where
         from: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         to: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         amount: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
-    ) -> Result<(), UpdateQueryError> {
+    ) -> Result<(), BalanceSubsystemError> {
         self.storage.transfer_nominal_token_value(
             ee_type,
             resources,
@@ -874,18 +871,9 @@ where
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
     ) -> Result<&'static [u8], SystemError> {
-        self.storage.deploy_code(
-            from_ee,
-            resources,
-            at_address,
-            bytecode,
-            bytecode_len,
-            artifacts_len,
-            &mut self.oracle,
-        )
+        self.storage
+            .deploy_code(from_ee, resources, at_address, bytecode, &mut self.oracle)
     }
 
     fn set_bytecode_details(
@@ -951,14 +939,17 @@ where
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         diff: &ruint::aliases::U256,
         should_subtract: bool,
-    ) -> Result<ruint::aliases::U256, UpdateQueryError> {
+    ) -> Result<ruint::aliases::U256, BalanceSubsystemError> {
         let update_fn = move |old_value: &ruint::aliases::U256| {
-            let new_value = if should_subtract {
-                old_value.checked_sub(*diff)
+            if should_subtract {
+                old_value
+                    .checked_sub(*diff)
+                    .ok_or(interface_error! {BalanceError::InsufficientBalance})
             } else {
-                old_value.checked_add(*diff)
-            };
-            new_value.ok_or(UpdateQueryError::NumericBoundsError)
+                old_value
+                    .checked_add(*diff)
+                    .ok_or(interface_error! {BalanceError::Overflow})
+            }
         };
         self.storage.update_nominal_token_value(
             ee_type,

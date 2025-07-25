@@ -13,3 +13,4 @@ risc_v_simulator = { workspace = true, features = ["delegation", "cycle_marker"]
 
 [features]
 use_risc_v_simulator = ["risc_v_simulator"]
+log_to_file = []

@@ -24,7 +24,10 @@ use storage_models::common_structs::StorageCacheModel;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ValueDiffCompressionStrategy};
 use zk_ee::internal_error;
-use zk_ee::system::errors::InternalError;
+use zk_ee::system::errors::internal::InternalError;
+use zk_ee::system::BalanceSubsystemError;
+use zk_ee::system::DeconstructionSubsystemError;
+use zk_ee::system::NonceSubsystemError;
 use zk_ee::system::Resources;
 use zk_ee::{
     common_structs::{
@@ -33,9 +36,8 @@ use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     memory::stack_trait::{StackCtor, StackCtorConst},
     system::{
-        errors::{SystemError, UpdateQueryError},
-        logger::Logger,
-        AccountData, AccountDataRequest, IOResultKeeper, Maybe,
+        errors::system::SystemError, logger::Logger, AccountData, AccountDataRequest,
+        IOResultKeeper, Maybe,
     },
     system_io_oracle::IOOracle,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
@@ -43,8 +45,6 @@ use zk_ee::{
 };
 
 use super::system::ExtraCheck;
-
-pub const DEFAULT_CODE_VERSION_BYTE: u8 = 1;
 
 pub fn address_into_special_storage_key(address: &B160) -> Bytes32 {
     let mut key = Bytes32::zero();
@@ -98,7 +98,7 @@ where
     type IOTypes = EthereumIOTypesConfig;
     type InitData = P;
 
-    fn finish_tx(&mut self) -> Result<(), zk_ee::system::errors::InternalError> {
+    fn finish_tx(&mut self) -> Result<(), zk_ee::system::errors::internal::InternalError> {
         self.account_data_cache.finish_tx(&mut self.storage_cache)
     }
 
@@ -266,6 +266,7 @@ where
         ArtifactsLen: Maybe<u32>,
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
+        CodeVersion: Maybe<u8>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -282,6 +283,7 @@ where
                 ArtifactsLen,
                 NominalTokenBalance,
                 Bytecode,
+                CodeVersion,
             >,
         >,
         oracle: &mut impl IOOracle,
@@ -296,11 +298,12 @@ where
             ArtifactsLen,
             NominalTokenBalance,
             Bytecode,
+            CodeVersion,
         >,
         SystemError,
     > {
         self.account_data_cache
-            .read_account_properties::<PROOF_ENV, _, _, _, _, _, _, _, _, _>(
+            .read_account_properties::<PROOF_ENV, _, _, _, _, _, _, _, _, _, _>(
                 ee_type,
                 resources,
                 address,
@@ -346,8 +349,6 @@ where
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError> {
         self.account_data_cache.deploy_code::<PROOF_ENV>(
@@ -355,8 +356,6 @@ where
             resources,
             at_address,
             bytecode,
-            bytecode_len,
-            artifacts_len,
             &mut self.storage_cache,
             &mut self.preimages_cache,
             oracle,
@@ -398,7 +397,7 @@ where
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
         in_constructor: bool,
-    ) -> Result<(), SystemError> {
+    ) -> Result<(), DeconstructionSubsystemError> {
         self.account_data_cache
             .mark_for_deconstruction::<PROOF_ENV>(
                 from_ee,
@@ -419,7 +418,7 @@ where
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         increment_by: u64,
         oracle: &mut impl IOOracle,
-    ) -> Result<u64, UpdateQueryError> {
+    ) -> Result<u64, NonceSubsystemError> {
         self.account_data_cache.increment_nonce::<PROOF_ENV>(
             ee_type,
             resources,
@@ -439,7 +438,7 @@ where
         to: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         amount: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         oracle: &mut impl IOOracle,
-    ) -> Result<(), UpdateQueryError> {
+    ) -> Result<(), BalanceSubsystemError> {
         self.account_data_cache
             .transfer_nominal_token_value::<PROOF_ENV>(
                 from_ee,
@@ -462,10 +461,11 @@ where
             &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         ) -> Result<
             <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
-            UpdateQueryError,
+            BalanceSubsystemError,
         >,
         oracle: &mut impl IOOracle,
-    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue, UpdateQueryError> {
+    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue, BalanceSubsystemError>
+    {
         self.account_data_cache
             .update_nominal_token_value::<PROOF_ENV>(
                 from_ee,

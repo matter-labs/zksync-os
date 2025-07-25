@@ -8,7 +8,10 @@ use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
 use rig::forward_system::run::ExecutionResult;
 use rig::ruint::aliases::B160;
-use rig::utils::{address_into_special_storage_key, ACCOUNT_PROPERTIES_STORAGE_ADDRESS};
+use rig::utils::{
+    address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
+};
+use rig::zk_ee::utils::Bytes32;
 use rig::{alloy, Chain};
 
 #[test]
@@ -18,7 +21,14 @@ fn test_set_bytecode_details_evm() {
     let complex_upgrader_address = address!("000000000000000000000000000000000000800f");
     let contract_deployer_address = address!("0000000000000000000000000000000000008006");
     // setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
-    // bytecode = 0x0123456789
+    let bytecode = hex::decode("0123456789").unwrap();
+    let code_hash = Bytes32::from_array(
+        hex::decode("1c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7")
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    );
+    chain.set_preimage(code_hash, &bytecode);
     let calldata =
         hex::decode("f6eca0b000000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
             .unwrap();
@@ -51,9 +61,10 @@ fn test_set_bytecode_details_evm() {
         success
     }));
 
-    let expected_account_hash =
-        rig::utils::evm_bytecode_into_account_properties(&[0x01, 0x23, 0x45, 0x67, 0x89])
-            .compute_hash();
+    let mut account = AccountProperties::default();
+    rig::zksync_os_api::helpers::set_properties_code(&mut account, &[0x01, 0x23, 0x45, 0x67, 0x89]);
+    let expected_account_hash = account.compute_hash();
+
     let actual_hash = output
         .storage_writes
         .iter()

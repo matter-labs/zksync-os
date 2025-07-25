@@ -18,6 +18,6 @@ pub fn run_forward<
     result_keeper: &mut impl ResultKeeperExt,
 ) {
     if let Err(err) = ForwardBootloader::run_prepared::<Config>(oracle, result_keeper) {
-        panic!("Forward run failed with: {:?}", err)
+        panic!("Forward run failed with: {err}")
     };
 }

@@ -21,6 +21,7 @@ zksync_os_runner = { path = "../../zksync_os_runner"}
 system_hooks = { path = "../../system_hooks"}
 crypto = { path = "../../crypto" }
 cycle_marker = { path = "../../cycle_marker", optional = true }
+zksync_os_api = { path = "../../api" }
 
 prover_examples = { workspace = true, optional=true}
 
@@ -48,3 +49,4 @@ resources_for_tester = ["basic_bootloader/resources_for_tester"]
 report_native = ["forward_system/report_native"]
 p256_precompile = ["system_hooks/p256_precompile"]
 disable_system_contracts = ["forward_system/disable_system_contracts"]
+prevrandao = ["zk_ee/prevrandao"]

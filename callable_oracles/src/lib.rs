@@ -21,7 +21,7 @@ pub mod utils;
 
 use zk_ee::{
     kv_markers::{ExactSizeChain, UsizeDeserializable, UsizeSerializable},
-    system::errors::InternalError,
+    system::errors::internal::InternalError,
 };
 
 pub mod hash_to_prime;

@@ -9,7 +9,7 @@ use evm_interpreter::MAX_CODE_SIZE;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
-use zk_ee::system::errors::SystemError;
+use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::utils::Bytes32;
 
 pub fn contract_deployer_hook<'a, S: EthereumLikeTypes>(
@@ -17,7 +17,7 @@ pub fn contract_deployer_hook<'a, S: EthereumLikeTypes>(
     caller_ee: u8,
     system: &mut System<S>,
     return_memory: &'a mut [MaybeUninit<u8>],
-) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), FatalError>
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -80,16 +80,16 @@ where
                     .write_fmt(format_args!("Revert: {:?}\n", e));
                 make_error_return_state(resources)
             }
-            Err(SystemError::OutOfErgs(_)) => {
+            Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                 let _ = system
                     .get_logger()
                     .write_fmt(format_args!("Out of gas during system hook\n"));
                 make_error_return_state(resources)
             }
-            Err(SystemError::OutOfNativeResources(loc)) => {
-                return Err(FatalError::OutOfNativeResources(loc))
+            Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+                return Err(e)
             }
-            Err(SystemError::Internal(e)) => return Err(e.into()),
+            Err(SystemError::LeafDefect(e)) => return Err(e.into()),
         },
         return_memory,
     ))
@@ -150,9 +150,10 @@ where
                     "Contract deployer failure: setBytecodeDetailsEVM called with invalid calldata",
                 ));
             }
-            let address = B160::try_from_be_slice(&calldata[12..32]).ok_or(
-                SystemError::Internal(internal_error!("Failed to create B160 from 20 byte array")),
-            )?;
+            let address =
+                B160::try_from_be_slice(&calldata[12..32]).ok_or(SystemError::LeafDefect(
+                    internal_error!("Failed to create B160 from 20 byte array"),
+                ))?;
 
             let bytecode_hash =
                 Bytes32::from_array(calldata[32..64].try_into().expect("Always valid"));

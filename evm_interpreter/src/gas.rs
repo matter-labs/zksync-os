@@ -16,7 +16,7 @@ use crate::{
 /// Wraps underlying system resources and implements gas accounting on top of it
 pub struct Gas<S: EthereumLikeTypes> {
     /// Underlying system resources
-    resources: S::Resources,
+    pub resources: S::Resources,
     /// Keep track of gas spent on heap resizes
     pub gas_paid_for_heap_growth: u64,
 }

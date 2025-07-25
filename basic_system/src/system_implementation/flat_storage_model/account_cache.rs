@@ -4,15 +4,17 @@
 use super::AccountPropertiesMetadata;
 use super::BytecodeAndAccountDataPreimagesStorage;
 use super::NewStorageWithAccountPropertiesUnderHash;
+use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_implementation::flat_storage_model::account_cache_entry::AccountProperties;
+use crate::system_implementation::flat_storage_model::bytecode_padding_len;
 use crate::system_implementation::flat_storage_model::cost_constants::*;
 use crate::system_implementation::flat_storage_model::PreimageRequest;
 use crate::system_implementation::flat_storage_model::StorageAccessPolicy;
-use crate::system_implementation::flat_storage_model::DEFAULT_CODE_VERSION_BYTE;
 use crate::system_implementation::system::ExtraCheck;
 use alloc::collections::BTreeSet;
 use core::alloc::Allocator;
 use core::marker::PhantomData;
+use evm_interpreter::errors::EvmSubsystemError;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
@@ -25,17 +27,24 @@ use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::history_map::HistoryMap;
 use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 use zk_ee::common_structs::PreimageType;
+use zk_ee::define_subsystem;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::interface_error;
 use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackCtor;
+use zk_ee::system::BalanceSubsystemError;
 use zk_ee::system::Computational;
+use zk_ee::system::DeconstructionSubsystemError;
+use zk_ee::system::NonceError;
+use zk_ee::system::NonceSubsystemError;
 use zk_ee::system::Resource;
 use zk_ee::utils::BitsOrd;
 use zk_ee::utils::Bytes32;
+use zk_ee::wrap_error;
 use zk_ee::{
     memory::stack_trait::StackCtorConst,
     system::{
-        errors::{InternalError, SystemError, UpdateQueryError},
+        errors::{internal::InternalError, system::SystemError},
         AccountData, AccountDataRequest, Ergs, IOResultKeeper, Maybe, Resources,
     },
     system_io_oracle::IOOracle,
@@ -116,7 +125,6 @@ where
                     WARM_PROPERTIES_ACCESS_COST_ERGS
                 }
             }
-            _ => return Err(internal_error!("Unsupported EE").into()),
         };
         let native = R::Native::from_computational(WARM_ACCOUNT_CACHE_ACCESS_NATIVE_COST);
         resources.charge(&R::from_ergs_and_native(ergs, native))?;
@@ -144,7 +152,6 @@ where
                         };
                         resources.charge(&cost)?;
                     }
-                    _ => return Err(internal_error!("Unsupported EE").into()),
                 }
 
                 // to avoid divergence we read as-if infinite ergs
@@ -212,7 +219,6 @@ where
                                 };
                                 resources.charge(&cost)?;
                             }
-                            _ => return Err(internal_error!("Unsupported EE").into()),
                         }
                     }
 
@@ -232,12 +238,12 @@ where
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         address: &B160,
-        update_fn: impl FnOnce(&U256) -> Result<U256, UpdateQueryError>,
+        update_fn: impl FnOnce(&U256) -> Result<U256, BalanceSubsystemError>,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
-    ) -> Result<U256, UpdateQueryError> {
+    ) -> Result<U256, BalanceSubsystemError> {
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             ee_type,
             resources,
@@ -276,8 +282,10 @@ where
         preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
-    ) -> Result<(), UpdateQueryError> {
-        let mut f = |addr, op: fn(U256, U256) -> (U256, bool)| {
+    ) -> Result<(), BalanceSubsystemError> {
+        use zk_ee::system::BalanceError;
+
+        let mut f = |addr, op: fn(U256, U256) -> (U256, bool), err| {
             self.update_nominal_token_value_inner::<PROOF_ENV>(
                 from_ee,
                 resources,
@@ -285,7 +293,7 @@ where
                 move |old_balance: &U256| {
                     let (new_value, of) = op(*old_balance, *amount);
                     if of {
-                        Err(UpdateQueryError::NumericBoundsError)
+                        Err(err)
                     } else {
                         Ok(new_value)
                     }
@@ -298,8 +306,16 @@ where
         };
 
         // can do update twice
-        f(from, U256::overflowing_sub)?;
-        f(to, U256::overflowing_add)?;
+        f(
+            from,
+            U256::overflowing_sub,
+            interface_error!(BalanceError::InsufficientBalance),
+        )?;
+        f(
+            to,
+            U256::overflowing_add,
+            interface_error!(BalanceError::Overflow),
+        )?;
 
         Ok(())
     }
@@ -331,7 +347,7 @@ where
                     preimage_type: PreimageType::AccountData,
                 }),
                 &mut inf_resources,
-                &encoding,
+                &[&encoding],
             )?;
 
             storage.write_special_account_property::<AccountAggregateDataHash>(
@@ -364,12 +380,15 @@ where
             let current = element_history.current();
             let initial = element_history.initial();
 
-            pubdata_used += AccountProperties::diff_compression_length(
-                initial.value(),
-                current.value(),
-                current.metadata().not_publish_bytecode,
-            )
-            .unwrap();
+            if current.value() != initial.value() {
+                pubdata_used += 32; // key
+                pubdata_used += AccountProperties::diff_compression_length(
+                    initial.value(),
+                    current.value(),
+                    current.metadata().not_publish_bytecode,
+                )
+                .unwrap();
+            }
         }
 
         pubdata_used
@@ -410,7 +429,6 @@ where
             ExecutionEnvironmentType::EVM => {
                 resources.charge(&R::from_ergs(KNOWN_TO_BE_WARM_PROPERTIES_ACCESS_COST_ERGS))?
             }
-            _ => return Err(internal_error!("Unsupported EE").into()),
         }
 
         match self.cache.get(address.into()) {
@@ -453,6 +471,7 @@ where
         ArtifactsLen: Maybe<u32>,
         NominalTokenBalance: Maybe<<EthereumIOTypesConfig as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
+        CodeVersion: Maybe<u8>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -469,6 +488,7 @@ where
                 ArtifactsLen,
                 NominalTokenBalance,
                 Bytecode,
+                CodeVersion,
             >,
         >,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
@@ -485,6 +505,7 @@ where
             ArtifactsLen,
             NominalTokenBalance,
             Bytecode,
+            CodeVersion,
         >,
         SystemError,
     > {
@@ -512,7 +533,7 @@ where
             observable_bytecode_len: Maybe::construct(|| full_data.observable_bytecode_len),
             nonce: Maybe::construct(|| full_data.nonce),
             bytecode_hash: Maybe::construct(|| full_data.bytecode_hash),
-            bytecode_len: Maybe::construct(|| full_data.bytecode_len),
+            unpadded_code_len: Maybe::construct(|| full_data.unpadded_code_len),
             artifacts_len: Maybe::construct(|| full_data.artifacts_len),
             nominal_token_balance: Maybe::construct(|| full_data.balance),
             bytecode: Maybe::try_construct(|| {
@@ -520,7 +541,7 @@ where
 
                 if full_data.bytecode_hash.is_zero() {
                     assert!(full_data.observable_bytecode_hash.is_zero());
-                    assert_eq!(full_data.bytecode_len, 0);
+                    assert_eq!(full_data.unpadded_code_len, 0);
                     assert_eq!(full_data.artifacts_len, 0);
                     assert_eq!(full_data.observable_bytecode_len, 0);
 
@@ -528,10 +549,9 @@ where
                     Ok(res)
                 } else {
                     // can try to get preimage
-                    // TODO(EVM-1073): compute preimage len using artifacts and bytecode len, and EE type in our model
                     let preimage_type = PreimageRequest {
                         hash: full_data.bytecode_hash,
-                        expected_preimage_len_in_bytes: full_data.bytecode_len,
+                        expected_preimage_len_in_bytes: full_data.full_bytecode_len(),
                         preimage_type: PreimageType::Bytecode,
                     };
                     preimages_cache.get_preimage::<PROOF_ENV>(
@@ -542,6 +562,7 @@ where
                     )
                 }
             })?,
+            code_version: Maybe::construct(|| full_data.versioning_data.code_version()),
         })
     }
 
@@ -554,7 +575,7 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-    ) -> Result<u64, UpdateQueryError> {
+    ) -> Result<u64, NonceSubsystemError> {
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             ee_type,
             resources,
@@ -579,7 +600,7 @@ where
                 })
             })?;
         } else {
-            return Err(UpdateQueryError::NumericBoundsError);
+            return Err(interface_error!(NonceError::NonceOverflow));
         }
 
         Ok(nonce)
@@ -590,11 +611,11 @@ where
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         address: &B160,
-        update_fn: impl FnOnce(&U256) -> Result<U256, UpdateQueryError>,
+        update_fn: impl FnOnce(&U256) -> Result<U256, BalanceSubsystemError>,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-    ) -> Result<U256, UpdateQueryError> {
+    ) -> Result<U256, BalanceSubsystemError> {
         self.update_nominal_token_value_inner::<PROOF_ENV>(
             ee_type,
             resources,
@@ -617,7 +638,7 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-    ) -> Result<(), UpdateQueryError> {
+    ) -> Result<(), BalanceSubsystemError> {
         self.transfer_nominal_token_value_inner::<PROOF_ENV>(
             from_ee,
             resources,
@@ -631,28 +652,54 @@ where
         )
     }
 
+    fn compute_bytecode_hash(
+        from_ee: ExecutionEnvironmentType,
+        observable_bytecode: &[u8],
+        artifacts: &[u8],
+        resources: &mut R,
+    ) -> Result<Bytes32, SystemError> {
+        match from_ee {
+            ExecutionEnvironmentType::NoEE => {
+                Err(internal_error!("Deployment cannot happen in NoEE").into())
+            }
+            ExecutionEnvironmentType::EVM => {
+                use crypto::blake2s::Blake2s256;
+                use crypto::MiniDigest;
+                let preimage_len = observable_bytecode.len()
+                    + bytecode_padding_len(observable_bytecode.len())
+                    + artifacts.len();
+                let native_cost = blake2s_native_cost(preimage_len);
+                resources.charge(&R::from_native(R::Native::from_computational(native_cost)))?;
+                let mut hasher = Blake2s256::new();
+                let padding = [0u8; core::mem::size_of::<u64>() - 1];
+                hasher.update(observable_bytecode);
+                hasher.update(&padding[..bytecode_padding_len(observable_bytecode.len())]);
+                hasher.update(artifacts);
+                Ok(Bytes32::from_array(hasher.finalize()))
+            }
+        }
+    }
+
     pub fn deploy_code<const PROOF_ENV: bool>(
         &mut self,
         from_ee: ExecutionEnvironmentType,
         resources: &mut R,
         at_address: &B160,
-        bytecode: &[u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
+        deployed_code: &[u8],
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError> {
+        let alloc = self.alloc.clone();
         // Charge for code deposit cost
         match from_ee {
             ExecutionEnvironmentType::NoEE => (),
             ExecutionEnvironmentType::EVM => {
                 use evm_interpreter::gas_constants::CODEDEPOSIT;
-                let code_deposit_cost = CODEDEPOSIT.saturating_mul(bytecode_len.into());
+                let code_deposit_cost = CODEDEPOSIT.saturating_mul(deployed_code.len() as u64);
                 let ergs_to_spend = Ergs(code_deposit_cost.saturating_mul(ERGS_PER_GAS));
                 resources.charge(&R::from_ergs(ergs_to_spend))?;
             }
-            _ => todo!(),
         }
 
         // we charged for everything, and so all IO below will use infinite ergs
@@ -675,44 +722,58 @@ where
 
         // compute observable and true hashes of bytecode
         let observable_bytecode_hash = match from_ee {
+            ExecutionEnvironmentType::NoEE => {
+                return Err(internal_error!("Deployment cannot happen in NoEE").into())
+            }
             ExecutionEnvironmentType::EVM => {
-                assert_eq!(artifacts_len, 0);
+                let native_cost = keccak256_native_cost::<R>(deployed_code.len());
+                resources.charge(&R::from_native(native_cost))?;
                 use crypto::sha3::Keccak256;
                 use crypto::MiniDigest;
-                let digest = Keccak256::digest(bytecode);
+                let digest = Keccak256::digest(deployed_code);
                 Bytes32::from_array(digest)
             }
-            _ => {
-                return Err(internal_error!("Unsupported EE").into());
-            }
         };
+        let observable_bytecode_len = deployed_code.len() as u32;
 
-        let bytecode_hash = match from_ee {
+        let (deployed_code, bytecode_hash, artifacts_len, code_version) = match from_ee {
+            ExecutionEnvironmentType::NoEE => {
+                return Err(internal_error!("Deployment cannot happen in NoEE").into())
+            }
             ExecutionEnvironmentType::EVM => {
-                assert_eq!(artifacts_len, 0);
-                use crypto::blake2s::Blake2s256;
-                use crypto::MiniDigest;
-                let digest = Blake2s256::digest(bytecode);
-                Bytes32::from_array(digest)
-            }
-            _ => {
-                return Err(internal_error!("Unsupported EE").into());
+                let artifacts = evm_interpreter::BytecodePreprocessingData::create_artifacts(
+                    alloc,
+                    deployed_code,
+                    resources,
+                )?;
+                let artifacts = artifacts.as_slice();
+                let bytecode_hash =
+                    Self::compute_bytecode_hash(from_ee, deployed_code, artifacts, resources)?;
+                let artifacts_len = artifacts.len() as u32;
+                let padding_len = bytecode_padding_len(deployed_code.len());
+                let bytecode_len = observable_bytecode_len + (padding_len as u32) + artifacts_len;
+
+                let padding = [0u8; core::mem::size_of::<u64>() - 1];
+                let padding = &padding[..padding_len];
+                // save bytecode
+                let deployed_code = preimages_cache.record_preimage::<PROOF_ENV>(
+                    from_ee,
+                    &(PreimageRequest {
+                        hash: bytecode_hash,
+                        expected_preimage_len_in_bytes: bytecode_len,
+                        preimage_type: PreimageType::Bytecode,
+                    }),
+                    resources,
+                    &[deployed_code, padding, artifacts],
+                )?;
+                (
+                    deployed_code,
+                    bytecode_hash,
+                    artifacts_len,
+                    evm_interpreter::ARTIFACTS_CACHING_CODE_VERSION_BYTE,
+                )
             }
         };
-
-        // save bytecode
-
-        // TODO(EVM-1073): compute preimage len using bytecode and artifacts len, and EE type
-        let bytecode = preimages_cache.record_preimage::<PROOF_ENV>(
-            from_ee,
-            &(PreimageRequest {
-                hash: bytecode_hash,
-                expected_preimage_len_in_bytes: bytecode_len,
-                preimage_type: PreimageType::Bytecode,
-            }),
-            resources,
-            bytecode,
-        )?;
 
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
@@ -721,14 +782,13 @@ where
         account_data.update(|cache_record| {
             cache_record.update(|v, m| {
                 v.observable_bytecode_hash = observable_bytecode_hash;
-                v.observable_bytecode_len = bytecode_len;
+                v.observable_bytecode_len = observable_bytecode_len;
                 v.bytecode_hash = bytecode_hash;
-                v.bytecode_len = bytecode_len;
+                v.unpadded_code_len = observable_bytecode_len;
                 v.artifacts_len = artifacts_len;
                 v.versioning_data.set_as_deployed();
                 v.versioning_data.set_ee_version(from_ee as u8);
-                v.versioning_data
-                    .set_code_version(DEFAULT_CODE_VERSION_BYTE);
+                v.versioning_data.set_code_version(code_version);
 
                 m.deployed_in_tx = Some(cur_tx);
                 // This is unlikely to happen, this case shouldn't be reachable by higher level logic
@@ -739,16 +799,21 @@ where
             })
         })?;
 
-        Ok(bytecode)
+        Ok(deployed_code)
     }
 
+    /// Assumes [code_hash] is of default version, which does not contain
+    /// artifacts cached in the bytecode.
+    /// As this storage model caches artifacts, this function decommitts
+    /// the code from [code_hash], computes the artifacts and re-hashes
+    /// to get the actual [bytecode_hash] for the account.
     pub fn set_bytecode_details<const PROOF_ENV: bool>(
         &mut self,
         resources: &mut R,
         at_address: &B160,
         ee: ExecutionEnvironmentType,
-        bytecode_hash: Bytes32,
-        bytecode_len: u32,
+        code_hash: Bytes32,
+        unpadded_bytecode_len: u32,
         artifacts_len: u32,
         observable_bytecode_hash: Bytes32,
         observable_bytecode_len: u32,
@@ -757,6 +822,7 @@ where
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError> {
         let cur_tx = self.current_tx_number;
+        let alloc = self.alloc.clone();
 
         let mut account_data = resources.with_infinite_ergs(|inf_resources| {
             self.materialize_element::<PROOF_ENV>(
@@ -771,6 +837,55 @@ where
             )
         })?;
 
+        let request = PreimageRequest {
+            hash: code_hash,
+            expected_preimage_len_in_bytes: unpadded_bytecode_len,
+            preimage_type: PreimageType::Bytecode,
+        };
+        let deployed_code =
+            preimages_cache.get_preimage::<PROOF_ENV>(ee, &request, resources, oracle)?;
+
+        let (_deployed_code, bytecode_hash, artifacts_len, code_version) = match ee {
+            ExecutionEnvironmentType::NoEE => {
+                return Err(internal_error!("Deployment cannot happen in NoEE").into())
+            }
+            ExecutionEnvironmentType::EVM => {
+                // For EVM, default code version doesn't cache artifacts
+                assert_eq!(artifacts_len, 0);
+                let artifacts = evm_interpreter::BytecodePreprocessingData::create_artifacts(
+                    alloc,
+                    deployed_code,
+                    resources,
+                )?;
+                let artifacts = artifacts.as_slice();
+                let bytecode_hash =
+                    Self::compute_bytecode_hash(ee, deployed_code, artifacts, resources)?;
+                let artifacts_len = artifacts.len() as u32;
+                let padding_len = bytecode_padding_len(deployed_code.len());
+                let bytecode_len = observable_bytecode_len + (padding_len as u32) + artifacts_len;
+
+                let padding = [0u8; core::mem::size_of::<u64>() - 1];
+                let padding = &padding[..padding_len];
+                // save bytecode
+                let deployed_code = preimages_cache.record_preimage::<PROOF_ENV>(
+                    ee,
+                    &(PreimageRequest {
+                        hash: bytecode_hash,
+                        expected_preimage_len_in_bytes: bytecode_len,
+                        preimage_type: PreimageType::Bytecode,
+                    }),
+                    resources,
+                    &[deployed_code, padding, artifacts],
+                )?;
+                (
+                    deployed_code,
+                    bytecode_hash,
+                    artifacts_len,
+                    evm_interpreter::ARTIFACTS_CACHING_CODE_VERSION_BYTE,
+                )
+            }
+        };
+
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
@@ -780,12 +895,11 @@ where
                 v.observable_bytecode_hash = observable_bytecode_hash;
                 v.observable_bytecode_len = observable_bytecode_len;
                 v.bytecode_hash = bytecode_hash;
-                v.bytecode_len = bytecode_len;
+                v.unpadded_code_len = unpadded_bytecode_len;
                 v.artifacts_len = artifacts_len;
                 v.versioning_data.set_as_deployed();
                 v.versioning_data.set_ee_version(ee as u8);
-                v.versioning_data
-                    .set_code_version(DEFAULT_CODE_VERSION_BYTE);
+                v.versioning_data.set_code_version(code_version);
 
                 m.deployed_in_tx = Some(cur_tx);
                 m.not_publish_bytecode = true;
@@ -807,7 +921,7 @@ where
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
         in_constructor: bool,
-    ) -> Result<(), SystemError> {
+    ) -> Result<(), DeconstructionSubsystemError> {
         let cur_tx = self.current_tx_number;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             from_ee,
@@ -855,12 +969,7 @@ where
                 oracle,
                 true,
             )
-            .map_err(|e| match e {
-                UpdateQueryError::NumericBoundsError => {
-                    internal_error!("Impossible, not enough balance in deconstruction").into()
-                }
-                UpdateQueryError::System(e) => e,
-            })?
+            .map_err(wrap_error!())?;
         } else if should_be_deconstructed {
             account_data.update(|cache_record| {
                 cache_record.update(|v, _| {
@@ -882,7 +991,7 @@ where
                     let beneficiary_properties = entry.current().value();
 
                     let beneficiary_is_empty = beneficiary_properties.nonce == 0
-                        && beneficiary_properties.bytecode_len == 0
+                        && beneficiary_properties.unpadded_code_len == 0
                         // We need to check with the transferred amount,
                         // this means it was 0 before the transfer.
                         && beneficiary_properties.balance == transfer_amount;
@@ -892,7 +1001,6 @@ where
                         resources.charge(&R::from_ergs(ergs_to_spend))?;
                     }
                 }
-                _ => return Err(internal_error!("Unsupported EE").into()),
             }
         }
 
@@ -922,3 +1030,10 @@ where
         Ok(())
     }
 }
+
+define_subsystem!(AccountCache,
+                  interface AccountCacheInterfaceError {},
+                  cascade AccountCacheCascadedError {
+                      EvmSubsystem(EvmSubsystemError),
+                  }
+);

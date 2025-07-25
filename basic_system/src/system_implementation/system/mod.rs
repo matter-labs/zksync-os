@@ -5,7 +5,7 @@ use crate::system_implementation::system::public_input::{
     BlocksOutput, BlocksPublicInput, ChainStateCommitment,
 };
 use core::alloc::Allocator;
-use errors::SystemError;
+use errors::system::SystemError;
 use evm_interpreter::gas_constants::COLD_SLOAD_COST;
 use evm_interpreter::gas_constants::SSTORE_RESET_EXTRA;
 use evm_interpreter::gas_constants::SSTORE_SET_EXTRA;
@@ -17,13 +17,12 @@ use zk_ee::common_structs::EventContent;
 use zk_ee::common_structs::LogContent;
 use zk_ee::common_structs::WarmStorageKey;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::internal_error;
 use zk_ee::utils::Bytes32;
 use zk_ee::utils::NopHasher;
 use zk_ee::{
     kv_markers::MAX_EVENT_TOPICS,
     memory::stack_trait::{StackCtor, StackCtorConst},
-    system::{errors::InternalError, logger::Logger, Resources, *},
+    system::{errors::internal::InternalError, logger::Logger, Resources, *},
     system_io_oracle::IOOracle,
 };
 
@@ -55,7 +54,6 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
                 }
             }
             ExecutionEnvironmentType::EVM => Ergs(WARM_STORAGE_READ_COST * ERGS_PER_GAS),
-            _ => return Err(internal_error!("Unsupported EE").into()),
         };
         let native = R::Native::from_computational(
             crate::system_implementation::flat_storage_model::cost_constants::WARM_STORAGE_READ_NATIVE_COST,
@@ -74,7 +72,6 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
             ExecutionEnvironmentType::EVM => {
                 Ergs((COLD_SLOAD_COST - WARM_STORAGE_READ_COST) * ERGS_PER_GAS)
             }
-            _ => return Err(internal_error!("Unsupported EE").into()),
         };
         let native = if is_new_slot {
             R::Native::from_computational(
@@ -121,7 +118,6 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
 
                 Ergs(total_cost * ERGS_PER_GAS)
             }
-            _ => return Err(internal_error!("Unsupported EE").into()),
         };
         let native = if is_new_slot {
             R::Native::from_computational(

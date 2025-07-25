@@ -87,7 +87,7 @@ jobs:
           ./download_ethereum_fixtures.sh
       - name: Run EVM state tests
         working-directory: ./era-evm-tester
-        run: cargo run --bin evm-tester --features zksync_os_forward_system/no_print -- --environment=ZKsyncOS --spec_tests
+        run: cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print -- --environment=ZKsyncOS --spec_tests
 
 
   verify_binary:
@@ -192,3 +192,28 @@ jobs:
       - uses: crate-ci/typos@master
         with:
           config: ./.github/typos.toml
+  
+  run_fuzzer_regressions:
+    name: Run fuzzer regressions
+    runs-on: [matterlabs-ci-runner]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: Compile for RISC-V
+        working-directory: ./zksync_os
+        run: |
+          rustup target add riscv32i-unknown-none-elf
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          rustup component add rust-src
+          ./dump_bin.sh
+      - name: Run regression tests
+        working-directory: ./tests/fuzzer
+        run: |
+          ./fuzz.sh install
+          ./fuzz.sh regression
