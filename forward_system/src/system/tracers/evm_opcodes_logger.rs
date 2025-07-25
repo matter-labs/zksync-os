@@ -7,7 +7,7 @@ use ruint::aliases::U256;
 use serde::Serialize;
 use zk_ee::{
     system::{
-        tracer::{EvmStateForTracer, Tracer},
+        tracer::{evm_state_for_tracer::EvmStateForTracer, Tracer},
         CallOrDeployResultRef, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources,
         SystemTypes,
     },

@@ -3,7 +3,7 @@ use core::fmt::Write;
 use core::ops::Range;
 use errors::EvmSubsystemError;
 use native_resource_constants::STEP_NATIVE_COST;
-use zk_ee::system::tracer::{EvmStateForTracer, Tracer};
+use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{
     logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
     DeploymentPreparationParameters, DeploymentResult, EthereumLikeTypes,

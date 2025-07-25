@@ -5,7 +5,7 @@
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use zk_ee::system::{
-    tracer::{EvmStateForTracer, Tracer},
+    tracer::{evm_state_for_tracer::EvmStateForTracer, Tracer},
     CallModifier, CallOrDeployResultRef, EthereumLikeTypes, ExecutionEnvironmentLaunchParams,
     Resources, SystemTypes,
 };
