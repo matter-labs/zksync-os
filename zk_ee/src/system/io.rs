@@ -153,7 +153,7 @@ impl<T> Maybe<T> for Just<T> {
     where
         Self: Sized,
     {
-        f().map(|x| Self::construct(|| x))
+        f().map(Self)
     }
 }
 
