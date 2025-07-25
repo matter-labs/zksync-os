@@ -36,7 +36,7 @@ pub struct TransactionId(pub u32);
 
 pub struct StorageSnapshotId {
     pub cache: CacheSnapshotId,
-    pub counter: HistoryCounterSnapshotId,
+    pub evm_refunds_counter: HistoryCounterSnapshotId,
 }
 
 /// EE-specific IO charging.
@@ -103,7 +103,7 @@ pub struct GenericPubdataAwarePlainStorage<
     pub(crate) resources_policy: P,
     pub(crate) current_tx_number: TransactionId,
     pub(crate) initial_values: BTreeMap<K, (V, TransactionId), A>, // Used to cache initial values at the beginning of the tx (For EVM gas model)
-    pub(crate) evm_refunds_counter: HistoryCounter<u32, SC, SCC, A>, // Used to keep track of EVM gas refunds TODO move out to higher levels
+    pub(crate) evm_refunds_counter: HistoryCounter<u32, SC, SCC, A>, // Used to keep track of EVM gas refunds
     alloc: A,
     pub(crate) _marker: core::marker::PhantomData<(R, SC, SCC)>,
 }
@@ -140,7 +140,6 @@ where
 
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
-        // TODO
         self.evm_refunds_counter = HistoryCounter::new(self.alloc.clone());
 
         self.current_tx_number.0 += 1;
@@ -150,7 +149,7 @@ where
     pub fn start_frame(&mut self) -> StorageSnapshotId {
         StorageSnapshotId {
             cache: self.cache.snapshot(),
-            counter: self.evm_refunds_counter.snapshot(),
+            evm_refunds_counter: self.evm_refunds_counter.snapshot(),
         }
     }
 
@@ -161,7 +160,7 @@ where
         rollback_handle: Option<&StorageSnapshotId>,
     ) -> Result<(), InternalError> {
         if let Some(x) = rollback_handle {
-            self.evm_refunds_counter.rollback(x.counter);
+            self.evm_refunds_counter.rollback(x.evm_refunds_counter);
             self.cache.rollback(x.cache)
         } else {
             Ok(())

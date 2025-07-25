@@ -1137,6 +1137,7 @@ where
         let mut gas_used = gas_limit - resources.ergs().0.div_floor(ERGS_PER_GAS);
         resources.exhaust_ergs();
 
+        // Following EIP-3529, refunds are capped to 1/5 of the gas used
         let evm_refund = {
             let full_refund = system.io.get_refund_counter() as u64;
             let max_refund = gas_used / 5;
