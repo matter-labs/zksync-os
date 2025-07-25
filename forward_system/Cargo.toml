@@ -34,7 +34,5 @@ error_origins = ["zk_ee/error_origins"]
 no_print = []
 unlimited_native = ["basic_bootloader/unlimited_native"]
 evm-compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-compatibility"]
-# Adds a field with native resource used to the block output
-report_native = ["basic_bootloader/report_native"]
 disable_system_contracts = ["basic_bootloader/disable_system_contracts"]
 prevrandao = ["zk_ee/prevrandao"]

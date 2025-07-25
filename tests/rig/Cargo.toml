@@ -46,7 +46,6 @@ cycle_marker = ["dep:cycle_marker", "zksync_os_runner/cycle_marker", "zk_ee/cycl
 simulate_witness_gen = []
 unlimited_native = ["forward_system/unlimited_native"]
 resources_for_tester = ["basic_bootloader/resources_for_tester"]
-report_native = ["forward_system/report_native"]
 p256_precompile = ["system_hooks/p256_precompile"]
 disable_system_contracts = ["forward_system/disable_system_contracts"]
 prevrandao = ["zk_ee/prevrandao"]

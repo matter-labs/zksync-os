@@ -32,6 +32,5 @@ evm-compatibility = ["code_in_kernel_space", "transfers_to_kernel_space", "syste
 cycle_marker = ["system_hooks/cycle_marker", "cycle_marker/log_to_file"]
 resources_for_tester = []
 unlimited_native = []
-report_native = []
 disable_system_contracts = []
 error_origins = ["zk_ee/error_origins"]
