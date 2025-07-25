@@ -19,7 +19,7 @@ pub(crate) use self::trie::*;
 pub use self::preimages::*;
 pub use self::trie::EthereumMPT;
 
-pub(crate) const EMPTY_SLICE_ENCODING: &'static [u8] = &[0x80];
+pub(crate) const EMPTY_SLICE_ENCODING: &[u8] = &[0x80];
 
 // Hash of RLP encoded empty slice
 pub const EMPTY_ROOT_HASH: Bytes32 =

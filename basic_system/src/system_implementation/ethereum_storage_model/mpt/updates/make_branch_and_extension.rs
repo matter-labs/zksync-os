@@ -71,7 +71,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                     // it'll go into newly created branch as opaque
                     let new_unreferenced_value_value = OpaqueValue {
                         parent_node: new_branch_node,
-                        branch_index: branch_index,
+                        branch_index,
                         encoding: existing_extension.next_node_key,
                     };
                     let new_unreferenced_value_node = NodeType::unreferenced_value_in_branch(
@@ -182,7 +182,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 // it'll go into newly created branch as opaque
                 let new_terminal_value = OpaqueValue {
                     parent_node: new_branch_node,
-                    branch_index: branch_index,
+                    branch_index,
                     encoding: existing_leaf.value,
                 };
                 let new_terminal_node =

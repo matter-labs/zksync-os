@@ -309,13 +309,12 @@ pub(crate) fn write_nibbles(buffer: &mut impl ByteBuffer, is_leaf: bool, path: &
         } else {
             (0x10, false)
         }
+    } else if is_leaf {
+        (0x20, true)
     } else {
-        if is_leaf {
-            (0x20, true)
-        } else {
-            (0x00, true)
-        }
+        (0x00, true)
     };
+
     for el in path.iter() {
         if write_high {
             buffer.write_byte(byte);

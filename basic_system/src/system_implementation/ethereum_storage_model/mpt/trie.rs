@@ -311,14 +311,14 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 if child_node.is_empty() {
                     Ok(DescendPath::BranchReached {
                         final_branch_node: current_node,
-                        branch_index: branch_index,
+                        branch_index,
                         value: RLPSlice::empty(),
                     })
                 } else if child_node.is_terminal_value_in_branch() {
                     let opaque = &self.branch_terminal_values[child_node.index()];
                     Ok(DescendPath::BranchReached {
                         final_branch_node: current_node,
-                        branch_index: branch_index,
+                        branch_index,
                         value: opaque.encoding,
                     })
                 } else {
@@ -328,7 +328,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 if child_node.is_empty() {
                     Ok(DescendPath::EmptyBranchTaken {
                         branch_node: current_node,
-                        branch_index: branch_index,
+                        branch_index,
                     })
                 } else {
                     if child_node.is_unreferenced_value_in_branch() {
@@ -627,21 +627,17 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             let branch_child = parent_branch_node.child_nodes[parent_branch_index];
             if branch_child.is_unreferenced_value_in_branch() {
                 parent_branch_node.child_nodes[parent_branch_index] = child_node;
-            } else {
-                if child_node != branch_child {
-                    // then it must be the same node, and we rely on indexing to do it
-                    return Err(());
-                }
+            } else if child_node != branch_child {
+                // then it must be the same node, and we rely on indexing to do it
+                return Err(());
             }
         } else if parent_node.is_extension() {
             let parent_extension_node = &mut self.extension_nodes[parent_node.index()];
             if parent_extension_node.child_node.is_unlinked() {
                 parent_extension_node.child_node = child_node;
-            } else {
-                if child_node != parent_extension_node.child_node {
-                    // then it must be the same node, and we rely on indexing to do it
-                    return Err(());
-                }
+            } else if child_node != parent_extension_node.child_node {
+                // then it must be the same node, and we rely on indexing to do it
+                return Err(());
             }
         }
 

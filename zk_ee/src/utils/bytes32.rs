@@ -1,4 +1,4 @@
-use core::{mem::MaybeUninit, ptr::addr_of_mut};
+use core::mem::MaybeUninit;
 use ruint::aliases::{B160, U256};
 
 #[cfg(target_pointer_width = "32")]

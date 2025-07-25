@@ -43,7 +43,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 new_raw_path[prefix_len] = surviving_branch as u8;
                 let mut modified_path = Path {
                     path: new_raw_path,
-                    prefix_len: prefix_len,
+                    prefix_len,
                 };
                 // we have to allocate the next one and decide
                 let key = self.branch_unreferenced_values[surviving_node.index()].encoding;
@@ -109,7 +109,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                     // we need to glue them
                     let existing_extension = self.extension_nodes[parent.index()];
                     debug_assert_eq!(existing_extension.child_node, branch_node);
-                    let _ = path.ascend(existing_extension.path_segment);
+                    path.ascend(existing_extension.path_segment);
                     let grand_parent_branch_index = path.ascend_branch()?;
 
                     (

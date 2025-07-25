@@ -254,7 +254,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                     };
                     let new_opaque = OpaqueValue {
                         parent_node: branch,
-                        branch_index: branch_index,
+                        branch_index,
                         encoding,
                     };
                     let index = self.branch_terminal_values.len();
@@ -347,7 +347,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
             } => {
                 // it's recursive!()
                 let extension = &path.prefix()[(path.prefix_len - extension_len)..];
-                let _ = self.termorary_split_existing_as_extension_and_branch(
+                self.termorary_split_existing_as_extension_and_branch(
                     parent_branch_or_empty,
                     branch_index,
                     alternative_path,
@@ -377,7 +377,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
                 };
                 let new_opaque = OpaqueValue {
                     parent_node: branch,
-                    branch_index: branch_index,
+                    branch_index,
                     encoding,
                 };
                 let index = self.branch_terminal_values.len();
