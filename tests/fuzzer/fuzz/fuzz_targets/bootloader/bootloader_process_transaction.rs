@@ -64,7 +64,7 @@ fn fuzz(data: &[u8]) {
         &mut system_functions,
         memories,
         true,
-        &mut NopTracer {},
+        &mut NopTracer::default(),
     );
 }
 

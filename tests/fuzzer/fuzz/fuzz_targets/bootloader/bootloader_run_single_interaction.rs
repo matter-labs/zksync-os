@@ -109,7 +109,7 @@ fn fuzz(input: FuzzInput) {
                 inf_resources,
                 &amount,
                 true,
-                &mut NopTracer {}
+                &mut NopTracer::default()
             );
         }
         2 => {
@@ -130,7 +130,7 @@ fn fuzz(input: FuzzInput) {
                 inf_resources,
                 &amount,
                 true,
-                &mut NopTracer {}
+                &mut NopTracer::default()
             );
         }
         _ => (),

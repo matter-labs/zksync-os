@@ -157,7 +157,7 @@ fn fuzz(input: FuzzInput) {
                 return;
             };
 
-            let _ = vm_state.start_executing_frame(&mut system, ee_launch_params, heap, &mut NopTracer {});
+            let _ = vm_state.start_executing_frame(&mut system, ee_launch_params, heap, &mut NopTracer::default());
         }
         1 => {
             // Fuzz-test SupportedEEVMState::continue_after_external_call
@@ -188,7 +188,7 @@ fn fuzz(input: FuzzInput) {
                 _ => (),
             }
 
-            let _ = vm_state.continue_after_external_call(&mut system, inf_resources, call_result, &mut NopTracer {});
+            let _ = vm_state.continue_after_external_call(&mut system, inf_resources, call_result, &mut NopTracer::default());
         }
         2 => {
             // Fuzz-test SupportedEEVMState::continue_after_deployment
@@ -221,7 +221,7 @@ fn fuzz(input: FuzzInput) {
             };
 
             let _ =
-                vm_state.continue_after_deployment(&mut system, inf_resources, deployment_result, &mut NopTracer {});
+                vm_state.continue_after_deployment(&mut system, inf_resources, deployment_result, &mut NopTracer::default());
         }
         3 => {
             // Fuzz-test SupportedEEVMState::prepare_for_deployment

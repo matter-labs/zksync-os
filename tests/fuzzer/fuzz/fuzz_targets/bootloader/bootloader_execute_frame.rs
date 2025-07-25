@@ -103,7 +103,7 @@ fn fuzz(input: FuzzInput) {
         return;
     };
 
-    let _ = vm_state.start_executing_frame(&mut system, ee_launch_params, heap, &mut NopTracer {});
+    let _ = vm_state.start_executing_frame(&mut system, ee_launch_params, heap, &mut NopTracer::default());
 
     let Ok(_) = system.finish_global_frame(None) else {
         return;
