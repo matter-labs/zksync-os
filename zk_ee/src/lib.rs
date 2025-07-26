@@ -3,7 +3,6 @@
 #![feature(generic_const_exprs)]
 #![feature(const_type_id)]
 #![feature(allocator_api)]
-#![feature(slice_as_chunks)]
 #![feature(array_chunks)]
 #![feature(associated_type_defaults)]
 #![feature(get_mut_unchecked)]
