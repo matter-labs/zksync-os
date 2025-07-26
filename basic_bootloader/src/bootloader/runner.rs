@@ -142,8 +142,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 let success = matches!(call_result, CallResult::Successful { .. });
 
                 let _ = self.system.get_logger().write_fmt(format_args!(
-                    "Return from external call, success = {}\n",
-                    success
+                    "Return from external call, success = {success}\n"
                 ));
 
                 (resources, CallOrDeployResult::CallResult(call_result))
@@ -782,8 +781,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
                         #[cfg(not(target_arch = "riscv32"))]
                         let _ = self.system.get_logger().write_fmt(format_args!(
-                            "Successfully deployed contract at {:?} \n",
-                            deployed_at
+                            "Successfully deployed contract at {deployed_at:?} \n"
                         ));
                         (true, deployment_result)
                     }

@@ -88,7 +88,7 @@ pub fn run_and_get_effective_cycles(
 
     // Check that the bin file is present and readable.
     let mut file = std::fs::File::open(img_path.clone())
-        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {:?}", img_path));
+        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {img_path:?}"));
     let mut buffer = vec![];
     file.read_to_end(&mut buffer).expect("must read the file");
 
@@ -133,7 +133,7 @@ pub fn simulate_witness_tracing(
 
     // Check that the bin file is present and readable.
     let mut file = std::fs::File::open(img_path.clone())
-        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {:?}", img_path));
+        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {img_path:?}"));
     let mut buffer = vec![];
     file.read_to_end(&mut buffer).expect("must read the file");
 
@@ -154,8 +154,7 @@ pub fn simulate_witness_tracing(
         all_witness_instances.len() * all_witness_instances[0].num_cycles_chunk_size;
     let speed = (cycles_upper_bound as f64) / elapsed.as_secs_f64() / 1_000_000f64;
     println!(
-        "Simulator witness gen speed is roughly {} MHz: ran {} cycles over {:?}",
-        speed, cycles_upper_bound, elapsed
+        "Simulator witness gen speed is roughly {speed} MHz: ran {cycles_upper_bound} cycles over {elapsed:?}"
     );
 }
 

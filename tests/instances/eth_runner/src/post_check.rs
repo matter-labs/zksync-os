@@ -197,7 +197,7 @@ impl DiffTrace {
                     // In the diff trace, slot clearing is not present in post,
                     // so we have to allow the case when v == 0.
                     if !(v.as_uint().is_zero() || storage.contains_key(k)) {
-                        error!("Key {:?} for {:?} not present in reference", k, address);
+                        error!("Key {k:?} for {address:?} not present in reference");
                         return Err(PostCheckError::Internal);
                     }
                 }
@@ -280,7 +280,7 @@ fn zksync_os_output_into_account_state(
                     let encoded = match preimages.get(&w.value.as_u8_array()) {
                         Some(x) => x.clone(),
                         None => {
-                            error!("Must contain preimage for account {:#?}", address);
+                            error!("Must contain preimage for account {address:#?}");
                             return Err(PostCheckError::Internal);
                         }
                     };
@@ -438,7 +438,7 @@ pub fn post_check(
         for (l, r) in res.logs.iter().zip(receipt.logs.iter()) {
             let eq = r.is_equal_to_excluding_data(l);
             if !eq {
-                error!("Not equal logs:\n {:#?} \nand\n {:?}", l, r);
+                error!("Not equal logs:\n {l:#?} \nand\n {r:?}");
                 return Err(PostCheckError::IncorrectLogs {
                     id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
                 });

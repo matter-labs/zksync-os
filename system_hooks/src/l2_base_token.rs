@@ -79,7 +79,7 @@ where
         Ok(Err(e)) => {
             let _ = system
                 .get_logger()
-                .write_fmt(format_args!("Revert: {:?}\n", e));
+                .write_fmt(format_args!("Revert: {e:?}\n"));
             Ok(make_error_return_state(resources))
         }
         Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {

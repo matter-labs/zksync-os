@@ -125,8 +125,7 @@ where
             .write_fmt(format_args!("Main TX body successful = {}\n", !reverted));
 
         let _ = system.get_logger().write_fmt(format_args!(
-            "Resources to refund = {:?}\n",
-            resources_after_main_tx
+            "Resources to refund = {resources_after_main_tx:?}\n"
         ));
 
         *resources = resources_after_main_tx;

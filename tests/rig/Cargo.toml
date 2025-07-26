@@ -32,7 +32,7 @@ ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 tokio = { version = "1.40.0", features = ["rt-multi-thread"] }
 env_logger = "0.11.6"
 log = "0.4.22" # tokio with `rt-multi-thread` feature needed to build ethers 2.0.0
-alloy = { version = "=0.4.0", features = ["full", "eip712"]}
+alloy = { version = "1", features = ["full", "eip712", "consensus"]}
 zksync-web3-rs = { git = "https://github.com/lambdaclass/zksync-web3-rs.git" }
 bincode = "1.3"
 

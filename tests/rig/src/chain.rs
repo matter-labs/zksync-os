@@ -203,7 +203,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let mut file = File::create(&path).expect("should create file");
             file.write_all(&serialized_oracle)
                 .expect("should write to file");
-            info!("Successfully wrote oracle dump to: {}", path);
+            info!("Successfully wrote oracle dump to: {path}");
         }
 
         // forward run
@@ -289,7 +289,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let mut file = File::create(&path).expect("should create file");
             file.write_all(&serialized_oracle)
                 .expect("should write to file");
-            info!("Successfully wrote oracle dumo to: {}", path);
+            info!("Successfully wrote oracle dumo to: {path}");
         }
 
         // forward run
@@ -384,7 +384,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 let mut file = File::create(&output_csr).expect("Failed to create csr reads file");
                 // Write each u32 as an 8-character hexadecimal string without newlines
                 for num in items.borrow().iter() {
-                    write!(file, "{:08X}", num).expect("Failed to write to file");
+                    write!(file, "{num:08X}").expect("Failed to write to file");
                 }
                 debug!(
                     "Successfully wrote {} u32 csr reads elements to file: {}",
@@ -399,7 +399,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 colors::RESET
             );
             for word in proof_output.into_iter() {
-                debug!("{:08x}", word);
+                debug!("{word:08x}");
             }
 
             // Ensure that proof running didn't fail: check that output is not zero
@@ -563,7 +563,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         use ethers::signers::Signer;
         let r =
             LocalWallet::new(&mut ethers::core::rand::thread_rng()).with_chain_id(self.chain_id);
-        info!("Generated wallet: {:0x?}", r);
+        info!("Generated wallet: {r:0x?}");
         r
     }
 
@@ -573,7 +573,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     pub fn random_signer(&self) -> PrivateKeySigner {
         use alloy::signers::Signer;
         let r = PrivateKeySigner::random().with_chain_id(Some(self.chain_id));
-        info!("Generated wallet: {:0x?}", r);
+        info!("Generated wallet: {r:0x?}");
         r
     }
 }
@@ -581,7 +581,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 // bunch of internal utility methods
 fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
     let app = app_name.as_deref().unwrap_or("app");
-    let filename = format!("{}.{}", app, extension);
+    let filename = format!("{app}.{extension}");
     let zksync_os_path = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {

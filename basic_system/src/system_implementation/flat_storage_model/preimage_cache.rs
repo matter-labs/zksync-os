@@ -104,15 +104,8 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                     PreimageType::AccountData => {
                         use crypto::blake2s::Blake2s256;
                         use crypto::MiniDigest;
-                        let digest = Blake2s256::digest(buffered.as_slice());
-                        let mut result = Bytes32::uninit();
-                        let recomputed_hash = unsafe {
-                            result
-                                .assume_init_mut()
-                                .as_u8_array_mut()
-                                .copy_from_slice(digest.as_slice());
-                            result.assume_init()
-                        };
+                        let recomputed_hash =
+                            Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
 
                         if recomputed_hash != *hash {
                             return Err(internal_error!("Account hash mismatch").into());
@@ -121,15 +114,8 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                     PreimageType::Bytecode => {
                         use crypto::blake2s::Blake2s256;
                         use crypto::MiniDigest;
-                        let digest = Blake2s256::digest(buffered.as_slice());
-                        let mut result = Bytes32::uninit();
-                        let recomputed_hash = unsafe {
-                            result
-                                .assume_init_mut()
-                                .as_u8_array_mut()
-                                .copy_from_slice(digest.as_slice());
-                            result.assume_init()
-                        };
+                        let recomputed_hash =
+                            Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
 
                         if recomputed_hash != *hash {
                             return Err(internal_error!("Bytecode hash mismatch").into());
@@ -142,30 +128,16 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                         PreimageType::AccountData => {
                             use crypto::blake2s::Blake2s256;
                             use crypto::MiniDigest;
-                            let digest = Blake2s256::digest(buffered.as_slice());
-                            let mut result = Bytes32::uninit();
-                            let recomputed_hash = unsafe {
-                                result
-                                    .assume_init_mut()
-                                    .as_u8_array_mut()
-                                    .copy_from_slice(digest.as_slice());
-                                result.assume_init()
-                            };
+                            let recomputed_hash =
+                                Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
 
                             recomputed_hash == *hash
                         }
                         PreimageType::Bytecode => {
                             use crypto::blake2s::Blake2s256;
                             use crypto::MiniDigest;
-                            let digest = Blake2s256::digest(buffered.as_slice());
-                            let mut result = Bytes32::uninit();
-                            let recomputed_hash = unsafe {
-                                result
-                                    .assume_init_mut()
-                                    .as_u8_array_mut()
-                                    .copy_from_slice(digest.as_slice());
-                                result.assume_init()
-                            };
+                            let recomputed_hash =
+                                Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
 
                             recomputed_hash == *hash
                         }

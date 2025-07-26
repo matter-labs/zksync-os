@@ -134,7 +134,7 @@ impl core::fmt::Debug for DelegatedU256 {
 impl core::fmt::LowerHex for DelegatedU256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for word in self.as_limbs().iter().rev() {
-            write!(f, "{:016x}", word)?;
+            write!(f, "{word:016x}")?;
         }
 
         core::fmt::Result::Ok(())
