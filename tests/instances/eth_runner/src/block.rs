@@ -43,10 +43,7 @@ impl Block {
                     if supported_tx_type && !calls_unsupported_percompile() {
                         Some(encode_alloy_rpc_tx(tx))
                     } else {
-                        warn!(
-                            "Skipping unsupported transaction of type {:?}",
-                            transaction_type
-                        );
+                        warn!("Skipping unsupported transaction of type {transaction_type:?}");
                         skipped.insert(i);
                         None
                     }

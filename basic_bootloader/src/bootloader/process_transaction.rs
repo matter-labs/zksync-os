@@ -714,11 +714,7 @@ where
         );
         #[cfg(not(target_arch = "riscv32"))]
         cycle_marker::log_marker(
-            format!(
-                "Spent native for [process_transaction]: {}",
-                computational_native_used
-            )
-            .as_str(),
+            format!("Spent native for [process_transaction]: {computational_native_used}").as_str(),
         );
 
         Ok(TxProcessingResult {
@@ -1169,7 +1165,7 @@ where
         let total_gas_refund = gas_limit - gas_used;
         let _ = system
             .get_logger()
-            .write_fmt(format_args!("Gas refund: {}\n", total_gas_refund));
+            .write_fmt(format_args!("Gas refund: {total_gas_refund}\n"));
         require_internal!(
             total_gas_refund <= gas_limit,
             "Gas refund greater than gas limit",

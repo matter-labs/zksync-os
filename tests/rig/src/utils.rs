@@ -37,7 +37,7 @@ pub fn load_wasm_bytecode(contract_name: &str) -> Vec<u8> {
         contract_name
     );
     let mut file = std::fs::File::open(path.as_str())
-        .unwrap_or_else(|_| panic!("Expecting '{}' to exist.", path));
+        .unwrap_or_else(|_| panic!("Expecting '{path}' to exist."));
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
 
@@ -60,7 +60,7 @@ pub fn load_sol_bytecode(project_name: &str, contract_name: &str) -> Vec<u8> {
 
     hex::decode(
         &std::fs::read_to_string(path.as_str())
-            .unwrap_or_else(|_| panic!("Expecring '{}' to exist.", path))[2..],
+            .unwrap_or_else(|_| panic!("Expecring '{path}' to exist."))[2..],
     )
     .unwrap()
 }

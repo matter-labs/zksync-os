@@ -49,7 +49,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
                 let input_iter = input.iter().copied();
                 let _ = logger.write_fmt(format_args!(" input: ",));
                 let _ = logger.log_data(input_iter);
-                let _ = logger.write_fmt(format_args!(" -> 0x{:0x}", hash));
+                let _ = logger.write_fmt(format_args!(" -> 0x{hash:0x}"));
             }
 
             hash
@@ -101,8 +101,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
-                " len {}, source offset: {:?}, dest offset {}",
-                len, source_offset, memory_offset
+                " len {len}, source offset: {source_offset:?}, dest offset {memory_offset}"
             ));
         }
 
@@ -184,8 +183,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
-                " len {}, source offset: {:?}, dest offset {}",
-                len, source_offset, memory_offset
+                " len {len}, source offset: {source_offset:?}, dest offset {memory_offset}"
             ));
         }
 

@@ -89,8 +89,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
-                " len {}, source offset: {:?}, dest offset {}",
-                len, source_offset, memory_offset
+                " len {len}, source offset: {source_offset:?}, dest offset {memory_offset}"
             ));
         }
 

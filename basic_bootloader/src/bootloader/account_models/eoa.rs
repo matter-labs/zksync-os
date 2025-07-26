@@ -255,8 +255,7 @@ where
             .write_fmt(format_args!("Main TX body successful = {}\n", !reverted));
 
         let _ = system.get_logger().write_fmt(format_args!(
-            "Resources to refund = {:?}\n",
-            resources_after_main_tx
+            "Resources to refund = {resources_after_main_tx:?}\n"
         ));
         *resources = resources_after_main_tx;
 
@@ -622,8 +621,7 @@ where
     // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
     #[cfg(not(target_arch = "riscv32"))]
     let _ = system.get_logger().write_fmt(format_args!(
-        "Deployment at {:?} ended with success = {}\n",
-        at, deployment_success
+        "Deployment at {at:?} ended with success = {deployment_success}\n"
     ));
     let returndata_iter = return_values.returndata.iter().copied();
     let _ = system.get_logger().write_fmt(format_args!("Returndata = "));

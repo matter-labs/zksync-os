@@ -26,8 +26,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         // TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
         #[cfg(not(target_arch = "riscv32"))]
         let _ = system.get_logger().write_fmt(format_args!(
-            "Minting {:?} tokens to {:?}\n",
-            nominal_token_value, to
+            "Minting {nominal_token_value:?} tokens to {to:?}\n"
         ));
 
         let _old_balance = system
@@ -78,10 +77,10 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         if DEBUG_OUTPUT {
             let _ = system
                 .get_logger()
-                .write_fmt(format_args!("`caller` = {:?}\n", caller));
+                .write_fmt(format_args!("`caller` = {caller:?}\n"));
             let _ = system
                 .get_logger()
-                .write_fmt(format_args!("`callee` = {:?}\n", callee));
+                .write_fmt(format_args!("`callee` = {callee:?}\n"));
         }
 
         let ee_version = {

@@ -247,15 +247,13 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             match tx_result {
                 Err(TxError::Internal(err)) => {
                     let _ = system.get_logger().write_fmt(format_args!(
-                        "Tx execution result: Internal error = {:?}\n",
-                        err,
+                        "Tx execution result: Internal error = {err:?}\n",
                     ));
                     return Err(err);
                 }
                 Err(TxError::Validation(err)) => {
                     let _ = system.get_logger().write_fmt(format_args!(
-                        "Tx execution result: Validation error = {:?}\n",
-                        err,
+                        "Tx execution result: Validation error = {err:?}\n",
                     ));
                     result_keeper.tx_processed(Err(err));
                 }
@@ -304,7 +302,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             let tx_stats = system.flush_tx();
             let _ = system
                 .get_logger()
-                .write_fmt(format_args!("Tx stats = {:?}\n", tx_stats));
+                .write_fmt(format_args!("Tx stats = {tx_stats:?}\n"));
 
             first_tx = false;
 

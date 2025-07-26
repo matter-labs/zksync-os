@@ -13,7 +13,7 @@ impl core::fmt::Debug for FieldElement5x52 {
         f.write_str("0x")?;
         let bytes = self.to_bytes();
         for b in bytes.as_slice().iter() {
-            f.write_fmt(format_args!("{:02x}", b))?;
+            f.write_fmt(format_args!("{b:02x}"))?;
         }
 
         core::fmt::Result::Ok(())

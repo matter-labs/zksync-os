@@ -21,7 +21,7 @@ impl Logger for StdIOLogger {
         let mut handle = std::io::BufWriter::new(handle);
         use std::io::Write;
         for el in src {
-            write!(&mut handle, "{:02x}", el).unwrap();
+            write!(&mut handle, "{el:02x}").unwrap();
         }
         writeln!(&mut handle).unwrap();
         Ok(())

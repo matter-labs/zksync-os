@@ -180,8 +180,7 @@ pub fn check_enough_resources_for_pubdata<S: EthereumLikeTypes>(
     let (pubdata_used, resources_for_pubdata) =
         get_resources_to_charge_for_pubdata(system, native_per_pubdata, base_pubdata)?;
     let _ = system.get_logger().write_fmt(format_args!(
-        "Checking gas for pubdata, resources_for_pubdata: {:?}, resources: {:?}\n",
-        resources_for_pubdata, resources
+        "Checking gas for pubdata, resources_for_pubdata: {resources_for_pubdata:?}, resources: {resources:?}\n"
     ));
     let enough = resources.has_enough(&resources_for_pubdata);
     Ok((enough, resources_for_pubdata, pubdata_used))

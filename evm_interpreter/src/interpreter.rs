@@ -167,13 +167,13 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     if Self::PRINT_OPCODES {
                         let _ = system
                             .get_logger()
-                            .write_fmt(format_args!("Executing {}", op));
+                            .write_fmt(format_args!("Executing {op}"));
                     }
                 }
                 None => {
                     let _ = system
                         .get_logger()
-                        .write_fmt(format_args!("Unknown opcode = 0x{:02x}\n", opcode));
+                        .write_fmt(format_args!("Unknown opcode = 0x{opcode:02x}\n"));
                 }
             }
 

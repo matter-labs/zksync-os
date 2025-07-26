@@ -429,8 +429,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
 
         debug_assert!(
             key.len() < 32 || key.len() == 33,
-            "key len is invalid for node {:?}",
-            node
+            "key len is invalid for node {node:?}"
         );
 
         Ok((is_new, key))
@@ -511,10 +510,7 @@ impl<'a, A: Allocator + Clone> EthereumMPT<'a, A> {
         unreferenced_branch_value: NodeType,
     ) -> Result<(bool, &'a [u8]), ()> {
         let Some(known_key) = self.keys_cache.get(&unreferenced_branch_value).copied() else {
-            panic!(
-                "Unreferenced branch {:?} has unknown key",
-                unreferenced_branch_value
-            );
+            panic!("Unreferenced branch {unreferenced_branch_value:?} has unknown key");
         };
         debug_assert_ne!(known_key.len(), 32);
 
