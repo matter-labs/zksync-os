@@ -103,8 +103,10 @@ impl<S: SystemTypes> Tracer<S> for NopTracer {
         false
     }
 
+    #[inline(always)]
     fn on_new_execution_frame(&mut self, _request: &ExecutionEnvironmentLaunchParams<S>) {}
 
+    #[inline(always)]
     fn after_execution_frame_completed(
         &mut self,
         _result: Option<(&S::Resources, CallOrDeployResultRef<S>)>,
