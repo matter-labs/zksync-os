@@ -51,11 +51,14 @@ where
         return_memory: memories.return_data,
     };
 
-    let (resources_returned, call_or_deploy_result) =
-        run.handle_spawn_inner::<true>(initial_ee_version, initial_request, heap)?;
+    match initial_request {
+        ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
+            let (resources_returned, call_result) = run.handle_requested_external_call::<true>(
+                initial_ee_version,
+                external_call_request,
+                heap,
+            )?;
 
-    match call_or_deploy_result {
-        CallOrDeployResult::CallResult(call_result) => {
             let (return_values, reverted) = match call_result {
                 CallResult::CallFailedToExecute => (ReturnValues::empty(), true),
                 CallResult::Failed { return_values } => (return_values, true),
@@ -69,12 +72,9 @@ where
                 },
             ))
         }
-        CallOrDeployResult::DeploymentResult(deployment_result) => Ok(
-            TransactionEndPoint::CompletedDeployment(CompletedDeployment {
-                resources_returned,
-                deployment_result,
-            }),
-        ),
+        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => run
+            .handle_requested_deployment::<true>(initial_ee_version, deployment_parameters, heap)
+            .map(TransactionEndPoint::CompletedDeployment),
     }
 }
 
@@ -103,77 +103,60 @@ struct Run<'a, 'm, S: EthereumLikeTypes> {
 
 const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUND, 0, 0]);
 
-impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
-    #[inline(always)]
-    fn handle_spawn<'s, 'a>(
-        &'s mut self,
-        ee_type: ExecutionEnvironmentType,
-        spawn: ExecutionEnvironmentSpawnRequest<'a, S>,
-        heap: SliceVec<'a, u8>,
-    ) -> Result<(S::Resources, CallOrDeployResult<'external, S>), BootloaderSubsystemError>
-    where
-        S::IO: IOSubsystemExt,
-    {
-        self.callstack_height += 1;
-        let result = self.handle_spawn_inner::<false>(ee_type, spawn, heap);
-        self.callstack_height -= 1;
-        result
-    }
-
-    #[inline(always)]
-    fn handle_spawn_inner<const IS_ENTRY_FRAME: bool>(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        spawn: ExecutionEnvironmentSpawnRequest<S>,
-        heap: SliceVec<u8>,
-    ) -> Result<(S::Resources, CallOrDeployResult<'external, S>), BootloaderSubsystemError>
-    where
-        S::IO: IOSubsystemExt,
-    {
-        let resources_and_result = match spawn {
+/// Handles an external call `$spawn` originating from `$vm` with execution environment type `$ee_type`
+/// and then proceeds to run the VM to the next preemption point.
+///
+/// Has to be a macro because the call request and VM overlap, so lifetimes don't work out otherwise.
+/// Can't be split up because otherwise we need to check if call or deployment twice.
+macro_rules! handle_spawn {
+    ($run: ident, $vm:ident, $ee_type:ident, $spawn:ident, $heap:ident) => {
+        match $spawn {
             ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
-                let (resources, call_result) = self
-                    .handle_requested_external_call::<IS_ENTRY_FRAME>(
-                        ee_type,
-                        external_call_request,
-                        heap,
-                    )?;
+                $run.callstack_height += 1;
+                let (resources, call_result) = $run.handle_requested_external_call::<false>(
+                    $ee_type,
+                    external_call_request,
+                    $heap,
+                )?;
+                $run.callstack_height -= 1;
 
                 let success = matches!(call_result, CallResult::Successful { .. });
 
-                let _ = self.system.get_logger().write_fmt(format_args!(
+                let _ = $run.system.get_logger().write_fmt(format_args!(
                     "Return from external call, success = {success}\n"
                 ));
 
-                (resources, CallOrDeployResult::CallResult(call_result))
+                $vm.continue_after_external_call($run.system, resources, call_result)
+                    .map_err(wrap_error!())
             }
             ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => {
+                $run.callstack_height += 1;
                 let CompletedDeployment {
                     resources_returned,
                     deployment_result,
-                } = self.handle_requested_deployment::<IS_ENTRY_FRAME>(
-                    ee_type,
+                } = $run.handle_requested_deployment::<false>(
+                    $ee_type,
                     deployment_parameters,
-                    heap,
+                    $heap,
                 )?;
+                $run.callstack_height -= 1;
 
                 let returndata_region = deployment_result.returndata();
                 let returndata_iter = returndata_region.iter().copied();
-                let _ = self
+                let _ = $run
                     .system
                     .get_logger()
                     .write_fmt(format_args!("Returndata = "));
-                let _ = self.system.get_logger().log_data(returndata_iter);
+                let _ = $run.system.get_logger().log_data(returndata_iter);
 
-                (
-                    resources_returned,
-                    CallOrDeployResult::DeploymentResult(deployment_result),
-                )
+                $vm.continue_after_deployment($run.system, resources_returned, deployment_result)
+                    .map_err(wrap_error!())
             }
-        };
-        Ok(resources_and_result)
-    }
+        }
+    };
+}
 
+impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
     fn copy_into_return_memory<'a>(
         &mut self,
         return_values: ReturnValues<'a, S>,
@@ -429,16 +412,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 } => {
                     let heap = core::mem::take(heap);
                     let request = core::mem::take(request);
-                    let (resources, result) = self.handle_spawn(new_ee_type, request, heap)?;
                     drop(preemption);
-                    preemption = match result {
-                        CallOrDeployResult::CallResult(call_result) => new_vm
-                            .continue_after_external_call(self.system, resources, call_result)
-                            .map_err(wrap_error!())?,
-                        CallOrDeployResult::DeploymentResult(deployment_result) => new_vm
-                            .continue_after_deployment(self.system, resources, deployment_result)
-                            .map_err(wrap_error!())?,
-                    };
+                    preemption = handle_spawn!(self, new_vm, new_ee_type, request, heap)?;
                 }
                 ExecutionEnvironmentPreemptionPoint::End(
                     TransactionEndPoint::CompletedExecution(CompletedExecution {
@@ -683,8 +658,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 )?;
 
                 let _ = self.system.get_logger().write_fmt(format_args!(
-                    "Return from constructor call, success = {}\n",
-                    deployment_success
+                    "Return from constructor call, success = {deployment_success}\n",
                 ));
 
                 resources_returned.reclaim(resources_for_deployer);
@@ -733,17 +707,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 } => {
                     let heap = core::mem::take(heap);
                     let request = core::mem::take(request);
-                    let (resources, result) =
-                        self.handle_spawn(constructor_ee_type, request, heap)?;
                     drop(preemption);
-                    preemption = match result {
-                        CallOrDeployResult::CallResult(call_result) => constructor
-                            .continue_after_external_call(self.system, resources, call_result)
-                            .map_err(wrap_error!())?,
-                        CallOrDeployResult::DeploymentResult(deployment_result) => constructor
-                            .continue_after_deployment(self.system, resources, deployment_result)
-                            .map_err(wrap_error!())?,
-                    };
+                    preemption =
+                        handle_spawn!(self, constructor, constructor_ee_type, request, heap)?;
                 }
                 ExecutionEnvironmentPreemptionPoint::End(end) => {
                     break match end {

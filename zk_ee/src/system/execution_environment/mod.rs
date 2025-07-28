@@ -26,11 +26,6 @@ use crate::memory::slice_vec::SliceVec;
 use crate::system::CallModifier;
 use crate::types_config::*;
 
-pub enum CallOrDeployResult<'a, S: SystemTypes> {
-    CallResult(CallResult<'a, S>),
-    DeploymentResult(DeploymentResult<'a, S>),
-}
-
 // we should consider some bound of amount of data that is deployment-specific,
 // for now it's arbitrary
 pub trait EEDeploymentExtraParameters<S: SystemTypes>: 'static + Sized + core::any::Any {
