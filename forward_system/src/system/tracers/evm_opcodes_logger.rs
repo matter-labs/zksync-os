@@ -104,16 +104,6 @@ impl<S: SystemTypes> EvmOpcodesLogger<S> {
 }
 
 impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
-    #[inline(always)]
-    fn is_on_evm_execution_step_enabled(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn is_after_evm_execution_step_enabled(&self) -> bool {
-        false
-    }
-
     fn before_evm_interpreter_execution_step(
         &mut self,
         opcode: u8,
@@ -188,12 +178,12 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
         })
     }
 
+    #[inline(always)]
     fn after_evm_interpreter_execution_step(
         &mut self,
         _opcode: u8,
         _interpreter_state: &impl EvmFrameInterface<S>,
     ) {
-        unreachable!()
     }
 }
 

@@ -1,9 +1,6 @@
 use crate::system::{evm::EvmFrameInterface, SystemTypes};
 
 pub trait EvmTracer<S: SystemTypes> {
-    fn is_on_evm_execution_step_enabled(&self) -> bool;
-    fn is_after_evm_execution_step_enabled(&self) -> bool;
-
     fn before_evm_interpreter_execution_step(
         &mut self,
         opcode: u8,
@@ -20,16 +17,6 @@ pub trait EvmTracer<S: SystemTypes> {
 pub struct NopEvmTracer;
 
 impl<S: SystemTypes> EvmTracer<S> for NopEvmTracer {
-    #[inline(always)]
-    fn is_on_evm_execution_step_enabled(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn is_after_evm_execution_step_enabled(&self) -> bool {
-        false
-    }
-
     #[inline(always)]
     fn before_evm_interpreter_execution_step(
         &mut self,

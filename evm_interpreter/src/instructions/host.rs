@@ -235,9 +235,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.resize_heap(mem_offset, len)?;
         let data = &self.heap[mem_offset..mem_offset + len];
 
-        if tracer.is_on_event_enabled() {
-            tracer.on_event(THIS_EE_TYPE, &self.address, &topics, data);
-        }
+        tracer.on_event(THIS_EE_TYPE, &self.address, &topics, data);
 
         system.io.emit_event(
             ExecutionEnvironmentType::EVM,

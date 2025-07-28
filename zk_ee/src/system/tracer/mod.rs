@@ -113,8 +113,10 @@ impl<S: SystemTypes> Tracer<S> for NopTracer {
     ) {
     }
 
+    #[inline(always)]
     fn begin_tx(&mut self, _calldata: &[u8]) {}
 
+    #[inline(always)]
     fn finish_tx(&mut self) {}
 
     fn on_storage_read(
@@ -137,6 +139,7 @@ impl<S: SystemTypes> Tracer<S> for NopTracer {
     ) {
     }
 
+    #[inline(always)]
     fn on_event(
         &mut self,
         _ee_type: ExecutionEnvironmentType,
