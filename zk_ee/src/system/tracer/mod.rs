@@ -9,17 +9,6 @@ use super::{CallOrDeployResultRef, ExecutionEnvironmentLaunchParams, SystemTypes
 pub mod evm_tracer;
 
 pub trait Tracer<S: SystemTypes> {
-    fn is_begin_tx_enabled(&self) -> bool;
-    fn is_finish_tx_enabled(&self) -> bool;
-
-    fn is_on_new_execution_frame_enabled(&self) -> bool;
-    fn is_after_execution_frame_enabled(&self) -> bool;
-
-    fn is_on_storage_read_enabled(&self) -> bool;
-    fn is_on_storage_write_enabled(&self) -> bool;
-
-    fn is_on_event_enabled(&self) -> bool;
-
     fn evm_tracer(&mut self) -> &mut impl EvmTracer<S>;
 
     /// Hook before external call or deployment execution
@@ -68,41 +57,6 @@ pub struct NopTracer {
 }
 
 impl<S: SystemTypes> Tracer<S> for NopTracer {
-    #[inline(always)]
-    fn is_begin_tx_enabled(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn is_finish_tx_enabled(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn is_on_new_execution_frame_enabled(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn is_after_execution_frame_enabled(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn is_on_storage_read_enabled(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn is_on_storage_write_enabled(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn is_on_event_enabled(&self) -> bool {
-        false
-    }
-
     #[inline(always)]
     fn on_new_execution_frame(&mut self, _request: &ExecutionEnvironmentLaunchParams<S>) {}
 
