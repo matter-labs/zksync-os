@@ -98,7 +98,7 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     let copy_source = ReadWitnessSource::new(non_determinism_source);
     let items = copy_source.get_read_items();
 
-    let _proof_output = zksync_os_runner::run(zk_os_program_path, None, 1 << 30, copy_source);
+    let _proof_output = zksync_os_runner::run(zk_os_program_path, None, 1 << 36, copy_source);
 
     Ok(std::rc::Rc::try_unwrap(items).unwrap().into_inner())
 }

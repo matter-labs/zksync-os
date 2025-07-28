@@ -43,7 +43,7 @@ pub fn run_batch_generate_witness(
     let items = copy_source.get_read_items();
     // By default - enable diagnostics is false (which makes the test run faster).
     let path = PathBuf::from_str(zksync_os_bin_path).unwrap();
-    let output = zksync_os_runner::run(path, None, 1 << 30, copy_source);
+    let output = zksync_os_runner::run(path, None, 1 << 36, copy_source);
 
     // We return 0s in case of failure.
     assert_ne!(output, [0u32; 8]);
