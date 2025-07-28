@@ -134,6 +134,16 @@ pub trait IOSubsystem: Sized {
         &mut self,
         rollback_handle: Option<&<Self as IOSubsystem>::StateSnapshot>,
     ) -> Result<(), InternalError>;
+
+    /// Increments an account's nonce and
+    /// returns the old nonce.
+    fn increment_nonce(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        increment_by: u64,
+    ) -> Result<u64, NonceSubsystemError>;
 }
 
 pub trait Maybe<T> {
@@ -332,16 +342,6 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
     ) -> Result<u64, SystemError>;
-
-    /// Increments an account's nonce and
-    /// returns the old nonce.
-    fn increment_nonce(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut Self::Resources,
-        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-        increment_by: u64,
-    ) -> Result<u64, NonceSubsystemError>;
 
     /// Perform a transfer of token balance.
     fn transfer_nominal_token_value(

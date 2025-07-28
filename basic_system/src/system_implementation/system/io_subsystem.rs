@@ -382,6 +382,17 @@ where
 
         Ok(())
     }
+
+    fn increment_nonce(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        increment_by: u64,
+    ) -> Result<u64, NonceSubsystemError> {
+        self.storage
+            .increment_nonce(ee_type, resources, address, increment_by, &mut self.oracle)
+    }
 }
 
 pub trait FinishIO {
@@ -789,17 +800,6 @@ where
                 &mut self.oracle,
             )
             .map(|account_data| account_data.nonce.0)
-    }
-
-    fn increment_nonce(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut Self::Resources,
-        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-        increment_by: u64,
-    ) -> Result<u64, NonceSubsystemError> {
-        self.storage
-            .increment_nonce(ee_type, resources, address, increment_by, &mut self.oracle)
     }
 
     fn touch_account(

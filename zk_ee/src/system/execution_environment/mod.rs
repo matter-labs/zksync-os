@@ -95,6 +95,12 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         callee_account_properties: &CalleeAccountProperties,
     ) -> Result<S::Resources, Self::SubsystemError>;
 
+    fn calculate_resources_passed_in_constructor(
+        resources_in_caller_frame: &mut S::Resources,
+        deployment_parameters: &ExecutionEnvironmentLaunchParams<S>,
+        system: &mut System<S>,
+    ) -> Result<S::Resources, Self::SubsystemError>;
+
     /// Continues after the bootloader handled a completed external call.
     fn continue_after_external_call<'a, 'res: 'ee>(
         &'a mut self,

@@ -130,6 +130,25 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     <S::IOTypes as SystemIOTypesConfig>::Address::default()
                 );
 
+                // EIP-161: contracts should be initialized with nonce 1
+                // Note: this has to be done before we actually deploy the bytecode,
+                // as constructor execution should see the deployed_address as having
+                // nonce = 1
+                available_resources
+                    .with_infinite_ergs(|inf_resources| {
+                        system
+                            .io
+                            .increment_nonce(THIS_EE_TYPE, inf_resources, &this_address, 1)
+                    })
+                    .map_err(|e| -> EvmSubsystemError {
+                        match e {
+                            SubsystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
+                                wrap_error!(e)
+                            }
+                            _ => internal_error!("Failed to set deployed nonce to 1").into(),
+                        }
+                    })?;
+
                 is_constructor = true
             }
             CallModifier::EVMCallcode => {
@@ -384,9 +403,6 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             return Err(interface_error!(EvmInterfaceError::UnknownDeploymentData));
         };
 
-        // Constructor gets 63/64 of available resources
-        let ergs_for_constructor = gas_utils::apply_63_64_rule(deployer_full_resources.ergs());
-
         // We only charge after succeeding the following checks:
         // - Deployer has enough balance for token transfer
         // - Nonce overflow check
@@ -489,18 +505,11 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             }
         };
 
-        // For now, keep native in deployer resources.
-        let mut deployer_remaining_resources = deployer_full_resources;
-
-        let mut resources_for_constructor = S::Resources::from_ergs(ergs_for_constructor);
-        // Charge ergs for constructor (take 63/64, cannot fail).
-        deployer_remaining_resources.charge_unchecked(&resources_for_constructor);
-
         let AccountData {
             nonce: Just(deployee_nonce),
             unpadded_code_len: Just(deployee_code_len),
             ..
-        } = deployer_remaining_resources.with_infinite_ergs(|inf_resources| {
+        } = deployer_full_resources.with_infinite_ergs(|inf_resources| {
             system.io.read_account_properties(
                 THIS_EE_TYPE,
                 inf_resources,
@@ -520,12 +529,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Deployment on existing account\n",));
-            return Ok((deployer_remaining_resources, None));
+            return Ok((deployer_full_resources, None));
         }
-
-        // Now we know the constructor will be ran, so we can take the native
-        // resources from deployer.
-        deployer_remaining_resources.give_native_to(&mut resources_for_constructor);
 
         let environment_parameters = EnvironmentParameters {
             bytecode: Bytecode::Constructor(deployment_code),
@@ -535,7 +540,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         // TODO: eventually more resources OUT of the frame
         let next_frame_state = ExecutionEnvironmentLaunchParams {
             external_call: ExternalCallRequest {
-                available_resources: resources_for_constructor,
+                available_resources: Default::default(),
                 // Ergs to pass are only used for actual calls
                 ergs_to_pass: Ergs(0),
                 caller: address_of_deployer,
@@ -549,6 +554,24 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             environment_parameters,
         };
 
-        Ok((deployer_remaining_resources, Some(next_frame_state)))
+        Ok((deployer_full_resources, Some(next_frame_state)))
+    }
+
+    fn calculate_resources_passed_in_constructor(
+        resources_in_caller_frame: &mut <S as SystemTypes>::Resources,
+        _deployment_parameters: &ExecutionEnvironmentLaunchParams<S>,
+        _system: &mut System<S>,
+    ) -> Result<<S as SystemTypes>::Resources, Self::SubsystemError> {
+        // Constructor gets 63/64 of available resources
+        let ergs_for_constructor = gas_utils::apply_63_64_rule(resources_in_caller_frame.ergs());
+        // Charge caller frame
+        let resources_to_pass = S::Resources::from_ergs(ergs_for_constructor);
+
+        // This never panics because ergs_for_constructor <= resources_in_caller_frame
+        resources_in_caller_frame
+            .charge(&resources_to_pass)
+            .unwrap();
+
+        return Ok(resources_to_pass);
     }
 }

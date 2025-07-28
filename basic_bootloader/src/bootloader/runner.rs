@@ -550,7 +550,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         // Caller gave away all it's resources into deployment parameters, and in preparation function
         // we will charge for deployment, compute address and potentially increment nonce
 
-        let (mut resources_for_deployer, mut launch_params) =
+        let (resources_for_deployer, mut launch_params) =
             match SupportedEEVMState::prepare_for_deployment(
                 ee_type,
                 self.system,
@@ -571,20 +571,50 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 }
             };
 
-        // resources returned back to caller
-        if IS_ENTRY_FRAME {
-            // resources returned back to caller do not make sense, so we join them back
-            launch_params
-                .external_call
-                .available_resources
-                .reclaim(resources_for_deployer);
-            resources_for_deployer = S::Resources::empty();
-        }
+        let mut deployer_resources = resources_for_deployer;
+
+        let mut resources_for_constructor_frame = if !IS_ENTRY_FRAME {
+            // now we should ask current EE to calculate resources for the callee frame
+            let mut constructor_resources =
+                match SupportedEEVMState::<S>::calculate_resources_passed_in_constructor(
+                    ee_type,
+                    &mut deployer_resources,
+                    &launch_params,
+                    self.system,
+                ) {
+                    Ok(x) => x,
+                    Err(x) => {
+                        if let RootCause::Runtime(RuntimeError::OutOfErgs(_)) = x.root_cause() {
+                            return Ok(CompletedDeployment {
+                                resources_returned: deployer_resources,
+                                deployment_result: DeploymentResult::Failed {
+                                    return_values: ReturnValues::empty(),
+                                    execution_reverted: false,
+                                },
+                            });
+                        } else {
+                            return Err(wrap_error!(x));
+                        }
+                    }
+                };
+
+            // Give native resource to the callee.
+            deployer_resources.give_native_to(&mut constructor_resources);
+            constructor_resources
+        } else {
+            deployer_resources.take()
+        };
+
+        // Now we know the constructor will be ran, so we can take the native
+        // resources from deployer.
+        deployer_resources.give_native_to(&mut resources_for_constructor_frame);
+
+        launch_params.external_call.available_resources = resources_for_constructor_frame;
 
         if self.callstack_height > 1024 {
-            resources_for_deployer.reclaim(launch_params.external_call.available_resources);
+            deployer_resources.reclaim(launch_params.external_call.available_resources);
             return Ok(CompletedDeployment {
-                resources_returned: resources_for_deployer,
+                resources_returned: deployer_resources,
                 deployment_result: DeploymentResult::Failed {
                     return_values: ReturnValues::empty(),
                     execution_reverted: false,
@@ -598,30 +628,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             .map_err(|_| internal_error!("must start a new frame for init code"))?;
 
         let nominal_token_value = launch_params.external_call.nominal_token_value;
-
-        // EIP-161: contracts should be initialized with nonce 1
-        // Note: this has to be done before we actually deploy the bytecode,
-        // as constructor execution should see the deployed_address as having
-        // nonce = 1
-        launch_params
-            .external_call
-            .available_resources
-            .with_infinite_ergs(|inf_resources| {
-                self.system.io.increment_nonce(
-                    self.initial_ee_version,
-                    inf_resources,
-                    &launch_params.external_call.callee,
-                    1,
-                )
-            })
-            .map_err(|e| -> BootloaderSubsystemError {
-                match e {
-                    SubsystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
-                        wrap_error!(e)
-                    }
-                    _ => internal_error!("Failed to set deployed nonce to 1").into(),
-                }
-            })?;
 
         if nominal_token_value != U256::ZERO {
             launch_params
@@ -651,7 +657,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         }
 
         match self.deployment_execute_constructor_frame(ee_type, launch_params, heap) {
-            Ok((deployment_success, mut resources_returned, deployment_result)) => {
+            Ok((deployment_success, resources_returned, deployment_result)) => {
                 // Now finish constructor frame
                 self.system.finish_global_frame(
                     (!deployment_success).then_some(&constructor_rollback_handle),
@@ -661,10 +667,10 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     "Return from constructor call, success = {deployment_success}\n",
                 ));
 
-                resources_returned.reclaim(resources_for_deployer);
+                deployer_resources.reclaim(resources_returned);
 
                 Ok(CompletedDeployment {
-                    resources_returned,
+                    resources_returned: deployer_resources,
                     deployment_result,
                 })
             }
