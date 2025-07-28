@@ -59,6 +59,7 @@ where
                 initial_ee_version,
                 external_call_request,
                 heap,
+                tracer,
             )?;
 
             let (return_values, reverted) = match call_result {
@@ -75,7 +76,12 @@ where
             ))
         }
         ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => run
-            .handle_requested_deployment::<true>(initial_ee_version, deployment_parameters, heap)
+            .handle_requested_deployment::<true>(
+                initial_ee_version,
+                deployment_parameters,
+                heap,
+                tracer,
+            )
             .map(TransactionEndPoint::CompletedDeployment),
     }
 }
@@ -111,7 +117,7 @@ const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUN
 /// Has to be a macro because the call request and VM overlap, so lifetimes don't work out otherwise.
 /// Can't be split up because otherwise we need to check if call or deployment twice.
 macro_rules! handle_spawn {
-    ($run: ident, $vm:ident, $ee_type:ident, $spawn:ident, $heap:ident) => {
+    ($run: ident, $vm:ident, $ee_type:ident, $spawn:ident, $heap:ident, $tracer:ident) => {
         match $spawn {
             ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
                 $run.callstack_height += 1;
@@ -119,6 +125,7 @@ macro_rules! handle_spawn {
                     $ee_type,
                     external_call_request,
                     $heap,
+                    $tracer,
                 )?;
                 $run.callstack_height -= 1;
 
@@ -128,7 +135,7 @@ macro_rules! handle_spawn {
                     "Return from external call, success = {success}\n"
                 ));
 
-                $vm.continue_after_external_call($run.system, resources, call_result)
+                $vm.continue_after_external_call($run.system, resources, call_result, $tracer)
                     .map_err(wrap_error!())
             }
             ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => {
@@ -140,6 +147,7 @@ macro_rules! handle_spawn {
                     $ee_type,
                     deployment_parameters,
                     $heap,
+                    $tracer,
                 )?;
                 $run.callstack_height -= 1;
 
@@ -151,8 +159,13 @@ macro_rules! handle_spawn {
                     .write_fmt(format_args!("Returndata = "));
                 let _ = $run.system.get_logger().log_data(returndata_iter);
 
-                $vm.continue_after_deployment($run.system, resources_returned, deployment_result)
-                    .map_err(wrap_error!())
+                $vm.continue_after_deployment(
+                    $run.system,
+                    resources_returned,
+                    deployment_result,
+                    $tracer,
+                )
+                .map_err(wrap_error!())
             }
         }
     };
@@ -437,7 +450,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     let heap = core::mem::take(heap);
                     let request = core::mem::take(request);
                     drop(preemption);
-                    preemption = handle_spawn!(self, new_vm, new_ee_type, request, heap)?;
+                    preemption = handle_spawn!(self, new_vm, new_ee_type, request, heap, tracer)?;
                 }
                 ExecutionEnvironmentPreemptionPoint::End(
                     TransactionEndPoint::CompletedExecution(CompletedExecution {
@@ -751,8 +764,14 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     let heap = core::mem::take(heap);
                     let request = core::mem::take(request);
                     drop(preemption);
-                    preemption =
-                        handle_spawn!(self, constructor, constructor_ee_type, request, heap)?;
+                    preemption = handle_spawn!(
+                        self,
+                        constructor,
+                        constructor_ee_type,
+                        request,
+                        heap,
+                        tracer
+                    )?;
                 }
                 ExecutionEnvironmentPreemptionPoint::End(end) => {
                     break match end {
