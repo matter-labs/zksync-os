@@ -14,7 +14,7 @@ use forward_system::run::test_impl::{
     InMemoryPreimageSource, InMemoryTree, NoopTxCallback, TxListSource,
 };
 use forward_system::run::{
-    BatchOutput, ForwardRunningOracle, ForwardRunningOracleAux,
+    BatchOutput, ForwardRunningOracle,
 };
 use forward_system::system::bootloader::run_forward;
 use log::{debug, info, trace};
@@ -193,12 +193,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         // dump oracle if env variable set
         if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
-            let aux_oracle: ForwardRunningOracleAux<
-                InMemoryTree<RANDOMIZED_TREE>,
-                InMemoryPreimageSource,
-                TxListSource,
-            > = oracle.clone().into();
-            let serialized_oracle = bincode::serialize(&aux_oracle).expect("should serialize");
+            let serialized_oracle = bincode::serialize(&oracle).expect("should serialize");
             let mut file = File::create(&path).expect("should create file");
             file.write_all(&serialized_oracle)
                 .expect("should write to file");
@@ -283,12 +278,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         // dump oracle if env variable set
         if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
-            let aux_oracle: ForwardRunningOracleAux<
-                InMemoryTree<RANDOMIZED_TREE>,
-                InMemoryPreimageSource,
-                TxListSource,
-            > = oracle.clone().into();
-            let serialized_oracle = bincode::serialize(&aux_oracle).expect("should serialize");
+            let serialized_oracle = bincode::serialize(&oracle).expect("should serialize");
             let mut file = File::create(&path).expect("should create file");
             file.write_all(&serialized_oracle)
                 .expect("should write to file");

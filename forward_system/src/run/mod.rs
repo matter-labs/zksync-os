@@ -18,7 +18,6 @@ use basic_bootloader::bootloader::config::{
 use errors::ForwardSubsystemError;
 use oracle::CallSimulationOracle;
 pub use oracle::ForwardRunningOracle;
-pub use oracle::ForwardRunningOracleAux;
 use zk_ee::common_structs::ProofData;
 use zk_ee::utils::Bytes32;
 
@@ -128,8 +127,7 @@ pub fn run_batch_with_oracle_dump<
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
 
     if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
-        let aux_oracle: ForwardRunningOracleAux<T, PS, TS> = oracle.clone().into();
-        let serialized_oracle = bincode::serialize(&aux_oracle).expect("should serialize");
+        let serialized_oracle = bincode::serialize(&oracle).expect("should serialize");
         let mut file = File::create(path).expect("should create file");
         file.write_all(&serialized_oracle)
             .expect("should write to file");
@@ -150,9 +148,7 @@ pub fn run_batch_from_oracle_dump<
     let mut file = File::open(path).expect("should open file");
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).expect("should read file");
-    let oracle_aux: ForwardRunningOracleAux<T, PS, TS> =
-        bincode::deserialize(&buffer).expect("should deserialize");
-    let oracle: ForwardRunningOracle<T, PS, TS> = oracle_aux.into();
+    let oracle: ForwardRunningOracle<T, PS, TS> = bincode::deserialize(&buffer).expect("should deserialize");
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 

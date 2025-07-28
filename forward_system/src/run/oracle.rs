@@ -16,61 +16,6 @@ use zk_ee::utils::*;
 use super::ReadStorage;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ForwardRunningOracleAux<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> {
-    pub proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
-    pub block_metadata: BlockMetadataFromOracle,
-    pub tree: T,
-    pub tx_source: TS,
-    pub preimage_source: PS,
-    pub next_tx: Option<Vec<u8>>,
-}
-
-impl<T: ReadStorageTree + Clone, PS: PreimageSource + Clone, TS: TxSource + Clone> Clone
-    for ForwardRunningOracleAux<T, PS, TS>
-{
-    fn clone(&self) -> Self {
-        ForwardRunningOracleAux {
-            proof_data: self.proof_data,
-            block_metadata: self.block_metadata,
-            tree: self.tree.clone(),
-            tx_source: self.tx_source.clone(),
-            preimage_source: self.preimage_source.clone(),
-            next_tx: self.next_tx.clone(),
-        }
-    }
-}
-
-impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> From<ForwardRunningOracle<T, PS, TS>>
-    for ForwardRunningOracleAux<T, PS, TS>
-{
-    fn from(oracle: ForwardRunningOracle<T, PS, TS>) -> Self {
-        ForwardRunningOracleAux {
-            proof_data: oracle.proof_data,
-            block_metadata: oracle.block_metadata,
-            tree: oracle.tree,
-            tx_source: oracle.tx_source,
-            preimage_source: oracle.preimage_source,
-            next_tx: oracle.next_tx,
-        }
-    }
-}
-
-impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> From<ForwardRunningOracleAux<T, PS, TS>>
-    for ForwardRunningOracle<T, PS, TS>
-{
-    fn from(oracle: ForwardRunningOracleAux<T, PS, TS>) -> Self {
-        ForwardRunningOracle {
-            proof_data: oracle.proof_data,
-            block_metadata: oracle.block_metadata,
-            tree: oracle.tree,
-            tx_source: oracle.tx_source,
-            preimage_source: oracle.preimage_source,
-            next_tx: oracle.next_tx,
-        }
-    }
-}
-
-#[derive(Debug)]
 pub struct ForwardRunningOracle<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> {
     pub proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
     pub block_metadata: BlockMetadataFromOracle,
