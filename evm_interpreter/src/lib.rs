@@ -22,11 +22,13 @@ use core::alloc::Allocator;
 use core::ops::Range;
 use either::Either;
 
+use errors::EvmSubsystemError;
 use evm_stack::EvmStack;
 use gas::Gas;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
+use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::{internal::InternalError, system::SystemError};
 use zk_ee::system::{EthereumLikeTypes, Resource, Resources, System, SystemTypes};
@@ -325,7 +327,7 @@ pub type InstructionResult = Result<(), ExitCode>;
 /// Expected exit reasons from the EVM interpreter.
 ///
 #[repr(u8)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 // #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ExitCode {
     //success codes
@@ -370,17 +372,26 @@ pub enum ExitCode {
     FatalExternalError,
 
     // Fatal internal error
-    FatalError(SystemError),
+    FatalError(EvmSubsystemError),
 }
 
 impl From<SystemError> for ExitCode {
     fn from(e: SystemError) -> Self {
         match e {
-            e @ SystemError::LeafDefect(_) => Self::FatalError(e),
-            e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
-                Self::FatalError(e)
-            }
             SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => Self::OutOfGas,
+            e => Self::FatalError(e.into()),
+        }
+    }
+}
+
+/// TODO this is a workaround. We need to contain ExitCode better inside EVM
+/// interpreter but it requires a bit of untangling.
+impl From<EvmSubsystemError> for ExitCode {
+    fn from(e: EvmSubsystemError) -> Self {
+        if let RootCause::Runtime(RuntimeError::OutOfErgs(_)) = e.root_cause() {
+            Self::OutOfGas
+        } else {
+            Self::FatalError(e)
         }
     }
 }

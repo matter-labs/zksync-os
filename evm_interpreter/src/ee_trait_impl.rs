@@ -7,12 +7,15 @@ use core::any::Any;
 use core::fmt::Write;
 use ruint::aliases::B160;
 use zk_ee::memory::ArrayBuilder;
+use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::RuntimeError;
-use zk_ee::system::{errors::UpdateQueryError, *};
+use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::*;
 use zk_ee::types_config::SystemIOTypesConfig;
+use zk_ee::utils::cheap_clone::CheapCloneRiscV;
 use zk_ee::utils::{b160_to_u256, Bytes32};
-use zk_ee::{interface_error, internal_error};
+use zk_ee::{interface_error, internal_error, wrap_error};
 
 impl<S: SystemTypes> EEDeploymentExtraParameters<S> for CreateScheme {}
 
@@ -393,10 +396,11 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     )
                 }) {
                     Ok(nonce) => Ok(nonce),
-                    Err(UpdateQueryError::System(e)) => return Err(e.into()),
-                    Err(UpdateQueryError::NumericBoundsError) => {
-                        return Ok((deployer_full_resources, None))
-                    }
+                    Err(SubsystemError::LeafUsage(InterfaceError(
+                        NonceError::NonceOverflow,
+                        _,
+                    ))) => return Ok((deployer_full_resources, None)),
+                    Err(e) => return Err(wrap_error!(e)),
                 }
             }
         }?;
@@ -431,7 +435,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     .map_err(|e| -> EvmSubsystemError {
                         match e.root_cause() {
                             RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
-                                (*e).into()
+                                e.clone_or_copy().into()
                             }
                             _ => internal_error!("Keccak in create2 cannot fail").into(),
                         }

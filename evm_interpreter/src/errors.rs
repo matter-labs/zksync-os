@@ -1,4 +1,9 @@
-use zk_ee::{define_subsystem, system::CallModifier};
+use zk_ee::{
+    define_subsystem,
+    system::{
+        BalanceSubsystemError, CallModifier, DeconstructionSubsystemError, NonceSubsystemError,
+    },
+};
 
 define_subsystem!(
     Evm,
@@ -7,5 +12,10 @@ define_subsystem!(
         UnknownDeploymentData,
         BytecodeNoPadding,
         UnexpectedModifier{ modifier: CallModifier },
+    },
+    cascade EvmCascadedError {
+        Nonce(NonceSubsystemError),
+        Balance(BalanceSubsystemError),
+        Deconstruction(DeconstructionSubsystemError),
     }
 );

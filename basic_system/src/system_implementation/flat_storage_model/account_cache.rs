@@ -29,16 +29,22 @@ use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 use zk_ee::common_structs::PreimageType;
 use zk_ee::define_subsystem;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::interface_error;
 use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackCtor;
+use zk_ee::system::BalanceSubsystemError;
 use zk_ee::system::Computational;
+use zk_ee::system::DeconstructionSubsystemError;
+use zk_ee::system::NonceError;
+use zk_ee::system::NonceSubsystemError;
 use zk_ee::system::Resource;
 use zk_ee::utils::BitsOrd;
 use zk_ee::utils::Bytes32;
+use zk_ee::wrap_error;
 use zk_ee::{
     memory::stack_trait::StackCtorConst,
     system::{
-        errors::{internal::InternalError, system::SystemError, UpdateQueryError},
+        errors::{internal::InternalError, system::SystemError},
         AccountData, AccountDataRequest, Ergs, IOResultKeeper, Maybe, Resources,
     },
     system_io_oracle::IOOracle,
@@ -232,12 +238,12 @@ where
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         address: &B160,
-        update_fn: impl FnOnce(&U256) -> Result<U256, UpdateQueryError>,
+        update_fn: impl FnOnce(&U256) -> Result<U256, BalanceSubsystemError>,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
-    ) -> Result<U256, UpdateQueryError> {
+    ) -> Result<U256, BalanceSubsystemError> {
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             ee_type,
             resources,
@@ -276,8 +282,10 @@ where
         preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
-    ) -> Result<(), UpdateQueryError> {
-        let mut f = |addr, op: fn(U256, U256) -> (U256, bool)| {
+    ) -> Result<(), BalanceSubsystemError> {
+        use zk_ee::system::BalanceError;
+
+        let mut f = |addr, op: fn(U256, U256) -> (U256, bool), err| {
             self.update_nominal_token_value_inner::<PROOF_ENV>(
                 from_ee,
                 resources,
@@ -285,7 +293,7 @@ where
                 move |old_balance: &U256| {
                     let (new_value, of) = op(*old_balance, *amount);
                     if of {
-                        Err(UpdateQueryError::NumericBoundsError)
+                        Err(err)
                     } else {
                         Ok(new_value)
                     }
@@ -298,8 +306,16 @@ where
         };
 
         // can do update twice
-        f(from, U256::overflowing_sub)?;
-        f(to, U256::overflowing_add)?;
+        f(
+            from,
+            U256::overflowing_sub,
+            interface_error!(BalanceError::InsufficientBalance),
+        )?;
+        f(
+            to,
+            U256::overflowing_add,
+            interface_error!(BalanceError::Overflow),
+        )?;
 
         Ok(())
     }
@@ -559,7 +575,7 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-    ) -> Result<u64, UpdateQueryError> {
+    ) -> Result<u64, NonceSubsystemError> {
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             ee_type,
             resources,
@@ -584,7 +600,7 @@ where
                 })
             })?;
         } else {
-            return Err(UpdateQueryError::NumericBoundsError);
+            return Err(interface_error!(NonceError::NonceOverflow));
         }
 
         Ok(nonce)
@@ -595,11 +611,11 @@ where
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         address: &B160,
-        update_fn: impl FnOnce(&U256) -> Result<U256, UpdateQueryError>,
+        update_fn: impl FnOnce(&U256) -> Result<U256, BalanceSubsystemError>,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-    ) -> Result<U256, UpdateQueryError> {
+    ) -> Result<U256, BalanceSubsystemError> {
         self.update_nominal_token_value_inner::<PROOF_ENV>(
             ee_type,
             resources,
@@ -622,7 +638,7 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-    ) -> Result<(), UpdateQueryError> {
+    ) -> Result<(), BalanceSubsystemError> {
         self.transfer_nominal_token_value_inner::<PROOF_ENV>(
             from_ee,
             resources,
@@ -905,7 +921,7 @@ where
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
         in_constructor: bool,
-    ) -> Result<(), SystemError> {
+    ) -> Result<(), DeconstructionSubsystemError> {
         let cur_tx = self.current_tx_number;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             from_ee,
@@ -953,12 +969,7 @@ where
                 oracle,
                 true,
             )
-            .map_err(|e| match e {
-                UpdateQueryError::NumericBoundsError => {
-                    internal_error!("Impossible, not enough balance in deconstruction").into()
-                }
-                UpdateQueryError::System(e) => e,
-            })?
+            .map_err(wrap_error!())?;
         } else if should_be_deconstructed {
             account_data.update(|cache_record| {
                 cache_record.update(|v, _| {

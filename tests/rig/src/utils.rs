@@ -2,7 +2,7 @@
 //! This module contains bunch of standalone utility methods, useful for testing.
 //!
 
-use alloy::consensus::SignableTransaction;
+use alloy::consensus::{SignableTransaction, Transaction};
 use alloy::network::TxSignerSync;
 #[allow(deprecated)]
 use alloy::primitives::Signature;
@@ -37,7 +37,7 @@ pub fn load_wasm_bytecode(contract_name: &str) -> Vec<u8> {
         contract_name
     );
     let mut file = std::fs::File::open(path.as_str())
-        .unwrap_or_else(|_| panic!("Expecting '{}' to exist.", path));
+        .unwrap_or_else(|_| panic!("Expecting '{path}' to exist."));
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
 
@@ -60,7 +60,7 @@ pub fn load_sol_bytecode(project_name: &str, contract_name: &str) -> Vec<u8> {
 
     hex::decode(
         &std::fs::read_to_string(path.as_str())
-            .unwrap_or_else(|_| panic!("Expecring '{}' to exist.", path))[2..],
+            .unwrap_or_else(|_| panic!("Expecring '{path}' to exist."))[2..],
     )
     .unwrap()
 }
@@ -98,7 +98,7 @@ pub fn sign_and_encode_alloy_tx(
     }
     let tx_type = tx.ty();
     let from = wallet.address().into_array();
-    let to = tx.to().to().map(|to| to.into_array());
+    let to = tx.to().map(|to| to.into_array());
     let gas_limit = tx.gas_limit() as u128;
     let max_fee_per_gas = tx.max_fee_per_gas();
     let max_priority_fee_per_gas = tx.max_priority_fee_per_gas();
@@ -143,37 +143,40 @@ pub fn sign_and_encode_alloy_tx(
 
 #[allow(deprecated)]
 pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> Vec<u8> {
-    let tx_type = tx.transaction_type.unwrap_or(0);
-    let from = tx.from.into_array();
-    let to = tx.to.map(|a| a.into_array());
-    let gas_limit = tx.gas as u128;
+    use alloy::consensus::Typed2718;
+    let tx_type = tx.inner.tx_type().ty();
+    let from = tx.as_recovered().signer().into_array();
+    let to = tx.to().map(|a| a.into_array());
+    let gas_limit = tx.gas_limit() as u128;
     let (max_fee_per_gas, max_priority_fee_per_gas) = if tx_type == 2 {
-        (tx.max_fee_per_gas.unwrap(), tx.max_priority_fee_per_gas)
+        (tx.max_fee_per_gas(), tx.max_priority_fee_per_gas())
     } else {
-        (tx.gas_price.unwrap(), tx.gas_price)
+        (tx.gas_price().unwrap(), tx.gas_price())
     };
-    let nonce = tx.nonce as u128;
-    let value = tx.value.to_be_bytes();
-    let data = tx.input.to_vec();
-    let sig: alloy::primitives::Signature = tx.signature.unwrap_or_default().try_into().unwrap();
+    let nonce = tx.nonce() as u128;
+    let value = tx.value().to_be_bytes();
+    let data = tx.input().to_vec();
+    let sig: alloy::primitives::Signature = *tx.clone().into_signed().signature();
     let mut signature = sig.as_bytes().to_vec();
-    let is_eip155 = sig.has_eip155_value();
+    let is_eip155 = tx.inner.is_replay_protected();
     if signature[64] <= 1 {
         signature[64] += 27;
     }
-    let access_list = tx
-        .access_list
-        .map(|access_list: alloy::rpc::types::AccessList| {
-            access_list
-                .0
-                .into_iter()
-                .map(|item| {
-                    let address = item.address.into_array();
-                    let keys: Vec<[u8; 32]> = item.storage_keys.into_iter().map(|k| k.0).collect();
-                    (address, keys)
-                })
-                .collect()
-        });
+    let access_list =
+        tx.access_list()
+            .cloned()
+            .map(|access_list: alloy::rpc::types::AccessList| {
+                access_list
+                    .0
+                    .into_iter()
+                    .map(|item| {
+                        let address = item.address.into_array();
+                        let keys: Vec<[u8; 32]> =
+                            item.storage_keys.into_iter().map(|k| k.0).collect();
+                        (address, keys)
+                    })
+                    .collect()
+            });
     let reserved_dynamic = access_list.map(encode_access_list);
 
     encode_tx(

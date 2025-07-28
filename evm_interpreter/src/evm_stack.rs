@@ -29,7 +29,7 @@ impl<A: Allocator> EvmStack<A> {
             if let Some(el) =
                 core::slice::from_raw_parts(self.buffer.as_ptr().cast::<U256>(), self.len).last()
             {
-                let _ = logger.write_fmt(format_args!("Stack top = 0x{:x}\n", el));
+                let _ = logger.write_fmt(format_args!("Stack top = 0x{el:x}\n"));
             } else {
                 let _ = logger.write_str("Stack top = empty\n");
             }
@@ -44,7 +44,7 @@ impl<A: Allocator> EvmStack<A> {
                 .iter()
                 .rev()
             {
-                let _ = logger.write_fmt(format_args!("{:x}\n", el));
+                let _ = logger.write_fmt(format_args!("{el:x}\n"));
             }
             let _ = logger.write_fmt(format_args!("DEPTH 0\n"));
         }

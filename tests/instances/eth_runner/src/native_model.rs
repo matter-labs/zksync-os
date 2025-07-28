@@ -3,10 +3,9 @@ use rig::log::{info, warn};
 
 pub fn compute_ratio(stats: BlockExtraStats) -> Option<f64> {
     // Check for native model
-    let native_used = match stats.native_used {
+    let native_used = match stats.computational_native_used {
         Some(x) => x,
         None => {
-            warn!("Native usage not reported, remember to enable the report_native feature!");
             return None;
         }
     };

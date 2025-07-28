@@ -14,16 +14,15 @@ use system_hooks::*;
 use zk_ee::common_structs::CalleeParameters;
 use zk_ee::common_structs::TransferInfo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::interface_error;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::runtime::RuntimeError;
-use zk_ee::system::{
-    errors::{system::SystemError, UpdateQueryError},
-    logger::Logger,
-    *,
-};
+use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::{errors::system::SystemError, logger::Logger, *};
 use zk_ee::wrap_error;
 use zk_ee::{internal_error, out_of_ergs_error};
 
+use super::errors::BootloaderInterfaceError;
 use super::errors::BootloaderSubsystemError;
 
 /// Main execution loop.
@@ -151,8 +150,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 let success = matches!(call_result, CallResult::Successful { .. });
 
                 let _ = self.system.get_logger().write_fmt(format_args!(
-                    "Return from external call, success = {}\n",
-                    success
+                    "Return from external call, success = {success}\n"
                 ));
 
                 Ok((resources, CallOrDeployResult::CallResult(call_result)))
@@ -433,35 +431,38 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 )
             }) {
                 Ok(()) => (),
-                Err(UpdateQueryError::System(SystemError::LeafRuntime(
-                    RuntimeError::OutOfErgs(_),
-                ))) => {
-                    return Err(internal_error!("Our of ergs on infinite").into());
-                }
-                Err(UpdateQueryError::System(SystemError::LeafDefect(e))) => return Err(e.into()),
-                Err(UpdateQueryError::System(SystemError::LeafRuntime(
-                    RuntimeError::OutOfNativeResources(loc),
-                ))) => {
-                    return Err(RuntimeError::OutOfNativeResources(loc).into());
-                }
-                Err(UpdateQueryError::NumericBoundsError) => {
-                    // Insufficient balance
-                    match ee_type {
-                        ExecutionEnvironmentType::NoEE => {
-                            unreachable!("Cannot be in NoEE deep in the callstack")
+                Err(e) => {
+                    match e {
+                        SubsystemError::LeafUsage(_interface_error) => {
+                            // TODO log this error, but logger is unavailable
+                            // Insufficient balance
+                            match ee_type {
+                                ExecutionEnvironmentType::NoEE => {
+                                    return Err(interface_error!(
+                                        BootloaderInterfaceError::TopLevelInsufficientBalance
+                                    ))
+                                }
+                                ExecutionEnvironmentType::EVM => {
+                                    // Following EVM, a call with insufficient balance is not a revert,
+                                    // but rather a normal failing call.
+                                    return Ok(Some(CallResult::Failed {
+                                        return_values: ReturnValues::empty(),
+                                    }));
+                                }
+                            }
                         }
-                        ExecutionEnvironmentType::EVM => {
-                            // Following EVM, a call with insufficient balance is not a revert,
-                            // but rather a normal failing call.
-                            return Ok(Some(CallResult::Failed {
-                                return_values: ReturnValues::empty(),
-                            }));
-                        }
+                        SubsystemError::LeafDefect(_) => return Err(wrap_error!(e)),
+                        SubsystemError::LeafRuntime(ref runtime_error) => match runtime_error {
+                            RuntimeError::OutOfNativeResources(_) => return Err(wrap_error!(e)),
+                            RuntimeError::OutOfErgs(_) => {
+                                return Err(internal_error!("Out of ergs on infinite ergs").into())
+                            }
+                        },
+                        SubsystemError::Cascaded(cascaded_error) => match cascaded_error {},
                     }
                 }
             }
         }
-
         // Calls to EOAs succeed with empty return value
         if is_eoa {
             return Ok(Some(CallResult::Successful {
@@ -492,8 +493,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let address_low = callee.as_limbs()[0] as u16;
 
         let _ = self.system.get_logger().write_fmt(format_args!(
-            "Call to special address 0x{:04x}\n",
-            address_low
+            "Call to special address 0x{address_low:04x}\n"
         ));
         let calldata_slice = &call_request.calldata;
         let calldata_iter = calldata_slice.iter().copied();
@@ -642,7 +642,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     })
                 }
                 Err(e) => {
-                    return Err(e.wrap(zk_ee::location!()));
+                    return Err(wrap_error!(e));
                 }
             };
 
@@ -695,9 +695,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             })
             .map_err(|e| -> BootloaderSubsystemError {
                 match e {
-                    UpdateQueryError::System(SystemError::LeafRuntime(
-                        RuntimeError::OutOfNativeResources(loc),
-                    )) => RuntimeError::OutOfNativeResources(loc).into(),
+                    SubsystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
+                        wrap_error!(e)
+                    }
                     _ => internal_error!("Failed to set deployed nonce to 1").into(),
                 }
             })?;
@@ -717,13 +717,14 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })
                 .map_err(|e| -> BootloaderSubsystemError {
                     match e {
-                        UpdateQueryError::System(SystemError::LeafRuntime(
-                            RuntimeError::OutOfNativeResources(loc),
-                        )) => RuntimeError::OutOfNativeResources(loc).into(),
-                        _ => internal_error!(
-                            "Must transfer value on deployment after check in preparation",
-                        )
-                        .into(),
+                        SubsystemError::LeafUsage(_interface_error) => {
+                            // TODO must log the error, but logger is unavailable
+                            internal_error!(
+                                "Must transfer value on deployment after check in preparation"
+                            )
+                            .into()
+                        }
+                        e => wrap_error!(e),
                     }
                 })?;
         }
@@ -791,8 +792,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
                         #[cfg(not(target_arch = "riscv32"))]
                         let _ = self.system.get_logger().write_fmt(format_args!(
-                            "Successfully deployed contract at {:?} \n",
-                            deployed_at
+                            "Successfully deployed contract at {deployed_at:?} \n"
                         ));
                         (true, deployment_result)
                     }
@@ -826,8 +826,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             .finish_global_frame((!deployment_success).then_some(&constructor_rollback_handle))?;
 
         let _ = self.system.get_logger().write_fmt(format_args!(
-            "Return from constructor call, success = {}\n",
-            deployment_success
+            "Return from constructor call, success = {deployment_success}\n"
         ));
 
         resources_returned.reclaim(resources_for_deployer);

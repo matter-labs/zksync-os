@@ -32,7 +32,7 @@ ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 tokio = { version = "1.40.0", features = ["rt-multi-thread"] }
 env_logger = "0.11.6"
 log = "0.4.22" # tokio with `rt-multi-thread` feature needed to build ethers 2.0.0
-alloy = { version = "=0.4.0", features = ["full", "eip712"]}
+alloy = { version = "1", features = ["full", "eip712", "consensus"]}
 zksync-web3-rs = { git = "https://github.com/lambdaclass/zksync-web3-rs.git" }
 bincode = "1.3"
 
@@ -46,7 +46,6 @@ cycle_marker = ["dep:cycle_marker", "zksync_os_runner/cycle_marker", "zk_ee/cycl
 simulate_witness_gen = []
 unlimited_native = ["forward_system/unlimited_native"]
 resources_for_tester = ["basic_bootloader/resources_for_tester"]
-report_native = ["forward_system/report_native"]
 p256_precompile = ["system_hooks/p256_precompile"]
 disable_system_contracts = ["forward_system/disable_system_contracts"]
 prevrandao = ["zk_ee/prevrandao"]

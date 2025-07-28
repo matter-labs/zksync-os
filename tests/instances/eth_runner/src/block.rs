@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::calltrace::CallTrace;
+use alloy::eips::Typed2718;
 use rig::log::warn;
 use rig::utils::encode_alloy_rpc_tx;
 use ruint::aliases::{B160, U256};
@@ -19,14 +20,9 @@ impl Block {
             eip1559_basefee: base_fee,
             gas_per_pubdata: U256::ZERO,
             native_price: base_fee / U256::from(100),
-            coinbase: B160::from_be_bytes(self.result.header.miner.0 .0),
+            coinbase: B160::from_be_bytes(self.result.header.beneficiary.0 .0),
             gas_limit: self.result.header.gas_limit,
-            mix_hash: self
-                .result
-                .header
-                .mix_hash
-                .map(|b| U256::from_be_bytes(b.0))
-                .unwrap_or(U256::ONE),
+            mix_hash: U256::from_be_bytes(self.result.header.mix_hash.0),
         }
     }
 
@@ -42,16 +38,12 @@ impl Block {
                     // Skip unsupported txs or tx that call into unsupported precompiles
                     let calls_unsupported_percompile =
                         || calltrace.result.has_call_to_unsupported_precompile();
-                    let supported_tx_type = tx.transaction_type.is_none_or(|t| t == 0u8)
-                        || tx.transaction_type == Some(1u8)
-                        || tx.transaction_type == Some(2u8);
+                    let transaction_type = tx.ty();
+                    let supported_tx_type = transaction_type <= 2;
                     if supported_tx_type && !calls_unsupported_percompile() {
                         Some(encode_alloy_rpc_tx(tx))
                     } else {
-                        warn!(
-                            "Skipping unsupported transaction of type {:?}",
-                            tx.transaction_type
-                        );
+                        warn!("Skipping unsupported transaction of type {transaction_type:?}");
                         skipped.insert(i);
                         None
                     }

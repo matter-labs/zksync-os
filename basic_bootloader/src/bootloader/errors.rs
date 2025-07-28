@@ -1,10 +1,13 @@
 use crate::bootloader::supported_ees::errors::EESubsystemError;
 use ruint::aliases::{B160, U256};
-use zk_ee::system::errors::{
-    internal::InternalError,
-    root_cause::{GetRootCause, RootCause},
-    runtime::RuntimeError,
-    system::SystemError,
+use zk_ee::system::{
+    errors::{
+        internal::InternalError,
+        root_cause::{GetRootCause, RootCause},
+        runtime::RuntimeError,
+        system::SystemError,
+    },
+    BalanceSubsystemError, NonceSubsystemError,
 };
 
 // Taken from revm, contains changes
@@ -240,6 +243,23 @@ macro_rules! require_internal {
 }
 
 zk_ee::define_subsystem!(Bootloader,
+interface BootloaderInterfaceError {
+    CantPayRefundInsufficientBalance,
+    CantPayRefundOverflow,
+    MintingBalanceOverflow,
+    TopLevelInsufficientBalance,
+},
 cascade WrappedError {
+    Balance(BalanceSubsystemError),
     EEError(EESubsystemError),
+    Nonce(NonceSubsystemError),
 });
+
+// We don't need anything more than Debug here -- the error should be passed to
+// the sequencer, converted to an appropriate public error through zksync-error
+// framework and then passed to the clients.
+impl core::fmt::Display for InvalidTransaction {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
