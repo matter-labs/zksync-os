@@ -471,7 +471,10 @@ where
                 .create_oracle_access_iterator::<ProofDataIterator>(())
                 .unwrap();
             let proof_data =
-                <ProofData<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
+                <ProofData<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(
+                    &mut initialization_iterator,
+                )
+                .unwrap();
             assert_eq!(initialization_iterator.len(), 0);
             (proof_data.state_root_view, proof_data.last_block_timestamp)
         };
@@ -580,7 +583,10 @@ where
                 .create_oracle_access_iterator::<ProofDataIterator>(())
                 .unwrap();
             let proof_data =
-                <ProofData<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
+                <ProofData<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(
+                    &mut initialization_iterator,
+                )
+                .unwrap();
             assert_eq!(initialization_iterator.len(), 0);
             (proof_data.state_root_view, proof_data.last_block_timestamp)
         };

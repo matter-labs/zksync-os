@@ -19,13 +19,13 @@ pub struct ProofData<SR: StateRootView<EthereumIOTypesConfig>> {
 }
 
 impl<SR: StateRootView<EthereumIOTypesConfig>> UsizeSerializable for ProofData<SR> {
-    const USIZE_LEN: usize = <SR as UsizeSerializable>::USIZE_LEN
-        + <u64 as UsizeSerializable>::USIZE_LEN;
+    const USIZE_LEN: usize =
+        <SR as UsizeSerializable>::USIZE_LEN + <u64 as UsizeSerializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
         ExactSizeChain::new(
             UsizeSerializable::iter(&self.state_root_view),
-            UsizeSerializable::iter(&self.last_block_timestamp)
+            UsizeSerializable::iter(&self.last_block_timestamp),
         )
     }
 }

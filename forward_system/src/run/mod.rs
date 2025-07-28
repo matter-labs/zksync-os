@@ -148,7 +148,8 @@ pub fn run_batch_from_oracle_dump<
     let mut file = File::open(path).expect("should open file");
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).expect("should read file");
-    let oracle: ForwardRunningOracle<T, PS, TS> = bincode::deserialize(&buffer).expect("should deserialize");
+    let oracle: ForwardRunningOracle<T, PS, TS> =
+        bincode::deserialize(&buffer).expect("should deserialize");
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 

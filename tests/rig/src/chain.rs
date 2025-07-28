@@ -13,9 +13,7 @@ use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::test_impl::{
     InMemoryPreimageSource, InMemoryTree, NoopTxCallback, TxListSource,
 };
-use forward_system::run::{
-    BatchOutput, ForwardRunningOracle,
-};
+use forward_system::run::{BatchOutput, ForwardRunningOracle};
 use forward_system::system::bootloader::run_forward;
 use log::{debug, info, trace};
 use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
