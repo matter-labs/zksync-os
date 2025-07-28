@@ -19,7 +19,6 @@ use errors::ForwardSubsystemError;
 use oracle::CallSimulationOracle;
 pub use oracle::ForwardRunningOracle;
 use zk_ee::common_structs::ProofData;
-use zk_ee::utils::Bytes32;
 
 pub use tree::LeafProof;
 pub use tree::ReadStorage;

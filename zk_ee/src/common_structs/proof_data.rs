@@ -1,7 +1,6 @@
 use crate::kv_markers::*;
 use crate::system::errors::internal::InternalError;
 use crate::types_config::EthereumIOTypesConfig;
-use crate::utils::*;
 
 use super::state_root_view::StateRootView;
 
