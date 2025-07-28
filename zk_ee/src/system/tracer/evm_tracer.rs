@@ -30,19 +30,19 @@ impl<S: SystemTypes> EvmTracer<S> for NopEvmTracer {
         false
     }
 
+    #[inline(always)]
     fn before_evm_interpreter_execution_step(
         &mut self,
         _opcode: u8,
         _frame_state: &impl EvmFrameInterface<S>,
     ) {
-        unreachable!()
     }
 
+    #[inline(always)]
     fn after_evm_interpreter_execution_step(
         &mut self,
         _opcode: u8,
         _frame_state: &impl EvmFrameInterface<S>,
     ) {
-        unreachable!()
     }
 }
