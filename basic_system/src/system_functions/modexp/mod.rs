@@ -123,14 +123,10 @@ fn modexp_as_system_function_inner<
     // On 32 bit machine precompile will cost at least around ~ (2^32/8)^2/3 ~= 9e16 gas,
     // so should be ok in practice
     let Ok(base_len) = usize::try_from(base_len) else {
-        return Err(SubsystemError::LeafUsage(interface_error!(
-            ModExpInterfaceError::InvalidInputLength
-        )));
+        return Err(interface_error!(ModExpInterfaceError::InvalidInputLength));
     };
     let Ok(mod_len) = usize::try_from(mod_len) else {
-        return Err(SubsystemError::LeafUsage(interface_error!(
-            ModExpInterfaceError::InvalidInputLength
-        )));
+        return Err(interface_error!(ModExpInterfaceError::InvalidInputLength));
     };
 
     // Handle a special case when both the base and mod length are zero.
@@ -146,9 +142,7 @@ fn modexp_as_system_function_inner<
     // So, on 32 bit machine precompile will cost at least around ~ 2^32*8/3 ~= 1e10 gas,
     // so should be ok in practice
     let Ok(exp_len) = usize::try_from(exp_len) else {
-        return Err(SubsystemError::LeafUsage(interface_error!(
-            ModExpInterfaceError::InvalidInputLength
-        )));
+        return Err(interface_error!(ModExpInterfaceError::InvalidInputLength));
     };
 
     // Used to extract ADJUSTED_EXPONENT_LENGTH.

@@ -42,9 +42,9 @@ fn p256_verify_as_system_function_inner<
     resources: &mut R,
 ) -> Result<(), SubsystemError<P256VerifyErrors>> {
     if src.len() != 160 {
-        return Err(SubsystemError::LeafUsage(interface_error!(
+        return Err(interface_error!(
             P256VerifyInterfaceError::InvalidInputLength
-        )));
+        ));
     }
     resources.charge(&R::from_ergs(P256_VERIFY_COST_ERGS))?;
     // digest, r, s, x, y

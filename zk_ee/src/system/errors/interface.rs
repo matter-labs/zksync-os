@@ -14,8 +14,12 @@ pub struct InterfaceError<T: InterfaceErrorKind>(pub T, pub Metadata);
 #[macro_export]
 macro_rules! interface_error {
     ($instance:expr) => {
-        $crate::system::errors::interface::InterfaceError($instance, $crate::location!().into())
-            .into()
+        $crate::system::errors::subsystem::SubsystemError::LeafUsage(
+            $crate::system::errors::interface::InterfaceError(
+                $instance,
+                $crate::location!().into(),
+            ),
+        )
     };
 }
 
