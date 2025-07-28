@@ -1,8 +1,8 @@
 use crate::bootloader::EVM_EE_BYTE;
 use errors::{EESubsystemError, InterfaceError};
 use zk_ee::{
-    execution_environment_type::ExecutionEnvironmentType, interface_error,
-    memory::slice_vec::SliceVec, system::*, wrap_error,
+    common_structs::CalleeAccountProperties, execution_environment_type::ExecutionEnvironmentType,
+    interface_error, memory::slice_vec::SliceVec, system::*, wrap_error,
 };
 
 #[allow(type_alias_bounds)]
@@ -32,16 +32,18 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         }
     }
 
-    pub fn clarify_and_take_passed_resources(
+    pub fn calculate_resources_passed_in_external_call(
         ee_version: ExecutionEnvironmentType,
-        resources_available_in_caller_frame: &mut S::Resources,
-        desired_ergs_to_pass: Ergs,
+        resources_in_caller_frame: &mut S::Resources,
+        call_request: &ExternalCallRequest<S>,
+        callee_account_properties: &CalleeAccountProperties,
     ) -> Result<S::Resources, EESubsystemError> {
         match ee_version {
             ExecutionEnvironmentType::EVM => {
-                SystemBoundEVMInterpreter::<S>::clarify_and_take_passed_resources(
-                    resources_available_in_caller_frame,
-                    desired_ergs_to_pass,
+                SystemBoundEVMInterpreter::<S>::calculate_resources_passed_in_external_call(
+                    resources_in_caller_frame,
+                    call_request,
+                    callee_account_properties,
                 )
                 .map_err(wrap_error!())
             }

@@ -1,11 +1,13 @@
 use super::*;
 use crate::errors::{EvmErrors, EvmInterfaceError, EvmSubsystemError};
 use crate::gas::gas_utils;
+use crate::gas_constants::{CALLVALUE, CALL_STIPEND, NEWACCOUNT};
 use crate::interpreter::CreateScheme;
 use alloc::boxed::Box;
 use core::any::Any;
 use core::fmt::Write;
 use ruint::aliases::B160;
+use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
@@ -292,15 +294,42 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         Some(scheme)
     }
 
-    fn clarify_and_take_passed_resources(
+    fn calculate_resources_passed_in_external_call(
         resources_available_in_caller_frame: &mut S::Resources,
-        desired_ergs_to_pass: Ergs,
+        call_request: &ExternalCallRequest<S>,
+        callee_parameters: &CalleeAccountProperties,
     ) -> Result<S::Resources, Self::SubsystemError> {
+        // Gas stipend calculation
+        let is_delegate = call_request.is_delegate();
+        let is_callcode = call_request.is_callcode();
+        let is_callcode_or_delegate = is_callcode || is_delegate;
+
+        // Positive value cost and stipend
+        let stipend = if !is_delegate && !call_request.nominal_token_value.is_zero() {
+            let positive_value_cost = S::Resources::from_ergs(Ergs(CALLVALUE * ERGS_PER_GAS));
+            resources_available_in_caller_frame.charge(&positive_value_cost)?;
+            Some(Ergs(CALL_STIPEND * ERGS_PER_GAS))
+        } else {
+            None
+        };
+
+        // Account creation cost
+        let callee_is_empty = callee_parameters.nonce == 0
+            && callee_parameters.unpadded_code_len == 0
+            && callee_parameters.nominal_token_balance.is_zero();
+        if !is_callcode_or_delegate
+            && !call_request.nominal_token_value.is_zero()
+            && callee_is_empty
+        {
+            let callee_creation_cost = S::Resources::from_ergs(Ergs(NEWACCOUNT * ERGS_PER_GAS));
+            resources_available_in_caller_frame.charge(&callee_creation_cost)?
+        }
+
         // we just need to apply 63/64 rule, as System/IO is responsible for the rest
 
         let max_passable_ergs =
             gas_utils::apply_63_64_rule(resources_available_in_caller_frame.ergs());
-        let ergs_to_pass = core::cmp::min(desired_ergs_to_pass, max_passable_ergs);
+        let ergs_to_pass = core::cmp::min(call_request.ergs_to_pass, max_passable_ergs);
 
         // Charge caller frame
         let mut resources_to_pass = S::Resources::from_ergs(ergs_to_pass);
@@ -309,8 +338,11 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         resources_available_in_caller_frame
             .charge(&resources_to_pass)
             .unwrap();
-        // Give native resource to the passed.
-        resources_available_in_caller_frame.give_native_to(&mut resources_to_pass);
+
+        // Add stipend
+        if let Some(stipend) = stipend {
+            resources_to_pass.add_ergs(stipend);
+        }
 
         Ok(resources_to_pass)
     }
