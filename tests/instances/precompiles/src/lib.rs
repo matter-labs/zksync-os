@@ -2,7 +2,7 @@
 #![feature(assert_matches)]
 
 use bytes::Bytes;
-use rig::forward_system::run::BatchOutput;
+use rig::forward_system::run::BlockOutput;
 use rig::forward_system::run::ExecutionResult::Revert;
 use rig::BlockContext;
 use rig::{
@@ -15,7 +15,7 @@ fn run_precompile(
     precompile_id: &str,
     gas: Option<impl Into<rig::ethers::prelude::U256>>,
     input: &[u8],
-) -> BatchOutput {
+) -> BlockOutput {
     let gas = match gas {
         Some(x) => x.into(),
         None => rig::ethers::prelude::U256::from(1 << 27),
@@ -801,7 +801,7 @@ fn test_precompile_parses_input_correctly() {
                 &wallet,
             );
 
-            let _batch_output = chain.run_block(vec![tx], None, None);
+            let _block_output = chain.run_block(vec![tx], None, None);
         }
     }
 }

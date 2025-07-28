@@ -5,7 +5,7 @@ use std::{path::PathBuf, str::FromStr};
 use forward_system::run::{
     io_implementer_init_data,
     test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource},
-    BatchContext, EthereumIOTypesConfig, ForwardRunningOracle, StorageCommitment,
+    BlockContext, EthereumIOTypesConfig, ForwardRunningOracle, StorageCommitment,
 };
 use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
 pub mod helpers;
@@ -16,7 +16,7 @@ pub use forward_system::run::run_batch;
 /// Runs a batch in riscV - using zksync_os binary - and returns the
 /// witness that can be passed to the prover subsystem.
 pub fn run_batch_generate_witness(
-    batch_context: BatchContext,
+    block_context: BlockContext,
     tree: InMemoryTree,
     preimage_source: InMemoryPreimageSource,
     tx_source: TxListSource,
@@ -26,7 +26,7 @@ pub fn run_batch_generate_witness(
     let oracle: ForwardRunningOracle<InMemoryTree, InMemoryPreimageSource, TxListSource> =
         ForwardRunningOracle {
             io_implementer_init_data: Some(io_implementer_init_data(Some(storage_commitment))),
-            block_metadata: batch_context,
+            block_metadata: block_context,
             tree,
             preimage_source,
             tx_source,
