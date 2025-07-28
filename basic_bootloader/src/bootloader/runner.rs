@@ -76,7 +76,12 @@ where
             ))
         }
         ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => run
-            .handle_requested_deployment::<true>(initial_ee_version, deployment_parameters, heap, tracer)
+            .handle_requested_deployment::<true>(
+                initial_ee_version,
+                deployment_parameters,
+                heap,
+                tracer,
+            )
             .map(TransactionEndPoint::CompletedDeployment),
     }
 }
