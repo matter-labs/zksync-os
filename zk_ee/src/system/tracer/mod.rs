@@ -119,6 +119,7 @@ impl<S: SystemTypes> Tracer<S> for NopTracer {
     #[inline(always)]
     fn finish_tx(&mut self) {}
 
+    #[inline(always)]
     fn on_storage_read(
         &mut self,
         _ee_type: ExecutionEnvironmentType,
@@ -129,6 +130,7 @@ impl<S: SystemTypes> Tracer<S> for NopTracer {
     ) {
     }
 
+    #[inline(always)]
     fn on_storage_write(
         &mut self,
         _ee_type: ExecutionEnvironmentType,
