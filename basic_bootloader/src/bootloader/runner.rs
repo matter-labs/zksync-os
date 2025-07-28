@@ -807,19 +807,15 @@ where
         // For entry frame we don't charge ergs for call preparation,
         // as this is included in the intrinsic cost.
         resources_in_caller_frame.with_infinite_ergs(|inf_resources| {
-            cycle_marker::wrap_with_resources!("prepare_for_call", inf_resources, {
-                read_callee_account_properties(system, ee_version, inf_resources, &call_request)
-            })
+            read_callee_account_properties(system, ee_version, inf_resources, &call_request)
         })
     } else {
-        cycle_marker::wrap_with_resources!("prepare_for_call", resources_in_caller_frame, {
-            read_callee_account_properties(
-                system,
-                ee_version,
-                &mut resources_in_caller_frame,
-                &call_request,
-            )
-        })
+        read_callee_account_properties(
+            system,
+            ee_version,
+            &mut resources_in_caller_frame,
+            &call_request,
+        )
     };
 
     let callee_account_properties = match r {
