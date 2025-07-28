@@ -605,10 +605,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             deployer_resources.take()
         };
 
-        // Now we know the constructor will be ran, so we can take the native
-        // resources from deployer.
-        deployer_resources.give_native_to(&mut resources_for_constructor_frame);
-
         launch_params.external_call.available_resources = resources_for_constructor_frame;
 
         if self.callstack_height > 1024 {
