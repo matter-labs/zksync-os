@@ -181,11 +181,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 }
             }
 
-            if tracer.evm_tracer().is_on_evm_execution_step_enabled() {
-                tracer
-                    .evm_tracer()
-                    .before_evm_interpreter_execution_step(opcode, self);
-            }
+            tracer
+                .evm_tracer()
+                .before_evm_interpreter_execution_step(opcode, self);
 
             self.instruction_pointer += 1;
             let result = self
@@ -346,11 +344,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     _ => Err(ExitCode::OpcodeNotFound),
                 });
 
-            if tracer.evm_tracer().is_after_evm_execution_step_enabled() {
-                tracer
-                    .evm_tracer()
-                    .after_evm_interpreter_execution_step(opcode, self);
-            }
+            tracer
+                .evm_tracer()
+                .after_evm_interpreter_execution_step(opcode, self);
 
             if Self::PRINT_OPCODES {
                 let _ = system.get_logger().write_str("\n");

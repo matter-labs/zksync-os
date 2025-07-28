@@ -114,9 +114,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         *stack_head = value.into_u256_be();
 
-        if tracer.is_on_storage_read_enabled() {
-            tracer.on_storage_write(THIS_EE_TYPE, false, self.address, key, value);
-        }
+        tracer.on_storage_write(THIS_EE_TYPE, false, self.address, key, value);
 
         Ok(())
     }
@@ -138,9 +136,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         *stack_head = value.into_u256_be();
 
-        if tracer.is_on_storage_read_enabled() {
-            tracer.on_storage_write(THIS_EE_TYPE, true, self.address, key, value);
-        }
+        tracer.on_storage_write(THIS_EE_TYPE, true, self.address, key, value);
+
         Ok(())
     }
 
@@ -168,9 +165,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             &value,
         )?;
 
-        if tracer.is_on_storage_write_enabled() {
-            tracer.on_storage_write(THIS_EE_TYPE, false, self.address, index, value);
-        }
+        tracer.on_storage_write(THIS_EE_TYPE, false, self.address, index, value);
 
         // This is an example of what would need to be done with tracing
         if Self::PRINT_OPCODES {
@@ -204,9 +199,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             &value,
         )?;
 
-        if tracer.is_on_storage_write_enabled() {
-            tracer.on_storage_write(THIS_EE_TYPE, true, self.address, index, value);
-        }
+        tracer.on_storage_write(THIS_EE_TYPE, true, self.address, index, value);
 
         Ok(())
     }
@@ -235,9 +228,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.resize_heap(mem_offset, len)?;
         let data = &self.heap[mem_offset..mem_offset + len];
 
-        if tracer.is_on_event_enabled() {
-            tracer.on_event(THIS_EE_TYPE, &self.address, &topics, data);
-        }
+        tracer.on_event(THIS_EE_TYPE, &self.address, &topics, data);
 
         system.io.emit_event(
             ExecutionEnvironmentType::EVM,

@@ -270,10 +270,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         // resources are checked and spent, so we continue with actual transition of control flow
 
-        if tracer.is_on_new_execution_frame_enabled() {
-            // Note that for tracing we treat failure on preparation step as failure before external call started
-            tracer.on_new_execution_frame(&external_call_launch_params);
-        }
+        // Note that for tracing we treat failure on preparation step as failure before external call started
+        tracer.on_new_execution_frame(&external_call_launch_params);
 
         // We create a new frame for callee, should include transfer and
         // callee execution
@@ -314,19 +312,17 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             )
         };
 
-        if tracer.is_after_execution_frame_enabled() {
-            tracer.after_execution_frame_completed(
-                callee_frame_execution_result
-                    .as_ref()
-                    .map(|(resources_returned, call_result)| {
-                        Some((
-                            resources_returned,
-                            CallOrDeployResultRef::CallResult(call_result),
-                        ))
-                    })
-                    .unwrap_or_default(),
-            );
-        }
+        tracer.after_execution_frame_completed(
+            callee_frame_execution_result
+                .as_ref()
+                .map(|(resources_returned, call_result)| {
+                    Some((
+                        resources_returned,
+                        CallOrDeployResultRef::CallResult(call_result),
+                    ))
+                })
+                .unwrap_or_default(),
+        );
 
         let (resources_returned_from_callee, call_result) = callee_frame_execution_result?;
         resources_in_caller_frame.reclaim(resources_returned_from_callee);
@@ -688,9 +684,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })?;
         }
 
-        if tracer.is_on_new_execution_frame_enabled() {
-            tracer.on_new_execution_frame(&launch_params);
-        }
+        tracer.on_new_execution_frame(&launch_params);
 
         match self.deployment_execute_constructor_frame(ee_type, launch_params, heap, tracer) {
             Ok((deployment_success, mut resources_returned, deployment_result)) => {
@@ -703,13 +697,11 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     "Return from constructor call, success = {deployment_success}\n",
                 ));
 
-                if tracer.is_after_execution_frame_enabled() {
-                    // TODO resources
-                    tracer.after_execution_frame_completed(Some((
-                        &resources_returned,
-                        CallOrDeployResultRef::DeploymentResult(&deployment_result),
-                    )));
-                }
+                // TODO resources
+                tracer.after_execution_frame_completed(Some((
+                    &resources_returned,
+                    CallOrDeployResultRef::DeploymentResult(&deployment_result),
+                )));
 
                 resources_returned.reclaim(resources_for_deployer);
 
@@ -719,9 +711,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })
             }
             Err(e) => {
-                if tracer.is_after_execution_frame_enabled() {
-                    tracer.after_execution_frame_completed(None);
-                }
+                tracer.after_execution_frame_completed(None);
                 Err(e)
             }
         }

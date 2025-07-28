@@ -104,16 +104,6 @@ impl<S: SystemTypes> EvmOpcodesLogger<S> {
 }
 
 impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
-    #[inline(always)]
-    fn is_on_evm_execution_step_enabled(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn is_after_evm_execution_step_enabled(&self) -> bool {
-        false
-    }
-
     fn before_evm_interpreter_execution_step(
         &mut self,
         opcode: u8,
@@ -188,51 +178,16 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
         })
     }
 
+    #[inline(always)]
     fn after_evm_interpreter_execution_step(
         &mut self,
         _opcode: u8,
         _interpreter_state: &impl EvmFrameInterface<S>,
     ) {
-        unreachable!()
     }
 }
 
 impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
-    #[inline(always)]
-    fn is_begin_tx_enabled(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn is_finish_tx_enabled(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn is_on_new_execution_frame_enabled(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn is_after_execution_frame_enabled(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn is_on_storage_read_enabled(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn is_on_storage_write_enabled(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn is_on_event_enabled(&self) -> bool {
-        false
-    }
-
     fn on_new_execution_frame(&mut self, _request: &ExecutionEnvironmentLaunchParams<S>) {
         self.current_call_depth += 1;
 
@@ -325,6 +280,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
         tx_log.finished = true;
     }
 
+    #[inline(always)]
     fn on_event(
         &mut self,
         _ee_type: zk_ee::execution_environment_type::ExecutionEnvironmentType,
@@ -332,7 +288,6 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
         _topics: &[<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::EventKey],
         _data: &[u8],
     ) {
-        unreachable!()
     }
 
     #[inline(always)]
