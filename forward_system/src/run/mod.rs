@@ -18,9 +18,7 @@ use basic_bootloader::bootloader::config::{
 use errors::ForwardSubsystemError;
 use oracle::CallSimulationOracle;
 pub use oracle::ForwardRunningOracle;
-pub use oracle::ForwardRunningOracleAux;
-use zk_ee::common_structs::BasicIOImplementerFSM;
-use zk_ee::utils::Bytes32;
+use zk_ee::common_structs::ProofData;
 
 pub use tree::LeafProof;
 pub use tree::ReadStorage;
@@ -60,7 +58,7 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     tx_result_callback: TR,
 ) -> Result<BatchOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
-        io_implementer_init_data: None,
+        proof_data: None,
         block_metadata: batch_context,
         tree,
         preimage_source,
@@ -78,13 +76,13 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
 pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
     zk_os_program_path: PathBuf,
     batch_context: BatchContext,
-    storage_commitment: StorageCommitment,
+    proof_data: ProofData<StorageCommitment>,
     tree: T,
     preimage_source: PS,
     tx_source: TS,
 ) -> Result<Vec<u32>, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
-        io_implementer_init_data: Some(io_implementer_init_data(Some(storage_commitment))),
+        proof_data: Some(proof_data),
         block_metadata: batch_context,
         tree,
         preimage_source,
@@ -118,7 +116,7 @@ pub fn run_batch_with_oracle_dump<
     tx_result_callback: TR,
 ) -> Result<BatchOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
-        io_implementer_init_data: None,
+        proof_data: None,
         block_metadata: batch_context,
         tree,
         preimage_source,
@@ -129,8 +127,7 @@ pub fn run_batch_with_oracle_dump<
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
 
     if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
-        let aux_oracle: ForwardRunningOracleAux<T, PS, TS> = oracle.clone().into();
-        let serialized_oracle = bincode::serialize(&aux_oracle).expect("should serialize");
+        let serialized_oracle = bincode::serialize(&oracle).expect("should serialize");
         let mut file = File::create(path).expect("should create file");
         file.write_all(&serialized_oracle)
             .expect("should write to file");
@@ -151,9 +148,8 @@ pub fn run_batch_from_oracle_dump<
     let mut file = File::open(path).expect("should open file");
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).expect("should read file");
-    let oracle_aux: ForwardRunningOracleAux<T, PS, TS> =
+    let oracle: ForwardRunningOracle<T, PS, TS> =
         bincode::deserialize(&buffer).expect("should deserialize");
-    let oracle: ForwardRunningOracle<T, PS, TS> = oracle_aux.into();
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
@@ -181,7 +177,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     };
 
     let oracle = CallSimulationOracle {
-        io_implementer_init_data: None,
+        proof_data: None,
         block_metadata: batch_context,
         storage,
         preimage_source,
@@ -198,21 +194,4 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     .map_err(wrap_error!())?;
     let mut batch_output: BatchOutput = result_keeper.into();
     Ok(batch_output.tx_results.remove(0))
-}
-
-pub fn io_implementer_init_data(
-    storage_commitment: Option<StorageCommitment>,
-) -> BasicIOImplementerFSM<StorageCommitment> {
-    BasicIOImplementerFSM {
-        state_root_view: match storage_commitment {
-            Some(storage_commitment) => storage_commitment,
-            None => StorageCommitment {
-                root: Default::default(),
-                next_free_slot: 0,
-            },
-        },
-        pubdata_diffs_log_hash: Bytes32::ZERO,
-        num_pubdata_diffs_logs: 0,
-        block_functionality_is_completed: false,
-    }
 }
