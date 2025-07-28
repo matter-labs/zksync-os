@@ -38,7 +38,7 @@ pub use tx_result_callback::TxResultCallback;
 pub use tx_source::NextTxResponse;
 pub use tx_source::TxSource;
 
-pub use self::output::BatchOutput;
+pub use self::output::BlockOutput;
 pub use self::output::ExecutionOutput;
 pub use self::output::ExecutionResult;
 pub use self::output::Log;
@@ -49,21 +49,21 @@ use crate::run::test_impl::{NoopTxCallback, TxListSource};
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;
 use basic_system::system_implementation::flat_storage_model::*;
 use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
-pub use zk_ee::system::metadata::BlockMetadataFromOracle as BatchContext;
+pub use zk_ee::system::metadata::BlockMetadataFromOracle as BlockContext;
 
 pub type StorageCommitment = FlatStorageCommitment<{ TREE_HEIGHT }>;
 
 pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxResultCallback>(
-    batch_context: BatchContext,
+    block_context: BlockContext,
     tree: T,
     preimage_source: PS,
     tx_source: TS,
     tx_result_callback: TR,
     tracer: &mut impl Tracer<ForwardRunningSystem<T, PS, TS>>,
-) -> Result<BatchOutput, ForwardSubsystemError> {
+) -> Result<BlockOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
         proof_data: None,
-        block_metadata: batch_context,
+        block_metadata: block_context,
         tree,
         preimage_source,
         tx_source,
@@ -83,7 +83,7 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
 // TODO: we should run it on native arch and it should return pubdata and other outputs via result keeper
 pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
     zk_os_program_path: PathBuf,
-    batch_context: BatchContext,
+    block_context: BlockContext,
     proof_data: ProofData<StorageCommitment>,
     tree: T,
     preimage_source: PS,
@@ -91,7 +91,7 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
 ) -> Result<Vec<u32>, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
         proof_data: Some(proof_data),
-        block_metadata: batch_context,
+        block_metadata: block_context,
         tree,
         preimage_source,
         tx_source,
@@ -117,16 +117,16 @@ pub fn run_batch_with_oracle_dump<
     TS: TxSource + Clone + serde::Serialize,
     TR: TxResultCallback,
 >(
-    batch_context: BatchContext,
+    block_context: BlockContext,
     tree: T,
     preimage_source: PS,
     tx_source: TS,
     tx_result_callback: TR,
     tracer: &mut impl Tracer<ForwardRunningSystem<T, PS, TS>>,
-) -> Result<BatchOutput, ForwardSubsystemError> {
+) -> Result<BlockOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
         proof_data: None,
-        block_metadata: batch_context,
+        block_metadata: block_context,
         tree,
         preimage_source,
         tx_source,
@@ -157,7 +157,7 @@ pub fn run_batch_from_oracle_dump<
 >(
     path: Option<String>,
     tracer: &mut impl Tracer<ForwardRunningSystem<T, PS, TS>>,
-) -> Result<BatchOutput, ForwardSubsystemError> {
+) -> Result<BlockOutput, ForwardSubsystemError> {
     let path = path.unwrap_or_else(|| std::env::var("ORACLE_DUMP_FILE").unwrap());
     let mut file = File::open(path).expect("should open file");
     let mut buffer = Vec::new();
@@ -186,7 +186,7 @@ pub fn run_batch_from_oracle_dump<
 // TODO: we need to have simplified version of oracle and config to disable tree validation, so we can use `ReadStorage` here
 pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     transaction: Vec<u8>,
-    batch_context: BatchContext,
+    block_context: BlockContext,
     storage: S,
     preimage_source: PS,
     tracer: &mut impl Tracer<CallSimulationSystem<S, PS, TxListSource>>,
@@ -197,7 +197,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
 
     let oracle = CallSimulationOracle {
         proof_data: None,
-        block_metadata: batch_context,
+        block_metadata: block_context,
         storage,
         preimage_source,
         tx_source,
@@ -212,6 +212,6 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
         tracer,
     )
     .map_err(wrap_error!())?;
-    let mut batch_output: BatchOutput = result_keeper.into();
-    Ok(batch_output.tx_results.remove(0))
+    let mut block_output: BlockOutput = result_keeper.into();
+    Ok(block_output.tx_results.remove(0))
 }

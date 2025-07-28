@@ -1,12 +1,8 @@
 use crate::bootloader::EVM_EE_BYTE;
 use errors::{EESubsystemError, InterfaceError};
 use zk_ee::{
-    common_structs::CalleeAccountProperties,
-    execution_environment_type::ExecutionEnvironmentType,
-    interface_error,
-    memory::slice_vec::SliceVec,
-    system::{tracer::Tracer, *},
-    wrap_error,
+    common_structs::CalleeAccountProperties, execution_environment_type::ExecutionEnvironmentType,
+    interface_error, memory::slice_vec::SliceVec, system::{tracer::Tracer, *}, wrap_error,
 };
 
 #[allow(type_alias_bounds)]
