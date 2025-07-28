@@ -658,8 +658,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 )?;
 
                 let _ = self.system.get_logger().write_fmt(format_args!(
-                    "Return from constructor call, success = {}\n",
-                    deployment_success
+                    "Return from constructor call, success = {deployment_success}\n",
                 ));
 
                 resources_returned.reclaim(resources_for_deployer);
