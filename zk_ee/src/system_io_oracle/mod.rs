@@ -43,7 +43,7 @@ impl OracleIteratorTypeMarker for NewTxContentIterator {
 }
 
 ///
-/// IO Implementer initial data query type.
+/// Proof data query type.
 ///
 pub struct ProofDataIterator;
 impl OracleIteratorTypeMarker for ProofDataIterator {
