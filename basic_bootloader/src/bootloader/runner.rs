@@ -429,8 +429,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 } => {
                     let heap = core::mem::take(heap);
                     let request = core::mem::take(request);
-                    let (resources, result) = self.handle_spawn(new_ee_type, request, heap)?;
                     drop(preemption);
+                    let (resources, result) = self.handle_spawn(new_ee_type, request, heap)?;
                     preemption = match result {
                         CallOrDeployResult::CallResult(call_result) => new_vm
                             .continue_after_external_call(self.system, resources, call_result)
@@ -733,9 +733,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 } => {
                     let heap = core::mem::take(heap);
                     let request = core::mem::take(request);
+                    drop(preemption);
                     let (resources, result) =
                         self.handle_spawn(constructor_ee_type, request, heap)?;
-                    drop(preemption);
                     preemption = match result {
                         CallOrDeployResult::CallResult(call_result) => constructor
                             .continue_after_external_call(self.system, resources, call_result)
