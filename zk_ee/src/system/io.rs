@@ -6,9 +6,10 @@
 use core::marker::PhantomData;
 
 use super::errors::internal::InternalError;
-use super::errors::{system::SystemError, UpdateQueryError};
+use super::errors::system::SystemError;
 use super::logger::Logger;
 use super::{IOResultKeeper, Resources};
+use crate::define_subsystem;
 use crate::execution_environment_type::ExecutionEnvironmentType;
 use crate::kv_markers::MAX_EVENT_TOPICS;
 use crate::system::metadata::BlockMetadataFromOracle;
@@ -119,7 +120,7 @@ pub trait IOSubsystem: Sized {
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         in_constructor: bool,
-    ) -> Result<(), SystemError>;
+    ) -> Result<(), DeconstructionSubsystemError>;
 
     fn net_pubdata_used(&self) -> Result<u64, InternalError>;
 
@@ -133,16 +134,17 @@ pub trait IOSubsystem: Sized {
         &mut self,
         rollback_handle: Option<&<Self as IOSubsystem>::StateSnapshot>,
     ) -> Result<(), InternalError>;
+
+    #[cfg(feature = "evm_refunds")]
+    /// Get current gas refund counter
+    fn get_refund_counter(&self) -> u32;
 }
 
 pub trait Maybe<T> {
     fn construct(f: impl FnOnce() -> T) -> Self;
     fn try_construct<E>(f: impl FnOnce() -> Result<T, E>) -> Result<Self, E>
     where
-        Self: Sized,
-    {
-        f().map(|x| Self::construct(|| x))
-    }
+        Self: Sized;
 }
 
 pub struct Just<T>(pub T);
@@ -150,11 +152,26 @@ impl<T> Maybe<T> for Just<T> {
     fn construct(f: impl FnOnce() -> T) -> Self {
         Self(f())
     }
+
+    fn try_construct<E>(f: impl FnOnce() -> Result<T, E>) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        f().map(Self)
+    }
 }
+
 pub struct Nothing;
 impl<T> Maybe<T> for Nothing {
     fn construct(_: impl FnOnce() -> T) -> Self {
         Self
+    }
+
+    fn try_construct<E>(_f: impl FnOnce() -> Result<T, E>) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        Ok(Self)
     }
 }
 
@@ -174,6 +191,7 @@ pub struct AccountData<
     NominalTokenBalance,
     Bytecode,
     CodeVersion,
+    IsDelegated,
 > {
     pub ee_version: EEVersion,
     pub observable_bytecode_hash: ObservableBytecodeHash,
@@ -185,15 +203,16 @@ pub struct AccountData<
     pub nominal_token_balance: NominalTokenBalance,
     pub bytecode: Bytecode,
     pub code_version: CodeVersion,
+    pub is_delegated: IsDelegated,
 }
 
-impl<A, B, C, D, E, F, G, H> AccountData<A, B, C, D, E, Just<u32>, Just<u32>, F, G, H> {
+impl<A, B, C, D, E, F, G, H> AccountData<A, B, C, D, E, Just<u32>, Just<u32>, F, G, H, Just<bool>> {
     pub fn is_contract(&self) -> bool {
-        self.unpadded_code_len.0 > 0 || self.artifacts_len.0 > 0
+        !self.is_delegated.0 && (self.unpadded_code_len.0 > 0 || self.artifacts_len.0 > 0)
     }
 }
 
-impl<A, B, C, D, E, F, G> AccountData<A, B, C, Just<u64>, D, Just<u32>, Just<u32>, E, F, G> {
+impl<A, B, C, D, E, F, G, H> AccountData<A, B, C, Just<u64>, D, Just<u32>, Just<u32>, E, F, G, H> {
     pub fn can_deploy_into(&self) -> bool {
         self.unpadded_code_len.0 == 0 && self.artifacts_len.0 == 0 && self.nonce.0 == 0
     }
@@ -215,6 +234,7 @@ impl
             Nothing,
             Nothing,
             Nothing,
+            Nothing,
         >,
     >
 {
@@ -223,63 +243,71 @@ impl
     }
 }
 
-impl<A, B, C, D, E, F, G, H, I, J> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, J>> {
+impl<A, B, C, D, E, F, G, H, I, J, K>
+    AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, J, K>>
+{
     pub fn with_ee_version(
         self,
-    ) -> AccountDataRequest<AccountData<Just<u8>, B, C, D, E, F, G, H, I, J>> {
+    ) -> AccountDataRequest<AccountData<Just<u8>, B, C, D, E, F, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
     pub fn with_observable_bytecode_hash<T>(
         self,
-    ) -> AccountDataRequest<AccountData<A, Just<T>, C, D, E, F, G, H, I, J>> {
+    ) -> AccountDataRequest<AccountData<A, Just<T>, C, D, E, F, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_observable_bytecode_len(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, Just<u32>, D, E, F, G, H, I, J>> {
+    ) -> AccountDataRequest<AccountData<A, B, Just<u32>, D, E, F, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_nonce(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, Just<u64>, E, F, G, H, I, J>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, Just<u64>, E, F, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_bytecode_hash<T>(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, Just<T>, F, G, H, I, J>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, Just<T>, F, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_unpadded_code_len(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, Just<u32>, G, H, I, J>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, Just<u32>, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_artifacts_len(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, Just<u32>, H, I, J>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, Just<u32>, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_nominal_token_balance<T>(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, Just<T>, I, J>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, Just<T>, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_bytecode(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, Just<&'static [u8]>, J>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, Just<&'static [u8]>, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_code_version(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, Just<u8>>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, Just<u8>, J>> {
+        AccountDataRequest(PhantomData)
+    }
+
+    pub fn with_is_delegated(
+        self,
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, J, Just<bool>>> {
         AccountDataRequest(PhantomData)
     }
 }
@@ -328,7 +356,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         increment_by: u64,
-    ) -> Result<u64, UpdateQueryError>;
+    ) -> Result<u64, NonceSubsystemError>;
 
     /// Perform a transfer of token balance.
     fn transfer_nominal_token_value(
@@ -338,7 +366,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         from: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         to: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         amount: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
-    ) -> Result<(), UpdateQueryError>;
+    ) -> Result<(), BalanceSubsystemError>;
 
     /// Touch an account to make it warm.
     fn touch_account(
@@ -361,6 +389,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
         CodeVersion: Maybe<u8>,
+        IsDelegated: Maybe<bool>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -378,6 +407,7 @@ pub trait IOSubsystemExt: IOSubsystem {
                 NominalTokenBalance,
                 Bytecode,
                 CodeVersion,
+                IsDelegated,
             >,
         >,
     ) -> Result<
@@ -392,6 +422,7 @@ pub trait IOSubsystemExt: IOSubsystem {
             NominalTokenBalance,
             Bytecode,
             CodeVersion,
+            IsDelegated,
         >,
         SystemError,
     >;
@@ -421,6 +452,14 @@ pub trait IOSubsystemExt: IOSubsystem {
         observable_bytecode_len: u32,
     ) -> Result<(), SystemError>;
 
+    /// Special method used for EIP-7702
+    fn set_delegation(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        delegate: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+    ) -> Result<(), SystemError>;
+
     fn finish(
         self,
         block_metadata: BlockMetadataFromOracle,
@@ -448,7 +487,29 @@ pub trait IOSubsystemExt: IOSubsystem {
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         diff: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         should_subtract: bool,
-    ) -> Result<U256, UpdateQueryError>;
+    ) -> Result<U256, BalanceSubsystemError>;
+
+    // Add EVM refund to counter
+    #[cfg(feature = "evm_refunds")]
+    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError>;
 }
 
 pub trait EthereumLikeIOSubsystem: IOSubsystem<IOTypes = EthereumIOTypesConfig> {}
+
+define_subsystem!(Nonce,
+interface NonceError {
+    NonceOverflow
+});
+
+define_subsystem!(Balance,
+interface BalanceError {
+    InsufficientBalance,
+    Overflow,
+});
+
+define_subsystem!(Deconstruction,
+interface DeconstructionError {
+},
+cascade DeconstructionWrapped {
+    Balance(BalanceSubsystemError),
+});

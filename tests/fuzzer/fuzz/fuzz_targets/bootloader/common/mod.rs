@@ -7,7 +7,7 @@ use basic_system::system_implementation::flat_storage_model::{
     FlatStorageCommitment, TestingTree, TESTING_TREE_HEIGHT,
 };
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource};
-use forward_system::run::{io_implementer_init_data, ForwardRunningOracle};
+use forward_system::run::ForwardRunningOracle;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rig::ruint::aliases::{B160, U256};
 use secp256k1::{Message, Secp256k1, SecretKey};
@@ -21,6 +21,7 @@ use zk_ee::reference_implementations::DecreasingNative;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::system::Resource;
 use zk_ee::utils::Bytes32;
+use zk_ee::common_structs::ProofData;
 
 // a test private key from anvil
 #[allow(unused)]
@@ -178,12 +179,15 @@ pub fn mock_oracle() -> ForwardRunningOracle<InMemoryTree, InMemoryPreimageSourc
         cold_storage: HashMap::new(),
     };
     ForwardRunningOracle {
-        io_implementer_init_data: Some(io_implementer_init_data(Some(FlatStorageCommitment::<
-            { TESTING_TREE_HEIGHT },
-        > {
-            root: *tree.storage_tree.root(),
-            next_free_slot: tree.storage_tree.next_free_slot,
-        }))),
+        proof_data: Some(ProofData {
+            state_root_view: FlatStorageCommitment::<
+                { TESTING_TREE_HEIGHT },
+            > {
+                root: *tree.storage_tree.root(),
+                next_free_slot: tree.storage_tree.next_free_slot,
+            },
+            last_block_timestamp: 0,
+        }),
         preimage_source: InMemoryPreimageSource {
             inner: HashMap::new(),
         },
@@ -224,12 +228,15 @@ pub fn mock_oracle_balance(
         .insert(properties_hash, encoding.to_vec());
 
     ForwardRunningOracle {
-        io_implementer_init_data: Some(io_implementer_init_data(Some(FlatStorageCommitment::<
-            { TESTING_TREE_HEIGHT },
-        > {
-            root: *tree.storage_tree.root(),
-            next_free_slot: tree.storage_tree.next_free_slot,
-        }))),
+        proof_data: Some(ProofData {
+            state_root_view: FlatStorageCommitment::<
+                { TESTING_TREE_HEIGHT },
+            > {
+                root: *tree.storage_tree.root(),
+                next_free_slot: tree.storage_tree.next_free_slot,
+            },
+            last_block_timestamp: 0,
+        }),
         preimage_source,
         tree,
         block_metadata: BlockMetadataFromOracle::new_for_test(),

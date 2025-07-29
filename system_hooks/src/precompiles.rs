@@ -26,6 +26,7 @@ use zk_ee::{
         },
         CallModifier, Resources, System,
     },
+    utils::cheap_clone::CheapCloneRiscV as _,
 };
 
 ///
@@ -85,7 +86,7 @@ where
                 Ok((make_error_return_state(resources), rest))
             }
             RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
-                Err(Into::<SystemError>::into(*e))
+                Err(Into::<SystemError>::into(e.clone_or_copy()))
             }
         },
     }

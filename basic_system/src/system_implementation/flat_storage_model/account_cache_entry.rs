@@ -26,9 +26,9 @@ use zk_ee::utils::Bytes32;
 /// - EE aux bitmask (u8, 3th byte)
 /// - 3 less significant(0-2) bytes currently set to 0, may be used in the future.
 ///
-pub struct VersioningData<const DEPLOYED: u8>(u64);
+pub struct VersioningData<const DEPLOYED: u8, const DELEGATED: u8>(u64);
 
-impl<const DEPLOYED: u8> VersioningData<DEPLOYED> {
+impl<const DEPLOYED: u8, const DELEGATED: u8> VersioningData<DEPLOYED, DELEGATED> {
     pub const fn empty_deployed() -> Self {
         Self((DEPLOYED as u64) << 56)
     }
@@ -43,6 +43,18 @@ impl<const DEPLOYED: u8> VersioningData<DEPLOYED> {
 
     pub fn set_as_deployed(&mut self) {
         self.0 = self.0 & 0x00ffffff_ffffffff | ((DEPLOYED as u64) << 56)
+    }
+
+    pub const fn is_delegated(&self) -> bool {
+        (self.0 >> 56) as u8 == DELEGATED
+    }
+
+    pub fn set_as_delegated(&mut self) {
+        self.0 = self.0 & 0x00ffffff_ffffffff | ((DELEGATED as u64) << 56)
+    }
+
+    pub fn unset_deployment_status(&mut self) {
+        self.0 &= 0x00ff_ffff_ffff_ffff;
     }
 
     pub const fn ee_version(&self) -> u8 {
@@ -86,13 +98,15 @@ impl<const DEPLOYED: u8> VersioningData<DEPLOYED> {
     }
 }
 
-impl<const N: u8> core::fmt::Debug for VersioningData<N> {
+impl<const N: u8, const DELEGATED: u8> core::fmt::Debug for VersioningData<N, DELEGATED> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "0x{:016x}", self.0)
     }
 }
 
 pub const DEFAULT_ADDRESS_SPECIFIC_IMMUTABLE_DATA_VERSION: u8 = 1;
+// Used as deployment_status for accounts with code delegation (EIP-7702)
+pub const DEFAULT_DELEGATED_VERSION: u8 = 2;
 
 #[derive(Default, Clone)]
 pub struct AccountPropertiesMetadata {
@@ -127,7 +141,8 @@ impl AccountPropertiesMetadata {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(C)]
 pub struct AccountProperties {
-    pub versioning_data: VersioningData<DEFAULT_ADDRESS_SPECIFIC_IMMUTABLE_DATA_VERSION>,
+    pub versioning_data:
+        VersioningData<DEFAULT_ADDRESS_SPECIFIC_IMMUTABLE_DATA_VERSION, DEFAULT_DELEGATED_VERSION>,
     pub nonce: u64,
     pub balance: U256,
     pub bytecode_hash: Bytes32,

@@ -6,6 +6,7 @@ use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
+use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
 pub mod run_single_interaction;
@@ -167,6 +168,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
         oracle: <S::IO as IOSubsystemExt>::IOOracle,
         result_keeper: &mut impl ResultKeeperExt,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<<S::IO as IOSubsystemExt>::FinalData, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -233,29 +235,34 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             let initial_calldata_buffer =
                 initial_calldata_buffer.as_tx_buffer(next_tx_data_len_bytes);
 
+            tracer.begin_tx(initial_calldata_buffer);
+
             // We will give the full buffer here, and internally we will use parts of it to give forward to EEs
             cycle_marker::start!("process_transaction");
+
             let tx_result = Self::process_transaction::<Config>(
                 initial_calldata_buffer,
                 &mut system,
                 &mut system_functions,
                 memories.reborrow(),
                 first_tx,
+                tracer,
             );
+
             cycle_marker::end!("process_transaction");
+
+            tracer.finish_tx();
 
             match tx_result {
                 Err(TxError::Internal(err)) => {
                     let _ = system.get_logger().write_fmt(format_args!(
-                        "Tx execution result: Internal error = {:?}\n",
-                        err,
+                        "Tx execution result: Internal error = {err:?}\n",
                     ));
                     return Err(err);
                 }
                 Err(TxError::Validation(err)) => {
                     let _ = system.get_logger().write_fmt(format_args!(
-                        "Tx execution result: Validation error = {:?}\n",
-                        err,
+                        "Tx execution result: Validation error = {err:?}\n",
                     ));
                     result_keeper.tx_processed(Err(err));
                 }
@@ -282,8 +289,8 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                         contract_address,
                         gas_used: tx_processing_result.gas_used,
                         gas_refunded: tx_processing_result.gas_refunded,
-                        #[cfg(feature = "report_native")]
-                        native_used: tx_processing_result.native_used,
+                        computational_native_used: tx_processing_result.computational_native_used,
+                        pubdata_used: tx_processing_result.pubdata_used,
                     }));
 
                     let mut keccak = Keccak256::new();
@@ -304,7 +311,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             let tx_stats = system.flush_tx();
             let _ = system
                 .get_logger()
-                .write_fmt(format_args!("Tx stats = {:?}\n", tx_stats));
+                .write_fmt(format_args!("Tx stats = {tx_stats:?}\n"));
 
             first_tx = false;
 

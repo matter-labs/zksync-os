@@ -5,7 +5,8 @@ use super::{
     subsystem::{Subsystem, SubsystemError},
 };
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(target_arch = "riscv32", derive(Copy))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SystemError {
     LeafDefect(InternalError),
     LeafRuntime(RuntimeError),
@@ -50,9 +51,7 @@ where
 macro_rules! out_of_ergs_error {
     () => {
         $crate::system::errors::system::SystemError::LeafRuntime(
-            $crate::system::errors::runtime::RuntimeError::OutOfErgs(
-                $crate::system::errors::location::ErrorLocation::new(file!(), line!()),
-            ),
+            $crate::system::errors::runtime::RuntimeError::OutOfErgs($crate::location!().into()),
         )
     };
 }

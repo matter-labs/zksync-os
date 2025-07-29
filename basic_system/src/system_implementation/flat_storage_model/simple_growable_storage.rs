@@ -1491,7 +1491,7 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Clone, const RANDOMIZE
 
     pub fn get_index_for_existing(&self, key: &Bytes32) -> u64 {
         let Some(existing) = self.key_lookup.get(key).copied() else {
-            panic!("expected existing leaf for key {:?}", key);
+            panic!("expected existing leaf for key {key:?}");
         };
 
         existing

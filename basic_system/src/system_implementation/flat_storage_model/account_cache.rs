@@ -29,16 +29,23 @@ use zk_ee::common_structs::history_map::HistoryMapItemRefMut;
 use zk_ee::common_structs::PreimageType;
 use zk_ee::define_subsystem;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::interface_error;
 use zk_ee::internal_error;
 use zk_ee::memory::stack_trait::StackCtor;
+use zk_ee::system::BalanceSubsystemError;
 use zk_ee::system::Computational;
+use zk_ee::system::DeconstructionSubsystemError;
+use zk_ee::system::NonceError;
+use zk_ee::system::NonceSubsystemError;
 use zk_ee::system::Resource;
+use zk_ee::system::EIP7702_DELEGATION_MARKER;
 use zk_ee::utils::BitsOrd;
 use zk_ee::utils::Bytes32;
+use zk_ee::wrap_error;
 use zk_ee::{
     memory::stack_trait::StackCtorConst,
     system::{
-        errors::{internal::InternalError, system::SystemError, UpdateQueryError},
+        errors::{internal::InternalError, system::SystemError},
         AccountData, AccountDataRequest, Ergs, IOResultKeeper, Maybe, Resources,
     },
     system_io_oracle::IOOracle,
@@ -232,12 +239,12 @@ where
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         address: &B160,
-        update_fn: impl FnOnce(&U256) -> Result<U256, UpdateQueryError>,
+        update_fn: impl FnOnce(&U256) -> Result<U256, BalanceSubsystemError>,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
-    ) -> Result<U256, UpdateQueryError> {
+    ) -> Result<U256, BalanceSubsystemError> {
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             ee_type,
             resources,
@@ -276,8 +283,10 @@ where
         preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
-    ) -> Result<(), UpdateQueryError> {
-        let mut f = |addr, op: fn(U256, U256) -> (U256, bool)| {
+    ) -> Result<(), BalanceSubsystemError> {
+        use zk_ee::system::BalanceError;
+
+        let mut f = |addr, op: fn(U256, U256) -> (U256, bool), err| {
             self.update_nominal_token_value_inner::<PROOF_ENV>(
                 from_ee,
                 resources,
@@ -285,7 +294,7 @@ where
                 move |old_balance: &U256| {
                     let (new_value, of) = op(*old_balance, *amount);
                     if of {
-                        Err(UpdateQueryError::NumericBoundsError)
+                        Err(err)
                     } else {
                         Ok(new_value)
                     }
@@ -298,8 +307,16 @@ where
         };
 
         // can do update twice
-        f(from, U256::overflowing_sub)?;
-        f(to, U256::overflowing_add)?;
+        f(
+            from,
+            U256::overflowing_sub,
+            interface_error!(BalanceError::InsufficientBalance),
+        )?;
+        f(
+            to,
+            U256::overflowing_add,
+            interface_error!(BalanceError::Overflow),
+        )?;
 
         Ok(())
     }
@@ -456,6 +473,7 @@ where
         NominalTokenBalance: Maybe<<EthereumIOTypesConfig as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
         CodeVersion: Maybe<u8>,
+        IsDelegated: Maybe<bool>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -473,6 +491,7 @@ where
                 NominalTokenBalance,
                 Bytecode,
                 CodeVersion,
+                IsDelegated,
             >,
         >,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
@@ -490,6 +509,7 @@ where
             NominalTokenBalance,
             Bytecode,
             CodeVersion,
+            IsDelegated,
         >,
         SystemError,
     > {
@@ -547,6 +567,22 @@ where
                 }
             })?,
             code_version: Maybe::construct(|| full_data.versioning_data.code_version()),
+            is_delegated: Maybe::try_construct(|| {
+                let delegated = full_data.versioning_data.is_delegated();
+                // Delegated accounts can only be of EVM EE type.
+                // Note that delegates can be of any EE type, the restriction
+                // is just on the delegated account itself.
+                if delegated
+                    && full_data.versioning_data.ee_version()
+                        != ExecutionEnvironmentType::EVM_EE_BYTE
+                {
+                    Err(SystemError::from(internal_error!(
+                        "Delegated account is not EVM"
+                    )))
+                } else {
+                    Ok(delegated)
+                }
+            })?,
         })
     }
 
@@ -559,7 +595,7 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-    ) -> Result<u64, UpdateQueryError> {
+    ) -> Result<u64, NonceSubsystemError> {
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             ee_type,
             resources,
@@ -584,7 +620,7 @@ where
                 })
             })?;
         } else {
-            return Err(UpdateQueryError::NumericBoundsError);
+            return Err(interface_error!(NonceError::NonceOverflow));
         }
 
         Ok(nonce)
@@ -595,11 +631,11 @@ where
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         address: &B160,
-        update_fn: impl FnOnce(&U256) -> Result<U256, UpdateQueryError>,
+        update_fn: impl FnOnce(&U256) -> Result<U256, BalanceSubsystemError>,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-    ) -> Result<U256, UpdateQueryError> {
+    ) -> Result<U256, BalanceSubsystemError> {
         self.update_nominal_token_value_inner::<PROOF_ENV>(
             ee_type,
             resources,
@@ -622,7 +658,7 @@ where
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-    ) -> Result<(), UpdateQueryError> {
+    ) -> Result<(), BalanceSubsystemError> {
         self.transfer_nominal_token_value_inner::<PROOF_ENV>(
             from_ee,
             resources,
@@ -895,6 +931,123 @@ where
         Ok(())
     }
 
+    pub fn set_delegation<const PROOF_ENV: bool>(
+        &mut self,
+        resources: &mut R,
+        at_address: &B160,
+        delegate: &B160,
+        storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SC, SCC, R, P>,
+        preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
+        oracle: &mut impl IOOracle,
+    ) -> Result<(), SystemError> {
+        let mut account_data = resources.with_infinite_ergs(|inf_resources| {
+            self.materialize_element::<PROOF_ENV>(
+                ExecutionEnvironmentType::EVM,
+                inf_resources,
+                at_address,
+                storage,
+                preimages_cache,
+                oracle,
+                false,
+                false,
+            )
+        })?;
+
+        let (
+            observable_bytecode_hash,
+            observable_bytecode_len,
+            bytecode_hash,
+            artifacts_len,
+            code_version,
+            delegated,
+        ) = if delegate == &B160::ZERO {
+            (Bytes32::ZERO, 0, Bytes32::ZERO, 0, 0u8, false)
+        } else {
+            // Bytecode is: 0xef0100 || address
+            let mut code = [0u8; 23];
+            code[0..3].copy_from_slice(&EIP7702_DELEGATION_MARKER);
+            code[3..].copy_from_slice(&delegate.to_be_bytes::<{ B160::BYTES }>());
+
+            // compute observable and true hashes of bytecode
+            let observable_bytecode_hash = {
+                let native_cost = keccak256_native_cost::<R>(code.len());
+                resources.charge(&R::from_native(native_cost))?;
+                use crypto::sha3::Keccak256;
+                use crypto::MiniDigest;
+                let digest = Keccak256::digest(code);
+                Bytes32::from_array(digest)
+            };
+
+            let observable_bytecode_len = code.len() as u32;
+
+            // We compute bytecode hash including padding, for compatibility
+            // We set EE type to EVM, just to use Blake in the helper function
+            let bytecode_hash =
+                Self::compute_bytecode_hash(ExecutionEnvironmentType::EVM, &code, &[], resources)?;
+            let artifacts_len = 0;
+            let padding_len = bytecode_padding_len(code.len());
+            let bytecode_len = observable_bytecode_len + (padding_len as u32) + artifacts_len;
+            let padding = [0u8; core::mem::size_of::<u64>() - 1];
+            let padding = &padding[..padding_len];
+            // save bytecode
+            preimages_cache.record_preimage::<PROOF_ENV>(
+                ExecutionEnvironmentType::NoEE,
+                &(PreimageRequest {
+                    hash: bytecode_hash,
+                    expected_preimage_len_in_bytes: bytecode_len,
+                    preimage_type: PreimageType::Bytecode,
+                }),
+                resources,
+                &[&code, padding, &[]],
+            )?;
+            (
+                observable_bytecode_hash,
+                observable_bytecode_len,
+                bytecode_hash,
+                artifacts_len,
+                evm_interpreter::ARTIFACTS_CACHING_CODE_VERSION_BYTE,
+                true,
+            )
+        };
+
+        resources.charge(&R::from_native(R::Native::from_computational(
+            WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
+        )))?;
+
+        account_data.update(|cache_record| {
+            cache_record.update(|v, m| {
+                v.observable_bytecode_hash = observable_bytecode_hash;
+                v.observable_bytecode_len = observable_bytecode_len;
+                v.bytecode_hash = bytecode_hash;
+                v.unpadded_code_len = observable_bytecode_len;
+                v.artifacts_len = artifacts_len;
+
+                if delegated {
+                    v.versioning_data.set_as_delegated();
+                    // Delegated accounts can only be of EVM EE type.
+                    // Note that delegates can be of any EE type, the restriction
+                    // is just on the delegated account itself.
+                    v.versioning_data
+                        .set_ee_version(ExecutionEnvironmentType::EVM_EE_BYTE);
+                } else {
+                    v.versioning_data.unset_deployment_status();
+                    v.versioning_data
+                        .set_ee_version(ExecutionEnvironmentType::NO_EE_BYTE);
+                }
+
+                v.versioning_data.set_code_version(code_version);
+
+                // This is unlikely to happen, this case shouldn't be reachable by higher level logic
+                // but just in case if force deployed contract was redeployed with regular deployment we want to publish it
+                m.not_publish_bytecode = false;
+
+                Ok(())
+            })
+        })?;
+
+        Ok(())
+    }
+
     pub fn mark_for_deconstruction<const PROOF_ENV: bool>(
         &mut self,
         from_ee: ExecutionEnvironmentType,
@@ -905,7 +1058,7 @@ where
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
         in_constructor: bool,
-    ) -> Result<(), SystemError> {
+    ) -> Result<(), DeconstructionSubsystemError> {
         let cur_tx = self.current_tx_number;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             from_ee,
@@ -953,12 +1106,7 @@ where
                 oracle,
                 true,
             )
-            .map_err(|e| match e {
-                UpdateQueryError::NumericBoundsError => {
-                    internal_error!("Impossible, not enough balance in deconstruction").into()
-                }
-                UpdateQueryError::System(e) => e,
-            })?
+            .map_err(wrap_error!())?;
         } else if should_be_deconstructed {
             account_data.update(|cache_record| {
                 cache_record.update(|v, _| {

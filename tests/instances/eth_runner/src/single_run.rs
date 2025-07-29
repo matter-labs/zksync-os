@@ -89,10 +89,10 @@ pub fn single_run(
     let calltrace: CallTrace = serde_json::from_reader(calltrace_reader)?;
     let block: Block = serde_json::from_str(&block).expect("valid block JSON");
     let block_number = block.result.header.number;
-    info!("Running block: {}", block_number);
+    info!("Running block: {block_number}");
     info!("Block gas used: {}", block.result.header.gas_used);
     // assert!(block.result.header.gas_used <= 11_000_000);
-    let miner = block.result.header.miner;
+    let miner = block.result.header.beneficiary;
 
     let block_context = block.get_block_context();
     let (transactions, skipped) = block.get_transactions(&calltrace);

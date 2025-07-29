@@ -13,7 +13,11 @@ while [ "$#" -gt 0 ]; do
       ;;
     *)
       echo "Unknown argument: $1"
+<<<<<<< HEAD
       echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|multiblock-batch]"
+=======
+      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|pectra]"
+>>>>>>> main
       exit 1
       ;;
   esac
@@ -46,16 +50,22 @@ case "$TYPE" in
     TEXT_NAME="app.text"
     ;;
   evm-replay)
-    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/prevrandao"
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/prevrandao,proof_running_system/evm_refunds"
     BIN_NAME="evm_replay.bin"
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
     ;;
   evm-replay-benchmarking)
-    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/cycle_marker,proof_running_system/prevrandao"
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/cycle_marker,proof_running_system/prevrandao,proof_running_system/evm_refunds"
     BIN_NAME="evm_replay.bin"
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
+    ;;
+  pectra)
+    FEATURES="$FEATURES,proof_running_system/pectra"
+    BIN_NAME="app.bin"
+    ELF_NAME="app.elf"
+    TEXT_NAME="app.text"
     ;;
   multiblock-batch)
     FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/multiblock-batch"

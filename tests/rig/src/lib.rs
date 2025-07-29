@@ -12,6 +12,7 @@ pub mod chain;
 pub mod utils;
 
 pub use alloy;
+pub use alloy_rlp;
 pub use chain::BlockContext;
 pub use chain::Chain;
 pub use ethers;

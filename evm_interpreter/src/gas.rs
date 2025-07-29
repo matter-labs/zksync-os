@@ -4,7 +4,7 @@
 //! including the "native" (proving) resource, which reflects the actual cost of proving.
 //! As a result, there is an element of double accounting.
 
-use zk_ee::system::{Computational, Ergs, EthereumLikeTypes, Resource, Resources};
+use zk_ee::system::{Computational, Ergs, EthereumLikeTypes, Resource, Resources, SystemTypes};
 
 use crate::{
     native_resource_constants::{
@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// Wraps underlying system resources and implements gas accounting on top of it
-pub struct Gas<S: EthereumLikeTypes> {
+pub struct Gas<S: SystemTypes> {
     /// Underlying system resources
     pub resources: S::Resources,
     /// Keep track of gas spent on heap resizes
@@ -31,7 +31,7 @@ impl<S: EthereumLikeTypes> Gas<S> {
 
     #[inline(always)]
     /// Returns remaining "native" (proving) resource
-    pub(crate) fn native(&mut self) -> u64 {
+    pub(crate) fn native(&self) -> u64 {
         self.resources.native().as_u64()
     }
 

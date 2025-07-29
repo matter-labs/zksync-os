@@ -13,9 +13,7 @@ use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::test_impl::{
     InMemoryPreimageSource, InMemoryTree, NoopTxCallback, TxListSource,
 };
-use forward_system::run::{
-    io_implementer_init_data, BatchOutput, ForwardRunningOracle, ForwardRunningOracleAux,
-};
+use forward_system::run::{BlockOutput, ForwardRunningOracle};
 use forward_system::system::bootloader::run_forward;
 use log::{debug, info, trace};
 use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
@@ -25,8 +23,9 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use zk_ee::common_structs::derive_flat_storage_key;
+use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
 use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle};
+use zk_ee::system::tracer::NopTracer;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
 
@@ -39,6 +38,7 @@ pub struct Chain<const RANDOMIZED_TREE: bool = false> {
     chain_id: u64,
     block_number: u64,
     block_hashes: [U256; 256],
+    block_timestamp: u64,
 }
 
 /// This is a part of the state, which can be controlled by sequencer, other block context values can be determined from the chain state.
@@ -83,6 +83,7 @@ impl Chain<false> {
             chain_id: chain_id.unwrap_or(37),
             block_number: 0,
             block_hashes: [U256::ZERO; 256],
+            block_timestamp: 0,
         }
     }
 }
@@ -105,13 +106,14 @@ impl Chain<true> {
             chain_id: chain_id.unwrap_or(37),
             block_number: 0,
             block_hashes: [U256::ZERO; 256],
+            block_timestamp: 0,
         }
     }
 }
 
 #[derive(Debug)]
 pub struct BlockExtraStats {
-    pub native_used: Option<u64>,
+    pub computational_native_used: Option<u64>,
     pub effective_used: Option<u64>,
 }
 
@@ -161,7 +163,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         &mut self,
         transactions: Vec<Vec<u8>>,
         block_context: Option<BlockContext>,
-    ) -> BatchOutput {
+    ) -> BlockOutput {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
@@ -175,16 +177,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             gas_limit: block_context.gas_limit,
             mix_hash: block_context.mix_hash,
         };
-        let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
-            root: *self.state_tree.storage_tree.root(),
-            next_free_slot: self.state_tree.storage_tree.next_free_slot,
-        };
         let tx_source = TxListSource {
             transactions: transactions.into(),
         };
 
         let oracle = ForwardRunningOracle {
-            io_implementer_init_data: Some(io_implementer_init_data(Some(state_commitment))),
+            proof_data: None,
             preimage_source: self.preimage_source.clone(),
             tree: self.state_tree.clone(),
             block_metadata,
@@ -194,27 +192,24 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         // dump oracle if env variable set
         if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
-            let aux_oracle: ForwardRunningOracleAux<
-                InMemoryTree<RANDOMIZED_TREE>,
-                InMemoryPreimageSource,
-                TxListSource,
-            > = oracle.clone().into();
-            let serialized_oracle = bincode::serialize(&aux_oracle).expect("should serialize");
+            let serialized_oracle = bincode::serialize(&oracle).expect("should serialize");
             let mut file = File::create(&path).expect("should create file");
             file.write_all(&serialized_oracle)
                 .expect("should write to file");
-            info!("Successfully wrote oracle dump to: {}", path);
+            info!("Successfully wrote oracle dump to: {path}");
         }
 
         // forward run
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
+        let mut nop_tracer = NopTracer::default();
 
         run_forward::<BasicBootloaderCallSimulationConfig, _, _, _>(
             oracle.clone(),
             &mut result_keeper,
+            &mut nop_tracer,
         );
 
-        let block_output: BatchOutput = result_keeper.into();
+        let block_output: BlockOutput = result_keeper.into();
         trace!(
             "{}Block output:{} \n{:#?}",
             colors::MAGENTA,
@@ -235,7 +230,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         transactions: Vec<Vec<u8>>,
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
-    ) -> BatchOutput {
+    ) -> BlockOutput {
         self.run_block_with_extra_stats(transactions, block_context, profiler_config, None, None)
             .0
     }
@@ -247,7 +242,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         profiler_config: Option<ProfilerConfig>,
         witness_output_file: Option<PathBuf>,
         app: Option<String>,
-    ) -> (BatchOutput, BlockExtraStats) {
+    ) -> (BlockOutput, BlockExtraStats) {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
@@ -265,12 +260,16 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             root: *self.state_tree.storage_tree.root(),
             next_free_slot: self.state_tree.storage_tree.next_free_slot,
         };
+        let proof_data = ProofData {
+            state_root_view: state_commitment,
+            last_block_timestamp: self.block_timestamp,
+        };
         let tx_source = TxListSource {
             transactions: transactions.into(),
         };
 
         let oracle = ForwardRunningOracle {
-            io_implementer_init_data: Some(io_implementer_init_data(Some(state_commitment))),
+            proof_data: Some(proof_data),
             preimage_source: self.preimage_source.clone(),
             tree: self.state_tree.clone(),
             block_metadata,
@@ -280,27 +279,24 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         // dump oracle if env variable set
         if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
-            let aux_oracle: ForwardRunningOracleAux<
-                InMemoryTree<RANDOMIZED_TREE>,
-                InMemoryPreimageSource,
-                TxListSource,
-            > = oracle.clone().into();
-            let serialized_oracle = bincode::serialize(&aux_oracle).expect("should serialize");
+            let serialized_oracle = bincode::serialize(&oracle).expect("should serialize");
             let mut file = File::create(&path).expect("should create file");
             file.write_all(&serialized_oracle)
                 .expect("should write to file");
-            info!("Successfully wrote oracle dumo to: {}", path);
+            info!("Successfully wrote oracle dumo to: {path}");
         }
 
         // forward run
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
+        let mut nop_tracer = NopTracer::default();
 
         run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
             oracle.clone(),
             &mut result_keeper,
+            &mut nop_tracer,
         );
 
-        let block_output: BatchOutput = result_keeper.into();
+        let block_output: BlockOutput = result_keeper.into();
         trace!(
             "{}Block output:{} \n{:#?}",
             colors::MAGENTA,
@@ -309,22 +305,21 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         );
         #[allow(unused_mut)]
         let mut stats = BlockExtraStats {
-            native_used: None,
+            computational_native_used: None,
             effective_used: None,
         };
 
-        #[cfg(feature = "report_native")]
         {
             let native_used: u64 = block_output
                 .tx_results
                 .iter()
                 .map(|res| {
                     res.as_ref()
-                        .map(|tx_out| tx_out.native_used)
+                        .map(|tx_out| tx_out.computational_native_used)
                         .unwrap_or_default()
                 })
                 .sum::<u64>();
-            stats.native_used = Some(native_used);
+            stats.computational_native_used = Some(native_used);
         }
 
         if let Some(path) = witness_output_file {
@@ -385,7 +380,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 let mut file = File::create(&output_csr).expect("Failed to create csr reads file");
                 // Write each u32 as an 8-character hexadecimal string without newlines
                 for num in items.borrow().iter() {
-                    write!(file, "{:08X}", num).expect("Failed to write to file");
+                    write!(file, "{num:08X}").expect("Failed to write to file");
                 }
                 debug!(
                     "Successfully wrote {} u32 csr reads elements to file: {}",
@@ -400,7 +395,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 colors::RESET
             );
             for word in proof_output.into_iter() {
-                debug!("{:08x}", word);
+                debug!("{word:08x}");
             }
 
             // Ensure that proof running didn't fail: check that output is not zero
@@ -564,7 +559,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         use ethers::signers::Signer;
         let r =
             LocalWallet::new(&mut ethers::core::rand::thread_rng()).with_chain_id(self.chain_id);
-        info!("Generated wallet: {:0x?}", r);
+        info!("Generated wallet: {r:0x?}");
         r
     }
 
@@ -574,7 +569,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     pub fn random_signer(&self) -> PrivateKeySigner {
         use alloy::signers::Signer;
         let r = PrivateKeySigner::random().with_chain_id(Some(self.chain_id));
-        info!("Generated wallet: {:0x?}", r);
+        info!("Generated wallet: {r:0x?}");
         r
     }
 }
@@ -582,7 +577,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 // bunch of internal utility methods
 fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
     let app = app_name.as_deref().unwrap_or("app");
-    let filename = format!("{}.{}", app, extension);
+    let filename = format!("{app}.{extension}");
     let zksync_os_path = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {

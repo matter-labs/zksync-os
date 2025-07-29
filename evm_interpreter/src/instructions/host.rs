@@ -5,7 +5,8 @@ use gas_constants::{CALL_STIPEND, INITCODE_WORD_COST, SHA3WORD};
 
 use native_resource_constants::*;
 use zk_ee::kv_markers::MAX_EVENT_TOPICS;
-use zk_ee::system::*;
+use zk_ee::system::tracer::Tracer;
+use zk_ee::{system::*, wrap_error};
 
 use super::*;
 
@@ -89,43 +90,62 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
             let _ = system.get_logger().write_fmt(format_args!(
-                " len {}, source offset: {:?}, dest offset {}",
-                len, source_offset, memory_offset
+                " len {len}, source offset: {source_offset:?}, dest offset {memory_offset}"
             ));
         }
 
         Ok(())
     }
 
-    pub fn sload(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn sload(
+        &mut self,
+        system: &mut System<S>,
+        tracer: &mut impl Tracer<S>,
+    ) -> InstructionResult {
         self.gas.spend_gas_and_native(0, SLOAD_NATIVE_COST)?;
         let stack_head = self.stack.top_mut()?;
+        let key = Bytes32::from_u256_be(stack_head);
         let value = system.io.storage_read::<false>(
             THIS_EE_TYPE,
             self.gas.resources_mut(),
             &self.address,
-            &Bytes32::from_u256_be(stack_head),
+            &key,
         )?;
 
         *stack_head = value.into_u256_be();
+
+        tracer.on_storage_write(THIS_EE_TYPE, false, self.address, key, value);
+
         Ok(())
     }
 
-    pub fn tload(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn tload(
+        &mut self,
+        system: &mut System<S>,
+        tracer: &mut impl Tracer<S>,
+    ) -> InstructionResult {
         self.gas.spend_gas_and_native(0, TLOAD_NATIVE_COST)?;
         let stack_head = self.stack.top_mut()?;
+        let key = Bytes32::from_u256_be(stack_head);
         let value = system.io.storage_read::<true>(
             THIS_EE_TYPE,
             self.gas.resources_mut(),
             &self.address,
-            &Bytes32::from_u256_be(stack_head),
+            &key,
         )?;
 
         *stack_head = value.into_u256_be();
+
+        tracer.on_storage_write(THIS_EE_TYPE, true, self.address, key, value);
+
         Ok(())
     }
 
-    pub fn sstore(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn sstore(
+        &mut self,
+        system: &mut System<S>,
+        tracer: &mut impl Tracer<S>,
+    ) -> InstructionResult {
         self.gas.spend_gas_and_native(0, SSTORE_NATIVE_COST)?;
         if self.is_static_frame() {
             return Err(ExitCode::StateChangeDuringStaticCall);
@@ -145,6 +165,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             &value,
         )?;
 
+        tracer.on_storage_write(THIS_EE_TYPE, false, self.address, index, value);
+
         // This is an example of what would need to be done with tracing
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
@@ -157,7 +179,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         Ok(())
     }
 
-    pub fn tstore(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn tstore(
+        &mut self,
+        system: &mut System<S>,
+        tracer: &mut impl Tracer<S>,
+    ) -> InstructionResult {
         self.gas.spend_gas_and_native(0, TSTORE_NATIVE_COST)?;
         if self.is_static_frame() {
             return Err(ExitCode::StateChangeDuringStaticCall);
@@ -173,10 +199,16 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             &value,
         )?;
 
+        tracer.on_storage_write(THIS_EE_TYPE, true, self.address, index, value);
+
         Ok(())
     }
 
-    pub fn log<const N: usize>(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn log<const N: usize>(
+        &mut self,
+        system: &mut System<S>,
+        tracer: &mut impl Tracer<S>,
+    ) -> InstructionResult {
         assert!(N <= MAX_EVENT_TOPICS);
         self.gas.spend_gas_and_native(0, LOG_NATIVE_COST)?;
 
@@ -195,6 +227,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // resize memory
         self.resize_heap(mem_offset, len)?;
         let data = &self.heap[mem_offset..mem_offset + len];
+
+        tracer.on_event(THIS_EE_TYPE, &self.address, &topics, data);
 
         system.io.emit_event(
             ExecutionEnvironmentType::EVM,
@@ -217,13 +251,16 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         let beneficiary = u256_to_b160(self.stack.pop_1()?);
 
-        system.io.mark_for_deconstruction(
-            THIS_EE_TYPE,
-            self.gas.resources_mut(),
-            &self.address,
-            &beneficiary,
-            self.is_constructor,
-        )?;
+        system
+            .io
+            .mark_for_deconstruction(
+                THIS_EE_TYPE,
+                self.gas.resources_mut(),
+                &self.address,
+                &beneficiary,
+                self.is_constructor,
+            )
+            .map_err(wrap_error!())?;
 
         Err(ExitCode::SelfDestruct)
     }

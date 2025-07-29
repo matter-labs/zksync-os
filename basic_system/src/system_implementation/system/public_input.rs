@@ -16,6 +16,7 @@ use crate::system_implementation::system::public_input;
 /// This commitment(hash of its fields) will be saved on the settlement layer.
 /// With proofs, we'll ensure that the values used during block execution correspond to this commitment.
 ///
+#[derive(Debug)]
 pub struct ChainStateCommitment {
     pub state_root: Bytes32,
     pub next_free_slot: u64,

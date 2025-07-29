@@ -2,7 +2,7 @@
 //! This module contains bunch of standalone utility methods, useful for testing.
 //!
 
-use alloy::consensus::SignableTransaction;
+use alloy::consensus::{SignableTransaction, Transaction};
 use alloy::network::TxSignerSync;
 #[allow(deprecated)]
 use alloy::primitives::Signature;
@@ -37,7 +37,7 @@ pub fn load_wasm_bytecode(contract_name: &str) -> Vec<u8> {
         contract_name
     );
     let mut file = std::fs::File::open(path.as_str())
-        .unwrap_or_else(|_| panic!("Expecting '{}' to exist.", path));
+        .unwrap_or_else(|_| panic!("Expecting '{path}' to exist."));
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
 
@@ -60,7 +60,7 @@ pub fn load_sol_bytecode(project_name: &str, contract_name: &str) -> Vec<u8> {
 
     hex::decode(
         &std::fs::read_to_string(path.as_str())
-            .unwrap_or_else(|_| panic!("Expecring '{}' to exist.", path))[2..],
+            .unwrap_or_else(|_| panic!("Expecring '{path}' to exist."))[2..],
     )
     .unwrap()
 }
@@ -98,7 +98,7 @@ pub fn sign_and_encode_alloy_tx(
     }
     let tx_type = tx.ty();
     let from = wallet.address().into_array();
-    let to = tx.to().to().map(|to| to.into_array());
+    let to = tx.to().map(|to| to.into_array());
     let gas_limit = tx.gas_limit() as u128;
     let max_fee_per_gas = tx.max_fee_per_gas();
     let max_priority_fee_per_gas = tx.max_priority_fee_per_gas();
@@ -120,7 +120,29 @@ pub fn sign_and_encode_alloy_tx(
                 })
                 .collect()
         });
-    let reserved_dynamic = access_list.map(encode_access_list);
+
+    let authorization_list = tx.authorization_list().map(|authorization_list| {
+        authorization_list
+            .iter()
+            .map(|authorization| {
+                let auth = authorization.inner();
+                let y_parity = authorization.y_parity();
+                let r = authorization.r();
+                let s = authorization.s();
+                (
+                    U256::from_big_endian(&auth.chain_id.to_be_bytes::<32>()),
+                    auth.address.into_array(),
+                    auth.nonce,
+                    y_parity,
+                    U256::from_big_endian(&r.to_be_bytes::<32>()),
+                    U256::from_big_endian(&s.to_be_bytes::<32>()),
+                )
+            })
+            .collect()
+    });
+    let reserved_dynamic = access_list.map(|access_list| {
+        encode_reserved_dynamic(access_list, authorization_list.unwrap_or_default())
+    });
 
     encode_tx(
         tx_type,
@@ -143,38 +165,68 @@ pub fn sign_and_encode_alloy_tx(
 
 #[allow(deprecated)]
 pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> Vec<u8> {
-    let tx_type = tx.transaction_type.unwrap_or(0);
-    let from = tx.from.into_array();
-    let to = tx.to.map(|a| a.into_array());
-    let gas_limit = tx.gas as u128;
+    use alloy::consensus::Typed2718;
+    let tx_type = tx.inner.tx_type().ty();
+    let from = tx.as_recovered().signer().into_array();
+    let to = tx.to().map(|a| a.into_array());
+    let gas_limit = tx.gas_limit() as u128;
     let (max_fee_per_gas, max_priority_fee_per_gas) = if tx_type == 2 {
-        (tx.max_fee_per_gas.unwrap(), tx.max_priority_fee_per_gas)
+        (tx.max_fee_per_gas(), tx.max_priority_fee_per_gas())
     } else {
-        (tx.gas_price.unwrap(), tx.gas_price)
+        (tx.gas_price().unwrap(), tx.gas_price())
     };
-    let nonce = tx.nonce as u128;
-    let value = tx.value.to_be_bytes();
-    let data = tx.input.to_vec();
-    let sig: alloy::primitives::Signature = tx.signature.unwrap_or_default().try_into().unwrap();
+    let nonce = tx.nonce() as u128;
+    let value = tx.value().to_be_bytes();
+    let data = tx.input().to_vec();
+    let sig: alloy::primitives::Signature = *tx.clone().into_signed().signature();
     let mut signature = sig.as_bytes().to_vec();
-    let is_eip155 = sig.has_eip155_value();
+    let is_eip155 = tx.inner.is_replay_protected();
     if signature[64] <= 1 {
         signature[64] += 27;
     }
-    let access_list = tx
-        .access_list
-        .map(|access_list: alloy::rpc::types::AccessList| {
-            access_list
-                .0
-                .into_iter()
-                .map(|item| {
-                    let address = item.address.into_array();
-                    let keys: Vec<[u8; 32]> = item.storage_keys.into_iter().map(|k| k.0).collect();
-                    (address, keys)
+    let access_list =
+        tx.access_list()
+            .cloned()
+            .map(|access_list: alloy::rpc::types::AccessList| {
+                access_list
+                    .0
+                    .into_iter()
+                    .map(|item| {
+                        let address = item.address.into_array();
+                        let keys: Vec<[u8; 32]> =
+                            item.storage_keys.into_iter().map(|k| k.0).collect();
+                        (address, keys)
+                    })
+                    .collect()
+            });
+
+    #[cfg(feature = "pectra")]
+    let authorization_list = tx
+        .authorization_list()
+        .map(|authorization_list| {
+            authorization_list
+                .iter()
+                .map(|authorization| {
+                    let auth = authorization.inner();
+                    let y_parity = authorization.y_parity();
+                    let r = authorization.r();
+                    let s = authorization.s();
+                    (
+                        U256::from_big_endian(&auth.chain_id.to_be_bytes::<32>()),
+                        auth.address.into_array(),
+                        auth.nonce,
+                        y_parity,
+                        U256::from_big_endian(&r.to_be_bytes::<32>()),
+                        U256::from_big_endian(&s.to_be_bytes::<32>()),
+                    )
                 })
                 .collect()
-        });
-    let reserved_dynamic = access_list.map(encode_access_list);
+        })
+        .unwrap_or_default();
+    #[cfg(not(feature = "pectra"))]
+    let authorization_list = vec![];
+    let reserved_dynamic =
+        access_list.map(|access_list| encode_reserved_dynamic(access_list, authorization_list));
 
     encode_tx(
         tx_type,
@@ -332,8 +384,11 @@ pub fn encode_l1_tx(tx: TransactionRequest) -> Vec<u8> {
     )
 }
 
-fn encode_access_list(list: Vec<([u8; 20], Vec<[u8; 32]>)>) -> Vec<u8> {
-    let inner: Vec<Token> = list
+fn encode_reserved_dynamic(
+    access_list: Vec<([u8; 20], Vec<[u8; 32]>)>,
+    authorization_list: Vec<(U256, [u8; 20], u64, u8, U256, U256)>,
+) -> Vec<u8> {
+    let access_list: Vec<Token> = access_list
         .into_iter()
         .map(|(addr, keys)| {
             let address_token = Token::Address(addr.into());
@@ -346,8 +401,24 @@ fn encode_access_list(list: Vec<([u8; 20], Vec<[u8; 32]>)>) -> Vec<u8> {
         })
         .collect();
 
-    // Single element list to be able to extend reserved_dynamic
-    let outer = Token::Array(vec![Token::Array(inner)]);
+    let authorization_list: Vec<Token> = authorization_list
+        .into_iter()
+        .map(|(chain_id, address, nonce, y_parity, r, s)| {
+            let chain_id = Token::Uint(chain_id);
+            let address = Token::Address(address.into());
+            let nonce = Token::Uint(U256::from(nonce));
+            let y_parity = Token::Uint(U256::from(y_parity));
+            let r = Token::Uint(r);
+            let s = Token::Uint(s);
+            Token::Tuple(vec![chain_id, address, nonce, y_parity, r, s])
+        })
+        .collect();
+
+    // 2-element list to be able to extend reserved_dynamic
+    let outer = Token::Array(vec![
+        Token::Array(access_list),
+        Token::Array(authorization_list),
+    ]);
     ethers::abi::encode(&[outer])
 }
 
@@ -422,13 +493,13 @@ fn encode_tx(
 #[cfg(test)]
 mod tests {
 
-    use super::encode_access_list;
-    use basic_bootloader::bootloader::constants::TX_OFFSET;
+    use super::encode_reserved_dynamic;
+    use super::U256;
     use ruint::aliases::B160;
     use zk_ee::utils::Bytes32;
     #[test]
-    fn test_encode_access_list() {
-        use basic_bootloader::bootloader::transaction::access_list_parser::AccessListParser;
+    fn test_encode_reserved_dynamic() {
+        use basic_bootloader::bootloader::transaction::reserved_dynamic_parser::ReservedDynamicParser;
         use ethers::abi::Token;
         let address0 = [0x11u8; 20];
         let address1 = [0x10u8; 20];
@@ -441,14 +512,31 @@ mod tests {
             (address1, storage_keys1.clone()),
         ];
 
-        let encoded_list = encode_access_list(access_list);
+        let authorization_list = vec![
+            (
+                U256::from(3),
+                address0,
+                4,
+                1,
+                U256::from(42),
+                U256::from(43),
+            ),
+            (
+                U256::from(3),
+                address1,
+                5,
+                0,
+                U256::from(52),
+                U256::from(53),
+            ),
+        ];
+
+        let encoded_list = encode_reserved_dynamic(access_list, authorization_list);
         let encoded = ethers::abi::encode(&[Token::Bytes(encoded_list)]);
-        // Prepend TX_OFFSET bytes, as those are then ignored by the parser.
-        let mut full_buffer = vec![0u8; TX_OFFSET];
-        full_buffer.extend(encoded);
+
         // Offset is 32 to skip the initial offset for the bytes encoding
-        let parser = AccessListParser { offset: 32 };
-        let mut iter = parser.into_iter(&full_buffer).expect("Must create iter");
+        let parser = ReservedDynamicParser::new(&encoded, 32).expect("Must create parser");
+        let mut iter = parser.access_list_iter(&encoded).expect("Must create iter");
         let (address, mut keys_iter) = iter
             .next()
             .expect("Must have first")
@@ -484,5 +572,19 @@ mod tests {
         assert!(keys_iter.next().is_none());
 
         assert!(iter.next().is_none());
+
+        #[cfg(feature = "pectra")]
+        {
+            let mut iter = parser
+                .authorization_list_iter(&encoded)
+                .expect("Must create iter");
+            let first = iter.next().expect("Must have first").expect("Must decode");
+            assert_eq!(first.nonce, 4);
+            assert_eq!(first.y_parity, 1);
+            let second = iter.next().expect("Must have second").expect("Must decode");
+            assert_eq!(second.nonce, 5);
+            assert_eq!(second.y_parity, 0);
+            assert!(iter.next().is_none())
+        }
     }
 }

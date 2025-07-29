@@ -24,6 +24,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         paymaster: B160,
         _caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ReturnValues<'a, S>, TxError>
     where
         S::IO: IOSubsystemExt,
@@ -47,6 +48,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             paymaster,
             PAYMASTER_VALIDATE_AND_PAY_SELECTOR,
             resources,
+            tracer,
         )
         .map_err(TxError::oon_as_validation)?;
 
@@ -331,6 +333,7 @@ where {
         from: B160,
         selector: &[u8],
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<CompletedExecution<'a, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -365,6 +368,7 @@ where {
             resources_for_tx,
             &U256::ZERO,
             true,
+            tracer,
         )
     }
 }

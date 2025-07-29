@@ -28,7 +28,7 @@ members = [
     "tests/instances/unit",
     "tests/instances/eth_runner",
     "tests/instances/system_hooks",
-    "cycle_marker", 
+    "cycle_marker",
     "tests/binary_checker"
 , "supporting_crates/delegated_u256", "supporting_crates/u256"]
 
@@ -86,4 +86,3 @@ debug = true
 # trace_and_split = { path = "../zksync-airbender/circuit_defs/trace_and_split" }
 # risc_v_simulator = { path = "../zksync-airbender/risc_v_simulator" }
 # execution_utils = { path = "../zksync-airbender/execution_utils" }
-

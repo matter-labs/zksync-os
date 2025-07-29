@@ -6,6 +6,7 @@ use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use basic_system::system_implementation::system::BatchPublicInputBuilder;
 use zk_ee::memory::ZSTAllocator;
+use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
 use zk_ee::system_io_oracle::{DisconnectOracleFormalIterator, IOOracle};
 use zk_ee::utils::Bytes32;
@@ -181,7 +182,7 @@ pub fn run_proving_inner<
     // Load all transactions from oracle and apply them.
     let (mut oracle, public_input) = ProvingBootloader::<O, L>::run_prepared::<
         BasicBootloaderProvingExecutionConfig,
-    >(oracle, &mut NopResultKeeper)
+    >(oracle, &mut NopResultKeeper, &mut NopTracer::default())
     .expect("Tried to prove a failing batch");
 
     // disconnect oracle before returning
