@@ -22,13 +22,16 @@ use core::alloc::Allocator;
 use core::ops::Range;
 use either::Either;
 
+use errors::EvmSubsystemError;
 use evm_stack::EvmStack;
 use gas::Gas;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
+use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::{internal::InternalError, system::SystemError};
+use zk_ee::system::evm::{EvmFrameInterface, EvmStackInterface};
 use zk_ee::system::{EthereumLikeTypes, Resource, Resources, System, SystemTypes};
 
 use alloc::vec::Vec;
@@ -58,7 +61,7 @@ pub const ARTIFACTS_CACHING_CODE_VERSION_BYTE: u8 = 1u8;
 
 // this is the interpreter that can be found in Reth itself, modified for purposes of having abstract view
 // on memory and resources
-pub struct Interpreter<'a, S: EthereumLikeTypes> {
+pub struct Interpreter<'a, S: SystemTypes> {
     /// Instruction pointer.
     pub instruction_pointer: usize,
     /// Implementation of gas accounting on top of system resources.
@@ -87,6 +90,56 @@ pub struct Interpreter<'a, S: EthereumLikeTypes> {
     pub is_static: bool,
     /// Is interpreter call executing construction code.
     pub is_constructor: bool,
+}
+
+impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for Interpreter<'ee, S> {
+    fn instruction_pointer(&self) -> usize {
+        self.instruction_pointer
+    }
+
+    fn resources(&self) -> &<S as SystemTypes>::Resources {
+        &self.gas.resources
+    }
+
+    fn stack(&self) -> &impl EvmStackInterface {
+        &self.stack
+    }
+
+    fn caller(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
+        self.caller
+    }
+
+    fn address(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
+        self.address
+    }
+
+    fn calldata(&self) -> &[u8] {
+        &self.calldata
+    }
+
+    fn return_data(&self) -> &[u8] {
+        &self.returndata
+    }
+
+    fn heap(&self) -> &[u8] {
+        &self.heap
+    }
+
+    fn bytecode(&self) -> &[u8] {
+        &self.bytecode
+    }
+
+    fn call_value(&self) -> &U256 {
+        &self.call_value
+    }
+
+    fn is_static(&self) -> bool {
+        self.is_static
+    }
+
+    fn is_constructor(&self) -> bool {
+        self.is_constructor
+    }
 }
 
 pub const STACK_SIZE: usize = 1024;
@@ -325,7 +378,7 @@ pub type InstructionResult = Result<(), ExitCode>;
 /// Expected exit reasons from the EVM interpreter.
 ///
 #[repr(u8)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 // #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ExitCode {
     //success codes
@@ -370,17 +423,26 @@ pub enum ExitCode {
     FatalExternalError,
 
     // Fatal internal error
-    FatalError(SystemError),
+    FatalError(EvmSubsystemError),
 }
 
 impl From<SystemError> for ExitCode {
     fn from(e: SystemError) -> Self {
         match e {
-            e @ SystemError::LeafDefect(_) => Self::FatalError(e),
-            e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
-                Self::FatalError(e)
-            }
             SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => Self::OutOfGas,
+            e => Self::FatalError(e.into()),
+        }
+    }
+}
+
+/// TODO this is a workaround. We need to contain ExitCode better inside EVM
+/// interpreter but it requires a bit of untangling.
+impl From<EvmSubsystemError> for ExitCode {
+    fn from(e: EvmSubsystemError) -> Self {
+        if let RootCause::Runtime(RuntimeError::OutOfErgs(_)) = e.root_cause() {
+            Self::OutOfGas
+        } else {
+            Self::FatalError(e)
         }
     }
 }

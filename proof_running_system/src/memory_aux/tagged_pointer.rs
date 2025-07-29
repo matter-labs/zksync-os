@@ -100,6 +100,7 @@ impl<A: TaggedPointerCompatible<1>, B: TaggedPointerCompatible<1>> TaggedPointer
         }
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn as_b_ref(&self) -> Option<&B> {
         let (ptr, tag) = strip_tag::<B>(self.pointer);
         if tag == Self::TAG_B {
@@ -109,6 +110,7 @@ impl<A: TaggedPointerCompatible<1>, B: TaggedPointerCompatible<1>> TaggedPointer
         }
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn as_a_mut(&self) -> Option<&mut A> {
         let (mut ptr, tag) = strip_tag::<A>(self.pointer);
         if tag == Self::TAG_A {
@@ -118,6 +120,7 @@ impl<A: TaggedPointerCompatible<1>, B: TaggedPointerCompatible<1>> TaggedPointer
         }
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn as_b_mut(&self) -> Option<&mut B> {
         let (mut ptr, tag) = strip_tag::<B>(self.pointer);
         if tag == Self::TAG_B {

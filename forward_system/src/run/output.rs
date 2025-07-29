@@ -47,8 +47,10 @@ pub struct TxOutput {
     pub gas_used: u64,
     /// Amount of refunded gas
     pub gas_refunded: u64,
-    #[cfg(feature = "report_native")]
-    pub native_used: u64,
+
+    pub computational_native_used: u64,
+
+    pub pubdata_used: u64,
     /// Deployed contract address
     /// - `Some(address)` for the deployment transaction
     /// - `None` otherwise
@@ -122,7 +124,7 @@ pub struct StorageWrite {
 }
 
 #[derive(Debug, Clone)]
-pub struct BatchOutput {
+pub struct BlockOutput {
     pub header: BlockHeader,
     pub tx_results: Vec<TxResult>,
     // TODO: will be returned per tx later
@@ -153,7 +155,7 @@ impl From<(B160, Bytes32, Bytes32)> for StorageWrite {
     }
 }
 
-impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput {
+impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BlockOutput {
     fn from(value: ForwardRunningResultKeeper<TR>) -> Self {
         let ForwardRunningResultKeeper {
             block_header,
@@ -183,8 +185,10 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
                     TxOutput {
                         gas_used: output.gas_used,
                         gas_refunded: output.gas_refunded,
-                        #[cfg(feature = "report_native")]
-                        native_used: output.native_used,
+
+                        computational_native_used: output.computational_native_used,
+
+                        pubdata_used: output.pubdata_used,
                         contract_address: output.contract_address,
                         logs: events
                             .iter()
@@ -226,4 +230,4 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
 }
 
 #[allow(dead_code)]
-pub type BatchResult = Result<BatchOutput, InternalError>;
+pub type BatchResult = Result<BlockOutput, InternalError>;

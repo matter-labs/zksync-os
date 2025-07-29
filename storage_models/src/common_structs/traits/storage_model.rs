@@ -1,11 +1,11 @@
 use super::snapshottable_io::SnapshottableIo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::system::NonceSubsystemError;
+use zk_ee::system::{BalanceSubsystemError, DeconstructionSubsystemError, NonceSubsystemError};
 use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::utils::Bytes32;
 use zk_ee::{
     system::{
-        errors::{internal::InternalError, system::SystemError, UpdateQueryError},
+        errors::{internal::InternalError, system::SystemError},
         logger::Logger,
         AccountData, AccountDataRequest, IOResultKeeper, Maybe, Resources,
     },
@@ -66,6 +66,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
         CodeVersion: Maybe<u8>,
+        IsDelegated: Maybe<bool>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -83,6 +84,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
                 NominalTokenBalance,
                 Bytecode,
                 CodeVersion,
+                IsDelegated,
             >,
         >,
         oracle: &mut impl IOOracle,
@@ -98,6 +100,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
             NominalTokenBalance,
             Bytecode,
             CodeVersion,
+            IsDelegated,
         >,
         SystemError,
     >;
@@ -129,12 +132,12 @@ pub trait StorageModel: Sized + SnapshottableIo {
             &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         ) -> Result<
             <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
-            UpdateQueryError,
+            BalanceSubsystemError,
         >,
         oracle: &mut impl IOOracle,
     ) -> Result<
         <Self::IOTypes as zk_ee::types_config::SystemIOTypesConfig>::NominalTokenValue,
-        UpdateQueryError,
+        BalanceSubsystemError,
     >;
 
     fn get_selfbalance(
@@ -155,7 +158,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         to: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         amount: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         oracle: &mut impl IOOracle,
-    ) -> Result<(), UpdateQueryError>;
+    ) -> Result<(), BalanceSubsystemError>;
 
     fn deploy_code(
         &mut self,
@@ -179,6 +182,14 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError>;
 
+    fn set_delegation(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        delegate: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        oracle: &mut impl IOOracle,
+    ) -> Result<(), SystemError>;
+
     fn mark_for_deconstruction(
         &mut self,
         from_ee: ExecutionEnvironmentType,
@@ -187,7 +198,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
         in_constructor: bool,
-    ) -> Result<(), SystemError>;
+    ) -> Result<(), DeconstructionSubsystemError>;
 
     type Allocator: core::alloc::Allocator + Clone;
     type InitData;
@@ -213,4 +224,12 @@ pub trait StorageModel: Sized + SnapshottableIo {
         result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
         logger: &mut impl Logger,
     ) -> Result<(), InternalError>;
+
+    #[cfg(feature = "evm_refunds")]
+    /// Get current gas refund counter
+    fn get_refund_counter(&self) -> u32;
+
+    // Add EVM refund to counter
+    #[cfg(feature = "evm_refunds")]
+    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError>;
 }

@@ -17,8 +17,9 @@ use evm_interpreter::gas_constants::TSTORE;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
-use zk_ee::common_structs::BasicIOImplementerFSM;
+use zk_ee::common_structs::ProofData;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
+use zk_ee::interface_error;
 use zk_ee::out_of_ergs_error;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::{
@@ -26,11 +27,10 @@ use zk_ee::{
     kv_markers::UsizeDeserializable,
     memory::ArrayBuilder,
     system::{
-        errors::{system::SystemError, UpdateQueryError},
-        AccountData, AccountDataRequest, EthereumLikeIOSubsystem, IOResultKeeper, IOSubsystem,
-        IOSubsystemExt, Maybe,
+        errors::system::SystemError, AccountData, AccountDataRequest, EthereumLikeIOSubsystem,
+        IOResultKeeper, IOSubsystem, IOSubsystemExt, Maybe,
     },
-    system_io_oracle::InitializeIOImplementerIterator,
+    system_io_oracle::ProofDataIterator,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::UsizeAlignedByteBox,
 };
@@ -338,7 +338,7 @@ where
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         in_constructor: bool,
-    ) -> Result<(), SystemError> {
+    ) -> Result<(), DeconstructionSubsystemError> {
         self.storage.mark_for_deconstruction(
             from_ee,
             resources,
@@ -381,6 +381,11 @@ where
             .finish_frame(rollback_handle.map(|x| x.events));
 
         Ok(())
+    }
+
+    #[cfg(feature = "evm_refunds")]
+    fn get_refund_counter(&self) -> u32 {
+        self.storage.get_refund_counter()
     }
 }
 
@@ -465,16 +470,18 @@ where
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
-        let mut state_commitment = {
+        let (mut state_commitment, last_block_timestamp) = {
             let mut initialization_iterator = self
                 .oracle
-                .create_oracle_access_iterator::<InitializeIOImplementerIterator>(())
+                .create_oracle_access_iterator::<ProofDataIterator>(())
                 .unwrap();
-            // TODO (EVM-989): read only state commitment
-            let fsm_state =
-                <BasicIOImplementerFSM::<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
+            let proof_data =
+                <ProofData<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(
+                    &mut initialization_iterator,
+                )
+                .unwrap();
             assert_eq!(initialization_iterator.len(), 0);
-            fsm_state.state_root_view
+            (proof_data.state_root_view, proof_data.last_block_timestamp)
         };
 
         let mut blocks_hasher = Blake2s256::new();
@@ -488,8 +495,7 @@ where
             next_free_slot: state_commitment.next_free_slot,
             block_number: block_metadata.block_number - 1,
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
-            // TODO(EVM-1080): we should set and validate that current block timestamp >= previous
-            last_block_timestamp: 0,
+            last_block_timestamp,
         };
 
         // finishing IO, applying changes
@@ -512,7 +518,6 @@ where
             .apply_pubdata(&mut pubdata_hasher, result_keeper);
         result_keeper.logs(self.logs_storage.messages_ref_iter());
         result_keeper.events(self.events_storage.events_ref_iter());
-
         let pubdata_hash = pubdata_hasher.finalize();
         let l2_to_l1_logs_hashes_hash = l2_to_l1_logs_hasher.finalize();
 
@@ -522,14 +527,16 @@ where
         }
         blocks_hasher.update(current_block_hash.as_u8_ref());
 
+        // validate that timestamp didn't decrease
+        assert!(block_metadata.timestamp >= last_block_timestamp);
+
         // chain state after
         let chain_state_commitment_after = ChainStateCommitment {
             state_root: state_commitment.root,
             next_free_slot: state_commitment.next_free_slot,
             block_number: block_metadata.block_number,
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
-            // TODO(EVM-1080): we should set and validate that current block timestamp >= previous
-            last_block_timestamp: 0,
+            last_block_timestamp: block_metadata.timestamp,
         };
 
         // other outputs to be opened on the settlement layer/aggregation program
@@ -575,28 +582,37 @@ where
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
-        let mut state_commitment = {
+        let (mut state_commitment, last_block_timestamp) = {
             let mut initialization_iterator = self
                 .oracle
-                .create_oracle_access_iterator::<InitializeIOImplementerIterator>(())
+                .create_oracle_access_iterator::<ProofDataIterator>(())
                 .unwrap();
-            // TODO (EVM-989): read only state commitment
-            let fsm_state =
-                <BasicIOImplementerFSM::<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
+            let proof_data =
+                <ProofData<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(
+                    &mut initialization_iterator,
+                )
+                .unwrap();
             assert_eq!(initialization_iterator.len(), 0);
-            fsm_state.state_root_view
+            (proof_data.state_root_view, proof_data.last_block_timestamp)
         };
 
+        let mut blocks_hasher = Blake2s256::new();
+        for block_hash in block_metadata.block_hashes.0.iter() {
+            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+        }
+
         // chain state before
-        // currently we generate simplified commitment(only to state) for tests.
+        let chain_state_commitment_before = ChainStateCommitment {
+            state_root: state_commitment.root,
+            next_free_slot: state_commitment.next_free_slot,
+            block_number: block_metadata.block_number - 1,
+            last_256_block_hashes_blake: blocks_hasher.finalize().into(),
+            last_block_timestamp,
+        };
         let _ = logger.write_fmt(format_args!(
             "PI calculation: state commitment before {:?}\n",
-            state_commitment
+            chain_state_commitment_before
         ));
-        let mut chain_state_hasher = Blake2s256::new();
-        chain_state_hasher.update(state_commitment.root.as_u8_ref());
-        chain_state_hasher.update(state_commitment.next_free_slot.to_be_bytes());
-        let chain_state_commitment_before = chain_state_hasher.finalize();
 
         // finishing IO, applying changes
         let mut pubdata_hasher = crypto::sha3::Keccak256::new();
@@ -621,20 +637,29 @@ where
         full_root_hasher.update([0u8; 32]); // aggregated root 0 for now
         let full_l2_to_l1_logs_root = full_root_hasher.finalize();
         let l1_txs_commitment = self.logs_storage.l1_txs_commitment();
-
         let pubdata_hash = pubdata_hasher.finalize();
 
+        blocks_hasher = Blake2s256::new();
+        for block_hash in block_metadata.block_hashes.0.iter().skip(1) {
+            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+        }
+        blocks_hasher.update(current_block_hash.as_u8_ref());
+
+        // validate that timestamp didn't decrease
+        assert!(block_metadata.timestamp >= last_block_timestamp);
+
         // chain state after
-        // currently we generate simplified commitment(only to state) for tests.
+        let chain_state_commitment_after = ChainStateCommitment {
+            state_root: state_commitment.root,
+            next_free_slot: state_commitment.next_free_slot,
+            block_number: block_metadata.block_number,
+            last_256_block_hashes_blake: blocks_hasher.finalize().into(),
+            last_block_timestamp: block_metadata.timestamp,
+        };
         let _ = logger.write_fmt(format_args!(
             "PI calculation: state commitment after {:?}\n",
-            state_commitment
+            chain_state_commitment_after
         ));
-        let mut chain_state_hasher = Blake2s256::new();
-        chain_state_hasher.update(state_commitment.root.as_u8_ref());
-        chain_state_hasher.update(state_commitment.next_free_slot.to_be_bytes());
-        let chain_state_commitment_after = chain_state_hasher.finalize();
-
         let mut da_commitment_hasher = crypto::sha3::Keccak256::new();
         da_commitment_hasher.update([0u8; 32]); // we don't have to validate state diffs hash
         da_commitment_hasher.update(pubdata_hash); // full pubdata keccak
@@ -658,8 +683,8 @@ where
         ));
 
         let public_input = public_input::BatchPublicInput {
-            state_before: chain_state_commitment_before.into(),
-            state_after: chain_state_commitment_after.into(),
+            state_before: chain_state_commitment_before.hash().into(),
+            state_after: chain_state_commitment_after.hash().into(),
             batch_output: batch_output.hash().into(),
         };
         let _ = logger.write_fmt(format_args!(
@@ -809,6 +834,7 @@ where
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
         CodeVersion: Maybe<u8>,
+        IsDelegated: Maybe<bool>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -826,6 +852,7 @@ where
                 NominalTokenBalance,
                 Bytecode,
                 CodeVersion,
+                IsDelegated,
             >,
         >,
     ) -> Result<
@@ -840,6 +867,7 @@ where
             NominalTokenBalance,
             Bytecode,
             CodeVersion,
+            IsDelegated,
         >,
         SystemError,
     > {
@@ -854,7 +882,7 @@ where
         from: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         to: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         amount: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
-    ) -> Result<(), UpdateQueryError> {
+    ) -> Result<(), BalanceSubsystemError> {
         self.storage.transfer_nominal_token_value(
             ee_type,
             resources,
@@ -900,6 +928,16 @@ where
         )
     }
 
+    fn set_delegation(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        delegate: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+    ) -> Result<(), SystemError> {
+        self.storage
+            .set_delegation(resources, at_address, delegate, &mut self.oracle)
+    }
+
     fn finish(
         self,
         block_metadata: BlockMetadataFromOracle,
@@ -939,14 +977,17 @@ where
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         diff: &ruint::aliases::U256,
         should_subtract: bool,
-    ) -> Result<ruint::aliases::U256, UpdateQueryError> {
+    ) -> Result<ruint::aliases::U256, BalanceSubsystemError> {
         let update_fn = move |old_value: &ruint::aliases::U256| {
-            let new_value = if should_subtract {
-                old_value.checked_sub(*diff)
+            if should_subtract {
+                old_value
+                    .checked_sub(*diff)
+                    .ok_or(interface_error! {BalanceError::InsufficientBalance})
             } else {
-                old_value.checked_add(*diff)
-            };
-            new_value.ok_or(UpdateQueryError::NumericBoundsError)
+                old_value
+                    .checked_add(*diff)
+                    .ok_or(interface_error! {BalanceError::Overflow})
+            }
         };
         self.storage.update_nominal_token_value(
             ee_type,
@@ -955,6 +996,12 @@ where
             update_fn,
             &mut self.oracle,
         )
+    }
+
+    // Add EVM refund to counter
+    #[cfg(feature = "evm_refunds")]
+    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError> {
+        self.storage.add_evm_refund(refund)
     }
 }
 

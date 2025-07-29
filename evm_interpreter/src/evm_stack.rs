@@ -6,6 +6,7 @@ use crate::STACK_SIZE;
 use alloc::boxed::Box;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use ruint::aliases::U256;
+use zk_ee::system::evm::EvmStackInterface;
 use zk_ee::system::logger::Logger;
 
 pub struct EvmStack<A: Allocator> {
@@ -29,7 +30,7 @@ impl<A: Allocator> EvmStack<A> {
             if let Some(el) =
                 core::slice::from_raw_parts(self.buffer.as_ptr().cast::<U256>(), self.len).last()
             {
-                let _ = logger.write_fmt(format_args!("Stack top = 0x{:x}\n", el));
+                let _ = logger.write_fmt(format_args!("Stack top = 0x{el:x}\n"));
             } else {
                 let _ = logger.write_str("Stack top = empty\n");
             }
@@ -44,7 +45,7 @@ impl<A: Allocator> EvmStack<A> {
                 .iter()
                 .rev()
             {
-                let _ = logger.write_fmt(format_args!("{:x}\n", el));
+                let _ = logger.write_fmt(format_args!("{el:x}\n"));
             }
             let _ = logger.write_fmt(format_args!("DEPTH 0\n"));
         }
@@ -332,6 +333,34 @@ impl<A: Allocator> EvmStack<A> {
         }
 
         Ok(())
+    }
+}
+
+impl<A: Allocator> EvmStackInterface for EvmStack<A> {
+    fn to_slice(&self) -> &[U256] {
+        unsafe { core::slice::from_raw_parts(self.buffer.as_ptr().cast::<U256>(), self.len) }
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn peek_n(&self, index: usize) -> Result<&U256, zk_ee::system::evm::EvmStackError> {
+        unsafe {
+            if self.len < index + 1 {
+                return Err(zk_ee::system::evm::EvmStackError::StackUnderflow);
+            }
+            let offset = self.len - (index + 1);
+            let p0 = self
+                .buffer
+                .as_ptr()
+                .add(offset)
+                .as_ref()
+                .expect("Should not be null")
+                .assume_init_ref();
+
+            Ok(p0)
+        }
     }
 }
 

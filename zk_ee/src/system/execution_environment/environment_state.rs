@@ -53,6 +53,7 @@ pub enum TransactionEndPoint<'a, S: SystemTypes> {
     CompletedDeployment(CompletedDeployment<'a, S>),
 }
 
+#[derive(Clone)]
 pub struct ExternalCallRequest<'a, S: SystemTypes> {
     pub available_resources: S::Resources,
     pub ergs_to_pass: Ergs,

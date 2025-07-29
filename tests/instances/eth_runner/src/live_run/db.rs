@@ -148,7 +148,7 @@ impl Database {
             let block_number = u64::from_be_bytes(key.as_ref().try_into().unwrap());
             let ratio: f64 =
                 bincode::serde::decode_from_slice(&value, bincode::config::standard())?.0;
-            writer.write_record(&[block_number.to_string(), format!("{:?}", ratio)])?;
+            writer.write_record(&[block_number.to_string(), format!("{ratio:?}")])?;
         }
 
         writer.flush()?;

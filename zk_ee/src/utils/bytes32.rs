@@ -1,4 +1,4 @@
-use core::{mem::MaybeUninit, ptr::addr_of_mut};
+use core::mem::MaybeUninit;
 use ruint::aliases::{B160, U256};
 
 #[cfg(target_pointer_width = "32")]
@@ -13,6 +13,11 @@ pub const BYTES32_USIZE_SIZE: usize = 4;
 pub struct Bytes32 {
     inner: [usize; BYTES32_USIZE_SIZE],
 }
+
+const _: () = const {
+    assert!(core::mem::size_of::<Bytes32>() == 32);
+    assert!(core::mem::align_of::<Bytes32>() >= core::mem::align_of::<usize>());
+};
 
 // we compare as integers to avoid any potential ambiguity
 
@@ -52,6 +57,7 @@ impl Bytes32 {
         inner: [usize::MAX; BYTES32_USIZE_SIZE],
     };
 
+    #[inline(always)]
     pub fn uninit() -> MaybeUninit<Self> {
         MaybeUninit::uninit()
     }
@@ -65,22 +71,61 @@ impl Bytes32 {
         }
     }
 
+    #[inline(always)]
     pub const fn zero() -> Self {
         Self {
             inner: [0usize; BYTES32_USIZE_SIZE],
         }
     }
 
+    #[inline(always)]
     pub fn from_array(array: [u8; 32]) -> Self {
-        unsafe {
-            let mut result = Self::uninit();
-            core::ptr::copy_nonoverlapping(
-                array.as_ptr(),
-                addr_of_mut!((*result.as_mut_ptr()).inner).cast(),
-                32,
-            );
-            result.assume_init()
+        unsafe { core::mem::transmute_copy(&array) }
+    }
+
+    // #[inline(always)]
+    // pub fn from_array(array: [u8; 32]) -> Self {
+    //     unsafe {
+    //         let mut result = Self::uninit();
+    //         core::ptr::copy_nonoverlapping(
+    //             array.as_ptr(),
+    //             addr_of_mut!((*result.as_mut_ptr()).inner).cast(),
+    //             32,
+    //         );
+    //         result.assume_init()
+    //     }
+    // }
+
+    #[allow(clippy::needless_as_bytes)]
+    pub const fn from_hex(input: &str) -> Self {
+        const fn hex_to_digit(c: u8) -> u8 {
+            match c {
+                b'A'..=b'F' => c - b'A' + 10,
+                b'a'..=b'f' => c - b'a' + 10,
+                b'0'..=b'9' => c - b'0',
+                _ => {
+                    unreachable!()
+                }
+            }
         }
+
+        assert!(input.len() == 64);
+        assert!(input.as_bytes().len() == 64); // ASCII check in essence
+        let mut result = Self::ZERO;
+        let mut idx = 0;
+        let dst = result.as_u8_array_mut();
+        let src = input.as_bytes().as_chunks::<2>().0;
+        while idx < 32 {
+            let dst = &mut dst[idx];
+            let [high, low] = src[idx];
+            let high = hex_to_digit(high);
+            let low = hex_to_digit(low);
+            *dst = (high << 4) | low;
+
+            idx += 1;
+        }
+
+        result
     }
 
     pub fn is_zero(&self) -> bool {
@@ -105,7 +150,7 @@ impl Bytes32 {
         &mut self.inner
     }
 
-    pub fn as_u32_array(self) -> [u32; 8] {
+    pub const fn as_u32_array(self) -> [u32; 8] {
         unsafe { core::mem::transmute(self) }
     }
 
@@ -133,15 +178,15 @@ impl Bytes32 {
         unsafe { core::slice::from_raw_parts_mut((&mut self.inner as *mut usize).cast::<u8>(), 32) }
     }
 
-    pub fn as_u8_array(self) -> [u8; 32] {
+    pub const fn as_u8_array(self) -> [u8; 32] {
         unsafe { core::mem::transmute(self) }
     }
 
-    pub fn as_u8_array_ref(&self) -> &[u8; 32] {
+    pub const fn as_u8_array_ref(&self) -> &[u8; 32] {
         unsafe { &*(&self.inner as *const usize).cast::<[u8; 32]>() }
     }
 
-    pub fn as_u8_array_mut(&mut self) -> &mut [u8; 32] {
+    pub const fn as_u8_array_mut(&mut self) -> &mut [u8; 32] {
         unsafe { &mut *(&mut self.inner as *mut usize).cast::<[u8; 32]>() }
     }
 

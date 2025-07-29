@@ -24,12 +24,12 @@ fn fetch_block_hashes(start_block: u64, db: &Database, endpoint: &str) -> Result
     let first = start_block.saturating_sub(N_PREV_BLOCKS as u64);
     for n in first..start_block {
         if db.get_block_hash(n)?.is_some() {
-            debug!("Block hash for {} already in DB, skipping", n);
+            debug!("Block hash for {n} already in DB, skipping");
         } else {
             let hash = rpc::get_block_hash(endpoint, n)
-                .context(format!("Failed to fetch block hash for {}", n))?;
+                .context(format!("Failed to fetch block hash for {n}"))?;
             db.set_block_hash(n, U256::from_be_bytes(hash.0))?;
-            debug!("Saved block hash for block {}: {:#x}", n, hash);
+            debug!("Saved block hash for block {n}: {hash:#x}");
         }
     }
     Ok(())
@@ -57,24 +57,20 @@ fn get_block_hashes_array(block_number: u64, db: &Database) -> Result<[U256; N_P
 fn fetch_block_traces(block_number: u64, db: &Database, endpoint: &str) -> Result<BlockTraces> {
     match db.get_block_traces(block_number)? {
         Some(traces) => {
-            debug!("Block traces for {} already in DB, skipping", block_number);
+            debug!("Block traces for {block_number} already in DB, skipping");
             Ok(traces)
         }
         None => {
             let block = rpc::get_block(endpoint, block_number)
-                .context(format!("Failed to fetch block for {}", block_number))?;
-            let prestate = rpc::get_prestate(endpoint, block_number).context(format!(
-                "Failed to fetch prestate trace for {}",
-                block_number
-            ))?;
+                .context(format!("Failed to fetch block for {block_number}"))?;
+            let prestate = rpc::get_prestate(endpoint, block_number)
+                .context(format!("Failed to fetch prestate trace for {block_number}"))?;
             let diff = rpc::get_difftrace(endpoint, block_number)
-                .context(format!("Failed to fetch diff trace for {}", block_number))?;
-            let receipts = rpc::get_receipts(endpoint, block_number).context(format!(
-                "Failed to fetch block receipts for {}",
-                block_number
-            ))?;
+                .context(format!("Failed to fetch diff trace for {block_number}"))?;
+            let receipts = rpc::get_receipts(endpoint, block_number)
+                .context(format!("Failed to fetch block receipts for {block_number}"))?;
             let call = rpc::get_calltrace(endpoint, block_number)
-                .context(format!("Failed to fetch call trace for {}", block_number))?;
+                .context(format!("Failed to fetch call trace for {block_number}"))?;
             let block_traces = BlockTraces {
                 block,
                 prestate,
@@ -111,9 +107,9 @@ fn run_block(
         U256::from_be_bytes(block.result.header.hash.0),
     )?;
     info!("\n ===================");
-    info!("Running block: {}", block_number);
+    info!("Running block: {block_number}");
 
-    let miner = block.result.header.miner;
+    let miner = block.result.header.beneficiary;
     let block_context = block.get_block_context();
     let (transactions, skipped) = block.get_transactions(&call);
     info!("Transactions to run: {}", transactions.len());
@@ -128,7 +124,7 @@ fn run_block(
     let total_gas_used = receipts
         .iter()
         .fold(U256::ZERO, |acc, r| r.gas_used.wrapping_add(acc));
-    info!("Reference gas used: {}", total_gas_used);
+    info!("Reference gas used: {total_gas_used}");
 
     let ps_trace = PrestateTrace {
         result: prestate
@@ -202,7 +198,7 @@ fn run_block(
             // Always save of them for now, even when already cached.
             // TODO: avoid persisting when read from cache.
             db.set_block_traces(block_number, &traces_clone)?;
-            debug!("Saved block traces for block {}", block_number);
+            debug!("Saved block traces for block {block_number}");
             Ok(db::BlockStatus::Error(e))
         }
     }
@@ -230,7 +226,7 @@ pub fn live_run(
         let status = db.get_block_status(n)?;
         let already_succeeded = status.is_some_and(|s| matches!(s, BlockStatus::Success));
         if skip_successful && already_succeeded {
-            debug!("Skipping block {}, already succeeded", n);
+            debug!("Skipping block {n}, already succeeded");
             continue;
         }
         if let BlockStatus::Error(_) = run_block(
@@ -273,7 +269,7 @@ pub fn show_status(db: String) -> Result<()> {
     } else {
         println!("❌ Failed blocks:");
         for (block_number, status) in failures {
-            println!("Block {:<8} => {:?}", block_number, status);
+            println!("Block {block_number:<8} => {status:?}");
         }
         Ok(())
     }

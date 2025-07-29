@@ -1,10 +1,12 @@
+use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use errors::BootloaderSubsystemError;
 use system_hooks::HooksStorage;
-use zk_ee::internal_error;
-use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError, UpdateQueryError};
+use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::CallModifier;
 use zk_ee::system::{EthereumLikeTypes, System};
+use zk_ee::{interface_error, internal_error, wrap_error};
 
 use super::*;
 
@@ -17,15 +19,14 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         nominal_token_value: &U256,
         to: &B160,
         resources: &mut S::Resources,
-    ) -> Result<(), SystemError>
+    ) -> Result<(), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
         // TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
         #[cfg(not(target_arch = "riscv32"))]
         let _ = system.get_logger().write_fmt(format_args!(
-            "Minting {:?} tokens to {:?}\n",
-            nominal_token_value, to
+            "Minting {nominal_token_value:?} tokens to {to:?}\n"
         ));
 
         let _old_balance = system
@@ -37,11 +38,18 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 nominal_token_value,
                 false,
             )
-            .map_err(|e| match e {
-                UpdateQueryError::NumericBoundsError => {
-                    internal_error!("Insufficient balance while minting").into()
+            .map_err(|e| -> BootloaderSubsystemError {
+                match e {
+                    SubsystemError::LeafUsage(balance_error) => {
+                        let _ = system
+                            .get_logger()
+                            .write_fmt(format_args!("Error while minting: {balance_error:?}"));
+                        SubsystemError::LeafUsage(interface_error!(
+                            BootloaderInterfaceError::MintingBalanceOverflow
+                        ))
+                    }
+                    _ => wrap_error!(e),
                 }
-                UpdateQueryError::System(e) => e,
             })?;
 
         Ok(())
@@ -62,6 +70,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         mut resources: S::Resources,
         nominal_token_value: &U256,
         should_make_frame: bool,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<CompletedExecution<'a, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -69,10 +78,10 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         if DEBUG_OUTPUT {
             let _ = system
                 .get_logger()
-                .write_fmt(format_args!("`caller` = {:?}\n", caller));
+                .write_fmt(format_args!("`caller` = {caller:?}\n"));
             let _ = system
                 .get_logger()
-                .write_fmt(format_args!("`callee` = {:?}\n", callee));
+                .write_fmt(format_args!("`callee` = {callee:?}\n"));
         }
 
         let ee_version = {
@@ -124,8 +133,14 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 nominal_token_value: *nominal_token_value,
             });
 
-        let final_state =
-            run_till_completion(memories, system, system_functions, ee_type, initial_request)?;
+        let final_state = run_till_completion(
+            memories,
+            system,
+            system_functions,
+            ee_type,
+            initial_request,
+            tracer,
+        )?;
 
         let TransactionEndPoint::CompletedExecution(CompletedExecution {
             return_values,

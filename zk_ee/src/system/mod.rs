@@ -11,6 +11,7 @@ pub mod logger;
 pub mod metadata;
 pub mod resources;
 mod result_keeper;
+pub mod tracer;
 
 pub use self::base_system_functions::*;
 pub use self::call_modifiers::*;

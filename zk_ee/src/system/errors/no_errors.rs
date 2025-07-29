@@ -30,3 +30,9 @@ impl From<NoErrors> for &'static str {
         match val {}
     }
 }
+
+impl core::fmt::Display for NoErrors {
+    fn fmt(&self, _: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        Ok(())
+    }
+}
