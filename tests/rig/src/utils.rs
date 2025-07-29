@@ -200,28 +200,33 @@ pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> Vec<u8> {
                     .collect()
             });
 
-    let authorization_list = tx.authorization_list().map(|authorization_list| {
-        authorization_list
-            .iter()
-            .map(|authorization| {
-                let auth = authorization.inner();
-                let y_parity = authorization.y_parity();
-                let r = authorization.r();
-                let s = authorization.s();
-                (
-                    U256::from_big_endian(&auth.chain_id.to_be_bytes::<32>()),
-                    auth.address.into_array(),
-                    auth.nonce,
-                    y_parity,
-                    U256::from_big_endian(&r.to_be_bytes::<32>()),
-                    U256::from_big_endian(&s.to_be_bytes::<32>()),
-                )
-            })
-            .collect()
-    });
-    let reserved_dynamic = access_list.map(|access_list| {
-        encode_reserved_dynamic(access_list, authorization_list.unwrap_or_default())
-    });
+    #[cfg(feature = "pectra")]
+    let authorization_list = tx
+        .authorization_list()
+        .map(|authorization_list| {
+            authorization_list
+                .iter()
+                .map(|authorization| {
+                    let auth = authorization.inner();
+                    let y_parity = authorization.y_parity();
+                    let r = authorization.r();
+                    let s = authorization.s();
+                    (
+                        U256::from_big_endian(&auth.chain_id.to_be_bytes::<32>()),
+                        auth.address.into_array(),
+                        auth.nonce,
+                        y_parity,
+                        U256::from_big_endian(&r.to_be_bytes::<32>()),
+                        U256::from_big_endian(&s.to_be_bytes::<32>()),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    #[cfg(not(feature = "pectra"))]
+    let authorization_list = vec![];
+    let reserved_dynamic =
+        access_list.map(|access_list| encode_reserved_dynamic(access_list, authorization_list));
 
     encode_tx(
         tx_type,
@@ -568,15 +573,18 @@ mod tests {
 
         assert!(iter.next().is_none());
 
-        let mut iter = parser
-            .authorization_list_iter(&encoded)
-            .expect("Must create iter");
-        let first = iter.next().expect("Must have first").expect("Must decode");
-        assert_eq!(first.nonce, 4);
-        assert_eq!(first.y_parity, 1);
-        let second = iter.next().expect("Must have second").expect("Must decode");
-        assert_eq!(second.nonce, 5);
-        assert_eq!(second.y_parity, 0);
-        assert!(iter.next().is_none())
+        #[cfg(feature = "pectra")]
+        {
+            let mut iter = parser
+                .authorization_list_iter(&encoded)
+                .expect("Must create iter");
+            let first = iter.next().expect("Must have first").expect("Must decode");
+            assert_eq!(first.nonce, 4);
+            assert_eq!(first.y_parity, 1);
+            let second = iter.next().expect("Must have second").expect("Must decode");
+            assert_eq!(second.nonce, 5);
+            assert_eq!(second.y_parity, 0);
+            assert!(iter.next().is_none())
+        }
     }
 }

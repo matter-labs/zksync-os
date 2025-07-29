@@ -51,6 +51,40 @@ jobs:
       - name: Run rust tests
         run: cargo test --release -j 3 -- --skip binary_checker
 
+  pectra-tests:
+    name: pectra-tests
+    runs-on: [matterlabs-ci-runner-high-performance]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+      - name: Setup
+        run: |
+          rustup set profile minimal
+          rustup target add wasm32-unknown-unknown
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          rustup component add rust-src
+      - name: Compile for RISC-V
+        working-directory: ./zksync_os
+        run: |
+          rustup target add riscv32i-unknown-none-elf
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          rustup component add rust-src
+          ./dump_bin.sh --type pectra
+      - name: Build wasm contracts
+        run: |
+          for dir in ./tests/contracts_wasm/*; do
+            if [ -d "$dir" ]; then
+              echo "Building contract in $dir"
+              (cd "$dir" && ./build.sh)
+            fi
+          done
+      - name: Run pectra tests
+        run: cargo test --features pectra --release -p transactions
+
   evm_state_tests:
     name: EF EVM state tests
     runs-on: [matterlabs-ci-runner-high-performance]
@@ -63,7 +97,7 @@ jobs:
           path: zksync-os
       - uses: actions/checkout@v4
         with:
-          repository: matter-labs/era-evm-tester 
+          repository: matter-labs/era-evm-tester
           ref: zk-ee
           path: era-evm-tester
       - name: Use local ZKsync OS version
@@ -117,7 +151,7 @@ jobs:
         run: ./dump_bin.sh
       - name: Run binary checker
         run: cargo test -p binary_checker -- --nocapture
-      
+
   e2e_prove:
     name: e2e_prove
     runs-on: [matterlabs-ci-runner-highmem]
@@ -186,7 +220,7 @@ jobs:
         with:
           components: clippy
       - name: Run Clippy
-        run: | 
+        run: |
           cargo clippy --all -- -D warnings
 
   typos:
@@ -197,7 +231,7 @@ jobs:
       - uses: crate-ci/typos@master
         with:
           config: ./.github/typos.toml
-  
+
   run_fuzzer_regressions:
     name: Run fuzzer regressions
     runs-on: [matterlabs-ci-runner]

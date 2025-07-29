@@ -13,7 +13,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking]"
+      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|pectra]"
       exit 1
       ;;
   esac
@@ -56,6 +56,12 @@ case "$TYPE" in
     BIN_NAME="evm_replay.bin"
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
+    ;;
+  pectra)
+    FEATURES="$FEATURES,proof_running_system/pectra"
+    BIN_NAME="app.bin"
+    ELF_NAME="app.elf"
+    TEXT_NAME="app.text"
     ;;
   default)
     # leave defaults

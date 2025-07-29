@@ -501,6 +501,7 @@ fn test_tx_with_access_list() {
     assert!(result0.is_ok_and(|o| o.is_success()));
 }
 
+#[cfg(feature = "pectra")]
 #[test]
 fn test_tx_with_authorization_list() {
     use rig::alloy::eips::eip7702::*;
