@@ -4,7 +4,7 @@ use ark_ec::{
     bn,
     models::{short_weierstrass::SWCurveConfig, CurveConfig},
     scalar_mul::glv::GLVConfig,
-    short_weierstrass::{Affine, Projective},
+    short_weierstrass::{Affine, Projective}, AffineRepr,
 };
 #[cfg(not(any(all(target_arch = "riscv32", feature = "bigint_ops"), test)))]
 use ark_ff::MontFp;
@@ -50,6 +50,11 @@ impl SWCurveConfig for Config {
     ) -> bn::G1Projective<super::Config> {
         let s = Self::ScalarField::from_sign_and_limbs(true, scalar);
         GLVConfig::glv_mul_projective(*p, s)
+    }
+
+    #[inline]
+    fn mul_affine(base: &Affine<Self>, scalar: &[u64]) -> bn::G1Projective<super::Config> {
+        Self::mul_projective(&base.into_group(), scalar)
     }
 
     #[inline]
