@@ -31,4 +31,4 @@ csv = "1.3"
 [features]
 simulate_witness_gen = ["rig/simulate_witness_gen"]
 default = []
-evm_replay = ["rig/prevrandao", "rig/unlimited_native"]
+evm_replay = ["rig/prevrandao", "rig/unlimited_native", "rig/disable_system_contracts", "rig/evm_refunds"]

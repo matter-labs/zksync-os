@@ -266,7 +266,7 @@ where
         // Just used for computing native used
         let resources_before_refund = resources.clone();
         #[allow(unused_variables)]
-        let (_, gas_used) = Self::compute_gas_refund(
+        let (_, gas_used, evm_refund) = Self::compute_gas_refund(
             system,
             to_charge_for_pubdata,
             gas_limit,
@@ -369,10 +369,8 @@ where
             is_l1_tx: is_priority_op,
             is_upgrade_tx: !is_priority_op,
             gas_used,
-            gas_refunded: 0,
-
+            gas_refunded: evm_refund,
             computational_native_used,
-
             pubdata_used: pubdata_used + L1_TX_INTRINSIC_PUBDATA as u64,
         })
     }
@@ -674,8 +672,7 @@ where
         // resources could be spent for pubdata.
         resources.reclaim_withheld(withheld_resources);
 
-        #[allow(unused_variables)]
-        let (gas_used, pubdata_used) = if !Config::ONLY_SIMULATE {
+        let (gas_used, evm_refund, pubdata_used) = if !Config::ONLY_SIMULATE {
             Self::refund_transaction::<Config>(
                 system,
                 system_functions,
@@ -697,14 +694,14 @@ where
             // TODO: remove when simulation flow runs validation
             let (pubdata_spent, to_charge_for_pubdata) =
                 get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
-            let (_gas_refund, gas_used) = Self::compute_gas_refund(
+            let (_gas_refund, evm_refund, gas_used) = Self::compute_gas_refund(
                 system,
                 to_charge_for_pubdata,
                 gas_limit,
                 native_per_gas,
                 &mut resources,
             )?;
-            (gas_used, pubdata_spent)
+            (gas_used, evm_refund, pubdata_spent)
         };
 
         // Add back the intrinsic native charged in get_resources_for_tx,
@@ -734,10 +731,8 @@ where
             is_l1_tx: false,
             is_upgrade_tx: false,
             gas_used,
-            gas_refunded: 0,
-
+            gas_refunded: evm_refund,
             computational_native_used,
-
             pubdata_used: pubdata_used + L2_TX_INTRINSIC_PUBDATA as u64,
         })
     }
@@ -1042,7 +1037,7 @@ where
         Ok(base_fee + priority_fee_per_gas)
     }
 
-    // Returns (gas_used, total_pubdata_used)
+    // Returns (gas_used, evm_refund, total_pubdata_used)
     #[allow(clippy::too_many_arguments)]
     fn refund_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
@@ -1059,7 +1054,7 @@ where
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
         pubdata_info: Option<(u64, S::Resources)>,
-    ) -> Result<(u64, u64), BootloaderSubsystemError> {
+    ) -> Result<(u64, u64, u64), BootloaderSubsystemError> {
         let paymaster = transaction.paymaster.read();
         let _ = system
             .get_logger()
@@ -1110,7 +1105,7 @@ where
                 )
             }
         };
-        let (total_gas_refund, gas_used) = Self::compute_gas_refund(
+        let (total_gas_refund, gas_used, evm_refund) = Self::compute_gas_refund(
             system,
             to_charge_for_pubdata,
             transaction.gas_limit.read(),
@@ -1143,22 +1138,35 @@ where
                 },
                 other => wrap_error!(other),
             })?;
-        Ok((gas_used, total_pubdata_used))
+        Ok((gas_used, evm_refund, total_pubdata_used))
     }
 
-    // Returns (gas_refund, gas_used)
+    // Returns (gas_refund, gas_used, evm_refund)
     fn compute_gas_refund(
         system: &mut System<S>,
         to_charge_for_pubdata: S::Resources,
         gas_limit: u64,
         native_per_gas: U256,
         resources: &mut S::Resources,
-    ) -> Result<(U256, u64), InternalError> {
+    ) -> Result<(U256, u64, u64), InternalError> {
         // Already checked
         resources.charge_unchecked(&to_charge_for_pubdata);
 
         let mut gas_used = gas_limit - resources.ergs().0.div_floor(ERGS_PER_GAS);
         resources.exhaust_ergs();
+
+        // Following EIP-3529, refunds are capped to 1/5 of the gas used
+        #[cfg(feature = "evm_refunds")]
+        let evm_refund = {
+            let full_refund = system.io.get_refund_counter() as u64;
+            let max_refund = gas_used / 5;
+            core::cmp::min(full_refund, max_refund)
+        };
+
+        #[cfg(not(feature = "evm_refunds"))]
+        let evm_refund = 0;
+
+        gas_used -= evm_refund;
 
         #[cfg(not(feature = "unlimited_native"))]
         {
@@ -1192,6 +1200,6 @@ where
             system
         )?;
         let total_gas_refund = U256::from(total_gas_refund);
-        Ok((total_gas_refund, gas_used))
+        Ok((total_gas_refund, gas_used, evm_refund))
     }
 }

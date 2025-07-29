@@ -71,7 +71,7 @@ jobs:
         run: |
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
-            MARKER_PATH=$(pwd)/base_block_${blk}.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" > base_block_${blk}.out
+            MARKER_PATH=$(pwd)/base_block_${blk}.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker,eth_runner/evm_replay -- single-run --block-dir "$dir" > base_block_${blk}.out
           done
           MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
 
@@ -97,7 +97,7 @@ jobs:
           pairs=""
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
-            MARKER_PATH=$(pwd)/head_block_${blk}.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" > head_block_${blk}.out
+            MARKER_PATH=$(pwd)/head_block_${blk}.bench cargo run -p eth_runner --release -j 3 --features rig/no_print,rig/cycle_marker,eth_runner/evm_replay -- single-run --block-dir "$dir" > head_block_${blk}.out
             python3 bench_scripts/parse_opcodes.py base_block_${blk}.out bench_results/base_block_${blk}.csv bench_results/base_block_${blk}.png
             python3 bench_scripts/parse_opcodes.py head_block_${blk}.out bench_results/head_block_${blk}.csv bench_results/head_block_${blk}.png
             if [ -z "$pairs" ]; then

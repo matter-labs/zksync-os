@@ -134,6 +134,10 @@ pub trait IOSubsystem: Sized {
         &mut self,
         rollback_handle: Option<&<Self as IOSubsystem>::StateSnapshot>,
     ) -> Result<(), InternalError>;
+
+    #[cfg(feature = "evm_refunds")]
+    /// Get current gas refund counter
+    fn get_refund_counter(&self) -> u32;
 }
 
 pub trait Maybe<T> {

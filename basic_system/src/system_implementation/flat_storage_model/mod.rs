@@ -75,7 +75,7 @@ pub struct FlatTreeWithAccountsUnderHashesStorageModel<
 }
 
 pub struct FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
-    storage: CacheSnapshotId,
+    storage: StorageSnapshotId,
     account_data: CacheSnapshotId,
     preimages: CacheSnapshotId,
 }
@@ -476,6 +476,16 @@ where
                 &mut self.preimages_cache,
                 oracle,
             )
+    }
+
+    #[cfg(feature = "evm_refunds")]
+    fn get_refund_counter(&self) -> u32 {
+        *self
+            .storage_cache
+            .0
+            .evm_refunds_counter
+            .value()
+            .unwrap_or(&0)
     }
 }
 
