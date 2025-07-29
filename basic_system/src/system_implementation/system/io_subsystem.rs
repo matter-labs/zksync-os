@@ -748,24 +748,33 @@ where
       upgrade_tx_hash: Bytes32,
       builder: &mut BatchPublicInputBuilder
     ) -> O {
-        let mut state_commitment = {
+        let (mut state_commitment, last_block_timestamp) = {
             let mut initialization_iterator = self
                 .oracle
-                .create_oracle_access_iterator::<InitializeIOImplementerIterator>(())
+                .create_oracle_access_iterator::<ProofDataIterator>(())
                 .unwrap();
-            // TODO (EVM-989): read only state commitment
-            let fsm_state =
-                <BasicIOImplementerFSM::<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(&mut initialization_iterator).unwrap();
+            let proof_data =
+                <ProofData<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(
+                    &mut initialization_iterator,
+                )
+                    .unwrap();
             assert_eq!(initialization_iterator.len(), 0);
-            fsm_state.state_root_view
+            (proof_data.state_root_view, proof_data.last_block_timestamp)
         };
 
+        let mut blocks_hasher = Blake2s256::new();
+        for block_hash in block_metadata.block_hashes.0.iter() {
+            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+        }
+
         // chain state before
-        // currently we generate simplified commitment(only to state) for tests.
-        let mut chain_state_hasher = Blake2s256::new();
-        chain_state_hasher.update(state_commitment.root.as_u8_ref());
-        chain_state_hasher.update(state_commitment.next_free_slot.to_be_bytes());
-        let chain_state_commitment_before = chain_state_hasher.finalize();
+        let chain_state_commitment_before = ChainStateCommitment {
+            state_root: state_commitment.root,
+            next_free_slot: state_commitment.next_free_slot,
+            block_number: block_metadata.block_number - 1,
+            last_256_block_hashes_blake: blocks_hasher.finalize().into(),
+            last_block_timestamp,
+        };
 
         builder.pubdata_hasher.update(current_block_hash.as_u8_ref());
 
@@ -788,16 +797,27 @@ where
         );
 
 
+        blocks_hasher = Blake2s256::new();
+        for block_hash in block_metadata.block_hashes.0.iter().skip(1) {
+            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+        }
+        blocks_hasher.update(current_block_hash.as_u8_ref());
+
+        // validate that timestamp didn't decrease
+        assert!(block_metadata.timestamp >= last_block_timestamp);
+
         // chain state after
-        // currently we generate simplified commitment(only to state) for tests.
-        let mut chain_state_hasher = Blake2s256::new();
-        chain_state_hasher.update(state_commitment.root.as_u8_ref());
-        chain_state_hasher.update(state_commitment.next_free_slot.to_be_bytes());
-        let chain_state_commitment_after = chain_state_hasher.finalize();
+        let chain_state_commitment_after = ChainStateCommitment {
+            state_root: state_commitment.root,
+            next_free_slot: state_commitment.next_free_slot,
+            block_number: block_metadata.block_number,
+            last_256_block_hashes_blake: blocks_hasher.finalize().into(),
+            last_block_timestamp: block_metadata.timestamp,
+        };
 
         builder.apply_block(
-            chain_state_commitment_before.into(),
-            chain_state_commitment_after.into(),
+            chain_state_commitment_before.hash().into(),
+            chain_state_commitment_after.hash().into(),
             block_metadata.timestamp,
             U256::try_from(block_metadata.chain_id).unwrap(),
             upgrade_tx_hash

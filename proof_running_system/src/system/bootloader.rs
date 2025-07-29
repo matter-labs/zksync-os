@@ -205,24 +205,22 @@ pub fn run_proving_inner<
 ) -> [u32; 8] {
     let _ = L::default().write_fmt(format_args!("IO implementer init is complete"));
 
+    // simulating query, just in case
+    I::csr_write_impl(0xdeadbeef);
+    I::csr_write_impl(0);
     let count = I::csr_read_impl();
     let mut batch_pi_builder = BatchPublicInputBuilder::new();
     for _ in 0..count {
         let (io, block_metadata, current_block_hash, upgrade_tx_hash) = ProvingBootloader::<O, L>::run_prepared::<
             BasicBootloaderProvingExecutionConfig,
-        >(oracle, &mut NopResultKeeper)
+        >(oracle, &mut NopResultKeeper, &mut NopTracer::default())
             .expect("Tried to prove a failing batch");
-        oracle = io.apply_to_batch(block_metadata, current_block_hash, upgrade_tx_hash, &mut batch_pi_builder)
+        oracle = io.apply_to_batch(block_metadata, current_block_hash, upgrade_tx_hash, &mut batch_pi_builder);
+        #[allow(unused_must_use)]
+        oracle
+            .create_oracle_access_iterator::<DisconnectOracleFormalIterator>(())
+            .expect("must disconnect an oracle before performing arbitrary CSR access");
     }
-    // Load all transactions from oracle and apply them.
-
-
-    // disconnect oracle before returning
-    // TODO: check this is the intended behaviour (ignoring the result)
-    #[allow(unused_must_use)]
-    oracle
-        .create_oracle_access_iterator::<DisconnectOracleFormalIterator>(())
-        .expect("must disconnect an oracle before performing arbitrary CSR access");
 
     Bytes32::from_array(batch_pi_builder
         .into_public_input()
