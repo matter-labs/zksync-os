@@ -7,17 +7,20 @@ use crate::bootloader::rlp;
 use crate::bootloader::transaction::reserved_dynamic_parser::{
     parse_address, parse_u256, parse_u32, parse_u64, parse_u8,
 };
+use crate::bootloader::BootloaderSubsystemError;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::internal_error;
 use zk_ee::memory::ArrayBuilder;
+use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::internal::InternalError;
+use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::system::SystemError;
-use zk_ee::system::errors::UpdateQueryError;
+use zk_ee::system::NonceError;
 use zk_ee::system::{
     AccountDataRequest, EthereumLikeTypes, IOSubsystemExt, Resources, System,
     EIP7702_DELEGATION_MARKER,
 };
+use zk_ee::{internal_error, wrap_error};
 
 use super::TxError;
 
@@ -191,11 +194,13 @@ impl AuthorizationListItem {
                     .io
                     .increment_nonce(ExecutionEnvironmentType::NoEE, inf_ergs, &authority, 1)
             })
-            .map_err(|e| match e {
-                UpdateQueryError::NumericBoundsError => {
-                    internal_error!("Cannot overflow, already checked").into()
+            .map_err(|e| -> BootloaderSubsystemError {
+                match e {
+                    SubsystemError::LeafUsage(InterfaceError(NonceError::NonceOverflow, _)) => {
+                        internal_error!("Cannot overflow, already checked").into()
+                    }
+                    _ => wrap_error!(e),
                 }
-                UpdateQueryError::System(e) => e,
             })?;
         Ok(true)
     }
