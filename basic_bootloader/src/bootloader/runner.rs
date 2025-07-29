@@ -23,7 +23,6 @@ use zk_ee::{internal_error, out_of_ergs_error};
 
 use super::errors::BootloaderInterfaceError;
 use super::errors::BootloaderSubsystemError;
-use super::transaction::authorization_list::parse_delegation;
 
 /// Main execution loop.
 /// Expects the caller to start and close the entry frame.
@@ -1006,7 +1005,8 @@ where
                 .with_is_delegated(),
         )
         .and_then(|account_properties| {
-            if account_properties.is_delegated.0 {
+            let properties = if cfg!(feature = "pectra") && account_properties.is_delegated.0 {
+                use crate::bootloader::transaction::parse_delegation;
                 // Resolve delegation following EIP-7702 (only one level
                 // of delegation is allowed).
                 let delegation = &account_properties.bytecode.0
@@ -1025,10 +1025,12 @@ where
                         .with_nonce()
                         .with_nominal_token_balance(),
                 )?;
-                Ok((account_properties, Some(delegate_properties)))
+                (account_properties, Some(delegate_properties))
             } else {
-                Ok((account_properties, None))
-            }
+                (account_properties, None)
+            };
+
+            Ok(properties)
         }) {
         Ok((account_properties, delegate)) => (account_properties, delegate),
         Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
