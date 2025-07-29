@@ -4,7 +4,8 @@ use ark_ec::{
     bn,
     models::{short_weierstrass::SWCurveConfig, CurveConfig},
     scalar_mul::glv::GLVConfig,
-    short_weierstrass::{Affine, Projective}, AffineRepr,
+    short_weierstrass::{Affine, Projective},
+    AffineRepr,
 };
 #[cfg(not(any(all(target_arch = "riscv32", feature = "bigint_ops"), test)))]
 use ark_ff::MontFp;
