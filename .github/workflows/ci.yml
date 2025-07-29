@@ -9,6 +9,11 @@ permissions: read-all
 env:
   CARGO_INCREMENTAL: 0
 
+# Cancel previous runs that might be caused by appbin update
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests:
     name: tests
