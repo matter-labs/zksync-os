@@ -9,17 +9,19 @@ use super::{CallOrDeployResultRef, ExecutionEnvironmentLaunchParams, SystemTypes
 pub mod evm_tracer;
 
 pub trait Tracer<S: SystemTypes> {
+    /// Should return EVM-specific tracer implementation
     fn evm_tracer(&mut self) -> &mut impl EvmTracer<S>;
 
-    /// Hook before external call or deployment execution
+    /// Hook immediately before external call or deployment frame execution
     fn on_new_execution_frame(&mut self, request: &ExecutionEnvironmentLaunchParams<S>);
 
-    /// Hook after external call or deployment execution or failure
+    /// Hook immediately after external call or deployment frame execution
     fn after_execution_frame_completed(
         &mut self,
         result: Option<(&S::Resources, CallOrDeployResultRef<S>)>,
     );
 
+    /// Is called on storage read produced by bytecode execution in EE
     fn on_storage_read(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -29,6 +31,7 @@ pub trait Tracer<S: SystemTypes> {
         value: <S::IOTypes as SystemIOTypesConfig>::StorageValue,
     );
 
+    /// Is called on storage read produced by bytecode execution in EE
     fn on_storage_write(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -38,6 +41,7 @@ pub trait Tracer<S: SystemTypes> {
         value: <S::IOTypes as SystemIOTypesConfig>::StorageValue,
     );
 
+    /// Is called before EE emits and event
     fn on_event(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -46,8 +50,10 @@ pub trait Tracer<S: SystemTypes> {
         data: &[u8],
     );
 
+    /// Is called before bootloader starts execution of a transaction
     fn begin_tx(&mut self, calldata: &[u8]);
 
+    /// Is called after bootloader finishes execution of a transaction
     fn finish_tx(&mut self);
 }
 

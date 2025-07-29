@@ -697,7 +697,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     "Return from constructor call, success = {deployment_success}\n",
                 ));
 
-                // TODO resources
                 tracer.after_execution_frame_completed(Some((
                     &resources_returned,
                     CallOrDeployResultRef::DeploymentResult(&deployment_result),
