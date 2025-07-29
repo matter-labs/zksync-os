@@ -20,7 +20,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 # Base features and output names
-FEATURES="proving"
+FEATURES="proving,print_debug_info"
 BIN_NAME="app.bin"
 ELF_NAME="app.elf"
 TEXT_NAME="app.text"
