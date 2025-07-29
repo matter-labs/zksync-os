@@ -263,7 +263,7 @@ where
         let supported = &[
             NextTxSize::ID,
             NewTxContentIterator::ID,
-            InitializeIOImplementerIterator::ID,
+            ProofDataIterator::ID,
             BlockLevelMetadataIterator::ID,
             InitialStorageSlotDataIterator::<EthereumIOTypesConfig>::ID,
             PreimageContentWordsIterator::ID,
@@ -307,13 +307,13 @@ where
                     .expect("must make an iterator");
                 it
             }
-            InitializeIOImplementerIterator::ID => {
+            ProofDataIterator::ID => {
                 let mut src_it = query.into_iter();
-                let params : () = <<InitializeIOImplementerIterator as OracleIteratorTypeMarker>::Params as UsizeDeserializable>::from_iter(&mut src_it).expect("must deserialize query params");
+                let params : () = <<ProofDataIterator as OracleIteratorTypeMarker>::Params as UsizeDeserializable>::from_iter(&mut src_it).expect("must deserialize query params");
                 assert!(src_it.len() == 0);
                 let it = self
                     .oracle
-                    .create_oracle_access_iterator::<InitializeIOImplementerIterator>(params)
+                    .create_oracle_access_iterator::<ProofDataIterator>(params)
                     .expect("must make an iterator");
                 it
             }

@@ -1,7 +1,7 @@
 use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
 use alloy::hex;
-use rig::forward_system::run::BatchOutput;
+use rig::forward_system::run::BlockOutput;
 use rig::log::{debug, error, info, warn};
 use ruint::aliases::{B160, B256, U256};
 use serde::{Deserialize, Serialize};
@@ -118,7 +118,7 @@ impl DiffTrace {
 
     pub fn check_storage_writes(
         self,
-        output: BatchOutput,
+        output: BlockOutput,
         prestate_cache: Cache,
         miner: B160,
     ) -> Result<(), PostCheckError> {
@@ -256,7 +256,7 @@ fn zksync_os_diff_consistent_with_selfdestruct(
 }
 
 fn zksync_os_output_into_account_state(
-    output: BatchOutput,
+    output: BlockOutput,
     prestate_cache: &Cache,
 ) -> Result<HashMap<B160, AccountState>, PostCheckError> {
     use basic_system::system_implementation::flat_storage_model::AccountProperties;
@@ -367,7 +367,7 @@ pub fn consistent_with_refund(zksync_os_gas_used: u64, gas_difference: u64) -> b
 }
 
 pub fn post_check(
-    output: BatchOutput,
+    output: BlockOutput,
     receipts: Vec<TransactionReceipt>,
     diff_trace: DiffTrace,
     prestate_cache: Cache,

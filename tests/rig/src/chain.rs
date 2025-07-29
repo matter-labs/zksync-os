@@ -13,9 +13,7 @@ use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::test_impl::{
     InMemoryPreimageSource, InMemoryTree, NoopTxCallback, TxListSource,
 };
-use forward_system::run::{
-    io_implementer_init_data, BatchOutput, ForwardRunningOracle, ForwardRunningOracleAux,
-};
+use forward_system::run::{BlockOutput, ForwardRunningOracle};
 use forward_system::system::bootloader::run_forward;
 use log::{debug, info, trace};
 use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
@@ -25,7 +23,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use zk_ee::common_structs::derive_flat_storage_key;
+use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
 use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
@@ -39,6 +37,7 @@ pub struct Chain<const RANDOMIZED_TREE: bool = false> {
     chain_id: u64,
     block_number: u64,
     block_hashes: [U256; 256],
+    block_timestamp: u64,
 }
 
 /// This is a part of the state, which can be controlled by sequencer, other block context values can be determined from the chain state.
@@ -83,6 +82,7 @@ impl Chain<false> {
             chain_id: chain_id.unwrap_or(37),
             block_number: 0,
             block_hashes: [U256::ZERO; 256],
+            block_timestamp: 0,
         }
     }
 }
@@ -105,6 +105,7 @@ impl Chain<true> {
             chain_id: chain_id.unwrap_or(37),
             block_number: 0,
             block_hashes: [U256::ZERO; 256],
+            block_timestamp: 0,
         }
     }
 }
@@ -161,7 +162,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         &mut self,
         transactions: Vec<Vec<u8>>,
         block_context: Option<BlockContext>,
-    ) -> BatchOutput {
+    ) -> BlockOutput {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
@@ -175,16 +176,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             gas_limit: block_context.gas_limit,
             mix_hash: block_context.mix_hash,
         };
-        let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
-            root: *self.state_tree.storage_tree.root(),
-            next_free_slot: self.state_tree.storage_tree.next_free_slot,
-        };
         let tx_source = TxListSource {
             transactions: transactions.into(),
         };
 
         let oracle = ForwardRunningOracle {
-            io_implementer_init_data: Some(io_implementer_init_data(Some(state_commitment))),
+            proof_data: None,
             preimage_source: self.preimage_source.clone(),
             tree: self.state_tree.clone(),
             block_metadata,
@@ -194,12 +191,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         // dump oracle if env variable set
         if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
-            let aux_oracle: ForwardRunningOracleAux<
-                InMemoryTree<RANDOMIZED_TREE>,
-                InMemoryPreimageSource,
-                TxListSource,
-            > = oracle.clone().into();
-            let serialized_oracle = bincode::serialize(&aux_oracle).expect("should serialize");
+            let serialized_oracle = bincode::serialize(&oracle).expect("should serialize");
             let mut file = File::create(&path).expect("should create file");
             file.write_all(&serialized_oracle)
                 .expect("should write to file");
@@ -214,7 +206,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             &mut result_keeper,
         );
 
-        let block_output: BatchOutput = result_keeper.into();
+        let block_output: BlockOutput = result_keeper.into();
         trace!(
             "{}Block output:{} \n{:#?}",
             colors::MAGENTA,
@@ -235,7 +227,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         transactions: Vec<Vec<u8>>,
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
-    ) -> BatchOutput {
+    ) -> BlockOutput {
         self.run_block_with_extra_stats(transactions, block_context, profiler_config, None, None)
             .0
     }
@@ -247,7 +239,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         profiler_config: Option<ProfilerConfig>,
         witness_output_file: Option<PathBuf>,
         app: Option<String>,
-    ) -> (BatchOutput, BlockExtraStats) {
+    ) -> (BlockOutput, BlockExtraStats) {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
@@ -265,12 +257,16 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             root: *self.state_tree.storage_tree.root(),
             next_free_slot: self.state_tree.storage_tree.next_free_slot,
         };
+        let proof_data = ProofData {
+            state_root_view: state_commitment,
+            last_block_timestamp: self.block_timestamp,
+        };
         let tx_source = TxListSource {
             transactions: transactions.into(),
         };
 
         let oracle = ForwardRunningOracle {
-            io_implementer_init_data: Some(io_implementer_init_data(Some(state_commitment))),
+            proof_data: Some(proof_data),
             preimage_source: self.preimage_source.clone(),
             tree: self.state_tree.clone(),
             block_metadata,
@@ -280,12 +276,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         // dump oracle if env variable set
         if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
-            let aux_oracle: ForwardRunningOracleAux<
-                InMemoryTree<RANDOMIZED_TREE>,
-                InMemoryPreimageSource,
-                TxListSource,
-            > = oracle.clone().into();
-            let serialized_oracle = bincode::serialize(&aux_oracle).expect("should serialize");
+            let serialized_oracle = bincode::serialize(&oracle).expect("should serialize");
             let mut file = File::create(&path).expect("should create file");
             file.write_all(&serialized_oracle)
                 .expect("should write to file");
@@ -300,7 +291,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             &mut result_keeper,
         );
 
-        let block_output: BatchOutput = result_keeper.into();
+        let block_output: BlockOutput = result_keeper.into();
         trace!(
             "{}Block output:{} \n{:#?}",
             colors::MAGENTA,

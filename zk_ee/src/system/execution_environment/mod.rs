@@ -20,10 +20,10 @@ use super::errors::subsystem::SubsystemError;
 use super::system::System;
 use super::system::SystemTypes;
 use super::IOSubsystemExt;
+use crate::common_structs::CalleeAccountProperties;
 use crate::internal_error;
 use crate::memory::slice_vec::SliceVec;
 use crate::system::CallModifier;
-use crate::system::Ergs;
 use crate::types_config::*;
 
 // we should consider some bound of amount of data that is deployment-specific,
@@ -85,6 +85,16 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         heap: SliceVec<'h, u8>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>;
 
+    ///
+    /// EE can decide how to provide resources to the callee frame on external call.
+    /// Returns resources for the callee frame. Native resource handled by OS itself.
+    ///
+    fn calculate_resources_passed_in_external_call(
+        resources_in_caller_frame: &mut S::Resources,
+        call_request: &ExternalCallRequest<S>,
+        callee_account_properties: &CalleeAccountProperties,
+    ) -> Result<S::Resources, Self::SubsystemError>;
+
     /// Continues after the bootloader handled a completed external call.
     fn continue_after_external_call<'a, 'res: 'ee>(
         &'a mut self,
@@ -106,16 +116,6 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     fn default_ee_deployment_options(
         system: &mut System<S>,
     ) -> Option<Box<dyn Any, <S as SystemTypes>::Allocator>>;
-
-    ///
-    /// Adjust resources passed from the caller to the callee.
-    /// Some EE might have some additional rules in this situation,
-    /// such as the 63/64 rule for EVM.
-    ///
-    fn clarify_and_take_passed_resources(
-        resources_available_in_deployer_frame: &mut S::Resources,
-        ergs_desired_to_pass: Ergs,
-    ) -> Result<S::Resources, Self::SubsystemError>;
 
     /// Runs some pre-deployment preparation and checks.
     /// The result can be None to represent unsuccessful preparation for deployment.
