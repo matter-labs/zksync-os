@@ -2,6 +2,7 @@ use ruint::aliases::U256;
 
 use crate::{system::SystemTypes, types_config::SystemIOTypesConfig};
 
+/// Expected interface of and EVM frame state. This trait simplifies versioning and integration of tracers.
 pub trait EvmFrameInterface<S: SystemTypes> {
     /// Instruction pointer
     fn instruction_pointer(&self) -> usize;
