@@ -997,6 +997,12 @@ where
             &mut self.oracle,
         )
     }
+
+    // Add EVM refund to counter
+    #[cfg(feature = "evm_refunds")]
+    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError> {
+        self.storage.add_evm_refund(refund)
+    }
 }
 
 impl<

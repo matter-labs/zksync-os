@@ -121,7 +121,7 @@ impl AuthorizationListItem {
     /// 4. Warm up authority
     /// 5. Verify the authority is not a contract.
     /// 6. Verify the nonce of authority is equal to nonce.
-    /// 7. Skipped for now: add refund if authority isn't empty.
+    /// 7. Add refund if authority isn't empty.
     /// 8. Set the code of authority to be 0xef0100 || address.
     ///    If address is 0x0, clear the account’s code
     ///    (and deployment status) instead.
@@ -165,6 +165,7 @@ impl AuthorizationListItem {
                 &authority,
                 AccountDataRequest::empty()
                     .with_nonce()
+                    .with_nominal_token_balance()
                     .with_is_delegated()
                     .with_artifacts_len()
                     .with_unpadded_code_len(),
@@ -177,6 +178,20 @@ impl AuthorizationListItem {
         // 6. Check nonce
         if account_properties.nonce.0 != self.nonce {
             return Ok(false);
+        }
+        // 7. Add refund if authority is not empty.
+        #[cfg(feature = "evm_refunds")]
+        {
+            let is_empty = account_properties.nonce.0 == 0
+                && account_properties.unpadded_code_len.0 == 0
+                && account_properties.nominal_token_balance.0.is_zero();
+            if !is_empty {
+                system.io.add_evm_refund(
+                    (evm_interpreter::gas_constants::NEWACCOUNT
+                        - evm_interpreter::gas_constants::PER_AUTH_BASE_COST)
+                        as u32,
+                )?
+            }
         }
         // 8. Set code for authority, system function
         //    will handle the two cases (unsetting).

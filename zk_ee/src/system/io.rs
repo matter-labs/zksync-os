@@ -488,6 +488,10 @@ pub trait IOSubsystemExt: IOSubsystem {
         diff: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         should_subtract: bool,
     ) -> Result<U256, BalanceSubsystemError>;
+
+    // Add EVM refund to counter
+    #[cfg(feature = "evm_refunds")]
+    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError>;
 }
 
 pub trait EthereumLikeIOSubsystem: IOSubsystem<IOTypes = EthereumIOTypesConfig> {}

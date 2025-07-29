@@ -507,6 +507,21 @@ where
             .value()
             .unwrap_or(&0)
     }
+
+    // Add EVM refund to counter
+    #[cfg(feature = "evm_refunds")]
+    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError> {
+        let mut gas_refunds = self
+            .storage_cache
+            .0
+            .evm_refunds_counter
+            .value()
+            .copied()
+            .unwrap_or_default();
+        gas_refunds += refund;
+        self.storage_cache.0.evm_refunds_counter.update(gas_refunds);
+        Ok(())
+    }
 }
 
 impl<
