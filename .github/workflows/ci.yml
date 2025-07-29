@@ -97,7 +97,7 @@ jobs:
           path: zksync-os
       - uses: actions/checkout@v4
         with:
-          repository: matter-labs/era-evm-tester
+          repository: matter-labs/era-evm-tester 
           ref: zk-ee
           path: era-evm-tester
       - name: Use local ZKsync OS version
