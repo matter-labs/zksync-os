@@ -3,18 +3,19 @@
 //! See [ZkSyncTransaction] for more details on encoding format.
 //!
 
-use super::{
-    authorization_list_parser::{AuthorizationListIter, AuthorizationListParser},
-    AccessListIter, AccessListParser,
-};
+#[cfg(feature = "pectra")]
+use super::authorization_list_parser::{AuthorizationListIter, AuthorizationListParser};
+use super::{AccessListIter, AccessListParser};
 use ruint::aliases::{B160, U256};
 
 #[derive(Clone, Copy, Debug)]
 
 pub struct Parsers {
     access_list_parser: AccessListParser,
+    #[cfg(feature = "pectra")]
     authorization_list_parser: AuthorizationListParser,
 }
+
 #[derive(Clone, Copy, Debug)]
 pub struct ReservedDynamicParser {
     parsers: Option<Parsers>,
@@ -44,10 +45,12 @@ impl ReservedDynamicParser {
         let access_list_rel_offset = parse_u32(slice, outer_base + 32)?;
         // Must be 64 (there's the authorization list offset before)
         check_offset(access_list_rel_offset, 64)?;
+        #[cfg(feature = "pectra")]
         let authorization_list_rel_offset = parse_u32(slice, outer_base + 64)?;
         let access_list_base = outer_base + 32 + access_list_rel_offset;
         // We cannot check strictness of authorization_list_rel_offset yet, we
         // have to do that once we know the full length of the access list
+        #[cfg(feature = "pectra")]
         let authorization_list_base = outer_base + 32 + authorization_list_rel_offset;
 
         Ok(Self {
@@ -55,6 +58,7 @@ impl ReservedDynamicParser {
                 access_list_parser: AccessListParser {
                     offset: access_list_base,
                 },
+                #[cfg(feature = "pectra")]
                 authorization_list_parser: AuthorizationListParser {
                     offset: authorization_list_base,
                 },
@@ -75,6 +79,7 @@ impl ReservedDynamicParser {
         Ok(self.access_list_iter(slice)?.next().is_none())
     }
 
+    #[cfg(feature = "pectra")]
     pub fn authorization_list_iter<'a>(
         &self,
         slice: &'a [u8],
@@ -88,6 +93,7 @@ impl ReservedDynamicParser {
         }
     }
 
+    #[cfg(feature = "pectra")]
     pub fn authorization_list_is_empty<'a>(&self, slice: &'a [u8]) -> Result<bool, ()> {
         Ok(self.authorization_list_iter(slice)?.next().is_none())
     }
@@ -105,6 +111,8 @@ pub(crate) fn parse_u32<'a>(slice: &'a [u8], offset: usize) -> Result<usize, ()>
     Ok(value as usize)
 }
 
+// Used for pectra feature
+#[allow(dead_code)]
 pub(crate) fn parse_u8<'a>(slice: &'a [u8], offset: usize) -> Result<u8, ()> {
     let bytes = slice.get(offset..(offset + 32)).ok_or(())?;
     for byte in bytes.iter().take(31) {
@@ -116,6 +124,8 @@ pub(crate) fn parse_u8<'a>(slice: &'a [u8], offset: usize) -> Result<u8, ()> {
     Ok(value)
 }
 
+// Used for pectra feature
+#[allow(dead_code)]
 pub(crate) fn parse_u64<'a>(slice: &'a [u8], offset: usize) -> Result<u64, ()> {
     let bytes = slice.get(offset..(offset + 32)).ok_or(())?;
     for byte in bytes.iter().take(24) {
@@ -138,6 +148,8 @@ pub(crate) fn parse_address<'a>(slice: &'a [u8], offset: usize) -> Result<B160, 
     Ok(value)
 }
 
+// Used for pectra feature
+#[allow(dead_code)]
 pub(crate) fn parse_u256<'a>(slice: &'a [u8], offset: usize) -> Result<U256, ()> {
     let bytes = slice.get(offset..(offset + 32)).ok_or(())?;
     let value = U256::from_be_bytes::<32>(bytes.try_into().unwrap());
@@ -221,6 +233,7 @@ mod tests {
         assert!(iter.next().is_none())
     }
 
+    #[cfg(feature = "pectra")]
     #[test]
     fn test_access_list_parser_2_2_2() {
         // Access list with 2 elements, each with 2 keys
@@ -244,12 +257,14 @@ mod tests {
         assert_eq!(keys2.count, 2);
         assert!(iter.next().is_none());
         // Check authorization list is empty
+
         assert!(parser
             .authorization_list_is_empty(&encoded)
             .expect("Must parse"));
     }
 
     // Also use an access list
+    #[cfg(feature = "pectra")]
     #[test]
     fn test_authorization_list_2() {
         // Access list with 2 elements, each with 2 keys

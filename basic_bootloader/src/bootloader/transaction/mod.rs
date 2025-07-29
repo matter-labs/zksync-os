@@ -5,6 +5,7 @@
 
 use self::u256be_ptr::U256BEPtr;
 use crate::bootloader::rlp;
+#[cfg(feature = "pectra")]
 use authorization_list_parser::AuthorizationListItem;
 use core::ops::Range;
 use crypto::sha3::Keccak256;
@@ -17,6 +18,7 @@ use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, syst
 
 mod abi_utils;
 pub mod access_list_parser;
+#[cfg(feature = "pectra")]
 pub mod authorization_list_parser;
 pub mod reserved_dynamic_parser;
 use self::access_list_parser::*;
@@ -100,6 +102,7 @@ impl<'a> ZkSyncTransaction<'a> {
     pub const EIP_2930_TX_TYPE: u8 = 0x01;
     /// The type id of EIP1559 transactions.
     pub const EIP_1559_TX_TYPE: u8 = 0x02;
+    #[cfg(feature = "pectra")]
     /// The type id of EIP7702 transactions.
     pub const EIP_7702_TX_TYPE: u8 = 0x04;
     /// The type id of EIP712 transactions.
@@ -233,10 +236,11 @@ impl<'a> ZkSyncTransaction<'a> {
             Self::LEGACY_TX_TYPE
             | Self::EIP_2930_TX_TYPE
             | Self::EIP_1559_TX_TYPE
-            | Self::EIP_7702_TX_TYPE
             | Self::EIP_712_TX_TYPE
             | Self::UPGRADE_TX_TYPE
             | Self::L1_L2_TX_TYPE => {}
+            #[cfg(feature = "pectra")]
+            Self::EIP_7702_TX_TYPE => {}
             _ => return Err(()),
         }
 
@@ -332,7 +336,9 @@ impl<'a> ZkSyncTransaction<'a> {
 
         // Access list is empty except for txs that support it
         match tx_type {
-            Self::EIP_1559_TX_TYPE | Self::EIP_2930_TX_TYPE | Self::EIP_7702_TX_TYPE => {}
+            Self::EIP_1559_TX_TYPE | Self::EIP_2930_TX_TYPE => {}
+            #[cfg(feature = "pectra")]
+            Self::EIP_7702_TX_TYPE => {}
             _ => {
                 if !self
                     .reserved_dynamic
@@ -345,6 +351,7 @@ impl<'a> ZkSyncTransaction<'a> {
 
         // Authorization list is empty except for txs that support it
         // For EIP 7702, authorization list cannot be empty
+        #[cfg(feature = "pectra")]
         match tx_type {
             Self::EIP_7702_TX_TYPE => {
                 if self
@@ -367,6 +374,7 @@ impl<'a> ZkSyncTransaction<'a> {
         // Null destination is not allowed for some transactions
         #[allow(clippy::single_match)]
         match tx_type {
+            #[cfg(feature = "pectra")]
             Self::EIP_7702_TX_TYPE => {
                 if self.to.read() == B160::ZERO {
                     return Err(());
@@ -443,6 +451,7 @@ impl<'a> ZkSyncTransaction<'a> {
             Self::LEGACY_TX_TYPE => self.legacy_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_2930_TX_TYPE => self.eip2930_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_1559_TX_TYPE => self.eip1559_tx_calculate_hash(chain_id, true, resources),
+            #[cfg(feature = "pectra")]
             Self::EIP_7702_TX_TYPE => self.eip7702_tx_calculate_hash(chain_id, true, resources),
             Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_signed_hash(chain_id, resources),
             _ => Err(
@@ -465,6 +474,7 @@ impl<'a> ZkSyncTransaction<'a> {
             Self::LEGACY_TX_TYPE => self.legacy_tx_calculate_hash(chain_id, false, resources),
             Self::EIP_2930_TX_TYPE => self.eip2930_tx_calculate_hash(chain_id, false, resources),
             Self::EIP_1559_TX_TYPE => self.eip1559_tx_calculate_hash(chain_id, false, resources),
+            #[cfg(feature = "pectra")]
             Self::EIP_7702_TX_TYPE => self.eip7702_tx_calculate_hash(chain_id, false, resources),
             Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_hash(chain_id, resources),
             Self::L1_L2_TX_TYPE => self.l1_tx_calculate_hash(resources),
@@ -644,6 +654,7 @@ impl<'a> ZkSyncTransaction<'a> {
     ///
     /// Estimates the length of the payload of the access list encoding
     ///
+    #[cfg(feature = "pectra")]
     fn estimate_authorization_list_raw_length(&self) -> Result<usize, ()> {
         let iter = self
             .reserved_dynamic
@@ -662,6 +673,7 @@ impl<'a> ZkSyncTransaction<'a> {
     ///
     /// Applies hash of the access list
     ///
+    #[cfg(feature = "pectra")]
     fn apply_authorization_list_encoding_to_hash(
         &self,
         total_authorization_list_length: usize,
@@ -968,6 +980,7 @@ impl<'a> ZkSyncTransaction<'a> {
     /// If signed == `true` calculate signed tx hash(the one that should be signed by the sender):
     /// Keccak256(0x04 || RLP(chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, destination, amount, data, access_list, access_list))
     ///
+    #[cfg(feature = "pectra")]
     pub fn eip7702_tx_calculate_hash<R: Resources>(
         &self,
         chain_id: u64,
@@ -1446,6 +1459,7 @@ fn estimate_access_list_item_length(nb_keys: usize) -> (usize, usize, usize) {
     )
 }
 
+#[cfg(feature = "pectra")]
 fn estimate_authorization_list_item_length(item: &AuthorizationListItem) -> usize {
     let AuthorizationListItem {
         chain_id,
