@@ -5,6 +5,11 @@ on:
 
 permissions: read-all
 
+# Cancel previous runs that might be caused by appbin update
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   vm-benchmarks:
     name: Run benchmarks
