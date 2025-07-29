@@ -10,6 +10,7 @@ use zk_ee::utils::Bytes32;
 /// - last 256 block hashes, previous can be "unrolled" from the last, but we commit to 256 for optimization.
 /// - last block timestamp, to ensure that block timestamps are not decreasing.
 ///
+#[derive(Debug)]
 pub struct ChainStateCommitment {
     pub state_root: Bytes32,
     pub next_free_slot: u64,

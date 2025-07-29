@@ -124,7 +124,7 @@ pub struct StorageWrite {
 }
 
 #[derive(Debug, Clone)]
-pub struct BatchOutput {
+pub struct BlockOutput {
     pub header: BlockHeader,
     pub tx_results: Vec<TxResult>,
     // TODO: will be returned per tx later
@@ -155,7 +155,7 @@ impl From<(B160, Bytes32, Bytes32)> for StorageWrite {
     }
 }
 
-impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput {
+impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BlockOutput {
     fn from(value: ForwardRunningResultKeeper<TR>) -> Self {
         let ForwardRunningResultKeeper {
             block_header,
@@ -230,4 +230,4 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BatchOutput 
 }
 
 #[allow(dead_code)]
-pub type BatchResult = Result<BatchOutput, InternalError>;
+pub type BatchResult = Result<BlockOutput, InternalError>;
