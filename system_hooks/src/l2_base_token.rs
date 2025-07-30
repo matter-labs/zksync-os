@@ -318,7 +318,7 @@ where
             message.extend_from_slice(additional_data);
             // Populating the rest of the message with zeros to make it a multiple of 32 bytes
             message
-                .extend(core::iter::repeat(0u8).take(abi_encoded_message_length - message.len()));
+                .extend(core::iter::repeat_n(0u8, abi_encoded_message_length - message.len()));
 
             let result = send_to_l1_inner(
                 &message,
