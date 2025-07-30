@@ -133,6 +133,10 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_level_metadata.gas_limit
     }
 
+    pub fn get_pubdata_limit(&self) -> u64 {
+        self.metadata.block_level_metadata.pubdata_limit
+    }
+
     pub fn get_gas_per_pubdata(&self) -> ruint::aliases::U256 {
         self.metadata.block_level_metadata.gas_per_pubdata
     }
