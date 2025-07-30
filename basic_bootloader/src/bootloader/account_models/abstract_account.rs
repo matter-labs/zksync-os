@@ -7,6 +7,7 @@ use crate::bootloader::account_models::{ExecutionResult, TxError};
 use crate::bootloader::errors::BootloaderSubsystemError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
+use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::Bytes32;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
@@ -68,7 +69,7 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn validate(
+    pub fn validate<Config: BasicBootloaderExecutionConfig>(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
@@ -83,7 +84,7 @@ where
         tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         match self {
-            AA::EOA(_) => EOA::validate(
+            AA::EOA(_) => EOA::validate::<Config>(
                 system,
                 system_functions,
                 memories,
@@ -96,7 +97,7 @@ where
                 resources,
                 tracer,
             ),
-            AA::Contract(_) => Contract::validate(
+            AA::Contract(_) => Contract::validate::<Config>(
                 system,
                 system_functions,
                 memories,
