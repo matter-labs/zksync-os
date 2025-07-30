@@ -188,8 +188,9 @@ where
                 ));
             }
             l1_messenger_calldata[68..88].copy_from_slice(&calldata[(4 + 12)..36]);
-            l1_messenger_calldata[88..120].copy_from_slice(&nominal_token_value.to_be_bytes::<32>());
-            
+            l1_messenger_calldata[88..120]
+                .copy_from_slice(&nominal_token_value.to_be_bytes::<32>());
+
             let result = send_to_l1_inner(
                 &l1_messenger_calldata,
                 resources,
@@ -302,8 +303,10 @@ where
             } else {
                 abi_encoded_message_length
             };
-            let mut message: alloc::vec::Vec<u8, S::Allocator> =
-                alloc::vec::Vec::with_capacity_in(abi_encoded_message_length, system.get_allocator());
+            let mut message: alloc::vec::Vec<u8, S::Allocator> = alloc::vec::Vec::with_capacity_in(
+                abi_encoded_message_length,
+                system.get_allocator(),
+            );
             // Offset and length
             message.extend_from_slice(&[0u8; 64]);
             message[31] = 32; // offset
@@ -314,10 +317,9 @@ where
             message.extend_from_slice(&caller.to_be_bytes::<20>());
             message.extend_from_slice(additional_data);
             // Populating the rest of the message with zeros to make it a multiple of 32 bytes
-            message.extend(core::iter::repeat(0u8).take(
-                abi_encoded_message_length - message.len(),
-            ));
-      
+            message
+                .extend(core::iter::repeat(0u8).take(abi_encoded_message_length - message.len()));
+
             let result = send_to_l1_inner(
                 &message,
                 resources,

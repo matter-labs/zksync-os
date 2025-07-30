@@ -146,13 +146,7 @@ where
                 ));
             }
 
-            send_to_l1_inner(
-                &calldata[4..],
-                resources,
-                system,
-                caller,
-                caller_ee,
-            )
+            send_to_l1_inner(&calldata[4..], resources, system, caller, caller_ee)
         }
         _ => Ok(Err("L1 messenger: unknown selector")),
     }
@@ -209,17 +203,18 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
             "L1 messenger failure: sendToL1 called with invalid calldata",
         ));
     }
-    let length =
-        match U256::from_be_slice(&abi_encoded_message[length_encoding_end - 32..length_encoding_end])
-            .try_into()
-        {
-            Ok(length) => length,
-            Err(_) => {
-                return Ok(Err(
-                    "L1 messenger failure: sendToL1 called with invalid calldata",
-                ))
-            }
-        };
+    let length = match U256::from_be_slice(
+        &abi_encoded_message[length_encoding_end - 32..length_encoding_end],
+    )
+    .try_into()
+    {
+        Ok(length) => length,
+        Err(_) => {
+            return Ok(Err(
+                "L1 messenger failure: sendToL1 called with invalid calldata",
+            ))
+        }
+    };
     // to check that it will not overflow
     let message_end = match length_encoding_end.checked_add(length) {
         Some(message_end) => message_end,
