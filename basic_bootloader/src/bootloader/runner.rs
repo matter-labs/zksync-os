@@ -538,8 +538,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 .write_fmt(format_args!("Returndata = "));
             let _ = self.system.get_logger().log_data(returndata_iter);
 
-            let return_values = self.copy_into_return_memory(return_values)?;
-
             self.system
                 .finish_global_frame(if reverted {
                     Some(&rollback_handle)
