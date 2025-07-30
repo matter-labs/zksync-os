@@ -20,6 +20,7 @@ use zk_ee::system::*;
 
 use zk_ee::utils::Bytes32;
 
+use super::config::BasicBootloaderExecutionConfig;
 use super::errors::BootloaderSubsystemError;
 
 /// The execution step output
@@ -73,7 +74,7 @@ where
     S::IO: IOSubsystemExt,
 {
     /// Validate transaction
-    fn validate(
+    fn validate<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers,

@@ -592,28 +592,24 @@ where
             .calculate_signed_hash(chain_id, &mut resources)?
             .into();
 
-        let ValidationResult { validation_pubdata } = if !Config::ONLY_SIMULATE {
-            Self::transaction_validation::<Config>(
-                system,
-                system_functions,
-                memories.reborrow(),
-                tx_hash,
-                suggested_signed_hash,
-                &mut transaction,
-                &account_model,
-                from,
-                gas_price,
-                gas_per_pubdata,
-                native_per_pubdata,
-                caller_ee_type,
-                caller_is_code,
-                caller_nonce,
-                &mut resources,
-                tracer,
-            )?
-        } else {
-            ValidationResult::default()
-        };
+        let ValidationResult { validation_pubdata } = Self::transaction_validation::<Config>(
+            system,
+            system_functions,
+            memories.reborrow(),
+            tx_hash,
+            suggested_signed_hash,
+            &mut transaction,
+            &account_model,
+            from,
+            gas_price,
+            gas_per_pubdata,
+            native_per_pubdata,
+            caller_ee_type,
+            caller_is_code,
+            caller_nonce,
+            &mut resources,
+            tracer,
+        )?;
 
         // Parse, validate and apply authorization list, following EIP-7702
         #[cfg(feature = "pectra")]
@@ -675,37 +671,22 @@ where
         // resources could be spent for pubdata.
         resources.reclaim_withheld(withheld_resources);
 
-        let (gas_used, evm_refund, pubdata_used) = if !Config::ONLY_SIMULATE {
-            Self::refund_transaction::<Config>(
-                system,
-                system_functions,
-                tx_hash,
-                suggested_signed_hash,
-                &mut transaction,
-                from,
-                &execution_result,
-                gas_price,
-                native_per_gas,
-                native_per_pubdata,
-                validation_pubdata,
-                caller_ee_type,
-                &mut resources,
-                pubdata_info,
-            )?
-        } else {
-            // Compute gas used following the same logic as in normal execution
-            // TODO: remove when simulation flow runs validation
-            let (pubdata_spent, to_charge_for_pubdata) =
-                get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
-            let (_gas_refund, evm_refund, gas_used) = Self::compute_gas_refund(
-                system,
-                to_charge_for_pubdata,
-                gas_limit,
-                native_per_gas,
-                &mut resources,
-            )?;
-            (gas_used, evm_refund, pubdata_spent)
-        };
+        let (gas_used, evm_refund, pubdata_used) = Self::refund_transaction::<Config>(
+            system,
+            system_functions,
+            tx_hash,
+            suggested_signed_hash,
+            &mut transaction,
+            from,
+            &execution_result,
+            gas_price,
+            native_per_gas,
+            native_per_pubdata,
+            validation_pubdata,
+            caller_ee_type,
+            &mut resources,
+            pubdata_info,
+        )?;
 
         // Add back the intrinsic native charged in get_resources_for_tx,
         // as initial_resources doesn't include them.
@@ -776,10 +757,12 @@ where
             InvalidTransaction::NonceOverflowInTransaction,
         ))?;
 
-        account_model.check_nonce_is_not_used(caller_nonce, tx_nonce)?;
+        if !Config::ONLY_SIMULATE {
+            account_model.check_nonce_is_not_used(caller_nonce, tx_nonce)?;
+        }
 
         // AA validation
-        account_model.validate(
+        account_model.validate::<Config>(
             system,
             system_functions,
             memories.reborrow(),
@@ -794,13 +777,15 @@ where
         )?;
 
         // Check nonce has been marked
-        account_model.check_nonce_is_used_after_validation(
-            system,
-            caller_ee_type,
-            resources,
-            tx_nonce,
-            from,
-        )?;
+        if !Config::ONLY_SIMULATE {
+            account_model.check_nonce_is_used_after_validation(
+                system,
+                caller_ee_type,
+                resources,
+                tx_nonce,
+                from,
+            )?;
+        }
 
         let _ = system.get_logger().write_fmt(format_args!(
             "Transaction was validated, can collect fees\n"
