@@ -181,7 +181,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let mut initial_calldata_buffer = TxDataBuffer::new(system.get_allocator());
 
         pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
-        pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 27; // 128 MB
+        pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 28; // 256 MB
 
         let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
         let mut return_data =
