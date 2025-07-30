@@ -182,7 +182,7 @@ where
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
                     .map_err(SystemError::LeafDefect)?,
                 resources,
-                &caller,
+                &L2_BASE_TOKEN_ADDRESS,
                 &message,
             )?;
 
@@ -285,7 +285,7 @@ where
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
                     .map_err(SystemError::LeafDefect)?,
                 resources,
-                &caller,
+                &L2_BASE_TOKEN_ADDRESS,
                 &message,
             )?;
 
