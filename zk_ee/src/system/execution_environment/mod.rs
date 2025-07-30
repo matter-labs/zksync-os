@@ -6,6 +6,7 @@
 
 pub mod call_params;
 pub mod environment_state;
+pub mod evm;
 pub mod interaction_params;
 use alloc::boxed::Box;
 use core::any::Any;
@@ -19,12 +20,18 @@ use super::errors::subsystem::Subsystem;
 use super::errors::subsystem::SubsystemError;
 use super::system::System;
 use super::system::SystemTypes;
+use super::tracer::Tracer;
 use super::IOSubsystemExt;
 use crate::common_structs::CalleeAccountProperties;
 use crate::internal_error;
 use crate::memory::slice_vec::SliceVec;
 use crate::system::CallModifier;
 use crate::types_config::*;
+
+pub enum CallOrDeployResultRef<'a, 'external, S: SystemTypes> {
+    CallResult(&'a CallResult<'external, S>),
+    DeploymentResult(&'a DeploymentResult<'external, S>),
+}
 
 // we should consider some bound of amount of data that is deployment-specific,
 // for now it's arbitrary
@@ -83,6 +90,7 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         system: &mut System<S>,
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>;
 
     ///
@@ -101,6 +109,7 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         system: &mut System<S>,
         returned_resources: S::Resources,
         call_result: CallResult<'res, S>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>;
 
     /// Continues after the bootloader handled a completed deployment.
@@ -109,6 +118,7 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         system: &mut System<S>,
         returned_resources: S::Resources,
         deployment_result: DeploymentResult<'res, S>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>;
 
     type DeploymentExtraParameters: EEDeploymentExtraParameters<S>;

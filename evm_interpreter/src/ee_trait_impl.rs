@@ -13,6 +13,7 @@ use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::tracer::Tracer;
 use zk_ee::system::*;
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::cheap_clone::CheapCloneRiscV;
@@ -83,6 +84,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         system: &mut System<S>,
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
         let ExecutionEnvironmentLaunchParams {
             external_call:
@@ -206,7 +208,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         self.heap = heap;
         self.call_value = nominal_token_value;
 
-        self.execute_till_yield_point(system)
+        self.execute_till_yield_point(system, tracer)
     }
 
     fn continue_after_external_call<'a, 'res: 'ee>(
@@ -214,6 +216,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         system: &mut System<S>,
         returned_resources: S::Resources,
         call_result: CallResult<'res, S>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
         assert!(!call_result.has_scratch_space());
         assert!(self.gas.native() == 0);
@@ -240,7 +243,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             }
         }
 
-        self.execute_till_yield_point(system)
+        self.execute_till_yield_point(system, tracer)
     }
 
     fn continue_after_deployment<'a, 'res: 'ee>(
@@ -248,6 +251,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         system: &mut System<S>,
         returned_resources: S::Resources,
         deployment_result: DeploymentResult<'res, S>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
         assert!(!deployment_result.has_scratch_space());
         assert!(self.gas.native() == 0);
@@ -282,7 +286,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             }
         }
 
-        self.execute_till_yield_point(system)
+        self.execute_till_yield_point(system, tracer)
     }
 
     type DeploymentExtraParameters = CreateScheme;

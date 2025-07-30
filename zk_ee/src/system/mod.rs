@@ -11,6 +11,7 @@ pub mod logger;
 pub mod metadata;
 pub mod resources;
 mod result_keeper;
+pub mod tracer;
 
 pub use self::base_system_functions::*;
 pub use self::call_modifiers::*;
@@ -48,6 +49,7 @@ pub trait SystemTypes {
 
     /// Common system functions implementation(ecrecover, keccak256, ecadd, etc).
     type SystemFunctions: SystemFunctions<Self::Resources>;
+    type SystemFunctionsExt: SystemFunctionsExt<Self::Resources>;
 
     type Logger: Logger + Default;
 

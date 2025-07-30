@@ -16,6 +16,7 @@ use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, logger::Logger, *};
 use zk_ee::wrap_error;
 use zk_ee::{internal_error, out_of_ergs_error};
@@ -31,6 +32,7 @@ pub fn run_till_completion<'a, S: EthereumLikeTypes>(
     hooks: &mut HooksStorage<S, S::Allocator>,
     initial_ee_version: ExecutionEnvironmentType,
     initial_request: ExecutionEnvironmentSpawnRequest<S>,
+    tracer: &mut impl Tracer<S>,
 ) -> Result<TransactionEndPoint<'a, S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
@@ -57,6 +59,7 @@ where
                 initial_ee_version,
                 external_call_request,
                 heap,
+                tracer,
             )?;
 
             let (return_values, reverted) = match call_result {
@@ -73,7 +76,12 @@ where
             ))
         }
         ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => run
-            .handle_requested_deployment::<true>(initial_ee_version, deployment_parameters, heap)
+            .handle_requested_deployment::<true>(
+                initial_ee_version,
+                deployment_parameters,
+                heap,
+                tracer,
+            )
             .map(TransactionEndPoint::CompletedDeployment),
     }
 }
@@ -109,7 +117,7 @@ const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUN
 /// Has to be a macro because the call request and VM overlap, so lifetimes don't work out otherwise.
 /// Can't be split up because otherwise we need to check if call or deployment twice.
 macro_rules! handle_spawn {
-    ($run: ident, $vm:ident, $ee_type:ident, $spawn:ident, $heap:ident) => {
+    ($run: ident, $vm:ident, $ee_type:ident, $spawn:ident, $heap:ident, $tracer:ident) => {
         match $spawn {
             ExecutionEnvironmentSpawnRequest::RequestedExternalCall(external_call_request) => {
                 $run.callstack_height += 1;
@@ -117,6 +125,7 @@ macro_rules! handle_spawn {
                     $ee_type,
                     external_call_request,
                     $heap,
+                    $tracer,
                 )?;
                 $run.callstack_height -= 1;
 
@@ -126,7 +135,7 @@ macro_rules! handle_spawn {
                     "Return from external call, success = {success}\n"
                 ));
 
-                $vm.continue_after_external_call($run.system, resources, call_result)
+                $vm.continue_after_external_call($run.system, resources, call_result, $tracer)
                     .map_err(wrap_error!())
             }
             ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => {
@@ -138,6 +147,7 @@ macro_rules! handle_spawn {
                     $ee_type,
                     deployment_parameters,
                     $heap,
+                    $tracer,
                 )?;
                 $run.callstack_height -= 1;
 
@@ -149,8 +159,13 @@ macro_rules! handle_spawn {
                     .write_fmt(format_args!("Returndata = "));
                 let _ = $run.system.get_logger().log_data(returndata_iter);
 
-                $vm.continue_after_deployment($run.system, resources_returned, deployment_result)
-                    .map_err(wrap_error!())
+                $vm.continue_after_deployment(
+                    $run.system,
+                    resources_returned,
+                    deployment_result,
+                    $tracer,
+                )
+                .map_err(wrap_error!())
             }
         }
     };
@@ -176,6 +191,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         ee_type: ExecutionEnvironmentType,
         call_request: ExternalCallRequest<S>,
         heap: SliceVec<u8>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -254,6 +270,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         // resources are checked and spent, so we continue with actual transition of control flow
 
+        // Note that for tracing we treat failure on preparation step as failure before external call started
+        tracer.on_new_execution_frame(&external_call_launch_params);
+
         // We create a new frame for callee, should include transfer and
         // callee execution
         let rollback_handle = self.system.start_global_frame()?;
@@ -289,8 +308,21 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 heap,
                 next_ee_version,
                 rollback_handle,
+                tracer,
             )
         };
+
+        tracer.after_execution_frame_completed(
+            callee_frame_execution_result
+                .as_ref()
+                .map(|(resources_returned, call_result)| {
+                    Some((
+                        resources_returned,
+                        CallOrDeployResultRef::CallResult(call_result),
+                    ))
+                })
+                .unwrap_or_default(),
+        );
 
         let (resources_returned_from_callee, call_result) = callee_frame_execution_result?;
         resources_in_caller_frame.reclaim(resources_returned_from_callee);
@@ -392,6 +424,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         heap: SliceVec<u8>,
         next_ee_version: u8,
         rollback_handle: SystemFrameSnapshot<S>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -401,7 +434,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let new_ee_type = new_vm.ee_type();
 
         let mut preemption = new_vm
-            .start_executing_frame(self.system, external_call_launch_params, heap)
+            .start_executing_frame(self.system, external_call_launch_params, heap, tracer)
             .map_err(wrap_error!())?;
 
         loop {
@@ -413,7 +446,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     let heap = core::mem::take(heap);
                     let request = core::mem::take(request);
                     drop(preemption);
-                    preemption = handle_spawn!(self, new_vm, new_ee_type, request, heap)?;
+                    preemption = handle_spawn!(self, new_vm, new_ee_type, request, heap, tracer)?;
                 }
                 ExecutionEnvironmentPreemptionPoint::End(
                     TransactionEndPoint::CompletedExecution(CompletedExecution {
@@ -543,6 +576,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         ee_type: ExecutionEnvironmentType,
         deployment_parameters: DeploymentPreparationParameters<S>,
         heap: SliceVec<u8>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<CompletedDeployment<'external, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -650,7 +684,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })?;
         }
 
-        match self.deployment_execute_constructor_frame(ee_type, launch_params, heap) {
+        tracer.on_new_execution_frame(&launch_params);
+
+        match self.deployment_execute_constructor_frame(ee_type, launch_params, heap, tracer) {
             Ok((deployment_success, mut resources_returned, deployment_result)) => {
                 // Now finish constructor frame
                 self.system.finish_global_frame(
@@ -661,6 +697,11 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     "Return from constructor call, success = {deployment_success}\n",
                 ));
 
+                tracer.after_execution_frame_completed(Some((
+                    &resources_returned,
+                    CallOrDeployResultRef::DeploymentResult(&deployment_result),
+                )));
+
                 resources_returned.reclaim(resources_for_deployer);
 
                 Ok(CompletedDeployment {
@@ -668,7 +709,10 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     deployment_result,
                 })
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                tracer.after_execution_frame_completed(None);
+                Err(e)
+            }
         }
     }
 
@@ -677,6 +721,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         ee_type: ExecutionEnvironmentType,
         launch_params: ExecutionEnvironmentLaunchParams<S>,
         heap: SliceVec<u8>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<
         (
             bool,
@@ -693,7 +738,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let constructor_ee_type = constructor.ee_type();
 
         let mut preemption = constructor
-            .start_executing_frame(self.system, launch_params, heap)
+            .start_executing_frame(self.system, launch_params, heap, tracer)
             .map_err(wrap_error!())?;
 
         let CompletedDeployment {
@@ -708,8 +753,14 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     let heap = core::mem::take(heap);
                     let request = core::mem::take(request);
                     drop(preemption);
-                    preemption =
-                        handle_spawn!(self, constructor, constructor_ee_type, request, heap)?;
+                    preemption = handle_spawn!(
+                        self,
+                        constructor,
+                        constructor_ee_type,
+                        request,
+                        heap,
+                        tracer
+                    )?;
                 }
                 ExecutionEnvironmentPreemptionPoint::End(end) => {
                     break match end {
@@ -935,20 +986,53 @@ where
     S::IO: IOSubsystemExt,
 {
     // IO will follow the rules of the CALLER here to charge for execution
-    let account_properties = match system.io.read_account_properties(
-        ee_version,
-        resources,
-        &call_request.callee,
-        AccountDataRequest::empty()
-            .with_ee_version()
-            .with_unpadded_code_len()
-            .with_artifacts_len()
-            .with_bytecode()
-            .with_nonce()
-            .with_nominal_token_balance()
-            .with_code_version(),
-    ) {
-        Ok(account_properties) => account_properties,
+    let (account_properties, delegate_properties) = match system
+        .io
+        .read_account_properties(
+            ee_version,
+            resources,
+            &call_request.callee,
+            AccountDataRequest::empty()
+                .with_ee_version()
+                .with_unpadded_code_len()
+                .with_artifacts_len()
+                // If the account is delegated, the bytecode will
+                // contain the address of the delegate.
+                .with_bytecode()
+                .with_nonce()
+                .with_nominal_token_balance()
+                .with_code_version()
+                .with_is_delegated(),
+        )
+        .and_then(|account_properties| {
+            let properties = if cfg!(feature = "pectra") && account_properties.is_delegated.0 {
+                use crate::bootloader::transaction::parse_delegation;
+                // Resolve delegation following EIP-7702 (only one level
+                // of delegation is allowed).
+                let delegation = &account_properties.bytecode.0
+                    [..account_properties.unpadded_code_len.0 as usize];
+                let address = parse_delegation(delegation)?;
+                let delegate_properties = system.io.read_account_properties(
+                    ee_version,
+                    resources,
+                    &address,
+                    AccountDataRequest::empty()
+                        .with_ee_version()
+                        .with_unpadded_code_len()
+                        .with_artifacts_len()
+                        .with_bytecode()
+                        .with_code_version()
+                        .with_nonce()
+                        .with_nominal_token_balance(),
+                )?;
+                (account_properties, Some(delegate_properties))
+            } else {
+                (account_properties, None)
+            };
+
+            Ok(properties)
+        }) {
+        Ok((account_properties, delegate)) => (account_properties, delegate),
         Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
             let _ = system.get_logger().write_fmt(format_args!(
                 "Call failed: insufficient resources to read callee account data\n",
@@ -963,14 +1047,60 @@ where
         Err(SystemError::LeafDefect(e)) => return Err(e.into()),
     };
 
+    // Read required data to perform a call
+    let (
+        next_ee_version,
+        bytecode,
+        code_version,
+        unpadded_code_len,
+        artifacts_len,
+        nonce,
+        nominal_token_balance,
+    ) = if let Some(delegate_properties) = delegate_properties {
+        let ee_version = delegate_properties.ee_version.0;
+        let unpadded_code_len = delegate_properties.unpadded_code_len.0;
+        let artifacts_len = delegate_properties.artifacts_len.0;
+        let bytecode = delegate_properties.bytecode.0;
+        let code_version = delegate_properties.code_version.0;
+        let nonce = delegate_properties.nonce.0;
+        let nominal_token_balance = delegate_properties.nominal_token_balance.0;
+
+        (
+            ee_version,
+            bytecode,
+            code_version,
+            unpadded_code_len,
+            artifacts_len,
+            nonce,
+            nominal_token_balance,
+        )
+    } else {
+        let ee_version = account_properties.ee_version.0;
+        let unpadded_code_len = account_properties.unpadded_code_len.0;
+        let artifacts_len = account_properties.artifacts_len.0;
+        let bytecode = account_properties.bytecode.0;
+        let code_version = account_properties.code_version.0;
+        let nonce = account_properties.nonce.0;
+        let nominal_token_balance = account_properties.nominal_token_balance.0;
+        (
+            ee_version,
+            bytecode,
+            code_version,
+            unpadded_code_len,
+            artifacts_len,
+            nonce,
+            nominal_token_balance,
+        )
+    };
+
     Ok(CalleeAccountProperties {
-        next_ee_version: account_properties.ee_version.0,
-        bytecode: account_properties.bytecode.0,
-        nonce: account_properties.nonce.0,
-        nominal_token_balance: account_properties.nominal_token_balance.0,
-        code_version: account_properties.code_version.0,
-        unpadded_code_len: account_properties.unpadded_code_len.0,
-        artifacts_len: account_properties.artifacts_len.0,
+        next_ee_version,
+        bytecode,
+        code_version,
+        unpadded_code_len,
+        artifacts_len,
+        nonce,
+        nominal_token_balance,
     })
 }
 

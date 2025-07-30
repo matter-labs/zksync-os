@@ -1,8 +1,12 @@
 use crate::bootloader::EVM_EE_BYTE;
 use errors::{EESubsystemError, InterfaceError};
 use zk_ee::{
-    common_structs::CalleeAccountProperties, execution_environment_type::ExecutionEnvironmentType,
-    interface_error, memory::slice_vec::SliceVec, system::*, wrap_error,
+    common_structs::CalleeAccountProperties,
+    execution_environment_type::ExecutionEnvironmentType,
+    interface_error,
+    memory::slice_vec::SliceVec,
+    system::{tracer::Tracer, *},
+    wrap_error,
 };
 
 #[allow(type_alias_bounds)]
@@ -74,10 +78,11 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         system: &mut System<S>,
         initial_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError> {
         match self {
             Self::EVM(evm_frame) => evm_frame
-                .start_executing_frame(system, initial_state, heap)
+                .start_executing_frame(system, initial_state, heap, tracer)
                 .map_err(wrap_error!()),
         }
     }
@@ -87,10 +92,11 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         system: &mut System<S>,
         returned_resources: S::Resources,
         call_result: CallResult<'res, S>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError> {
         match self {
             Self::EVM(evm_frame) => evm_frame
-                .continue_after_external_call(system, returned_resources, call_result)
+                .continue_after_external_call(system, returned_resources, call_result, tracer)
                 .map_err(wrap_error!()),
         }
     }
@@ -100,10 +106,11 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         system: &mut System<S>,
         returned_resources: S::Resources,
         deployment_result: DeploymentResult<'res, S>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError> {
         match self {
             Self::EVM(evm_frame) => evm_frame
-                .continue_after_deployment(system, returned_resources, deployment_result)
+                .continue_after_deployment(system, returned_resources, deployment_result, tracer)
                 .map_err(wrap_error!()),
         }
     }

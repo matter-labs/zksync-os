@@ -3,6 +3,8 @@
 //! It implements methods for `withdraw` and `withdrawWithMessage`,
 //! which work in the same way as in Era.
 //!
+use crate::l1_messenger::send_to_l1_inner;
+
 use super::*;
 use core::fmt::Write;
 use ruint::aliases::{B160, U256};
@@ -163,31 +165,41 @@ where
                 Err(SubsystemError::Cascaded(e)) => match e {},
             }?;
 
-            // Emit log
-            // Packed ABI encoding of:
+            // Sending L2->L1 message.
+            // ABI-encoded messages should consist of the following:
+            // 32 bytes offset (must be 32)
+            // 32 bytes length of the message
+            // followed by the message itself, padded to be a multiple of 32 bytes.
+            // In this case, it is known that the message is 56 bytes long:
             // - IMailbox.finalizeEthWithdrawal.selector (4)
             // - l1_receiver (20)
             // - nominal_token_value (32)
-            let mut message = [0u8; 56];
-            message[0..4].copy_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
+
+            // So the padded message will be 64 bytes long.
+            // Total length of the encoded message will be 32 + 32 + 64 = 128 bytes.
+            let mut l1_messenger_calldata = [0u8; 128];
+            l1_messenger_calldata[31] = 32; // offset
+            l1_messenger_calldata[63] = 56; // length
+            l1_messenger_calldata[64..68].copy_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
             // check that first 12 bytes in address encoding are zero
             if calldata[4..4 + 12].iter().any(|byte| *byte != 0) {
                 return Ok(Err(
-                    "Contract deployer failure: withdraw called with invalid calldata",
+                    "L2 base token failure: withdraw called with invalid calldata",
                 ));
             }
-            message[4..24].copy_from_slice(&calldata[(4 + 12)..36]);
-            message[24..56].copy_from_slice(&nominal_token_value.to_be_bytes::<32>());
-            system.io.emit_l1_message(
-                ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-                    .map_err(SystemError::LeafDefect)?,
+            l1_messenger_calldata[68..88].copy_from_slice(&calldata[(4 + 12)..36]);
+            l1_messenger_calldata[88..120]
+                .copy_from_slice(&nominal_token_value.to_be_bytes::<32>());
+
+            let result = send_to_l1_inner(
+                &l1_messenger_calldata,
                 resources,
-                &caller,
-                &message,
+                system,
+                L2_BASE_TOKEN_ADDRESS,
+                caller_ee,
             )?;
 
-            // TODO: emit event for withdrawal for Era compatibility
-            Ok(Ok(&[]))
+            Ok(result.map(|_| &[] as &[u8]))
         }
         s if s == WITHDRAW_WITH_MESSAGE_SELECTOR => {
             if is_static {
@@ -246,6 +258,13 @@ where
             }
             let additional_data = &calldata[length_encoding_end..message_end];
 
+            // check that first 12 bytes in address encoding are zero
+            if calldata[4..4 + 12].iter().any(|byte| *byte != 0) {
+                return Ok(Err(
+                    "L2 base token failure: withdrawWithMessage called with invalid calldata",
+                ));
+            }
+
             // Burn nominal_token_value
             match system.io.update_account_nominal_token_balance(
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
@@ -265,32 +284,53 @@ where
                 Err(SubsystemError::Cascaded(e)) => match e {},
             }?;
 
-            // Emit log
+            // Sending L2->L1 message.
+            // ABI-encoded messages should consist of the following:
+            // 32 bytes offset (must be 32)
+            // 32 bytes length of the message
+            // followed by the message itself, padded to be a multiple of 32 bytes.
+            // In this case, the message will consist of the following:
             // Packed ABI encoding of:
             // - IMailbox.finalizeEthWithdrawal.selector (4)
             // - l1_receiver (20)
             // - nominal_token_value (32)
             // - sender (20)
-            // - additional_data (length)
+            // - additional_data (length of additional_data)
             let message_length = 76 + length;
-            let mut message: alloc::vec::Vec<u8, S::Allocator> =
-                alloc::vec::Vec::with_capacity_in(message_length, system.get_allocator());
+            let abi_encoded_message_length = 32 + 32 + message_length;
+            let abi_encoded_message_length = if abi_encoded_message_length % 32 != 0 {
+                abi_encoded_message_length + (32 - (abi_encoded_message_length % 32))
+            } else {
+                abi_encoded_message_length
+            };
+            let mut message: alloc::vec::Vec<u8, S::Allocator> = alloc::vec::Vec::with_capacity_in(
+                abi_encoded_message_length,
+                system.get_allocator(),
+            );
+            // Offset and length
+            message.extend_from_slice(&[0u8; 64]);
+            message[31] = 32; // offset
+            message[32..64].copy_from_slice(&U256::from(message_length).to_be_bytes::<32>());
             message.extend_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
             message.extend_from_slice(&calldata[16..36]);
             message.extend_from_slice(&nominal_token_value.to_be_bytes::<32>());
             message.extend_from_slice(&caller.to_be_bytes::<20>());
             message.extend_from_slice(additional_data);
+            // Populating the rest of the message with zeros to make it a multiple of 32 bytes
+            message.extend(core::iter::repeat_n(
+                0u8,
+                abi_encoded_message_length - message.len(),
+            ));
 
-            system.io.emit_l1_message(
-                ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-                    .map_err(SystemError::LeafDefect)?,
-                resources,
-                &caller,
+            let result = send_to_l1_inner(
                 &message,
+                resources,
+                system,
+                L2_BASE_TOKEN_ADDRESS,
+                caller_ee,
             )?;
 
-            // TODO: emit event for Era compatibility
-            Ok(Ok(&[]))
+            Ok(result.map(|_| &[] as &[u8]))
         }
         _ => Ok(Err("L2 base token: unknown selector")),
     }

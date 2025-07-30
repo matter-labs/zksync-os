@@ -3,6 +3,8 @@ use core::fmt::Write;
 use core::ops::Range;
 use errors::EvmSubsystemError;
 use native_resource_constants::STEP_NATIVE_COST;
+use zk_ee::system::tracer::evm_tracer::EvmTracer;
+use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{
     logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
     DeploymentPreparationParameters, DeploymentResult, EthereumLikeTypes,
@@ -18,9 +20,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn execute_till_yield_point<'a>(
         &'a mut self,
         system: &mut System<S>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
         let mut external_call = None;
-        let exit_code = self.run(system, &mut external_call)?;
+        let exit_code = self.run(system, &mut external_call, tracer)?;
 
         if let ExitCode::FatalError(e) = exit_code {
             return Err(e);
@@ -157,6 +160,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         &mut self,
         system: &mut System<S>,
         external_call_dest: &mut Option<ExternalCall<S>>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExitCode, EvmSubsystemError> {
         let mut cycles = 0;
         let result = loop {
@@ -176,6 +180,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                         .write_fmt(format_args!("Unknown opcode = 0x{opcode:02x}\n"));
                 }
             }
+
+            tracer
+                .evm_tracer()
+                .before_evm_interpreter_execution_step(opcode, self);
 
             self.instruction_pointer += 1;
             let result = self
@@ -318,23 +326,27 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::NUMBER => self.number(system),
                     opcodes::DIFFICULTY => self.difficulty(system),
                     opcodes::GASLIMIT => self.gaslimit(system),
-                    opcodes::SLOAD => self.sload(system),
-                    opcodes::SSTORE => self.sstore(system),
-                    opcodes::TLOAD => self.tload(system),
-                    opcodes::TSTORE => self.tstore(system),
+                    opcodes::SLOAD => self.sload(system, tracer),
+                    opcodes::SSTORE => self.sstore(system, tracer),
+                    opcodes::TLOAD => self.tload(system, tracer),
+                    opcodes::TSTORE => self.tstore(system, tracer),
                     opcodes::MCOPY => self.mcopy(),
                     opcodes::GAS => self.gas(),
-                    opcodes::LOG0 => self.log::<0>(system),
-                    opcodes::LOG1 => self.log::<1>(system),
-                    opcodes::LOG2 => self.log::<2>(system),
-                    opcodes::LOG3 => self.log::<3>(system),
-                    opcodes::LOG4 => self.log::<4>(system),
+                    opcodes::LOG0 => self.log::<0>(system, tracer),
+                    opcodes::LOG1 => self.log::<1>(system, tracer),
+                    opcodes::LOG2 => self.log::<2>(system, tracer),
+                    opcodes::LOG3 => self.log::<3>(system, tracer),
+                    opcodes::LOG4 => self.log::<4>(system, tracer),
                     opcodes::SELFDESTRUCT => self.selfdestruct(system),
                     opcodes::CHAINID => self.chainid(system),
                     opcodes::BLOBHASH => self.blobhash(system),
                     opcodes::BLOBBASEFEE => self.blobbasefee(system),
                     _ => Err(ExitCode::OpcodeNotFound),
                 });
+
+            tracer
+                .evm_tracer()
+                .after_evm_interpreter_execution_step(opcode, self);
 
             if Self::PRINT_OPCODES {
                 let _ = system.get_logger().write_str("\n");

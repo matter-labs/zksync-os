@@ -12,6 +12,8 @@ pub mod test_impl;
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;
 use crate::system::system::CallSimulationBootloader;
+use crate::system::system::CallSimulationSystem;
+use crate::system::system::ForwardRunningSystem;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
 };
@@ -19,6 +21,7 @@ use errors::ForwardSubsystemError;
 use oracle::CallSimulationOracle;
 pub use oracle::ForwardRunningOracle;
 use zk_ee::common_structs::ProofData;
+use zk_ee::system::tracer::Tracer;
 
 pub use tree::LeafProof;
 pub use tree::ReadStorage;
@@ -56,6 +59,7 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     preimage_source: PS,
     tx_source: TS,
     tx_result_callback: TR,
+    tracer: &mut impl Tracer<ForwardRunningSystem<T, PS, TS>>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
         proof_data: None,
@@ -68,7 +72,11 @@ pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
 
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
 
-    run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(oracle, &mut result_keeper);
+    run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
+        oracle,
+        &mut result_keeper,
+        tracer,
+    );
     Ok(result_keeper.into())
 }
 
@@ -114,6 +122,7 @@ pub fn run_batch_with_oracle_dump<
     preimage_source: PS,
     tx_source: TS,
     tx_result_callback: TR,
+    tracer: &mut impl Tracer<ForwardRunningSystem<T, PS, TS>>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
         proof_data: None,
@@ -133,7 +142,11 @@ pub fn run_batch_with_oracle_dump<
             .expect("should write to file");
     }
 
-    run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(oracle, &mut result_keeper);
+    run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
+        oracle,
+        &mut result_keeper,
+        tracer,
+    );
     Ok(result_keeper.into())
 }
 
@@ -143,6 +156,7 @@ pub fn run_batch_from_oracle_dump<
     TS: TxSource + Clone + serde::de::DeserializeOwned,
 >(
     path: Option<String>,
+    tracer: &mut impl Tracer<ForwardRunningSystem<T, PS, TS>>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
     let path = path.unwrap_or_else(|| std::env::var("ORACLE_DUMP_FILE").unwrap());
     let mut file = File::open(path).expect("should open file");
@@ -153,7 +167,11 @@ pub fn run_batch_from_oracle_dump<
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
-    run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(oracle, &mut result_keeper);
+    run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
+        oracle,
+        &mut result_keeper,
+        tracer,
+    );
     Ok(result_keeper.into())
 }
 
@@ -171,6 +189,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     block_context: BlockContext,
     storage: S,
     preimage_source: PS,
+    tracer: &mut impl Tracer<CallSimulationSystem<S, PS, TxListSource>>,
 ) -> Result<TxResult, ForwardSubsystemError> {
     let tx_source = TxListSource {
         transactions: vec![transaction].into(),
@@ -190,6 +209,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     CallSimulationBootloader::run_prepared::<BasicBootloaderCallSimulationConfig>(
         oracle,
         &mut result_keeper,
+        tracer,
     )
     .map_err(wrap_error!())?;
     let mut block_output: BlockOutput = result_keeper.into();

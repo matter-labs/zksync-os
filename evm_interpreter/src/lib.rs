@@ -31,6 +31,7 @@ use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::{internal::InternalError, system::SystemError};
+use zk_ee::system::evm::{EvmFrameInterface, EvmStackInterface};
 use zk_ee::system::{EthereumLikeTypes, Resource, Resources, System, SystemTypes};
 
 use alloc::vec::Vec;
@@ -60,7 +61,7 @@ pub const ARTIFACTS_CACHING_CODE_VERSION_BYTE: u8 = 1u8;
 
 // this is the interpreter that can be found in Reth itself, modified for purposes of having abstract view
 // on memory and resources
-pub struct Interpreter<'a, S: EthereumLikeTypes> {
+pub struct Interpreter<'a, S: SystemTypes> {
     /// Instruction pointer.
     pub instruction_pointer: usize,
     /// Implementation of gas accounting on top of system resources.
@@ -89,6 +90,56 @@ pub struct Interpreter<'a, S: EthereumLikeTypes> {
     pub is_static: bool,
     /// Is interpreter call executing construction code.
     pub is_constructor: bool,
+}
+
+impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for Interpreter<'ee, S> {
+    fn instruction_pointer(&self) -> usize {
+        self.instruction_pointer
+    }
+
+    fn resources(&self) -> &<S as SystemTypes>::Resources {
+        &self.gas.resources
+    }
+
+    fn stack(&self) -> &impl EvmStackInterface {
+        &self.stack
+    }
+
+    fn caller(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
+        self.caller
+    }
+
+    fn address(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
+        self.address
+    }
+
+    fn calldata(&self) -> &[u8] {
+        &self.calldata
+    }
+
+    fn return_data(&self) -> &[u8] {
+        &self.returndata
+    }
+
+    fn heap(&self) -> &[u8] {
+        &self.heap
+    }
+
+    fn bytecode(&self) -> &[u8] {
+        &self.bytecode
+    }
+
+    fn call_value(&self) -> &U256 {
+        &self.call_value
+    }
+
+    fn is_static(&self) -> bool {
+        self.is_static
+    }
+
+    fn is_constructor(&self) -> bool {
+        self.is_constructor
+    }
 }
 
 pub const STACK_SIZE: usize = 1024;

@@ -2,24 +2,29 @@ use super::*;
 
 use crate::cost_constants::{MODEXP_MINIMAL_COST_ERGS, MODEXP_WORST_CASE_NATIVE_PER_GAS};
 use alloc::vec::Vec;
-use crypto::modexp::modexp;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
+use zk_ee::system::logger::Logger;
+use zk_ee::system::SystemFunctionExt;
+use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::{
     interface_error, internal_error, out_of_ergs_error,
     system::{
         base_system_functions::ModExpErrors,
         errors::{subsystem::SubsystemError, system::SystemError},
-        Computational, Ergs, ModExpInterfaceError, SystemFunction,
+        Computational, Ergs, ModExpInterfaceError,
     },
 };
+
+#[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
+mod delegation;
 
 ///
 /// modexp system function implementation.
 ///
 pub struct ModExpImpl;
 
-impl<R: Resources> SystemFunction<R, ModExpErrors> for ModExpImpl {
+impl<R: Resources> SystemFunctionExt<R, ModExpErrors> for ModExpImpl {
     /// If the input size is less than expected - it will be padded with zeroes.
     /// If the input size is greater - redundant bytes will be ignored.
     ///
@@ -29,14 +34,21 @@ impl<R: Resources> SystemFunction<R, ModExpErrors> for ModExpImpl {
     /// or `mod_len` > usize max value
     /// or (`exp_len` > usize max value and `base_len` != 0 and `mod_len` != 0).
     /// In practice, it shouldn't be possible as requires large resources amounts, at least ~1e10 EVM gas.
-    fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<
+        O: IOOracle,
+        L: Logger,
+        D: Extend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
         allocator: A,
     ) -> Result<(), SubsystemError<ModExpErrors>> {
         cycle_marker::wrap_with_resources!("modexp", resources, {
-            modexp_as_system_function_inner(input, output, resources, allocator)
+            modexp_as_system_function_inner(input, output, resources, oracle, logger, allocator)
         })
     }
 }
@@ -48,11 +60,32 @@ fn resources_from_ergs<R: Resources>(ergs: Ergs) -> R {
     R::from_ergs_and_native(ergs, native)
 }
 
+fn read_padded(dst: &mut Vec<u8, impl Allocator>, src: &mut &[u8], provided_len: usize) {
+    let source_len = src.len();
+    let to_take = core::cmp::min(source_len, provided_len);
+    let (bytes, rest) = (*src).split_at(to_take);
+    *src = rest;
+    dst.extend_from_slice(&bytes);
+
+    if provided_len > source_len {
+        dst.resize(provided_len, 0);
+    }
+}
+
 // Based on https://github.com/bluealloy/revm/blob/main/crates/precompile/src/modexp.rs
-fn modexp_as_system_function_inner<D: ?Sized + Extend<u8>, A: Allocator + Clone, R: Resources>(
+#[allow(unused_variables)]
+fn modexp_as_system_function_inner<
+    O: IOOracle,
+    L: Logger,
+    D: ?Sized + Extend<u8>,
+    A: Allocator + Clone,
+    R: Resources,
+>(
     input: &[u8],
     dst: &mut D,
     resources: &mut R,
+    oracle: &mut O,
+    logger: &mut L,
     allocator: A,
 ) -> Result<(), SubsystemError<ModExpErrors>> {
     // Check at least we have min gas
@@ -121,7 +154,7 @@ fn modexp_as_system_function_inner<D: ?Sized + Extend<u8>, A: Allocator + Clone,
     // Used to extract ADJUSTED_EXPONENT_LENGTH.
     let exp_highp_len = core::cmp::min(exp_len, 32);
 
-    let input = input.get(HEADER_LENGTH..).unwrap_or_default();
+    let mut input = input.get(HEADER_LENGTH..).unwrap_or_default();
 
     let exp_highp = {
         // get right padded bytes so if data.len is less then exp_len we will get right padded zeroes.
@@ -138,37 +171,48 @@ fn modexp_as_system_function_inner<D: ?Sized + Extend<u8>, A: Allocator + Clone,
     let ergs = ergs_cost(base_len as u64, exp_len as u64, mod_len as u64, &exp_highp)?;
     resources.charge(&resources_from_ergs::<R>(ergs))?;
 
-    let mut input_it = input.iter();
     let mut base = Vec::try_with_capacity_in(base_len, allocator.clone())
         .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
-    base.resize(base_len, 0);
-    for (dst, src) in base.iter_mut().zip(&mut input_it) {
-        *dst = *src;
-    }
+    read_padded(&mut base, &mut input, base_len);
 
     let mut exponent = Vec::try_with_capacity_in(exp_len, allocator.clone())
         .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
-    exponent.resize(exp_len, 0);
-    for (dst, src) in exponent.iter_mut().zip(&mut input_it) {
-        *dst = *src;
-    }
+    read_padded(&mut exponent, &mut input, exp_len);
 
     let mut modulus = Vec::try_with_capacity_in(mod_len, allocator.clone())
         .map_err(|_| SystemError::LeafDefect(internal_error!("alloc")))?;
-    modulus.resize(mod_len, 0);
-    for (dst, src) in modulus.iter_mut().zip(&mut input_it) {
-        *dst = *src;
-    }
+    read_padded(&mut modulus, &mut input, mod_len);
+
+    debug_assert_eq!(base.len(), base_len);
+    debug_assert_eq!(exponent.len(), exp_len);
+    debug_assert_eq!(modulus.len(), mod_len);
 
     // Call the modexp.
-    let output = modexp(
+
+    #[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
+    let output = self::delegation::modexp(
+        base.as_slice(),
+        exponent.as_slice(),
+        modulus.as_slice(),
+        oracle,
+        logger,
+        allocator,
+    );
+
+    #[cfg(not(any(all(target_arch = "riscv32", feature = "proving"), test)))]
+    let output = ::modexp::modexp(
         base.as_slice(),
         exponent.as_slice(),
         modulus.as_slice(),
         allocator,
     );
 
-    dst.extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output));
+    if output.len() >= mod_len {
+        // truncate
+        dst.extend(output[(output.len() - mod_len)..].iter().copied());
+    } else {
+        dst.extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output));
+    }
 
     Ok(())
 }

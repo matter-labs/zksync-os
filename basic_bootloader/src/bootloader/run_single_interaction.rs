@@ -70,6 +70,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         mut resources: S::Resources,
         nominal_token_value: &U256,
         should_make_frame: bool,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<CompletedExecution<'a, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -132,8 +133,14 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 nominal_token_value: *nominal_token_value,
             });
 
-        let final_state =
-            run_till_completion(memories, system, system_functions, ee_type, initial_request)?;
+        let final_state = run_till_completion(
+            memories,
+            system,
+            system_functions,
+            ee_type,
+            initial_request,
+            tracer,
+        )?;
 
         let TransactionEndPoint::CompletedExecution(CompletedExecution {
             return_values,

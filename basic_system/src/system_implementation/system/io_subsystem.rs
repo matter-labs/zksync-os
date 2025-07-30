@@ -382,6 +382,11 @@ where
 
         Ok(())
     }
+
+    #[cfg(feature = "evm_refunds")]
+    fn get_refund_counter(&self) -> u32 {
+        self.storage.get_refund_counter()
+    }
 }
 
 pub trait FinishIO {
@@ -829,6 +834,7 @@ where
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
         CodeVersion: Maybe<u8>,
+        IsDelegated: Maybe<bool>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -846,6 +852,7 @@ where
                 NominalTokenBalance,
                 Bytecode,
                 CodeVersion,
+                IsDelegated,
             >,
         >,
     ) -> Result<
@@ -860,6 +867,7 @@ where
             NominalTokenBalance,
             Bytecode,
             CodeVersion,
+            IsDelegated,
         >,
         SystemError,
     > {
@@ -920,6 +928,16 @@ where
         )
     }
 
+    fn set_delegation(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        delegate: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+    ) -> Result<(), SystemError> {
+        self.storage
+            .set_delegation(resources, at_address, delegate, &mut self.oracle)
+    }
+
     fn finish(
         self,
         block_metadata: BlockMetadataFromOracle,
@@ -978,6 +996,12 @@ where
             update_fn,
             &mut self.oracle,
         )
+    }
+
+    // Add EVM refund to counter
+    #[cfg(feature = "evm_refunds")]
+    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError> {
+        self.storage.add_evm_refund(refund)
     }
 }
 
