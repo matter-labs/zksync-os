@@ -640,18 +640,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         launch_params.external_call.available_resources = resources_for_constructor_frame;
 
-        // TODO should be part of EE
-        if self.callstack_height > 1024 {
-            deployer_resources.reclaim(launch_params.external_call.available_resources);
-            return Ok(CompletedDeployment {
-                resources_returned: deployer_resources,
-                deployment_result: DeploymentResult::Failed {
-                    return_values: ReturnValues::empty(),
-                    execution_reverted: false,
-                },
-            });
-        }
-
         let constructor_rollback_handle = self
             .system
             .start_global_frame()

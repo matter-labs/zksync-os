@@ -389,6 +389,14 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         assert!(constructor_parameters.is_empty());
         assert!(call_scratch_space.is_none());
 
+        if deployment_parameters.callstack_depth > 1024 {
+            let _ = system
+            .get_logger()
+            .write_fmt(format_args!("Callstack is too deep (deployment)\n",));
+
+            return Ok(None);
+        }
+
         if !nominal_token_value.is_zero() {
             // Check deployer has enough balance for token transfer
             let deployer_balance = resources
