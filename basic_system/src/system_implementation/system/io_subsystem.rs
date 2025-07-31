@@ -394,6 +394,23 @@ where
             .increment_nonce(ee_type, resources, address, increment_by, &mut self.oracle)
     }
 
+    fn read_nonce(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+    ) -> Result<u64, SystemError> {
+        self.storage
+            .read_account_properties(
+                ee_type,
+                resources,
+                address,
+                AccountDataRequest::empty().with_nonce(),
+                &mut self.oracle,
+            )
+            .map(|account_data| account_data.nonce.0)
+    }
+
     #[cfg(feature = "evm_refunds")]
     fn get_refund_counter(&self) -> u32 {
         self.storage.get_refund_counter()
@@ -788,23 +805,6 @@ where
             &mut self.oracle,
             is_access_list,
         )
-    }
-
-    fn read_nonce(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut Self::Resources,
-        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-    ) -> Result<u64, SystemError> {
-        self.storage
-            .read_account_properties(
-                ee_type,
-                resources,
-                address,
-                AccountDataRequest::empty().with_nonce(),
-                &mut self.oracle,
-            )
-            .map(|account_data| account_data.nonce.0)
     }
 
     fn touch_account(

@@ -24,6 +24,7 @@ pub struct EnvironmentParameters<'a> {
 /// for deploying a contract.
 pub struct DeploymentPreparationParameters<'a, S: SystemTypes> {
     pub address_of_deployer: <S::IOTypes as SystemIOTypesConfig>::Address,
+    pub address: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub call_scratch_space:
         Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], S::Allocator>>,
     pub deployment_code: &'a [u8],

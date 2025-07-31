@@ -135,6 +135,14 @@ pub trait IOSubsystem: Sized {
         rollback_handle: Option<&<Self as IOSubsystem>::StateSnapshot>,
     ) -> Result<(), InternalError>;
 
+    /// Read an account's nonce.
+    fn read_nonce(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+    ) -> Result<u64, SystemError>;
+
     /// Increments an account's nonce and
     /// returns the old nonce.
     fn increment_nonce(
@@ -349,14 +357,6 @@ pub trait IOSubsystemExt: IOSubsystem {
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         is_access_list: bool,
     ) -> Result<(), SystemError>;
-
-    /// Read an account's nonce.
-    fn read_nonce(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut Self::Resources,
-        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-    ) -> Result<u64, SystemError>;
 
     /// Perform a transfer of token balance.
     fn transfer_nominal_token_value(

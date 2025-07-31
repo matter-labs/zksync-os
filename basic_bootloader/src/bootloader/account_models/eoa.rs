@@ -8,12 +8,14 @@ use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
 use crate::bootloader::errors::{AAMethod, BootloaderSubsystemError};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
+use crate::bootloader::supported_ees::errors::EESubsystemError;
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
+use evm_interpreter::interpreter::CreateScheme;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
@@ -580,16 +582,32 @@ where
             deployed_address: DeployedAddress::RevertedNoAddress,
         });
     }
+
+    let deployed_address;
+
     let ee_specific_deployment_processing_data = match to_ee_type {
         ExecutionEnvironmentType::NoEE => {
             return Err(internal_error!("Deployment cannot target NoEE").into())
         }
         ExecutionEnvironmentType::EVM => {
+            deployed_address = SystemBoundEVMInterpreter::<S>::derive_address_for_deployment(
+                system,
+                resources,
+                CreateScheme::Create,
+                &from,
+                existing_nonce,
+                main_calldata,
+            )
+            .map_err(|e| {
+                let ee_error: EESubsystemError = wrap_error!(e);
+                wrap_error!(ee_error)
+            })?;
             SystemBoundEVMInterpreter::<S>::default_ee_deployment_options(system)
         }
     };
 
     let deployment_parameters = DeploymentPreparationParameters {
+        address: deployed_address,
         address_of_deployer: from,
         call_scratch_space: None,
         constructor_parameters: &[],

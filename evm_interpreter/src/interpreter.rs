@@ -3,8 +3,11 @@ use core::fmt::Write;
 use core::ops::Range;
 use errors::EvmSubsystemError;
 use native_resource_constants::STEP_NATIVE_COST;
+use ruint::aliases::B160;
+use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::system::SystemFunctions;
 use zk_ee::system::{
     logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
     DeploymentPreparationParameters, DeploymentResult, EthereumLikeTypes,
@@ -12,6 +15,7 @@ use zk_ee::system::{
 };
 use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
+use zk_ee::utils::cheap_clone::CheapCloneRiscV;
 
 impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     /// Keeps executing instructions (steps) from the system, until it hits a yield point -
@@ -62,12 +66,14 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
                     ExternalCall::Create(EVMDeploymentRequest {
                         deployment_code,
+                        address,
                         ee_specific_deployment_processing_data,
                         deployer_full_resources,
                         nominal_token_value,
                     }) => ExecutionEnvironmentSpawnRequest::RequestedDeployment(
                         DeploymentPreparationParameters {
                             address_of_deployer: self.address,
+                            address,
                             call_scratch_space: None,
                             deployment_code: &current_heap[deployment_code],
                             constructor_parameters: &[],
@@ -108,6 +114,7 @@ pub struct EVMCallRequest<S: EthereumLikeTypes> {
 
 pub struct EVMDeploymentRequest<S: SystemTypes> {
     pub deployment_code: Range<usize>,
+    pub address: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub ee_specific_deployment_processing_data:
         Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
     pub deployer_full_resources: S::Resources,
@@ -448,5 +455,67 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         }
 
         self.returndata = returndata_region;
+    }
+
+    pub fn derive_address_for_deployment(
+        system: &mut System<S>,
+        resources: &mut <S as SystemTypes>::Resources,
+        scheme: CreateScheme,
+        deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
+        deployer_nonce: u64,
+        deployment_code: &[u8],
+    ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError> {
+        use crypto::sha3::{Digest, Keccak256};
+        let deployed_address = match &scheme {
+            CreateScheme::Create => {
+                let mut buffer = [0u8; crate::utils::MAX_CREATE_RLP_ENCODING_LEN];
+                let encoding_it = crate::utils::create_quasi_rlp(deployer_address, deployer_nonce);
+                let encoding_len = ExactSizeIterator::len(&encoding_it);
+                for (dst, src) in buffer.iter_mut().zip(encoding_it) {
+                    *dst = src;
+                }
+                let new_address = Keccak256::digest(&buffer[..encoding_len]);
+                let new_address = B160::try_from_be_slice(&new_address.as_slice()[12..])
+                    .expect("must create address");
+                new_address
+            }
+            CreateScheme::Create2 { salt } => {
+                // we need to compute address based on the hash of the code and salt
+                let mut initcode_hash = ArrayBuilder::default();
+                resources
+                    .with_infinite_ergs(|inf_resources| {
+                        S::SystemFunctions::keccak256(
+                            deployment_code,
+                            &mut initcode_hash,
+                            inf_resources,
+                            system.get_allocator(),
+                        )
+                    })
+                    .map_err(|e| -> EvmSubsystemError {
+                        match e.root_cause() {
+                            RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
+                                e.clone_or_copy().into()
+                            }
+                            _ => internal_error!("Keccak in create2 cannot fail").into(),
+                        }
+                    })?;
+                let initcode_hash = Bytes32::from_array(initcode_hash.build());
+
+                let mut create2_buffer = [0xffu8; 1 + 20 + 32 + 32];
+                create2_buffer[1..(1 + 20)]
+                    .copy_from_slice(&deployer_address.to_be_bytes::<{ B160::BYTES }>());
+                create2_buffer[(1 + 20)..(1 + 20 + 32)]
+                    .copy_from_slice(&salt.to_be_bytes::<{ U256::BYTES }>());
+                create2_buffer[(1 + 20 + 32)..(1 + 20 + 32 + 32)]
+                    .copy_from_slice(initcode_hash.as_u8_array_ref());
+
+                let new_address = Keccak256::digest(&create2_buffer);
+                let new_address = B160::try_from_be_slice(&new_address.as_slice()[12..])
+                    .expect("must create address");
+                new_address
+            }
+        };
+
+        Ok(deployed_address)
     }
 }

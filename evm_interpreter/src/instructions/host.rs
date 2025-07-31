@@ -320,10 +320,27 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         let ee_specific_data = alloc::boxed::Box::try_new_in(scheme, system.get_allocator())
             .expect("system allocator must be capable to allocate for EE deployment parameters");
+
+        let deployer_nonce = self.gas.resources.with_infinite_ergs(|inf_resources| {
+            system
+                .io
+                .read_nonce(THIS_EE_TYPE, inf_resources, &self.address)
+        })?;
+
+        let deployed_address = Self::derive_address_for_deployment(
+            system,
+            self.gas.resources_mut(),
+            scheme,
+            &self.address,
+            deployer_nonce,
+            &self.heap[deployment_code.clone()],
+        )?;
+
         // at this preemption point we give all resources for preparation
-        let all_resources = self.gas.take_resources();
+        let all_resources = self.gas.take_resources(); // TODO
 
         let deployment_parameters = EVMDeploymentRequest {
+            address: deployed_address,
             deployment_code,
             ee_specific_deployment_processing_data: Some(
                 ee_specific_data as alloc::boxed::Box<dyn core::any::Any, S::Allocator>,

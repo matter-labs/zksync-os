@@ -6,18 +6,14 @@ use crate::interpreter::CreateScheme;
 use alloc::boxed::Box;
 use core::any::Any;
 use core::fmt::Write;
-use ruint::aliases::B160;
 use zk_ee::common_structs::CalleeAccountProperties;
-use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::errors::interface::InterfaceError;
-use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::*;
 use zk_ee::types_config::SystemIOTypesConfig;
-use zk_ee::utils::cheap_clone::CheapCloneRiscV;
-use zk_ee::utils::{b160_to_u256, Bytes32};
+use zk_ee::utils::b160_to_u256;
 use zk_ee::{interface_error, internal_error, wrap_error};
 
 impl<S: SystemTypes> EEDeploymentExtraParameters<S> for CreateScheme {}
@@ -387,33 +383,23 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         // for EVM we just create a new frame and run it
         let DeploymentPreparationParameters {
             address_of_deployer,
+            address: deployed_address,
             call_scratch_space,
             deployment_code,
             constructor_parameters,
-            ee_specific_deployment_processing_data,
+            ee_specific_deployment_processing_data: _ee_specific_deployment_processing_data,
             nominal_token_value,
             mut deployer_full_resources,
             deployer_nonce,
         } = deployment_parameters;
         assert!(constructor_parameters.is_empty());
         assert!(call_scratch_space.is_none());
-        let Some(ee_specific_deployment_processing_data) = ee_specific_deployment_processing_data
-        else {
-            return Err(interface_error!(EvmInterfaceError::NoDeploymentScheme));
-        };
-        let Ok(scheme) = <CreateScheme as EEDeploymentExtraParameters<S>>::from_box_dyn(
-            ee_specific_deployment_processing_data,
-        ) else {
-            return Err(interface_error!(EvmInterfaceError::UnknownDeploymentData));
-        };
 
         // We only charge after succeeding the following checks:
         // - Deployer has enough balance for token transfer
         // - Nonce overflow check
 
         // Native resource is still in deployer_full_resources, so we charge it from there.
-
-        let allocator = system.get_allocator().clone();
 
         if !nominal_token_value.is_zero() {
             // Check deployer has enough balance for token transfer
@@ -438,7 +424,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         }
 
         // Nonce overflow check
-        let old_deployer_nonce = match deployer_nonce {
+        let _ = match deployer_nonce {
             Some(old_nonce) => Ok::<u64, Self::SubsystemError>(old_nonce),
             None => {
                 match deployer_full_resources.with_infinite_ergs(|inf_resources| {
@@ -458,58 +444,6 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 }
             }
         }?;
-
-        use crypto::sha3::{Digest, Keccak256};
-        let deployed_address = match &scheme {
-            CreateScheme::Create => {
-                let mut buffer = [0u8; crate::utils::MAX_CREATE_RLP_ENCODING_LEN];
-                let encoding_it =
-                    crate::utils::create_quasi_rlp(&address_of_deployer, old_deployer_nonce);
-                let encoding_len = ExactSizeIterator::len(&encoding_it);
-                for (dst, src) in buffer.iter_mut().zip(encoding_it) {
-                    *dst = src;
-                }
-                let new_address = Keccak256::digest(&buffer[..encoding_len]);
-                let new_address = B160::try_from_be_slice(&new_address.as_slice()[12..])
-                    .expect("must create address");
-                new_address
-            }
-            CreateScheme::Create2 { salt } => {
-                // we need to compute address based on the hash of the code and salt
-                let mut initcode_hash = ArrayBuilder::default();
-                deployer_full_resources
-                    .with_infinite_ergs(|inf_resources| {
-                        S::SystemFunctions::keccak256(
-                            &deployment_code,
-                            &mut initcode_hash,
-                            inf_resources,
-                            allocator,
-                        )
-                    })
-                    .map_err(|e| -> EvmSubsystemError {
-                        match e.root_cause() {
-                            RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
-                                e.clone_or_copy().into()
-                            }
-                            _ => internal_error!("Keccak in create2 cannot fail").into(),
-                        }
-                    })?;
-                let initcode_hash = Bytes32::from_array(initcode_hash.build());
-
-                let mut create2_buffer = [0xffu8; 1 + 20 + 32 + 32];
-                create2_buffer[1..(1 + 20)]
-                    .copy_from_slice(&address_of_deployer.to_be_bytes::<{ B160::BYTES }>());
-                create2_buffer[(1 + 20)..(1 + 20 + 32)]
-                    .copy_from_slice(&salt.to_be_bytes::<{ U256::BYTES }>());
-                create2_buffer[(1 + 20 + 32)..(1 + 20 + 32 + 32)]
-                    .copy_from_slice(initcode_hash.as_u8_array_ref());
-
-                let new_address = Keccak256::digest(&create2_buffer);
-                let new_address = B160::try_from_be_slice(&new_address.as_slice()[12..])
-                    .expect("must create address");
-                new_address
-            }
-        };
 
         let AccountData {
             nonce: Just(deployee_nonce),

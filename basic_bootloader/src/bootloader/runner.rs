@@ -152,6 +152,13 @@ macro_rules! handle_spawn {
                 )?;
                 $run.callstack_height -= 1;
 
+                let success = matches!(deployment_result, DeploymentResult::Successful { .. });
+
+                let _ = $run.system.get_logger().write_fmt(format_args!(
+                    "Return from deployment, success = {:?}\n",
+                    success
+                ));
+
                 let returndata_region = deployment_result.returndata();
                 let returndata_iter = returndata_region.iter().copied();
                 let _ = $run
