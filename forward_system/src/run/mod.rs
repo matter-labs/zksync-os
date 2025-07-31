@@ -101,6 +101,9 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
 
     let mut non_determinism_source = ZkEENonDeterminismSource::default();
     non_determinism_source.add_external_processor(oracle_wrapper);
+    non_determinism_source.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery {
+        marker: std::marker::PhantomData,
+    });
 
     // We'll wrap the source, to collect all the reads.
     let copy_source = ReadWitnessSource::new(non_determinism_source);
