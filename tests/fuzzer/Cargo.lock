@@ -1709,6 +1709,7 @@ dependencies = [
  "cycle_marker",
  "either",
  "evm_interpreter",
+ "modexp",
  "paste",
  "rand 0.9.2",
  "ruint",
@@ -1968,6 +1969,19 @@ dependencies = [
  "libc",
  "once_cell",
  "serde",
+]
+
+[[package]]
+name = "callable_oracles"
+version = "0.1.0"
+dependencies = [
+ "crypto",
+ "num-bigint",
+ "num-traits",
+ "oracle_provider",
+ "risc_v_simulator",
+ "ruint",
+ "zk_ee",
 ]
 
 [[package]]
@@ -2374,11 +2388,11 @@ dependencies = [
  "educe",
  "itertools 0.14.0",
  "k256",
- "modexp",
  "num-bigint",
  "num-traits",
  "p256",
  "ripemd",
+ "ruint",
  "sha2 0.10.9",
  "sha3",
  "zeroize",
@@ -6204,9 +6218,11 @@ name = "rig"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "alloy-rlp",
  "basic_bootloader",
  "basic_system",
  "bincode",
+ "callable_oracles",
  "crypto",
  "env_logger 0.11.8",
  "ethers",
@@ -8862,6 +8878,7 @@ name = "zksync_os_api"
 version = "0.1.0"
 dependencies = [
  "basic_system",
+ "callable_oracles",
  "crypto",
  "evm_interpreter",
  "forward_system",

@@ -1,4 +1,5 @@
 use crate::bootloader::account_models::{AccountModel, ExecutionOutput, ExecutionResult};
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::PREPARE_FOR_PAYMASTER_SELECTOR;
 use crate::bootloader::constants::{
     EXECUTE_SELECTOR, PAY_FOR_TRANSACTION_SELECTOR, VALIDATE_SELECTOR,
@@ -12,6 +13,7 @@ use core::fmt::Write;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{logger::Logger, *};
 
 pub struct Contract;
@@ -20,7 +22,7 @@ impl<S: EthereumLikeTypes> AccountModel<S> for Contract
 where
     S::IO: IOSubsystemExt,
 {
-    fn validate(
+    fn validate<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers,
@@ -31,6 +33,7 @@ where
         _caller_is_code: bool,
         _caller_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         let from = transaction.from.read();
 
@@ -53,6 +56,7 @@ where
             from,
             VALIDATE_SELECTOR,
             resources,
+            tracer,
         )
         .map_err(TxError::oon_as_validation)?;
 
@@ -88,6 +92,7 @@ where
         transaction: &mut ZkSyncTransaction,
         _current_tx_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         let _ = system
             .get_logger()
@@ -110,6 +115,7 @@ where
             from,
             EXECUTE_SELECTOR,
             resources,
+            tracer,
         )?;
 
         let resources_after_main_tx = resources_returned;
@@ -180,6 +186,7 @@ where
         from: B160,
         _caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         let _ = system
             .get_logger()
@@ -199,6 +206,7 @@ where
             from,
             PAY_FOR_TRANSACTION_SELECTOR,
             resources,
+            tracer,
         )
         .map_err(TxError::oon_as_validation)?;
 
@@ -229,6 +237,7 @@ where
         _paymaster: B160,
         _caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         let _ = system
             .get_logger()
@@ -248,6 +257,7 @@ where
             from,
             PREPARE_FOR_PAYMASTER_SELECTOR,
             resources,
+            tracer,
         )
         .map_err(TxError::oon_as_validation)?;
         *resources = resources_returned;

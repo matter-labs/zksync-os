@@ -33,8 +33,10 @@ use crate::contract_deployer::contract_deployer_hook;
 use crate::l1_messenger::l1_messenger_hook;
 use crate::l2_base_token::l2_base_token_hook;
 use alloc::collections::BTreeMap;
+use core::marker::PhantomData;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use precompiles::{pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors};
+use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::{
     memory::slice_vec::SliceVec,
@@ -75,6 +77,65 @@ pub struct SystemHook<S: SystemTypes>(
         &'a mut [MaybeUninit<u8>],
     ) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>,
 );
+
+pub trait SystemFunctionInvocation<S: SystemTypes, E: Subsystem>
+where
+    S::IO: IOSubsystemExt,
+{
+    fn invoke<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
+        logger: &mut S::Logger,
+        input: &[u8],
+        output: &mut D,
+        resources: &mut S::Resources,
+        allocator: A,
+    ) -> Result<(), SubsystemError<E>>;
+}
+
+struct SystemFunctionInvocationUser<
+    S: SystemTypes,
+    E: Subsystem,
+    F: SystemFunction<S::Resources, E>,
+>(PhantomData<(S, E, F)>);
+struct SystemFunctionInvocationExt<
+    S: SystemTypes,
+    E: Subsystem,
+    F: SystemFunctionExt<S::Resources, E>,
+>(PhantomData<(S, E, F)>);
+
+impl<S: SystemTypes, E: Subsystem, F: SystemFunction<S::Resources, E>>
+    SystemFunctionInvocation<S, E> for SystemFunctionInvocationUser<S, E, F>
+where
+    S::IO: IOSubsystemExt,
+{
+    fn invoke<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        _oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
+        _logger: &mut S::Logger,
+        input: &[u8],
+        output: &mut D,
+        resources: &mut S::Resources,
+        allocator: A,
+    ) -> Result<(), SubsystemError<E>> {
+        F::execute(input, output, resources, allocator)
+    }
+}
+
+impl<S: SystemTypes, E: Subsystem, F: SystemFunctionExt<S::Resources, E>>
+    SystemFunctionInvocation<S, E> for SystemFunctionInvocationExt<S, E, F>
+where
+    S::IO: IOSubsystemExt,
+{
+    fn invoke<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
+        logger: &mut S::Logger,
+        input: &[u8],
+        output: &mut D,
+        resources: &mut S::Resources,
+        allocator: A,
+    ) -> Result<(), SubsystemError<E>> {
+        F::execute(input, output, resources, oracle, logger, allocator)
+    }
+}
 
 ///
 /// System hooks storage.
@@ -151,7 +212,7 @@ where
             RIPEMD160_HOOK_ADDRESS_LOW,
         );
         self.add_precompile::<IdentityPrecompile, IdentityPrecompileErrors>(ID_HOOK_ADDRESS_LOW);
-        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::ModExp, ModExpErrors>(
+        self.add_precompile_ext::<<S::SystemFunctionsExt as SystemFunctionsExt<_>>::ModExp, ModExpErrors>(
             MODEXP_HOOK_ADDRESS_LOW,
         );
         self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Bn254Add, Bn254AddErrors>(
@@ -203,7 +264,21 @@ where
     {
         self.add_hook(
             address_low,
-            SystemHook(pure_system_function_hook_impl::<P, E, S>),
+            SystemHook(
+                pure_system_function_hook_impl::<SystemFunctionInvocationUser<S, E, P>, E, S>,
+            ),
+        )
+    }
+
+    fn add_precompile_ext<P: SystemFunctionExt<S::Resources, E>, E: Subsystem>(
+        &mut self,
+        address_low: u16,
+    ) {
+        self.add_hook(
+            address_low,
+            SystemHook(
+                pure_system_function_hook_impl::<SystemFunctionInvocationExt<S, E, P>, E, S>,
+            ),
         )
     }
 

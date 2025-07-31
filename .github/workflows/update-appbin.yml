@@ -2,8 +2,6 @@ name: Update app.bin
 
 on:
   pull_request:
-    types: [ synchronize, opened ]
-
 
 permissions:
   contents: write
@@ -11,20 +9,46 @@ permissions:
   actions: read
   pull-requests: write
 
+# Cancel previous appbin updates if the new one for this PR is in queue
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Log all shell steps
+defaults:
+  run:
+    shell: bash -ex {0}
+
 jobs:
   update_app_bin:
-    runs-on: [ matterlabs-ci-runner ]
+    runs-on: ubuntu-latest
+    env:
+      COMMIT_MESSAGE: "chore: auto-update app.bin file"
     steps:
-      - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v3
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Get last commit message via GitHub API
+        id: commit
+        run: |
+          COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
+          MESSAGE=$(curl -s \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/commits/${COMMIT_SHA} \
+            | jq -r .commit.message)
+          echo message="${MESSAGE}" >> "${GITHUB_OUTPUT}"
 
       - name: Build fresh app bin
-        run: |
-          zksync_os/reproduce/reproduce.sh
+        if: ${{ !contains(steps.commit.outputs.message, env.COMMIT_MESSAGE) }}
+        run: zksync_os/reproduce/reproduce.sh
 
       - name: Update PR if any files were modified
+        if: ${{ !contains(steps.commit.outputs.message, env.COMMIT_MESSAGE) }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "zksync-era-bot"
+          git config user.email "zksync-era-bot@users.noreply.github.com"
           git status --porcelain
           git diff --name-only
           if [ -n "$(git diff --name-only)" ]; then
@@ -35,6 +59,6 @@ jobs:
             git fetch origin ${{ github.head_ref }}
             git checkout ${{ github.head_ref }}
             git stash pop || echo "Nothing to pop"
-            git commit -a -m "chore: auto-update app.bin file"
+            git commit -a -m "${COMMIT_MESSAGE}"
             git push origin HEAD:${{ github.head_ref }}
           fi

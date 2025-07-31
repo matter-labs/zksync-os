@@ -3,11 +3,25 @@
 #![allow(static_mut_refs)]
 #![allow(clippy::uninit_assumed_init)]
 #![allow(clippy::new_without_default)]
+#![feature(allocator_api)]
 
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
+#[allow(clippy::all)]
+#[allow(unused_imports, dead_code)]
+#[cfg(any(
+    all(target_arch = "riscv32", feature = "bigint_ops"),
+    feature = "proving",
+    feature = "testing",
+    test
+))]
 mod ark_ff_delegation;
-#[allow(unused_imports)]
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
+#[allow(clippy::all)]
+#[allow(unused_imports, dead_code)]
+#[cfg(any(
+    all(target_arch = "riscv32", feature = "bigint_ops"),
+    feature = "proving",
+    feature = "testing",
+    test
+))]
 mod bigint_delegation;
 #[allow(unexpected_cfgs)]
 pub mod blake2s;
@@ -16,7 +30,6 @@ pub mod bls12_381;
 #[allow(clippy::all)]
 pub mod bn254;
 pub mod k256;
-pub mod modexp;
 pub mod p256;
 pub mod ripemd160;
 pub mod secp256k1;
@@ -24,11 +37,29 @@ pub mod secp256r1;
 pub mod sha256;
 pub mod sha3;
 
+#[cfg(any(
+    all(target_arch = "riscv32", feature = "bigint_ops"),
+    feature = "proving",
+    feature = "testing",
+    test
+))]
+mod raw_delegation_interface;
+
 pub use blake2 as blake2_ext;
 
 pub use ark_ec;
 pub use ark_ff;
 pub use ark_serialize;
+
+#[cfg(any(
+    all(target_arch = "riscv32", feature = "bigint_ops"),
+    feature = "proving",
+    feature = "testing",
+    test
+))]
+pub use self::raw_delegation_interface::{
+    bigint_op_delegation_raw, bigint_op_delegation_with_carry_bit_raw,
+};
 
 pub fn init_lib() {
     #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
@@ -39,6 +70,16 @@ pub fn init_lib() {
         bigint_delegation::init();
         secp256r1::init();
     }
+}
+
+pub enum BigIntOps {
+    Add = 0,
+    Sub = 1,
+    SubAndNegate = 2,
+    MulLow = 3,
+    MulHigh = 4,
+    Eq = 5,
+    MemCpy = 7,
 }
 
 pub trait MiniDigest: Sized {

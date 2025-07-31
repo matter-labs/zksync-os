@@ -43,9 +43,10 @@ pub fn pure_system_function_hook_impl<'a, F, E, S>(
     return_memory: &'a mut [MaybeUninit<u8>],
 ) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
 where
-    F: SystemFunction<S::Resources, E>,
-    E: Subsystem,
+    F: SystemFunctionInvocation<S, E>,
     S: EthereumLikeTypes,
+    S::IO: IOSubsystemExt,
+    E: Subsystem,
 {
     let ExternalCallRequest {
         available_resources,
@@ -64,7 +65,15 @@ where
     let allocator = system.get_allocator();
 
     let mut return_vec = SliceVec::new(return_memory);
-    let result = F::execute(&calldata, &mut return_vec, &mut resources, allocator);
+    let mut logger = system.get_logger();
+    let result = F::invoke(
+        system.io.oracle(),
+        &mut logger,
+        &calldata,
+        &mut return_vec,
+        &mut resources,
+        allocator,
+    );
 
     match result {
         Ok(()) => {

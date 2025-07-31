@@ -66,6 +66,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
         CodeVersion: Maybe<u8>,
+        IsDelegated: Maybe<bool>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -83,6 +84,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
                 NominalTokenBalance,
                 Bytecode,
                 CodeVersion,
+                IsDelegated,
             >,
         >,
         oracle: &mut impl IOOracle,
@@ -98,6 +100,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
             NominalTokenBalance,
             Bytecode,
             CodeVersion,
+            IsDelegated,
         >,
         SystemError,
     >;
@@ -179,6 +182,14 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError>;
 
+    fn set_delegation(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        delegate: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        oracle: &mut impl IOOracle,
+    ) -> Result<(), SystemError>;
+
     fn mark_for_deconstruction(
         &mut self,
         from_ee: ExecutionEnvironmentType,
@@ -213,4 +224,12 @@ pub trait StorageModel: Sized + SnapshottableIo {
         result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
         logger: &mut impl Logger,
     ) -> Result<(), InternalError>;
+
+    #[cfg(feature = "evm_refunds")]
+    /// Get current gas refund counter
+    fn get_refund_counter(&self) -> u32;
+
+    // Add EVM refund to counter
+    #[cfg(feature = "evm_refunds")]
+    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError>;
 }

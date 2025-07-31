@@ -182,10 +182,10 @@ dependencies = [
  "basic_system",
  "crypto",
  "cycle_marker",
- "either",
  "evm_interpreter",
+ "paste",
  "ruint",
- "seq-macro",
+ "strum_macros",
  "system_hooks",
  "zk_ee",
 ]
@@ -195,15 +195,15 @@ name = "basic_system"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
- "cfg-if",
- "const_for",
  "crypto",
  "cycle_marker",
  "either",
  "evm_interpreter",
+ "modexp",
+ "paste",
  "ruint",
  "storage_models",
- "system_hooks",
+ "strum_macros",
  "zk_ee",
 ]
 
@@ -301,7 +301,6 @@ dependencies = [
  "educe",
  "itertools 0.14.0",
  "k256",
- "modexp",
  "num-bigint",
  "num-traits",
  "p256",
@@ -442,7 +441,9 @@ dependencies = [
  "crypto",
  "cycle_marker",
  "either",
+ "paste",
  "ruint",
+ "strum_macros",
  "zk_ee",
 ]
 
@@ -511,6 +512,12 @@ dependencies = [
  "hash32",
  "stable_deref_trait",
 ]
+
+[[package]]
+name = "heck"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hmac"
@@ -915,11 +922,20 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "storage_models"
 version = "0.1.0"
 dependencies = [
- "arrayvec",
  "crypto",
- "either",
- "ruint",
  "zk_ee",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
 ]
 
 [[package]]
@@ -955,10 +971,11 @@ name = "system_hooks"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
- "crypto",
  "cycle_marker",
  "evm_interpreter",
+ "paste",
  "ruint",
+ "strum_macros",
  "zk_ee",
 ]
 
@@ -1060,7 +1077,9 @@ dependencies = [
  "cfg-if",
  "crypto",
  "cycle_marker",
+ "paste",
  "ruint",
+ "strum_macros",
 ]
 
 [[package]]

@@ -109,6 +109,15 @@ pub enum InvalidTransaction {
     /// Protocol upgrade txs should always be successful.
     // TODO: it's not really a validation error
     UpgradeTxFailed,
+
+    /// Transaction makes the block reach the gas limit
+    BlockGasLimitReached,
+    /// Transaction makes the block reach the native resource limit
+    BlockNativeLimitReached,
+    /// Transaction makes the block reach the pubdata limit
+    BlockPubdataLimitReached,
+    /// Transaction makes the block reach the l2->l1 logs limit
+    BlockL2ToL1LogsLimitReached,
 }
 
 ///

@@ -1,10 +1,10 @@
 use crate::ark_ff_delegation::BigInt;
 
-mod delegation;
+pub(crate) mod delegation;
 pub mod u256;
 pub mod u512;
 
-pub fn init() {
+pub(crate) fn init() {
     u256::init();
     u512::init();
 }

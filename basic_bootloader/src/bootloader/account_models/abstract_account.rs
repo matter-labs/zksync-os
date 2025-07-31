@@ -7,10 +7,12 @@ use crate::bootloader::account_models::{ExecutionResult, TxError};
 use crate::bootloader::errors::BootloaderSubsystemError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
+use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::Bytes32;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
 
 pub enum AA<S> {
@@ -67,7 +69,7 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn validate(
+    pub fn validate<Config: BasicBootloaderExecutionConfig>(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
@@ -79,9 +81,10 @@ where
         caller_is_code: bool,
         caller_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         match self {
-            AA::EOA(_) => EOA::validate(
+            AA::EOA(_) => EOA::validate::<Config>(
                 system,
                 system_functions,
                 memories,
@@ -92,8 +95,9 @@ where
                 caller_is_code,
                 caller_nonce,
                 resources,
+                tracer,
             ),
-            AA::Contract(_) => Contract::validate(
+            AA::Contract(_) => Contract::validate::<Config>(
                 system,
                 system_functions,
                 memories,
@@ -104,6 +108,7 @@ where
                 caller_is_code,
                 caller_nonce,
                 resources,
+                tracer,
             ),
         }
     }
@@ -120,6 +125,7 @@ where
         transaction: &mut ZkSyncTransaction,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         match self {
             AA::EOA(_) => EOA::execute(
@@ -131,6 +137,7 @@ where
                 transaction,
                 current_tx_nonce,
                 resources,
+                tracer,
             ),
             AA::Contract(_) => Contract::execute(
                 system,
@@ -141,6 +148,7 @@ where
                 transaction,
                 current_tx_nonce,
                 resources,
+                tracer,
             ),
         }
     }
@@ -184,6 +192,7 @@ where
         from: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         match self {
             AA::EOA(_) => EOA::pay_for_transaction(
@@ -196,6 +205,7 @@ where
                 from,
                 caller_ee_type,
                 resources,
+                tracer,
             ),
             AA::Contract(_) => Contract::pay_for_transaction(
                 system,
@@ -207,6 +217,7 @@ where
                 from,
                 caller_ee_type,
                 resources,
+                tracer,
             ),
         }
     }
@@ -224,6 +235,7 @@ where
         paymaster: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         match self {
             AA::EOA(_) => EOA::pre_paymaster(
@@ -237,6 +249,7 @@ where
                 paymaster,
                 caller_ee_type,
                 resources,
+                tracer,
             ),
             AA::Contract(_) => Contract::pre_paymaster(
                 system,
@@ -249,6 +262,7 @@ where
                 paymaster,
                 caller_ee_type,
                 resources,
+                tracer,
             ),
         }
     }

@@ -17,6 +17,7 @@ crypto = { path = "../crypto", default-features = false, features = ["secp256k1-
 arrayvec = { version = "0.7.4", default-features = false }
 either = { version = "*", default-features = false }
 storage_models = { path = "../storage_models", default-features = false }
+modexp = { path = "../supporting_crates/modexp" }
 cycle_marker = { path = "../cycle_marker" }
 
 cfg-if = "1.0.0"
@@ -28,15 +29,20 @@ strum_macros = "0.27.1"
 paste = "1.0.15"
 
 [features]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "rand"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "rand", "crypto/testing"]
 evm-compatibility = []
 default = ["testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
 wrap-in-batch = []
+proving = ["crypto/proving"]
+evm_refunds = ["storage_models/evm_refunds"]
 
 [dev-dependencies]
 hex = {version = "0.4.3"}
-proptest = "1"
+proptest = "1.6.0"
+crypto = { path = "../crypto", default-features = false, features = ["secp256k1-static-context", "testing"]}
+num-bigint = "*"
+num-traits = "*"
 arbitrary = "1"
 serde_json = "*"
 alloy-rpc-types-debug = { version = "*", default-features = false }

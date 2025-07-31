@@ -15,6 +15,7 @@ use system_hooks::addresses_constants::L1_MESSENGER_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
 use zk_ee::system::{Resource, System};
+use zk_ee::system::tracer::NopTracer;
 
 mod common;
 
@@ -108,6 +109,7 @@ fn fuzz(input: FuzzInput) {
                 inf_resources,
                 &amount,
                 true,
+                &mut NopTracer::default()
             );
         }
         2 => {
@@ -128,6 +130,7 @@ fn fuzz(input: FuzzInput) {
                 inf_resources,
                 &amount,
                 true,
+                &mut NopTracer::default()
             );
         }
         _ => (),

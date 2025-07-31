@@ -18,7 +18,7 @@ k256 =  { version = "0.13", default-features = false, features = ["ecdsa-core", 
 p256 =  { version = "0.13", default-features = false, features = ["ecdsa-core", "ecdsa", "arithmetic"] }
 blake2s_u32 = { workspace = true, optional = true, default-features = false }
 ripemd = { version = "0.1", default-features = false }
-modexp = { path = "../supporting_crates/modexp" }
+ruint = { version = "1.12.4", default-features = false, optional = true }
 
 cfg-if = "1.0.0"
 const_for = "0.1.5"
@@ -28,8 +28,7 @@ const_for = "0.1.5"
 # num-bigint = { version = "0.4", default-features = false, optional = true }
 # num-integer = { version = "0.1", default-features = false, optional = true }
 
-ark-std = { version = "*", default-features = false }
-
+ark-std = { version = "0.5", default-features = false }
 ark-ff = { version = "0.5", default-features = false }
 ark-ec = { version = "0.5", default-features = false }
 ark-serialize = { version = "0.5", default-features = false }
@@ -52,21 +51,15 @@ zksync_os_runner = { path = "../zksync_os_runner"}
 risc_v_simulator = { workspace = true, features = ["delegation"] }
 # blake2s_u32 = {path = "../../zksync-airbender/blake2s_u32", optional = true, default-features = false}
 ruint = { version = "1.12.4", default-features = false }
-ark-std = { version = "*" }
+ark-std = { version = "0.5" }
 zeroize = { version = "1", default-features = false }
 num-traits = { version = "0.2", default-features = false }
 num-bigint = { version = "0.4", default-features = false }
 num-integer = { version = "0.1", default-features = false }
 proptest = "1.0.0"
 hex-literal = "0.4.1"
-ark-test-curves = { version = "0.5.0", features = ["secp256k1", "bls12_381_curve"] }
+ark-test-curves = { version = "0.5", features = ["secp256k1", "bls12_381_curve"] }
 rand_core = { version = "0.6.4", features = ["getrandom"] }
-
-# addchain = { git = "https://github.com/VictorArcium/addchain" }
-# num-bigint = { version = "0.3" }
-# num-integer = { version = "0.1" }
-# num-traits = { version = "0.2" }
-# ark-algebra-test-templates = { version = "0.5.0", default-features = false }
 
 [features]
 # forward = ["blake2"]
@@ -79,3 +72,4 @@ single_round_with_control = ["blake2s_u32/blake2_with_compression"]
 blake2s_tests = []
 secp256k1-static-context = []
 alloc = []
+testing = ["ruint"]

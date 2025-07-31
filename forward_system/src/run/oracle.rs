@@ -179,6 +179,11 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
                 let iterator = DynUsizeIterator::from_owned(prev_index);
                 Ok(Box::new(iterator))
             }
+            a if a == core::any::TypeId::of::<Arithmetics>() => {
+                let iterator = DynUsizeIterator::from_owned(init_value);
+
+                Ok(Box::new(iterator))
+            }
             _ => Err(internal_error!("Invalid marker")),
         }
     }

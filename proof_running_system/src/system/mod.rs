@@ -55,6 +55,7 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for ProofRunningSystemTypes<O
         true,
     >;
     type SystemFunctions = NoStdSystemFunctions;
+    type SystemFunctionsExt = NoStdSystemFunctions;
     type Allocator = BootloaderAllocator;
     type Logger = L;
 }

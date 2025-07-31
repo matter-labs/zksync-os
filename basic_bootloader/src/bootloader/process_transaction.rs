@@ -59,6 +59,7 @@ where
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
         is_first_tx: bool,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<TxProcessingResult<'a>, TxError> {
         let transaction = ZkSyncTransaction::try_from_slice(initial_calldata_buffer)
             .map_err(|_| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
@@ -78,6 +79,7 @@ where
                         memories,
                         transaction,
                         false,
+                        tracer,
                     )
                 }
             }
@@ -87,12 +89,14 @@ where
                 memories,
                 transaction,
                 true,
+                tracer,
             ),
             _ => Self::process_l2_transaction::<Config>(
                 system,
                 system_functions,
                 memories,
                 transaction,
+                tracer,
             ),
         }
     }
@@ -103,6 +107,7 @@ where
         memories: RunnerMemoryBuffers<'a>,
         transaction: ZkSyncTransaction,
         is_priority_op: bool,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<TxProcessingResult<'a>, TxError> {
         // The work done by the bootloader (outside of EE or EOA specific
         // computation) is charged as part of the intrinsic gas cost.
@@ -168,37 +173,42 @@ where
         // TODO: l1 transaction preparation (marking factory deps)
         let chain_id = system.get_chain_id();
 
-        let (tx_hash, preparation_out_of_resources): (Bytes32, bool) =
-            match transaction.calculate_hash(chain_id, &mut resources) {
-                Ok(h) => (h.into(), false),
-                Err(e) => {
-                    match e.root_cause() {
-                        RootCause::Runtime(_) => {
-                            let _ = system.get_logger().write_fmt(format_args!(
-                                "Transaction preparation exhausted native resources: {e:?}\n"
-                            ));
+        let (tx_hash, preparation_out_of_resources): (Bytes32, bool) = match transaction
+            .calculate_hash(chain_id, &mut resources)
+        {
+            Ok(h) => (h.into(), false),
+            Err(e) => {
+                match e {
+                    TxError::Internal(e) if !matches!(e.root_cause(), RootCause::Runtime(_)) => {
+                        return Err(e.into());
+                    }
+                    // Only way hashing of L1 tx can fail due to Validation or Runtime is
+                    // due to running out of native.
+                    _ => {
+                        let _ = system.get_logger().write_fmt(format_args!(
+                            "Transaction preparation exhausted native resources: {e:?}\n"
+                        ));
 
-                            resources.exhaust_ergs();
-                            // We need to compute the hash anyways, we do with inf resources
-                            let mut inf_resources = S::Resources::FORMAL_INFINITE;
-                            (
-                                transaction
-                                    .calculate_hash(chain_id, &mut inf_resources)
-                                    .expect("must succeed")
-                                    .into(),
-                                true,
-                            )
-                        }
-                        _ => return Err(e.into()),
+                        resources.exhaust_ergs();
+                        // We need to compute the hash anyways, we do with inf resources
+                        let mut inf_resources = S::Resources::FORMAL_INFINITE;
+                        (
+                            transaction
+                                .calculate_hash(chain_id, &mut inf_resources)
+                                .expect("must succeed")
+                                .into(),
+                            true,
+                        )
                     }
                 }
-            };
+            }
+        };
 
         // pubdata_info = (pubdata_used, to_charge_for_pubdata) can be cached
         // to used in the refund step only if the execution succeeded.
         // Otherwise, this value needs to be recomputed after reverting
         // state changes.
-        let (result, pubdata_info) = if !preparation_out_of_resources {
+        let (result, pubdata_info, resources_before_refund) = if !preparation_out_of_resources {
             // Take a snapshot in case we need to revert due to out of native.
             let rollback_handle = system.start_global_frame()?;
 
@@ -216,8 +226,9 @@ where
                 native_per_pubdata,
                 &mut resources,
                 withheld_resources,
+                tracer,
             ) {
-                Ok((r, pubdata_used, to_charge_for_pubdata)) => {
+                Ok((r, pubdata_used, to_charge_for_pubdata, resources_before_refund)) => {
                     let pubdata_info = match r {
                         ExecutionResult::Success { .. } => {
                             system.finish_global_frame(None)?;
@@ -228,7 +239,7 @@ where
                             None
                         }
                     };
-                    (r, pubdata_info)
+                    (r, pubdata_info, resources_before_refund)
                 }
                 Err(e) => {
                     match e.root_cause() {
@@ -240,14 +251,22 @@ where
                             ));
                             resources.exhaust_ergs();
                             system.finish_global_frame(Some(&rollback_handle))?;
-                            (ExecutionResult::Revert { output: &[] }, None)
+                            (
+                                ExecutionResult::Revert { output: &[] },
+                                None,
+                                S::Resources::empty(),
+                            )
                         }
                         _ => return Err(e.into()),
                     }
                 }
             }
         } else {
-            (ExecutionResult::Revert { output: &[] }, None)
+            (
+                ExecutionResult::Revert { output: &[] },
+                None,
+                S::Resources::empty(),
+            )
         };
 
         // Compute gas to refund
@@ -257,10 +276,9 @@ where
             Some(r) => r,
             None => get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?,
         };
-        // Just used for computing native used
-        let resources_before_refund = resources.clone();
+
         #[allow(unused_variables)]
-        let (_, gas_used) = Self::compute_gas_refund(
+        let (_, gas_used, evm_refund) = Self::compute_gas_refund(
             system,
             to_charge_for_pubdata,
             gas_limit,
@@ -363,15 +381,13 @@ where
             is_l1_tx: is_priority_op,
             is_upgrade_tx: !is_priority_op,
             gas_used,
-            gas_refunded: 0,
-
+            gas_refunded: evm_refund,
             computational_native_used,
-
             pubdata_used: pubdata_used + L1_TX_INTRINSIC_PUBDATA as u64,
         })
     }
 
-    // Returns (execution_result, pubdata_used, to_charge_for_pubdata)
+    // Returns (execution_result, pubdata_used, to_charge_for_pubdata, resources_before_refund)
     fn execute_l1_transaction_and_notify_result<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
@@ -383,7 +399,9 @@ where
         native_per_pubdata: U256,
         resources: &mut S::Resources,
         withheld_resources: S::Resources,
-    ) -> Result<(ExecutionResult<'a>, u64, S::Resources), BootloaderSubsystemError> {
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<(ExecutionResult<'a>, u64, S::Resources, S::Resources), BootloaderSubsystemError>
+    {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Executing L1 transaction\n"));
@@ -436,6 +454,7 @@ where
             resources_for_tx,
             &value,
             false,
+            tracer,
         )?;
         *resources = resources_returned;
         system.finish_global_frame(reverted.then_some(&rollback_handle))?;
@@ -456,6 +475,10 @@ where
             }
         };
 
+        // Just used for computing native used
+        // Needs to use the resources before we reclaim withheld
+        let resources_before_refund = resources.clone();
+
         // After the transaction is executed, we reclaim the withheld resources.
         // This is needed to ensure correct "gas_used" calculation, also these
         // resources could be spent for pubdata.
@@ -472,7 +495,12 @@ where
             execution_result
         };
 
-        Ok((execution_result, pubdata_used, to_charge_for_pubdata))
+        Ok((
+            execution_result,
+            pubdata_used,
+            to_charge_for_pubdata,
+            resources_before_refund,
+        ))
     }
 
     fn process_l2_transaction<'a, Config: BasicBootloaderExecutionConfig>(
@@ -480,6 +508,7 @@ where
         system_functions: &mut HooksStorage<S, S::Allocator>,
         mut memories: RunnerMemoryBuffers<'a>,
         mut transaction: ZkSyncTransaction,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<TxProcessingResult<'a>, TxError> {
         let from = transaction.from.read();
         let gas_limit = transaction.gas_limit.read();
@@ -551,7 +580,8 @@ where
                         .with_ee_version()
                         .with_nonce()
                         .with_artifacts_len()
-                        .with_unpadded_code_len(),
+                        .with_unpadded_code_len()
+                        .with_is_delegated(),
                 )
             })?;
 
@@ -572,41 +602,35 @@ where
         let chain_id = system.get_chain_id();
 
         // Process access list
-        // Note: this operation should be performed before the hashing of the
-        // transaction, as the latter assumes the transaction structure has
-        // already been validated.
         transaction.parse_and_warm_up_access_list(system, &mut resources)?;
 
-        let tx_hash: Bytes32 = transaction
-            .calculate_hash(chain_id, &mut resources)
-            .map_err(TxError::oon_as_validation)?
-            .into();
+        let tx_hash: Bytes32 = transaction.calculate_hash(chain_id, &mut resources)?.into();
         let suggested_signed_hash: Bytes32 = transaction
-            .calculate_signed_hash(chain_id, &mut resources)
-            .map_err(TxError::oon_as_validation)?
+            .calculate_signed_hash(chain_id, &mut resources)?
             .into();
 
-        let ValidationResult { validation_pubdata } = if !Config::ONLY_SIMULATE {
-            Self::transaction_validation::<Config>(
-                system,
-                system_functions,
-                memories.reborrow(),
-                tx_hash,
-                suggested_signed_hash,
-                &mut transaction,
-                &account_model,
-                from,
-                gas_price,
-                gas_per_pubdata,
-                native_per_pubdata,
-                caller_ee_type,
-                caller_is_code,
-                caller_nonce,
-                &mut resources,
-            )?
-        } else {
-            ValidationResult::default()
-        };
+        let ValidationResult { validation_pubdata } = Self::transaction_validation::<Config>(
+            system,
+            system_functions,
+            memories.reborrow(),
+            tx_hash,
+            suggested_signed_hash,
+            &mut transaction,
+            &account_model,
+            from,
+            gas_price,
+            gas_per_pubdata,
+            native_per_pubdata,
+            caller_ee_type,
+            caller_is_code,
+            caller_nonce,
+            &mut resources,
+            tracer,
+        )?;
+
+        // Parse, validate and apply authorization list, following EIP-7702
+        #[cfg(feature = "pectra")]
+        transaction.parse_authorization_list_and_apply_delegations(system, &mut resources)?;
 
         // Take a snapshot in case we need to revert due to out of native.
         let rollback_handle = system.start_global_frame()?;
@@ -627,6 +651,7 @@ where
             validation_pubdata,
             caller_nonce,
             &mut resources,
+            tracer,
         ) {
             Ok((r, pubdata_used, to_charge_for_pubdata)) => {
                 let pubdata_info = match r {
@@ -663,38 +688,22 @@ where
         // resources could be spent for pubdata.
         resources.reclaim_withheld(withheld_resources);
 
-        #[allow(unused_variables)]
-        let (gas_used, pubdata_used) = if !Config::ONLY_SIMULATE {
-            Self::refund_transaction::<Config>(
-                system,
-                system_functions,
-                tx_hash,
-                suggested_signed_hash,
-                &mut transaction,
-                from,
-                &execution_result,
-                gas_price,
-                native_per_gas,
-                native_per_pubdata,
-                validation_pubdata,
-                caller_ee_type,
-                &mut resources,
-                pubdata_info,
-            )?
-        } else {
-            // Compute gas used following the same logic as in normal execution
-            // TODO: remove when simulation flow runs validation
-            let (pubdata_spent, to_charge_for_pubdata) =
-                get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
-            let (_gas_refund, gas_used) = Self::compute_gas_refund(
-                system,
-                to_charge_for_pubdata,
-                gas_limit,
-                native_per_gas,
-                &mut resources,
-            )?;
-            (gas_used, pubdata_spent)
-        };
+        let (gas_used, evm_refund, pubdata_used) = Self::refund_transaction::<Config>(
+            system,
+            system_functions,
+            tx_hash,
+            suggested_signed_hash,
+            &mut transaction,
+            from,
+            &execution_result,
+            gas_price,
+            native_per_gas,
+            native_per_pubdata,
+            validation_pubdata,
+            caller_ee_type,
+            &mut resources,
+            pubdata_info,
+        )?;
 
         // Add back the intrinsic native charged in get_resources_for_tx,
         // as initial_resources doesn't include them.
@@ -723,10 +732,8 @@ where
             is_l1_tx: false,
             is_upgrade_tx: false,
             gas_used,
-            gas_refunded: 0,
-
+            gas_refunded: evm_refund,
             computational_native_used,
-
             pubdata_used: pubdata_used + L2_TX_INTRINSIC_PUBDATA as u64,
         })
     }
@@ -748,6 +755,7 @@ where
         caller_is_code: bool,
         caller_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ValidationResult, TxError> {
         let _ = system
             .get_logger()
@@ -766,10 +774,12 @@ where
             InvalidTransaction::NonceOverflowInTransaction,
         ))?;
 
-        account_model.check_nonce_is_not_used(caller_nonce, tx_nonce)?;
+        if !Config::ONLY_SIMULATE {
+            account_model.check_nonce_is_not_used(caller_nonce, tx_nonce)?;
+        }
 
         // AA validation
-        account_model.validate(
+        account_model.validate::<Config>(
             system,
             system_functions,
             memories.reborrow(),
@@ -780,16 +790,19 @@ where
             caller_is_code,
             caller_nonce,
             resources,
+            tracer,
         )?;
 
         // Check nonce has been marked
-        account_model.check_nonce_is_used_after_validation(
-            system,
-            caller_ee_type,
-            resources,
-            tx_nonce,
-            from,
-        )?;
+        if !Config::ONLY_SIMULATE {
+            account_model.check_nonce_is_used_after_validation(
+                system,
+                caller_ee_type,
+                resources,
+                tx_nonce,
+                from,
+            )?;
+        }
 
         let _ = system.get_logger().write_fmt(format_args!(
             "Transaction was validated, can collect fees\n"
@@ -808,6 +821,7 @@ where
             gas_price,
             caller_ee_type,
             resources,
+            tracer,
         )?;
 
         // Charge for validation pubdata
@@ -836,6 +850,7 @@ where
         validation_pubdata: u64,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(ExecutionResult<'a>, u64, S::Resources), BootloaderSubsystemError> {
         let _ = system
             .get_logger()
@@ -853,6 +868,7 @@ where
             transaction,
             current_tx_nonce,
             resources,
+            tracer,
         )?;
 
         let _ = system
@@ -892,6 +908,7 @@ where
         gas_price: U256,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         let paymaster = transaction.paymaster.read();
 
@@ -923,6 +940,7 @@ where
                 paymaster,
                 caller_ee_type,
                 resources,
+                tracer,
             )?;
 
             let return_values = Self::validate_and_pay_for_paymaster_transaction(
@@ -935,6 +953,7 @@ where
                 paymaster,
                 caller_ee_type,
                 resources,
+                tracer,
             )?;
             let pre_tx_buffer = transaction.pre_tx_buffer();
             Self::store_paymaster_context_and_check_magic(system, pre_tx_buffer, &return_values)?;
@@ -952,6 +971,7 @@ where
                 from,
                 caller_ee_type,
                 resources,
+                tracer,
             )?;
 
             from
@@ -1022,7 +1042,7 @@ where
         Ok(base_fee + priority_fee_per_gas)
     }
 
-    // Returns (gas_used, total_pubdata_used)
+    // Returns (gas_used, evm_refund, total_pubdata_used)
     #[allow(clippy::too_many_arguments)]
     fn refund_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
@@ -1039,7 +1059,7 @@ where
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
         pubdata_info: Option<(u64, S::Resources)>,
-    ) -> Result<(u64, u64), BootloaderSubsystemError> {
+    ) -> Result<(u64, u64, u64), BootloaderSubsystemError> {
         let paymaster = transaction.paymaster.read();
         let _ = system
             .get_logger()
@@ -1090,7 +1110,7 @@ where
                 )
             }
         };
-        let (total_gas_refund, gas_used) = Self::compute_gas_refund(
+        let (total_gas_refund, gas_used, evm_refund) = Self::compute_gas_refund(
             system,
             to_charge_for_pubdata,
             transaction.gas_limit.read(),
@@ -1123,22 +1143,35 @@ where
                 },
                 other => wrap_error!(other),
             })?;
-        Ok((gas_used, total_pubdata_used))
+        Ok((gas_used, evm_refund, total_pubdata_used))
     }
 
-    // Returns (gas_refund, gas_used)
+    // Returns (gas_refund, gas_used, evm_refund)
     fn compute_gas_refund(
         system: &mut System<S>,
         to_charge_for_pubdata: S::Resources,
         gas_limit: u64,
         native_per_gas: U256,
         resources: &mut S::Resources,
-    ) -> Result<(U256, u64), InternalError> {
+    ) -> Result<(U256, u64, u64), InternalError> {
         // Already checked
         resources.charge_unchecked(&to_charge_for_pubdata);
 
         let mut gas_used = gas_limit - resources.ergs().0.div_floor(ERGS_PER_GAS);
         resources.exhaust_ergs();
+
+        // Following EIP-3529, refunds are capped to 1/5 of the gas used
+        #[cfg(feature = "evm_refunds")]
+        let evm_refund = {
+            let full_refund = system.io.get_refund_counter() as u64;
+            let max_refund = gas_used / 5;
+            core::cmp::min(full_refund, max_refund)
+        };
+
+        #[cfg(not(feature = "evm_refunds"))]
+        let evm_refund = 0;
+
+        gas_used -= evm_refund;
 
         #[cfg(not(feature = "unlimited_native"))]
         {
@@ -1172,6 +1205,6 @@ where
             system
         )?;
         let total_gas_refund = U256::from(total_gas_refund);
-        Ok((total_gas_refund, gas_used))
+        Ok((total_gas_refund, gas_used, evm_refund))
     }
 }
