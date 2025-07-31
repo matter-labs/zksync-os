@@ -415,24 +415,26 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
         let allocator = system.get_allocator().clone();
 
-        let deployer_balance = deployer_full_resources
-            .with_infinite_ergs(|inf_resources| {
-                system.io.read_account_properties(
-                    THIS_EE_TYPE,
-                    inf_resources,
-                    &address_of_deployer,
-                    AccountDataRequest::empty().with_nominal_token_balance(),
-                )
-            })?
-            .nominal_token_balance
-            .0;
+        if !nominal_token_value.is_zero() {
+            // Check deployer has enough balance for token transfer
+            let deployer_balance = deployer_full_resources
+                .with_infinite_ergs(|inf_resources| {
+                    system.io.read_account_properties(
+                        THIS_EE_TYPE,
+                        inf_resources,
+                        &address_of_deployer,
+                        AccountDataRequest::empty().with_nominal_token_balance(),
+                    )
+                })?
+                .nominal_token_balance
+                .0;
 
-        // Check deployer has enough balance for token transfer
-        if !nominal_token_value.is_zero() && deployer_balance < nominal_token_value {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Not enough balance for deployment\n",));
-            return Ok((deployer_full_resources, None));
+            if deployer_balance < nominal_token_value {
+                let _ = system
+                    .get_logger()
+                    .write_fmt(format_args!("Not enough balance for deployment\n",));
+                return Ok((deployer_full_resources, None));
+            }
         }
 
         // Nonce overflow check
