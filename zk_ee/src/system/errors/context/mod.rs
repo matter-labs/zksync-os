@@ -2,7 +2,8 @@ pub mod contextualized;
 pub mod element;
 pub mod empty;
 pub mod nonempty;
-
+#[cfg(test)]
+pub mod tests;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
