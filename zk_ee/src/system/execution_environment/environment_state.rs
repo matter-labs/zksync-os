@@ -6,9 +6,7 @@ use crate::{
     types_config::SystemIOTypesConfig,
 };
 
-use super::{
-    DeploymentPreparationParameters, DeploymentResult, EnvironmentParameters, ReturnValues,
-};
+use super::{DeploymentResult, EnvironmentParameters, ReturnValues};
 
 /// Everything an execution environment needs to know to start execution
 pub struct ExecutionEnvironmentLaunchParams<'a, S: SystemTypes> {
@@ -26,7 +24,7 @@ pub enum ExecutionEnvironmentPreemptionPoint<'a, S: SystemTypes> {
 
 pub enum ExecutionEnvironmentSpawnRequest<'a, S: SystemTypes> {
     RequestedExternalCall(ExternalCallRequest<'a, S>),
-    RequestedDeployment(DeploymentPreparationParameters<'a, S>),
+    RequestedDeployment(DeploymentRequest<'a, S>),
 }
 
 impl<S: SystemTypes> Default for ExecutionEnvironmentSpawnRequest<'_, S>
@@ -94,6 +92,20 @@ impl<S: SystemTypes> ExternalCallRequest<'_, S> {
     pub fn next_frame_self_address(&self) -> &<S::IOTypes as SystemIOTypesConfig>::Address {
         &self.callee
     }
+}
+
+pub struct DeploymentRequest<'a, S: SystemTypes> {
+    pub address_of_deployer: <S::IOTypes as SystemIOTypesConfig>::Address,
+    pub address: <S::IOTypes as SystemIOTypesConfig>::Address,
+    pub call_scratch_space:
+        Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], S::Allocator>>,
+    pub deployment_code: &'a [u8], // TODO should be in ee_specific_deployment_processing_data
+    pub constructor_parameters: &'a [u8], // TODO should be in ee_specific_deployment_processing_data
+    pub ee_specific_deployment_processing_data:
+        Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
+    pub deployer_full_resources: S::Resources,
+    pub ergs_to_pass: Ergs,
+    pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
 }
 
 pub struct CompletedExecution<'a, S: SystemTypes> {

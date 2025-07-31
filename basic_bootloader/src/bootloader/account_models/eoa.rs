@@ -606,7 +606,7 @@ where
         }
     };
 
-    let deployment_parameters = DeploymentPreparationParameters {
+    let deployment_request = DeploymentRequest {
         address: deployed_address,
         address_of_deployer: from,
         call_scratch_space: None,
@@ -616,7 +616,6 @@ where
         ee_specific_deployment_processing_data,
         deployer_full_resources: resources.clone(),
         ergs_to_pass: resources.ergs(),
-        deployer_nonce: Some(existing_nonce),
     };
     let rollback_handle = system.start_global_frame()?;
 
@@ -625,7 +624,7 @@ where
         system,
         system_functions,
         to_ee_type,
-        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters),
+        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_request),
         tracer,
     )?;
     let TransactionEndPoint::CompletedDeployment(CompletedDeployment {

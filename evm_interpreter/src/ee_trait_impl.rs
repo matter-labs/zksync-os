@@ -384,18 +384,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             constructor_parameters,
             ee_specific_deployment_processing_data: _ee_specific_deployment_processing_data,
             nominal_token_value,
-            deployer_full_resources: _,
-            ergs_to_pass,
-            deployer_nonce,
+            callstack_depth,
         } = deployment_parameters;
         assert!(constructor_parameters.is_empty());
         assert!(call_scratch_space.is_none());
-
-        // We only charge after succeeding the following checks:
-        // - Deployer has enough balance for token transfer
-        // - Nonce overflow check
-
-        // Native resource is still in deployer_full_resources, so we charge it from there.
 
         if !nominal_token_value.is_zero() {
             // Check deployer has enough balance for token transfer
@@ -419,27 +411,20 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             }
         }
 
-        // Nonce overflow check
-        let _ = match deployer_nonce {
-            Some(old_nonce) => Ok::<u64, Self::SubsystemError>(old_nonce),
-            None => {
-                match resources.with_infinite_ergs(|inf_resources| {
-                    system.io.increment_nonce(
-                        THIS_EE_TYPE,
-                        inf_resources,
-                        &address_of_deployer,
-                        1u64,
-                    )
-                }) {
-                    Ok(nonce) => Ok(nonce),
-                    Err(SubsystemError::LeafUsage(InterfaceError(
-                        NonceError::NonceOverflow,
-                        _,
-                    ))) => return Ok(None),
-                    Err(e) => return Err(wrap_error!(e)),
+        // Increase nonce. Ignore, if we are in the root frame - caller's nonce already incremented before.
+        if callstack_depth > 0 {
+            match resources.with_infinite_ergs(|inf_resources| {
+                system
+                    .io
+                    .increment_nonce(THIS_EE_TYPE, inf_resources, &address_of_deployer, 1u64)
+            }) {
+                Ok(_) => {}
+                Err(SubsystemError::LeafUsage(InterfaceError(NonceError::NonceOverflow, _))) => {
+                    return Ok(None)
                 }
-            }
-        }?;
+                Err(e) => return Err(wrap_error!(e)),
+            };
+        };
 
         let AccountData {
             nonce: Just(deployee_nonce),

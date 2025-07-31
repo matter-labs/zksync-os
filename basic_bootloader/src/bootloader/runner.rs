@@ -583,7 +583,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
     fn handle_requested_deployment<const IS_ENTRY_FRAME: bool>(
         &mut self,
         ee_type: ExecutionEnvironmentType,
-        deployment_parameters: DeploymentPreparationParameters<S>,
+        deployment_request: DeploymentRequest<S>,
         heap: SliceVec<u8>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<CompletedDeployment<'external, S>, BootloaderSubsystemError>
@@ -593,8 +593,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         // Caller gave away all it's resources into deployment parameters, and in preparation function
         // we will charge for deployment, compute address and potentially increment nonce
 
-        let ergs_to_pass = deployment_parameters.ergs_to_pass; // TODO
-        let mut deployer_resources = deployment_parameters.deployer_full_resources.clone(); // TODO
+        let ergs_to_pass = deployment_request.ergs_to_pass; // TODO
+        let mut deployer_resources = deployment_request.deployer_full_resources;
 
         let mut resources_for_constructor_frame = if !IS_ENTRY_FRAME {
             let mut constructor_resources = S::Resources::from_ergs(ergs_to_pass);
@@ -609,7 +609,17 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let mut launch_params = match SupportedEEVMState::prepare_for_deployment(
             ee_type,
             self.system,
-            deployment_parameters,
+            DeploymentPreparationParameters {
+                address_of_deployer: deployment_request.address_of_deployer,
+                address: deployment_request.address,
+                call_scratch_space: deployment_request.call_scratch_space,
+                deployment_code: deployment_request.deployment_code,
+                constructor_parameters: deployment_request.constructor_parameters,
+                ee_specific_deployment_processing_data: deployment_request
+                    .ee_specific_deployment_processing_data,
+                nominal_token_value: deployment_request.nominal_token_value,
+                callstack_depth: self.callstack_height,
+            },
             &mut resources_for_constructor_frame,
         ) {
             Ok(Some(launch_params)) => launch_params,
@@ -630,6 +640,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         launch_params.external_call.available_resources = resources_for_constructor_frame;
 
+        // TODO should be part of EE
         if self.callstack_height > 1024 {
             deployer_resources.reclaim(launch_params.external_call.available_resources);
             return Ok(CompletedDeployment {

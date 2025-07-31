@@ -7,12 +7,12 @@ use ruint::aliases::B160;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::SystemFunctions;
 use zk_ee::system::{
     logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
     DeploymentPreparationParameters, DeploymentResult, EthereumLikeTypes,
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
 };
+use zk_ee::system::{DeploymentRequest, SystemFunctions};
 use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::cheap_clone::CheapCloneRiscV;
@@ -71,8 +71,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                         deployer_full_resources,
                         nominal_token_value,
                         ergs_for_constructor,
-                    }) => ExecutionEnvironmentSpawnRequest::RequestedDeployment(
-                        DeploymentPreparationParameters {
+                    }) => {
+                        ExecutionEnvironmentSpawnRequest::RequestedDeployment(DeploymentRequest {
                             address_of_deployer: self.address,
                             address,
                             call_scratch_space: None,
@@ -82,9 +82,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                             deployer_full_resources,
                             ergs_to_pass: ergs_for_constructor,
                             nominal_token_value,
-                            deployer_nonce: None,
-                        },
-                    ),
+                        })
+                    }
                 },
             });
         }
