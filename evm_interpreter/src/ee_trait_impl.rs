@@ -370,13 +370,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
     fn prepare_for_deployment<'a>(
         system: &mut System<S>,
         deployment_parameters: DeploymentPreparationParameters<'a, S>,
-    ) -> Result<
-        (
-            S::Resources,
-            Option<ExecutionEnvironmentLaunchParams<'a, S>>,
-        ),
-        Self::SubsystemError,
-    >
+        resources: &mut S::Resources,
+    ) -> Result<Option<ExecutionEnvironmentLaunchParams<'a, S>>, Self::SubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -389,7 +384,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             constructor_parameters,
             ee_specific_deployment_processing_data: _ee_specific_deployment_processing_data,
             nominal_token_value,
-            mut deployer_full_resources,
+            deployer_full_resources: _,
             ergs_to_pass,
             deployer_nonce,
         } = deployment_parameters;
@@ -404,7 +399,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
         if !nominal_token_value.is_zero() {
             // Check deployer has enough balance for token transfer
-            let deployer_balance = deployer_full_resources
+            let deployer_balance = resources
                 .with_infinite_ergs(|inf_resources| {
                     system.io.read_account_properties(
                         THIS_EE_TYPE,
@@ -420,7 +415,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 let _ = system
                     .get_logger()
                     .write_fmt(format_args!("Not enough balance for deployment\n",));
-                return Ok((deployer_full_resources, None));
+                return Ok(None);
             }
         }
 
@@ -428,7 +423,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         let _ = match deployer_nonce {
             Some(old_nonce) => Ok::<u64, Self::SubsystemError>(old_nonce),
             None => {
-                match deployer_full_resources.with_infinite_ergs(|inf_resources| {
+                match resources.with_infinite_ergs(|inf_resources| {
                     system.io.increment_nonce(
                         THIS_EE_TYPE,
                         inf_resources,
@@ -440,7 +435,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     Err(SubsystemError::LeafUsage(InterfaceError(
                         NonceError::NonceOverflow,
                         _,
-                    ))) => return Ok((deployer_full_resources, None)),
+                    ))) => return Ok(None),
                     Err(e) => return Err(wrap_error!(e)),
                 }
             }
@@ -450,7 +445,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             nonce: Just(deployee_nonce),
             unpadded_code_len: Just(deployee_code_len),
             ..
-        } = deployer_full_resources.with_infinite_ergs(|inf_resources| {
+        } = resources.with_infinite_ergs(|inf_resources| {
             system.io.read_account_properties(
                 THIS_EE_TYPE,
                 inf_resources,
@@ -470,7 +465,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             let _ = system
                 .get_logger()
                 .write_fmt(format_args!("Deployment on existing account\n",));
-            return Ok((deployer_full_resources, None));
+            resources
+                .charge(&S::Resources::from_ergs(resources.ergs()))
+                .expect("Should succeed"); // Burn all gas
+            return Ok(None);
         }
 
         let environment_parameters = EnvironmentParameters {
@@ -495,6 +493,6 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             environment_parameters,
         };
 
-        Ok((deployer_full_resources, Some(next_frame_state)))
+        Ok(Some(next_frame_state))
     }
 }

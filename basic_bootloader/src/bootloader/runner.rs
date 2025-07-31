@@ -594,31 +594,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         // we will charge for deployment, compute address and potentially increment nonce
 
         let ergs_to_pass = deployment_parameters.ergs_to_pass; // TODO
+        let mut deployer_resources = deployment_parameters.deployer_full_resources.clone(); // TODO
 
-        let (resources_for_deployer, mut launch_params) =
-            match SupportedEEVMState::prepare_for_deployment(
-                ee_type,
-                self.system,
-                deployment_parameters,
-            ) {
-                Ok((resources, Some(launch_params))) => (resources, launch_params),
-                Ok((resources_for_deployer, None)) => {
-                    return Ok(CompletedDeployment {
-                        resources_returned: resources_for_deployer,
-                        deployment_result: DeploymentResult::Failed {
-                            return_values: ReturnValues::empty(),
-                            execution_reverted: false,
-                        },
-                    })
-                }
-                Err(e) => {
-                    return Err(wrap_error!(e));
-                }
-            };
-
-        let mut deployer_resources = resources_for_deployer;
-
-        let resources_for_constructor_frame = if !IS_ENTRY_FRAME {
+        let mut resources_for_constructor_frame = if !IS_ENTRY_FRAME {
             let mut constructor_resources = S::Resources::from_ergs(ergs_to_pass);
             deployer_resources.charge(&constructor_resources)?;
             // Give native resource to the callee.
@@ -626,6 +604,28 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             constructor_resources
         } else {
             deployer_resources.take()
+        };
+
+        let mut launch_params = match SupportedEEVMState::prepare_for_deployment(
+            ee_type,
+            self.system,
+            deployment_parameters,
+            &mut resources_for_constructor_frame,
+        ) {
+            Ok(Some(launch_params)) => launch_params,
+            Ok(None) => {
+                deployer_resources.reclaim(resources_for_constructor_frame);
+                return Ok(CompletedDeployment {
+                    resources_returned: deployer_resources,
+                    deployment_result: DeploymentResult::Failed {
+                        return_values: ReturnValues::empty(),
+                        execution_reverted: false,
+                    },
+                });
+            }
+            Err(e) => {
+                return Err(wrap_error!(e));
+            }
         };
 
         launch_params.external_call.available_resources = resources_for_constructor_frame;

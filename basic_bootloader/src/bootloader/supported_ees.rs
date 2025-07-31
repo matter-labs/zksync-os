@@ -119,13 +119,8 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         ee_version: ExecutionEnvironmentType,
         system: &mut System<S>,
         deployment_parameters: DeploymentPreparationParameters<'a, S>,
-    ) -> Result<
-        (
-            S::Resources,
-            Option<ExecutionEnvironmentLaunchParams<'a, S>>,
-        ),
-        EESubsystemError,
-    >
+        resources: &mut S::Resources,
+    ) -> Result<Option<ExecutionEnvironmentLaunchParams<'a, S>>, EESubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -134,6 +129,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
                 SystemBoundEVMInterpreter::<S>::prepare_for_deployment(
                     system,
                     deployment_parameters,
+                    resources,
                 )
                 .map_err(wrap_error!())
             }

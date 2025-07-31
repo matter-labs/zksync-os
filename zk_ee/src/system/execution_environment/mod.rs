@@ -135,13 +135,8 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     fn prepare_for_deployment<'a>(
         system: &mut System<S>,
         deployment_parameters: DeploymentPreparationParameters<'a, S>,
-    ) -> Result<
-        (
-            S::Resources,
-            Option<ExecutionEnvironmentLaunchParams<'a, S>>,
-        ),
-        Self::SubsystemError,
-    >
+        resources: &mut S::Resources,
+    ) -> Result<Option<ExecutionEnvironmentLaunchParams<'a, S>>, Self::SubsystemError>
     where
         S::IO: IOSubsystemExt;
 }
