@@ -10,9 +10,11 @@ use ruint::aliases::U256;
 use system_hooks::*;
 use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::common_structs::TransferInfo;
+use zk_ee::error_ctx;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::interface_error;
 use zk_ee::memory::slice_vec::SliceVec;
+use zk_ee::system::errors::context::contextualized::Contextualized as _;
 use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
@@ -346,7 +348,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
     {
         // Now, perform transfer with infinite ergs
         if let Some(TransferInfo { value, target }) = transfer_to_perform {
-            match external_call_params
+            if let Err(e) = external_call_params
                 .external_call
                 .available_resources
                 .with_infinite_ergs(|inf_resources| {
@@ -357,37 +359,44 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         &target,
                         &value,
                     )
-                }) {
-                Ok(()) => (),
-                Err(e) => {
-                    match e {
-                        SubsystemError::LeafUsage(_interface_error) => {
-                            // TODO log this error, but logger is unavailable
-                            // Insufficient balance
-                            match ee_type {
-                                ExecutionEnvironmentType::NoEE => {
-                                    return Err(interface_error!(
-                                        BootloaderInterfaceError::TopLevelInsufficientBalance
-                                    ))
-                                }
-                                ExecutionEnvironmentType::EVM => {
-                                    // Following EVM, a call with insufficient balance is not a revert,
-                                    // but rather a normal failing call.
-                                    return Ok(Some(CallResult::Failed {
-                                        return_values: ReturnValues::empty(),
-                                    }));
-                                }
+                })
+            {
+                match e {
+                    SubsystemError::LeafUsage(_interface_error) => {
+                        // TODO log this error, but logger is unavailable
+                        // Insufficient balance
+                        match ee_type {
+                            ExecutionEnvironmentType::NoEE => {
+                                return Err(interface_error!(
+                                    BootloaderInterfaceError::TopLevelInsufficientBalance
+                                )
+                                .with_context(||
+                                    error_ctx! {
+                                         "caller" => debug_format(external_call_params.external_call.caller),
+                                         "target" => debug_format(target),
+                                    }
+                                ));
+                            }
+                            ExecutionEnvironmentType::EVM => {
+                                // Following EVM, a call with insufficient balance is not a revert,
+                                // but rather a normal failing call.
+                                return Ok(Some(CallResult::Failed {
+                                    return_values: ReturnValues::empty(),
+                                }));
                             }
                         }
-                        SubsystemError::LeafDefect(_) => return Err(wrap_error!(e)),
-                        SubsystemError::LeafRuntime(ref runtime_error) => match runtime_error {
-                            RuntimeError::OutOfNativeResources(_) => return Err(wrap_error!(e)),
-                            RuntimeError::OutOfErgs(_) => {
-                                return Err(internal_error!("Out of ergs on infinite ergs").into())
-                            }
-                        },
-                        SubsystemError::Cascaded(cascaded_error) => match cascaded_error {},
                     }
+                    SubsystemError::LeafRuntime(runtime_error @ RuntimeError::OutOfErgs(_)) => {
+                        return Err(SubsystemError::LeafDefect(internal_error!(
+                            "Out of ergs on infinite ergs"
+                        ))
+                        .with_context(|| {
+                            error_ctx! {
+                                "inner" => runtime_error,
+                            }
+                        }))
+                    }
+                    e => return Err(wrap_error!(e)),
                 }
             }
         }
