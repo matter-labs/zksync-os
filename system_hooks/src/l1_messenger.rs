@@ -164,14 +164,21 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     caller: B160,
     caller_ee: u8,
 ) -> Result<Result<Bytes32, &'static str>, SystemError> {
+    // abi_encoded_message length shouldn't be able to overflow u32, due to gas
+    // limitations.
+    let abi_encoded_message_len: u32 = abi_encoded_message
+        .len()
+        .try_into()
+        .map_err(|_| internal_error!("abi_encoded_message is larger than u32"))?;
+
     // following solidity abi for sendToL1(bytes _message)
-    if abi_encoded_message.len() < 32 {
+    if abi_encoded_message_len < 32 {
         return Ok(Err(
             "L1 messenger failure: sendToL1 called with invalid calldata",
         ));
     }
 
-    let message_offset: usize = match U256::from_be_slice(&abi_encoded_message[..32]).try_into() {
+    let message_offset: u32 = match U256::from_be_slice(&abi_encoded_message[..32]).try_into() {
         Ok(offset) => offset,
         Err(_) => {
             return Ok(Err(
@@ -189,7 +196,7 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
         ));
     }
     // length located at message_offset..message_offset+32
-    // we want to check that message_offset+32 will not overflow usize
+    // we want to check that message_offset+32 will not overflow u32
     let length_encoding_end = match message_offset.checked_add(32) {
         Some(length_encoding_end) => length_encoding_end,
         None => {
@@ -198,13 +205,13 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
             ))
         }
     };
-    if abi_encoded_message.len() < length_encoding_end {
+    if abi_encoded_message_len < length_encoding_end {
         return Ok(Err(
             "L1 messenger failure: sendToL1 called with invalid calldata",
         ));
     }
-    let length = match U256::from_be_slice(
-        &abi_encoded_message[length_encoding_end - 32..length_encoding_end],
+    let length: u32 = match U256::from_be_slice(
+        &abi_encoded_message[(length_encoding_end as usize) - 32..length_encoding_end as usize],
     )
     .try_into()
     {
@@ -224,7 +231,7 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
             ))
         }
     };
-    if abi_encoded_message.len() < message_end {
+    if abi_encoded_message_len < message_end {
         return Ok(Err(
             "L1 messenger failure: sendToL1 called with invalid calldata",
         ));
@@ -234,11 +241,11 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     // to call a function with offset pointing to a faraway point in calldata. However,
     // when explicitly calling a contract Solidity encodes it via a strict encoding and allowing
     // only standard encoding here allows for cheaper and easier implementation.
-    if abi_encoded_message.len() % 32 != 0 {
+    if abi_encoded_message_len % 32 != 0 {
         return Ok(Err("Calldata is not well formed"));
     }
 
-    let message = &abi_encoded_message[length_encoding_end..message_end];
+    let message = &abi_encoded_message[(length_encoding_end as usize)..message_end as usize];
     let message_hash = system.io.emit_l1_message(
         ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
             .map_err(SystemError::LeafDefect)?,
