@@ -57,27 +57,6 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         }
     }
 
-    pub fn calculate_resources_passed_in_constructor(
-        ee_version: ExecutionEnvironmentType,
-        resources_in_caller_frame: &mut <S as SystemTypes>::Resources,
-        deployment_parameters: &ExecutionEnvironmentLaunchParams<S>,
-        system: &mut System<S>,
-    ) -> Result<<S as SystemTypes>::Resources, EESubsystemError> {
-        match ee_version {
-            ExecutionEnvironmentType::EVM => {
-                SystemBoundEVMInterpreter::<S>::calculate_resources_passed_in_constructor(
-                    resources_in_caller_frame,
-                    deployment_parameters,
-                    system,
-                )
-                .map_err(wrap_error!())
-            }
-            _ => Err(interface_error!(
-                InterfaceError::UnsupportedExecutionEnvironment
-            )),
-        }
-    }
-
     pub fn create_initial(
         ee_version: u8,
         system: &mut System<S>,

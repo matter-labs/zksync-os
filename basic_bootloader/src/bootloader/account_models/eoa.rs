@@ -615,6 +615,7 @@ where
         deployment_code: main_calldata,
         ee_specific_deployment_processing_data,
         deployer_full_resources: resources.clone(),
+        ergs_to_pass: resources.ergs(),
         deployer_nonce: Some(existing_nonce),
     };
     let rollback_handle = system.start_global_frame()?;

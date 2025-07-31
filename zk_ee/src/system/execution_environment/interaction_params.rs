@@ -1,5 +1,5 @@
 use crate::{
-    system::{system::SystemTypes, MAX_SCRATCH_SPACE_USIZE_WORDS},
+    system::{system::SystemTypes, Ergs, MAX_SCRATCH_SPACE_USIZE_WORDS},
     types_config::SystemIOTypesConfig,
 };
 
@@ -32,6 +32,7 @@ pub struct DeploymentPreparationParameters<'a, S: SystemTypes> {
     pub ee_specific_deployment_processing_data:
         Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
     pub deployer_full_resources: S::Resources,
+    pub ergs_to_pass: Ergs,
     pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
     pub deployer_nonce: Option<u64>,
 }

@@ -390,6 +390,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             ee_specific_deployment_processing_data: _ee_specific_deployment_processing_data,
             nominal_token_value,
             mut deployer_full_resources,
+            ergs_to_pass,
             deployer_nonce,
         } = deployment_parameters;
         assert!(constructor_parameters.is_empty());
@@ -495,23 +496,5 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         };
 
         Ok((deployer_full_resources, Some(next_frame_state)))
-    }
-
-    fn calculate_resources_passed_in_constructor(
-        resources_in_caller_frame: &mut <S as SystemTypes>::Resources,
-        _deployment_parameters: &ExecutionEnvironmentLaunchParams<S>,
-        _system: &mut System<S>,
-    ) -> Result<<S as SystemTypes>::Resources, Self::SubsystemError> {
-        // Constructor gets 63/64 of available resources
-        let ergs_for_constructor = gas_utils::apply_63_64_rule(resources_in_caller_frame.ergs());
-        // Charge caller frame
-        let resources_to_pass = S::Resources::from_ergs(ergs_for_constructor);
-
-        // This never panics because ergs_for_constructor <= resources_in_caller_frame
-        resources_in_caller_frame
-            .charge(&resources_to_pass)
-            .unwrap();
-
-        return Ok(resources_to_pass);
     }
 }

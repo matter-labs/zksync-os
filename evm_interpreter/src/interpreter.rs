@@ -70,6 +70,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                         ee_specific_deployment_processing_data,
                         deployer_full_resources,
                         nominal_token_value,
+                        ergs_for_constructor,
                     }) => ExecutionEnvironmentSpawnRequest::RequestedDeployment(
                         DeploymentPreparationParameters {
                             address_of_deployer: self.address,
@@ -79,6 +80,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                             constructor_parameters: &[],
                             ee_specific_deployment_processing_data,
                             deployer_full_resources,
+                            ergs_to_pass: ergs_for_constructor,
                             nominal_token_value,
                             deployer_nonce: None,
                         },
@@ -118,6 +120,7 @@ pub struct EVMDeploymentRequest<S: SystemTypes> {
     pub ee_specific_deployment_processing_data:
         Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
     pub deployer_full_resources: S::Resources,
+    pub ergs_for_constructor: Ergs,
     pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
 }
 

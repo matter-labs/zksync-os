@@ -593,6 +593,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         // Caller gave away all it's resources into deployment parameters, and in preparation function
         // we will charge for deployment, compute address and potentially increment nonce
 
+        let ergs_to_pass = deployment_parameters.ergs_to_pass; // TODO
+
         let (resources_for_deployer, mut launch_params) =
             match SupportedEEVMState::prepare_for_deployment(
                 ee_type,
@@ -617,30 +619,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let mut deployer_resources = resources_for_deployer;
 
         let resources_for_constructor_frame = if !IS_ENTRY_FRAME {
-            // now we should ask current EE to calculate resources for the callee frame
-            let mut constructor_resources =
-                match SupportedEEVMState::<S>::calculate_resources_passed_in_constructor(
-                    ee_type,
-                    &mut deployer_resources,
-                    &launch_params,
-                    self.system,
-                ) {
-                    Ok(x) => x,
-                    Err(x) => {
-                        if let RootCause::Runtime(RuntimeError::OutOfErgs(_)) = x.root_cause() {
-                            return Ok(CompletedDeployment {
-                                resources_returned: deployer_resources,
-                                deployment_result: DeploymentResult::Failed {
-                                    return_values: ReturnValues::empty(),
-                                    execution_reverted: false,
-                                },
-                            });
-                        } else {
-                            return Err(wrap_error!(x));
-                        }
-                    }
-                };
-
+            let mut constructor_resources = S::Resources::from_ergs(ergs_to_pass);
+            deployer_resources.charge(&constructor_resources)?;
             // Give native resource to the callee.
             deployer_resources.give_native_to(&mut constructor_resources);
             constructor_resources
