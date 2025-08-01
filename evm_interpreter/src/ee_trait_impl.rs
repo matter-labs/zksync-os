@@ -102,6 +102,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         let EnvironmentParameters {
             bytecode,
             scratch_space_len: _,
+            callstack_depth: _,
         } = environment_parameters;
 
         let mut is_static = false;
@@ -368,9 +369,9 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
     // derive address and check other preconditions to deploy the bytecode
     fn prepare_for_deployment<'a>(
-        system: &mut System<S>,
+        _system: &mut System<S>,
         deployment_parameters: DeploymentPreparationParameters<'a, S>,
-        resources: &mut S::Resources,
+        _resources: &mut S::Resources,
     ) -> Result<Option<ExecutionEnvironmentLaunchParams<'a, S>>, Self::SubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -389,84 +390,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         assert!(constructor_parameters.is_empty());
         assert!(call_scratch_space.is_none());
 
-        if deployment_parameters.callstack_depth > 1024 {
-            let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Callstack is too deep (deployment)\n",));
-
-            return Ok(None);
-        }
-
-        if !nominal_token_value.is_zero() {
-            // Check deployer has enough balance for token transfer
-            let deployer_balance = resources
-                .with_infinite_ergs(|inf_resources| {
-                    system.io.read_account_properties(
-                        THIS_EE_TYPE,
-                        inf_resources,
-                        &address_of_deployer,
-                        AccountDataRequest::empty().with_nominal_token_balance(),
-                    )
-                })?
-                .nominal_token_balance
-                .0;
-
-            if deployer_balance < nominal_token_value {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Not enough balance for deployment\n",));
-                return Ok(None);
-            }
-        }
-
-        // Increase nonce. Ignore, if we are in the root frame - caller's nonce already incremented before.
-        if callstack_depth > 0 {
-            match resources.with_infinite_ergs(|inf_resources| {
-                system
-                    .io
-                    .increment_nonce(THIS_EE_TYPE, inf_resources, &address_of_deployer, 1u64)
-            }) {
-                Ok(_) => {}
-                Err(SubsystemError::LeafUsage(InterfaceError(NonceError::NonceOverflow, _))) => {
-                    return Ok(None)
-                }
-                Err(e) => return Err(wrap_error!(e)),
-            };
-        };
-
-        let AccountData {
-            nonce: Just(deployee_nonce),
-            unpadded_code_len: Just(deployee_code_len),
-            ..
-        } = resources.with_infinite_ergs(|inf_resources| {
-            system.io.read_account_properties(
-                THIS_EE_TYPE,
-                inf_resources,
-                &deployed_address,
-                AccountDataRequest::empty()
-                    .with_nonce()
-                    .with_unpadded_code_len(),
-            )
-        })?;
-
-        // Check there's no contract already deployed at this address.
-        // NB: EVM also specifies that the address should have empty storage,
-        // but we cannot perform such a check for now.
-        // We need to check this here (not when we actually deploy the code)
-        // because if this check fails the constructor shouldn't be executed.
-        if deployee_code_len != 0 || deployee_nonce != 0 {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Deployment on existing account\n",));
-            resources
-                .charge(&S::Resources::from_ergs(resources.ergs()))
-                .expect("Should succeed"); // Burn all gas
-            return Ok(None);
-        }
-
         let environment_parameters = EnvironmentParameters {
             bytecode: Bytecode::Constructor(deployment_code),
             scratch_space_len: 0u32,
+            callstack_depth,
         };
 
         // TODO: eventually more resources OUT of the frame
@@ -487,5 +414,109 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         };
 
         Ok(Some(next_frame_state))
+    }
+
+    fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
+        system: &mut System<S>,
+        frame_state: &mut ExecutionEnvironmentLaunchParams<'i, S>,
+        _tracer: &mut impl Tracer<S>,
+    ) -> Result<bool, Self::SubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        if frame_state.environment_parameters.callstack_depth > 1024 {
+            let _ = system
+                .get_logger()
+                .write_fmt(format_args!("Callstack is too deep\n",));
+
+            return Ok(false);
+        }
+
+        // Check caller has enough balance for token transfer
+        if !frame_state.external_call.nominal_token_value.is_zero() {
+            let deployer_balance = frame_state
+                .external_call
+                .available_resources
+                .with_infinite_ergs(|inf_resources| {
+                    system.io.read_account_properties(
+                        THIS_EE_TYPE,
+                        inf_resources,
+                        &frame_state.external_call.caller,
+                        AccountDataRequest::empty().with_nominal_token_balance(),
+                    )
+                })?
+                .nominal_token_balance
+                .0;
+
+            if deployer_balance < frame_state.external_call.nominal_token_value {
+                let _ = system
+                    .get_logger()
+                    .write_fmt(format_args!("Not enough balance for transfer\n",));
+                return Ok(false);
+            }
+        }
+
+        if frame_state.external_call.modifier == CallModifier::Constructor {
+            // Increase nonce. Ignore, if we are in the root frame - caller's nonce already incremented before.
+            if frame_state.environment_parameters.callstack_depth > 0 {
+                match frame_state
+                    .external_call
+                    .available_resources
+                    .with_infinite_ergs(|inf_resources| {
+                        system.io.increment_nonce(
+                            THIS_EE_TYPE,
+                            inf_resources,
+                            &frame_state.external_call.caller,
+                            1u64,
+                        )
+                    }) {
+                    Ok(_) => {}
+                    Err(SubsystemError::LeafUsage(InterfaceError(
+                        NonceError::NonceOverflow,
+                        _,
+                    ))) => return Ok(false),
+                    Err(e) => return Err(wrap_error!(e)),
+                };
+            };
+
+            let AccountData {
+                nonce: Just(deployee_nonce),
+                unpadded_code_len: Just(deployee_code_len),
+                ..
+            } = frame_state
+                .external_call
+                .available_resources
+                .with_infinite_ergs(|inf_resources| {
+                    system.io.read_account_properties(
+                        THIS_EE_TYPE,
+                        inf_resources,
+                        &frame_state.external_call.callee,
+                        AccountDataRequest::empty()
+                            .with_nonce()
+                            .with_unpadded_code_len(),
+                    )
+                })?;
+
+            // Check there's no contract already deployed at this address.
+            // NB: EVM also specifies that the address should have empty storage,
+            // but we cannot perform such a check for now.
+            // We need to check this here (not when we actually deploy the code)
+            // because if this check fails the constructor shouldn't be executed.
+            if deployee_code_len != 0 || deployee_nonce != 0 {
+                let _ = system
+                    .get_logger()
+                    .write_fmt(format_args!("Deployment on existing account\n",));
+                frame_state
+                    .external_call
+                    .available_resources
+                    .charge(&S::Resources::from_ergs(
+                        frame_state.external_call.available_resources.ergs(),
+                    ))
+                    .expect("Should succeed"); // Burn all gas
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 }

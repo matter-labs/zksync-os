@@ -260,7 +260,12 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             mut external_call_launch_params,
             mut resources_in_caller_frame,
         );
-        match run_call_preparation::<S, IS_ENTRY_FRAME>(self.system, ee_type, call_request) {
+        match run_call_preparation::<S, IS_ENTRY_FRAME>(
+            self.system,
+            ee_type,
+            call_request,
+            self.callstack_height,
+        ) {
             Ok(CallPreparationResult::Success {
                 next_ee_version: next_ee_version_returned,
                 transfer_to_perform: transfer_to_perform_returned,
@@ -640,6 +645,31 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         launch_params.external_call.available_resources = resources_for_constructor_frame;
 
+        tracer.on_new_execution_frame(&launch_params);
+
+        match SupportedEEVMState::before_executing_frame(
+            ee_type,
+            self.system,
+            &mut launch_params,
+            tracer,
+        ) {
+            Ok(success) => {
+                if !success {
+                    tracer.after_execution_frame_completed(None); // TODO pass returned resources anyway
+
+                    deployer_resources.reclaim(launch_params.external_call.available_resources);
+                    return Ok(CompletedDeployment {
+                        resources_returned: deployer_resources,
+                        deployment_result: DeploymentResult::Failed {
+                            return_values: ReturnValues::empty(),
+                            execution_reverted: false,
+                        },
+                    });
+                }
+            }
+            Err(_) => todo!(),
+        }
+
         let constructor_rollback_handle = self
             .system
             .start_global_frame()
@@ -673,8 +703,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     }
                 })?;
         }
-
-        tracer.on_new_execution_frame(&launch_params);
 
         match self.deployment_execute_constructor_frame(ee_type, launch_params, heap, tracer) {
             Ok((deployment_success, resources_returned, deployment_result)) => {
@@ -838,6 +866,7 @@ fn run_call_preparation<'a, S: EthereumLikeTypes, const IS_ENTRY_FRAME: bool>(
     system: &mut System<S>,
     ee_version: ExecutionEnvironmentType,
     mut call_request: ExternalCallRequest<'a, S>,
+    callstack_depth: usize,
 ) -> Result<CallPreparationResult<'a, S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
@@ -954,6 +983,7 @@ where
                 code_version: callee_account_properties.code_version,
             },
             scratch_space_len: 0,
+            callstack_depth,
         },
     };
 

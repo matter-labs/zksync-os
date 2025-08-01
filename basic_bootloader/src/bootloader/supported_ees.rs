@@ -71,6 +71,26 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         }
     }
 
+    pub fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
+        ee_version: ExecutionEnvironmentType,
+        system: &mut System<S>,
+        frame_state: &mut ExecutionEnvironmentLaunchParams<'i, S>,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<bool, EESubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        match ee_version {
+            ExecutionEnvironmentType::EVM => {
+                SystemBoundEVMInterpreter::<S>::before_executing_frame(system, frame_state, tracer)
+                    .map_err(wrap_error!())
+            }
+            _ => Err(interface_error!(
+                InterfaceError::UnsupportedExecutionEnvironment
+            )),
+        }
+    }
+
     /// Starts executing a new frame within the current EE.
     /// initial_state contains all the necessary information - calldata, environment settings and resources passed.
     pub fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(

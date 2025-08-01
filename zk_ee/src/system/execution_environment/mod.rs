@@ -81,6 +81,14 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     ///
     fn is_static_context(&self) -> bool;
 
+    fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
+        system: &mut System<S>,
+        frame_state: &mut ExecutionEnvironmentLaunchParams<'i, S>,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<bool, Self::SubsystemError>
+    where
+        S::IO: IOSubsystemExt;
+
     ///
     /// Start the execution of an EE frame in a given initial state.
     /// Returns a preemption point for the bootloader to handle.

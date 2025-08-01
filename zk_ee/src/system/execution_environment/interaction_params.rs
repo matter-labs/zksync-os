@@ -18,6 +18,7 @@ pub enum Bytecode<'a> {
 pub struct EnvironmentParameters<'a> {
     pub bytecode: Bytecode<'a>,
     pub scratch_space_len: u32,
+    pub callstack_depth: usize,
 }
 
 /// All needed information for the bootloader and EEs to prepare
