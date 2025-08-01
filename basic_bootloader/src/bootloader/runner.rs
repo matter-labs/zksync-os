@@ -57,17 +57,12 @@ where
     if initial_request.modifier == CallModifier::Constructor {
         run.handle_requested_deployment::<true>(initial_ee_version, initial_request, heap, tracer)
     } else {
-        let (resources_returned, call_result) = run.handle_requested_external_call::<true>(
+        run.handle_requested_external_call::<true>(
             initial_ee_version,
             initial_request,
             heap,
             tracer,
-        )?;
-
-        Ok(CompletedExecution {
-            resources_returned,
-            result: call_result,
-        })
+        )
     }
 }
 
@@ -106,28 +101,29 @@ const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUN
 macro_rules! handle_spawn {
     ($run: ident, $vm:ident, $ee_type:ident, $spawn:ident, $heap:ident, $tracer:ident) => {{
         $run.callstack_height += 1;
-        let (resources_returned, result) = if $spawn.modifier == CallModifier::Constructor {
-            let CompletedExecution {
-                resources_returned,
-                result: deployment_result,
-            } = $run.handle_requested_deployment::<false>($ee_type, $spawn, $heap, $tracer)?;
+        let CompletedExecution {
+            resources_returned,
+            result,
+        } = if $spawn.modifier == CallModifier::Constructor {
+            let completed_execution =
+                $run.handle_requested_deployment::<false>($ee_type, $spawn, $heap, $tracer)?;
 
             let _ = $run.system.get_logger().write_fmt(format_args!(
                 "Return from deployment, success = {:?}\n",
-                matches!(deployment_result, CallResult::Successful { .. })
+                !completed_execution.failed()
             ));
 
-            (resources_returned, deployment_result)
+            completed_execution
         } else {
-            let (resources_returned, call_result) =
+            let completed_execution =
                 $run.handle_requested_external_call::<false>($ee_type, $spawn, $heap, $tracer)?;
 
             let _ = $run.system.get_logger().write_fmt(format_args!(
                 "Return from external call, success = {:?}\n",
-                matches!(call_result, CallResult::Successful { .. })
+                !completed_execution.failed()
             ));
 
-            (resources_returned, call_result)
+            completed_execution
         };
         $run.callstack_height -= 1;
 
@@ -160,7 +156,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         call_request: ExternalCallRequest<S>,
         heap: SliceVec<u8>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
+    ) -> Result<CompletedExecution<'external, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -237,7 +233,12 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
             Ok(CallPreparationResult::Failure {
                 resources_in_caller_frame,
-            }) => return Ok((resources_in_caller_frame, CallResult::CallFailedToExecute)),
+            }) => {
+                return Ok(CompletedExecution {
+                    resources_returned: resources_in_caller_frame,
+                    result: CallResult::CallFailedToExecute,
+                })
+            }
             Err(e) => return Err(e),
         };
 
@@ -294,7 +295,11 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         let (resources_returned_from_callee, call_result) = callee_frame_execution_result?;
         resources_in_caller_frame.reclaim(resources_returned_from_callee);
-        Ok((resources_in_caller_frame, call_result))
+
+        Ok(CompletedExecution {
+            resources_returned: resources_in_caller_frame,
+            result: call_result,
+        })
     }
 
     #[inline(always)]
