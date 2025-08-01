@@ -141,24 +141,19 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             tracer,
         )?;
 
-        let TransactionEndPoint::CompletedExecution(CompletedExecution {
-            return_values,
+        let CompletedExecution {
             resources_returned,
-            reverted,
-        }) = final_state
-        else {
-            return Err(internal_error!("attempt to run ended up in invalid state").into());
-        };
+            result,
+        } = final_state;
 
         if let Some(ref rollback_handle) = rollback_handle {
             system
-                .finish_global_frame(reverted.then_some(rollback_handle))
+                .finish_global_frame(result.failed().then_some(rollback_handle))
                 .map_err(|_| internal_error!("must finish execution frame"))?;
         }
         Ok(CompletedExecution {
-            return_values,
             resources_returned,
-            reverted,
+            result,
         })
     }
 }

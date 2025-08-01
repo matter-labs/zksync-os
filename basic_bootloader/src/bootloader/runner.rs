@@ -34,7 +34,7 @@ pub fn run_till_completion<'a, S: EthereumLikeTypes>(
     initial_ee_version: ExecutionEnvironmentType,
     initial_request: ExternalCallRequest<S>,
     tracer: &mut impl Tracer<S>,
-) -> Result<TransactionEndPoint<'a, S>, BootloaderSubsystemError>
+) -> Result<CompletedExecution<'a, S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -56,7 +56,6 @@ where
 
     if initial_request.modifier == CallModifier::Constructor {
         run.handle_requested_deployment::<true>(initial_ee_version, initial_request, heap, tracer)
-            .map(TransactionEndPoint::CompletedDeployment)
     } else {
         let (resources_returned, call_result) = run.handle_requested_external_call::<true>(
             initial_ee_version,
@@ -65,18 +64,10 @@ where
             tracer,
         )?;
 
-        let (return_values, reverted) = match call_result {
-            CallResult::CallFailedToExecute => (ReturnValues::empty(), true),
-            CallResult::Failed { return_values } => (return_values, true),
-            CallResult::Successful { return_values } => (return_values, false),
-        };
-        Ok(TransactionEndPoint::CompletedExecution(
-            CompletedExecution {
-                resources_returned,
-                return_values,
-                reverted,
-            },
-        ))
+        Ok(CompletedExecution {
+            resources_returned,
+            result: call_result,
+        })
     }
 }
 
@@ -116,9 +107,9 @@ macro_rules! handle_spawn {
     ($run: ident, $vm:ident, $ee_type:ident, $spawn:ident, $heap:ident, $tracer:ident) => {{
         $run.callstack_height += 1;
         let (resources_returned, result) = if $spawn.modifier == CallModifier::Constructor {
-            let CompletedDeployment {
+            let CompletedExecution {
                 resources_returned,
-                deployment_result,
+                result: deployment_result,
             } = $run.handle_requested_deployment::<false>($ee_type, $spawn, $heap, $tracer)?;
 
             let _ = $run.system.get_logger().write_fmt(format_args!(
@@ -425,13 +416,13 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     drop(preemption);
                     preemption = handle_spawn!(self, new_vm, new_ee_type, request, heap, tracer)?;
                 }
-                ExecutionEnvironmentPreemptionPoint::End(
-                    TransactionEndPoint::CompletedExecution(CompletedExecution {
-                        resources_returned,
-                        return_values,
-                        reverted,
-                    }),
-                ) => {
+                ExecutionEnvironmentPreemptionPoint::End(CompletedExecution {
+                    resources_returned,
+                    result,
+                }) => {
+                    let reverted = result.failed();
+                    let return_values = result.return_values();
+
                     self.system
                         .finish_global_frame(reverted.then_some(&rollback_handle))
                         .map_err(|_| internal_error!("must finish execution frame"))?;
@@ -453,14 +444,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                             CallResult::Successful { return_values }
                         },
                     ));
-                }
-                ExecutionEnvironmentPreemptionPoint::End(
-                    TransactionEndPoint::CompletedDeployment(_),
-                ) => {
-                    //TODO should be misuse
-                    return Err(BootloaderSubsystemError::LeafDefect(internal_error!(
-                        "returned from external call as if it was a deployment",
-                    )));
                 }
             }
         }
@@ -492,11 +475,12 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         if let Some(system_hook_run_result) = res {
             let CompletedExecution {
-                return_values,
                 resources_returned,
-                reverted,
-                ..
+                result,
             } = system_hook_run_result;
+
+            let reverted = result.failed();
+            let return_values = result.return_values();
 
             let _ = self.system.get_logger().write_fmt(format_args!(
                 "Call to special address returned, success = {}\n",
@@ -552,7 +536,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         deployment_request: ExternalCallRequest<S>,
         heap: SliceVec<u8>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<CompletedDeployment<'external, S>, BootloaderSubsystemError>
+    ) -> Result<CompletedExecution<'external, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
@@ -590,9 +574,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             Ok(Some(launch_params)) => launch_params,
             Ok(None) => {
                 deployer_resources.reclaim(resources_for_constructor_frame);
-                return Ok(CompletedDeployment {
+                return Ok(CompletedExecution {
                     resources_returned: deployer_resources,
-                    deployment_result: CallResult::Failed {
+                    result: CallResult::Failed {
                         return_values: ReturnValues::empty(),
                     },
                 });
@@ -617,9 +601,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     tracer.after_execution_frame_completed(None); // TODO pass returned resources anyway
 
                     deployer_resources.reclaim(launch_params.external_call.available_resources);
-                    return Ok(CompletedDeployment {
+                    return Ok(CompletedExecution {
                         resources_returned: deployer_resources,
-                        deployment_result: CallResult::Failed {
+                        result: CallResult::Failed {
                             return_values: ReturnValues::empty(),
                         },
                     });
@@ -680,9 +664,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
                 deployer_resources.reclaim(resources_returned);
 
-                Ok(CompletedDeployment {
+                Ok(CompletedExecution {
                     resources_returned: deployer_resources,
-                    deployment_result,
+                    result: deployment_result,
                 })
             }
             Err(e) => {
@@ -717,9 +701,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             .start_executing_frame(self.system, launch_params, heap, tracer)
             .map_err(wrap_error!())?;
 
-        let CompletedDeployment {
+        let CompletedExecution {
             resources_returned,
-            deployment_result,
+            result: deployment_result,
         } = loop {
             match preemption {
                 ExecutionEnvironmentPreemptionPoint::Spawn {
@@ -738,17 +722,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         tracer
                     )?;
                 }
-                ExecutionEnvironmentPreemptionPoint::End(end) => {
-                    break match end {
-                        TransactionEndPoint::CompletedExecution(_) => {
-                            return Err(internal_error!(
-                                "returned from deployment as if it was an external call",
-                            )
-                            .into())
-                        }
-                        TransactionEndPoint::CompletedDeployment(result) => result,
-                    }
-                }
+                ExecutionEnvironmentPreemptionPoint::End(result) => break result,
             }
         };
 

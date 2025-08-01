@@ -72,6 +72,22 @@ pub enum CallResult<'a, S: SystemTypes> {
     Successful { return_values: ReturnValues<'a, S> },
 }
 
+impl<'a, S: SystemTypes> CallResult<'a, S> {
+    #[inline]
+    pub fn failed(&self) -> bool {
+        matches!(self, CallResult::Failed { .. }) || matches!(self, CallResult::CallFailedToExecute)
+    }
+
+    #[inline]
+    pub fn return_values(self) -> ReturnValues<'a, S> {
+        match self {
+            CallResult::CallFailedToExecute => todo!(), // TODO
+            CallResult::Failed { return_values } => return_values,
+            CallResult::Successful { return_values } => return_values,
+        }
+    }
+}
+
 impl<S: SystemTypes> core::fmt::Debug for CallResult<'_, S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {

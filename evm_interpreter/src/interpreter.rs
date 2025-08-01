@@ -7,12 +7,12 @@ use ruint::aliases::B160;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::system::Ergs;
 use zk_ee::system::{
-    logger::Logger, CallModifier, CompletedDeployment, CompletedExecution, EthereumLikeTypes,
+    logger::Logger, CallModifier, CompletedExecution, EthereumLikeTypes,
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
 };
 use zk_ee::system::{CallResult, IOSubsystemExt, SystemFunctions};
-use zk_ee::system::{Ergs, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::cheap_clone::CheapCloneRiscV;
 
@@ -442,18 +442,22 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             };
 
             Ok(ExecutionEnvironmentPreemptionPoint::End(
-                TransactionEndPoint::CompletedDeployment(CompletedDeployment {
+                CompletedExecution {
                     resources_returned: self.gas.take_resources(),
-                    deployment_result,
-                }),
+                    result: deployment_result,
+                },
             ))
         } else {
+            let result = if execution_reverted {
+                CallResult::Failed { return_values }
+            } else {
+                CallResult::Successful { return_values }
+            };
             Ok(ExecutionEnvironmentPreemptionPoint::End(
-                TransactionEndPoint::CompletedExecution(CompletedExecution {
-                    return_values,
+                CompletedExecution {
                     resources_returned: self.gas.take_resources(),
-                    reverted: execution_reverted,
-                }),
+                    result,
+                },
             ))
         }
     }

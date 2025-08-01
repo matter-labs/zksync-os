@@ -19,12 +19,7 @@ pub enum ExecutionEnvironmentPreemptionPoint<'a, S: SystemTypes> {
         request: ExternalCallRequest<'a, S>,
         heap: SliceVec<'a, u8>,
     },
-    End(TransactionEndPoint<'a, S>),
-}
-
-pub enum TransactionEndPoint<'a, S: SystemTypes> {
-    CompletedExecution(CompletedExecution<'a, S>),
-    CompletedDeployment(CompletedDeployment<'a, S>),
+    End(CompletedExecution<'a, S>),
 }
 
 #[derive(Clone)]
@@ -107,13 +102,19 @@ pub struct DeploymentRequest<'a, S: SystemTypes> {
 
 pub struct CompletedExecution<'a, S: SystemTypes> {
     pub resources_returned: S::Resources,
-    pub return_values: ReturnValues<'a, S>,
-    pub reverted: bool,
+    pub result: CallResult<'a, S>,
 }
 
-pub struct CompletedDeployment<'a, S: SystemTypes> {
-    pub resources_returned: S::Resources,
-    pub deployment_result: CallResult<'a, S>,
+impl<'a, S: SystemTypes> CompletedExecution<'a, S> {
+    #[inline]
+    pub fn failed(&self) -> bool {
+        self.result.failed()
+    }
+
+    #[inline]
+    pub fn return_values(self) -> ReturnValues<'a, S> {
+        self.result.return_values()
+    }
 }
 
 impl<S: SystemTypes> Debug for ExternalCallRequest<'_, S> {

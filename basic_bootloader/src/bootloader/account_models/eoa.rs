@@ -229,11 +229,12 @@ where
                 )?;
 
                 let CompletedExecution {
-                    return_values,
                     resources_returned,
-                    reverted,
-                    ..
+                    result,
                 } = final_state;
+
+                let reverted = result.failed();
+                let return_values = result.return_values();
 
                 TxExecutionResult {
                     return_values,
@@ -625,13 +626,11 @@ where
         deployment_request,
         tracer,
     )?;
-    let TransactionEndPoint::CompletedDeployment(CompletedDeployment {
+
+    let CompletedExecution {
         resources_returned,
-        deployment_result,
-    }) = final_state
-    else {
-        return Err(internal_error!("attempt to deploy ended up in invalid state").into());
-    };
+        result: deployment_result,
+    } = final_state;
 
     let (deployment_success, reverted, return_values, at) = match deployment_result {
         CallResult::Successful { return_values } => {
@@ -706,9 +705,7 @@ where
 
     let CompletedExecution {
         resources_returned,
-        return_values,
-        reverted,
-        ..
+        result,
     } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
@@ -722,6 +719,9 @@ where
         tracer,
     )
     .map_err(TxError::oon_as_validation)?;
+
+    let reverted = result.failed();
+    let return_values = result.return_values();
 
     let returndata_region = return_values.returndata;
     let returndata_slice = &returndata_region;
@@ -788,9 +788,7 @@ where
 
     let CompletedExecution {
         resources_returned,
-        return_values,
-        reverted,
-        ..
+        result,
     } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
@@ -804,6 +802,9 @@ where
         tracer,
     )
     .map_err(TxError::oon_as_validation)?;
+
+    let reverted = result.failed();
+    let return_values = result.return_values();
 
     let returndata_region = return_values.returndata;
     let returndata_slice = &returndata_region;
