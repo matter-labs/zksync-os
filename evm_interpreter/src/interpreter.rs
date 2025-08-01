@@ -11,8 +11,8 @@ use zk_ee::system::{
     logger::Logger, CallModifier, CompletedDeployment, CompletedExecution, EthereumLikeTypes,
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
 };
-use zk_ee::system::{CallResult, DeploymentRequest, IOSubsystemExt, SystemFunctions};
-use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, TransactionEndPoint};
+use zk_ee::system::{CallResult, IOSubsystemExt, SystemFunctions};
+use zk_ee::system::{Ergs, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::cheap_clone::CheapCloneRiscV;
 
@@ -51,19 +51,17 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     }) => {
                         let ergs_to_pass = Ergs(gas_to_pass.saturating_mul(ERGS_PER_GAS));
                         let available_resources = self.gas.take_resources();
-                        ExecutionEnvironmentSpawnRequest::RequestedExternalCall(
-                            ExternalCallRequest {
-                                calldata: &current_heap[calldata],
-                                call_scratch_space: None,
-                                nominal_token_value: call_value,
-                                callers_caller: self.caller,
-                                caller: self.address,
-                                callee: destination_address,
-                                modifier,
-                                ergs_to_pass,
-                                available_resources,
-                            },
-                        )
+                        ExternalCallRequest {
+                            input: &current_heap[calldata],
+                            call_scratch_space: None,
+                            nominal_token_value: call_value,
+                            callers_caller: self.caller,
+                            caller: self.address,
+                            callee: destination_address,
+                            modifier,
+                            ergs_to_pass,
+                            available_resources,
+                        }
                     }
 
                     ExternalCall::Create(EVMDeploymentRequest {
@@ -73,19 +71,17 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                         deployer_full_resources,
                         nominal_token_value,
                         ergs_for_constructor,
-                    }) => {
-                        ExecutionEnvironmentSpawnRequest::RequestedDeployment(DeploymentRequest {
-                            address_of_deployer: self.address,
-                            address,
-                            call_scratch_space: None,
-                            deployment_code: &current_heap[deployment_code],
-                            constructor_parameters: &[],
-                            ee_specific_deployment_processing_data,
-                            deployer_full_resources,
-                            ergs_to_pass: ergs_for_constructor,
-                            nominal_token_value,
-                        })
-                    }
+                    }) => ExternalCallRequest {
+                        input: &current_heap[deployment_code],
+                        call_scratch_space: None,
+                        nominal_token_value,
+                        callers_caller: self.caller,
+                        caller: self.address,
+                        callee: address,
+                        modifier: CallModifier::Constructor,
+                        ergs_to_pass: ergs_for_constructor,
+                        available_resources: deployer_full_resources,
+                    },
                 },
             });
         }

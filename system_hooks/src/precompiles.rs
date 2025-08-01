@@ -50,7 +50,7 @@ where
 {
     let ExternalCallRequest {
         available_resources,
-        calldata,
+        input: calldata,
         modifier,
         ..
     } = request;

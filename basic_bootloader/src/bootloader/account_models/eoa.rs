@@ -583,14 +583,12 @@ where
         });
     }
 
-    let deployed_address;
-
-    let ee_specific_deployment_processing_data = match to_ee_type {
+    let deployed_address = match to_ee_type {
         ExecutionEnvironmentType::NoEE => {
             return Err(internal_error!("Deployment cannot target NoEE").into())
         }
         ExecutionEnvironmentType::EVM => {
-            deployed_address = SystemBoundEVMInterpreter::<S>::derive_address_for_deployment(
+            SystemBoundEVMInterpreter::<S>::derive_address_for_deployment(
                 system,
                 resources,
                 CreateScheme::Create,
@@ -601,22 +599,22 @@ where
             .map_err(|e| {
                 let ee_error: EESubsystemError = wrap_error!(e);
                 wrap_error!(ee_error)
-            })?;
-            SystemBoundEVMInterpreter::<S>::default_ee_deployment_options(system)
+            })?
         }
     };
 
-    let deployment_request = DeploymentRequest {
-        address: deployed_address,
-        address_of_deployer: from,
-        call_scratch_space: None,
-        constructor_parameters: &[],
-        nominal_token_value,
-        deployment_code: main_calldata,
-        ee_specific_deployment_processing_data,
-        deployer_full_resources: resources.clone(),
+    let deployment_request = ExternalCallRequest {
+        available_resources: resources.clone(),
         ergs_to_pass: resources.ergs(),
+        caller: from,
+        callee: deployed_address,
+        callers_caller: Default::default(), // TODO
+        modifier: CallModifier::Constructor,
+        input: main_calldata,
+        nominal_token_value,
+        call_scratch_space: None,
     };
+
     let rollback_handle = system.start_global_frame()?;
 
     let final_state = run_till_completion(
@@ -624,7 +622,7 @@ where
         system,
         system_functions,
         to_ee_type,
-        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_request),
+        deployment_request,
         tracer,
     )?;
     let TransactionEndPoint::CompletedDeployment(CompletedDeployment {

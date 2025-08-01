@@ -16,34 +16,10 @@ pub struct ExecutionEnvironmentLaunchParams<'a, S: SystemTypes> {
 
 pub enum ExecutionEnvironmentPreemptionPoint<'a, S: SystemTypes> {
     Spawn {
-        request: ExecutionEnvironmentSpawnRequest<'a, S>,
+        request: ExternalCallRequest<'a, S>,
         heap: SliceVec<'a, u8>,
     },
     End(TransactionEndPoint<'a, S>),
-}
-
-pub enum ExecutionEnvironmentSpawnRequest<'a, S: SystemTypes> {
-    RequestedExternalCall(ExternalCallRequest<'a, S>),
-    RequestedDeployment(DeploymentRequest<'a, S>),
-}
-
-impl<S: SystemTypes> Default for ExecutionEnvironmentSpawnRequest<'_, S>
-where
-    S::Resources: Default,
-{
-    fn default() -> Self {
-        Self::RequestedExternalCall(ExternalCallRequest {
-            available_resources: S::Resources::default(),
-            ergs_to_pass: Ergs::default(),
-            caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
-            callee: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
-            callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
-            modifier: CallModifier::NoModifier,
-            calldata: &[],
-            nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue::default(),
-            call_scratch_space: None,
-        })
-    }
 }
 
 pub enum TransactionEndPoint<'a, S: SystemTypes> {
@@ -59,11 +35,32 @@ pub struct ExternalCallRequest<'a, S: SystemTypes> {
     pub callee: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub modifier: CallModifier,
-    pub calldata: &'a [u8],
+    pub input: &'a [u8],
     /// Base tokens attached to this call.
     pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
     pub call_scratch_space:
         Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], S::Allocator>>,
+    // pub ee_specific_deployment_processing_data:
+    //    Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>, // TODO
+}
+
+impl<S: SystemTypes> Default for ExternalCallRequest<'_, S>
+where
+    S::Resources: Default,
+{
+    fn default() -> Self {
+        Self {
+            available_resources: S::Resources::default(),
+            ergs_to_pass: Ergs::default(),
+            caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
+            callee: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
+            callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
+            modifier: CallModifier::NoModifier,
+            input: &[],
+            nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue::default(),
+            call_scratch_space: None,
+        }
+    }
 }
 
 impl<S: SystemTypes> ExternalCallRequest<'_, S> {
@@ -128,7 +125,7 @@ impl<S: SystemTypes> Debug for ExternalCallRequest<'_, S> {
             .field("callee", &self.callee)
             .field("callers_caller", &self.callers_caller)
             .field("modifier", &self.modifier)
-            .field("calldata", &self.calldata)
+            .field("calldata", &self.input)
             .field("nominal_token_value", &self.nominal_token_value)
             .field("call_scratch_space", &self.call_scratch_space)
             .finish()

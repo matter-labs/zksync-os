@@ -81,7 +81,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
             value: initial_state.external_call.nominal_token_value,
             gas: initial_state.external_call.available_resources.ergs().0 / ERGS_PER_GAS,
             gas_used: 0, // will be populated later
-            input: initial_state.external_call.calldata.to_vec(),
+            input: initial_state.external_call.input.to_vec(),
             output: vec![], // will be populated later
             error: None,
             reverted: false, // will be populated later

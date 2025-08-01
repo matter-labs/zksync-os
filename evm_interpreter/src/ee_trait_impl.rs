@@ -3,8 +3,6 @@ use crate::errors::{EvmErrors, EvmInterfaceError, EvmSubsystemError};
 use crate::gas::gas_utils;
 use crate::gas_constants::{CALLVALUE, CALL_STIPEND, NEWACCOUNT};
 use crate::interpreter::CreateScheme;
-use alloc::boxed::Box;
-use core::any::Any;
 use core::fmt::Write;
 use core::mem;
 use zk_ee::common_structs::CalleeAccountProperties;
@@ -71,7 +69,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     callee,
                     callers_caller,
                     modifier,
-                    calldata,
+                    input: calldata,
                     call_scratch_space,
                     nominal_token_value,
                 },
@@ -291,13 +289,6 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         self.execute_till_yield_point(system, tracer)
     }
 
-    fn default_ee_deployment_options(system: &mut System<S>) -> Option<Box<dyn Any, S::Allocator>> {
-        let allocator = system.get_allocator();
-        let scheme = Box::new_in(CreateScheme::Create, allocator);
-        let scheme = scheme as Box<dyn Any, S::Allocator>;
-        Some(scheme)
-    }
-
     fn calculate_resources_passed_in_external_call(
         resources_available_in_caller_frame: &mut S::Resources,
         call_request: &ExternalCallRequest<S>,
@@ -390,7 +381,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 callee: deployed_address,
                 callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(), // Fine to use placeholder
                 modifier: CallModifier::Constructor,
-                calldata: &[],
+                input: &[],
                 call_scratch_space: None,
                 nominal_token_value,
             },

@@ -95,10 +95,6 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     where
         S::IO: IOSubsystemExt;
 
-    fn default_ee_deployment_options(
-        system: &mut System<S>,
-    ) -> Option<Box<dyn Any, <S as SystemTypes>::Allocator>>;
-
     /// Runs some pre-deployment preparation and checks.
     /// The result can be None to represent unsuccessful preparation for deployment.
     /// EE should prepare a new state to run as "constructor" and potentially OS/IO related data.
