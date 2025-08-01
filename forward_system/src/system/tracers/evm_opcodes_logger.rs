@@ -9,8 +9,7 @@ use zk_ee::{
     system::{
         evm::{EvmFrameInterface, EvmStackInterface},
         tracer::{evm_tracer::EvmTracer, Tracer},
-        CallOrDeployResultRef, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources,
-        SystemTypes,
+        CallResult, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources, SystemTypes,
     },
     types_config::SystemIOTypesConfig,
     utils::Bytes32,
@@ -203,7 +202,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
 
     fn after_execution_frame_completed(
         &mut self,
-        _result: Option<(&S::Resources, CallOrDeployResultRef<S>)>,
+        _result: Option<(&S::Resources, &CallResult<S>)>,
     ) {
         assert_ne!(self.current_call_depth, 0);
         self.current_call_depth -= 1;

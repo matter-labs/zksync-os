@@ -3,9 +3,8 @@ use crate::errors::{EvmErrors, EvmInterfaceError, EvmSubsystemError};
 use crate::gas::gas_utils;
 use crate::gas_constants::{CALLVALUE, CALL_STIPEND, NEWACCOUNT};
 use crate::interpreter::CreateScheme;
-use alloc::boxed::Box;
-use core::any::Any;
 use core::fmt::Write;
+use core::mem;
 use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
@@ -25,31 +24,6 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
     type UsageError = <EvmErrors as zk_ee::system::errors::subsystem::Subsystem>::Interface;
     type SubsystemError = EvmSubsystemError;
-
-    fn is_modifier_supported(modifier: &CallModifier) -> bool {
-        matches!(
-            modifier,
-            CallModifier::NoModifier
-                | CallModifier::Constructor
-                | CallModifier::Static
-                | CallModifier::Delegate
-                | CallModifier::DelegateStatic
-                | CallModifier::EVMCallcode
-        )
-    }
-
-    fn self_address(&self) -> &<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
-        &self.address
-    }
-
-    /// TODO unused
-    fn resources_mut(&mut self) -> &mut <S as SystemTypes>::Resources {
-        self.gas.resources_mut()
-    }
-
-    fn is_static_context(&self) -> bool {
-        self.is_static
-    }
 
     fn new(system: &mut System<S>) -> Result<Self, Self::SubsystemError> {
         let gas = Gas::new();
@@ -72,6 +46,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             bytecode_preprocessing: empty_preprocessing,
             call_value: U256::ZERO,
             is_constructor: false,
+            pending_os_request: None,
         })
     }
 
@@ -81,7 +56,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         let ExecutionEnvironmentLaunchParams {
             external_call:
                 ExternalCallRequest {
@@ -91,7 +69,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     callee,
                     callers_caller,
                     modifier,
-                    calldata,
+                    input: calldata,
                     call_scratch_space,
                     nominal_token_value,
                 },
@@ -227,91 +205,88 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         self.execute_till_yield_point(system, tracer)
     }
 
-    fn continue_after_external_call<'a, 'res: 'ee>(
+    fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
-        call_result: CallResult<'res, S>,
+        call_result: CallResult<'res, S>, // TODO rename?
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
-        assert!(!call_result.has_scratch_space());
-        assert!(self.gas.native() == 0);
-        self.gas.reclaim_resources(returned_resources);
-        match call_result {
-            CallResult::CallFailedToExecute => {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Call failed, out of gas\n"));
-                // we fail because it's caller's failure
-                return self.create_immediate_return_state(true, true, false);
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        let preemption_reason = match mem::take(&mut self.pending_os_request) {
+            Some(x) => x,
+            None => {
+                return Err(interface_error!(
+                    EvmInterfaceError::InvalidReenterAfterPreemtion
+                ))
             }
-            CallResult::Failed { return_values } => {
-                // NOTE: EE is ALLOWED to spend resources from caller's frame before
-                // passing a desired part of them to the callee, If particular EE wants to
-                // follow some not-true resource policy, it can make adjustments here before
-                // continuing the execution
-                self.copy_returndata_to_heap(return_values.returndata);
-                self.stack.push_zero().expect("must have enough space");
-            }
-            CallResult::Successful { return_values } => {
-                self.copy_returndata_to_heap(return_values.returndata);
-                self.stack.push_one().expect("must have enough space");
-            }
-        }
+        };
 
-        self.execute_till_yield_point(system, tracer)
-    }
-
-    fn continue_after_deployment<'a, 'res: 'ee>(
-        &'a mut self,
-        system: &mut System<S>,
-        returned_resources: S::Resources,
-        deployment_result: DeploymentResult<'res, S>,
-        tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
-        assert!(!deployment_result.has_scratch_space());
-        assert!(self.gas.native() == 0);
-        self.gas.reclaim_resources(returned_resources);
-        match deployment_result {
-            DeploymentResult::Failed {
-                return_values,
-                execution_reverted,
-            } => {
-                // NOTE: failed deployments may have non-empty returndata
-                if execution_reverted {
-                    assert!(self.returndata_location.is_empty());
-                    assert!(return_values.return_scratch_space.is_none());
+        match preemption_reason {
+            PendingOsRequest::Call => {
+                assert!(!call_result.has_scratch_space());
+                assert!(self.gas.native() == 0);
+                self.gas.reclaim_resources(returned_resources);
+                match call_result {
+                    CallResult::CallFailedToExecute => {
+                        let _ = system
+                            .get_logger()
+                            .write_fmt(format_args!("Call failed, out of gas\n"));
+                        // we fail because it's caller's failure
+                        return self.create_immediate_return_state(system, true, true, false);
+                    }
+                    CallResult::Failed { return_values } => {
+                        // NOTE: EE is ALLOWED to spend resources from caller's frame before
+                        // passing a desired part of them to the callee, If particular EE wants to
+                        // follow some not-true resource policy, it can make adjustments here before
+                        // continuing the execution
+                        self.copy_returndata_to_heap(return_values.returndata);
+                        self.stack.push_zero().expect("must have enough space");
+                    }
+                    CallResult::Successful { return_values } => {
+                        self.copy_returndata_to_heap(return_values.returndata);
+                        self.stack.push_one().expect("must have enough space");
+                    }
                 }
-                self.returndata = return_values.returndata;
-                // we need to push 0 to stack
-                self.stack.push_zero().expect("must have enough space");
             }
-            DeploymentResult::Successful {
-                return_values,
-                deployed_at,
-                ..
-            } => {
-                assert!(return_values.return_scratch_space.is_none());
-                // NOTE: successful deployments have empty returndata
-                assert!(return_values.returndata.is_empty());
-                self.returndata = return_values.returndata;
-                // we need to push address to stack
-                self.stack
-                    .push(&b160_to_u256(deployed_at))
-                    .expect("must have enough space");
+            PendingOsRequest::Create(deployed_at) => {
+                assert!(!call_result.has_scratch_space());
+                assert!(self.gas.native() == 0);
+                self.gas.reclaim_resources(returned_resources);
+                match call_result {
+                    CallResult::CallFailedToExecute => {
+                        let _ = system
+                            .get_logger()
+                            .write_fmt(format_args!("Call failed, out of gas\n"));
+                        // we fail because it's caller's failure
+                        return self.create_immediate_return_state(system, true, true, false);
+                    }
+                    CallResult::Failed { return_values } => {
+                        // NOTE: failed deployments may have non-empty returndata
+                        assert!(self.returndata_location.is_empty());
+                        assert!(return_values.return_scratch_space.is_none());
+
+                        self.returndata = return_values.returndata;
+                        // we need to push 0 to stack
+                        self.stack.push_zero().expect("must have enough space");
+                    }
+                    CallResult::Successful { return_values } => {
+                        assert!(return_values.return_scratch_space.is_none());
+                        // NOTE: successful deployments have empty returndata
+                        assert!(return_values.returndata.is_empty());
+                        self.returndata = return_values.returndata;
+                        // we need to push address to stack
+                        self.stack
+                            .push(&b160_to_u256(deployed_at))
+                            .expect("must have enough space");
+                    }
+                }
             }
-        }
+        };
 
         self.execute_till_yield_point(system, tracer)
-    }
-
-    type DeploymentExtraParameters = CreateScheme;
-
-    fn default_ee_deployment_options(system: &mut System<S>) -> Option<Box<dyn Any, S::Allocator>> {
-        let allocator = system.get_allocator();
-        let scheme = Box::new_in(CreateScheme::Create, allocator);
-        let scheme = scheme as Box<dyn Any, S::Allocator>;
-        Some(scheme)
     }
 
     fn calculate_resources_passed_in_external_call(
@@ -406,7 +381,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 callee: deployed_address,
                 callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(), // Fine to use placeholder
                 modifier: CallModifier::Constructor,
-                calldata: &[],
+                input: &[],
                 call_scratch_space: None,
                 nominal_token_value,
             },

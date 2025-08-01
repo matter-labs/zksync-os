@@ -43,9 +43,7 @@ where
 
         let CompletedExecution {
             resources_returned,
-            reverted,
-            return_values,
-            ..
+            result,
         } = BasicBootloader::call_account_method(
             system,
             system_functions,
@@ -59,6 +57,9 @@ where
             tracer,
         )
         .map_err(TxError::oon_as_validation)?;
+
+        let reverted = result.failed();
+        let return_values = result.return_values();
 
         let returndata_slice = return_values.returndata;
         *resources = resources_returned;
@@ -102,9 +103,7 @@ where
 
         let CompletedExecution {
             resources_returned,
-            reverted,
-            return_values,
-            ..
+            result,
         } = BasicBootloader::call_account_method(
             system,
             system_functions,
@@ -117,6 +116,9 @@ where
             resources,
             tracer,
         )?;
+
+        let reverted = result.failed();
+        let return_values = result.return_values();
 
         let resources_after_main_tx = resources_returned;
 
@@ -194,8 +196,7 @@ where
 
         let CompletedExecution {
             resources_returned,
-            reverted,
-            ..
+            result,
         } = BasicBootloader::call_account_method(
             system,
             system_functions,
@@ -209,6 +210,8 @@ where
             tracer,
         )
         .map_err(TxError::oon_as_validation)?;
+
+        let reverted = result.failed();
 
         *resources = resources_returned;
 
@@ -245,8 +248,7 @@ where
 
         let CompletedExecution {
             resources_returned,
-            reverted,
-            ..
+            result,
         } = BasicBootloader::call_account_method(
             system,
             system_functions,
@@ -261,6 +263,8 @@ where
         )
         .map_err(TxError::oon_as_validation)?;
         *resources = resources_returned;
+
+        let reverted = result.failed();
 
         let res: Result<(), TxError> = if reverted {
             Err(TxError::Validation(InvalidTransaction::Revert {

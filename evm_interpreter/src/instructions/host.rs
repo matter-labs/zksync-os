@@ -353,6 +353,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             deployer_full_resources: all_resources,
         };
 
+        self.pending_os_request = Some(PendingOsRequest::Create(deployed_address));
+
         *external_call_dest = Some(ExternalCall::Create(deployment_parameters));
 
         Err(ExitCode::ExternalCall)
@@ -457,6 +459,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             gas_to_pass,
             call_value: value,
         };
+
+        self.pending_os_request = Some(PendingOsRequest::Call);
 
         *external_call_dest = Some(ExternalCall::Call(call_request));
         Err(ExitCode::ExternalCall)

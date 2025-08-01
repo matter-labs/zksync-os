@@ -59,6 +59,11 @@ pub const DEFAULT_CODE_VERSION_BYTE: u8 = 0u8;
 /// Artifacts cached
 pub const ARTIFACTS_CACHING_CODE_VERSION_BYTE: u8 = 1u8;
 
+pub enum PendingOsRequest<S: SystemTypes> {
+    Call,
+    Create(<S::IOTypes as SystemIOTypesConfig>::Address),
+}
+
 // this is the interpreter that can be found in Reth itself, modified for purposes of having abstract view
 // on memory and resources
 pub struct Interpreter<'a, S: SystemTypes> {
@@ -90,6 +95,7 @@ pub struct Interpreter<'a, S: SystemTypes> {
     pub is_static: bool,
     /// Is interpreter call executing construction code.
     pub is_constructor: bool,
+    pending_os_request: Option<PendingOsRequest<S>>,
 }
 
 impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for Interpreter<'ee, S> {

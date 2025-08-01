@@ -7,13 +7,12 @@ use ruint::aliases::B160;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::system::Ergs;
 use zk_ee::system::{
-    logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
-    DeploymentPreparationParameters, DeploymentResult, EthereumLikeTypes,
+    logger::Logger, CallModifier, CompletedExecution, EthereumLikeTypes,
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
 };
-use zk_ee::system::{DeploymentRequest, SystemFunctions};
-use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, TransactionEndPoint};
+use zk_ee::system::{CallResult, IOSubsystemExt, SystemFunctions};
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::cheap_clone::CheapCloneRiscV;
 
@@ -25,7 +24,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         &'a mut self,
         system: &mut System<S>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         let mut external_call = None;
         let exit_code = self.run(system, &mut external_call, tracer)?;
 
@@ -49,19 +51,17 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     }) => {
                         let ergs_to_pass = Ergs(gas_to_pass.saturating_mul(ERGS_PER_GAS));
                         let available_resources = self.gas.take_resources();
-                        ExecutionEnvironmentSpawnRequest::RequestedExternalCall(
-                            ExternalCallRequest {
-                                calldata: &current_heap[calldata],
-                                call_scratch_space: None,
-                                nominal_token_value: call_value,
-                                callers_caller: self.caller,
-                                caller: self.address,
-                                callee: destination_address,
-                                modifier,
-                                ergs_to_pass,
-                                available_resources,
-                            },
-                        )
+                        ExternalCallRequest {
+                            input: &current_heap[calldata],
+                            call_scratch_space: None,
+                            nominal_token_value: call_value,
+                            callers_caller: self.caller,
+                            caller: self.address,
+                            callee: destination_address,
+                            modifier,
+                            ergs_to_pass,
+                            available_resources,
+                        }
                     }
 
                     ExternalCall::Create(EVMDeploymentRequest {
@@ -71,19 +71,17 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                         deployer_full_resources,
                         nominal_token_value,
                         ergs_for_constructor,
-                    }) => {
-                        ExecutionEnvironmentSpawnRequest::RequestedDeployment(DeploymentRequest {
-                            address_of_deployer: self.address,
-                            address,
-                            call_scratch_space: None,
-                            deployment_code: &current_heap[deployment_code],
-                            constructor_parameters: &[],
-                            ee_specific_deployment_processing_data,
-                            deployer_full_resources,
-                            ergs_to_pass: ergs_for_constructor,
-                            nominal_token_value,
-                        })
-                    }
+                    }) => ExternalCallRequest {
+                        input: &current_heap[deployment_code],
+                        call_scratch_space: None,
+                        nominal_token_value,
+                        callers_caller: self.caller,
+                        caller: self.address,
+                        callee: address,
+                        modifier: CallModifier::Constructor,
+                        ergs_to_pass: ergs_for_constructor,
+                        available_resources: deployer_full_resources,
+                    },
                 },
             });
         }
@@ -96,7 +94,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             _ => (true, true),
         };
 
-        self.create_immediate_return_state(empty_returndata, reverted, exit_code.is_error())
+        self.create_immediate_return_state(system, empty_returndata, reverted, exit_code.is_error())
     }
 }
 
@@ -378,10 +376,14 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
     pub(crate) fn create_immediate_return_state<'a>(
         &'a mut self,
+        system: &mut System<S>,
         empty_returndata: bool,
         execution_reverted: bool,
         is_error: bool,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         if is_error {
             // Spend all remaining resources on error
             self.gas.consume_all_gas();
@@ -402,43 +404,60 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 {
                     // Spend all remaining resources
                     self.gas.consume_all_gas();
-                    DeploymentResult::Failed {
-                        return_values,
-                        execution_reverted,
-                    }
+                    CallResult::Failed { return_values }
                 } else {
-                    // It's responsibility of the System/IO to properly charge,
-                    // so we just construct the structure
-
-                    let deployed_code = return_values.returndata;
+                    let deployed_code = return_values.returndata; // TODO actually deploy
                     return_values.returndata = &[];
 
-                    DeploymentResult::Successful {
+                    match system.deploy_bytecode(
+                        THIS_EE_TYPE,
+                        self.gas.resources_mut(),
+                        &self.address,
                         deployed_code,
-                        return_values,
-                        deployed_at: self.address,
+                    ) {
+                        Ok(_) => {
+                            // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
+                            #[cfg(not(target_arch = "riscv32"))]
+                            let _ = system.get_logger().write_fmt(format_args!(
+                                "Successfully deployed contract at {:?} \n",
+                                self.address
+                            ));
+                            CallResult::Successful {
+                                return_values: ReturnValues::empty(),
+                            }
+                        }
+                        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
+                            CallResult::Failed {
+                                return_values: ReturnValues::empty(),
+                            }
+                        }
+                        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
+                            return Err(RuntimeError::OutOfNativeResources(loc).into())
+                        }
+                        Err(SystemError::LeafDefect(e)) => return Err(e.into()),
                     }
                 }
             } else {
-                DeploymentResult::Failed {
-                    return_values,
-                    execution_reverted,
-                }
+                CallResult::Failed { return_values }
             };
 
             Ok(ExecutionEnvironmentPreemptionPoint::End(
-                TransactionEndPoint::CompletedDeployment(CompletedDeployment {
+                CompletedExecution {
                     resources_returned: self.gas.take_resources(),
-                    deployment_result,
-                }),
+                    result: deployment_result,
+                },
             ))
         } else {
+            let result = if execution_reverted {
+                CallResult::Failed { return_values }
+            } else {
+                CallResult::Successful { return_values }
+            };
             Ok(ExecutionEnvironmentPreemptionPoint::End(
-                TransactionEndPoint::CompletedExecution(CompletedExecution {
-                    return_values,
+                CompletedExecution {
                     resources_returned: self.gas.take_resources(),
-                    reverted: execution_reverted,
-                }),
+                    result,
+                },
             ))
         }
     }

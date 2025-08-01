@@ -229,11 +229,12 @@ where
                 )?;
 
                 let CompletedExecution {
-                    return_values,
                     resources_returned,
-                    reverted,
-                    ..
+                    result,
                 } = final_state;
+
+                let reverted = result.failed();
+                let return_values = result.return_values();
 
                 TxExecutionResult {
                     return_values,
@@ -583,14 +584,12 @@ where
         });
     }
 
-    let deployed_address;
-
-    let ee_specific_deployment_processing_data = match to_ee_type {
+    let deployed_address = match to_ee_type {
         ExecutionEnvironmentType::NoEE => {
             return Err(internal_error!("Deployment cannot target NoEE").into())
         }
         ExecutionEnvironmentType::EVM => {
-            deployed_address = SystemBoundEVMInterpreter::<S>::derive_address_for_deployment(
+            SystemBoundEVMInterpreter::<S>::derive_address_for_deployment(
                 system,
                 resources,
                 CreateScheme::Create,
@@ -601,22 +600,22 @@ where
             .map_err(|e| {
                 let ee_error: EESubsystemError = wrap_error!(e);
                 wrap_error!(ee_error)
-            })?;
-            SystemBoundEVMInterpreter::<S>::default_ee_deployment_options(system)
+            })?
         }
     };
 
-    let deployment_request = DeploymentRequest {
-        address: deployed_address,
-        address_of_deployer: from,
-        call_scratch_space: None,
-        constructor_parameters: &[],
-        nominal_token_value,
-        deployment_code: main_calldata,
-        ee_specific_deployment_processing_data,
-        deployer_full_resources: resources.clone(),
+    let deployment_request = ExternalCallRequest {
+        available_resources: resources.clone(),
         ergs_to_pass: resources.ergs(),
+        caller: from,
+        callee: deployed_address,
+        callers_caller: Default::default(), // TODO
+        modifier: CallModifier::Constructor,
+        input: main_calldata,
+        nominal_token_value,
+        call_scratch_space: None,
     };
+
     let rollback_handle = system.start_global_frame()?;
 
     let final_state = run_till_completion(
@@ -624,24 +623,21 @@ where
         system,
         system_functions,
         to_ee_type,
-        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_request),
+        deployment_request,
         tracer,
     )?;
-    let TransactionEndPoint::CompletedDeployment(CompletedDeployment {
+
+    let CompletedExecution {
         resources_returned,
-        deployment_result,
-    }) = final_state
-    else {
-        return Err(internal_error!("attempt to deploy ended up in invalid state").into());
-    };
+        result: deployment_result,
+    } = final_state;
 
     let (deployment_success, reverted, return_values, at) = match deployment_result {
-        DeploymentResult::Successful {
-            return_values,
-            deployed_at,
-            ..
-        } => (true, false, return_values, Some(deployed_at)),
-        DeploymentResult::Failed { return_values, .. } => (false, true, return_values, None),
+        CallResult::Successful { return_values } => {
+            (true, false, return_values, Some(deployed_address))
+        }
+        CallResult::Failed { return_values, .. } => (false, true, return_values, None),
+        CallResult::CallFailedToExecute => unreachable!(), // TODO
     };
     // Do not forget to reassign it back after potential copy when finishing frame
     system.finish_global_frame(reverted.then_some(&rollback_handle))?;
@@ -709,9 +705,7 @@ where
 
     let CompletedExecution {
         resources_returned,
-        return_values,
-        reverted,
-        ..
+        result,
     } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
@@ -725,6 +719,9 @@ where
         tracer,
     )
     .map_err(TxError::oon_as_validation)?;
+
+    let reverted = result.failed();
+    let return_values = result.return_values();
 
     let returndata_region = return_values.returndata;
     let returndata_slice = &returndata_region;
@@ -791,9 +788,7 @@ where
 
     let CompletedExecution {
         resources_returned,
-        return_values,
-        reverted,
-        ..
+        result,
     } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
@@ -807,6 +802,9 @@ where
         tracer,
     )
     .map_err(TxError::oon_as_validation)?;
+
+    let reverted = result.failed();
+    let return_values = result.return_values();
 
     let returndata_region = return_values.returndata;
     let returndata_slice = &returndata_region;
