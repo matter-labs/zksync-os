@@ -136,7 +136,7 @@ macro_rules! handle_spawn {
                     "Return from external call, success = {success}\n"
                 ));
 
-                $vm.continue_after_external_call($run.system, resources, call_result, $tracer)
+                $vm.continue_after_preemption($run.system, resources, call_result, $tracer)
                     .map_err(wrap_error!())
             }
             ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters) => {
@@ -152,22 +152,14 @@ macro_rules! handle_spawn {
                 )?;
                 $run.callstack_height -= 1;
 
-                let success = matches!(deployment_result, DeploymentResult::Successful { .. });
+                let success = matches!(deployment_result, CallResult::Successful { .. });
 
                 let _ = $run.system.get_logger().write_fmt(format_args!(
                     "Return from deployment, success = {:?}\n",
                     success
                 ));
 
-                let returndata_region = deployment_result.returndata();
-                let returndata_iter = returndata_region.iter().copied();
-                let _ = $run
-                    .system
-                    .get_logger()
-                    .write_fmt(format_args!("Returndata = "));
-                let _ = $run.system.get_logger().log_data(returndata_iter);
-
-                $vm.continue_after_deployment(
+                $vm.continue_after_preemption(
                     $run.system,
                     resources_returned,
                     deployment_result,
@@ -331,12 +323,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         tracer.after_execution_frame_completed(
             callee_frame_execution_result
                 .as_ref()
-                .map(|(resources_returned, call_result)| {
-                    Some((
-                        resources_returned,
-                        CallOrDeployResultRef::CallResult(call_result),
-                    ))
-                })
+                .map(|(resources_returned, call_result)| Some((resources_returned, call_result)))
                 .unwrap_or_default(),
         );
 
@@ -632,9 +619,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 deployer_resources.reclaim(resources_for_constructor_frame);
                 return Ok(CompletedDeployment {
                     resources_returned: deployer_resources,
-                    deployment_result: DeploymentResult::Failed {
+                    deployment_result: CallResult::Failed {
                         return_values: ReturnValues::empty(),
-                        execution_reverted: false,
                     },
                 });
             }
@@ -660,9 +646,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     deployer_resources.reclaim(launch_params.external_call.available_resources);
                     return Ok(CompletedDeployment {
                         resources_returned: deployer_resources,
-                        deployment_result: DeploymentResult::Failed {
+                        deployment_result: CallResult::Failed {
                             return_values: ReturnValues::empty(),
-                            execution_reverted: false,
                         },
                     });
                 }
@@ -717,7 +702,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
                 tracer.after_execution_frame_completed(Some((
                     &resources_returned,
-                    CallOrDeployResultRef::DeploymentResult(&deployment_result),
+                    &deployment_result,
                 )));
 
                 deployer_resources.reclaim(resources_returned);
@@ -744,7 +729,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         (
             bool,
             <S as SystemTypes>::Resources,
-            zk_ee::system::DeploymentResult<'external, S>,
+            CallResult<'external, S>,
         ),
         BootloaderSubsystemError,
     >
@@ -760,7 +745,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             .map_err(wrap_error!())?;
 
         let CompletedDeployment {
-            mut resources_returned,
+            resources_returned,
             deployment_result,
         } = loop {
             match preemption {
@@ -795,54 +780,19 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         };
 
         let (deployment_success, deployment_result) = match deployment_result {
-            DeploymentResult::Successful {
-                deployed_code,
-                return_values,
-                deployed_at,
-            } => {
-                // it's responsibility of the system to finish deployment. We continue to use resources from deployment frame
-                match self.system.deploy_bytecode(
-                    ee_type,
-                    &mut resources_returned,
-                    &deployed_at,
-                    deployed_code,
-                ) {
-                    Ok(deployed_code) => {
-                        let deployment_result = DeploymentResult::Successful {
-                            deployed_code,
-                            return_values: ReturnValues::empty(),
-                            deployed_at,
-                        };
-                        // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
-                        #[cfg(not(target_arch = "riscv32"))]
-                        let _ = self.system.get_logger().write_fmt(format_args!(
-                            "Successfully deployed contract at {deployed_at:?} \n"
-                        ));
-                        (true, deployment_result)
-                    }
-                    Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-                        let deployment_result = DeploymentResult::Failed {
-                            return_values: self.copy_into_return_memory(return_values)?,
-                            execution_reverted: false,
-                        };
-                        (false, deployment_result)
-                    }
-                    Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
-                        return Err(RuntimeError::OutOfNativeResources(loc).into())
-                    }
-                    Err(SystemError::LeafDefect(e)) => return Err(e.into()),
-                }
-            }
-            DeploymentResult::Failed {
-                return_values,
-                execution_reverted,
-            } => (
-                false,
-                DeploymentResult::Failed {
+            CallResult::Successful { return_values } => (
+                true,
+                CallResult::Successful {
                     return_values: self.copy_into_return_memory(return_values)?,
-                    execution_reverted,
                 },
             ),
+            CallResult::Failed { return_values } => (
+                false,
+                CallResult::Failed {
+                    return_values: self.copy_into_return_memory(return_values)?,
+                },
+            ),
+            CallResult::CallFailedToExecute => unreachable!(), // TODO
         };
 
         Ok((deployment_success, resources_returned, deployment_result))

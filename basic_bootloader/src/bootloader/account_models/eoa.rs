@@ -636,12 +636,11 @@ where
     };
 
     let (deployment_success, reverted, return_values, at) = match deployment_result {
-        DeploymentResult::Successful {
-            return_values,
-            deployed_at,
-            ..
-        } => (true, false, return_values, Some(deployed_at)),
-        DeploymentResult::Failed { return_values, .. } => (false, true, return_values, None),
+        CallResult::Successful { return_values } => {
+            (true, false, return_values, Some(deployed_address))
+        }
+        CallResult::Failed { return_values, .. } => (false, true, return_values, None),
+        CallResult::CallFailedToExecute => unreachable!(), // TODO
     };
     // Do not forget to reassign it back after potential copy when finishing frame
     system.finish_global_frame(reverted.then_some(&rollback_handle))?;

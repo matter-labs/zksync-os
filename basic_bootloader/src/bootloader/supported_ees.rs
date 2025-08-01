@@ -99,7 +99,10 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         initial_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         match self {
             Self::EVM(evm_frame) => evm_frame
                 .start_executing_frame(system, initial_state, heap, tracer)
@@ -107,30 +110,19 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         }
     }
 
-    pub fn continue_after_external_call<'a, 'res: 'ee>(
+    pub fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
         call_result: CallResult<'res, S>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         match self {
             Self::EVM(evm_frame) => evm_frame
-                .continue_after_external_call(system, returned_resources, call_result, tracer)
-                .map_err(wrap_error!()),
-        }
-    }
-
-    pub fn continue_after_deployment<'a, 'res: 'ee>(
-        &'a mut self,
-        system: &mut System<S>,
-        returned_resources: S::Resources,
-        deployment_result: DeploymentResult<'res, S>,
-        tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError> {
-        match self {
-            Self::EVM(evm_frame) => evm_frame
-                .continue_after_deployment(system, returned_resources, deployment_result, tracer)
+                .continue_after_preemption(system, returned_resources, call_result, tracer)
                 .map_err(wrap_error!()),
         }
     }

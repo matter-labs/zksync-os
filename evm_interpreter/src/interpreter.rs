@@ -8,11 +8,10 @@ use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{
-    logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
-    DeploymentPreparationParameters, DeploymentResult, EthereumLikeTypes,
+    logger::Logger, CallModifier, CompletedDeployment, CompletedExecution, EthereumLikeTypes,
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
 };
-use zk_ee::system::{DeploymentRequest, SystemFunctions};
+use zk_ee::system::{CallResult, DeploymentRequest, IOSubsystemExt, SystemFunctions};
 use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, TransactionEndPoint};
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::cheap_clone::CheapCloneRiscV;
@@ -25,7 +24,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         &'a mut self,
         system: &mut System<S>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         let mut external_call = None;
         let exit_code = self.run(system, &mut external_call, tracer)?;
 
@@ -96,7 +98,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             _ => (true, true),
         };
 
-        self.create_immediate_return_state(empty_returndata, reverted, exit_code.is_error())
+        self.create_immediate_return_state(system, empty_returndata, reverted, exit_code.is_error())
     }
 }
 
@@ -378,10 +380,14 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
     pub(crate) fn create_immediate_return_state<'a>(
         &'a mut self,
+        system: &mut System<S>,
         empty_returndata: bool,
         execution_reverted: bool,
         is_error: bool,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         if is_error {
             // Spend all remaining resources on error
             self.gas.consume_all_gas();
@@ -402,28 +408,41 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 {
                     // Spend all remaining resources
                     self.gas.consume_all_gas();
-                    DeploymentResult::Failed {
-                        return_values,
-                        execution_reverted,
-                    }
+                    CallResult::Failed { return_values }
                 } else {
-                    // It's responsibility of the System/IO to properly charge,
-                    // so we just construct the structure
-
-                    let deployed_code = return_values.returndata;
+                    let deployed_code = return_values.returndata; // TODO actually deploy
                     return_values.returndata = &[];
 
-                    DeploymentResult::Successful {
+                    match system.deploy_bytecode(
+                        THIS_EE_TYPE,
+                        self.gas.resources_mut(),
+                        &self.address,
                         deployed_code,
-                        return_values,
-                        deployed_at: self.address,
+                    ) {
+                        Ok(_) => {
+                            // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
+                            #[cfg(not(target_arch = "riscv32"))]
+                            let _ = system.get_logger().write_fmt(format_args!(
+                                "Successfully deployed contract at {:?} \n",
+                                self.address
+                            ));
+                            CallResult::Successful {
+                                return_values: ReturnValues::empty(),
+                            }
+                        }
+                        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
+                            CallResult::Failed {
+                                return_values: ReturnValues::empty(),
+                            }
+                        }
+                        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
+                            return Err(RuntimeError::OutOfNativeResources(loc).into())
+                        }
+                        Err(SystemError::LeafDefect(e)) => return Err(e.into()),
                     }
                 }
             } else {
-                DeploymentResult::Failed {
-                    return_values,
-                    execution_reverted,
-                }
+                CallResult::Failed { return_values }
             };
 
             Ok(ExecutionEnvironmentPreemptionPoint::End(

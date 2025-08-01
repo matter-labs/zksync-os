@@ -6,7 +6,7 @@ use crate::{
     types_config::SystemIOTypesConfig,
 };
 
-use super::{DeploymentResult, EnvironmentParameters, ReturnValues};
+use super::{CallResult, EnvironmentParameters, ReturnValues};
 
 /// Everything an execution environment needs to know to start execution
 pub struct ExecutionEnvironmentLaunchParams<'a, S: SystemTypes> {
@@ -116,7 +116,7 @@ pub struct CompletedExecution<'a, S: SystemTypes> {
 
 pub struct CompletedDeployment<'a, S: SystemTypes> {
     pub resources_returned: S::Resources,
-    pub deployment_result: DeploymentResult<'a, S>,
+    pub deployment_result: CallResult<'a, S>,
 }
 
 impl<S: SystemTypes> Debug for ExternalCallRequest<'_, S> {

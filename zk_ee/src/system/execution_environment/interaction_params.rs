@@ -3,8 +3,6 @@ use crate::{
     types_config::SystemIOTypesConfig,
 };
 
-use super::ReturnValues;
-
 pub enum Bytecode<'a> {
     Decommitted {
         bytecode: &'a [u8],
@@ -34,37 +32,4 @@ pub struct DeploymentPreparationParameters<'a, S: SystemTypes> {
         Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
     pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
     pub callstack_depth: usize,
-}
-
-/// Result of an attempted deployment.
-pub enum DeploymentResult<'a, S: SystemTypes> {
-    /// Deployment failed after preparation.
-    Failed {
-        return_values: ReturnValues<'a, S>,
-        execution_reverted: bool,
-    },
-    /// Deployment succeeded.
-    Successful {
-        deployed_code: &'a [u8],
-        return_values: ReturnValues<'a, S>,
-        deployed_at: <S::IOTypes as SystemIOTypesConfig>::Address,
-    },
-}
-
-impl<'a, S: SystemTypes> DeploymentResult<'a, S> {
-    pub fn has_scratch_space(&self) -> bool {
-        match self {
-            DeploymentResult::Failed { return_values, .. }
-            | DeploymentResult::Successful { return_values, .. } => {
-                return_values.return_scratch_space.is_some()
-            }
-        }
-    }
-
-    pub fn returndata(&self) -> &'a [u8] {
-        match self {
-            DeploymentResult::Failed { return_values, .. }
-            | DeploymentResult::Successful { return_values, .. } => return_values.returndata,
-        }
-    }
 }

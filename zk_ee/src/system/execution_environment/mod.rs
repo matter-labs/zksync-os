@@ -25,13 +25,6 @@ use super::IOSubsystemExt;
 use crate::common_structs::CalleeAccountProperties;
 use crate::internal_error;
 use crate::memory::slice_vec::SliceVec;
-use crate::system::CallModifier;
-use crate::types_config::*;
-
-pub enum CallOrDeployResultRef<'a, 'external, S: SystemTypes> {
-    CallResult(&'a CallResult<'external, S>),
-    DeploymentResult(&'a DeploymentResult<'external, S>),
-}
 
 // we should consider some bound of amount of data that is deployment-specific,
 // for now it's arbitrary
@@ -60,27 +53,6 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     ///
     fn new(system: &mut System<S>) -> Result<Self, Self::SubsystemError>;
 
-    ///
-    /// The contract address where the EE is being executed.
-    ///
-    fn self_address(&self) -> &<S::IOTypes as SystemIOTypesConfig>::Address;
-
-    ///
-    /// Available resources in the current frame.
-    ///
-    fn resources_mut(&mut self) -> &mut S::Resources;
-
-    ///
-    /// Whether this EE supports a given call modifier.
-    ///
-    fn is_modifier_supported(modifier: &CallModifier) -> bool;
-
-    ///
-    /// Whether the EE is running in a static context, i.e. in
-    /// a context where state changes are not allowed.
-    ///
-    fn is_static_context(&self) -> bool;
-
     fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         system: &mut System<S>,
         frame_state: &mut ExecutionEnvironmentLaunchParams<'i, S>,
@@ -99,7 +71,9 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>;
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>
+    where
+        S::IO: IOSubsystemExt;
 
     ///
     /// EE can decide how to provide resources to the callee frame on external call.
@@ -111,25 +85,15 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         callee_account_properties: &CalleeAccountProperties,
     ) -> Result<S::Resources, Self::SubsystemError>;
 
-    /// Continues after the bootloader handled a completed external call.
-    fn continue_after_external_call<'a, 'res: 'ee>(
+    fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
-        call_result: CallResult<'res, S>,
+        call_result: CallResult<'res, S>, // TODO rename?
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>;
-
-    /// Continues after the bootloader handled a completed deployment.
-    fn continue_after_deployment<'a, 'res: 'ee>(
-        &'a mut self,
-        system: &mut System<S>,
-        returned_resources: S::Resources,
-        deployment_result: DeploymentResult<'res, S>,
-        tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>;
-
-    type DeploymentExtraParameters: EEDeploymentExtraParameters<S>;
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>
+    where
+        S::IO: IOSubsystemExt;
 
     fn default_ee_deployment_options(
         system: &mut System<S>,
