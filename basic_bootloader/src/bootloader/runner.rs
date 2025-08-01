@@ -54,16 +54,7 @@ where
         return_memory: memories.return_data,
     };
 
-    if initial_request.modifier == CallModifier::Constructor {
-        run.handle_requested_deployment::<true>(initial_ee_version, initial_request, heap, tracer)
-    } else {
-        run.handle_requested_external_call::<true>(
-            initial_ee_version,
-            initial_request,
-            heap,
-            tracer,
-        )
-    }
+    run.handle_requested_external_call::<true>(initial_ee_version, initial_request, heap, tracer)
 }
 
 pub struct RunnerMemoryBuffers<'a> {
@@ -104,27 +95,12 @@ macro_rules! handle_spawn {
         let CompletedExecution {
             resources_returned,
             result,
-        } = if $spawn.modifier == CallModifier::Constructor {
-            let completed_execution =
-                $run.handle_requested_deployment::<false>($ee_type, $spawn, $heap, $tracer)?;
+        } = $run.handle_requested_external_call::<false>($ee_type, $spawn, $heap, $tracer)?;
 
-            let _ = $run.system.get_logger().write_fmt(format_args!(
-                "Return from deployment, success = {:?}\n",
-                !completed_execution.failed()
-            ));
-
-            completed_execution
-        } else {
-            let completed_execution =
-                $run.handle_requested_external_call::<false>($ee_type, $spawn, $heap, $tracer)?;
-
-            let _ = $run.system.get_logger().write_fmt(format_args!(
-                "Return from external call, success = {:?}\n",
-                !completed_execution.failed()
-            ));
-
-            completed_execution
-        };
+        let _ = $run.system.get_logger().write_fmt(format_args!(
+            "Return from call or deployment, success = {:?}\n",
+            !result.failed()
+        ));
         $run.callstack_height -= 1;
 
         $vm.continue_after_preemption($run.system, resources_returned, result, $tracer)
@@ -163,10 +139,10 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         // TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
         #[cfg(not(target_arch = "riscv32"))]
         {
-            let _ = self
-                .system
-                .get_logger()
-                .write_fmt(format_args!("External call to {:?}\n", call_request.callee));
+            let _ = self.system.get_logger().write_fmt(format_args!(
+                "External call or deploy to {:?}\n",
+                call_request.callee
+            ));
 
             let _ = self.system.get_logger().write_fmt(format_args!(
                 "External call with parameters:\n{:?}\n",
@@ -195,6 +171,15 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             && self
                 .hooks
                 .has_hook_for(call_request.callee.as_limbs()[0] as u16);
+
+        if call_request.modifier == CallModifier::Constructor {
+            return self.handle_requested_deployment::<IS_ENTRY_FRAME>(
+                ee_type,
+                call_request,
+                heap,
+                tracer,
+            );
+        }
 
         // NOTE: on external call request caller doesn't spend resources,
         // but indicates how much he would want to pass at most. Here we can decide the rest
@@ -651,103 +636,28 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 })?;
         }
 
-        match self.deployment_execute_constructor_frame(ee_type, launch_params, heap, tracer) {
-            Ok((deployment_success, resources_returned, deployment_result)) => {
-                // Now finish constructor frame
-                self.system.finish_global_frame(
-                    (!deployment_success).then_some(&constructor_rollback_handle),
-                )?;
+        let constructor_frame_execution_result = self.call_execute_callee_frame(
+            launch_params,
+            heap,
+            ee_type as u8,
+            constructor_rollback_handle,
+            tracer,
+        );
 
-                let _ = self.system.get_logger().write_fmt(format_args!(
-                    "Return from constructor call, success = {deployment_success}\n",
-                ));
+        tracer.after_execution_frame_completed(
+            constructor_frame_execution_result
+                .as_ref()
+                .map(|(resources_returned, call_result)| Some((resources_returned, call_result)))
+                .unwrap_or_default(),
+        );
 
-                tracer.after_execution_frame_completed(Some((
-                    &resources_returned,
-                    &deployment_result,
-                )));
+        let (resources_returned_from_callee, call_result) = constructor_frame_execution_result?;
+        deployer_resources.reclaim(resources_returned_from_callee);
 
-                deployer_resources.reclaim(resources_returned);
-
-                Ok(CompletedExecution {
-                    resources_returned: deployer_resources,
-                    result: deployment_result,
-                })
-            }
-            Err(e) => {
-                tracer.after_execution_frame_completed(None);
-                Err(e)
-            }
-        }
-    }
-
-    pub fn deployment_execute_constructor_frame(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        launch_params: ExecutionEnvironmentLaunchParams<S>,
-        heap: SliceVec<u8>,
-        tracer: &mut impl Tracer<S>,
-    ) -> Result<
-        (
-            bool,
-            <S as SystemTypes>::Resources,
-            CallResult<'external, S>,
-        ),
-        BootloaderSubsystemError,
-    >
-    where
-        S::IO: IOSubsystemExt,
-    {
-        // EE made all the preparations and we are in callee's frame already
-        let mut constructor = create_ee(ee_type as u8, self.system)?;
-        let constructor_ee_type = constructor.ee_type();
-
-        let mut preemption = constructor
-            .start_executing_frame(self.system, launch_params, heap, tracer)
-            .map_err(wrap_error!())?;
-
-        let CompletedExecution {
-            resources_returned,
-            result: deployment_result,
-        } = loop {
-            match preemption {
-                ExecutionEnvironmentPreemptionPoint::Spawn {
-                    ref mut request,
-                    ref mut heap,
-                } => {
-                    let heap = core::mem::take(heap);
-                    let request = core::mem::take(request);
-                    drop(preemption);
-                    preemption = handle_spawn!(
-                        self,
-                        constructor,
-                        constructor_ee_type,
-                        request,
-                        heap,
-                        tracer
-                    )?;
-                }
-                ExecutionEnvironmentPreemptionPoint::End(result) => break result,
-            }
-        };
-
-        let (deployment_success, deployment_result) = match deployment_result {
-            CallResult::Successful { return_values } => (
-                true,
-                CallResult::Successful {
-                    return_values: self.copy_into_return_memory(return_values)?,
-                },
-            ),
-            CallResult::Failed { return_values } => (
-                false,
-                CallResult::Failed {
-                    return_values: self.copy_into_return_memory(return_values)?,
-                },
-            ),
-            CallResult::CallFailedToExecute => unreachable!(), // TODO
-        };
-
-        Ok((deployment_success, resources_returned, deployment_result))
+        Ok(CompletedExecution {
+            resources_returned: deployer_resources,
+            result: call_result,
+        })
     }
 }
 
