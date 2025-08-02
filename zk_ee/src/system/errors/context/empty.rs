@@ -30,6 +30,14 @@ impl IErrorContext for ErrorContext {
     }
 
     #[inline(always)]
+    fn push_lazy<F>(self, _name: &'static str, _f: F, _visibility: ValueVisibility) -> Self
+    where
+        F: FnOnce() -> String,
+    {
+        self
+    }
+
+    #[inline(always)]
     fn to_vec(&self) -> Option<Vec<NamedContextElement>> {
         None
     }

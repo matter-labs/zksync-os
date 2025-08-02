@@ -26,6 +26,12 @@ pub trait IErrorContext {
     fn get(&self, name: &str) -> Option<&String>;
     fn push(self, name: &'static str, value: impl ToString, visibility: ValueVisibility) -> Self;
 
+    /// Push a context entry with lazy evaluation. The closure is only called
+    /// when the entry should be included based on the visibility and feature flags.
+    fn push_lazy<F>(self, name: &'static str, f: F, visibility: ValueVisibility) -> Self
+    where
+        F: FnOnce() -> String;
+
     fn to_vec(&self) -> Option<Vec<NamedContextElement>>;
     fn into_vec(self) -> Option<Vec<NamedContextElement>>;
 }

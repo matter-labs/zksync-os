@@ -53,42 +53,87 @@ impl IErrorContext for ErrorContext {
         }
         self
     }
+
+    #[inline(always)]
+    fn push_lazy<F>(mut self, name: &'static str, f: F, visibility: ValueVisibility) -> Self
+    where
+        F: FnOnce() -> String,
+    {
+        let should_include = match visibility {
+            ValueVisibility::AnyForwardRun => true,
+            ValueVisibility::DetailedOnly => cfg!(feature = "detailed_errors"),
+        };
+
+        if should_include {
+            let value = f();
+            self.values.push(NamedContextElement { name, value });
+        }
+        self
+    }
 }
+
 /// Constructs an error context. Works for forward runs, ignored in the proving
 /// context.
+///
+/// # `detailed` attribute
+///
+/// The `#[detailed]` attribute uses lazy evaluation via closures to ensure expressions
+/// are only evaluated when the `detailed_errors` feature is enabled:
+/// - Expensive computations are lazily evaluated and eliminated when `detailed_errors` is disabled
+/// - Side effects in detailed expressions won't occur in production builds
+/// - The lazy closure approach provides better compiler optimization opportunities
+///
+/// # debug_format
+///
+/// When defining context, the function `debug_format` is available to transform
+/// any value implementing `Debug` into its debug representation.
+/// For example:
+/// ```rust,ignore
+/// error_ctx! {
+/// "target" => debug_format(target),
+/// }
+/// ```
 ///
 /// # Examples
 /// ```rust
 /// extern crate alloc;
 /// use zk_ee::error_ctx;
 /// fn test_valid_usages_still_work() {
-///    let var = "test_value";
-///
+///    // Empty context
 ///    let _ctx1 = error_ctx! {};
 ///
+///    // Simple key value pair.
 ///    let _ctx2 = error_ctx! {
-///        "key" => "value"
+///        "key" => "some_value"
 ///    };
 ///
+///    // A shorthand for `"var" => var`
+///    let var = "test_value";
 ///    let _ctx3 = error_ctx! {
 ///        var
 ///    };
 ///
 ///    let _ctx4 = error_ctx! {
-///        #[detailed] "debug" => "info",
-///        "public" => "data"
+///        #[detailed] "debug" => "info",  // Only evaluated if `detailed_errors` feature is enabled
+///        "public" => "data"              // Always evaluated (but not on RISC-V)
 ///    };
 ///
 ///    let _ctx5 = error_ctx! {
-///        #[detailed] var,
+///        #[detailed] var,                // Only evaluated if `detailed_errors` feature is enabled
 ///        "other" => 42
 ///    };
 ///
 /// // debug_format transforms an object implementing Debug into its string
-/// // representation
+/// // representation:
 ///    let _ctx6 = error_ctx! {
 ///        "test" => "value",
+///        "var_debug_repr" => debug_format(var),
+///    };
+///
+///    let _ctx7 = error_ctx! {
+///        "test" => "value",
 ///        var,
+///        // `debug_format` is lazily called via closure when `detailed_errors` feature is enabled
 ///        #[detailed] "debug" => debug_format(var),
 ///    };
 ///}
@@ -98,10 +143,10 @@ macro_rules! error_ctx {
     (@entries $ctx:ident, $(,)*) => {};
 
     // ` "name" => expr `, only if the feature "detailed_errors" is enabled
+    // Expression is lazily evaluated via closure - only called when needed
     (@entries $ctx:ident, #[detailed] $name:literal => $value:expr $(, $($rest:tt)*)?) => {
-         $ctx = $ctx.push($name, $value,
-                   $crate::system::errors::context::element::ValueVisibility::DetailedOnly,
-         );
+        $ctx = $ctx.push_lazy($name, || ($value).to_string(),
+                  $crate::system::errors::context::element::ValueVisibility::DetailedOnly);
         $($crate::error_ctx!(@entries $ctx, $($rest)*);)?
     };
     // ` "name" => expr `, always included
@@ -113,10 +158,10 @@ macro_rules! error_ctx {
     };
     // ident, only if the feature "detailed_errors" is enabled
     // `#[detailed] var` is an alias to `#[detailed] "var" => var`
+    // Variable is lazily evaluated via closure - only accessed when needed
     (@entries $ctx:ident, #[detailed] $name:ident $(, $($rest:tt)*)?) => {
-         $ctx = $ctx.push(stringify!($name), $name,
-                   $crate::system::errors::context::element::ValueVisibility::DetailedOnly,
-         );
+        $ctx = $ctx.push_lazy(stringify!($name), || $name.to_string(),
+                  $crate::system::errors::context::element::ValueVisibility::DetailedOnly);
         $($crate::error_ctx!(@entries $ctx, $($rest)*);)?
     };
     // identifier, always included
@@ -194,8 +239,8 @@ macro_rules! error_ctx {
     { $($tt:tt)* } => {{
 
         #[doc=r#"
-        When defining context, this function is available to transform any
-        value implementing Debug into its debug representation.
+        When defining context, this function is available to transform any value
+        implementing `Debug` into its debug representation.
         For example:
         ```rust,ignore
         error_ctx! {
