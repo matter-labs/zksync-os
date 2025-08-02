@@ -474,4 +474,135 @@ mod tests {
             assert_eq!(display_str, "");
         }
     }
+
+    #[test]
+    fn test_lazy_detailed_evaluation() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        static DETAILED_CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+        static NORMAL_CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        // Reset counters
+        DETAILED_CALL_COUNT.store(0, Ordering::Relaxed);
+        NORMAL_CALL_COUNT.store(0, Ordering::Relaxed);
+
+        let _ctx = error_ctx! {
+            "normal" => {
+                NORMAL_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
+                "normal_value"
+            },
+            #[detailed] "detailed" => {
+                DETAILED_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
+                "detailed_value"
+            },
+        };
+
+        // Normal expressions should always be evaluated (on non-RISC-V)
+        #[cfg(not(target_arch = "riscv32"))]
+        assert_eq!(NORMAL_CALL_COUNT.load(Ordering::Relaxed), 1);
+
+        #[cfg(target_arch = "riscv32")]
+        assert_eq!(NORMAL_CALL_COUNT.load(Ordering::Relaxed), 0); // Nothing evaluated on RISC-V
+
+        // Detailed expressions should only be evaluated when detailed_errors is enabled
+        #[cfg(all(not(target_arch = "riscv32"), feature = "detailed_errors"))]
+        assert_eq!(DETAILED_CALL_COUNT.load(Ordering::Relaxed), 1);
+
+        #[cfg(not(all(not(target_arch = "riscv32"), feature = "detailed_errors")))]
+        assert_eq!(DETAILED_CALL_COUNT.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn test_lazy_expensive_computation() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        static EXPENSIVE_CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        fn very_expensive_computation() -> String {
+            EXPENSIVE_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
+            // Simulate expensive work
+            "expensive_result".to_string()
+        }
+
+        // Reset counter
+        EXPENSIVE_CALL_COUNT.store(0, Ordering::Relaxed);
+
+        let _ctx = error_ctx! {
+            "cheap" => "simple_value",
+            #[detailed] "expensive" => very_expensive_computation(),
+        };
+
+        // Verify that expensive computation is only called when detailed_errors is enabled
+        #[cfg(all(not(target_arch = "riscv32"), feature = "detailed_errors"))]
+        assert_eq!(EXPENSIVE_CALL_COUNT.load(Ordering::Relaxed), 1);
+
+        #[cfg(not(all(not(target_arch = "riscv32"), feature = "detailed_errors")))]
+        assert_eq!(EXPENSIVE_CALL_COUNT.load(Ordering::Relaxed), 0);
+
+        #[cfg(not(target_arch = "riscv32"))]
+        {
+            let elements = _ctx.to_vec().unwrap();
+
+            #[cfg(feature = "detailed_errors")]
+            {
+                assert_eq!(elements.len(), 2);
+                assert_eq!(elements[1].name, "expensive");
+                assert_eq!(elements[1].value, "expensive_result");
+            }
+
+            #[cfg(not(feature = "detailed_errors"))]
+            {
+                // Only the cheap computation should be present
+                assert_eq!(elements.len(), 1);
+                assert_eq!(elements[0].name, "cheap");
+                assert_eq!(elements[0].value, "simple_value");
+            }
+        }
+    }
+
+    #[test]
+    fn test_push_lazy_method_directly() {
+        use crate::system::errors::context::IErrorContext;
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        static CLOSURE_CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        // Reset counter
+        CLOSURE_CALL_COUNT.store(0, Ordering::Relaxed);
+
+        let ctx = crate::system::errors::context::ErrorContext::default();
+
+        let ctx = ctx.push_lazy(
+            "test",
+            || {
+                CLOSURE_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
+                "lazy_value".to_string()
+            },
+            crate::system::errors::context::element::ValueVisibility::DetailedOnly,
+        );
+
+        // Verify the closure was called appropriately based on feature flags
+        #[cfg(all(not(target_arch = "riscv32"), feature = "detailed_errors"))]
+        assert_eq!(CLOSURE_CALL_COUNT.load(Ordering::Relaxed), 1);
+
+        #[cfg(not(all(not(target_arch = "riscv32"), feature = "detailed_errors")))]
+        assert_eq!(CLOSURE_CALL_COUNT.load(Ordering::Relaxed), 0);
+
+        #[cfg(not(target_arch = "riscv32"))]
+        {
+            let elements = ctx.to_vec().unwrap();
+
+            #[cfg(feature = "detailed_errors")]
+            {
+                assert_eq!(elements.len(), 1);
+                assert_eq!(elements[0].name, "test");
+                assert_eq!(elements[0].value, "lazy_value");
+            }
+
+            #[cfg(not(feature = "detailed_errors"))]
+            {
+                assert_eq!(elements.len(), 0);
+            }
+        }
+    }
 }
