@@ -148,6 +148,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         // NOTE: on external call request caller doesn't spend resources,
         // but indicates how much he would want to pass at most. Here we can decide the rest
+        // TODO: in future charging for reading account properties should be done in EE, so this logic could be simplified
 
         // we should create next EE and push to callstack
         // only system knows next EE version
@@ -158,7 +159,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         // declaring these here rather than returning them reduces stack usage.
         let (next_ee_type, external_call_launch_params, mut resources_in_caller_frame);
-        match run_call_preparation::<S, IS_ENTRY_FRAME>(
+        match read_callee_and_prepare_frame_state::<S, IS_ENTRY_FRAME>(
             self.system,
             caller_ee_type,
             call_request,
@@ -177,10 +178,11 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             Ok(CallPreparationResult::Failure {
                 resources_in_caller_frame,
             }) => {
+                // Failure in the **caller** frame
                 return Ok(CompletedExecution {
                     resources_returned: resources_in_caller_frame,
                     result: CallResult::CallFailedToExecute,
-                })
+                });
             }
             Err(e) => return Err(e),
         };
@@ -591,8 +593,8 @@ pub enum CallPreparationResult<'a, S: SystemTypes> {
     },
 }
 
-/// Read callee properties, execute additional checks, charge resources and perform additional EE-specific logic
-fn run_call_preparation<'a, S: EthereumLikeTypes, const IS_ENTRY_FRAME: bool>(
+/// Read callee properties, charge for it, calculate resources for callee
+fn read_callee_and_prepare_frame_state<'a, S: EthereumLikeTypes, const IS_ENTRY_FRAME: bool>(
     system: &mut System<S>,
     caller_ee_version: ExecutionEnvironmentType,
     mut call_request: ExternalCallRequest<'a, S>,
