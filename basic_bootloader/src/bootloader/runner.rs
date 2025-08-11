@@ -6,10 +6,8 @@ use core::fmt::Write;
 use core::mem::MaybeUninit;
 use errors::internal::InternalError;
 use ruint::aliases::B160;
-use ruint::aliases::U256;
 use system_hooks::*;
 use zk_ee::common_structs::CalleeAccountProperties;
-use zk_ee::common_structs::TransferInfo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::interface_error;
 use zk_ee::memory::slice_vec::SliceVec;
@@ -19,7 +17,6 @@ use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, logger::Logger, *};
-use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::wrap_error;
 use zk_ee::{internal_error, out_of_ergs_error};
 
@@ -160,12 +157,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         // potential writes below, otherwise we will pass what's needed to caller
 
         // declaring these here rather than returning them reduces stack usage.
-        let (
-            next_ee_type,
-            transfer_to_perform,
-            external_call_launch_params,
-            mut resources_in_caller_frame,
-        );
+        let (next_ee_type, external_call_launch_params, mut resources_in_caller_frame);
         match run_call_preparation::<S, IS_ENTRY_FRAME>(
             self.system,
             caller_ee_type,
@@ -174,12 +166,10 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         ) {
             Ok(CallPreparationResult::Success {
                 next_ee_type: next_ee_type_returned,
-                transfer_to_perform: transfer_to_perform_returned,
                 external_call_launch_params: external_call_launch_params_returned,
                 resources_in_caller_frame: resources_in_caller_frame_returned,
             }) => {
                 next_ee_type = next_ee_type_returned;
-                transfer_to_perform = transfer_to_perform_returned;
                 external_call_launch_params = external_call_launch_params_returned;
                 resources_in_caller_frame = resources_in_caller_frame_returned;
             }
@@ -204,7 +194,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             next_ee_type,
             caller_ee_type,
             external_call_launch_params,
-            transfer_to_perform,
             heap,
             tracer,
         );
@@ -230,7 +219,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         next_ee_type: ExecutionEnvironmentType,
         caller_ee_type: ExecutionEnvironmentType,
         mut external_call_launch_params: ExecutionEnvironmentLaunchParams<S>,
-        transfer_to_perform: Option<TransferInfo>,
         heap: SliceVec<u8>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
@@ -275,28 +263,20 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         let rollback_handle = self.system.start_global_frame()?;
 
         // Try to execute transfer if requested
-        if let Some(transfer_to_perform) = transfer_to_perform {
-            let success = self.perform_requested_transfer(
-                &transfer_to_perform,
-                &external_call_launch_params.external_call.caller,
-                caller_ee_type,
-                &mut external_call_launch_params
+        if !self.perform_transfer_if_required(
+            &mut external_call_launch_params.external_call,
+            caller_ee_type,
+        )? {
+            self.system.finish_global_frame(Some(&rollback_handle))?;
+
+            return Ok((
+                external_call_launch_params
                     .external_call
                     .available_resources,
-            )?;
-
-            if !success {
-                self.system.finish_global_frame(Some(&rollback_handle))?;
-
-                return Ok((
-                    external_call_launch_params
-                        .external_call
-                        .available_resources,
-                    CallResult::Failed {
-                        return_values: ReturnValues::empty(),
-                    },
-                ));
-            }
+                CallResult::Failed {
+                    return_values: ReturnValues::empty(),
+                },
+            ));
         }
 
         // By default, code execution is disabled for calls in kernel space
@@ -340,31 +320,52 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
     }
 
     #[inline(always)]
-    fn perform_requested_transfer<'a>(
+    fn perform_transfer_if_required<'a>(
         &mut self,
-        transfer_to_perform: &TransferInfo,
-        from: &<S::IOTypes as SystemIOTypesConfig>::Address,
+        call_request: &mut ExternalCallRequest<S>,
         caller_ee_type: ExecutionEnvironmentType,
-        resources: &mut S::Resources,
     ) -> Result<bool, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
-        let TransferInfo { value, target } = transfer_to_perform;
-        match resources.with_infinite_ergs(|inf_resources| {
-            self.system.io.transfer_nominal_token_value(
-                ExecutionEnvironmentType::NoEE,
-                inf_resources,
-                from,
-                &target,
-                &value,
-            )
-        }) {
+        if call_request.nominal_token_value.is_zero() || call_request.is_delegate() {
+            return Ok(true);
+        }
+
+        // Check transfer is allowed and determine transfer target
+        if !call_request.is_transfer_allowed() {
+            let _ = self.system.get_logger().write_fmt(format_args!(
+                "Call failed: positive value with modifier {:?}\n",
+                call_request.modifier
+            ));
+            return Err(internal_error!("Positive value with incorrect modifier").into());
+        }
+        // Adjust transfer target due to CALLCODE
+        let target = match call_request.modifier {
+            CallModifier::EVMCallcode | CallModifier::EVMCallcodeStatic => call_request.caller,
+            _ => call_request.callee,
+        };
+
+        match call_request
+            .available_resources
+            .with_infinite_ergs(|inf_resources| {
+                self.system.io.transfer_nominal_token_value(
+                    ExecutionEnvironmentType::NoEE,
+                    inf_resources,
+                    &call_request.caller,
+                    &target,
+                    &call_request.nominal_token_value,
+                )
+            }) {
             Ok(()) => Ok(true),
             Err(e) => {
                 match e {
                     SubsystemError::LeafUsage(_interface_error) => {
-                        // TODO log this error, but logger is unavailable
+                        let _ = self
+                            .system
+                            .get_logger()
+                            .write_fmt(format_args!("Insufficient balance for transfer\n"));
+
                         // Insufficient balance
                         match caller_ee_type {
                             ExecutionEnvironmentType::NoEE => Err(interface_error!(
@@ -582,7 +583,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 pub enum CallPreparationResult<'a, S: SystemTypes> {
     Success {
         next_ee_type: ExecutionEnvironmentType,
-        transfer_to_perform: Option<TransferInfo>,
         external_call_launch_params: ExecutionEnvironmentLaunchParams<'a, S>,
         resources_in_caller_frame: S::Resources,
     },
@@ -603,10 +603,10 @@ where
 {
     let mut resources_in_caller_frame = call_request.available_resources.take();
 
-    // TODO ugly
     let r = if IS_ENTRY_FRAME || call_request.modifier == CallModifier::Constructor {
         // For entry frame we don't charge ergs for call preparation,
-        // as this is included in the intrinsic cost.
+        // as this is included in the intrinsic cost. For constructor frame this is also included in creation gas cost.
+        // TODO: in future charging should be done by EE, so this logic can be unified
         resources_in_caller_frame.with_infinite_ergs(|inf_resources| {
             read_callee_account_properties(system, caller_ee_version, inf_resources, &call_request)
         })
@@ -632,34 +632,6 @@ where
         Err(SystemError::LeafDefect(e)) => return Err(e.into()),
     };
 
-    // Check transfer is allowed and determine transfer target
-    let transfer_to_perform =
-        if call_request.nominal_token_value != U256::ZERO && !call_request.is_delegate() {
-            if !call_request.is_transfer_allowed() {
-                let _ = system.get_logger().write_fmt(format_args!(
-                    "Call failed: positive value with modifier {:?}\n",
-                    call_request.modifier
-                ));
-                return Ok(CallPreparationResult::Failure {
-                    resources_in_caller_frame,
-                });
-            }
-            // Adjust transfer target due to CALLCODE
-            let target = match call_request.modifier {
-                CallModifier::EVMCallcode | CallModifier::EVMCallcodeStatic => call_request.caller,
-                _ => call_request.callee,
-            };
-            Some(TransferInfo {
-                value: call_request.nominal_token_value,
-                target,
-            })
-        } else {
-            None
-        };
-
-    // If we're in the entry frame, i.e. not the execution of a CALL opcode,
-    // we don't apply the CALL-specific gas charging, but instead set
-    // resources_for_callee_frame equal to the available resources
     let resources_for_callee_frame = if !IS_ENTRY_FRAME {
         // now we should ask current EE to calculate resources for the callee frame
         let mut callee_resources =
@@ -685,6 +657,8 @@ where
         resources_in_caller_frame.give_native_to(&mut callee_resources);
         callee_resources
     } else {
+        // If we're in the entry frame, i.e. not the execution of a CALL opcode,
+        // we just pass all available resources
         resources_in_caller_frame.take()
     };
 
@@ -727,13 +701,13 @@ where
 
     Ok(CallPreparationResult::Success {
         next_ee_type: ExecutionEnvironmentType::parse_ee_version_byte(next_ee_version)?,
-        transfer_to_perform,
         external_call_launch_params,
         resources_in_caller_frame,
     })
 }
 
 /// Charge for reading account properties and perform actual read
+/// TODO: in future charging should be done by EE
 fn read_callee_account_properties<'a, S: EthereumLikeTypes>(
     system: &mut System<S>,
     ee_version: ExecutionEnvironmentType,
