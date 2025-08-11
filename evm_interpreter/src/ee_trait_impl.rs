@@ -364,7 +364,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         if !frame_state.external_call.nominal_token_value.is_zero()
             && !frame_state.external_call.is_delegate()
         {
-            let deployer_balance = frame_state
+            let caller_balance = frame_state
                 .external_call
                 .available_resources
                 .with_infinite_ergs(|inf_resources| {
@@ -378,7 +378,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 .nominal_token_balance
                 .0;
 
-            if deployer_balance < frame_state.external_call.nominal_token_value {
+            if caller_balance < frame_state.external_call.nominal_token_value {
                 let _ = system
                     .get_logger()
                     .write_fmt(format_args!("Not enough balance for transfer\n",));

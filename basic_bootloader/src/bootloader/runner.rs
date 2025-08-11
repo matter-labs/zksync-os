@@ -149,28 +149,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             ));
         }
 
-        // By default, code execution is disabled for calls in kernel space
-        // (< SPECIAL_ADDRESS_BOUND). These calls will either be handled by
-        // a system hook or behave like calls to an empty account otherwise.
-        //
-        // If the [code_in_kernel_space] feature is enabled, only calls to
-        // addresses linked to a hook are considered special. Any other call
-        // can execute code following the normal flow.
-        //
-        // NB: if we decide to make the latter behaviour the default, we
-        // should refactor the logic to avoid the duplicated lookup into
-        // the hook storage.
-        #[cfg(not(feature = "code_in_kernel_space"))]
-        let is_call_to_special_address =
-            call_request.callee.as_uint() < SPECIAL_ADDRESS_BOUND.as_uint();
-
-        #[cfg(feature = "code_in_kernel_space")]
-        let is_call_to_special_address = call_request.callee.as_uint()
-            < SPECIAL_ADDRESS_BOUND.as_uint()
-            && self
-                .hooks
-                .has_hook_for(call_request.callee.as_limbs()[0] as u16);
-
         // NOTE: on external call request caller doesn't spend resources,
         // but indicates how much he would want to pass at most. Here we can decide the rest
 
@@ -183,9 +161,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         // declaring these here rather than returning them reduces stack usage.
         let (
-            next_ee_version,
+            next_ee_type,
             transfer_to_perform,
-            mut external_call_launch_params,
+            external_call_launch_params,
             mut resources_in_caller_frame,
         );
         match run_call_preparation::<S, IS_ENTRY_FRAME>(
@@ -195,12 +173,12 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             self.callstack_height,
         ) {
             Ok(CallPreparationResult::Success {
-                next_ee_version: next_ee_version_returned,
+                next_ee_type: next_ee_type_returned,
                 transfer_to_perform: transfer_to_perform_returned,
                 external_call_launch_params: external_call_launch_params_returned,
                 resources_in_caller_frame: resources_in_caller_frame_returned,
             }) => {
-                next_ee_version = next_ee_version_returned;
+                next_ee_type = next_ee_type_returned;
                 transfer_to_perform = transfer_to_perform_returned;
                 external_call_launch_params = external_call_launch_params_returned;
                 resources_in_caller_frame = resources_in_caller_frame_returned;
@@ -222,92 +200,14 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         // Note that for tracing we treat failure on preparation step as failure before external call started
         tracer.on_new_execution_frame(&external_call_launch_params);
 
-        let mut next_ee_type = match next_ee_version {
-            0 => ExecutionEnvironmentType::NoEE,
-            1 => ExecutionEnvironmentType::EVM,
-            _ => unreachable!(), // TODO
-        };
-
-        if next_ee_type == ExecutionEnvironmentType::NoEE {
-            next_ee_type = ExecutionEnvironmentType::EVM;
-        }
-
-        match SupportedEEVMState::before_executing_frame(
-            next_ee_type, // TODO ee type
-            self.system,
-            &mut external_call_launch_params,
+        let callee_frame_execution_result = self.execute_call(
+            next_ee_type,
+            caller_ee_type,
+            external_call_launch_params,
+            transfer_to_perform,
+            heap,
             tracer,
-        ) {
-            Ok(success) => {
-                if !success {
-                    tracer.after_execution_frame_completed(None); // TODO pass returned resources anyway
-
-                    resources_in_caller_frame.reclaim(
-                        external_call_launch_params
-                            .external_call
-                            .available_resources,
-                    );
-                    return Ok(CompletedExecution {
-                        resources_returned: resources_in_caller_frame,
-                        result: CallResult::Failed {
-                            return_values: ReturnValues::empty(),
-                        },
-                    });
-                }
-            }
-            Err(e) => return Err(wrap_error!(e)),
-        }
-
-        // We create a new frame for callee, should include transfer and
-        // callee execution
-        let rollback_handle = self.system.start_global_frame()?;
-
-        if let Some(transfer_to_perform) = transfer_to_perform {
-            let success = self.perform_requested_transfer(
-                &transfer_to_perform,
-                &external_call_launch_params.external_call.caller,
-                caller_ee_type,
-                &mut external_call_launch_params
-                    .external_call
-                    .available_resources,
-            )?;
-
-            if !success {
-                tracer.after_execution_frame_completed(None); // TODO pass returned resources anyway
-
-                self.system.finish_global_frame(Some(&rollback_handle))?;
-
-                resources_in_caller_frame.reclaim(
-                    external_call_launch_params
-                        .external_call
-                        .available_resources,
-                );
-
-                return Ok(CompletedExecution {
-                    resources_returned: resources_in_caller_frame,
-                    result: CallResult::Failed {
-                        return_values: ReturnValues::empty(),
-                    },
-                });
-            }
-        }
-
-        let callee_frame_execution_result = if is_call_to_special_address {
-            // The call is targeting the "system contract" space.
-            self.call_to_special_address_execute_callee_frame(
-                external_call_launch_params,
-                caller_ee_type,
-                rollback_handle,
-            )
-        } else {
-            self.call_execute_callee_frame(
-                external_call_launch_params,
-                heap,
-                next_ee_version,
-                rollback_handle,
-                tracer,
-            )
-        };
+        );
 
         tracer.after_execution_frame_completed(
             callee_frame_execution_result
@@ -323,6 +223,120 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             resources_returned: resources_in_caller_frame,
             result: call_result,
         })
+    }
+
+    fn execute_call(
+        &mut self,
+        next_ee_type: ExecutionEnvironmentType,
+        caller_ee_type: ExecutionEnvironmentType,
+        mut external_call_launch_params: ExecutionEnvironmentLaunchParams<S>,
+        transfer_to_perform: Option<TransferInfo>,
+        heap: SliceVec<u8>,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        // We want to execute some prechecks even if EE is not specified (e.g. call/transfer to empty account or precompile)
+        let interpret_as_ee_type = if next_ee_type == ExecutionEnvironmentType::NoEE {
+            if caller_ee_type == ExecutionEnvironmentType::NoEE {
+                // Default EE type
+                ExecutionEnvironmentType::EVM
+            } else {
+                caller_ee_type
+            }
+        } else {
+            next_ee_type
+        };
+
+        // Pre-checks and operations that should not be rolled back if call fails
+        match SupportedEEVMState::before_executing_frame(
+            interpret_as_ee_type,
+            self.system,
+            &mut external_call_launch_params,
+            tracer,
+        ) {
+            Ok(success) => {
+                if !success {
+                    return Ok((
+                        external_call_launch_params
+                            .external_call
+                            .available_resources,
+                        CallResult::Failed {
+                            return_values: ReturnValues::empty(),
+                        },
+                    ));
+                }
+            }
+            Err(e) => return Err(wrap_error!(e)),
+        }
+
+        // Create snapshot for rollbacks
+        let rollback_handle = self.system.start_global_frame()?;
+
+        // Try to execute transfer if requested
+        if let Some(transfer_to_perform) = transfer_to_perform {
+            let success = self.perform_requested_transfer(
+                &transfer_to_perform,
+                &external_call_launch_params.external_call.caller,
+                caller_ee_type,
+                &mut external_call_launch_params
+                    .external_call
+                    .available_resources,
+            )?;
+
+            if !success {
+                self.system.finish_global_frame(Some(&rollback_handle))?;
+
+                return Ok((
+                    external_call_launch_params
+                        .external_call
+                        .available_resources,
+                    CallResult::Failed {
+                        return_values: ReturnValues::empty(),
+                    },
+                ));
+            }
+        }
+
+        // By default, code execution is disabled for calls in kernel space
+        // (< SPECIAL_ADDRESS_BOUND). These calls will either be handled by
+        // a system hook or behave like calls to an empty account otherwise.
+        //
+        // If the [code_in_kernel_space] feature is enabled, only calls to
+        // addresses linked to a hook are considered special. Any other call
+        // can execute code following the normal flow.
+        //
+        // NB: if we decide to make the latter behaviour the default, we
+        // should refactor the logic to avoid the duplicated lookup into
+        // the hook storage.
+        #[cfg(not(feature = "code_in_kernel_space"))]
+        let is_call_to_special_address = external_call_launch_params.external_call.callee.as_uint()
+            < SPECIAL_ADDRESS_BOUND.as_uint();
+
+        #[cfg(feature = "code_in_kernel_space")]
+        let is_call_to_special_address = external_call_launch_params.external_call.callee.as_uint()
+            < SPECIAL_ADDRESS_BOUND.as_uint()
+            && self.hooks.has_hook_for(
+                external_call_launch_params.external_call.callee.as_limbs()[0] as u16,
+            );
+
+        if is_call_to_special_address {
+            // The call is targeting the "system contract" space.
+            self.call_to_special_address_execute_callee_frame(
+                external_call_launch_params,
+                caller_ee_type,
+                rollback_handle,
+            )
+        } else {
+            self.call_execute_callee_frame(
+                external_call_launch_params,
+                heap,
+                next_ee_type,
+                rollback_handle,
+                tracer,
+            )
+        }
     }
 
     #[inline(always)]
@@ -380,7 +394,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         &mut self,
         external_call_launch_params: ExecutionEnvironmentLaunchParams<S>,
         heap: SliceVec<u8>,
-        next_ee_version: u8,
+        next_ee_type: ExecutionEnvironmentType,
         rollback_handle: SystemFrameSnapshot<S>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
@@ -388,7 +402,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         S::IO: IOSubsystemExt,
     {
         // By convention, calls to empty accounts succeed without any return data
-        if next_ee_version == ExecutionEnvironmentType::NO_EE_BYTE {
+        if next_ee_type == ExecutionEnvironmentType::NoEE {
             if let Bytecode::Decommitted {
                 bytecode,
                 unpadded_code_len: _,
@@ -414,7 +428,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         }
 
         // now grow callstack and prepare initial state
-        let mut new_vm = create_ee(next_ee_version, self.system)?;
+        let mut new_vm = create_ee(next_ee_type, self.system)?;
         let new_ee_type = new_vm.ee_type();
 
         let mut preemption = new_vm
@@ -567,7 +581,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
 pub enum CallPreparationResult<'a, S: SystemTypes> {
     Success {
-        next_ee_version: u8,
+        next_ee_type: ExecutionEnvironmentType,
         transfer_to_perform: Option<TransferInfo>,
         external_call_launch_params: ExecutionEnvironmentLaunchParams<'a, S>,
         resources_in_caller_frame: S::Resources,
@@ -712,7 +726,7 @@ where
         };
 
     Ok(CallPreparationResult::Success {
-        next_ee_version,
+        next_ee_type: ExecutionEnvironmentType::parse_ee_version_byte(next_ee_version)?,
         transfer_to_perform,
         external_call_launch_params,
         resources_in_caller_frame,
@@ -853,7 +867,7 @@ where
 /// that this (unfortunately) allocates gets cleaned up.
 #[inline(never)]
 fn create_ee<'a, S: EthereumLikeTypes>(
-    ee_type: u8,
+    ee_type: ExecutionEnvironmentType,
     system: &mut System<S>,
 ) -> Result<Box<SupportedEEVMState<'a, S>, S::Allocator>, BootloaderSubsystemError> {
     Ok(Box::new_in(

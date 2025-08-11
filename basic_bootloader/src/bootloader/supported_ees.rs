@@ -58,11 +58,11 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
     }
 
     pub fn create_initial(
-        ee_version: u8,
+        ee_type: ExecutionEnvironmentType,
         system: &mut System<S>,
     ) -> Result<Self, EESubsystemError> {
-        match ee_version {
-            a if a == EVM_EE_BYTE => SystemBoundEVMInterpreter::new(system)
+        match ee_type {
+            ExecutionEnvironmentType::EVM => SystemBoundEVMInterpreter::new(system)
                 .map(Self::EVM)
                 .map_err(wrap_error!()),
             _ => Err(interface_error!(
