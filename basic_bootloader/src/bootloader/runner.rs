@@ -268,7 +268,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         // callee execution
         let rollback_handle = self.system.start_global_frame()?;
 
-        // Note that actual transfer is executed in "check_if_external_call_returns_early" which may be confusing
         let callee_frame_execution_result = if let Some(call_result) = self
             .perform_requested_transfer(
                 &mut external_call_launch_params,
