@@ -294,30 +294,35 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         call_request: &ExternalCallRequest<S>,
         callee_parameters: &CalleeAccountProperties,
     ) -> Result<S::Resources, Self::SubsystemError> {
-        // Gas stipend calculation
-        let is_delegate = call_request.is_delegate();
-        let is_callcode = call_request.is_callcode();
-        let is_callcode_or_delegate = is_callcode || is_delegate;
+        let mut stipend = None;
 
-        // Positive value cost and stipend
-        let stipend = if !is_delegate && !call_request.nominal_token_value.is_zero() {
-            let positive_value_cost = S::Resources::from_ergs(Ergs(CALLVALUE * ERGS_PER_GAS));
-            resources_available_in_caller_frame.charge(&positive_value_cost)?;
-            Some(Ergs(CALL_STIPEND * ERGS_PER_GAS))
-        } else {
-            None
-        };
+        // TODO ugly
+        if call_request.modifier != CallModifier::Constructor {
+            // Gas stipend calculation
+            let is_delegate = call_request.is_delegate();
+            let is_callcode = call_request.is_callcode();
+            let is_callcode_or_delegate = is_callcode || is_delegate;
 
-        // Account creation cost
-        let callee_is_empty = callee_parameters.nonce == 0
-            && callee_parameters.unpadded_code_len == 0
-            && callee_parameters.nominal_token_balance.is_zero();
-        if !is_callcode_or_delegate
-            && !call_request.nominal_token_value.is_zero()
-            && callee_is_empty
-        {
-            let callee_creation_cost = S::Resources::from_ergs(Ergs(NEWACCOUNT * ERGS_PER_GAS));
-            resources_available_in_caller_frame.charge(&callee_creation_cost)?
+            // Positive value cost and stipend
+            stipend = if !is_delegate && !call_request.nominal_token_value.is_zero() {
+                let positive_value_cost = S::Resources::from_ergs(Ergs(CALLVALUE * ERGS_PER_GAS));
+                resources_available_in_caller_frame.charge(&positive_value_cost)?;
+                Some(Ergs(CALL_STIPEND * ERGS_PER_GAS))
+            } else {
+                None
+            };
+
+            // Account creation cost
+            let callee_is_empty = callee_parameters.nonce == 0
+                && callee_parameters.unpadded_code_len == 0
+                && callee_parameters.nominal_token_balance.is_zero();
+            if !is_callcode_or_delegate
+                && !call_request.nominal_token_value.is_zero()
+                && callee_is_empty
+            {
+                let callee_creation_cost = S::Resources::from_ergs(Ergs(NEWACCOUNT * ERGS_PER_GAS));
+                resources_available_in_caller_frame.charge(&callee_creation_cost)?
+            }
         }
 
         // we just need to apply 63/64 rule, as System/IO is responsible for the rest
@@ -342,55 +347,6 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         Ok(resources_to_pass)
     }
 
-    // derive address and check other preconditions to deploy the bytecode
-    fn prepare_for_deployment<'a>(
-        _system: &mut System<S>,
-        deployment_parameters: DeploymentPreparationParameters<'a, S>,
-        _resources: &mut S::Resources,
-    ) -> Result<Option<ExecutionEnvironmentLaunchParams<'a, S>>, Self::SubsystemError>
-    where
-        S::IO: IOSubsystemExt,
-    {
-        // for EVM we just create a new frame and run it
-        let DeploymentPreparationParameters {
-            address_of_deployer,
-            address: deployed_address,
-            call_scratch_space,
-            deployment_code,
-            constructor_parameters,
-            ee_specific_deployment_processing_data: _ee_specific_deployment_processing_data,
-            nominal_token_value,
-            callstack_depth,
-        } = deployment_parameters;
-        assert!(constructor_parameters.is_empty());
-        assert!(call_scratch_space.is_none());
-
-        let environment_parameters = EnvironmentParameters {
-            bytecode: Bytecode::Constructor(deployment_code),
-            scratch_space_len: 0u32,
-            callstack_depth,
-        };
-
-        // TODO: eventually more resources OUT of the frame
-        let next_frame_state = ExecutionEnvironmentLaunchParams {
-            external_call: ExternalCallRequest {
-                available_resources: Default::default(),
-                // Ergs to pass are only used for actual calls
-                ergs_to_pass: Ergs(0),
-                caller: address_of_deployer,
-                callee: deployed_address,
-                callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(), // Fine to use placeholder
-                modifier: CallModifier::Constructor,
-                input: &[],
-                call_scratch_space: None,
-                nominal_token_value,
-            },
-            environment_parameters,
-        };
-
-        Ok(Some(next_frame_state))
-    }
-
     fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         system: &mut System<S>,
         frame_state: &mut ExecutionEnvironmentLaunchParams<'i, S>,
@@ -408,7 +364,9 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         }
 
         // Check caller has enough balance for token transfer
-        if !frame_state.external_call.nominal_token_value.is_zero() {
+        if !frame_state.external_call.nominal_token_value.is_zero()
+            && !frame_state.external_call.is_delegate()
+        {
             let deployer_balance = frame_state
                 .external_call
                 .available_resources

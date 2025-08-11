@@ -172,15 +172,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 .hooks
                 .has_hook_for(call_request.callee.as_limbs()[0] as u16);
 
-        if call_request.modifier == CallModifier::Constructor {
-            return self.handle_requested_deployment::<IS_ENTRY_FRAME>(
-                ee_type,
-                call_request,
-                heap,
-                tracer,
-            );
-        }
-
         // NOTE: on external call request caller doesn't spend resources,
         // but indicates how much he would want to pass at most. Here we can decide the rest
 
@@ -198,6 +189,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             mut external_call_launch_params,
             mut resources_in_caller_frame,
         );
+        let is_constructor = call_request.modifier == CallModifier::Constructor;
         match run_call_preparation::<S, IS_ENTRY_FRAME>(
             self.system,
             ee_type,
@@ -210,7 +202,11 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 external_call_launch_params: external_call_launch_params_returned,
                 resources_in_caller_frame: resources_in_caller_frame_returned,
             }) => {
-                next_ee_version = next_ee_version_returned;
+                next_ee_version = if is_constructor {
+                    ee_type as u8
+                } else {
+                    next_ee_version_returned
+                };
                 transfer_to_perform = transfer_to_perform_returned;
                 external_call_launch_params = external_call_launch_params_returned;
                 resources_in_caller_frame = resources_in_caller_frame_returned;
@@ -231,6 +227,42 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         // Note that for tracing we treat failure on preparation step as failure before external call started
         tracer.on_new_execution_frame(&external_call_launch_params);
+
+        let mut next_ee_type = match next_ee_version {
+            0 => ExecutionEnvironmentType::NoEE,
+            1 => ExecutionEnvironmentType::EVM,
+            _ => unreachable!(), // TODO
+        };
+
+        if next_ee_type == ExecutionEnvironmentType::NoEE {
+            next_ee_type = ExecutionEnvironmentType::EVM;
+        }
+
+        match SupportedEEVMState::before_executing_frame(
+            next_ee_type, // TODO ee type
+            self.system,
+            &mut external_call_launch_params,
+            tracer,
+        ) {
+            Ok(success) => {
+                if !success {
+                    tracer.after_execution_frame_completed(None); // TODO pass returned resources anyway
+
+                    resources_in_caller_frame.reclaim(
+                        external_call_launch_params
+                            .external_call
+                            .available_resources,
+                    );
+                    return Ok(CompletedExecution {
+                        resources_returned: resources_in_caller_frame,
+                        result: CallResult::Failed {
+                            return_values: ReturnValues::empty(),
+                        },
+                    });
+                }
+            }
+            Err(e) => return Err(wrap_error!(e)),
+        }
 
         // We create a new frame for callee, should include transfer and
         // callee execution
@@ -346,31 +378,28 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             }
         }
 
-        let is_eoa = match external_call_params.environment_parameters.bytecode {
-            Bytecode::Decommitted {
-                bytecode,
-                unpadded_code_len: _,
-                artifacts_len: _,
-                code_version: _,
-            } => bytecode.is_empty(),
-            Bytecode::Constructor(_) => {
-                return Err(SubsystemError::LeafDefect(internal_error!(
-                    "Constructor bytecode used instead of bytecode"
-                )))
+        // TODO replace and handle EOAs differently
+        if external_call_params.external_call.modifier != CallModifier::Constructor {
+            let is_eoa = match external_call_params.environment_parameters.bytecode {
+                Bytecode::Decommitted {
+                    bytecode,
+                    unpadded_code_len: _,
+                    artifacts_len: _,
+                    code_version: _,
+                } => bytecode.is_empty(),
+                Bytecode::Constructor(_) => {
+                    return Err(SubsystemError::LeafDefect(internal_error!(
+                        "Constructor bytecode used instead of bytecode"
+                    )))
+                }
+            };
+
+            // Calls to EOAs succeed with empty return value
+            if !is_call_to_special_address && is_eoa {
+                return Ok(Some(CallResult::Successful {
+                    return_values: ReturnValues::empty(),
+                }));
             }
-        };
-
-        // Calls to EOAs succeed with empty return value
-        if !is_call_to_special_address && is_eoa {
-            return Ok(Some(CallResult::Successful {
-                return_values: ReturnValues::empty(),
-            }));
-        }
-
-        if self.callstack_height > 1024 {
-            return Ok(Some(CallResult::Failed {
-                return_values: ReturnValues::empty(),
-            }));
         }
 
         Ok(None)
@@ -519,146 +548,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             ))
         }
     }
-
-    fn handle_requested_deployment<const IS_ENTRY_FRAME: bool>(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        deployment_request: ExternalCallRequest<S>,
-        heap: SliceVec<u8>,
-        tracer: &mut impl Tracer<S>,
-    ) -> Result<CompletedExecution<'external, S>, BootloaderSubsystemError>
-    where
-        S::IO: IOSubsystemExt,
-    {
-        // Caller gave away all it's resources into deployment parameters, and in preparation function
-        // we will charge for deployment, compute address and potentially increment nonce
-
-        let ergs_to_pass = deployment_request.ergs_to_pass; // TODO
-        let mut deployer_resources = deployment_request.available_resources;
-
-        let mut resources_for_constructor_frame = if !IS_ENTRY_FRAME {
-            let mut constructor_resources = S::Resources::from_ergs(ergs_to_pass);
-            deployer_resources.charge(&constructor_resources)?;
-            // Give native resource to the callee.
-            deployer_resources.give_native_to(&mut constructor_resources);
-            constructor_resources
-        } else {
-            deployer_resources.take()
-        };
-
-        let mut launch_params = match SupportedEEVMState::prepare_for_deployment(
-            ee_type,
-            self.system,
-            DeploymentPreparationParameters {
-                address_of_deployer: deployment_request.caller,
-                address: deployment_request.callee,
-                call_scratch_space: deployment_request.call_scratch_space,
-                deployment_code: deployment_request.input,
-                constructor_parameters: &[],                  // TODO
-                ee_specific_deployment_processing_data: None, // TODO
-                nominal_token_value: deployment_request.nominal_token_value,
-                callstack_depth: self.callstack_height,
-            },
-            &mut resources_for_constructor_frame,
-        ) {
-            Ok(Some(launch_params)) => launch_params,
-            Ok(None) => {
-                deployer_resources.reclaim(resources_for_constructor_frame);
-                return Ok(CompletedExecution {
-                    resources_returned: deployer_resources,
-                    result: CallResult::Failed {
-                        return_values: ReturnValues::empty(),
-                    },
-                });
-            }
-            Err(e) => {
-                return Err(wrap_error!(e));
-            }
-        };
-
-        launch_params.external_call.available_resources = resources_for_constructor_frame;
-
-        tracer.on_new_execution_frame(&launch_params);
-
-        match SupportedEEVMState::before_executing_frame(
-            ee_type,
-            self.system,
-            &mut launch_params,
-            tracer,
-        ) {
-            Ok(success) => {
-                if !success {
-                    tracer.after_execution_frame_completed(None); // TODO pass returned resources anyway
-
-                    deployer_resources.reclaim(launch_params.external_call.available_resources);
-                    return Ok(CompletedExecution {
-                        resources_returned: deployer_resources,
-                        result: CallResult::Failed {
-                            return_values: ReturnValues::empty(),
-                        },
-                    });
-                }
-            }
-            Err(_) => todo!(),
-        }
-
-        let constructor_rollback_handle = self
-            .system
-            .start_global_frame()
-            .map_err(|_| internal_error!("must start a new frame for init code"))?;
-
-        let nominal_token_value = launch_params.external_call.nominal_token_value;
-
-        if nominal_token_value != U256::ZERO {
-            launch_params
-                .external_call
-                .available_resources
-                .with_infinite_ergs(|inf_resources| {
-                    self.system.io.transfer_nominal_token_value(
-                        self.initial_ee_version,
-                        inf_resources,
-                        &launch_params.external_call.caller,
-                        &launch_params.external_call.callee,
-                        &nominal_token_value,
-                    )
-                })
-                .map_err(|e| -> BootloaderSubsystemError {
-                    match e {
-                        SubsystemError::LeafUsage(_interface_error) => {
-                            // TODO must log the error, but logger is unavailable
-                            internal_error!(
-                                "Must transfer value on deployment after check in preparation"
-                            )
-                            .into()
-                        }
-                        e => wrap_error!(e),
-                    }
-                })?;
-        }
-
-        let constructor_frame_execution_result = self.call_execute_callee_frame(
-            launch_params,
-            heap,
-            ee_type as u8,
-            constructor_rollback_handle,
-            tracer,
-        );
-
-        tracer.after_execution_frame_completed(
-            constructor_frame_execution_result
-                .as_ref()
-                .map(|(resources_returned, call_result)| Some((resources_returned, call_result)))
-                .unwrap_or_default(),
-        );
-
-        let (resources_returned_from_callee, call_result) = constructor_frame_execution_result?;
-        deployer_resources.reclaim(resources_returned_from_callee);
-
-        Ok(CompletedExecution {
-            resources_returned: deployer_resources,
-            result: call_result,
-        })
-    }
 }
 
 pub enum CallPreparationResult<'a, S: SystemTypes> {
@@ -685,7 +574,8 @@ where
 {
     let mut resources_in_caller_frame = call_request.available_resources.take();
 
-    let r = if IS_ENTRY_FRAME {
+    // TODO ugly
+    let r = if IS_ENTRY_FRAME || call_request.modifier == CallModifier::Constructor {
         // For entry frame we don't charge ergs for call preparation,
         // as this is included in the intrinsic cost.
         resources_in_caller_frame.with_infinite_ergs(|inf_resources| {
@@ -782,18 +672,30 @@ where
             .log_data(callee_account_properties.bytecode.as_ref().iter().copied());
     }
 
+    // TODO ugly
+    let bytecode = if call_request.modifier == CallModifier::Constructor {
+        Bytecode::Constructor(&call_request.input)
+    } else {
+        Bytecode::Decommitted {
+            bytecode: callee_account_properties.bytecode,
+            unpadded_code_len: callee_account_properties.unpadded_code_len,
+            artifacts_len: callee_account_properties.artifacts_len,
+            code_version: callee_account_properties.code_version,
+        }
+    };
+
+    if call_request.modifier == CallModifier::Constructor {
+        // TODO ugly
+        call_request.input = &[];
+    }
+
     let external_call_launch_params = ExecutionEnvironmentLaunchParams {
         external_call: ExternalCallRequest {
             available_resources: resources_for_callee_frame,
             ..call_request
         },
         environment_parameters: EnvironmentParameters {
-            bytecode: Bytecode::Decommitted {
-                bytecode: callee_account_properties.bytecode,
-                unpadded_code_len: callee_account_properties.unpadded_code_len,
-                artifacts_len: callee_account_properties.artifacts_len,
-                code_version: callee_account_properties.code_version,
-            },
+            bytecode,
             scratch_space_len: 0,
             callstack_depth,
         },

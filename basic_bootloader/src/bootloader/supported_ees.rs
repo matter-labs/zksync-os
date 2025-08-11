@@ -127,30 +127,6 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         }
     }
 
-    pub fn prepare_for_deployment<'a>(
-        ee_version: ExecutionEnvironmentType,
-        system: &mut System<S>,
-        deployment_parameters: DeploymentPreparationParameters<'a, S>,
-        resources: &mut S::Resources,
-    ) -> Result<Option<ExecutionEnvironmentLaunchParams<'a, S>>, EESubsystemError>
-    where
-        S::IO: IOSubsystemExt,
-    {
-        match ee_version {
-            ExecutionEnvironmentType::EVM => {
-                SystemBoundEVMInterpreter::<S>::prepare_for_deployment(
-                    system,
-                    deployment_parameters,
-                    resources,
-                )
-                .map_err(wrap_error!())
-            }
-            _ => Err(interface_error!(
-                InterfaceError::UnsupportedExecutionEnvironment
-            )),
-        }
-    }
-
     pub fn give_back_ergs(&mut self, resources: S::Resources) {
         assert!(resources.native().as_u64() == 0);
         match self {

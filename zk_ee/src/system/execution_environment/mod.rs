@@ -8,7 +8,6 @@ pub mod call_params;
 pub mod environment_state;
 pub mod evm;
 pub mod interaction_params;
-use alloc::boxed::Box;
 use core::any::Any;
 
 pub use self::call_params::*;
@@ -92,19 +91,6 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         call_result: CallResult<'res, S>, // TODO rename?
         tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>
-    where
-        S::IO: IOSubsystemExt;
-
-    /// Runs some pre-deployment preparation and checks.
-    /// The result can be None to represent unsuccessful preparation for deployment.
-    /// EE should prepare a new state to run as "constructor" and potentially OS/IO related data.
-    /// OS then will perform it's own checks and decide whether deployment should proceed or not
-    /// Returns the resources to give back to the deployer
-    fn prepare_for_deployment<'a>(
-        system: &mut System<S>,
-        deployment_parameters: DeploymentPreparationParameters<'a, S>,
-        resources: &mut S::Resources,
-    ) -> Result<Option<ExecutionEnvironmentLaunchParams<'a, S>>, Self::SubsystemError>
     where
         S::IO: IOSubsystemExt;
 }

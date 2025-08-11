@@ -339,12 +339,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // at this preemption point we give all resources to the system
         let all_resources = self.gas.take_resources();
 
-        // Constructor gets 63/64 of available resources
-        let ergs_for_constructor = gas_utils::apply_63_64_rule(all_resources.ergs());
+        // Constructor gets 63/64 of available resources TODO
+        //let ergs_for_constructor = gas_utils::apply_63_64_rule(all_resources.ergs());
 
         let deployment_parameters = EVMDeploymentRequest {
             address: deployed_address,
-            ergs_for_constructor,
+            ergs_for_constructor: all_resources.ergs(),
             deployment_code,
             ee_specific_deployment_processing_data: Some(
                 ee_specific_data as alloc::boxed::Box<dyn core::any::Any, S::Allocator>,
