@@ -19,6 +19,7 @@ use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, logger::Logger, *};
+use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::wrap_error;
 use zk_ee::{internal_error, out_of_ergs_error};
 
@@ -49,7 +50,6 @@ where
     let mut run = Run {
         system,
         hooks,
-        initial_ee_version,
         callstack_height: 0,
         return_memory: memories.return_data,
     };
@@ -74,7 +74,6 @@ impl RunnerMemoryBuffers<'_> {
 struct Run<'a, 'm, S: EthereumLikeTypes> {
     system: &'a mut System<S>,
     hooks: &'a mut HooksStorage<S, S::Allocator>,
-    initial_ee_version: ExecutionEnvironmentType,
     callstack_height: usize,
 
     return_memory: &'m mut [MaybeUninit<u8>],
@@ -128,7 +127,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
     fn handle_requested_external_call<const IS_ENTRY_FRAME: bool>(
         &mut self,
-        ee_type: ExecutionEnvironmentType,
+        caller_ee_type: ExecutionEnvironmentType,
         call_request: ExternalCallRequest<S>,
         heap: SliceVec<u8>,
         tracer: &mut impl Tracer<S>,
@@ -189,10 +188,9 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             mut external_call_launch_params,
             mut resources_in_caller_frame,
         );
-        let is_constructor = call_request.modifier == CallModifier::Constructor;
         match run_call_preparation::<S, IS_ENTRY_FRAME>(
             self.system,
-            ee_type,
+            caller_ee_type,
             call_request,
             self.callstack_height,
         ) {
@@ -202,11 +200,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 external_call_launch_params: external_call_launch_params_returned,
                 resources_in_caller_frame: resources_in_caller_frame_returned,
             }) => {
-                next_ee_version = if is_constructor {
-                    ee_type as u8
-                } else {
-                    next_ee_version_returned
-                };
+                next_ee_version = next_ee_version_returned;
                 transfer_to_perform = transfer_to_perform_returned;
                 external_call_launch_params = external_call_launch_params_returned;
                 resources_in_caller_frame = resources_in_caller_frame_returned;
@@ -268,26 +262,41 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         // callee execution
         let rollback_handle = self.system.start_global_frame()?;
 
-        let callee_frame_execution_result = if let Some(call_result) = self
-            .perform_requested_transfer(
-                &mut external_call_launch_params,
+        if let Some(transfer_to_perform) = transfer_to_perform {
+            let success = self.perform_requested_transfer(
                 &transfer_to_perform,
-                ee_type,
-            )? {
-            let failure = matches!(call_result, CallResult::Failed { .. });
-            self.system
-                .finish_global_frame(failure.then_some(&rollback_handle))?;
+                &external_call_launch_params.external_call.caller,
+                caller_ee_type,
+                &mut external_call_launch_params
+                    .external_call
+                    .available_resources,
+            )?;
 
-            let resources_to_return = external_call_launch_params
-                .external_call
-                .available_resources;
+            if !success {
+                tracer.after_execution_frame_completed(None); // TODO pass returned resources anyway
 
-            Ok((resources_to_return, call_result))
-        } else if is_call_to_special_address {
+                self.system.finish_global_frame(Some(&rollback_handle))?;
+
+                resources_in_caller_frame.reclaim(
+                    external_call_launch_params
+                        .external_call
+                        .available_resources,
+                );
+
+                return Ok(CompletedExecution {
+                    resources_returned: resources_in_caller_frame,
+                    result: CallResult::Failed {
+                        return_values: ReturnValues::empty(),
+                    },
+                });
+            }
+        }
+
+        let callee_frame_execution_result = if is_call_to_special_address {
             // The call is targeting the "system contract" space.
             self.call_to_special_address_execute_callee_frame(
                 external_call_launch_params,
-                ee_type,
+                caller_ee_type,
                 rollback_handle,
             )
         } else {
@@ -319,62 +328,52 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
     #[inline(always)]
     fn perform_requested_transfer<'a>(
         &mut self,
-        external_call_params: &mut ExecutionEnvironmentLaunchParams<S>,
-        transfer_to_perform: &Option<TransferInfo>,
-        ee_type: ExecutionEnvironmentType,
-    ) -> Result<Option<CallResult<'a, S>>, BootloaderSubsystemError>
+        transfer_to_perform: &TransferInfo,
+        from: &<S::IOTypes as SystemIOTypesConfig>::Address,
+        caller_ee_type: ExecutionEnvironmentType,
+        resources: &mut S::Resources,
+    ) -> Result<bool, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
-        // Now, perform transfer with infinite ergs
-        if let Some(TransferInfo { value, target }) = transfer_to_perform {
-            match external_call_params
-                .external_call
-                .available_resources
-                .with_infinite_ergs(|inf_resources| {
-                    self.system.io.transfer_nominal_token_value(
-                        ExecutionEnvironmentType::NoEE,
-                        inf_resources,
-                        &external_call_params.external_call.caller,
-                        &target,
-                        &value,
-                    )
-                }) {
-                Ok(()) => (),
-                Err(e) => {
-                    match e {
-                        SubsystemError::LeafUsage(_interface_error) => {
-                            // TODO log this error, but logger is unavailable
-                            // Insufficient balance
-                            match ee_type {
-                                ExecutionEnvironmentType::NoEE => {
-                                    return Err(interface_error!(
-                                        BootloaderInterfaceError::TopLevelInsufficientBalance
-                                    ))
-                                }
-                                ExecutionEnvironmentType::EVM => {
-                                    // Following EVM, a call with insufficient balance is not a revert,
-                                    // but rather a normal failing call.
-                                    return Ok(Some(CallResult::Failed {
-                                        return_values: ReturnValues::empty(),
-                                    }));
-                                }
+        let TransferInfo { value, target } = transfer_to_perform;
+        match resources.with_infinite_ergs(|inf_resources| {
+            self.system.io.transfer_nominal_token_value(
+                ExecutionEnvironmentType::NoEE,
+                inf_resources,
+                from,
+                &target,
+                &value,
+            )
+        }) {
+            Ok(()) => Ok(true),
+            Err(e) => {
+                match e {
+                    SubsystemError::LeafUsage(_interface_error) => {
+                        // TODO log this error, but logger is unavailable
+                        // Insufficient balance
+                        match caller_ee_type {
+                            ExecutionEnvironmentType::NoEE => Err(interface_error!(
+                                BootloaderInterfaceError::TopLevelInsufficientBalance
+                            )),
+                            ExecutionEnvironmentType::EVM => {
+                                // Following EVM, a call with insufficient balance is not a revert,
+                                // but rather a normal failing call.
+                                Ok(false)
                             }
                         }
-                        SubsystemError::LeafDefect(_) => return Err(wrap_error!(e)),
-                        SubsystemError::LeafRuntime(ref runtime_error) => match runtime_error {
-                            RuntimeError::OutOfNativeResources(_) => return Err(wrap_error!(e)),
-                            RuntimeError::OutOfErgs(_) => {
-                                return Err(internal_error!("Out of ergs on infinite ergs").into())
-                            }
-                        },
-                        SubsystemError::Cascaded(cascaded_error) => match cascaded_error {},
                     }
+                    SubsystemError::LeafDefect(_) => Err(wrap_error!(e)),
+                    SubsystemError::LeafRuntime(ref runtime_error) => match runtime_error {
+                        RuntimeError::OutOfNativeResources(_) => Err(wrap_error!(e)),
+                        RuntimeError::OutOfErgs(_) => {
+                            Err(internal_error!("Out of ergs on infinite ergs").into())
+                        }
+                    },
+                    SubsystemError::Cascaded(cascaded_error) => match cascaded_error {},
                 }
             }
         }
-
-        Ok(None)
     }
 
     fn call_execute_callee_frame(
@@ -475,6 +474,24 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
     where
         S::IO: IOSubsystemExt,
     {
+        if external_call_launch_params.external_call.modifier == CallModifier::Constructor {
+            let _ = self.system.get_logger().write_fmt(format_args!(
+                "Attempt to deploy something on special address\n"
+            ));
+            self.system
+                .finish_global_frame(Some(&rollback_handle))
+                .map_err(|_| internal_error!("must finish execution frame"))?;
+
+            return Ok((
+                external_call_launch_params
+                    .external_call
+                    .available_resources,
+                CallResult::Failed {
+                    return_values: ReturnValues::empty(),
+                },
+            ));
+        }
+
         let return_memory = core::mem::take(&mut self.return_memory);
         let resources_passed = external_call_launch_params
             .external_call
@@ -563,7 +580,7 @@ pub enum CallPreparationResult<'a, S: SystemTypes> {
 /// Read callee properties, execute additional checks, charge resources and perform additional EE-specific logic
 fn run_call_preparation<'a, S: EthereumLikeTypes, const IS_ENTRY_FRAME: bool>(
     system: &mut System<S>,
-    ee_version: ExecutionEnvironmentType,
+    caller_ee_version: ExecutionEnvironmentType,
     mut call_request: ExternalCallRequest<'a, S>,
     callstack_depth: usize,
 ) -> Result<CallPreparationResult<'a, S>, BootloaderSubsystemError>
@@ -577,12 +594,12 @@ where
         // For entry frame we don't charge ergs for call preparation,
         // as this is included in the intrinsic cost.
         resources_in_caller_frame.with_infinite_ergs(|inf_resources| {
-            read_callee_account_properties(system, ee_version, inf_resources, &call_request)
+            read_callee_account_properties(system, caller_ee_version, inf_resources, &call_request)
         })
     } else {
         read_callee_account_properties(
             system,
-            ee_version,
+            caller_ee_version,
             &mut resources_in_caller_frame,
             &call_request,
         )
@@ -633,7 +650,7 @@ where
         // now we should ask current EE to calculate resources for the callee frame
         let mut callee_resources =
             match SupportedEEVMState::<S>::calculate_resources_passed_in_external_call(
-                ee_version,
+                caller_ee_version,
                 &mut resources_in_caller_frame,
                 &call_request,
                 &callee_account_properties,
@@ -670,37 +687,32 @@ where
             .log_data(callee_account_properties.bytecode.as_ref().iter().copied());
     }
 
-    // TODO ugly
-    let bytecode = if call_request.modifier == CallModifier::Constructor {
-        Bytecode::Constructor(&call_request.input)
-    } else {
-        Bytecode::Decommitted {
-            bytecode: callee_account_properties.bytecode,
-            unpadded_code_len: callee_account_properties.unpadded_code_len,
-            artifacts_len: callee_account_properties.artifacts_len,
-            code_version: callee_account_properties.code_version,
-        }
-    };
-
-    if call_request.modifier == CallModifier::Constructor {
-        // TODO ugly
-        call_request.input = &[];
-    }
-
     let external_call_launch_params = ExecutionEnvironmentLaunchParams {
         external_call: ExternalCallRequest {
             available_resources: resources_for_callee_frame,
             ..call_request
         },
         environment_parameters: EnvironmentParameters {
-            bytecode,
+            bytecode: Bytecode::Decommitted {
+                bytecode: callee_account_properties.bytecode,
+                unpadded_code_len: callee_account_properties.unpadded_code_len,
+                artifacts_len: callee_account_properties.artifacts_len,
+                code_version: callee_account_properties.code_version,
+            },
             scratch_space_len: 0,
             callstack_depth,
         },
     };
 
+    let next_ee_version =
+        if external_call_launch_params.external_call.modifier == CallModifier::Constructor {
+            caller_ee_version as u8 // TODO only correct for EVM
+        } else {
+            callee_account_properties.next_ee_version
+        };
+
     Ok(CallPreparationResult::Success {
-        next_ee_version: callee_account_properties.next_ee_version,
+        next_ee_version,
         transfer_to_perform,
         external_call_launch_params,
         resources_in_caller_frame,
@@ -737,6 +749,7 @@ where
                 .with_is_delegated(),
         )
         .and_then(|account_properties| {
+            // TODO constructor?
             let properties = if cfg!(feature = "pectra") && account_properties.is_delegated.0 {
                 use crate::bootloader::transaction::parse_delegation;
                 // Resolve delegation following EIP-7702 (only one level

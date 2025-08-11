@@ -69,7 +69,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     callee,
                     callers_caller,
                     modifier,
-                    input: calldata,
+                    input: mut calldata,
                     call_scratch_space,
                     nominal_token_value,
                 },
@@ -78,7 +78,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         assert!(call_scratch_space.is_none());
 
         let EnvironmentParameters {
-            bytecode,
+            mut bytecode,
             scratch_space_len: _,
             callstack_depth: _,
         } = environment_parameters;
@@ -101,12 +101,6 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 is_static = true;
             }
             CallModifier::Constructor => {
-                // check conventions
-                debug_assert_eq!(
-                    callers_caller,
-                    <S::IOTypes as SystemIOTypesConfig>::Address::default()
-                );
-
                 // EIP-161: contracts should be initialized with nonce 1
                 // Note: this has to be done before we actually deploy the bytecode,
                 // as constructor execution should see the deployed_address as having
@@ -126,7 +120,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                         }
                     })?;
 
-                is_constructor = true
+                is_constructor = true;
+
+                bytecode = Bytecode::Constructor(calldata);
+                calldata = &[];
             }
             CallModifier::EVMCallcode => {
                 // This strange modifier doesn't preserve caller and value,
