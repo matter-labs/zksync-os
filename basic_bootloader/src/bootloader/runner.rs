@@ -270,14 +270,12 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
 
         // Note that actual transfer is executed in "check_if_external_call_returns_early" which may be confusing
         let callee_frame_execution_result = if let Some(call_result) = self
-            .check_if_external_call_returns_early(
+            .perform_requested_transfer(
                 &mut external_call_launch_params,
                 &transfer_to_perform,
                 ee_type,
-                is_call_to_special_address,
             )? {
-            // Call finished before VM started
-            let failure = !matches!(call_result, CallResult::Successful { .. });
+            let failure = matches!(call_result, CallResult::Failed { .. });
             self.system
                 .finish_global_frame(failure.then_some(&rollback_handle))?;
 
@@ -320,12 +318,11 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
     }
 
     #[inline(always)]
-    fn check_if_external_call_returns_early<'a>(
+    fn perform_requested_transfer<'a>(
         &mut self,
         external_call_params: &mut ExecutionEnvironmentLaunchParams<S>,
         transfer_to_perform: &Option<TransferInfo>,
         ee_type: ExecutionEnvironmentType,
-        is_call_to_special_address: bool,
     ) -> Result<Option<CallResult<'a, S>>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -378,30 +375,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             }
         }
 
-        // TODO replace and handle EOAs differently
-        if external_call_params.external_call.modifier != CallModifier::Constructor {
-            let is_eoa = match external_call_params.environment_parameters.bytecode {
-                Bytecode::Decommitted {
-                    bytecode,
-                    unpadded_code_len: _,
-                    artifacts_len: _,
-                    code_version: _,
-                } => bytecode.is_empty(),
-                Bytecode::Constructor(_) => {
-                    return Err(SubsystemError::LeafDefect(internal_error!(
-                        "Constructor bytecode used instead of bytecode"
-                    )))
-                }
-            };
-
-            // Calls to EOAs succeed with empty return value
-            if !is_call_to_special_address && is_eoa {
-                return Ok(Some(CallResult::Successful {
-                    return_values: ReturnValues::empty(),
-                }));
-            }
-        }
-
         Ok(None)
     }
 
@@ -416,6 +389,32 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
     where
         S::IO: IOSubsystemExt,
     {
+        // By convention, calls to empty accounts succeed without any return data
+        if next_ee_version == ExecutionEnvironmentType::NO_EE_BYTE {
+            if let Bytecode::Decommitted {
+                bytecode,
+                unpadded_code_len: _,
+                artifacts_len: _,
+                code_version: _,
+            } = external_call_launch_params.environment_parameters.bytecode
+            {
+                if bytecode.len() != 0 {
+                    return Err(internal_error!("Unexpected non-empty bytecode").into());
+                }
+            } else {
+                return Err(internal_error!("Invalid No_EE invocation").into());
+            }
+
+            return Ok((
+                external_call_launch_params
+                    .external_call
+                    .available_resources,
+                CallResult::Successful {
+                    return_values: ReturnValues::empty(),
+                },
+            ));
+        }
+
         // now grow callstack and prepare initial state
         let mut new_vm = create_ee(next_ee_version, self.system)?;
         let new_ee_type = new_vm.ee_type();
