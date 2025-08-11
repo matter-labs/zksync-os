@@ -6,7 +6,7 @@ use crate::{
     types_config::SystemIOTypesConfig,
 };
 
-use super::{CallResult, EnvironmentParameters, ReturnValues};
+use super::{CallResult, ReturnValues};
 
 /// Everything an execution environment needs to know to start execution
 pub struct ExecutionEnvironmentLaunchParams<'a, S: SystemTypes> {
@@ -86,20 +86,6 @@ impl<S: SystemTypes> ExternalCallRequest<'_, S> {
     }
 }
 
-pub struct DeploymentRequest<'a, S: SystemTypes> {
-    pub address_of_deployer: <S::IOTypes as SystemIOTypesConfig>::Address,
-    pub address: <S::IOTypes as SystemIOTypesConfig>::Address,
-    pub call_scratch_space:
-        Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], S::Allocator>>,
-    pub deployment_code: &'a [u8], // TODO should be in ee_specific_deployment_processing_data
-    pub constructor_parameters: &'a [u8], // TODO should be in ee_specific_deployment_processing_data
-    pub ee_specific_deployment_processing_data:
-        Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
-    pub deployer_full_resources: S::Resources,
-    pub ergs_to_pass: Ergs,
-    pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
-}
-
 pub struct CompletedExecution<'a, S: SystemTypes> {
     pub resources_returned: S::Resources,
     pub result: CallResult<'a, S>,
@@ -131,4 +117,20 @@ impl<S: SystemTypes> Debug for ExternalCallRequest<'_, S> {
             .field("call_scratch_space", &self.call_scratch_space)
             .finish()
     }
+}
+
+pub enum Bytecode<'a> {
+    Decommitted {
+        bytecode: &'a [u8],
+        unpadded_code_len: u32,
+        artifacts_len: u32,
+        code_version: u8,
+    },
+    Constructor(&'a [u8]),
+}
+
+pub struct EnvironmentParameters<'a> {
+    pub bytecode: Bytecode<'a>,
+    pub scratch_space_len: u32,
+    pub callstack_depth: usize,
 }

@@ -7,12 +7,10 @@
 pub mod call_params;
 pub mod environment_state;
 pub mod evm;
-pub mod interaction_params;
 use core::any::Any;
 
 pub use self::call_params::*;
 pub use self::environment_state::*;
-pub use self::interaction_params::*;
 
 use super::errors::internal::InternalError;
 use super::errors::subsystem::Subsystem;
