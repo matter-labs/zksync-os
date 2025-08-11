@@ -38,8 +38,20 @@ impl U256 {
         Self(DelegatedU256::from_limbs(limbs))
     }
 
-    pub unsafe fn write_into_ptr(dst: *mut Self, source: &Self) {
-        delegated_u256::write_into_ptr(dst.cast(), &source.0);
+    pub unsafe fn write_into_ptr(&self, dst: *mut Self) {
+        delegated_u256::write_into_ptr(dst.cast(), &self.0);
+    }
+
+    pub unsafe fn write_into_ptr_unchecked(&self, dst: *mut Self) {
+        delegated_u256::write_into_ptr_unchecked(dst.cast(), &self.0);
+    }
+
+    pub fn clone_into(&self, dst: &mut Self) {
+        unsafe { self.write_into_ptr(dst as *mut _) };
+    }
+
+    pub unsafe fn clone_into_unchecked(&self, dst: &mut Self) {
+        self.write_into_ptr_unchecked(dst as *mut _);
     }
 
     #[inline(always)]
@@ -208,6 +220,10 @@ impl U256 {
 
     pub fn bit_len(&self) -> usize {
         self.0.bit_len()
+    }
+
+    pub fn leading_zeros(&self) -> usize {
+        self.0.leading_zeros()
     }
 
     pub fn byte(&self, byte_idx: usize) -> u8 {

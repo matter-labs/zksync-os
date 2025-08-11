@@ -10,12 +10,12 @@ use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDetermin
 pub mod helpers;
 
 /// Runs the batch, and returns the output (that contains gas usage, transaction status etc.).
-pub use forward_system::run::run_batch;
+pub use forward_system::run::run_block;
 use zk_ee::common_structs::ProofData;
 
-/// Runs a batch in riscV - using zksync_os binary - and returns the
+/// Runs a block in riscV - using zksync_os binary - and returns the
 /// witness that can be passed to the prover subsystem.
-pub fn run_batch_generate_witness(
+pub fn run_block_generate_witness(
     block_context: BlockContext,
     tree: InMemoryTree,
     preimage_source: InMemoryPreimageSource,
@@ -36,6 +36,9 @@ pub fn run_batch_generate_witness(
     let oracle_wrapper = BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle.clone());
     let mut non_determinism_source = ZkEENonDeterminismSource::default();
     non_determinism_source.add_external_processor(oracle_wrapper);
+    non_determinism_source.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery {
+        marker: std::marker::PhantomData,
+    });
 
     // We'll wrap the source, to collect all the reads.
     let copy_source = ReadWitnessSource::new(non_determinism_source);

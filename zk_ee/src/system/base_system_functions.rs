@@ -1,4 +1,4 @@
-use crate::{define_subsystem, internal_error};
+use crate::{define_subsystem, internal_error, system::logger::Logger, system_io_oracle::IOOracle};
 
 use super::{
     errors::subsystem::{Subsystem, SubsystemError},
@@ -65,6 +65,24 @@ pub trait SystemFunction<R: Resources, E: Subsystem> {
         input: &[u8],
         output: &mut D,
         resources: &mut R,
+        allocator: A,
+    ) -> Result<(), SubsystemError<E>>;
+}
+
+///
+/// Extended system function implementation for cases when IO oracle access is needed
+///
+pub trait SystemFunctionExt<R: Resources, E: Subsystem> {
+    /// Writes result to the `output` and returns actual output slice length that was used.
+    /// Should return error on invalid inputs and if resources do not even cover basic parsing cost.
+    /// in practice only pairing can have invalid input(size) on charging stage.
+    /// Callee is provided with access to oracle for it's work, and to logger if needed.
+    fn execute<O: IOOracle, L: Logger, D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
         allocator: A,
     ) -> Result<(), SubsystemError<E>>;
 }
@@ -140,7 +158,6 @@ pub trait SystemFunctions<R: Resources> {
     type Bn254Mul: SystemFunction<R, Bn254MulErrors>;
     type Bn254PairingCheck: SystemFunction<R, Bn254PairingCheckErrors>;
     type RipeMd160: SystemFunction<R, RipeMd160Errors>;
-    type ModExp: SystemFunction<R, ModExpErrors>;
 
     fn keccak256<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
@@ -249,13 +266,24 @@ pub trait SystemFunctions<R: Resources> {
     ) -> Result<(), SubsystemError<RipeMd160Errors>> {
         Self::RipeMd160::execute(input, output, resources, allocator)
     }
+}
 
-    fn mod_exp<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+pub trait SystemFunctionsExt<R: Resources> {
+    type ModExp: SystemFunctionExt<R, ModExpErrors>;
+
+    fn mod_exp<
+        O: IOOracle,
+        L: Logger,
+        D: Extend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
         allocator: A,
     ) -> Result<(), SubsystemError<ModExpErrors>> {
-        Self::ModExp::execute(input, output, resources, allocator)
+        Self::ModExp::execute(input, output, resources, oracle, logger, allocator)
     }
 }

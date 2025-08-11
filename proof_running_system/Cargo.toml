@@ -34,6 +34,7 @@ fastrand = "2.0.2"
 [features]
 testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "basic_bootloader/testing"]
 default = ["testing"]
+proving = ["crypto/proving", "basic_system/proving"]
 scalloc = []
 cycle_marker = ["zk_ee/cycle_marker", "evm_interpreter/cycle_marker", "basic_system/cycle_marker", "basic_bootloader/cycle_marker"]
 evm-compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-compatibility"]

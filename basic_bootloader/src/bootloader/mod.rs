@@ -1,9 +1,10 @@
 use alloc::vec::Vec;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
-use errors::BootloaderSubsystemError;
+use errors::{BootloaderSubsystemError, InvalidTransaction};
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
+use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::tracer::Tracer;
@@ -181,7 +182,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let mut initial_calldata_buffer = TxDataBuffer::new(system.get_allocator());
 
         pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
-        pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 27; // 128 MB
+        pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 28; // 256 MB
 
         let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
         let mut return_data =
@@ -209,6 +210,8 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let mut first_tx = true;
         let mut upgrade_tx_hash = Bytes32::zero();
         let mut block_gas_used = 0;
+        let mut block_computational_native_used = 0;
+        let mut block_pubdata_used = 0;
 
         // now we can run every transaction
         while let Some(next_tx_data_len_bytes) = {
@@ -237,6 +240,12 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
             tracer.begin_tx(initial_calldata_buffer);
 
+            // Take a snapshot in case we need to invalidate the
+            // transaction to seal the block.
+            // This can happen if any of the block limits (native, gas, pubdata
+            // logs) is reached by the current transaction.
+            let pre_tx_rollback_handle = system.start_global_frame()?;
+
             // We will give the full buffer here, and internally we will use parts of it to give forward to EEs
             cycle_marker::start!("process_transaction");
 
@@ -258,12 +267,16 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                     let _ = system.get_logger().write_fmt(format_args!(
                         "Tx execution result: Internal error = {err:?}\n",
                     ));
+                    // Finish the frame opened before processing the tx
+                    system.finish_global_frame(None)?;
                     return Err(err);
                 }
                 Err(TxError::Validation(err)) => {
                     let _ = system.get_logger().write_fmt(format_args!(
                         "Tx execution result: Validation error = {err:?}\n",
                     ));
+                    // Finish the frame opened before processing the tx
+                    system.finish_global_frame(None)?;
                     result_keeper.tx_processed(Err(err));
                 }
                 Ok(tx_processing_result) => {
@@ -273,37 +286,60 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                         "Tx execution result = {:?}\n",
                         &tx_processing_result,
                     ));
-                    let (status, output, contract_address) = match tx_processing_result.result {
-                        ExecutionResult::Success { output } => match output {
-                            ExecutionOutput::Call(output) => (true, output, None),
-                            ExecutionOutput::Create(output, contract_address) => {
-                                (true, output, Some(contract_address))
-                            }
-                        },
-                        ExecutionResult::Revert { output } => (false, output, None),
-                    };
                     block_gas_used += tx_processing_result.gas_used;
-                    result_keeper.tx_processed(Ok(TxProcessingOutput {
-                        status,
-                        output: &output,
-                        contract_address,
-                        gas_used: tx_processing_result.gas_used,
-                        gas_refunded: tx_processing_result.gas_refunded,
-                        computational_native_used: tx_processing_result.computational_native_used,
-                        pubdata_used: tx_processing_result.pubdata_used,
-                    }));
+                    block_computational_native_used +=
+                        tx_processing_result.computational_native_used;
+                    block_pubdata_used += tx_processing_result.pubdata_used;
+                    let block_logs_used = system.io.logs_len();
 
-                    let mut keccak = Keccak256::new();
-                    keccak.update(tx_rolling_hash);
-                    keccak.update(tx_processing_result.tx_hash.as_u8_ref());
-                    tx_rolling_hash = keccak.finalize();
+                    // Check if the transaction made the block reach any of the limits
+                    // for gas, native, pubdata or logs.
+                    if let Err(err) = Self::check_for_block_limits(
+                        &mut system,
+                        block_gas_used,
+                        block_computational_native_used,
+                        block_pubdata_used,
+                        block_logs_used,
+                    ) {
+                        // Revert to state before transaction
+                        system.finish_global_frame(Some(&pre_tx_rollback_handle))?;
+                        result_keeper.tx_processed(Err(err));
+                    } else {
+                        // Finish the frame opened before processing the tx
+                        system.finish_global_frame(None)?;
 
-                    if tx_processing_result.is_l1_tx {
-                        l1_to_l2_txs_hasher.update(tx_processing_result.tx_hash.as_u8_ref());
-                    }
+                        let (status, output, contract_address) = match tx_processing_result.result {
+                            ExecutionResult::Success { output } => match output {
+                                ExecutionOutput::Call(output) => (true, output, None),
+                                ExecutionOutput::Create(output, contract_address) => {
+                                    (true, output, Some(contract_address))
+                                }
+                            },
+                            ExecutionResult::Revert { output } => (false, output, None),
+                        };
+                        result_keeper.tx_processed(Ok(TxProcessingOutput {
+                            status,
+                            output: &output,
+                            contract_address,
+                            gas_used: tx_processing_result.gas_used,
+                            gas_refunded: tx_processing_result.gas_refunded,
+                            computational_native_used: tx_processing_result
+                                .computational_native_used,
+                            pubdata_used: tx_processing_result.pubdata_used,
+                        }));
 
-                    if tx_processing_result.is_upgrade_tx {
-                        upgrade_tx_hash = tx_processing_result.tx_hash;
+                        let mut keccak = Keccak256::new();
+                        keccak.update(tx_rolling_hash);
+                        keccak.update(tx_processing_result.tx_hash.as_u8_ref());
+                        tx_rolling_hash = keccak.finalize();
+
+                        if tx_processing_result.is_l1_tx {
+                            l1_to_l2_txs_hasher.update(tx_processing_result.tx_hash.as_u8_ref());
+                        }
+
+                        if tx_processing_result.is_upgrade_tx {
+                            upgrade_tx_hash = tx_processing_result.tx_hash;
+                        }
                     }
                 }
             }
@@ -349,9 +385,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let block_number = system.get_block_number();
         let previous_block_hash = system.get_blockhash(block_number);
         let beneficiary = system.get_coinbase();
-        // TODO: Gas limit should be constant
         let gas_limit = system.get_gas_limit();
-        // TODO: gas used shouldn't be zero
         let timestamp = system.get_timestamp();
         let consensus_random = Bytes32::from_u256_be(&system.get_mix_hash());
         let base_fee_per_gas = system.get_eip1559_basefee();
@@ -397,5 +431,49 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         cycle_marker::end!("run_prepared");
         #[allow(clippy::let_and_return)]
         Ok(r)
+    }
+
+    /// Check if the transaction made the block reach any of the limits
+    /// for gas, native, pubdata or logs.
+    /// If one such limit is reached, return the corresponding validation
+    /// error.
+    fn check_for_block_limits(
+        system: &mut System<S>,
+        gas_used: u64,
+        computational_native_used: u64,
+        pubdata_used: u64,
+        logs_used: u64,
+    ) -> Result<(), InvalidTransaction> {
+        if cfg!(feature = "resources_for_tester") {
+            // EVM tester uses some really high gas limits,
+            // so we don't limit the block's native resource.
+            Ok(())
+        } else {
+            let mut logger = system.get_logger();
+
+            if gas_used > system.get_gas_limit() {
+                let _ = logger.write_fmt(format_args!(
+                    "Block gas limit reached, invalidating transaction\n"
+                ));
+                Err(InvalidTransaction::BlockGasLimitReached)
+            } else if computational_native_used > MAX_NATIVE_COMPUTATIONAL {
+                let _ = logger.write_fmt(format_args!(
+                    "Block native limit reached, invalidating transaction\n"
+                ));
+                Err(InvalidTransaction::BlockNativeLimitReached)
+            } else if pubdata_used > system.get_pubdata_limit() {
+                let _ = logger.write_fmt(format_args!(
+                    "Block pubdata limit reached, invalidating transaction\n"
+                ));
+                Err(InvalidTransaction::BlockPubdataLimitReached)
+            } else if logs_used > MAX_NUMBER_OF_LOGS {
+                let _ = logger.write_fmt(format_args!(
+                    "Block logs limit reached, invalidating transaction\n"
+                ));
+                Err(InvalidTransaction::BlockL2ToL1LogsLimitReached)
+            } else {
+                Ok(())
+            }
+        }
     }
 }

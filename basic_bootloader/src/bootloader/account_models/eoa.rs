@@ -10,6 +10,7 @@ use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
+use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
@@ -52,7 +53,7 @@ impl<S: EthereumLikeTypes> AccountModel<S> for EOA
 where
     S::IO: IOSubsystemExt,
 {
-    fn validate(
+    fn validate<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _memories: RunnerMemoryBuffers,
@@ -107,7 +108,7 @@ where
         let r = &signature[..32];
         let s = &signature[32..64];
         let v = &signature[64];
-        if U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
+        if !Config::ONLY_SIMULATE && U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
             return Err(InvalidTransaction::MalleableSignature.into());
         }
 
@@ -126,23 +127,25 @@ where
         )
         .map_err(SystemError::from)?;
 
-        if ecrecover_output.is_empty() {
-            return Err(InvalidTransaction::IncorrectFrom {
-                recovered: B160::ZERO,
-                tx: from,
+        if !Config::ONLY_SIMULATE {
+            if ecrecover_output.is_empty() {
+                return Err(InvalidTransaction::IncorrectFrom {
+                    recovered: B160::ZERO,
+                    tx: from,
+                }
+                .into());
             }
-            .into());
-        }
 
-        let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
-            .ok_or(internal_error!("Invalid ecrecover return value"))?;
+            let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
+                .ok_or(internal_error!("Invalid ecrecover return value"))?;
 
-        if recovered_from != from {
-            return Err(InvalidTransaction::IncorrectFrom {
-                recovered: recovered_from,
-                tx: from,
+            if recovered_from != from {
+                return Err(InvalidTransaction::IncorrectFrom {
+                    recovered: recovered_from,
+                    tx: from,
+                }
+                .into());
             }
-            .into());
         }
 
         let old_nonce = match system
@@ -497,7 +500,8 @@ where
                 return Err(TxError::Validation(CreateInitCodeSizeLimit));
             }
             let initcode_gas_cost = evm_interpreter::gas_constants::INITCODE_WORD_COST
-                * (calldata_len.next_multiple_of(32) / 32);
+                * (calldata_len.next_multiple_of(32) / 32)
+                + DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS as u64;
             let ergs_to_spend = Ergs(initcode_gas_cost.saturating_mul(ERGS_PER_GAS));
             match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
                 Ok(_) => (),
@@ -567,24 +571,6 @@ fn process_deployment<'a, S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
-    // First, charge extra cost for deployment
-    let extra_gas_cost = DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS as u64;
-    let ergs_to_spend = Ergs(extra_gas_cost.saturating_mul(ERGS_PER_GAS));
-    match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
-        Ok(_) => (),
-        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-            return Ok(TxExecutionResult {
-                return_values: ReturnValues::empty(),
-                resources_returned: S::Resources::empty(),
-                reverted: true,
-                deployed_address: DeployedAddress::RevertedNoAddress,
-            })
-        }
-        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
-            return Err(RuntimeError::OutOfNativeResources(loc).into())
-        }
-        Err(SystemError::LeafDefect(e)) => return Err(e.into()),
-    };
     // Next check max initcode size
     if main_calldata.len() > MAX_INITCODE_SIZE {
         return Ok(TxExecutionResult {

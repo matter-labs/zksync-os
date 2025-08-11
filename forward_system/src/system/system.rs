@@ -35,6 +35,7 @@ impl<O: IOOracle> SystemTypes for ForwardSystemTypes<O> {
         false,
     >;
     type SystemFunctions = NoStdSystemFunctions;
+    type SystemFunctionsExt = NoStdSystemFunctions;
     type Allocator = Global;
     type Logger = Logger;
 }

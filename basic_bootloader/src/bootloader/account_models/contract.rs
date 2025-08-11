@@ -1,4 +1,5 @@
 use crate::bootloader::account_models::{AccountModel, ExecutionOutput, ExecutionResult};
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::PREPARE_FOR_PAYMASTER_SELECTOR;
 use crate::bootloader::constants::{
     EXECUTE_SELECTOR, PAY_FOR_TRANSACTION_SELECTOR, VALIDATE_SELECTOR,
@@ -21,7 +22,7 @@ impl<S: EthereumLikeTypes> AccountModel<S> for Contract
 where
     S::IO: IOSubsystemExt,
 {
-    fn validate(
+    fn validate<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers,

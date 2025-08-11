@@ -4,6 +4,7 @@ use crate::bootloader::DEBUG_OUTPUT;
 use alloc::boxed::Box;
 use core::fmt::Write;
 use core::mem::MaybeUninit;
+use errors::internal::InternalError;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
 use system_hooks::*;
@@ -175,15 +176,18 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
     fn copy_into_return_memory<'a>(
         &mut self,
         return_values: ReturnValues<'a, S>,
-    ) -> ReturnValues<'external, S> {
+    ) -> Result<ReturnValues<'external, S>, InternalError> {
         let return_memory = core::mem::take(&mut self.return_memory);
+        if return_values.returndata.len() > return_memory.len() {
+            return Err(internal_error!("OOM on returndata buffer"));
+        }
         let (output, rest) = return_memory.split_at_mut(return_values.returndata.len());
         self.return_memory = rest;
 
-        ReturnValues {
+        Ok(ReturnValues {
             returndata: output.write_copy_of_slice(return_values.returndata),
             ..return_values
-        }
+        })
     }
 
     fn handle_requested_external_call<const IS_ENTRY_FRAME: bool>(
@@ -466,7 +470,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                         .write_fmt(format_args!("Returndata = "));
                     let _ = self.system.get_logger().log_data(returndata_iter);
 
-                    let return_values = self.copy_into_return_memory(return_values);
+                    let return_values = self.copy_into_return_memory(return_values)?;
 
                     return Ok((
                         resources_returned,
@@ -533,8 +537,6 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 .get_logger()
                 .write_fmt(format_args!("Returndata = "));
             let _ = self.system.get_logger().log_data(returndata_iter);
-
-            let return_values = self.copy_into_return_memory(return_values);
 
             self.system
                 .finish_global_frame(if reverted {
@@ -804,7 +806,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                     }
                     Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                         let deployment_result = DeploymentResult::Failed {
-                            return_values: self.copy_into_return_memory(return_values),
+                            return_values: self.copy_into_return_memory(return_values)?,
                             execution_reverted: false,
                         };
                         (false, deployment_result)
@@ -821,7 +823,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             } => (
                 false,
                 DeploymentResult::Failed {
-                    return_values: self.copy_into_return_memory(return_values),
+                    return_values: self.copy_into_return_memory(return_values)?,
                     execution_reverted,
                 },
             ),
