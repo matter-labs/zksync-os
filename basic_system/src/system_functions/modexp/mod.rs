@@ -55,8 +55,9 @@ impl<R: Resources> SystemFunctionExt<R, ModExpErrors> for ModExpImpl {
 
 /// Get resources from ergs, with native being ergs * constant
 fn resources_from_ergs<R: Resources>(ergs: Ergs) -> R {
-    let native =
-        <R::Native as Computational>::from_computational(ergs.0 * MODEXP_WORST_CASE_NATIVE_PER_GAS);
+    let native = <R::Native as Computational>::from_computational(
+        ergs.0.saturating_mul(MODEXP_WORST_CASE_NATIVE_PER_GAS),
+    );
     R::from_ergs_and_native(ergs, native)
 }
 

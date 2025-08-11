@@ -1,5 +1,6 @@
 use alloy::consensus::SignableTransaction;
 use alloy::consensus::TypedTransaction;
+use alloy::dyn_abi::DynSolValue;
 use alloy::network::TxSignerSync;
 #[allow(deprecated)]
 use alloy::primitives::Signature;
@@ -7,9 +8,8 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
 use basic_system::system_implementation::flat_storage_model::bytecode_padding_len;
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
-use ethers::abi::{Token, Uint};
-use ethers::types::U256;
 use forward_system::run::PreimageSource;
+use ruint::aliases::U256;
 use std::alloc::Global;
 use std::ops::Add;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -19,7 +19,7 @@ use zk_ee::utils::Bytes32;
 // Getters
 
 /// Retrieves balance from an account.
-pub fn get_balance(account: &AccountProperties) -> ruint::aliases::U256 {
+pub fn get_balance(account: &AccountProperties) -> U256 {
     account.balance
 }
 
@@ -46,7 +46,7 @@ pub fn get_code<P: PreimageSource>(
 }
 
 /// Sets the balance for an account.
-pub fn set_properties_balance(account: &mut AccountProperties, balance: ruint::aliases::U256) {
+pub fn set_properties_balance(account: &mut AccountProperties, balance: U256) {
     account.balance = balance
 }
 
@@ -117,38 +117,38 @@ pub fn encode_reserved_dynamic(
     access_list: Vec<([u8; 20], Vec<[u8; 32]>)>,
     authorization_list: Vec<(U256, [u8; 20], u64, u8, U256, U256)>,
 ) -> Vec<u8> {
-    let access_list: Vec<Token> = access_list
+    let access_list: Vec<DynSolValue> = access_list
         .into_iter()
         .map(|(addr, keys)| {
-            let address_token = Token::Address(addr.into());
-            let keys_token = Token::Array(
+            let address = DynSolValue::Address(addr.into());
+            let keys = DynSolValue::Array(
                 keys.into_iter()
-                    .map(|k| Token::FixedBytes(k.to_vec()))
+                    .map(|k| DynSolValue::FixedBytes(k.into(), k.len()))
                     .collect(),
             );
-            Token::Tuple(vec![address_token, keys_token])
+            DynSolValue::Tuple(vec![address, keys])
         })
         .collect();
 
-    let authorization_list: Vec<Token> = authorization_list
+    let authorization_list: Vec<DynSolValue> = authorization_list
         .into_iter()
         .map(|(chain_id, address, nonce, y_parity, r, s)| {
-            let chain_id = Token::Uint(chain_id);
-            let address = Token::Address(address.into());
-            let nonce = Token::Uint(U256::from(nonce));
-            let y_parity = Token::Uint(U256::from(y_parity));
-            let r = Token::Uint(r);
-            let s = Token::Uint(s);
-            Token::Tuple(vec![chain_id, address, nonce, y_parity, r, s])
+            let chain_id = chain_id.into();
+            let address = DynSolValue::Address(address.into());
+            let nonce = U256::from(nonce).into();
+            let y_parity = U256::from(y_parity).into();
+            let r = r.into();
+            let s = s.into();
+            DynSolValue::Tuple(vec![chain_id, address, nonce, y_parity, r, s])
         })
         .collect();
 
     // 2-element list to be able to extend reserved_dynamic
-    let outer = Token::Array(vec![
-        Token::Array(access_list),
-        Token::Array(authorization_list),
+    let outer = DynSolValue::Array(vec![
+        DynSolValue::Array(access_list),
+        DynSolValue::Array(authorization_list),
     ]);
-    ethers::abi::encode(&[outer])
+    DynSolValue::Tuple(vec![outer]).abi_encode_params()
 }
 
 ///
@@ -172,51 +172,48 @@ pub fn encode_tx(
     reserved_dynamic: Option<Vec<u8>>,
     is_eip155: bool,
 ) -> Vec<u8> {
-    fn address_to_uint(address: &[u8; 20]) -> Uint {
+    fn address_to_value(address: &[u8; 20]) -> DynSolValue {
         let mut padded = [0u8; 32];
         padded[12..].copy_from_slice(address.as_slice());
-        Uint::from(padded)
+        U256::from_be_bytes(padded).into()
     }
 
-    ethers::abi::encode(&[
-        Token::Uint(tx_type.into()),
-        Token::Uint(address_to_uint(&from)),
-        Token::Uint(address_to_uint(&to.unwrap_or_default())),
-        Token::Uint(gas_limit.into()),
-        Token::Uint(gas_per_pubdata_byte_limit.unwrap_or_default().into()),
-        Token::Uint(max_fee_per_gas.into()),
-        Token::Uint(max_priority_fee_per_gas.unwrap_or(max_fee_per_gas).into()),
-        Token::Uint(address_to_uint(&paymaster.unwrap_or_default())),
-        Token::Uint(U256::from(nonce)),
-        Token::Uint(U256::from(value)),
-        Token::FixedArray(vec![
-            Token::Uint(if tx_type == 0 {
+    DynSolValue::Tuple(vec![
+        U256::from(tx_type).into(),
+        address_to_value(&from),
+        address_to_value(&to.unwrap_or_default()),
+        U256::from(gas_limit).into(),
+        gas_per_pubdata_byte_limit.unwrap_or_default().into(),
+        max_fee_per_gas.into(),
+        max_priority_fee_per_gas.unwrap_or(max_fee_per_gas).into(),
+        address_to_value(&paymaster.unwrap_or_default()),
+        U256::from(nonce).into(),
+        U256::from_be_bytes(value).into(),
+        DynSolValue::FixedArray(vec![
+            (if tx_type == 0 {
                 if is_eip155 {
-                    U256::one()
+                    U256::ONE
                 } else {
-                    U256::zero()
+                    U256::ZERO
                 }
             } else if tx_type == 255 {
-                U256::from(value).add(gas_limit * max_fee_per_gas)
+                U256::from_be_bytes(value).add(U256::from(gas_limit * max_fee_per_gas))
             } else {
-                U256::zero()
-            }),
-            Token::Uint(if to.is_none() {
-                U256::one()
-            } else {
-                U256::zero()
-            }),
-            Token::Uint(U256::zero()),
-            Token::Uint(U256::zero()),
+                U256::ZERO
+            })
+            .into(),
+            (if to.is_none() { U256::ONE } else { U256::ZERO }).into(),
+            U256::ZERO.into(),
+            U256::ZERO.into(),
         ]),
-        Token::Bytes(data),
-        Token::Bytes(signature),
+        DynSolValue::Bytes(data),
+        DynSolValue::Bytes(signature),
         // factory deps not supported for now
-        Token::Array(vec![]),
-        Token::Bytes(paymaster_input.unwrap_or_default()),
-        Token::Bytes(reserved_dynamic.unwrap_or_default()),
+        DynSolValue::Array(vec![]),
+        DynSolValue::Bytes(paymaster_input.unwrap_or_default()),
+        DynSolValue::Bytes(reserved_dynamic.unwrap_or_default()),
     ])
-    .to_vec()
+    .abi_encode_params()
 }
 
 ///
@@ -271,12 +268,12 @@ pub fn sign_and_encode_alloy_tx(
                 let r = authorization.r();
                 let s = authorization.s();
                 (
-                    U256::from_big_endian(&auth.chain_id.to_be_bytes::<32>()),
+                    U256::from_be_bytes(auth.chain_id.to_be_bytes::<32>()),
                     auth.address.into_array(),
                     auth.nonce,
                     y_parity,
-                    U256::from_big_endian(&r.to_be_bytes::<32>()),
-                    U256::from_big_endian(&s.to_be_bytes::<32>()),
+                    U256::from_be_bytes(r.to_be_bytes::<32>()),
+                    U256::from_be_bytes(s.to_be_bytes::<32>()),
                 )
             })
             .collect()
