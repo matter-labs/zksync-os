@@ -1,6 +1,7 @@
 use core::fmt::Debug;
 
 use crate::{
+    common_structs::CalleeAccountProperties,
     memory::slice_vec::SliceVec,
     system::{system::SystemTypes, CallModifier, Ergs, MAX_SCRATCH_SPACE_USIZE_WORDS},
     types_config::SystemIOTypesConfig,
@@ -127,7 +128,7 @@ pub enum Bytecode<'a> {
 }
 
 pub struct EnvironmentParameters<'a> {
-    pub bytecode: Bytecode<'a>,
     pub scratch_space_len: u32,
     pub callstack_depth: usize,
+    pub callee_account_properties: CalleeAccountProperties<'a>,
 }

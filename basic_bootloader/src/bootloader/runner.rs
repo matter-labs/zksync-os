@@ -380,18 +380,17 @@ impl<'external, S: EthereumLikeTypes> GlobalExecutionContext<'_, 'external, S> {
     {
         // By convention, calls to empty accounts succeed without any return data
         if next_ee_type == ExecutionEnvironmentType::NoEE {
-            if let Bytecode::Decommitted {
-                bytecode,
-                unpadded_code_len: _,
-                artifacts_len: _,
-                code_version: _,
-            } = external_call_launch_params.environment_parameters.bytecode
-            {
-                if bytecode.len() != 0 {
+            if external_call_launch_params.external_call.modifier == CallModifier::Constructor {
+                return Err(internal_error!("Invalid No_EE invocation").into());
+            } else {
+                if external_call_launch_params
+                    .environment_parameters
+                    .callee_account_properties
+                    .unpadded_code_len
+                    != 0
+                {
                     return Err(internal_error!("Unexpected non-empty bytecode").into());
                 }
-            } else {
-                return Err(internal_error!("Invalid No_EE invocation").into());
             }
 
             return Ok((
@@ -675,30 +674,24 @@ where
             .log_data(callee_account_properties.bytecode.as_ref().iter().copied());
     }
 
+    let next_ee_version = if call_request.modifier == CallModifier::Constructor {
+        // Note: only correct for EVM. For EraVM integration logic should be modified (it calls "constructor" brach of already deployed account)
+        caller_ee_version as u8
+    } else {
+        callee_account_properties.ee_type
+    };
+
     let external_call_launch_params = ExecutionEnvironmentLaunchParams {
         external_call: ExternalCallRequest {
             available_resources: resources_for_callee_frame,
             ..call_request
         },
         environment_parameters: EnvironmentParameters {
-            bytecode: Bytecode::Decommitted {
-                bytecode: callee_account_properties.bytecode,
-                unpadded_code_len: callee_account_properties.unpadded_code_len,
-                artifacts_len: callee_account_properties.artifacts_len,
-                code_version: callee_account_properties.code_version,
-            },
             scratch_space_len: 0,
             callstack_depth,
+            callee_account_properties,
         },
     };
-
-    let next_ee_version =
-        if external_call_launch_params.external_call.modifier == CallModifier::Constructor {
-            // Note: only correct for EVM. For EraVM integration logic should be modified (it calls "constructor" brach of already deployed account)
-            caller_ee_version as u8
-        } else {
-            callee_account_properties.next_ee_version
-        };
 
     Ok(CallPreparationResult::Success {
         next_ee_type: ExecutionEnvironmentType::parse_ee_version_byte(next_ee_version)?,
@@ -818,7 +811,7 @@ where
     let nominal_token_balance = account_properties.nominal_token_balance.0;
 
     Ok(CalleeAccountProperties {
-        next_ee_version,
+        ee_type: next_ee_version,
         bytecode,
         code_version,
         unpadded_code_len,

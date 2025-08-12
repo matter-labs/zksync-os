@@ -78,9 +78,9 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         assert!(call_scratch_space.is_none());
 
         let EnvironmentParameters {
-            mut bytecode,
             scratch_space_len: _,
             callstack_depth: _,
+            callee_account_properties,
         } = environment_parameters;
 
         let mut is_static = false;
@@ -88,6 +88,48 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
         let mut caller_address = caller;
         let mut this_address = callee;
+
+        // Set bytecode
+        if modifier == CallModifier::Constructor {
+            // Code to execute is in calldata
+            let bytecode_preprocessing = BytecodePreprocessingData::create_artifacts(
+                system.get_allocator(),
+                calldata,
+                &mut available_resources,
+            )?;
+            self.bytecode = calldata;
+            self.bytecode_preprocessing = bytecode_preprocessing;
+        } else {
+            // Execute actual decommited bytecode provided by OS
+            let bytecode = callee_account_properties.bytecode;
+            let unpadded_code_len = callee_account_properties.unpadded_code_len;
+            let artifacts_len = callee_account_properties.artifacts_len;
+            let code_version = callee_account_properties.code_version;
+
+            match code_version {
+                DEFAULT_CODE_VERSION_BYTE => {
+                    assert_eq!(artifacts_len, 0);
+                    let bytecode_preprocessing = BytecodePreprocessingData::create_artifacts(
+                        system.get_allocator(),
+                        bytecode,
+                        &mut available_resources,
+                    )?;
+                    self.bytecode = bytecode;
+                    self.bytecode_preprocessing = bytecode_preprocessing;
+                }
+                ARTIFACTS_CACHING_CODE_VERSION_BYTE => {
+                    let (code, bytecode_preprocessing) = BytecodePreprocessingData::parse_bytecode(
+                        bytecode,
+                        unpadded_code_len as usize,
+                        artifacts_len as usize,
+                    )?;
+                    self.bytecode = code;
+                    self.bytecode_preprocessing = bytecode_preprocessing;
+                }
+                _ => return Err(internal_error!("Unknown code version").into()),
+            }
+        };
+
         match modifier {
             CallModifier::NoModifier => {}
             CallModifier::Delegate => {
@@ -121,8 +163,6 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     })?;
 
                 is_constructor = true;
-
-                bytecode = Bytecode::Constructor(calldata);
                 calldata = &[];
             }
             CallModifier::EVMCallcode => {
@@ -148,47 +188,8 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             "for a fresh call resources of initial frame must be empty",
         );
 
-        // we need to set bytecode, address of self and caller, static state
+        // address of self and caller, static state
         // and calldata
-
-        match bytecode {
-            Bytecode::Constructor(constructor_code) => {
-                let bytecode_preprocessing = BytecodePreprocessingData::create_artifacts(
-                    system.get_allocator(),
-                    constructor_code,
-                    &mut available_resources,
-                )?;
-                self.bytecode = constructor_code;
-                self.bytecode_preprocessing = bytecode_preprocessing;
-            }
-            Bytecode::Decommitted {
-                bytecode,
-                artifacts_len,
-                unpadded_code_len,
-                code_version,
-            } => match code_version {
-                DEFAULT_CODE_VERSION_BYTE => {
-                    assert_eq!(artifacts_len, 0);
-                    let bytecode_preprocessing = BytecodePreprocessingData::create_artifacts(
-                        system.get_allocator(),
-                        bytecode,
-                        &mut available_resources,
-                    )?;
-                    self.bytecode = bytecode;
-                    self.bytecode_preprocessing = bytecode_preprocessing;
-                }
-                ARTIFACTS_CACHING_CODE_VERSION_BYTE => {
-                    let (code, bytecode_preprocessing) = BytecodePreprocessingData::parse_bytecode(
-                        bytecode,
-                        unpadded_code_len as usize,
-                        artifacts_len as usize,
-                    )?;
-                    self.bytecode = code;
-                    self.bytecode_preprocessing = bytecode_preprocessing;
-                }
-                _ => return Err(internal_error!("Unknown code version").into()),
-            },
-        }
 
         *self.gas.resources_mut() = available_resources;
         self.address = this_address;
@@ -409,23 +410,14 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 };
             };
 
-            let AccountData {
-                nonce: Just(deployee_nonce),
-                unpadded_code_len: Just(deployee_code_len),
-                ..
-            } = frame_state
-                .external_call
-                .available_resources
-                .with_infinite_ergs(|inf_resources| {
-                    system.io.read_account_properties(
-                        THIS_EE_TYPE,
-                        inf_resources,
-                        &frame_state.external_call.callee,
-                        AccountDataRequest::empty()
-                            .with_nonce()
-                            .with_unpadded_code_len(),
-                    )
-                })?;
+            let deployee_code_len = frame_state
+                .environment_parameters
+                .callee_account_properties
+                .unpadded_code_len;
+            let deployee_nonce = frame_state
+                .environment_parameters
+                .callee_account_properties
+                .nonce;
 
             // Check there's no contract already deployed at this address.
             // NB: EVM also specifies that the address should have empty storage,

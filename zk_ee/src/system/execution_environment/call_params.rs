@@ -1,3 +1,5 @@
+use ruint::aliases::{B160, U256};
+
 use super::*;
 use crate::system::MAX_SCRATCH_SPACE_USIZE_WORDS;
 use core::ops::Range;
@@ -116,4 +118,9 @@ impl<S: SystemTypes> CallResult<'_, S> {
             }
         }
     }
+}
+
+pub struct TransferInfo {
+    pub value: U256,
+    pub target: B160,
 }
