@@ -316,6 +316,7 @@ impl<'external, S: EthereumLikeTypes> GlobalExecutionContext<'_, 'external, S> {
             return Err(internal_error!("Positive value with incorrect modifier").into());
         }
         // Adjust transfer target due to CALLCODE
+        // TODO: in future should be moved to EE
         let target = match call_request.modifier {
             CallModifier::EVMCallcode | CallModifier::EVMCallcodeStatic => call_request.caller,
             _ => call_request.callee,
@@ -733,6 +734,7 @@ where
                 && account_properties.is_delegated.0
                 && call_request.modifier != CallModifier::Constructor
             {
+                // TODO: in future should be moved to EE
                 use crate::bootloader::transaction::parse_delegation;
                 // Resolve delegation following EIP-7702 (only one level
                 // of delegation is allowed).
