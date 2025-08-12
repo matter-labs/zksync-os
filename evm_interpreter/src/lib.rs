@@ -95,7 +95,7 @@ pub struct Interpreter<'a, S: SystemTypes> {
     pub is_static: bool,
     /// Is interpreter call executing construction code.
     pub is_constructor: bool,
-    pending_os_request: Option<PendingOsRequest<S>>,
+    pub pending_os_request: Option<PendingOsRequest<S>>,
 }
 
 impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for Interpreter<'ee, S> {
