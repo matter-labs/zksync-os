@@ -268,7 +268,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn create<const IS_CREATE2: bool>(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
     ) -> InstructionResult {
         self.gas.spend_gas_and_native(
             gas_constants::CREATE,
@@ -318,9 +318,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // TODO: not necessary once heaps get the same treatment as calldata
         let deployment_code = code_offset..end;
 
-        let ee_specific_data = alloc::boxed::Box::try_new_in(scheme, system.get_allocator())
-            .expect("system allocator must be capable to allocate for EE deployment parameters");
-
         let deployer_nonce = self.gas.resources.with_infinite_ergs(|inf_resources| {
             system
                 .io
@@ -339,48 +336,44 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // at this preemption point we give all resources to the system
         let all_resources = self.gas.take_resources();
 
-        // Constructor gets 63/64 of available resources TODO
-        //let ergs_for_constructor = gas_utils::apply_63_64_rule(all_resources.ergs());
-
-        let deployment_parameters = EVMDeploymentRequest {
-            address: deployed_address,
-            ergs_for_constructor: all_resources.ergs(),
-            deployment_code,
-            ee_specific_deployment_processing_data: Some(
-                ee_specific_data as alloc::boxed::Box<dyn core::any::Any, S::Allocator>,
-            ),
-            nominal_token_value: value,
-            deployer_full_resources: all_resources,
-        };
-
         self.pending_os_request = Some(PendingOsRequest::Create(deployed_address));
 
-        *external_call_dest = Some(ExternalCall::Create(deployment_parameters));
+        *external_call_dest = Some(EVMCallRequest {
+            ergs_to_pass: all_resources.ergs(),
+            call_value: value,
+            destination_address: deployed_address,
+            input_data: deployment_code,
+            modifier: CallModifier::Constructor,
+            full_caller_resources: all_resources,
+        });
 
         Err(ExitCode::ExternalCall)
     }
 
-    pub fn call(&mut self, external_call_dest: &mut Option<ExternalCall<S>>) -> InstructionResult {
+    pub fn call(
+        &mut self,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
+    ) -> InstructionResult {
         self.call_impl(CallScheme::Call, external_call_dest)
     }
 
     pub fn call_code(
         &mut self,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
     ) -> InstructionResult {
         self.call_impl(CallScheme::CallCode, external_call_dest)
     }
 
     pub fn delegate_call(
         &mut self,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
     ) -> InstructionResult {
         self.call_impl(CallScheme::DelegateCall, external_call_dest)
     }
 
     pub fn static_call(
         &mut self,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
     ) -> InstructionResult {
         self.call_impl(CallScheme::StaticCall, external_call_dest)
     }
@@ -388,7 +381,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     fn call_impl(
         &mut self,
         scheme: CallScheme,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
     ) -> InstructionResult {
         self.gas
             .spend_gas_and_native(0, native_resource_constants::CALL_NATIVE_COST)?;
@@ -452,17 +445,20 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // we also set "last returndata" as a placeholder place for "to where to copy"
         self.returndata_location = out_offset..(out_offset + out_len);
 
-        let call_request = EVMCallRequest {
-            destination_address: to,
-            calldata,
-            modifier: call_modifier,
-            gas_to_pass,
-            call_value: value,
-        };
-
         self.pending_os_request = Some(PendingOsRequest::Call);
 
-        *external_call_dest = Some(ExternalCall::Call(call_request));
+        // at this preemption point we give all resources to the system
+        let all_resources = self.gas.take_resources();
+
+        *external_call_dest = Some(EVMCallRequest {
+            ergs_to_pass: Ergs(gas_to_pass.saturating_mul(ERGS_PER_GAS)),
+            call_value: value,
+            destination_address: to,
+            input_data: calldata,
+            modifier: call_modifier,
+            full_caller_resources: all_resources,
+        });
+
         Err(ExitCode::ExternalCall)
     }
 }

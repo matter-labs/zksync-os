@@ -22,7 +22,6 @@ pub enum ExecutionEnvironmentPreemptionPoint<'a, S: SystemTypes> {
     End(CompletedExecution<'a, S>),
 }
 
-#[derive(Clone)]
 pub struct ExternalCallRequest<'a, S: SystemTypes> {
     pub available_resources: S::Resources,
     pub ergs_to_pass: Ergs,
@@ -35,8 +34,6 @@ pub struct ExternalCallRequest<'a, S: SystemTypes> {
     pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
     pub call_scratch_space:
         Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], S::Allocator>>,
-    // pub ee_specific_deployment_processing_data:
-    //    Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>, // TODO
 }
 
 impl<S: SystemTypes> Default for ExternalCallRequest<'_, S>

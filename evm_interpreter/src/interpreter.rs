@@ -39,50 +39,31 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             assert!(exit_code == ExitCode::ExternalCall);
             let (current_heap, next_heap) = self.heap.freeze();
 
+            let external_call_request = {
+                let EVMCallRequest {
+                    ergs_to_pass,
+                    call_value,
+                    destination_address,
+                    input_data,
+                    modifier,
+                    full_caller_resources,
+                } = call;
+                ExternalCallRequest {
+                    available_resources: full_caller_resources,
+                    ergs_to_pass,
+                    caller: self.address,
+                    callee: destination_address,
+                    callers_caller: self.caller,
+                    modifier,
+                    input: &current_heap[input_data],
+                    nominal_token_value: call_value,
+                    call_scratch_space: None,
+                }
+            };
+
             return Ok(ExecutionEnvironmentPreemptionPoint::CallRequest {
                 heap: next_heap,
-                request: match call {
-                    ExternalCall::Call(EVMCallRequest {
-                        gas_to_pass,
-                        destination_address,
-                        calldata,
-                        modifier,
-                        call_value,
-                    }) => {
-                        let ergs_to_pass = Ergs(gas_to_pass.saturating_mul(ERGS_PER_GAS));
-                        let available_resources = self.gas.take_resources();
-                        ExternalCallRequest {
-                            input: &current_heap[calldata],
-                            call_scratch_space: None,
-                            nominal_token_value: call_value,
-                            callers_caller: self.caller,
-                            caller: self.address,
-                            callee: destination_address,
-                            modifier,
-                            ergs_to_pass,
-                            available_resources,
-                        }
-                    }
-
-                    ExternalCall::Create(EVMDeploymentRequest {
-                        deployment_code,
-                        address,
-                        ee_specific_deployment_processing_data,
-                        deployer_full_resources,
-                        nominal_token_value,
-                        ergs_for_constructor,
-                    }) => ExternalCallRequest {
-                        input: &current_heap[deployment_code],
-                        call_scratch_space: None,
-                        nominal_token_value,
-                        callers_caller: self.caller,
-                        caller: self.address,
-                        callee: address,
-                        modifier: CallModifier::Constructor,
-                        ergs_to_pass: ergs_for_constructor,
-                        available_resources: deployer_full_resources,
-                    },
-                },
+                request: external_call_request,
             });
         }
 
@@ -98,27 +79,13 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     }
 }
 
-pub enum ExternalCall<S: EthereumLikeTypes> {
-    Call(EVMCallRequest<S>),
-    Create(EVMDeploymentRequest<S>),
-}
-
 pub struct EVMCallRequest<S: EthereumLikeTypes> {
-    pub(crate) gas_to_pass: u64,
-    pub(crate) call_value: U256,
-    pub(crate) destination_address: <S::IOTypes as SystemIOTypesConfig>::Address,
-    pub(crate) calldata: Range<usize>,
-    pub(crate) modifier: CallModifier,
-}
-
-pub struct EVMDeploymentRequest<S: SystemTypes> {
-    pub deployment_code: Range<usize>,
-    pub address: <S::IOTypes as SystemIOTypesConfig>::Address,
-    pub ee_specific_deployment_processing_data:
-        Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
-    pub deployer_full_resources: S::Resources,
-    pub ergs_for_constructor: Ergs,
-    pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+    pub ergs_to_pass: Ergs,
+    pub call_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+    pub destination_address: <S::IOTypes as SystemIOTypesConfig>::Address,
+    pub input_data: Range<usize>,
+    pub modifier: CallModifier,
+    pub full_caller_resources: S::Resources,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -166,7 +133,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn run(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<ExitCode, EvmSubsystemError> {
         let mut cycles = 0;
