@@ -71,6 +71,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         }
     }
 
+    /// Pre-checks and operations that should not be rolled back if call fails
     pub fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         ee_version: ExecutionEnvironmentType,
         system: &mut System<S>,

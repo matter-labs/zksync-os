@@ -44,7 +44,7 @@ where
         .get_logger()
         .write_fmt(format_args!("Begin execution\n"));
 
-    let mut run = Run {
+    let mut run = GlobalExecutionContext {
         system,
         hooks,
         callstack_height: 0,
@@ -68,7 +68,7 @@ impl RunnerMemoryBuffers<'_> {
     }
 }
 
-struct Run<'a, 'm, S: EthereumLikeTypes> {
+struct GlobalExecutionContext<'a, 'm, S: EthereumLikeTypes> {
     system: &'a mut System<S>,
     hooks: &'a mut HooksStorage<S, S::Allocator>,
     callstack_height: usize,
@@ -78,33 +78,7 @@ struct Run<'a, 'm, S: EthereumLikeTypes> {
 
 const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUND, 0, 0]);
 
-// TODO rename
-
-/// Handles an external call `$spawn` originating from `$vm` with execution environment type `$ee_type`
-/// and then proceeds to run the VM to the next preemption point.
-///
-/// Has to be a macro because the call request and VM overlap, so lifetimes don't work out otherwise.
-/// Can't be split up because otherwise we need to check if call or deployment twice.
-macro_rules! handle_spawn {
-    ($run: ident, $vm:ident, $ee_type:ident, $spawn:ident, $heap:ident, $tracer:ident) => {{
-        $run.callstack_height += 1;
-        let CompletedExecution {
-            resources_returned,
-            result,
-        } = $run.handle_requested_external_call::<false>($ee_type, $spawn, $heap, $tracer)?;
-
-        let _ = $run.system.get_logger().write_fmt(format_args!(
-            "Return from call or deployment, success = {:?}\n",
-            !result.failed()
-        ));
-        $run.callstack_height -= 1;
-
-        $vm.continue_after_preemption($run.system, resources_returned, result, $tracer)
-            .map_err(wrap_error!())
-    }};
-}
-
-impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
+impl<'external, S: EthereumLikeTypes> GlobalExecutionContext<'_, 'external, S> {
     fn copy_into_return_memory<'a>(
         &mut self,
         return_values: ReturnValues<'a, S>,
@@ -122,6 +96,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         })
     }
 
+    /// High-level function used to process call requests
     fn handle_requested_external_call<const IS_ENTRY_FRAME: bool>(
         &mut self,
         caller_ee_type: ExecutionEnvironmentType,
@@ -146,16 +121,13 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             ));
         }
 
-        // NOTE: on external call request caller doesn't spend resources,
-        // but indicates how much he would want to pass at most. Here we can decide the rest
-        // TODO: in future charging for reading account properties should be done in EE, so this logic could be simplified
+        // We begin execution of the requested call in the caller's context. This is necessary
+        // because the execution environment does not charge the caller's frame for reading
+        // the callee's account properties — this is currently handled within the storage implementation.
+        // Therefore, we read the callee's data, charge the caller accordingly, calculate the actual amount
+        // of ergs passed to the callee, and then execute the callee's frame.
 
-        // we should create next EE and push to callstack
-        // only system knows next EE version
-
-        // NOTE: we should move to the frame of the CALLEE now, even though we still use resources of
-        // CALLER to perform some reads. If we bail, then we will roll back the frame and all
-        // potential writes below, otherwise we will pass what's needed to caller
+        // Note: in future charging for reading account properties should be done in EE, so this logic could be simplified
 
         // declaring these here rather than returning them reduces stack usage.
         let (next_ee_type, external_call_launch_params, mut resources_in_caller_frame);
@@ -188,9 +160,8 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             Err(e) => return Err(e),
         };
 
-        // resources are checked and spent, so we continue with actual transition of control flow
+        // Resources are checked and spent, so we continue with actual transition of control flow to the callee
 
-        // Note that for tracing we treat failure on preparation step as failure before external call started
         tracer.on_new_execution_frame(&external_call_launch_params);
 
         let callee_frame_execution_result = self.execute_call(
@@ -217,6 +188,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         })
     }
 
+    /// Internal implementation of call execution. Requires prepared external_call_launch_params which include all required data for EE launch.
     fn execute_call(
         &mut self,
         next_ee_type: ExecutionEnvironmentType,
@@ -231,7 +203,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         // We want to execute some prechecks even if EE is not specified (e.g. call/transfer to empty account or precompile)
         let interpret_as_ee_type = if next_ee_type == ExecutionEnvironmentType::NoEE {
             if caller_ee_type == ExecutionEnvironmentType::NoEE {
-                // Default EE type
+                // "Default" EE type
                 ExecutionEnvironmentType::EVM
             } else {
                 caller_ee_type
@@ -322,7 +294,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         }
     }
 
-    #[inline(always)]
+    /// Check if transfer is requested and try to perform it
     fn perform_transfer_if_required<'a>(
         &mut self,
         call_request: &mut ExternalCallRequest<S>,
@@ -394,6 +366,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         }
     }
 
+    /// Actual passing of control flow to the callee
     fn call_execute_callee_frame(
         &mut self,
         external_call_launch_params: ExecutionEnvironmentLaunchParams<S>,
@@ -431,7 +404,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             ));
         }
 
-        // now grow callstack and prepare initial state
+        // Create new EE execution instance (frame)
         let mut new_vm = create_ee(next_ee_type, self.system)?;
         let new_ee_type = new_vm.ee_type();
 
@@ -439,16 +412,37 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
             .start_executing_frame(self.system, external_call_launch_params, heap, tracer)
             .map_err(wrap_error!())?;
 
+        // Execute until we get `End` preemption point
         loop {
             match preemption {
-                ExecutionEnvironmentPreemptionPoint::Spawn {
+                ExecutionEnvironmentPreemptionPoint::CallRequest {
                     ref mut request,
                     ref mut heap,
                 } => {
                     let heap = core::mem::take(heap);
                     let request = core::mem::take(request);
                     drop(preemption);
-                    preemption = handle_spawn!(self, new_vm, new_ee_type, request, heap, tracer)?;
+
+                    self.callstack_height += 1;
+                    let CompletedExecution {
+                        resources_returned,
+                        result,
+                    } = self.handle_requested_external_call::<false>(
+                        new_ee_type,
+                        request,
+                        heap,
+                        tracer,
+                    )?;
+
+                    let _ = self.system.get_logger().write_fmt(format_args!(
+                        "Return from call or deployment, success = {:?}\n",
+                        !result.failed()
+                    ));
+                    self.callstack_height -= 1;
+
+                    preemption = new_vm
+                        .continue_after_preemption(self.system, resources_returned, result, tracer)
+                        .map_err(wrap_error!())?;
                 }
                 ExecutionEnvironmentPreemptionPoint::End(CompletedExecution {
                     resources_returned,
@@ -483,6 +477,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
         }
     }
 
+    /// Actual passing of control flow to a special address (system hook)
     fn call_to_special_address_execute_callee_frame(
         &mut self,
         external_call_launch_params: ExecutionEnvironmentLaunchParams<S>,
@@ -492,6 +487,7 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
     where
         S::IO: IOSubsystemExt,
     {
+        // Deploying attempt should be reverted
         if external_call_launch_params.external_call.modifier == CallModifier::Constructor {
             let _ = self.system.get_logger().write_fmt(format_args!(
                 "Attempt to deploy something on special address\n"
@@ -610,7 +606,7 @@ where
     let r = if IS_ENTRY_FRAME || call_request.modifier == CallModifier::Constructor {
         // For entry frame we don't charge ergs for call preparation,
         // as this is included in the intrinsic cost. For constructor frame this is also included in creation gas cost.
-        // TODO: in future charging should be done by EE, so this logic can be unified
+        // Note: in future charging should be done by EE, so this logic can be unified
         resources_in_caller_frame.with_infinite_ergs(|inf_resources| {
             read_callee_account_properties(system, caller_ee_version, inf_resources, &call_request)
         })
@@ -698,7 +694,8 @@ where
 
     let next_ee_version =
         if external_call_launch_params.external_call.modifier == CallModifier::Constructor {
-            caller_ee_version as u8 // TODO only correct for EVM
+            // Note: only correct for EVM. For EraVM integration logic should be modified (it calls "constructor" brach of already deployed account)
+            caller_ee_version as u8
         } else {
             callee_account_properties.next_ee_version
         };
@@ -711,10 +708,9 @@ where
 }
 
 /// Charge for reading account properties and perform actual read
-/// TODO: in future charging should be done by EE
 fn read_callee_account_properties<'a, S: EthereumLikeTypes>(
     system: &mut System<S>,
-    ee_version: ExecutionEnvironmentType,
+    caller_ee_type: ExecutionEnvironmentType,
     resources: &mut S::Resources,
     call_request: &ExternalCallRequest<S>,
 ) -> Result<CalleeAccountProperties<'a>, SystemError>
@@ -725,7 +721,7 @@ where
     let (account_properties, delegate_properties) = match system
         .io
         .read_account_properties(
-            ee_version,
+            caller_ee_type,
             resources,
             &call_request.callee,
             AccountDataRequest::empty()
@@ -741,8 +737,11 @@ where
                 .with_is_delegated(),
         )
         .and_then(|account_properties| {
-            // TODO constructor?
-            let properties = if cfg!(feature = "pectra") && account_properties.is_delegated.0 {
+            // Note: we ignore delegation in case if this is a constructor call. EE should revert due to collision.
+            let properties = if cfg!(feature = "pectra")
+                && account_properties.is_delegated.0
+                && call_request.modifier != CallModifier::Constructor
+            {
                 use crate::bootloader::transaction::parse_delegation;
                 // Resolve delegation following EIP-7702 (only one level
                 // of delegation is allowed).
@@ -750,7 +749,7 @@ where
                     [..account_properties.unpadded_code_len.0 as usize];
                 let address = parse_delegation(delegation)?;
                 let delegate_properties = system.io.read_account_properties(
-                    ee_version,
+                    caller_ee_type,
                     resources,
                     &address,
                     AccountDataRequest::empty()
@@ -785,50 +784,38 @@ where
     };
 
     // Read required data to perform a call
-    let (
-        next_ee_version,
-        bytecode,
-        code_version,
-        unpadded_code_len,
-        artifacts_len,
-        nonce,
-        nominal_token_balance,
-    ) = if let Some(delegate_properties) = delegate_properties {
-        let ee_version = delegate_properties.ee_version.0;
-        let unpadded_code_len = delegate_properties.unpadded_code_len.0;
-        let artifacts_len = delegate_properties.artifacts_len.0;
-        let bytecode = delegate_properties.bytecode.0;
-        let code_version = delegate_properties.code_version.0;
-        let nonce = delegate_properties.nonce.0;
-        let nominal_token_balance = delegate_properties.nominal_token_balance.0;
+    let (next_ee_version, bytecode, code_version, unpadded_code_len, artifacts_len) =
+        if let Some(delegate_properties) = delegate_properties {
+            let ee_version = delegate_properties.ee_version.0;
+            let unpadded_code_len = delegate_properties.unpadded_code_len.0;
+            let artifacts_len = delegate_properties.artifacts_len.0;
+            let bytecode = delegate_properties.bytecode.0;
+            let code_version = delegate_properties.code_version.0;
 
-        (
-            ee_version,
-            bytecode,
-            code_version,
-            unpadded_code_len,
-            artifacts_len,
-            nonce,
-            nominal_token_balance,
-        )
-    } else {
-        let ee_version = account_properties.ee_version.0;
-        let unpadded_code_len = account_properties.unpadded_code_len.0;
-        let artifacts_len = account_properties.artifacts_len.0;
-        let bytecode = account_properties.bytecode.0;
-        let code_version = account_properties.code_version.0;
-        let nonce = account_properties.nonce.0;
-        let nominal_token_balance = account_properties.nominal_token_balance.0;
-        (
-            ee_version,
-            bytecode,
-            code_version,
-            unpadded_code_len,
-            artifacts_len,
-            nonce,
-            nominal_token_balance,
-        )
-    };
+            (
+                ee_version,
+                bytecode,
+                code_version,
+                unpadded_code_len,
+                artifacts_len,
+            )
+        } else {
+            let ee_version = account_properties.ee_version.0;
+            let unpadded_code_len = account_properties.unpadded_code_len.0;
+            let artifacts_len = account_properties.artifacts_len.0;
+            let bytecode = account_properties.bytecode.0;
+            let code_version = account_properties.code_version.0;
+            (
+                ee_version,
+                bytecode,
+                code_version,
+                unpadded_code_len,
+                artifacts_len,
+            )
+        };
+
+    let nonce = account_properties.nonce.0;
+    let nominal_token_balance = account_properties.nominal_token_balance.0;
 
     Ok(CalleeAccountProperties {
         next_ee_version,

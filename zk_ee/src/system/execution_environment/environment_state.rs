@@ -15,7 +15,7 @@ pub struct ExecutionEnvironmentLaunchParams<'a, S: SystemTypes> {
 }
 
 pub enum ExecutionEnvironmentPreemptionPoint<'a, S: SystemTypes> {
-    Spawn {
+    CallRequest {
         request: ExternalCallRequest<'a, S>,
         heap: SliceVec<'a, u8>,
     },

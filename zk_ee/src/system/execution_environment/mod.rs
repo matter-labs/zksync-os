@@ -50,6 +50,9 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     ///
     fn new(system: &mut System<S>) -> Result<Self, Self::SubsystemError>;
 
+    ///
+    /// Pre-checks and operations that should not be rolled back if actual frame execution fails.
+    ///
     fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         system: &mut System<S>,
         frame_state: &mut ExecutionEnvironmentLaunchParams<'i, S>,
@@ -60,7 +63,7 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
 
     ///
     /// Start the execution of an EE frame in a given initial state.
-    /// Returns a preemption point for the bootloader to handle.
+    /// Returns a preemption point for the runner to handle.
     ///
     fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         &'a mut self,
@@ -82,6 +85,10 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         callee_account_properties: &CalleeAccountProperties,
     ) -> Result<S::Resources, Self::SubsystemError>;
 
+    ///
+    /// Continue the execution of an EE frame after preemtion.
+    /// Returns a preemption point for the runner to handle.
+    ///
     fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,

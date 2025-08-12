@@ -39,7 +39,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             assert!(exit_code == ExitCode::ExternalCall);
             let (current_heap, next_heap) = self.heap.freeze();
 
-            return Ok(ExecutionEnvironmentPreemptionPoint::Spawn {
+            return Ok(ExecutionEnvironmentPreemptionPoint::CallRequest {
                 heap: next_heap,
                 request: match call {
                     ExternalCall::Call(EVMCallRequest {
