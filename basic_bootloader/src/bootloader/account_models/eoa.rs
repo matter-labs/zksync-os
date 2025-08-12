@@ -637,7 +637,9 @@ where
             (true, false, return_values, Some(deployed_address))
         }
         CallResult::Failed { return_values, .. } => (false, true, return_values, None),
-        CallResult::CallFailedToExecute => unreachable!(), // TODO
+        CallResult::PreparationStepFailed => {
+            return Err(internal_error!("Preparation step failed in root call").into())
+        } // Should not happen
     };
     // Do not forget to reassign it back after potential copy when finishing frame
     system.finish_global_frame(reverted.then_some(&rollback_handle))?;

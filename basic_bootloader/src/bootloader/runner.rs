@@ -175,13 +175,14 @@ impl<'external, S: EthereumLikeTypes> Run<'_, 'external, S> {
                 resources_in_caller_frame = resources_in_caller_frame_returned;
             }
 
-            Ok(CallPreparationResult::Failure {
+            Ok(CallPreparationResult::OutOfErgs {
                 resources_in_caller_frame,
             }) => {
-                // Failure in the **caller** frame
+                // Failure in the **caller** frame context
+                // Should not happen in entry frame (callstack depth 0)
                 return Ok(CompletedExecution {
                     resources_returned: resources_in_caller_frame,
-                    result: CallResult::CallFailedToExecute,
+                    result: CallResult::PreparationStepFailed,
                 });
             }
             Err(e) => return Err(e),
@@ -588,7 +589,8 @@ pub enum CallPreparationResult<'a, S: SystemTypes> {
         external_call_launch_params: ExecutionEnvironmentLaunchParams<'a, S>,
         resources_in_caller_frame: S::Resources,
     },
-    Failure {
+    /// Out of ergs during preparation. For EE it looks like failure happened in the caller frame
+    OutOfErgs {
         resources_in_caller_frame: S::Resources,
     },
 }
@@ -624,7 +626,7 @@ where
     let callee_account_properties = match r {
         Ok(x) => x,
         Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-            return Ok(CallPreparationResult::Failure {
+            return Ok(CallPreparationResult::OutOfErgs {
                 resources_in_caller_frame,
             });
         }
@@ -646,7 +648,7 @@ where
                 Ok(x) => x,
                 Err(x) => {
                     if let RootCause::Runtime(RuntimeError::OutOfErgs(_)) = x.root_cause() {
-                        return Ok(CallPreparationResult::Failure {
+                        return Ok(CallPreparationResult::OutOfErgs {
                             resources_in_caller_frame,
                         });
                     } else {

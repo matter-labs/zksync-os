@@ -227,7 +227,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 assert!(self.gas.native() == 0);
                 self.gas.reclaim_resources(returned_resources);
                 match call_result {
-                    CallResult::CallFailedToExecute => {
+                    CallResult::PreparationStepFailed => {
                         let _ = system
                             .get_logger()
                             .write_fmt(format_args!("Call failed, out of gas\n"));
@@ -253,7 +253,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 assert!(self.gas.native() == 0);
                 self.gas.reclaim_resources(returned_resources);
                 match call_result {
-                    CallResult::CallFailedToExecute => {
+                    CallResult::PreparationStepFailed => {
                         let _ = system
                             .get_logger()
                             .write_fmt(format_args!("Call failed, out of gas\n"));

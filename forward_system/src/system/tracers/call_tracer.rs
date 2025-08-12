@@ -102,7 +102,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
                     .saturating_sub(result.0.ergs().0 / ERGS_PER_GAS);
 
                 match &result.1 {
-                    zk_ee::system::CallResult::CallFailedToExecute => {
+                    zk_ee::system::CallResult::PreparationStepFailed => {
                         finished_call.reverted = true;
                         finished_call.error =
                             Some("Unexpected failure before tx execution".to_owned());
