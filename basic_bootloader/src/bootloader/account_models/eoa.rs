@@ -609,7 +609,7 @@ where
         ergs_to_pass: resources.ergs(),
         caller: from,
         callee: deployed_address,
-        callers_caller: Default::default(), // TODO
+        callers_caller: Default::default(), // Fine to use placeholder, should not be used
         modifier: CallModifier::Constructor,
         input: main_calldata,
         nominal_token_value,

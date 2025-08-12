@@ -295,7 +295,7 @@ impl<'external, S: EthereumLikeTypes> GlobalExecutionContext<'_, 'external, S> {
     }
 
     /// Check if transfer is requested and try to perform it
-    fn perform_transfer_if_required<'a>(
+    fn perform_transfer_if_required(
         &mut self,
         call_request: &mut ExternalCallRequest<S>,
         caller_ee_type: ExecutionEnvironmentType,
@@ -382,15 +382,13 @@ impl<'external, S: EthereumLikeTypes> GlobalExecutionContext<'_, 'external, S> {
         if next_ee_type == ExecutionEnvironmentType::NoEE {
             if external_call_launch_params.external_call.modifier == CallModifier::Constructor {
                 return Err(internal_error!("Invalid No_EE invocation").into());
-            } else {
-                if external_call_launch_params
-                    .environment_parameters
-                    .callee_account_properties
-                    .unpadded_code_len
-                    != 0
-                {
-                    return Err(internal_error!("Unexpected non-empty bytecode").into());
-                }
+            } else if external_call_launch_params
+                .environment_parameters
+                .callee_account_properties
+                .unpadded_code_len
+                != 0
+            {
+                return Err(internal_error!("Unexpected non-empty bytecode").into());
             }
 
             return Ok((

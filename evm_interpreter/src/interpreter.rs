@@ -373,7 +373,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     self.gas.consume_all_gas();
                     CallResult::Failed { return_values }
                 } else {
-                    let deployed_code = return_values.returndata; // TODO actually deploy
+                    let deployed_code = return_values.returndata;
                     return_values.returndata = &[];
 
                     match system.deploy_bytecode(

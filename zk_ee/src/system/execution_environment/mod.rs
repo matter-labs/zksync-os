@@ -93,7 +93,7 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
-        call_result: CallResult<'res, S>, // TODO rename?
+        call_request_result: CallResult<'res, S>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>
     where

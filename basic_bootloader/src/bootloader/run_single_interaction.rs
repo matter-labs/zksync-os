@@ -122,7 +122,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         let initial_request = ExternalCallRequest {
             available_resources: resources.clone(),
-            ergs_to_pass: Ergs(0),      // Doesn't matter in this case
+            ergs_to_pass: resources.ergs(),
             callers_caller: B160::ZERO, // Fine to use placeholder
             caller: *caller,
             callee: *callee,

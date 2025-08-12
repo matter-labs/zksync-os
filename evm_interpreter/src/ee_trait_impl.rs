@@ -207,7 +207,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
-        call_result: CallResult<'res, S>, // TODO rename?
+        call_request_result: CallResult<'res, S>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>
     where
@@ -224,10 +224,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
         match preemption_reason {
             PendingOsRequest::Call => {
-                assert!(!call_result.has_scratch_space());
+                assert!(!call_request_result.has_scratch_space());
                 assert!(self.gas.native() == 0);
                 self.gas.reclaim_resources(returned_resources);
-                match call_result {
+                match call_request_result {
                     CallResult::PreparationStepFailed => {
                         let _ = system
                             .get_logger()
@@ -250,10 +250,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 }
             }
             PendingOsRequest::Create(deployed_at) => {
-                assert!(!call_result.has_scratch_space());
+                assert!(!call_request_result.has_scratch_space());
                 assert!(self.gas.native() == 0);
                 self.gas.reclaim_resources(returned_resources);
-                match call_result {
+                match call_request_result {
                     CallResult::PreparationStepFailed => {
                         let _ = system
                             .get_logger()
@@ -294,7 +294,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
     ) -> Result<S::Resources, Self::SubsystemError> {
         let mut stipend = None;
 
-        // TODO ugly
+        // Additional cost for non-zero value for general calls
         if call_request.modifier != CallModifier::Constructor {
             // Gas stipend calculation
             let is_delegate = call_request.is_delegate();
