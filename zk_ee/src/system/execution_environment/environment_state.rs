@@ -117,16 +117,6 @@ impl<S: SystemTypes> Debug for ExternalCallRequest<'_, S> {
     }
 }
 
-pub enum Bytecode<'a> {
-    Decommitted {
-        bytecode: &'a [u8],
-        unpadded_code_len: u32,
-        artifacts_len: u32,
-        code_version: u8,
-    },
-    Constructor(&'a [u8]),
-}
-
 pub struct EnvironmentParameters<'a> {
     pub scratch_space_len: u32,
     pub callstack_depth: usize,
