@@ -673,7 +673,7 @@ where
     }
 
     let next_ee_version = if call_request.modifier == CallModifier::Constructor {
-        // Note: only correct for EVM. For EraVM integration logic should be modified (it calls "constructor" brach of already deployed account)
+        // Note: only correct for EVM. For EraVM integration logic should be modified (it calls "constructor" branch of already deployed account)
         caller_ee_version as u8
     } else {
         callee_account_properties.ee_type
