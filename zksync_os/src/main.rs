@@ -17,6 +17,11 @@ extern "C" {
     static mut _sidata: usize;
     static mut _sdata: usize;
     static mut _edata: usize;
+
+    // Boundaries of the .rodata section
+    static mut _sirodata: usize;
+    static mut _srodata: usize;
+    static mut _erodata: usize;
 }
 
 // core::arch::global_asm!(include_str!("asm/asm.S"));
@@ -152,10 +157,28 @@ static GLOBAL_ALLOC: OptionalGlobalAllocator = OptionalGlobalAllocator;
 core::arch::global_asm!(include_str!("memset.s"));
 core::arch::global_asm!(include_str!("memcpy.s"));
 
+unsafe fn load_rodata(load_address: *mut usize, rodata_start: *mut usize, rodata_end: *mut usize) {
+    assert!(load_address != rodata_start);
+    assert!(rodata_end.addr() > rodata_start.addr());
+
+    let offset = rodata_end.addr() - rodata_start.addr();
+
+    let src = load_address as *const u8;
+    let dst = rodata_start as *mut u8;
+
+    for i in 0..offset  {
+        *dst.add(i) = *src.add(i);
+    }
+}
+
 unsafe fn workload() -> ! {
     use core::ptr::addr_of_mut;
     let heap_start = addr_of_mut!(_sheap);
     let heap_end = addr_of_mut!(_eheap);
+    let load_address = addr_of_mut!(_sirodata);
+    let rodata_start = addr_of_mut!(_srodata);
+    let rodata_end = addr_of_mut!(_erodata);
+    load_rodata(load_address, rodata_start, rodata_end);
     use proof_running_system::system::bootloader::init_allocator;
     init_allocator(heap_start, heap_end);
 
