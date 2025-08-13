@@ -22,6 +22,10 @@ pub trait EvmTracer<S: SystemTypes> {
 
     /// Called if some failure happens during opcode execution
     fn on_opcode_error(&mut self, error: &EvmError, frame_state: &impl EvmFrameInterface<S>);
+
+    /// Called if some call-specific failure happened
+    /// Note: unfortunately we can't probide frame state here by design (Frame technically doesn't exist yet)
+    fn on_call_error(&mut self, error: &EvmError);
 }
 
 #[derive(Default)]
@@ -46,4 +50,7 @@ impl<S: SystemTypes> EvmTracer<S> for NopEvmTracer {
 
     #[inline(always)]
     fn on_opcode_error(&mut self, _error: &EvmError, _frame_state: &impl EvmFrameInterface<S>) {}
+
+    #[inline(always)]
+    fn on_call_error(&mut self, _error: &EvmError) {}
 }

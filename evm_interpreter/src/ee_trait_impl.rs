@@ -9,6 +9,7 @@ use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::*;
 use zk_ee::types_config::SystemIOTypesConfig;
@@ -340,7 +341,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
     fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         system: &mut System<S>,
         frame_state: &mut ExecutionEnvironmentLaunchParams<'i, S>,
-        _tracer: &mut impl Tracer<S>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<bool, Self::SubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -350,6 +351,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 .get_logger()
                 .write_fmt(format_args!("Callstack is too deep\n",));
 
+            tracer.evm_tracer().on_call_error(&EvmError::CallTooDeep);
             return Ok(false);
         }
 
@@ -375,6 +377,9 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 let _ = system
                     .get_logger()
                     .write_fmt(format_args!("Not enough balance for transfer\n",));
+                tracer
+                    .evm_tracer()
+                    .on_call_error(&EvmError::InsufficientBalance);
                 return Ok(false);
             }
         }
@@ -397,7 +402,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     Err(SubsystemError::LeafUsage(InterfaceError(
                         NonceError::NonceOverflow,
                         _,
-                    ))) => return Ok(false),
+                    ))) => {
+                        tracer.evm_tracer().on_call_error(&EvmError::NonceOverflow);
+                        return Ok(false);
+                    }
                     Err(e) => return Err(wrap_error!(e)),
                 };
             };
@@ -427,6 +435,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                         frame_state.external_call.available_resources.ergs(),
                     ))
                     .expect("Should succeed"); // Burn all gas
+
+                tracer
+                    .evm_tracer()
+                    .on_call_error(&EvmError::CreateCollision);
                 return Ok(false);
             }
         }

@@ -192,6 +192,10 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
     ) {
         todo!()
     }
+
+    fn on_call_error(&mut self, error: &zk_ee::system::evm::errors::EvmError) {
+        todo!()
+    }
 }
 
 impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {

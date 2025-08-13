@@ -12,16 +12,15 @@ pub enum EvmError {
     StateChangeDuringStaticCall,
     MemoryLimitOOG,
     InvalidOperandOOG,
-    // TODO EVM EE itself can't catch some of call/deploy related errors
-    /// Currently this error is not used
+    /// Call-specific error
     CodeStoreOutOfGas,
-    /// Currently this error is not used
+    /// Call-specific error
     CallTooDeep,
-    /// Currently this error is not used
+    /// Call-specific error
     InsufficientBalance,
-    /// Currently this error is not used
+    /// Call-specific error
     CreateCollision,
-    /// Currently this error is not used
+    /// Call-specific error
     NonceOverflow,
     CreateContractSizeLimit,
     CreateInitcodeSizeLimit,

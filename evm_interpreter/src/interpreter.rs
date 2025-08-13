@@ -379,27 +379,16 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         }
 
         let result = if self.is_constructor {
-            let deployed_code_len = return_values.returndata.len() as u64;
-            let deployed = return_values.returndata;
-            // EIP-3541: reject code starting with 0xEF.
-            let invalid_code = deployed_code_len >= 1 && deployed[0] == 0xEF;
-            // EIP-158: reject code of length > 24576.
-            let max_code_size_exceeded = return_values.returndata.len() > MAX_CODE_SIZE;
-            if invalid_code || max_code_size_exceeded {
-                let evm_error = if invalid_code {
-                    EvmError::CreateContractStartingWithEF
-                } else {
-                    EvmError::CreateContractSizeLimit
-                };
-                tracer.evm_tracer().on_opcode_error(&evm_error, self);
+            let deployed_code = return_values.returndata;
 
-                // Spend all remaining resources
-                self.gas.consume_all_gas();
-                CallResult::Failed { return_values }
+            let mut error_after_constructor = None;
+            if deployed_code.len() > MAX_CODE_SIZE {
+                // EIP-158: reject code of length > 24576.
+                error_after_constructor = Some(EvmError::CreateContractSizeLimit)
+            } else if deployed_code.len() >= 1 && deployed_code[0] == 0xEF {
+                // EIP-3541: reject code starting with 0xEF.
+                error_after_constructor = Some(EvmError::CreateContractStartingWithEF);
             } else {
-                let deployed_code = return_values.returndata;
-                return_values.returndata = &[];
-
                 match system.deploy_bytecode(
                     THIS_EE_TYPE,
                     self.gas.resources_mut(),
@@ -413,19 +402,29 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                             "Successfully deployed contract at {:?} \n",
                             self.address
                         ));
-                        CallResult::Successful {
-                            return_values: ReturnValues::empty(),
-                        }
                     }
                     Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-                        CallResult::Failed {
-                            return_values: ReturnValues::empty(),
-                        }
+                        error_after_constructor = Some(EvmError::CodeStoreOutOfGas);
                     }
                     Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
                         return Err(RuntimeError::OutOfNativeResources(loc).into())
                     }
                     Err(SystemError::LeafDefect(e)) => return Err(e.into()),
+                }
+            }
+
+            if let Some(error) = error_after_constructor {
+                // Spend all remaining resources
+                self.gas.consume_all_gas();
+
+                tracer.evm_tracer().on_opcode_error(&error, self);
+
+                CallResult::Failed {
+                    return_values: ReturnValues::empty(),
+                }
+            } else {
+                CallResult::Successful {
+                    return_values: ReturnValues::empty(),
                 }
             }
         } else {
