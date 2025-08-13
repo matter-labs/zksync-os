@@ -501,7 +501,7 @@ where
             }
             let initcode_gas_cost = evm_interpreter::gas_constants::INITCODE_WORD_COST
                 * (calldata_len.next_multiple_of(32) / 32)
-                + DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS as u64;
+                + DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS;
             let ergs_to_spend = Ergs(initcode_gas_cost.saturating_mul(ERGS_PER_GAS));
             match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
                 Ok(_) => (),
