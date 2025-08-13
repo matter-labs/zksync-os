@@ -22,6 +22,7 @@ impl Block {
             native_price: base_fee / U256::from(100),
             coinbase: B160::from_be_bytes(self.result.header.beneficiary.0 .0),
             gas_limit: self.result.header.gas_limit,
+            pubdata_limit: u64::MAX,
             mix_hash: U256::from_be_bytes(self.result.header.mix_hash.0),
         }
     }

@@ -489,6 +489,9 @@ pub trait IOSubsystemExt: IOSubsystem {
         should_subtract: bool,
     ) -> Result<U256, BalanceSubsystemError>;
 
+    // Get number of logs emitted so far.
+    fn logs_len(&self) -> u64;
+
     // Add EVM refund to counter
     #[cfg(feature = "evm_refunds")]
     fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError>;

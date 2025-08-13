@@ -20,6 +20,8 @@ use ruint::aliases::B160;
 use ruint::aliases::U256;
 
 pub const L2_TO_L1_LOG_SERIALIZE_SIZE: usize = 88;
+// Taken from the size of the Merkle tree.
+pub const MAX_NUMBER_OF_LOGS: u64 = 16_384;
 
 ///
 /// L2 to l1 log structure, used for merkle tree leaves.
@@ -240,6 +242,10 @@ where
         );
 
         Ok(())
+    }
+
+    pub fn len(&self) -> u64 {
+        self.list.len() as u64
     }
 
     #[track_caller]

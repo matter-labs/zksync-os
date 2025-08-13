@@ -10,12 +10,12 @@ use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDetermin
 pub mod helpers;
 
 /// Runs the batch, and returns the output (that contains gas usage, transaction status etc.).
-pub use forward_system::run::run_batch;
+pub use forward_system::run::run_block;
 use zk_ee::common_structs::ProofData;
 
-/// Runs a batch in riscV - using zksync_os binary - and returns the
+/// Runs a block in riscV - using zksync_os binary - and returns the
 /// witness that can be passed to the prover subsystem.
-pub fn run_batch_generate_witness(
+pub fn run_block_generate_witness(
     block_context: BlockContext,
     tree: InMemoryTree,
     preimage_source: InMemoryPreimageSource,

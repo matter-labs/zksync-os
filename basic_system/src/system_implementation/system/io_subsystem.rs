@@ -998,6 +998,10 @@ where
         )
     }
 
+    fn logs_len(&self) -> u64 {
+        self.logs_storage.len()
+    }
+
     // Add EVM refund to counter
     #[cfg(feature = "evm_refunds")]
     fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError> {

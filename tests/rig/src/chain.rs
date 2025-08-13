@@ -49,6 +49,7 @@ pub struct BlockContext {
     pub native_price: U256,
     pub coinbase: B160,
     pub gas_limit: u64,
+    pub pubdata_limit: u64,
     pub mix_hash: U256,
 }
 
@@ -61,6 +62,7 @@ impl Default for BlockContext {
             native_price: U256::from(10),
             coinbase: B160::default(),
             gas_limit: MAX_BLOCK_GAS_LIMIT,
+            pubdata_limit: u64::MAX,
             mix_hash: U256::ONE,
         }
     }
@@ -127,9 +129,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     /// TODO: duplicated from API, unify.
-    /// Runs a batch in riscV - using zksync_os binary - and returns the
+    /// Runs a block in riscV - using zksync_os binary - and returns the
     /// witness that can be passed to the prover subsystem.
-    pub fn run_batch_generate_witness(
+    pub fn run_block_generate_witness(
         oracle: ForwardRunningOracle<
             InMemoryTree<RANDOMIZED_TREE>,
             InMemoryPreimageSource,
@@ -182,6 +184,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             native_price: block_context.native_price,
             coinbase: block_context.coinbase,
             gas_limit: block_context.gas_limit,
+            pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
         };
         let tx_source = TxListSource {
@@ -261,6 +264,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             native_price: block_context.native_price,
             coinbase: block_context.coinbase,
             gas_limit: block_context.gas_limit,
+            pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
@@ -330,7 +334,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         }
 
         if let Some(path) = witness_output_file {
-            let result = Self::run_batch_generate_witness(oracle.clone(), &app);
+            let result = Self::run_block_generate_witness(oracle.clone(), &app);
             let mut file = File::create(&path).expect("should create file");
             let witness: Vec<u8> = result.iter().flat_map(|x| x.to_be_bytes()).collect();
             let hex = hex::encode(witness);

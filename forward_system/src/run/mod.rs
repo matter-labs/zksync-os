@@ -53,7 +53,7 @@ pub use zk_ee::system::metadata::BlockMetadataFromOracle as BlockContext;
 
 pub type StorageCommitment = FlatStorageCommitment<{ TREE_HEIGHT }>;
 
-pub fn run_batch<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxResultCallback>(
+pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxResultCallback>(
     block_context: BlockContext,
     tree: T,
     preimage_source: PS,
@@ -101,6 +101,9 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
 
     let mut non_determinism_source = ZkEENonDeterminismSource::default();
     non_determinism_source.add_external_processor(oracle_wrapper);
+    non_determinism_source.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery {
+        marker: std::marker::PhantomData,
+    });
 
     // We'll wrap the source, to collect all the reads.
     let copy_source = ReadWitnessSource::new(non_determinism_source);
@@ -111,7 +114,7 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     Ok(std::rc::Rc::try_unwrap(items).unwrap().into_inner())
 }
 
-pub fn run_batch_with_oracle_dump<
+pub fn run_block_with_oracle_dump<
     T: ReadStorageTree + Clone + serde::Serialize,
     PS: PreimageSource + Clone + serde::Serialize,
     TS: TxSource + Clone + serde::Serialize,
@@ -150,7 +153,7 @@ pub fn run_batch_with_oracle_dump<
     Ok(result_keeper.into())
 }
 
-pub fn run_batch_from_oracle_dump<
+pub fn run_block_from_oracle_dump<
     T: ReadStorageTree + Clone + serde::de::DeserializeOwned,
     PS: PreimageSource + Clone + serde::de::DeserializeOwned,
     TS: TxSource + Clone + serde::de::DeserializeOwned,

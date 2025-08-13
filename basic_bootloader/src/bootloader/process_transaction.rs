@@ -208,7 +208,7 @@ where
         // to used in the refund step only if the execution succeeded.
         // Otherwise, this value needs to be recomputed after reverting
         // state changes.
-        let (result, pubdata_info) = if !preparation_out_of_resources {
+        let (result, pubdata_info, resources_before_refund) = if !preparation_out_of_resources {
             // Take a snapshot in case we need to revert due to out of native.
             let rollback_handle = system.start_global_frame()?;
 
@@ -228,7 +228,7 @@ where
                 withheld_resources,
                 tracer,
             ) {
-                Ok((r, pubdata_used, to_charge_for_pubdata)) => {
+                Ok((r, pubdata_used, to_charge_for_pubdata, resources_before_refund)) => {
                     let pubdata_info = match r {
                         ExecutionResult::Success { .. } => {
                             system.finish_global_frame(None)?;
@@ -239,7 +239,7 @@ where
                             None
                         }
                     };
-                    (r, pubdata_info)
+                    (r, pubdata_info, resources_before_refund)
                 }
                 Err(e) => {
                     match e.root_cause() {
@@ -251,14 +251,22 @@ where
                             ));
                             resources.exhaust_ergs();
                             system.finish_global_frame(Some(&rollback_handle))?;
-                            (ExecutionResult::Revert { output: &[] }, None)
+                            (
+                                ExecutionResult::Revert { output: &[] },
+                                None,
+                                S::Resources::empty(),
+                            )
                         }
                         _ => return Err(e.into()),
                     }
                 }
             }
         } else {
-            (ExecutionResult::Revert { output: &[] }, None)
+            (
+                ExecutionResult::Revert { output: &[] },
+                None,
+                S::Resources::empty(),
+            )
         };
 
         // Compute gas to refund
@@ -268,8 +276,7 @@ where
             Some(r) => r,
             None => get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?,
         };
-        // Just used for computing native used
-        let resources_before_refund = resources.clone();
+
         #[allow(unused_variables)]
         let (_, gas_used, evm_refund) = Self::compute_gas_refund(
             system,
@@ -380,7 +387,7 @@ where
         })
     }
 
-    // Returns (execution_result, pubdata_used, to_charge_for_pubdata)
+    // Returns (execution_result, pubdata_used, to_charge_for_pubdata, resources_before_refund)
     fn execute_l1_transaction_and_notify_result<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
@@ -393,7 +400,8 @@ where
         resources: &mut S::Resources,
         withheld_resources: S::Resources,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<(ExecutionResult<'a>, u64, S::Resources), BootloaderSubsystemError> {
+    ) -> Result<(ExecutionResult<'a>, u64, S::Resources, S::Resources), BootloaderSubsystemError>
+    {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Executing L1 transaction\n"));
@@ -467,6 +475,10 @@ where
             }
         };
 
+        // Just used for computing native used
+        // Needs to use the resources before we reclaim withheld
+        let resources_before_refund = resources.clone();
+
         // After the transaction is executed, we reclaim the withheld resources.
         // This is needed to ensure correct "gas_used" calculation, also these
         // resources could be spent for pubdata.
@@ -483,7 +495,12 @@ where
             execution_result
         };
 
-        Ok((execution_result, pubdata_used, to_charge_for_pubdata))
+        Ok((
+            execution_result,
+            pubdata_used,
+            to_charge_for_pubdata,
+            resources_before_refund,
+        ))
     }
 
     fn process_l2_transaction<'a, Config: BasicBootloaderExecutionConfig>(

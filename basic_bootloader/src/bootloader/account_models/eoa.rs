@@ -500,7 +500,8 @@ where
                 return Err(TxError::Validation(CreateInitCodeSizeLimit));
             }
             let initcode_gas_cost = evm_interpreter::gas_constants::INITCODE_WORD_COST
-                * (calldata_len.next_multiple_of(32) / 32);
+                * (calldata_len.next_multiple_of(32) / 32)
+                + DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS as u64;
             let ergs_to_spend = Ergs(initcode_gas_cost.saturating_mul(ERGS_PER_GAS));
             match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
                 Ok(_) => (),
@@ -570,24 +571,6 @@ fn process_deployment<'a, S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
-    // First, charge extra cost for deployment
-    let extra_gas_cost = DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS as u64;
-    let ergs_to_spend = Ergs(extra_gas_cost.saturating_mul(ERGS_PER_GAS));
-    match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
-        Ok(_) => (),
-        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-            return Ok(TxExecutionResult {
-                return_values: ReturnValues::empty(),
-                resources_returned: S::Resources::empty(),
-                reverted: true,
-                deployed_address: DeployedAddress::RevertedNoAddress,
-            })
-        }
-        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
-            return Err(RuntimeError::OutOfNativeResources(loc).into())
-        }
-        Err(SystemError::LeafDefect(e)) => return Err(e.into()),
-    };
     // Next check max initcode size
     if main_calldata.len() > MAX_INITCODE_SIZE {
         return Ok(TxExecutionResult {

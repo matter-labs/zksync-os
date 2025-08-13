@@ -132,6 +132,12 @@ where
         .get_logger()
         .write_fmt(format_args!("Selector for l2 base token:"));
     let _ = system.get_logger().log_data(selector.iter().copied());
+    // Calldata length shouldn't be able to overflow u32, due to gas
+    // limitations.
+    let calldata_len: u32 = calldata
+        .len()
+        .try_into()
+        .map_err(|_| internal_error!("Calldata is larger than u32"))?;
 
     match selector {
         s if s == WITHDRAW_SELECTOR => {
@@ -141,7 +147,7 @@ where
                 ));
             }
             // following solidity abi for withdraw(address)
-            if calldata.len() < 36 {
+            if calldata_len < 36 {
                 return Ok(Err(
                     "L2 base token failure: withdraw called with invalid calldata",
                 ));
@@ -208,12 +214,12 @@ where
                 ));
             }
             // following solidity abi for withdrawWithMessage(address,bytes)
-            if calldata.len() < 68 {
+            if calldata_len < 68 {
                 return Ok(Err(
                     "L2 base token failure: withdrawWithMessage called with invalid calldata",
                 ));
             }
-            let message_offset: usize =
+            let message_offset: u32 =
                 match U256::from_be_slice(&calldata[36..68]).try_into() {
                     Ok(offset) => offset,
                     Err(_) => return Ok(Err(
@@ -221,7 +227,7 @@ where
                     )),
                 };
             // length located at 4+message_offset..4+message_offset+32
-            // we want to check that 4+message_offset+32 will not overflow usize
+            // we want to check that 4+message_offset+32 will not overflow u32
             let length_encoding_end =
                 match message_offset.checked_add(36) {
                     Some(length_encoding_end) => length_encoding_end,
@@ -229,14 +235,16 @@ where
                         "L2 base token failure: withdrawWithMessage called with invalid calldata",
                     )),
                 };
-            if calldata.len() < length_encoding_end {
+            if calldata_len < length_encoding_end {
                 return Ok(Err(
                     "L2 base token failure: withdrawWithMessage called with invalid calldata",
                 ));
             }
-            let length =
-                match U256::from_be_slice(&calldata[length_encoding_end - 32..length_encoding_end])
-                    .try_into()
+            let length: u32 =
+                match U256::from_be_slice(
+                    &calldata[(length_encoding_end as usize) - 32..length_encoding_end as usize],
+                )
+                .try_into()
                 {
                     Ok(length) => length,
                     Err(_) => return Ok(Err(
@@ -251,12 +259,12 @@ where
                         "L2 base token failure: withdrawWithMessage called with invalid calldata",
                     )),
                 };
-            if calldata.len() < message_end {
+            if calldata_len < message_end {
                 return Ok(Err(
                     "L2 base token failure: withdrawWithMessage called with invalid calldata",
                 ));
             }
-            let additional_data = &calldata[length_encoding_end..message_end];
+            let additional_data = &calldata[(length_encoding_end as usize)..message_end as usize];
 
             // check that first 12 bytes in address encoding are zero
             if calldata[4..4 + 12].iter().any(|byte| *byte != 0) {
@@ -304,7 +312,7 @@ where
                 abi_encoded_message_length
             };
             let mut message: alloc::vec::Vec<u8, S::Allocator> = alloc::vec::Vec::with_capacity_in(
-                abi_encoded_message_length,
+                abi_encoded_message_length as usize,
                 system.get_allocator(),
             );
             // Offset and length
@@ -319,7 +327,7 @@ where
             // Populating the rest of the message with zeros to make it a multiple of 32 bytes
             message.extend(core::iter::repeat_n(
                 0u8,
-                abi_encoded_message_length - message.len(),
+                abi_encoded_message_length as usize - message.len(),
             ));
 
             let result = send_to_l1_inner(
