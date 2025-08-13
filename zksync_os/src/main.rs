@@ -159,7 +159,7 @@ core::arch::global_asm!(include_str!("memcpy.s"));
 
 unsafe fn load_to_ram(src: *const u8, start: *mut u8, end: *mut u8) {
     assert!(src != start);
-    assert!(end.addr() > start.addr());
+    assert!(end.addr() >= start.addr());
 
     let offset = end.addr() - start.addr();
 
