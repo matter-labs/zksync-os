@@ -360,73 +360,68 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             return_values.returndata = &self.heap[self.returndata_location.clone()];
         }
 
-        if self.is_constructor {
-            let deployment_result = if execution_reverted == false {
-                let deployed_code_len = return_values.returndata.len() as u64;
-                // EIP-3541: reject code starting with 0xEF.
-                // EIP-158: reject code of length > 24576.
-                let deployed = return_values.returndata;
-                if deployed_code_len >= 1 && deployed[0] == 0xEF
-                    || return_values.returndata.len() > MAX_CODE_SIZE
-                {
-                    // Spend all remaining resources
-                    self.gas.consume_all_gas();
-                    CallResult::Failed { return_values }
-                } else {
-                    let deployed_code = return_values.returndata;
-                    return_values.returndata = &[];
-
-                    match system.deploy_bytecode(
-                        THIS_EE_TYPE,
-                        self.gas.resources_mut(),
-                        &self.address,
-                        deployed_code,
-                    ) {
-                        Ok(_) => {
-                            // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
-                            #[cfg(not(target_arch = "riscv32"))]
-                            let _ = system.get_logger().write_fmt(format_args!(
-                                "Successfully deployed contract at {:?} \n",
-                                self.address
-                            ));
-                            CallResult::Successful {
-                                return_values: ReturnValues::empty(),
-                            }
-                        }
-                        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-                            CallResult::Failed {
-                                return_values: ReturnValues::empty(),
-                            }
-                        }
-                        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
-                            return Err(RuntimeError::OutOfNativeResources(loc).into())
-                        }
-                        Err(SystemError::LeafDefect(e)) => return Err(e.into()),
-                    }
-                }
-            } else {
-                CallResult::Failed { return_values }
-            };
-
-            Ok(ExecutionEnvironmentPreemptionPoint::End(
+        if execution_reverted {
+            return Ok(ExecutionEnvironmentPreemptionPoint::End(
                 CompletedExecution {
                     resources_returned: self.gas.take_resources(),
-                    result: deployment_result,
+                    result: CallResult::Failed { return_values },
                 },
-            ))
-        } else {
-            let result = if execution_reverted {
-                CallResult::Failed { return_values }
-            } else {
-                CallResult::Successful { return_values }
-            };
-            Ok(ExecutionEnvironmentPreemptionPoint::End(
-                CompletedExecution {
-                    resources_returned: self.gas.take_resources(),
-                    result,
-                },
-            ))
+            ));
         }
+
+        let result = if self.is_constructor {
+            let deployed_code_len = return_values.returndata.len() as u64;
+            // EIP-3541: reject code starting with 0xEF.
+            // EIP-158: reject code of length > 24576.
+            let deployed = return_values.returndata;
+            if deployed_code_len >= 1 && deployed[0] == 0xEF
+                || return_values.returndata.len() > MAX_CODE_SIZE
+            {
+                // Spend all remaining resources
+                self.gas.consume_all_gas();
+                CallResult::Failed { return_values }
+            } else {
+                let deployed_code = return_values.returndata;
+                return_values.returndata = &[];
+
+                match system.deploy_bytecode(
+                    THIS_EE_TYPE,
+                    self.gas.resources_mut(),
+                    &self.address,
+                    deployed_code,
+                ) {
+                    Ok(_) => {
+                        // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
+                        #[cfg(not(target_arch = "riscv32"))]
+                        let _ = system.get_logger().write_fmt(format_args!(
+                            "Successfully deployed contract at {:?} \n",
+                            self.address
+                        ));
+                        CallResult::Successful {
+                            return_values: ReturnValues::empty(),
+                        }
+                    }
+                    Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
+                        CallResult::Failed {
+                            return_values: ReturnValues::empty(),
+                        }
+                    }
+                    Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
+                        return Err(RuntimeError::OutOfNativeResources(loc).into())
+                    }
+                    Err(SystemError::LeafDefect(e)) => return Err(e.into()),
+                }
+            }
+        } else {
+            CallResult::Successful { return_values }
+        };
+
+        Ok(ExecutionEnvironmentPreemptionPoint::End(
+            CompletedExecution {
+                resources_returned: self.gas.take_resources(),
+                result,
+            },
+        ))
     }
 
     pub(crate) fn copy_returndata_to_heap(&mut self, returndata_region: &'ee [u8]) {
