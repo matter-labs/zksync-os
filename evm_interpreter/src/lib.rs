@@ -405,9 +405,9 @@ pub enum ExitCode {
     FatalError(EvmSubsystemError),
 }
 
-impl Into<ExitCode> for EvmError {
-    fn into(self) -> ExitCode {
-        ExitCode::EvmError(self)
+impl From<EvmError> for ExitCode {
+    fn from(e: EvmError) -> Self {
+        Self::EvmError(e)
     }
 }
 

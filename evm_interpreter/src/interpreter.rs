@@ -348,8 +348,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             ExitCode::Return => false,
             ExitCode::EvmError(EvmError::Revert) => false,
             ExitCode::EvmError(_) => true,
-            ExitCode::ExternalCall => unreachable!(), // TODO
-            ExitCode::FatalError(_) => unreachable!(),
+            ExitCode::ExternalCall | ExitCode::FatalError(_) => {
+                return Err(internal_error!("Invalid exit code passed").into())
+            }
         };
 
         let mut execution_reverted = false;
@@ -385,7 +386,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             if deployed_code.len() > MAX_CODE_SIZE {
                 // EIP-158: reject code of length > 24576.
                 error_after_constructor = Some(EvmError::CreateContractSizeLimit)
-            } else if deployed_code.len() >= 1 && deployed_code[0] == 0xEF {
+            } else if !deployed_code.is_empty() && deployed_code[0] == 0xEF {
                 // EIP-3541: reject code starting with 0xEF.
                 error_after_constructor = Some(EvmError::CreateContractStartingWithEF);
             } else {
