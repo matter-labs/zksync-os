@@ -28,7 +28,7 @@ pub struct EvmExecutionStep {
     storage: Option<Vec<(Bytes32, Bytes32)>>,
     transient_storage: Option<Vec<(Bytes32, Bytes32)>>,
     depth: usize,
-    refund: u64, // Always zero for now
+    refund: u64,
 }
 
 #[derive(Default, Debug, Serialize)]
@@ -173,7 +173,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
             storage,
             transient_storage,
             depth: self.current_call_depth,
-            refund: 0, // Always zero for now
+            refund: interpreter_state.refund_counter() as u64, // Always zero if refunds are disabled
         })
     }
 
