@@ -184,6 +184,10 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
         _interpreter_state: &impl EvmFrameInterface<S>,
     ) {
     }
+    
+    fn on_opcode_error(&mut self, error: &zk_ee::system::evm::errors::EvmError, frame_state: &impl EvmFrameInterface<S>) {
+        todo!()
+    }
 }
 
 impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {

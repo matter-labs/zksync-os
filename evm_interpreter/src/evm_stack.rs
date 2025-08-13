@@ -4,6 +4,7 @@
 use crate::ExitCode;
 use crate::STACK_SIZE;
 use alloc::boxed::Box;
+use zk_ee::system::evm::errors::EvmError;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use ruint::aliases::U256;
 use zk_ee::system::evm::EvmStackInterface;
@@ -345,10 +346,10 @@ impl<A: Allocator> EvmStackInterface for EvmStack<A> {
         self.len
     }
 
-    fn peek_n(&self, index: usize) -> Result<&U256, zk_ee::system::evm::EvmStackError> {
+    fn peek_n(&self, index: usize) -> Result<&U256, EvmError> {
         unsafe {
             if self.len < index + 1 {
-                return Err(zk_ee::system::evm::EvmStackError::StackUnderflow);
+                return Err(EvmError::StackUnderflow);
             }
             let offset = self.len - (index + 1);
             let p0 = self
