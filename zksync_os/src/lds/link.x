@@ -200,10 +200,4 @@ then modify your build script to compile the C code _without_ the
 -fPIC flag. See the documentation of the `gcc::Config.fpic` method for
 details.");
 
-ASSERT(SIZEOF(.data) == 0, "
-.data section detected in the input files. Global variables with non-trivial
-initialization are not supported yet. Variables with zero-initialization can be
-linked to .bss section instead, as the platform guarantees zero-initialization
-of all RAM space.");
-
 /* Do not exceed this mark in the error messages above                                    | */
