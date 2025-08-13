@@ -9,7 +9,7 @@ ZKsyncOS provides an interface to define EEs and some concrete instances. We sta
 Execution environments offer methods to:
 
 - Create an empty instance (or frame),
-- Perform initial checks on a new instance given the launch state,
+- Perform initial checks on a new instance given the launch state (bumping the caller's nonce),
 - Actually launch the EE execution, which runs until reaching a *preemption point*, and
 - Continue after the system handles the preemption.
 
