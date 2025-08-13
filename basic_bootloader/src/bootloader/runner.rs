@@ -51,7 +51,12 @@ where
         return_memory: memories.return_data,
     };
 
-    execution.handle_requested_external_call::<true>(initial_ee_version, initial_request, heap, tracer)
+    execution.handle_requested_external_call::<true>(
+        initial_ee_version,
+        initial_request,
+        heap,
+        tracer,
+    )
 }
 
 pub struct RunnerMemoryBuffers<'a> {
