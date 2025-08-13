@@ -44,14 +44,14 @@ where
         .get_logger()
         .write_fmt(format_args!("Begin execution\n"));
 
-    let mut run = GlobalExecutionContext {
+    let mut execution = ExecutionContext {
         system,
         hooks,
         callstack_height: 0,
         return_memory: memories.return_data,
     };
 
-    run.handle_requested_external_call::<true>(initial_ee_version, initial_request, heap, tracer)
+    execution.handle_requested_external_call::<true>(initial_ee_version, initial_request, heap, tracer)
 }
 
 pub struct RunnerMemoryBuffers<'a> {
@@ -68,7 +68,7 @@ impl RunnerMemoryBuffers<'_> {
     }
 }
 
-struct GlobalExecutionContext<'a, 'm, S: EthereumLikeTypes> {
+struct ExecutionContext<'a, 'm, S: EthereumLikeTypes> {
     system: &'a mut System<S>,
     hooks: &'a mut HooksStorage<S, S::Allocator>,
     callstack_height: usize,
@@ -78,7 +78,7 @@ struct GlobalExecutionContext<'a, 'm, S: EthereumLikeTypes> {
 
 const SPECIAL_ADDRESS_BOUND: B160 = B160::from_limbs([SPECIAL_ADDRESS_SPACE_BOUND, 0, 0]);
 
-impl<'external, S: EthereumLikeTypes> GlobalExecutionContext<'_, 'external, S> {
+impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
     fn copy_into_return_memory<'a>(
         &mut self,
         return_values: ReturnValues<'a, S>,

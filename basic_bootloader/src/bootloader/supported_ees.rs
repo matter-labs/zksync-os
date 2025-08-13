@@ -51,7 +51,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
                 )
                 .map_err(wrap_error!())
             }
-            _ => Err(interface_error!(
+            ExecutionEnvironmentType::NoEE => Err(interface_error!(
                 InterfaceError::UnsupportedExecutionEnvironment
             )),
         }
@@ -65,7 +65,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
             ExecutionEnvironmentType::EVM => SystemBoundEVMInterpreter::new(system)
                 .map(Self::EVM)
                 .map_err(wrap_error!()),
-            _ => Err(interface_error!(
+            ExecutionEnvironmentType::NoEE => Err(interface_error!(
                 InterfaceError::UnsupportedExecutionEnvironment
             )),
         }
@@ -86,7 +86,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
                 SystemBoundEVMInterpreter::<S>::before_executing_frame(system, frame_state, tracer)
                     .map_err(wrap_error!())
             }
-            _ => Err(interface_error!(
+            ExecutionEnvironmentType::NoEE => Err(interface_error!(
                 InterfaceError::UnsupportedExecutionEnvironment
             )),
         }
