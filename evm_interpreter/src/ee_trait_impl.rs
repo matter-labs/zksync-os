@@ -223,55 +223,46 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             }
         };
 
-        match preemption_reason {
-            PendingOsRequest::Call => {
-                assert!(!call_request_result.has_scratch_space());
-                assert!(self.gas.native() == 0);
-                self.gas.reclaim_resources(returned_resources);
-                match call_request_result {
-                    CallResult::PreparationStepFailed => {
-                        let _ = system
-                            .get_logger()
-                            .write_fmt(format_args!("Call failed, out of gas\n"));
-                        // we fail because it's caller's failure
-                        return self.create_immediate_return_state(system, true, true, false);
-                    }
-                    CallResult::Failed { return_values } => {
+        assert!(!call_request_result.has_scratch_space());
+        assert!(self.gas.native() == 0);
+        self.gas.reclaim_resources(returned_resources);
+
+        match call_request_result {
+            CallResult::PreparationStepFailed => {
+                let _ = system
+                    .get_logger()
+                    .write_fmt(format_args!("Call failed, out of gas\n"));
+                // we fail because it's caller's failure
+                let exit_code = EvmError::OutOfGas.into();
+                return self.create_immediate_return_state(system, exit_code, tracer);
+            }
+            CallResult::Failed { return_values } => {
+                match preemption_reason {
+                    PendingOsRequest::Call => {
                         // NOTE: EE is ALLOWED to spend resources from caller's frame before
                         // passing a desired part of them to the callee, If particular EE wants to
                         // follow some not-true resource policy, it can make adjustments here before
                         // continuing the execution
                         self.copy_returndata_to_heap(return_values.returndata);
-                        self.stack.push_zero().expect("must have enough space");
                     }
-                    CallResult::Successful { return_values } => {
-                        self.copy_returndata_to_heap(return_values.returndata);
-                        self.stack.push_one().expect("must have enough space");
-                    }
-                }
-            }
-            PendingOsRequest::Create(deployed_at) => {
-                assert!(!call_request_result.has_scratch_space());
-                assert!(self.gas.native() == 0);
-                self.gas.reclaim_resources(returned_resources);
-                match call_request_result {
-                    CallResult::PreparationStepFailed => {
-                        let _ = system
-                            .get_logger()
-                            .write_fmt(format_args!("Call failed, out of gas\n"));
-                        // we fail because it's caller's failure
-                        return self.create_immediate_return_state(system, true, true, false);
-                    }
-                    CallResult::Failed { return_values } => {
+                    PendingOsRequest::Create(_) => {
                         // NOTE: failed deployments may have non-empty returndata
                         assert!(self.returndata_location.is_empty());
                         assert!(return_values.return_scratch_space.is_none());
 
                         self.returndata = return_values.returndata;
-                        // we need to push 0 to stack
-                        self.stack.push_zero().expect("must have enough space");
                     }
-                    CallResult::Successful { return_values } => {
+                }
+
+                self.stack.push_zero().expect("must have enough space");
+            }
+            CallResult::Successful { return_values } => {
+                match preemption_reason {
+                    PendingOsRequest::Call => {
+                        self.copy_returndata_to_heap(return_values.returndata);
+                        self.stack.push_one().expect("must have enough space");
+                    }
+                    PendingOsRequest::Create(deployed_at) => {
                         assert!(return_values.return_scratch_space.is_none());
                         // NOTE: successful deployments have empty returndata
                         assert!(return_values.returndata.is_empty());
@@ -283,7 +274,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     }
                 }
             }
-        };
+        }
 
         self.execute_till_yield_point(system, tracer)
     }

@@ -37,4 +37,3 @@ pub trait EvmStackInterface {
     fn len(&self) -> usize;
     fn peek_n(&self, index: usize) -> Result<&U256, EvmError>;
 }
-

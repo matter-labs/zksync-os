@@ -1,4 +1,7 @@
-use crate::system::{evm::{errors::EvmError, EvmFrameInterface}, SystemTypes};
+use crate::system::{
+    evm::{errors::EvmError, EvmFrameInterface},
+    SystemTypes,
+};
 
 pub trait EvmTracer<S: SystemTypes> {
     /// Called before opcode execution
@@ -42,7 +45,5 @@ impl<S: SystemTypes> EvmTracer<S> for NopEvmTracer {
     }
 
     #[inline(always)]
-    fn on_opcode_error(&mut self, _error: &EvmError, _frame_state: &impl EvmFrameInterface<S>) {
-        
-    }
+    fn on_opcode_error(&mut self, _error: &EvmError, _frame_state: &impl EvmFrameInterface<S>) {}
 }
