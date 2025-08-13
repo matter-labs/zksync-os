@@ -179,8 +179,8 @@ unsafe fn workload() -> ! {
     load_to_ram(load_address as *const u8, rodata_start as *mut u8, rodata_end as *mut u8);
 
     let load_address = addr_of_mut!(_sidata);
-    let data_start = addr_of_mut!(_srodata);
-    let data_end = addr_of_mut!(_erodata);
+    let data_start = addr_of_mut!(_sdata);
+    let data_end = addr_of_mut!(_edata);
     load_to_ram(load_address as *const u8, data_start as *mut u8, data_end as *mut u8);
 
     use proof_running_system::system::bootloader::init_allocator;
