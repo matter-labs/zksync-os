@@ -188,7 +188,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             "for a fresh call resources of initial frame must be empty",
         );
 
-        // address of self and caller, static state
+        // We need to set address of self and caller, static state
         // and calldata
 
         *self.gas.resources_mut() = available_resources;
@@ -203,6 +203,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         self.execute_till_yield_point(system, tracer)
     }
 
+    /// Note: panics if `pending_os_request` is None
     fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
