@@ -168,6 +168,7 @@ impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for InterpreterExternal<'ee
 
     #[cfg(feature = "evm_refunds")]
     fn refund_counter(&self) -> usize {
+        use zk_ee::system::IOSubsystem;
         self.system.io.get_refund_counter()
     }
 
