@@ -2,7 +2,6 @@ use alloy::consensus::SignableTransaction;
 use alloy::consensus::TypedTransaction;
 use alloy::dyn_abi::DynSolValue;
 use alloy::network::TxSignerSync;
-#[allow(deprecated)]
 use alloy::primitives::Signature;
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
