@@ -21,7 +21,8 @@ pub struct EvmExecutionStep {
     opcode_raw: u8,
     opcode: Option<String>,
     gas: u64,
-    gas_used: Option<u64>, // Gas used for opcode execution, None means we can't derive this value
+    /// Gas used for opcode execution, None means we can't derive this value
+    gas_used: Option<u64>,
     memory: Option<Vec<u8>>,
     mem_size: usize,
     stack: Option<Vec<U256>>,
@@ -263,7 +264,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
     fn on_new_execution_frame(&mut self, request: &ExecutionEnvironmentLaunchParams<S>) {
         // Hacking our way to track gas used by call-like opcodes
         let tx_log = self.transaction_logs.last_mut().expect("Should exist");
-        if let Some(_) = tx_log.steps.last_mut() {
+        if tx_log.steps.last_mut().is_some() {
             self.pending_call_opcodes.insert(
                 self.current_call_depth,
                 (tx_log.steps.len() - 1, self.last_known_gas_left),
