@@ -216,9 +216,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         // now we can run every transaction
         while let Some(next_tx_data_len_bytes) = {
             let mut writable = initial_calldata_buffer.into_writable();
-            system
-                .try_begin_next_tx(&mut writable)
-                .expect("TX start call must always succeed")
+            system.try_begin_next_tx(&mut writable)?
         } {
             let mut inf_resources = S::Resources::FORMAL_INFINITE;
             system

@@ -240,14 +240,18 @@ where
     pub fn try_begin_next_tx(
         &mut self,
         tx_write_iter: &mut impl crate::oracle::SafeUsizeWritable,
-    ) -> Result<Option<usize>, ()> {
+    ) -> Result<Option<usize>, InternalError> {
         let next_tx_len_bytes = match self.io.oracle().try_begin_next_tx() {
             None => return Ok(None),
             Some(size) => size.get() as usize,
         };
+        // Check to avoid usize overflow in 32-bit target.
+        if next_tx_len_bytes > u32::MAX as usize - (core::mem::size_of::<u32>() - 1) {
+            return Err(internal_error!("TX length is too large"));
+        }
         let next_tx_len_usize_words = next_tx_len_bytes.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
         if tx_write_iter.len() < next_tx_len_usize_words {
-            return Err(());
+            return Err(internal_error!("TX write iterator is too small"));
         }
         let tx_iterator = self
             .io
@@ -255,7 +259,7 @@ where
             .create_oracle_access_iterator::<NewTxContentIterator>(())
             .expect("must create iterator for the content");
         if tx_iterator.len() != next_tx_len_usize_words {
-            return Err(());
+            return Err(internal_error!("TX iterator length mismatch"));
         }
         for word in tx_iterator {
             unsafe {
