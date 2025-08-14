@@ -417,7 +417,10 @@ where
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
         in_constructor: bool,
-    ) -> Result<(), DeconstructionSubsystemError> {
+    ) -> Result<
+        <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        DeconstructionSubsystemError,
+    > {
         self.account_data_cache
             .mark_for_deconstruction::<PROOF_ENV>(
                 from_ee,

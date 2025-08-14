@@ -303,7 +303,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::LOG2 => self.log::<2>(system, tracer),
                     opcodes::LOG3 => self.log::<3>(system, tracer),
                     opcodes::LOG4 => self.log::<4>(system, tracer),
-                    opcodes::SELFDESTRUCT => self.selfdestruct(system),
+                    opcodes::SELFDESTRUCT => self.selfdestruct(system, tracer),
                     opcodes::CHAINID => self.chainid(system),
                     opcodes::BLOBHASH => self.blobhash(system),
                     opcodes::BLOBBASEFEE => self.blobbasefee(system),

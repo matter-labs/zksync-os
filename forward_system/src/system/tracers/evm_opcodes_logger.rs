@@ -204,6 +204,15 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
 
         last_opcode_record.error = Some(error.clone());
     }
+
+    #[inline(always)]
+    fn on_selfdestruct(
+        &mut self,
+        _beneficiary: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address,
+        _token_value: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        _frame_state: &impl EvmFrameInterface<S>,
+    ) {
+    }
 }
 
 impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {

@@ -1,6 +1,4 @@
-// Reference implementation of call tracer. Not feature complete for production
-
-// TODO: SELFDESTRUCT should be tracked as well
+// Reference implementation of call tracer.
 
 use std::mem;
 
@@ -24,13 +22,14 @@ pub enum CallType {
     DelegateStatic,
     EVMCallcode,
     EVMCallcodeStatic,
-    ZKVMSystem,
-    ZKVMSystemStatic,
+    ZKVMSystem,       // Not used
+    ZKVMSystemStatic, // Not used
     Selfdestruct,
 }
 
 impl From<CallModifier> for CallType {
     fn from(value: CallModifier) -> Self {
+        // Note: in our implementation Selfdestruct isn't actually implemented as a "call". But in traces it should be treated like one
         match value {
             CallModifier::Constructor => CallType::Constructor,
             CallModifier::NoModifier => CallType::Call,
@@ -39,8 +38,8 @@ impl From<CallModifier> for CallType {
             CallModifier::DelegateStatic => CallType::DelegateStatic,
             CallModifier::EVMCallcode => CallType::EVMCallcode,
             CallModifier::EVMCallcodeStatic => CallType::EVMCallcodeStatic,
-            CallModifier::ZKVMSystem => CallType::ZKVMSystem,
-            CallModifier::ZKVMSystemStatic => CallType::ZKVMSystemStatic,
+            CallModifier::ZKVMSystem => CallType::ZKVMSystem, // Not used
+            CallModifier::ZKVMSystemStatic => CallType::ZKVMSystemStatic, // Not used
         }
     }
 }
@@ -64,7 +63,7 @@ pub struct Call {
 #[derive(Debug)]
 pub enum CallError {
     EvmError(EvmError),
-    FatalError(String),
+    FatalError(String), // Some fatal internal error outside of EVM specification (ZKsync OS specific)
 }
 
 #[derive(Default)]
@@ -214,5 +213,28 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for CallTracer {
         let current_call = self.unfinished_calls.last_mut().expect("Should exist");
         current_call.error = Some(CallError::EvmError(error.clone()));
         current_call.reverted = true;
+    }
+
+    /// We should treat selfdestruct as a special kind of a call
+    fn on_selfdestruct(
+        &mut self,
+        beneficiary: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address,
+        token_value: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        frame_state: &impl EvmFrameInterface<S>,
+    ) {
+        // Following Geth implementation: https://github.com/ethereum/go-ethereum/blob/2dbb580f51b61d7ff78fceb44b06835827704110/core/vm/instructions.go#L894
+        self.finished_calls.push(Call {
+            call_type: CallType::Selfdestruct,
+            from: frame_state.address(),
+            to: beneficiary,
+            value: token_value,
+            gas: 0,
+            gas_used: 0,
+            input: vec![],
+            output: vec![],
+            error: None,
+            reverted: false,
+            calls: vec![],
+        })
     }
 }

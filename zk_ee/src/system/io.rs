@@ -112,7 +112,7 @@ pub trait IOSubsystem: Sized {
     ) -> Result<Bytes32, SystemError>;
 
     /// Mark an account to be destructed at the end of the transaction.
-    /// Perform token transfer to beneficiary.
+    /// Perform token transfer to beneficiary. Returns amount of token transferred.
     fn mark_for_deconstruction(
         &mut self,
         from_ee: ExecutionEnvironmentType,
@@ -120,7 +120,10 @@ pub trait IOSubsystem: Sized {
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         in_constructor: bool,
-    ) -> Result<(), DeconstructionSubsystemError>;
+    ) -> Result<
+        <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        DeconstructionSubsystemError,
+    >;
 
     fn net_pubdata_used(&self) -> Result<u64, InternalError>;
 

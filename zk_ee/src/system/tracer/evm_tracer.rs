@@ -1,6 +1,9 @@
-use crate::system::{
-    evm::{errors::EvmError, EvmFrameInterface},
-    SystemTypes,
+use crate::{
+    system::{
+        evm::{errors::EvmError, EvmFrameInterface},
+        SystemTypes,
+    },
+    types_config::SystemIOTypesConfig,
 };
 
 pub trait EvmTracer<S: SystemTypes> {
@@ -26,6 +29,14 @@ pub trait EvmTracer<S: SystemTypes> {
     /// Called if some call-specific failure happened
     /// Note: unfortunately we can't provide frame state here by design (frame technically doesn't exist yet)
     fn on_call_error(&mut self, error: &EvmError);
+
+    /// Called during selfdestruct execution
+    fn on_selfdestruct(
+        &mut self,
+        beneficiary: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address,
+        token_value: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        frame_state: &impl EvmFrameInterface<S>,
+    );
 }
 
 #[derive(Default)]
@@ -53,4 +64,13 @@ impl<S: SystemTypes> EvmTracer<S> for NopEvmTracer {
 
     #[inline(always)]
     fn on_call_error(&mut self, _error: &EvmError) {}
+
+    #[inline(always)]
+    fn on_selfdestruct(
+        &mut self,
+        _beneficiary: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address,
+        _token_value: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        _frame_state: &impl EvmFrameInterface<S>,
+    ) {
+    }
 }
