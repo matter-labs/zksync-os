@@ -2,8 +2,8 @@ use crate::bootloader::account_models::{AccountModel, ExecutionOutput, Execution
 use crate::bootloader::constants::ERC20_APPROVE_SELECTOR;
 use crate::bootloader::constants::PAYMASTER_APPROVAL_BASED_SELECTOR;
 use crate::bootloader::constants::PAYMASTER_GENERAL_SELECTOR;
+use crate::bootloader::constants::TX_OFFSET;
 use crate::bootloader::constants::{DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS, ERC20_ALLOWANCE_SELECTOR};
-use crate::bootloader::constants::{SPECIAL_ADDRESS_TO_WASM_DEPLOY, TX_OFFSET};
 use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
 use crate::bootloader::errors::{AAMethod, BootloaderSubsystemError};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
@@ -491,9 +491,7 @@ where
         resources: &mut S::Resources,
         transaction: &ZkSyncTransaction,
     ) -> Result<(), TxError> {
-        let to = transaction.to.read();
-        let is_deployment =
-            !transaction.reserved[1].read().is_zero() || to == SPECIAL_ADDRESS_TO_WASM_DEPLOY;
+        let is_deployment = !transaction.reserved[1].read().is_zero();
         if is_deployment {
             let calldata_len = transaction.calldata().len() as u64;
             if calldata_len > MAX_INITCODE_SIZE as u64 {
