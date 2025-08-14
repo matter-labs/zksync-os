@@ -156,7 +156,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     })
                     .map_err(|e| -> EvmSubsystemError {
                         match e {
-                            SubsystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
+                            SubsystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_)) => {
                                 wrap_error!(e)
                             }
                             _ => internal_error!("Failed to set deployed nonce to 1").into(),

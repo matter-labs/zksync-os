@@ -4,13 +4,13 @@ use crate::bootloader::DEBUG_OUTPUT;
 use alloc::boxed::Box;
 use core::fmt::Write;
 use core::mem::MaybeUninit;
-use errors::internal::InternalError;
 use ruint::aliases::B160;
 use system_hooks::*;
 use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::interface_error;
 use zk_ee::memory::slice_vec::SliceVec;
+use zk_ee::out_of_return_memory;
 use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
@@ -87,10 +87,10 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
     fn copy_into_return_memory<'a>(
         &mut self,
         return_values: ReturnValues<'a, S>,
-    ) -> Result<ReturnValues<'external, S>, InternalError> {
+    ) -> Result<ReturnValues<'external, S>, BootloaderSubsystemError> {
         let return_memory = core::mem::take(&mut self.return_memory);
         if return_values.returndata.len() > return_memory.len() {
-            return Err(internal_error!("OOM on returndata buffer"));
+            return Err(out_of_return_memory!().into());
         }
         let (output, rest) = return_memory.split_at_mut(return_values.returndata.len());
         self.return_memory = rest;
@@ -361,7 +361,7 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
                     }
                     SubsystemError::LeafDefect(_) => Err(wrap_error!(e)),
                     SubsystemError::LeafRuntime(ref runtime_error) => match runtime_error {
-                        RuntimeError::OutOfNativeResources(_) => Err(wrap_error!(e)),
+                        RuntimeError::FatalRuntimeError(_) => Err(wrap_error!(e)),
                         RuntimeError::OutOfErgs(_) => {
                             Err(internal_error!("Out of ergs on infinite ergs").into())
                         }
@@ -629,8 +629,8 @@ where
                 resources_in_caller_frame,
             });
         }
-        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
-            return Err(RuntimeError::OutOfNativeResources(loc).into())
+        Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(e))) => {
+            return Err(RuntimeError::FatalRuntimeError(e).into())
         }
         Err(SystemError::LeafDefect(e)) => return Err(e.into()),
     };
@@ -773,10 +773,8 @@ where
             ));
             return Err(out_of_ergs_error!());
         }
-        Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
-            return Err(SystemError::LeafRuntime(
-                RuntimeError::OutOfNativeResources(loc),
-            ))
+        Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(e))) => {
+            return Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(e)))
         }
         Err(SystemError::LeafDefect(e)) => return Err(e.into()),
     };

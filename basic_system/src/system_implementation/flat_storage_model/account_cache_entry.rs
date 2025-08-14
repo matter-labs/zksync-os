@@ -395,7 +395,7 @@ impl AccountProperties {
                         SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
                             internal_error!("Out of ergs on infinite ergs")
                         }
-                        SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
+                        SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_)) => {
                             internal_error!("Out of native on infinite")
                         }
                         SystemError::LeafDefect(i) => i,
