@@ -342,42 +342,31 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     where
         S::IO: IOSubsystemExt,
     {
-        let empty_returndata = match exit_code {
-            ExitCode::Stop => true,
-            ExitCode::SelfDestruct => true,
-            ExitCode::Return => false,
-            ExitCode::EvmError(EvmError::Revert) => false,
-            ExitCode::EvmError(_) => true,
+        let mut return_values = ReturnValues::empty();
+        // Set returndata if exit code is Return or Revert
+        match exit_code {
+            ExitCode::Return | ExitCode::EvmError(EvmError::Revert) => {
+                return_values.returndata = &self.heap[self.returndata_location.clone()];
+            }
+            ExitCode::Stop | ExitCode::SelfDestruct | ExitCode::EvmError(_) => (),
             ExitCode::ExternalCall | ExitCode::FatalError(_) => {
                 return Err(internal_error!("Invalid exit code passed").into())
             }
         };
 
-        let mut execution_reverted = false;
         if let ExitCode::EvmError(evm_error) = exit_code {
-            execution_reverted = true;
-
             if evm_error != EvmError::Revert {
-                // Spend all remaining resources on error
+                // Spend all remaining resources on EVM error
                 self.gas.consume_all_gas();
             }
-
             tracer.evm_tracer().on_opcode_error(&evm_error, self);
-        };
-
-        let mut return_values = ReturnValues::empty();
-        if empty_returndata == false {
-            return_values.returndata = &self.heap[self.returndata_location.clone()];
-        }
-
-        if execution_reverted {
             return Ok(ExecutionEnvironmentPreemptionPoint::End(
                 CompletedExecution {
                     resources_returned: self.gas.take_resources(),
                     result: CallResult::Failed { return_values },
                 },
             ));
-        }
+        };
 
         let result = if self.is_constructor {
             let deployed_code = return_values.returndata;

@@ -224,8 +224,13 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             }
         };
 
-        assert!(!call_request_result.has_scratch_space());
-        assert!(self.gas.native() == 0);
+        if call_request_result.has_scratch_space() {
+            return Err(internal_error!("Unexpected scratch space").into());
+        }
+        if self.gas.native() != 0 {
+            return Err(internal_error!("Invalid initial native resources").into());
+        }
+
         self.gas.reclaim_resources(returned_resources);
 
         match call_request_result {
