@@ -14,8 +14,8 @@ pub struct Metadata<IOTypes: SystemIOTypesConfig> {
 }
 
 /// Array of previous block hashes.
-/// Hash for block number N will be at index [current_block_number - N - 1]
-/// (most recent will be at the start) if N is one of the most recent
+/// Hash for block number N will be at index [256 - (current_block_number - N)]
+/// (most recent will be at the end) if N is one of the most recent
 /// 256 blocks.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BlockHashes(pub [U256; 256]);
