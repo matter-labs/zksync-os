@@ -365,6 +365,7 @@ where
             &mut inf_resources,
             tx_hash,
             success,
+            is_priority_op,
         )?;
 
         // Add back the intrinsic native charged in get_resources_for_tx,
@@ -383,7 +384,7 @@ where
             gas_used,
             gas_refunded: evm_refund,
             computational_native_used,
-            pubdata_used: pubdata_used + L1_TX_INTRINSIC_PUBDATA as u64,
+            pubdata_used: pubdata_used + L1_TX_INTRINSIC_PUBDATA,
         })
     }
 
@@ -734,7 +735,7 @@ where
             gas_used,
             gas_refunded: evm_refund,
             computational_native_used,
-            pubdata_used: pubdata_used + L2_TX_INTRINSIC_PUBDATA as u64,
+            pubdata_used: pubdata_used + L2_TX_INTRINSIC_PUBDATA,
         })
     }
 
