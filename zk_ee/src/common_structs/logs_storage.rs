@@ -336,11 +336,13 @@ where
     pub fn apply_l1_txs_to_commitment(&self, mut count: U256, mut rolling_keccak: Bytes32) -> (U256, Bytes32) {
         for log in self.list.iter() {
             if let GenericLogContentData::L1TxLog(l1_tx) = &log.data {
-                count.add_assign(U256::ONE);
-                let mut hasher = Keccak256::new();
-                hasher.update(rolling_keccak.as_u8_ref());
-                hasher.update(l1_tx.tx_hash.as_u8_ref());
-                rolling_keccak = hasher.finalize().into();
+                if l1_tx.is_priority {
+                    count.add_assign(U256::ONE);
+                    let mut hasher = Keccak256::new();
+                    hasher.update(rolling_keccak.as_u8_ref());
+                    hasher.update(l1_tx.tx_hash.as_u8_ref());
+                    rolling_keccak = hasher.finalize().into();
+                }
             }
         }
         (count, rolling_keccak)
