@@ -223,7 +223,7 @@ pub fn run_proving_inner<
     }
 
     Bytes32::from_array(batch_pi_builder
-        .into_public_input()
+        .into_public_input(L::default())
         .hash())
         .as_u32_array()
 }

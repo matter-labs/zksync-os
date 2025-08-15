@@ -3,6 +3,7 @@ use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::{B160, U256};
 use zk_ee::common_structs::L2ToL1Log;
+use zk_ee::system::logger::Logger;
 use zk_ee::utils::Bytes32;
 use crate::system_implementation::system::public_input;
 
@@ -252,7 +253,7 @@ impl BatchPublicInputBuilder {
         }
     }
 
-    pub fn into_public_input(self) -> BatchPublicInput {
+    pub fn into_public_input(self, mut logger: impl Logger) -> BatchPublicInput {
         assert!(!self.is_first_block);
 
         let mut full_root_hasher = crypto::sha3::Keccak256::new();
@@ -278,12 +279,30 @@ impl BatchPublicInputBuilder {
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash: self.upgrade_tx_hash.unwrap(),
         };
-
-        BatchPublicInput {
+        let public_input = BatchPublicInput {
             state_before: self.initial_state_commitment.unwrap(),
             state_after: self.current_state_commitment.unwrap(),
             batch_output: batch_output.hash().into(),
-        }
+        };
+
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: state commitment before {:?}\n",
+            self.initial_state_commitment.unwrap()
+        ));
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: state commitment after {:?}\n",
+            self.current_state_commitment.unwrap()
+        ));
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: batch output {:?}\n",
+            batch_output,
+        ));
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: final batch public input {:?}\n",
+            public_input,
+        ));
+
+        public_input
 
     }
 
