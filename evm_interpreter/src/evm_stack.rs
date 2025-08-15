@@ -4,9 +4,9 @@
 use crate::ExitCode;
 use crate::STACK_SIZE;
 use alloc::boxed::Box;
-use zk_ee::system::evm::errors::EvmError;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use ruint::aliases::U256;
+use zk_ee::system::evm::errors::EvmError;
 use zk_ee::system::evm::EvmStackInterface;
 use zk_ee::system::logger::Logger;
 
