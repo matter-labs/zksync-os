@@ -75,6 +75,12 @@ case "$TYPE" in
     ELF_NAME="multiblock_batch.elf"
     TEXT_NAME="multiblock_batch.text"
     ;;
+  multiblock-batch-logging-enabled)
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/multiblock-batch,print_debug_info"
+    BIN_NAME="multiblock_batch_logging_enabled.bin"
+    ELF_NAME="multiblock_batch_logging_enabled.elf"
+    TEXT_NAME="multiblock_batch_logging_enabled.text"
+    ;;
   default)
     # leave defaults
     ;;
