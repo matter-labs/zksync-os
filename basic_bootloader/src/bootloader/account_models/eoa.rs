@@ -8,12 +8,14 @@ use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
 use crate::bootloader::errors::{AAMethod, BootloaderSubsystemError};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
+use crate::bootloader::supported_ees::errors::EESubsystemError;
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
+use evm_interpreter::interpreter::CreateScheme;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
@@ -227,11 +229,12 @@ where
                 )?;
 
                 let CompletedExecution {
-                    return_values,
                     resources_returned,
-                    reverted,
-                    ..
+                    result,
                 } = final_state;
+
+                let reverted = result.failed();
+                let return_values = result.return_values();
 
                 TxExecutionResult {
                     return_values,
@@ -578,25 +581,39 @@ where
             deployed_address: DeployedAddress::RevertedNoAddress,
         });
     }
-    let ee_specific_deployment_processing_data = match to_ee_type {
+
+    let deployed_address = match to_ee_type {
         ExecutionEnvironmentType::NoEE => {
             return Err(internal_error!("Deployment cannot target NoEE").into())
         }
         ExecutionEnvironmentType::EVM => {
-            SystemBoundEVMInterpreter::<S>::default_ee_deployment_options(system)
+            SystemBoundEVMInterpreter::<S>::derive_address_for_deployment(
+                system,
+                resources,
+                CreateScheme::Create,
+                &from,
+                existing_nonce,
+                main_calldata,
+            )
+            .map_err(|e| {
+                let ee_error: EESubsystemError = wrap_error!(e);
+                wrap_error!(ee_error)
+            })?
         }
     };
 
-    let deployment_parameters = DeploymentPreparationParameters {
-        address_of_deployer: from,
-        call_scratch_space: None,
-        constructor_parameters: &[],
+    let deployment_request = ExternalCallRequest {
+        available_resources: resources.clone(),
+        ergs_to_pass: resources.ergs(),
+        caller: from,
+        callee: deployed_address,
+        callers_caller: Default::default(), // Fine to use placeholder, should not be used
+        modifier: CallModifier::Constructor,
+        input: main_calldata,
         nominal_token_value,
-        deployment_code: main_calldata,
-        ee_specific_deployment_processing_data,
-        deployer_full_resources: resources.clone(),
-        deployer_nonce: Some(existing_nonce),
+        call_scratch_space: None,
     };
+
     let rollback_handle = system.start_global_frame()?;
 
     let final_state = run_till_completion(
@@ -604,24 +621,23 @@ where
         system,
         system_functions,
         to_ee_type,
-        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters),
+        deployment_request,
         tracer,
     )?;
-    let TransactionEndPoint::CompletedDeployment(CompletedDeployment {
+
+    let CompletedExecution {
         resources_returned,
-        deployment_result,
-    }) = final_state
-    else {
-        return Err(internal_error!("attempt to deploy ended up in invalid state").into());
-    };
+        result: deployment_result,
+    } = final_state;
 
     let (deployment_success, reverted, return_values, at) = match deployment_result {
-        DeploymentResult::Successful {
-            return_values,
-            deployed_at,
-            ..
-        } => (true, false, return_values, Some(deployed_at)),
-        DeploymentResult::Failed { return_values, .. } => (false, true, return_values, None),
+        CallResult::Successful { return_values } => {
+            (true, false, return_values, Some(deployed_address))
+        }
+        CallResult::Failed { return_values, .. } => (false, true, return_values, None),
+        CallResult::PreparationStepFailed => {
+            return Err(internal_error!("Preparation step failed in root call").into())
+        } // Should not happen
     };
     // Do not forget to reassign it back after potential copy when finishing frame
     system.finish_global_frame(reverted.then_some(&rollback_handle))?;
@@ -689,9 +705,7 @@ where
 
     let CompletedExecution {
         resources_returned,
-        return_values,
-        reverted,
-        ..
+        result,
     } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
@@ -705,6 +719,9 @@ where
         tracer,
     )
     .map_err(TxError::oon_as_validation)?;
+
+    let reverted = result.failed();
+    let return_values = result.return_values();
 
     let returndata_region = return_values.returndata;
     let returndata_slice = &returndata_region;
@@ -771,9 +788,7 @@ where
 
     let CompletedExecution {
         resources_returned,
-        return_values,
-        reverted,
-        ..
+        result,
     } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
@@ -787,6 +802,9 @@ where
         tracer,
     )
     .map_err(TxError::oon_as_validation)?;
+
+    let reverted = result.failed();
+    let return_values = result.return_values();
 
     let returndata_region = return_values.returndata;
     let returndata_slice = &returndata_region;

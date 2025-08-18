@@ -9,8 +9,8 @@ use zk_ee::system::{
         evm_tracer::{EvmTracer, NopEvmTracer},
         Tracer,
     },
-    CallModifier, CallOrDeployResultRef, EthereumLikeTypes, ExecutionEnvironmentLaunchParams,
-    Resources, SystemTypes,
+    CallModifier, CallResult, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources,
+    SystemTypes,
 };
 use zk_ee::types_config::SystemIOTypesConfig;
 
@@ -81,7 +81,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
             value: initial_state.external_call.nominal_token_value,
             gas: initial_state.external_call.available_resources.ergs().0 / ERGS_PER_GAS,
             gas_used: 0, // will be populated later
-            input: initial_state.external_call.calldata.to_vec(),
+            input: initial_state.external_call.input.to_vec(),
             output: vec![], // will be populated later
             error: None,
             reverted: false, // will be populated later
@@ -89,10 +89,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         })
     }
 
-    fn after_execution_frame_completed(
-        &mut self,
-        result: Option<(&S::Resources, CallOrDeployResultRef<S>)>,
-    ) {
+    fn after_execution_frame_completed(&mut self, result: Option<(&S::Resources, &CallResult<S>)>) {
         assert_ne!(self.current_call_depth, 0);
         self.current_call_depth -= 1;
 
@@ -105,37 +102,19 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
                     .saturating_sub(result.0.ergs().0 / ERGS_PER_GAS);
 
                 match &result.1 {
-                    CallOrDeployResultRef::CallResult(call_result) => match call_result {
-                        zk_ee::system::CallResult::CallFailedToExecute => {
-                            finished_call.reverted = true;
-                            finished_call.error =
-                                Some("Unexpected failure before tx execution".to_owned());
-                        }
-                        zk_ee::system::CallResult::Failed { return_values } => {
-                            finished_call.reverted = true;
-                            finished_call.output = return_values.returndata.to_vec();
-                        }
-                        zk_ee::system::CallResult::Successful { return_values } => {
-                            finished_call.output = return_values.returndata.to_vec();
-                        }
-                    },
-                    CallOrDeployResultRef::DeploymentResult(deployment_result) => {
-                        match deployment_result {
-                            zk_ee::system::DeploymentResult::Failed {
-                                return_values,
-                                execution_reverted: _,
-                            } => {
-                                finished_call.reverted = true;
-                                finished_call.output = return_values.returndata.to_vec();
-                            }
-                            zk_ee::system::DeploymentResult::Successful {
-                                deployed_code: _,
-                                return_values: _,
-                                deployed_at: _,
-                            } => {}
-                        }
+                    zk_ee::system::CallResult::PreparationStepFailed => {
+                        finished_call.reverted = true;
+                        finished_call.error =
+                            Some("Unexpected failure before tx execution".to_owned());
                     }
-                }
+                    zk_ee::system::CallResult::Failed { return_values } => {
+                        finished_call.reverted = true;
+                        finished_call.output = return_values.returndata.to_vec();
+                    }
+                    zk_ee::system::CallResult::Successful { return_values } => {
+                        finished_call.output = return_values.returndata.to_vec();
+                    }
+                };
             }
             None => {
                 // Some unexpected internal failure happened
