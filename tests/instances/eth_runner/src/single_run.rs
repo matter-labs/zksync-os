@@ -38,7 +38,7 @@ fn run<const RANDOMIZED: bool>(
         std::path::Path::new(&dir).join(suffix)
     });
 
-    let (output, stats) = chain.run_block_with_extra_stats(
+    let (output, stats, _) = chain.run_block_with_extra_stats(
         transactions,
         Some(block_context),
         None,

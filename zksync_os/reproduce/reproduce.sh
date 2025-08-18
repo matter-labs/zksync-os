@@ -14,6 +14,8 @@ FILES=(
     evm_replay.bin
     server_app.bin
     server_app_logging_enabled.bin
+    multiblock_batch.bin
+    multiblock_batch_logging_enabled.bin
 )
 
 for FILE in "${FILES[@]}"; do

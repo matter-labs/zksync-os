@@ -479,7 +479,7 @@ where
 
 // In practice we will not use single block batches
 // This functionality is here only for the tests
-#[cfg(not(feature = "wrap-in-batch"))]
+#[cfg(all(not(feature = "wrap-in-batch"), not(feature = "multiblock-batch")))]
 impl<
         A: Allocator + Clone + Default,
         R: Resources,
@@ -729,6 +729,138 @@ where
         ));
 
         (self.oracle, public_input_hash)
+    }
+}
+
+#[cfg(feature = "multiblock-batch")]
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32> + Default,
+        SC: StackCtor<SCC>,
+        SCC: const StackCtorConst,
+        O: IOOracle,
+    > FinishIO for FullIO<A, R, P, SC, SCC, O, true>
+where
+    ExtraCheck<SCC, A>:,
+{
+    type FinalData = (
+        FullIO<A, R, P, SC, SCC, O, true>,
+        BlockMetadataFromOracle,
+        Bytes32,
+        Bytes32,
+    );
+    fn finish(
+        self,
+        block_metadata: BlockMetadataFromOracle,
+        current_block_hash: Bytes32,
+        _l1_to_l2_txs_hash: Bytes32,
+        upgrade_tx_hash: Bytes32,
+        _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
+        _logger: impl Logger,
+    ) -> Self::FinalData {
+        (self, block_metadata, current_block_hash, upgrade_tx_hash)
+    }
+}
+
+#[cfg(feature = "multiblock-batch")]
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32> + Default,
+        SC: StackCtor<SCC>,
+        SCC: const StackCtorConst,
+        O: IOOracle,
+        const PROOF_ENV: bool,
+    > FullIO<A, R, P, SC, SCC, O, PROOF_ENV>
+where
+    ExtraCheck<SCC, A>:,
+    Self: FinishIO,
+{
+    pub fn apply_to_batch(
+        mut self,
+        block_metadata: BlockMetadataFromOracle,
+        current_block_hash: Bytes32,
+        upgrade_tx_hash: Bytes32,
+        builder: &mut crate::system_implementation::system::public_input::BatchPublicInputBuilder,
+    ) -> O {
+        let (mut state_commitment, last_block_timestamp) = {
+            let mut initialization_iterator = self
+                .oracle
+                .create_oracle_access_iterator::<ProofDataIterator>(())
+                .unwrap();
+            let proof_data =
+                <ProofData<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(
+                    &mut initialization_iterator,
+                )
+                .unwrap();
+            assert_eq!(initialization_iterator.len(), 0);
+            (proof_data.state_root_view, proof_data.last_block_timestamp)
+        };
+
+        let mut blocks_hasher = Blake2s256::new();
+        for block_hash in block_metadata.block_hashes.0.iter() {
+            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+        }
+
+        // chain state before
+        let chain_state_commitment_before = ChainStateCommitment {
+            state_root: state_commitment.root,
+            next_free_slot: state_commitment.next_free_slot,
+            block_number: block_metadata.block_number - 1,
+            last_256_block_hashes_blake: blocks_hasher.finalize().into(),
+            last_block_timestamp,
+        };
+
+        builder
+            .pubdata_hasher
+            .update(current_block_hash.as_u8_ref());
+
+        self.storage
+            .finish(
+                &mut self.oracle,
+                Some(&mut state_commitment),
+                &mut builder.pubdata_hasher,
+                &mut NopResultKeeper,
+                &mut NullLogger,
+            )
+            .expect("Failed to finish storage");
+
+        self.logs_storage
+            .apply_pubdata(&mut builder.pubdata_hasher, &mut NopResultKeeper);
+        self.logs_storage
+            .apply_to_array_vec(&mut builder.logs_storage);
+        (builder.number_of_layer_1_txs, builder.l1_txs_rolling_hash) = self
+            .logs_storage
+            .apply_l1_txs_to_commitment(builder.number_of_layer_1_txs, builder.l1_txs_rolling_hash);
+
+        blocks_hasher = Blake2s256::new();
+        for block_hash in block_metadata.block_hashes.0.iter().skip(1) {
+            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+        }
+        blocks_hasher.update(current_block_hash.as_u8_ref());
+
+        // validate that timestamp didn't decrease
+        assert!(block_metadata.timestamp >= last_block_timestamp);
+
+        // chain state after
+        let chain_state_commitment_after = ChainStateCommitment {
+            state_root: state_commitment.root,
+            next_free_slot: state_commitment.next_free_slot,
+            block_number: block_metadata.block_number,
+            last_256_block_hashes_blake: blocks_hasher.finalize().into(),
+            last_block_timestamp: block_metadata.timestamp,
+        };
+
+        builder.apply_block(
+            chain_state_commitment_before.hash().into(),
+            chain_state_commitment_after.hash().into(),
+            block_metadata.timestamp,
+            U256::try_from(block_metadata.chain_id).unwrap(),
+            upgrade_tx_hash,
+        );
+
+        self.oracle
     }
 }
 

@@ -252,7 +252,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         profiler_config: Option<ProfilerConfig>,
         witness_output_file: Option<PathBuf>,
         app: Option<String>,
-    ) -> (BlockOutput, BlockExtraStats) {
+    ) -> (BlockOutput, BlockExtraStats, Vec<u32>) {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
@@ -333,13 +333,35 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             stats.computational_native_used = Some(native_used);
         }
 
-        if let Some(path) = witness_output_file {
+        // update state
+        self.block_number += 1;
+        self.block_timestamp = block_context.timestamp;
+        for i in 0..255 {
+            self.block_hashes[i] = self.block_hashes[i + 1];
+        }
+        self.block_hashes[255] = U256::from_be_bytes(block_output.header.hash());
+
+        for storage_write in block_output.storage_writes.iter() {
+            self.state_tree
+                .cold_storage
+                .insert(storage_write.key, storage_write.value);
+            self.state_tree
+                .storage_tree
+                .insert(&storage_write.key, &storage_write.value);
+        }
+
+        for (hash, preimage, _preimage_type) in block_output.published_preimages.iter() {
+            self.preimage_source.inner.insert(*hash, preimage.clone());
+        }
+
+        let proof_input = if let Some(path) = witness_output_file {
             let result = Self::run_block_generate_witness(oracle.clone(), &app);
             let mut file = File::create(&path).expect("should create file");
             let witness: Vec<u8> = result.iter().flat_map(|x| x.to_be_bytes()).collect();
             let hex = hex::encode(witness);
             file.write_all(hex.as_bytes())
                 .expect("should write to file");
+            result
         } else {
             // proof run
             let oracle_wrapper = BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle);
@@ -410,6 +432,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 );
             }
 
+            let proof_input = items.borrow().iter().copied().collect::<Vec<u32>>();
+
             debug!(
                 "{}Proof running output{} = 0x",
                 colors::GREEN,
@@ -424,9 +448,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
             #[cfg(feature = "e2e_proving")]
             run_prover(items.borrow().as_slice());
-            // TODO: we also need to update state if we want to execute next block on top
-        }
-        (block_output, stats)
+
+            proof_input
+        };
+        (block_output, stats, proof_input)
     }
 
     fn get_account_properties(&mut self, address: &B160) -> AccountProperties {
