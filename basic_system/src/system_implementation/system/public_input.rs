@@ -199,8 +199,8 @@ pub struct BatchPublicInputBuilder {
     is_first_block: bool,
     initial_state_commitment: Option<Bytes32>,
     current_state_commitment: Option<Bytes32>,
-    first_block_timestmap: Option<u64>,
-    current_block_timestmap: Option<u64>,
+    first_block_timestamp: Option<u64>,
+    current_block_timestamp: Option<u64>,
     chain_id: Option<U256>,
     pub pubdata_hasher: Keccak256,
     pub logs_storage: ArrayVec<Bytes32, 16384>,
@@ -215,8 +215,8 @@ impl BatchPublicInputBuilder {
             is_first_block: true,
             initial_state_commitment: None,
             current_state_commitment: None,
-            first_block_timestmap: None,
-            current_block_timestmap: None,
+            first_block_timestamp: None,
+            current_block_timestamp: None,
             chain_id: None,
             pubdata_hasher: Keccak256::new(),
             logs_storage: ArrayVec::new(),
@@ -246,8 +246,8 @@ impl BatchPublicInputBuilder {
         if self.is_first_block {
             self.initial_state_commitment = Some(state_commitment_before);
             self.current_state_commitment = Some(state_commitment_after);
-            self.first_block_timestmap = Some(block_timestamp);
-            self.current_block_timestmap = Some(block_timestamp);
+            self.first_block_timestamp = Some(block_timestamp);
+            self.current_block_timestamp = Some(block_timestamp);
             self.chain_id = Some(chain_id);
             self.upgrade_tx_hash = Some(upgrade_tx_hash);
             self.is_first_block = false;
@@ -257,7 +257,7 @@ impl BatchPublicInputBuilder {
                 state_commitment_before
             );
             self.current_state_commitment = Some(state_commitment_after);
-            self.current_block_timestmap = Some(block_timestamp);
+            self.current_block_timestamp = Some(block_timestamp);
             assert_eq!(self.chain_id.unwrap(), chain_id);
             assert!(upgrade_tx_hash.is_zero());
         }
@@ -283,8 +283,8 @@ impl BatchPublicInputBuilder {
 
         let batch_output = public_input::BatchOutput {
             chain_id: self.chain_id.unwrap(),
-            first_block_timestamp: self.first_block_timestmap.unwrap(),
-            last_block_timestamp: self.current_block_timestmap.unwrap(),
+            first_block_timestamp: self.first_block_timestamp.unwrap(),
+            last_block_timestamp: self.current_block_timestamp.unwrap(),
             used_l2_da_validator_address: ruint::aliases::B160::ZERO,
             pubdata_commitment: da_commitment.into(),
             number_of_layer_1_txs: self.number_of_layer_1_txs,
