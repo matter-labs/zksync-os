@@ -207,7 +207,8 @@ pub fn run_proving_inner<
     I::csr_write_impl(0xdeadbeef);
     I::csr_write_impl(0);
     let count = I::csr_read_impl();
-    let mut batch_pi_builder = basic_system::system_implementation::system::BatchPublicInputBuilder::new();
+    let mut batch_pi_builder =
+        basic_system::system_implementation::system::BatchPublicInputBuilder::new();
     for _ in 0..count {
         let (io, block_metadata, current_block_hash, upgrade_tx_hash) =
             ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
@@ -230,5 +231,6 @@ pub fn run_proving_inner<
             .expect("must disconnect an oracle before performing arbitrary CSR access");
     }
 
-    zk_ee::utils::Bytes32::from_array(batch_pi_builder.into_public_input(L::default()).hash()).as_u32_array()
+    zk_ee::utils::Bytes32::from_array(batch_pi_builder.into_public_input(L::default()).hash())
+        .as_u32_array()
 }
