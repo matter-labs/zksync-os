@@ -56,6 +56,8 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
         self.cache.commit();
     }
 
+    pub fn finish_tx(&mut self) {}
+
     #[track_caller]
     pub fn start_frame(&mut self) -> CacheSnapshotId {
         self.cache.snapshot()

@@ -149,7 +149,9 @@ where
         {
             self.evm_refunds_counter = HistoryCounter::new(self.alloc.clone());
         }
+    }
 
+    pub fn finish_tx(&mut self) {
         self.current_tx_number.0 += 1;
     }
 
@@ -598,6 +600,11 @@ where
 
     fn begin_new_tx(&mut self) {
         self.0.begin_new_tx();
+    }
+
+    fn finish_tx(&mut self) -> Result<(), InternalError> {
+        self.0.finish_tx();
+        Ok(())
     }
 
     fn start_frame(&mut self) -> Self::StateSnapshot {
