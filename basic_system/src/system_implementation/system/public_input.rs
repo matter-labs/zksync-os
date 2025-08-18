@@ -131,7 +131,7 @@ pub struct BatchOutput {
     /// Last block timestamp.
     pub last_block_timestamp: u64,
     // TODO(EVM-1081): in future should be commitment scheme
-    /// pub pubdata_commitment_scheme: DACommitmentScheme,
+    // pub pubdata_commitment_scheme: DACommitmentScheme,
     pub used_l2_da_validator_address: B160,
     /// Pubdata commitment.
     pub pubdata_commitment: Bytes32,
