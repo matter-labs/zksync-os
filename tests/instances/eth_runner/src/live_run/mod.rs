@@ -165,7 +165,7 @@ fn run_block(
         suffix.push_str("_witness");
         std::path::Path::new(&dir).join(suffix)
     });
-    let (output, stats) = chain.run_block_with_extra_stats(
+    let (output, stats, _) = chain.run_block_with_extra_stats(
         transactions,
         Some(block_context),
         None,

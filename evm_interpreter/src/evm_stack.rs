@@ -6,6 +6,7 @@ use crate::STACK_SIZE;
 use alloc::boxed::Box;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use ruint::aliases::U256;
+use zk_ee::system::evm::errors::EvmError;
 use zk_ee::system::evm::EvmStackInterface;
 use zk_ee::system::logger::Logger;
 
@@ -57,12 +58,12 @@ impl<A: Allocator> EvmStack<A> {
     #[inline(always)]
     pub(crate) fn swap(&mut self, n: usize) -> Result<(), ExitCode> {
         let src_offset = if self.len == 0 {
-            return Err(ExitCode::StackUnderflow);
+            return Err(EvmError::StackUnderflow.into());
         } else {
             self.len - 1
         };
         let dst_offset = if n > src_offset {
-            return Err(ExitCode::StackUnderflow);
+            return Err(EvmError::StackUnderflow.into());
         } else {
             src_offset - n
         };
@@ -87,10 +88,10 @@ impl<A: Allocator> EvmStack<A> {
     #[inline(always)]
     pub(crate) fn dup(&mut self, n: usize) -> Result<(), ExitCode> {
         if self.len == STACK_SIZE {
-            return Err(ExitCode::StackOverflow);
+            return Err(EvmError::StackOverflow.into());
         }
         let offset = if n > self.len {
-            return Err(ExitCode::StackUnderflow);
+            return Err(EvmError::StackUnderflow.into());
         } else {
             self.len - n
         };
@@ -112,7 +113,7 @@ impl<A: Allocator> EvmStack<A> {
     #[inline(always)]
     pub(crate) fn pop_and_ignore(&mut self) -> Result<(), ExitCode> {
         if self.len == 0 {
-            Err(ExitCode::StackUnderflow)
+            Err(EvmError::StackUnderflow.into())
         } else {
             self.len -= 1;
 
@@ -124,7 +125,7 @@ impl<A: Allocator> EvmStack<A> {
     pub fn pop_1(&'_ mut self) -> Result<&'_ U256, ExitCode> {
         unsafe {
             if self.len < 1 {
-                return Err(ExitCode::StackUnderflow);
+                return Err(EvmError::StackUnderflow.into());
             }
             let offset = self.len - 1;
             let p0 = self.buffer.get_unchecked(offset).assume_init_ref();
@@ -138,7 +139,7 @@ impl<A: Allocator> EvmStack<A> {
     pub fn pop_2(&'_ mut self) -> Result<(&'_ U256, &'_ U256), ExitCode> {
         unsafe {
             if self.len < 2 {
-                return Err(ExitCode::StackUnderflow);
+                return Err(EvmError::StackUnderflow.into());
             }
             let mut offset = self.len - 1;
             let p0 = self.buffer.get_unchecked(offset).assume_init_ref();
@@ -154,7 +155,7 @@ impl<A: Allocator> EvmStack<A> {
     pub fn pop_3(&'_ mut self) -> Result<(&'_ U256, &'_ U256, &'_ U256), ExitCode> {
         unsafe {
             if self.len < 3 {
-                return Err(ExitCode::StackUnderflow);
+                return Err(EvmError::StackUnderflow.into());
             }
             let mut offset = self.len - 1;
             let p0 = self.buffer.get_unchecked(offset).assume_init_ref();
@@ -173,7 +174,7 @@ impl<A: Allocator> EvmStack<A> {
     pub fn pop_4(&'_ mut self) -> Result<(&'_ U256, &'_ U256, &'_ U256, &'_ U256), ExitCode> {
         unsafe {
             if self.len < 4 {
-                return Err(ExitCode::StackUnderflow);
+                return Err(EvmError::StackUnderflow.into());
             }
             let mut offset = self.len - 1;
             let p0 = self.buffer.get_unchecked(offset).assume_init_ref();
@@ -194,7 +195,7 @@ impl<A: Allocator> EvmStack<A> {
     pub fn top_mut(&'_ mut self) -> Result<&'_ mut U256, ExitCode> {
         unsafe {
             if self.len < 1 {
-                return Err(ExitCode::StackUnderflow);
+                return Err(EvmError::StackUnderflow.into());
             }
             let offset = self.len - 1;
             let peeked = self.buffer.get_unchecked_mut(offset).assume_init_mut();
@@ -207,7 +208,7 @@ impl<A: Allocator> EvmStack<A> {
     pub fn pop_1_and_peek_mut(&'_ mut self) -> Result<(&'_ U256, &'_ mut U256), ExitCode> {
         unsafe {
             if self.len < 2 {
-                return Err(ExitCode::StackUnderflow);
+                return Err(EvmError::StackUnderflow.into());
             }
             let mut offset = self.len - 1;
             let p0 = self
@@ -236,7 +237,7 @@ impl<A: Allocator> EvmStack<A> {
     ) -> Result<((&'_ U256, &'_ U256), &'_ mut U256), ExitCode> {
         unsafe {
             if self.len < 3 {
-                return Err(ExitCode::StackUnderflow);
+                return Err(EvmError::StackUnderflow.into());
             }
             let mut offset = self.len - 1;
             let p0 = self
@@ -270,7 +271,7 @@ impl<A: Allocator> EvmStack<A> {
     pub fn pop_1_mut_and_peek(&'_ mut self) -> Result<(&'_ mut U256, &'_ mut U256), ExitCode> {
         unsafe {
             if self.len < 2 {
-                return Err(ExitCode::StackUnderflow);
+                return Err(EvmError::StackUnderflow.into());
             }
             let mut offset = self.len - 1;
             let p0 = self
@@ -296,7 +297,7 @@ impl<A: Allocator> EvmStack<A> {
     #[inline(always)]
     pub fn push_zero(&mut self) -> Result<(), ExitCode> {
         if self.len == STACK_SIZE {
-            return Err(ExitCode::StackOverflow);
+            return Err(EvmError::StackOverflow.into());
         }
         unsafe {
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
@@ -310,7 +311,7 @@ impl<A: Allocator> EvmStack<A> {
     #[inline(always)]
     pub fn push_one(&mut self) -> Result<(), ExitCode> {
         if self.len == STACK_SIZE {
-            return Err(ExitCode::StackOverflow);
+            return Err(EvmError::StackOverflow.into());
         }
         unsafe {
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
@@ -324,7 +325,7 @@ impl<A: Allocator> EvmStack<A> {
     #[inline(always)]
     pub fn push(&mut self, value: &U256) -> Result<(), ExitCode> {
         if self.len == STACK_SIZE {
-            return Err(ExitCode::StackOverflow);
+            return Err(EvmError::StackOverflow.into());
         }
         unsafe {
             let dst_ref_mut = self.buffer.as_mut_ptr().add(self.len).as_mut_unchecked();
@@ -345,10 +346,10 @@ impl<A: Allocator> EvmStackInterface for EvmStack<A> {
         self.len
     }
 
-    fn peek_n(&self, index: usize) -> Result<&U256, zk_ee::system::evm::EvmStackError> {
+    fn peek_n(&self, index: usize) -> Result<&U256, EvmError> {
         unsafe {
             if self.len < index + 1 {
-                return Err(zk_ee::system::evm::EvmStackError::StackUnderflow);
+                return Err(EvmError::StackUnderflow);
             }
             let offset = self.len - (index + 1);
             let p0 = self
@@ -366,8 +367,9 @@ impl<A: Allocator> EvmStackInterface for EvmStack<A> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ExitCode, STACK_SIZE};
+    use crate::STACK_SIZE;
     use ruint::aliases::U256;
+    use zk_ee::system::evm::errors::EvmError;
 
     use super::EvmStack;
     use std::alloc::Global;
@@ -390,7 +392,7 @@ mod tests {
             stack.push(&U256::ONE).expect("Should push");
         }
 
-        assert_eq!(stack.push(&U256::ONE), Err(ExitCode::StackOverflow));
+        assert_eq!(stack.push(&U256::ONE), Err(EvmError::StackOverflow.into()));
     }
 
     #[test]
@@ -401,7 +403,7 @@ mod tests {
             stack.push_zero().expect("Should push");
         }
 
-        assert_eq!(stack.push_zero(), Err(ExitCode::StackOverflow));
+        assert_eq!(stack.push_zero(), Err(EvmError::StackOverflow.into()));
     }
 
     #[test]
@@ -412,32 +414,32 @@ mod tests {
             stack.push_one().expect("Should push");
         }
 
-        assert_eq!(stack.push_one(), Err(ExitCode::StackOverflow));
+        assert_eq!(stack.push_one(), Err(EvmError::StackOverflow.into()));
     }
 
     #[test]
     fn pop_can_not_underflow() {
         let mut stack = EvmStack::new_in(Global);
 
-        assert_eq!(stack.pop_1(), Err(ExitCode::StackUnderflow));
-        assert_eq!(stack.pop_2(), Err(ExitCode::StackUnderflow));
-        assert_eq!(stack.pop_3(), Err(ExitCode::StackUnderflow));
-        assert_eq!(stack.pop_4(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_1(), Err(EvmError::StackUnderflow.into()));
+        assert_eq!(stack.pop_2(), Err(EvmError::StackUnderflow.into()));
+        assert_eq!(stack.pop_3(), Err(EvmError::StackUnderflow.into()));
+        assert_eq!(stack.pop_4(), Err(EvmError::StackUnderflow.into()));
 
         stack.push_one().expect("Should push");
 
-        assert_eq!(stack.pop_2(), Err(ExitCode::StackUnderflow));
-        assert_eq!(stack.pop_3(), Err(ExitCode::StackUnderflow));
-        assert_eq!(stack.pop_4(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_2(), Err(EvmError::StackUnderflow.into()));
+        assert_eq!(stack.pop_3(), Err(EvmError::StackUnderflow.into()));
+        assert_eq!(stack.pop_4(), Err(EvmError::StackUnderflow.into()));
 
         stack.push_one().expect("Should push");
 
-        assert_eq!(stack.pop_3(), Err(ExitCode::StackUnderflow));
-        assert_eq!(stack.pop_4(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_3(), Err(EvmError::StackUnderflow.into()));
+        assert_eq!(stack.pop_4(), Err(EvmError::StackUnderflow.into()));
 
         stack.push_one().expect("Should push");
 
-        assert_eq!(stack.pop_4(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.pop_4(), Err(EvmError::StackUnderflow.into()));
     }
 
     #[test]
@@ -446,31 +448,43 @@ mod tests {
 
         stack.push_one().expect("Should push");
 
-        assert_eq!(stack.pop_1_and_peek_mut(), Err(ExitCode::StackUnderflow));
-        assert_eq!(stack.pop_1_mut_and_peek(), Err(ExitCode::StackUnderflow));
-        assert_eq!(stack.pop_2_and_peek_mut(), Err(ExitCode::StackUnderflow));
+        assert_eq!(
+            stack.pop_1_and_peek_mut(),
+            Err(EvmError::StackUnderflow.into())
+        );
+        assert_eq!(
+            stack.pop_1_mut_and_peek(),
+            Err(EvmError::StackUnderflow.into())
+        );
+        assert_eq!(
+            stack.pop_2_and_peek_mut(),
+            Err(EvmError::StackUnderflow.into())
+        );
 
         stack.push_one().expect("Should push");
 
-        assert_eq!(stack.pop_2_and_peek_mut(), Err(ExitCode::StackUnderflow));
+        assert_eq!(
+            stack.pop_2_and_peek_mut(),
+            Err(EvmError::StackUnderflow.into())
+        );
     }
 
     #[test]
     fn top_mut_can_not_underflow() {
         let mut stack = EvmStack::new_in(Global);
 
-        assert_eq!(stack.top_mut(), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.top_mut(), Err(EvmError::StackUnderflow.into()));
     }
 
     #[test]
     fn swap() {
         let mut stack = EvmStack::new_in(Global);
 
-        assert_eq!(stack.swap(1), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.swap(1), Err(EvmError::StackUnderflow.into()));
 
         stack.push_one().expect("Should push");
 
-        assert_eq!(stack.swap(1), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.swap(1), Err(EvmError::StackUnderflow.into()));
 
         stack.push_zero().expect("Should push");
         stack.swap(1).expect("Should swap");
@@ -485,7 +499,7 @@ mod tests {
     fn dup() {
         let mut stack = EvmStack::new_in(Global);
 
-        assert_eq!(stack.dup(1), Err(ExitCode::StackUnderflow));
+        assert_eq!(stack.dup(1), Err(EvmError::StackUnderflow.into()));
 
         stack.push_one().expect("Should push");
         stack.dup(1).expect("Should dup");
@@ -501,6 +515,6 @@ mod tests {
             stack.dup(1).expect("Should dup");
         }
 
-        assert_eq!(stack.dup(1), Err(ExitCode::StackOverflow));
+        assert_eq!(stack.dup(1), Err(EvmError::StackOverflow.into()));
     }
 }
