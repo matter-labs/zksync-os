@@ -333,7 +333,7 @@ impl BatchPublicInputBuilder {
         //     0xa707d1c62d8be699d34cb74804fdd7b4c568b6c1a821066f126c680d4b83e00b,
         //     0xf6e093070e0389d2e529d60fadb855fdded54976ec50ac709e3a36ceaa64c291,
         //     0x375a5bf909cb02143e3695ca658e0641e739aa590f0004dba93572c44cdb9d2d
-        const EMPTY_HASHES: [[u8; 32]; 15] = [
+        const EMPTY_HASHES: [[u8; 32]; TREE_HEIGHT + 1] = [
             [
                 0x72, 0xab, 0xee, 0x45, 0xb5, 0x9e, 0x34, 0x4a, 0xf8, 0xa6, 0xe5, 0x20, 0x24, 0x1c,
                 0x47, 0x44, 0xaf, 0xf2, 0x6e, 0xd4, 0x11, 0xf4, 0xc4, 0xb0, 0x0f, 0x8a, 0xf0, 0x9a,
@@ -411,17 +411,17 @@ impl BatchPublicInputBuilder {
             ],
         ];
         let mut curr_non_default = logs.len();
+        let mut hasher = crypto::sha3::Keccak256::new();
         #[allow(clippy::needless_range_loop)]
         for level in 0..TREE_HEIGHT {
             for i in 0..curr_non_default.div_ceil(2) {
-                let mut hasher = crypto::sha3::Keccak256::new();
                 hasher.update(logs[i * 2].as_u8_ref());
                 if i * 2 + 1 < curr_non_default {
                     hasher.update(logs[i * 2 + 1].as_u8_ref());
                 } else {
                     hasher.update(EMPTY_HASHES[level]);
                 }
-                logs[i] = hasher.finalize().into();
+                logs[i] = hasher.finalize_reset().into();
             }
             curr_non_default = curr_non_default.div_ceil(2);
         }
