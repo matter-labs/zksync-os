@@ -232,7 +232,7 @@ impl BatchPublicInputBuilder {
 
     ///
     /// Apply information about a processed block.
-    /// Pleas note, that pubdata, l2 -> l1 logs, and l1 -> l2 txs commitment should be handled separately using corresponding public fields of this structure.
+    /// Please note, that pubdata, l2 -> l1 logs, and l1 -> l2 txs commitment should be handled separately using corresponding public fields of this structure.
     ///
     pub fn apply_block(
         &mut self,
