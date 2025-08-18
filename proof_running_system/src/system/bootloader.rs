@@ -216,6 +216,8 @@ pub fn run_proving_inner<
         >(oracle, &mut NopResultKeeper, &mut NopTracer::default())
             .expect("Tried to prove a failing batch");
         oracle = io.apply_to_batch(block_metadata, current_block_hash, upgrade_tx_hash, &mut batch_pi_builder);
+        // we do this query for consistency with block based input generation(there is empty iterator as response to this query)
+        // but during proving this request shouldn't have the effect with "u32 array based" oracle
         #[allow(unused_must_use)]
         oracle
             .create_oracle_access_iterator::<DisconnectOracleFormalIterator>(())

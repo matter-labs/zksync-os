@@ -192,6 +192,9 @@ impl BatchPublicInput {
     }
 }
 
+///
+/// Batch PI builder, it allows to apply blocks info on by one to persist data needed for the batch PI and at the end create it.
+///
 pub struct BatchPublicInputBuilder {
     is_first_block: bool,
     initial_state_commitment: Option<Bytes32>,
@@ -228,6 +231,10 @@ impl BatchPublicInputBuilder {
         }
     }
 
+    ///
+    /// Apply information about a processed block.
+    /// Pleas note, that pubdata, l2 -> l1 logs, and l1 -> l2 txs commitment should be handled separately using corresponding public fields of this structure.
+    ///
     pub fn apply_block(
         &mut self,
         state_commitment_before: Bytes32,
@@ -253,6 +260,9 @@ impl BatchPublicInputBuilder {
         }
     }
 
+    ///
+    /// Create public input for a batch that contains previously added blocks.
+    ///
     pub fn into_public_input(self, mut logger: impl Logger) -> BatchPublicInput {
         assert!(!self.is_first_block);
 
