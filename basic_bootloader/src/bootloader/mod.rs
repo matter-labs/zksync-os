@@ -344,13 +344,10 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                 }
             }
 
-            let tx_stats = system.flush_tx();
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Tx stats = {tx_stats:?}\n"));
-
             first_tx = false;
 
+            // The fee is transferred to the coinbase address before
+            // finishing the transaction.
             let coinbase = system.get_coinbase();
             let mut inf_resources = S::Resources::FORMAL_INFINITE;
             let bootloader_balance = system
@@ -376,6 +373,11 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                     )
                     .expect("must be able to move funds to coinbase");
             }
+
+            let tx_stats = system.flush_tx();
+            let _ = system
+                .get_logger()
+                .write_fmt(format_args!("Tx stats = {tx_stats:?}\n"));
 
             let mut logger = system.get_logger();
             let _ = logger.write_fmt(format_args!("TX execution ends\n"));
