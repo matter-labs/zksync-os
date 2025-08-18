@@ -26,6 +26,8 @@ pub trait EvmFrameInterface<S: SystemTypes> {
     fn bytecode(&self) -> &[u8];
     /// Call value
     fn call_value(&self) -> &U256;
+    /// Value of the refund counter (if enabled)
+    fn refund_counter(&self) -> u32;
     /// Is EVM frame static or not.
     fn is_static(&self) -> bool;
     /// Is interpreter frame executing construction code or not.
