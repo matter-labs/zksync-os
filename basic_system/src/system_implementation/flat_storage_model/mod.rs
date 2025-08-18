@@ -247,7 +247,7 @@ where
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         new_value: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
         oracle: &mut impl IOOracle,
-    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
+    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError> {
         self.storage_cache
             .write(ee_type, resources, address, key, new_value, oracle)
     }
@@ -413,7 +413,10 @@ where
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
         in_constructor: bool,
-    ) -> Result<(), DeconstructionSubsystemError> {
+    ) -> Result<
+        <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        DeconstructionSubsystemError,
+    > {
         self.account_data_cache
             .mark_for_deconstruction::<PROOF_ENV>(
                 from_ee,

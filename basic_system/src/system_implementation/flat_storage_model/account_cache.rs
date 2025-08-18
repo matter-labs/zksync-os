@@ -1056,7 +1056,7 @@ where
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
         in_constructor: bool,
-    ) -> Result<(), DeconstructionSubsystemError> {
+    ) -> Result<U256, DeconstructionSubsystemError> {
         let cur_tx = self.current_tx_number;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             from_ee,
@@ -1139,7 +1139,7 @@ where
             }
         }
 
-        Ok(())
+        Ok(transfer_amount)
     }
 
     pub fn finish_tx(
