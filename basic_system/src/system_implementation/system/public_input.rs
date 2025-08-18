@@ -131,7 +131,7 @@ pub struct BatchOutput {
     /// Last block timestamp.
     pub last_block_timestamp: u64,
     // TODO(EVM-1081): in future should be commitment scheme
-    /// pub pubdata_commitment_scheme: DACommitmentScheme,
+    // pub pubdata_commitment_scheme: DACommitmentScheme,
     pub used_l2_da_validator_address: B160,
     /// Pubdata commitment.
     pub pubdata_commitment: Bytes32,
@@ -232,7 +232,7 @@ impl BatchPublicInputBuilder {
 
     ///
     /// Apply information about a processed block.
-    /// Pleas note, that pubdata, l2 -> l1 logs, and l1 -> l2 txs commitment should be handled separately using corresponding public fields of this structure.
+    /// Please note, that pubdata, l2 -> l1 logs, and l1 -> l2 txs commitment should be handled separately using corresponding public fields of this structure.
     ///
     pub fn apply_block(
         &mut self,
