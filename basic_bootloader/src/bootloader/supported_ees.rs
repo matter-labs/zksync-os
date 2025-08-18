@@ -51,21 +51,42 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
                 )
                 .map_err(wrap_error!())
             }
-            _ => Err(interface_error!(
+            ExecutionEnvironmentType::NoEE => Err(interface_error!(
                 InterfaceError::UnsupportedExecutionEnvironment
             )),
         }
     }
 
     pub fn create_initial(
-        ee_version: u8,
+        ee_type: ExecutionEnvironmentType,
         system: &mut System<S>,
     ) -> Result<Self, EESubsystemError> {
-        match ee_version {
-            a if a == EVM_EE_BYTE => SystemBoundEVMInterpreter::new(system)
+        match ee_type {
+            ExecutionEnvironmentType::EVM => SystemBoundEVMInterpreter::new(system)
                 .map(Self::EVM)
                 .map_err(wrap_error!()),
-            _ => Err(interface_error!(
+            ExecutionEnvironmentType::NoEE => Err(interface_error!(
+                InterfaceError::UnsupportedExecutionEnvironment
+            )),
+        }
+    }
+
+    /// Pre-checks and operations that should not be rolled back if call fails
+    pub fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
+        ee_version: ExecutionEnvironmentType,
+        system: &mut System<S>,
+        frame_state: &mut ExecutionEnvironmentLaunchParams<'i, S>,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<bool, EESubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
+        match ee_version {
+            ExecutionEnvironmentType::EVM => {
+                SystemBoundEVMInterpreter::<S>::before_executing_frame(system, frame_state, tracer)
+                    .map_err(wrap_error!())
+            }
+            ExecutionEnvironmentType::NoEE => Err(interface_error!(
                 InterfaceError::UnsupportedExecutionEnvironment
             )),
         }
@@ -79,7 +100,10 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         initial_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         match self {
             Self::EVM(evm_frame) => evm_frame
                 .start_executing_frame(system, initial_state, heap, tracer)
@@ -87,59 +111,20 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
         }
     }
 
-    pub fn continue_after_external_call<'a, 'res: 'ee>(
+    pub fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
         call_result: CallResult<'res, S>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError> {
-        match self {
-            Self::EVM(evm_frame) => evm_frame
-                .continue_after_external_call(system, returned_resources, call_result, tracer)
-                .map_err(wrap_error!()),
-        }
-    }
-
-    pub fn continue_after_deployment<'a, 'res: 'ee>(
-        &'a mut self,
-        system: &mut System<S>,
-        returned_resources: S::Resources,
-        deployment_result: DeploymentResult<'res, S>,
-        tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError> {
-        match self {
-            Self::EVM(evm_frame) => evm_frame
-                .continue_after_deployment(system, returned_resources, deployment_result, tracer)
-                .map_err(wrap_error!()),
-        }
-    }
-
-    pub fn prepare_for_deployment<'a>(
-        ee_version: ExecutionEnvironmentType,
-        system: &mut System<S>,
-        deployment_parameters: DeploymentPreparationParameters<'a, S>,
-    ) -> Result<
-        (
-            S::Resources,
-            Option<ExecutionEnvironmentLaunchParams<'a, S>>,
-        ),
-        EESubsystemError,
-    >
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EESubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
-        match ee_version {
-            ExecutionEnvironmentType::EVM => {
-                SystemBoundEVMInterpreter::<S>::prepare_for_deployment(
-                    system,
-                    deployment_parameters,
-                )
-                .map_err(wrap_error!())
-            }
-            _ => Err(interface_error!(
-                InterfaceError::UnsupportedExecutionEnvironment
-            )),
+        match self {
+            Self::EVM(evm_frame) => evm_frame
+                .continue_after_preemption(system, returned_resources, call_result, tracer)
+                .map_err(wrap_error!()),
         }
     }
 

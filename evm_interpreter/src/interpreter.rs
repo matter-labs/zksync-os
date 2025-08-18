@@ -3,15 +3,18 @@ use core::fmt::Write;
 use core::ops::Range;
 use errors::EvmSubsystemError;
 use native_resource_constants::STEP_NATIVE_COST;
+use ruint::aliases::B160;
+use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::system::Ergs;
 use zk_ee::system::{
-    logger::Logger, CallModifier, CompletedDeployment, CompletedExecution,
-    DeploymentPreparationParameters, DeploymentResult, EthereumLikeTypes,
+    logger::Logger, CallModifier, CompletedExecution, EthereumLikeTypes,
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
 };
-use zk_ee::system::{Ergs, ExecutionEnvironmentSpawnRequest, TransactionEndPoint};
+use zk_ee::system::{CallResult, IOSubsystemExt, SystemFunctions};
 use zk_ee::types_config::SystemIOTypesConfig;
+use zk_ee::utils::cheap_clone::CheapCloneRiscV;
 
 impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     /// Keeps executing instructions (steps) from the system, until it hits a yield point -
@@ -21,7 +24,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         &'a mut self,
         system: &mut System<S>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         let mut external_call = None;
         let exit_code = self.run(system, &mut external_call, tracer)?;
 
@@ -33,51 +39,31 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             assert!(exit_code == ExitCode::ExternalCall);
             let (current_heap, next_heap) = self.heap.freeze();
 
-            return Ok(ExecutionEnvironmentPreemptionPoint::Spawn {
-                heap: next_heap,
-                request: match call {
-                    ExternalCall::Call(EVMCallRequest {
-                        gas_to_pass,
-                        destination_address,
-                        calldata,
-                        modifier,
-                        call_value,
-                    }) => {
-                        let ergs_to_pass = Ergs(gas_to_pass.saturating_mul(ERGS_PER_GAS));
-                        let available_resources = self.gas.take_resources();
-                        ExecutionEnvironmentSpawnRequest::RequestedExternalCall(
-                            ExternalCallRequest {
-                                calldata: &current_heap[calldata],
-                                call_scratch_space: None,
-                                nominal_token_value: call_value,
-                                callers_caller: self.caller,
-                                caller: self.address,
-                                callee: destination_address,
-                                modifier,
-                                ergs_to_pass,
-                                available_resources,
-                            },
-                        )
-                    }
+            let external_call_request = {
+                let EVMCallRequest {
+                    ergs_to_pass,
+                    call_value,
+                    destination_address,
+                    input_data,
+                    modifier,
+                    full_caller_resources,
+                } = call;
+                ExternalCallRequest {
+                    available_resources: full_caller_resources,
+                    ergs_to_pass,
+                    caller: self.address,
+                    callee: destination_address,
+                    callers_caller: self.caller,
+                    modifier,
+                    input: &current_heap[input_data],
+                    nominal_token_value: call_value,
+                    call_scratch_space: None,
+                }
+            };
 
-                    ExternalCall::Create(EVMDeploymentRequest {
-                        deployment_code,
-                        ee_specific_deployment_processing_data,
-                        deployer_full_resources,
-                        nominal_token_value,
-                    }) => ExecutionEnvironmentSpawnRequest::RequestedDeployment(
-                        DeploymentPreparationParameters {
-                            address_of_deployer: self.address,
-                            call_scratch_space: None,
-                            deployment_code: &current_heap[deployment_code],
-                            constructor_parameters: &[],
-                            ee_specific_deployment_processing_data,
-                            deployer_full_resources,
-                            nominal_token_value,
-                            deployer_nonce: None,
-                        },
-                    ),
-                },
+            return Ok(ExecutionEnvironmentPreemptionPoint::CallRequest {
+                heap: next_heap,
+                request: external_call_request,
             });
         }
 
@@ -89,29 +75,17 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             _ => (true, true),
         };
 
-        self.create_immediate_return_state(empty_returndata, reverted, exit_code.is_error())
+        self.create_immediate_return_state(system, empty_returndata, reverted, exit_code.is_error())
     }
 }
 
-pub enum ExternalCall<S: EthereumLikeTypes> {
-    Call(EVMCallRequest<S>),
-    Create(EVMDeploymentRequest<S>),
-}
-
 pub struct EVMCallRequest<S: EthereumLikeTypes> {
-    pub(crate) gas_to_pass: u64,
-    pub(crate) call_value: U256,
-    pub(crate) destination_address: <S::IOTypes as SystemIOTypesConfig>::Address,
-    pub(crate) calldata: Range<usize>,
-    pub(crate) modifier: CallModifier,
-}
-
-pub struct EVMDeploymentRequest<S: SystemTypes> {
-    pub deployment_code: Range<usize>,
-    pub ee_specific_deployment_processing_data:
-        Option<alloc::boxed::Box<dyn core::any::Any, S::Allocator>>,
-    pub deployer_full_resources: S::Resources,
-    pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+    pub ergs_to_pass: Ergs,
+    pub call_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+    pub destination_address: <S::IOTypes as SystemIOTypesConfig>::Address,
+    pub input_data: Range<usize>,
+    pub modifier: CallModifier,
+    pub full_caller_resources: S::Resources,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -159,7 +133,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn run(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<ExitCode, EvmSubsystemError> {
         let mut cycles = 0;
@@ -369,10 +343,14 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
     pub(crate) fn create_immediate_return_state<'a>(
         &'a mut self,
+        system: &mut System<S>,
         empty_returndata: bool,
         execution_reverted: bool,
         is_error: bool,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError> {
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
+    where
+        S::IO: IOSubsystemExt,
+    {
         if is_error {
             // Spend all remaining resources on error
             self.gas.consume_all_gas();
@@ -382,56 +360,68 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             return_values.returndata = &self.heap[self.returndata_location.clone()];
         }
 
-        if self.is_constructor {
-            let deployment_result = if execution_reverted == false {
-                let deployed_code_len = return_values.returndata.len() as u64;
-                // EIP-3541: reject code starting with 0xEF.
-                // EIP-158: reject code of length > 24576.
-                let deployed = return_values.returndata;
-                if deployed_code_len >= 1 && deployed[0] == 0xEF
-                    || return_values.returndata.len() > MAX_CODE_SIZE
-                {
-                    // Spend all remaining resources
-                    self.gas.consume_all_gas();
-                    DeploymentResult::Failed {
-                        return_values,
-                        execution_reverted,
-                    }
-                } else {
-                    // It's responsibility of the System/IO to properly charge,
-                    // so we just construct the structure
-
-                    let deployed_code = return_values.returndata;
-                    return_values.returndata = &[];
-
-                    DeploymentResult::Successful {
-                        deployed_code,
-                        return_values,
-                        deployed_at: self.address,
-                    }
-                }
-            } else {
-                DeploymentResult::Failed {
-                    return_values,
-                    execution_reverted,
-                }
-            };
-
-            Ok(ExecutionEnvironmentPreemptionPoint::End(
-                TransactionEndPoint::CompletedDeployment(CompletedDeployment {
+        if execution_reverted {
+            return Ok(ExecutionEnvironmentPreemptionPoint::End(
+                CompletedExecution {
                     resources_returned: self.gas.take_resources(),
-                    deployment_result,
-                }),
-            ))
-        } else {
-            Ok(ExecutionEnvironmentPreemptionPoint::End(
-                TransactionEndPoint::CompletedExecution(CompletedExecution {
-                    return_values,
-                    resources_returned: self.gas.take_resources(),
-                    reverted: execution_reverted,
-                }),
-            ))
+                    result: CallResult::Failed { return_values },
+                },
+            ));
         }
+
+        let result = if self.is_constructor {
+            let deployed_code_len = return_values.returndata.len() as u64;
+            // EIP-3541: reject code starting with 0xEF.
+            // EIP-158: reject code of length > 24576.
+            let deployed = return_values.returndata;
+            if deployed_code_len >= 1 && deployed[0] == 0xEF
+                || return_values.returndata.len() > MAX_CODE_SIZE
+            {
+                // Spend all remaining resources
+                self.gas.consume_all_gas();
+                CallResult::Failed { return_values }
+            } else {
+                let deployed_code = return_values.returndata;
+                return_values.returndata = &[];
+
+                match system.deploy_bytecode(
+                    THIS_EE_TYPE,
+                    self.gas.resources_mut(),
+                    &self.address,
+                    deployed_code,
+                ) {
+                    Ok(_) => {
+                        // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
+                        #[cfg(not(target_arch = "riscv32"))]
+                        let _ = system.get_logger().write_fmt(format_args!(
+                            "Successfully deployed contract at {:?} \n",
+                            self.address
+                        ));
+                        CallResult::Successful {
+                            return_values: ReturnValues::empty(),
+                        }
+                    }
+                    Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
+                        CallResult::Failed {
+                            return_values: ReturnValues::empty(),
+                        }
+                    }
+                    Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
+                        return Err(RuntimeError::OutOfNativeResources(loc).into())
+                    }
+                    Err(SystemError::LeafDefect(e)) => return Err(e.into()),
+                }
+            }
+        } else {
+            CallResult::Successful { return_values }
+        };
+
+        Ok(ExecutionEnvironmentPreemptionPoint::End(
+            CompletedExecution {
+                resources_returned: self.gas.take_resources(),
+                result,
+            },
+        ))
     }
 
     pub(crate) fn copy_returndata_to_heap(&mut self, returndata_region: &'ee [u8]) {
@@ -448,5 +438,67 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         }
 
         self.returndata = returndata_region;
+    }
+
+    pub fn derive_address_for_deployment(
+        system: &mut System<S>,
+        resources: &mut <S as SystemTypes>::Resources,
+        scheme: CreateScheme,
+        deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
+        deployer_nonce: u64,
+        deployment_code: &[u8],
+    ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError> {
+        use crypto::sha3::{Digest, Keccak256};
+        let deployed_address = match &scheme {
+            CreateScheme::Create => {
+                let mut buffer = [0u8; crate::utils::MAX_CREATE_RLP_ENCODING_LEN];
+                let encoding_it = crate::utils::create_quasi_rlp(deployer_address, deployer_nonce);
+                let encoding_len = ExactSizeIterator::len(&encoding_it);
+                for (dst, src) in buffer.iter_mut().zip(encoding_it) {
+                    *dst = src;
+                }
+                let new_address = Keccak256::digest(&buffer[..encoding_len]);
+                let new_address = B160::try_from_be_slice(&new_address.as_slice()[12..])
+                    .expect("must create address");
+                new_address
+            }
+            CreateScheme::Create2 { salt } => {
+                // we need to compute address based on the hash of the code and salt
+                let mut initcode_hash = ArrayBuilder::default();
+                resources
+                    .with_infinite_ergs(|inf_resources| {
+                        S::SystemFunctions::keccak256(
+                            deployment_code,
+                            &mut initcode_hash,
+                            inf_resources,
+                            system.get_allocator(),
+                        )
+                    })
+                    .map_err(|e| -> EvmSubsystemError {
+                        match e.root_cause() {
+                            RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
+                                e.clone_or_copy().into()
+                            }
+                            _ => internal_error!("Keccak in create2 cannot fail").into(),
+                        }
+                    })?;
+                let initcode_hash = Bytes32::from_array(initcode_hash.build());
+
+                let mut create2_buffer = [0xffu8; 1 + 20 + 32 + 32];
+                create2_buffer[1..(1 + 20)]
+                    .copy_from_slice(&deployer_address.to_be_bytes::<{ B160::BYTES }>());
+                create2_buffer[(1 + 20)..(1 + 20 + 32)]
+                    .copy_from_slice(&salt.to_be_bytes::<{ U256::BYTES }>());
+                create2_buffer[(1 + 20 + 32)..(1 + 20 + 32 + 32)]
+                    .copy_from_slice(initcode_hash.as_u8_array_ref());
+
+                let new_address = Keccak256::digest(&create2_buffer);
+                let new_address = B160::try_from_be_slice(&new_address.as_slice()[12..])
+                    .expect("must create address");
+                new_address
+            }
+        };
+
+        Ok(deployed_address)
     }
 }

@@ -12,6 +12,7 @@ define_subsystem!(
         UnknownDeploymentData,
         BytecodeNoPadding,
         UnexpectedModifier{ modifier: CallModifier },
+        InvalidReenterAfterPreemtion,
     },
     cascade EvmCascadedError {
         Nonce(NonceSubsystemError),

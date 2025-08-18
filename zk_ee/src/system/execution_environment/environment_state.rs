@@ -1,14 +1,13 @@
 use core::fmt::Debug;
 
 use crate::{
+    common_structs::CalleeAccountProperties,
     memory::slice_vec::SliceVec,
     system::{system::SystemTypes, CallModifier, Ergs, MAX_SCRATCH_SPACE_USIZE_WORDS},
     types_config::SystemIOTypesConfig,
 };
 
-use super::{
-    DeploymentPreparationParameters, DeploymentResult, EnvironmentParameters, ReturnValues,
-};
+use super::{CallResult, ReturnValues};
 
 /// Everything an execution environment needs to know to start execution
 pub struct ExecutionEnvironmentLaunchParams<'a, S: SystemTypes> {
@@ -17,43 +16,13 @@ pub struct ExecutionEnvironmentLaunchParams<'a, S: SystemTypes> {
 }
 
 pub enum ExecutionEnvironmentPreemptionPoint<'a, S: SystemTypes> {
-    Spawn {
-        request: ExecutionEnvironmentSpawnRequest<'a, S>,
+    CallRequest {
+        request: ExternalCallRequest<'a, S>,
         heap: SliceVec<'a, u8>,
     },
-    End(TransactionEndPoint<'a, S>),
+    End(CompletedExecution<'a, S>),
 }
 
-pub enum ExecutionEnvironmentSpawnRequest<'a, S: SystemTypes> {
-    RequestedExternalCall(ExternalCallRequest<'a, S>),
-    RequestedDeployment(DeploymentPreparationParameters<'a, S>),
-}
-
-impl<S: SystemTypes> Default for ExecutionEnvironmentSpawnRequest<'_, S>
-where
-    S::Resources: Default,
-{
-    fn default() -> Self {
-        Self::RequestedExternalCall(ExternalCallRequest {
-            available_resources: S::Resources::default(),
-            ergs_to_pass: Ergs::default(),
-            caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
-            callee: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
-            callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
-            modifier: CallModifier::NoModifier,
-            calldata: &[],
-            nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue::default(),
-            call_scratch_space: None,
-        })
-    }
-}
-
-pub enum TransactionEndPoint<'a, S: SystemTypes> {
-    CompletedExecution(CompletedExecution<'a, S>),
-    CompletedDeployment(CompletedDeployment<'a, S>),
-}
-
-#[derive(Clone)]
 pub struct ExternalCallRequest<'a, S: SystemTypes> {
     pub available_resources: S::Resources,
     pub ergs_to_pass: Ergs,
@@ -61,11 +30,30 @@ pub struct ExternalCallRequest<'a, S: SystemTypes> {
     pub callee: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address,
     pub modifier: CallModifier,
-    pub calldata: &'a [u8],
+    pub input: &'a [u8],
     /// Base tokens attached to this call.
     pub nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
     pub call_scratch_space:
         Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], S::Allocator>>,
+}
+
+impl<S: SystemTypes> Default for ExternalCallRequest<'_, S>
+where
+    S::Resources: Default,
+{
+    fn default() -> Self {
+        Self {
+            available_resources: S::Resources::default(),
+            ergs_to_pass: Ergs::default(),
+            caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
+            callee: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
+            callers_caller: <S::IOTypes as SystemIOTypesConfig>::Address::default(),
+            modifier: CallModifier::NoModifier,
+            input: &[],
+            nominal_token_value: <S::IOTypes as SystemIOTypesConfig>::NominalTokenValue::default(),
+            call_scratch_space: None,
+        }
+    }
 }
 
 impl<S: SystemTypes> ExternalCallRequest<'_, S> {
@@ -98,13 +86,19 @@ impl<S: SystemTypes> ExternalCallRequest<'_, S> {
 
 pub struct CompletedExecution<'a, S: SystemTypes> {
     pub resources_returned: S::Resources,
-    pub return_values: ReturnValues<'a, S>,
-    pub reverted: bool,
+    pub result: CallResult<'a, S>,
 }
 
-pub struct CompletedDeployment<'a, S: SystemTypes> {
-    pub resources_returned: S::Resources,
-    pub deployment_result: DeploymentResult<'a, S>,
+impl<'a, S: SystemTypes> CompletedExecution<'a, S> {
+    #[inline]
+    pub fn failed(&self) -> bool {
+        self.result.failed()
+    }
+
+    #[inline]
+    pub fn return_values(self) -> ReturnValues<'a, S> {
+        self.result.return_values()
+    }
 }
 
 impl<S: SystemTypes> Debug for ExternalCallRequest<'_, S> {
@@ -116,9 +110,15 @@ impl<S: SystemTypes> Debug for ExternalCallRequest<'_, S> {
             .field("callee", &self.callee)
             .field("callers_caller", &self.callers_caller)
             .field("modifier", &self.modifier)
-            .field("calldata", &self.calldata)
+            .field("calldata", &self.input)
             .field("nominal_token_value", &self.nominal_token_value)
             .field("call_scratch_space", &self.call_scratch_space)
             .finish()
     }
+}
+
+pub struct EnvironmentParameters<'a> {
+    pub scratch_space_len: u32,
+    pub callstack_depth: usize,
+    pub callee_account_properties: CalleeAccountProperties<'a>,
 }

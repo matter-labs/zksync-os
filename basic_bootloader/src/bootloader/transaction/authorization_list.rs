@@ -14,6 +14,7 @@ use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::system::SystemError;
+use zk_ee::system::IOSubsystem;
 use zk_ee::system::NonceError;
 use zk_ee::system::{AccountDataRequest, EthereumLikeTypes, IOSubsystemExt, Resources, System};
 use zk_ee::{internal_error, wrap_error};
