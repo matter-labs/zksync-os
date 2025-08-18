@@ -7,7 +7,7 @@ use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
 use hex::FromHex;
 use rig::alloy::consensus::TxEip7702;
-use rig::alloy::primitives::{address, FixedBytes};
+use rig::alloy::primitives::{address, Bytes, FixedBytes};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::ethers::types::Address;
 use rig::ruint::aliases::{B160, U256};
@@ -707,6 +707,78 @@ fn test_cold_in_new_tx() {
     assert!(result0.is_ok_and(|o| o.is_success()));
     assert!(result1.is_ok_and(|o| o.is_success()));
     assert!(result2.is_ok_and(|o| !o.is_success()));
+}
+
+// TODO: find better place for regression tests
+#[test]
+fn test_regression_returndata_empty_3541() {
+    let mut chain = Chain::empty(None);
+
+    let wallet = PrivateKeySigner::from_str(
+        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
+    )
+    .unwrap();
+    let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
+    // Code for:
+    // PUSH13 0x63EF0000006000526004601CF3
+    // PUSH1  0x00
+    // MSTORE
+    // PUSH1  0x0D
+    // PUSH1  0x13
+    // PUSH1  0x00
+    // CREATE
+    // RETURNDATASIZE
+    // ISZERO
+    // PUSH1  0x08
+    // PC
+    // ADD
+    // JUMPI
+    // PUSH1  0x00
+    // PUSH1  0x00
+    // REVERT
+    // JUMPDEST
+    // PUSH1  0x00
+    // PUSH1  0x00
+    // RETURN
+    // This code tries to deploy a contract with code starting with EF and
+    // expects returndata to be empty, otherwise it reverts.
+    const BYTECODE: &str =
+        "6c63ef0000006000526004601cf3600052600d60136000f03d15600858015760006000fd5b60006000f3";
+
+    let from = wallet_ethers.address();
+
+    let to = address!("0000000000000000000000000000000000010002");
+
+    // We do an initial mint to populate storage slots, otherwise SSTORE
+    // costs are hard to reason about.
+    let encoded_tx = {
+        let mint_tx = TxEip2930 {
+            chain_id: 37u64,
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 1_000_000,
+            to: TxKind::Call(to),
+            value: Default::default(),
+            ..Default::default()
+        };
+        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+    };
+
+    let transactions = vec![encoded_tx];
+
+    let bytecode = hex::decode(BYTECODE).unwrap();
+    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+
+    chain.set_balance(
+        B160::from_be_bytes(from.0),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    let output = chain.run_block(transactions, None, None);
+
+    // Assert all txs succeeded
+    let result0 = output.tx_results.first().unwrap().clone();
+    assert!(result0.is_ok_and(|o| o.is_success()));
 }
 
 #[test]

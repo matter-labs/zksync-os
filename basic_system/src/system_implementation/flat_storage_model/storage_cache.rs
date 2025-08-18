@@ -444,7 +444,7 @@ where
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         new_value: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
         oracle: &mut impl IOOracle,
-    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
+    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError> {
         let sa = StorageAddress {
             address: *address,
             key: *key,

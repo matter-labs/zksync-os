@@ -9,6 +9,7 @@ use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::*;
 use zk_ee::types_config::SystemIOTypesConfig;
@@ -223,55 +224,51 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             }
         };
 
-        match preemption_reason {
-            PendingOsRequest::Call => {
-                assert!(!call_request_result.has_scratch_space());
-                assert!(self.gas.native() == 0);
-                self.gas.reclaim_resources(returned_resources);
-                match call_request_result {
-                    CallResult::PreparationStepFailed => {
-                        let _ = system
-                            .get_logger()
-                            .write_fmt(format_args!("Call failed, out of gas\n"));
-                        // we fail because it's caller's failure
-                        return self.create_immediate_return_state(system, true, true, false);
-                    }
-                    CallResult::Failed { return_values } => {
+        if call_request_result.has_scratch_space() {
+            return Err(internal_error!("Unexpected scratch space").into());
+        }
+        if self.gas.native() != 0 {
+            return Err(internal_error!("Invalid initial native resources").into());
+        }
+
+        self.gas.reclaim_resources(returned_resources);
+
+        match call_request_result {
+            CallResult::PreparationStepFailed => {
+                let _ = system
+                    .get_logger()
+                    .write_fmt(format_args!("Call failed, out of gas\n"));
+                // we fail because it's caller's failure
+                let exit_code = EvmError::OutOfGas.into();
+                return self.create_immediate_return_state(system, exit_code, tracer);
+            }
+            CallResult::Failed { return_values } => {
+                match preemption_reason {
+                    PendingOsRequest::Call => {
                         // NOTE: EE is ALLOWED to spend resources from caller's frame before
                         // passing a desired part of them to the callee, If particular EE wants to
                         // follow some not-true resource policy, it can make adjustments here before
                         // continuing the execution
                         self.copy_returndata_to_heap(return_values.returndata);
-                        self.stack.push_zero().expect("must have enough space");
                     }
-                    CallResult::Successful { return_values } => {
-                        self.copy_returndata_to_heap(return_values.returndata);
-                        self.stack.push_one().expect("must have enough space");
-                    }
-                }
-            }
-            PendingOsRequest::Create(deployed_at) => {
-                assert!(!call_request_result.has_scratch_space());
-                assert!(self.gas.native() == 0);
-                self.gas.reclaim_resources(returned_resources);
-                match call_request_result {
-                    CallResult::PreparationStepFailed => {
-                        let _ = system
-                            .get_logger()
-                            .write_fmt(format_args!("Call failed, out of gas\n"));
-                        // we fail because it's caller's failure
-                        return self.create_immediate_return_state(system, true, true, false);
-                    }
-                    CallResult::Failed { return_values } => {
+                    PendingOsRequest::Create(_) => {
                         // NOTE: failed deployments may have non-empty returndata
                         assert!(self.returndata_location.is_empty());
                         assert!(return_values.return_scratch_space.is_none());
 
                         self.returndata = return_values.returndata;
-                        // we need to push 0 to stack
-                        self.stack.push_zero().expect("must have enough space");
                     }
-                    CallResult::Successful { return_values } => {
+                }
+
+                self.stack.push_zero().expect("must have enough space");
+            }
+            CallResult::Successful { return_values } => {
+                match preemption_reason {
+                    PendingOsRequest::Call => {
+                        self.copy_returndata_to_heap(return_values.returndata);
+                        self.stack.push_one().expect("must have enough space");
+                    }
+                    PendingOsRequest::Create(deployed_at) => {
                         assert!(return_values.return_scratch_space.is_none());
                         // NOTE: successful deployments have empty returndata
                         assert!(return_values.returndata.is_empty());
@@ -283,7 +280,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     }
                 }
             }
-        };
+        }
 
         self.execute_till_yield_point(system, tracer)
     }
@@ -349,7 +346,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
     fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         system: &mut System<S>,
         frame_state: &mut ExecutionEnvironmentLaunchParams<'i, S>,
-        _tracer: &mut impl Tracer<S>,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<bool, Self::SubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -359,6 +356,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 .get_logger()
                 .write_fmt(format_args!("Callstack is too deep\n",));
 
+            tracer.evm_tracer().on_call_error(&EvmError::CallTooDeep);
             return Ok(false);
         }
 
@@ -384,6 +382,9 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 let _ = system
                     .get_logger()
                     .write_fmt(format_args!("Not enough balance for transfer\n",));
+                tracer
+                    .evm_tracer()
+                    .on_call_error(&EvmError::InsufficientBalance);
                 return Ok(false);
             }
         }
@@ -406,7 +407,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                     Err(SubsystemError::LeafUsage(InterfaceError(
                         NonceError::NonceOverflow,
                         _,
-                    ))) => return Ok(false),
+                    ))) => {
+                        tracer.evm_tracer().on_call_error(&EvmError::NonceOverflow);
+                        return Ok(false);
+                    }
                     Err(e) => return Err(wrap_error!(e)),
                 };
             };
@@ -436,6 +440,10 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                         frame_state.external_call.available_resources.ergs(),
                     ))
                     .expect("Should succeed"); // Burn all gas
+
+                tracer
+                    .evm_tracer()
+                    .on_call_error(&EvmError::CreateCollision);
                 return Ok(false);
             }
         }
