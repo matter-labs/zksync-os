@@ -21,14 +21,20 @@ core::arch::global_asm!(include_str!(
 ));
 
 unsafe fn load_to_ram(src: *const u8, dst_start: *mut u8, dst_end: *mut u8) {
-    assert!(src != start);
-    assert!(dst_end.addr() >= dst_start.addr());
+    #[cfg(debug_assertions)]
+    {
+        const ROM_BOUND: usize = 1 << 21;
+    
+        debug_assert!(src.addr() < ROM_BOUND);
+        debug_assert!(dst_start.addr() >= ROM_BOUND);
+        debug_assert!(dst_end.addr() >= dst_start.addr());
+    }
 
     let offset = dst_end.addr() - dst_start.addr();
 
     core::ptr::copy_nonoverlapping(
         src,
-        start,
+        dst_start,
         offset
     );
 }
