@@ -1,3 +1,4 @@
+use crate::system_implementation::system::public_input;
 use arrayvec::ArrayVec;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
@@ -5,7 +6,6 @@ use ruint::aliases::{B160, U256};
 use zk_ee::common_structs::L2ToL1Log;
 use zk_ee::system::logger::Logger;
 use zk_ee::utils::Bytes32;
-use crate::system_implementation::system::public_input;
 
 ///
 /// Commitment to state that we need to keep between blocks execution:
@@ -223,9 +223,9 @@ impl BatchPublicInputBuilder {
             number_of_layer_1_txs: U256::ZERO,
             // keccak256([])
             l1_txs_rolling_hash: Bytes32::from([
-            0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c, 0x92, 0x7e, 0x7d, 0xb2, 0xdc, 0xc7,
-            0x03, 0xc0, 0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b, 0x7b, 0xfa, 0xd8, 0x04,
-            0x5d, 0x85, 0xa4, 0x70,
+                0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c, 0x92, 0x7e, 0x7d, 0xb2, 0xdc, 0xc7,
+                0x03, 0xc0, 0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b, 0x7b, 0xfa, 0xd8, 0x04,
+                0x5d, 0x85, 0xa4, 0x70,
             ]),
             upgrade_tx_hash: None,
         }
@@ -241,7 +241,7 @@ impl BatchPublicInputBuilder {
         state_commitment_after: Bytes32,
         block_timestamp: u64,
         chain_id: U256,
-        upgrade_tx_hash: Bytes32
+        upgrade_tx_hash: Bytes32,
     ) {
         if self.is_first_block {
             self.initial_state_commitment = Some(state_commitment_before);
@@ -252,7 +252,10 @@ impl BatchPublicInputBuilder {
             self.upgrade_tx_hash = Some(upgrade_tx_hash);
             self.is_first_block = false;
         } else {
-            assert_eq!(self.current_state_commitment.unwrap(), state_commitment_before);
+            assert_eq!(
+                self.current_state_commitment.unwrap(),
+                state_commitment_before
+            );
             self.current_state_commitment = Some(state_commitment_after);
             self.current_block_timestmap = Some(block_timestamp);
             assert_eq!(self.chain_id.unwrap(), chain_id);
@@ -313,7 +316,6 @@ impl BatchPublicInputBuilder {
         ));
 
         public_input
-
     }
 
     fn l2_logs_root(mut logs: ArrayVec<Bytes32, 16384>) -> Bytes32 {

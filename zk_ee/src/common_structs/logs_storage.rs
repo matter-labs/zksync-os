@@ -13,9 +13,9 @@ use crate::{
     utils::{Bytes32, UsizeAlignedByteBox},
 };
 use alloc::alloc::Global;
+use arrayvec::ArrayVec;
 use core::alloc::Allocator;
 use core::ops::AddAssign;
-use arrayvec::ArrayVec;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
@@ -333,7 +333,11 @@ where
         });
     }
 
-    pub fn apply_l1_txs_to_commitment(&self, mut count: U256, mut rolling_keccak: Bytes32) -> (U256, Bytes32) {
+    pub fn apply_l1_txs_to_commitment(
+        &self,
+        mut count: U256,
+        mut rolling_keccak: Bytes32,
+    ) -> (U256, Bytes32) {
         for log in self.list.iter() {
             if let GenericLogContentData::L1TxLog(l1_tx) = &log.data {
                 count.add_assign(U256::ONE);

@@ -2,9 +2,9 @@ use super::*;
 use crate::io_oracle::NonDeterminismCSRSourceImplementation;
 use alloc::alloc::{GlobalAlloc, Layout};
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
+use basic_system::system_implementation::system::BatchPublicInputBuilder;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
-use basic_system::system_implementation::system::BatchPublicInputBuilder;
 use zk_ee::memory::ZSTAllocator;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
@@ -211,11 +211,19 @@ pub fn run_proving_inner<
     let count = I::csr_read_impl();
     let mut batch_pi_builder = BatchPublicInputBuilder::new();
     for _ in 0..count {
-        let (io, block_metadata, current_block_hash, upgrade_tx_hash) = ProvingBootloader::<O, L>::run_prepared::<
-            BasicBootloaderProvingExecutionConfig,
-        >(oracle, &mut NopResultKeeper, &mut NopTracer::default())
+        let (io, block_metadata, current_block_hash, upgrade_tx_hash) =
+            ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
+                oracle,
+                &mut NopResultKeeper,
+                &mut NopTracer::default(),
+            )
             .expect("Tried to prove a failing batch");
-        oracle = io.apply_to_batch(block_metadata, current_block_hash, upgrade_tx_hash, &mut batch_pi_builder);
+        oracle = io.apply_to_batch(
+            block_metadata,
+            current_block_hash,
+            upgrade_tx_hash,
+            &mut batch_pi_builder,
+        );
         // we do this query for consistency with block based input generation(there is empty iterator as response to this query)
         // but during proving this request shouldn't have the effect with "u32 array based" oracle
         #[allow(unused_must_use)]
@@ -224,8 +232,5 @@ pub fn run_proving_inner<
             .expect("must disconnect an oracle before performing arbitrary CSR access");
     }
 
-    Bytes32::from_array(batch_pi_builder
-        .into_public_input(L::default())
-        .hash())
-        .as_u32_array()
+    Bytes32::from_array(batch_pi_builder.into_public_input(L::default()).hash()).as_u32_array()
 }

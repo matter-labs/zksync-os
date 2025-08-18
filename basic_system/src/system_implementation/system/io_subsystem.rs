@@ -2,6 +2,7 @@
 use super::*;
 use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_functions::keccak256::Keccak256Impl;
+use crate::system_implementation::system::public_input::BatchPublicInputBuilder;
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
@@ -34,7 +35,6 @@ use zk_ee::{
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::UsizeAlignedByteBox,
 };
-use crate::system_implementation::system::public_input::BatchPublicInputBuilder;
 
 pub struct FullIO<
     A: Allocator + Clone + Default,
@@ -477,7 +477,7 @@ where
 
 // In practice we will not use single block batches
 // This functionality is here only for the tests
-#[cfg(all(not(feature = "wrap-in-batch"),not(feature = "multiblock-batch")))]
+#[cfg(all(not(feature = "wrap-in-batch"), not(feature = "multiblock-batch")))]
 impl<
         A: Allocator + Clone + Default,
         R: Resources,
@@ -732,17 +732,22 @@ where
 
 #[cfg(feature = "multiblock-batch")]
 impl<
-    A: Allocator + Clone + Default,
-    R: Resources,
-    P: StorageAccessPolicy<R, Bytes32> + Default,
-    SC: StackCtor<SCC>,
-    SCC: const StackCtorConst,
-    O: IOOracle,
-> FinishIO for FullIO<A, R, P, SC, SCC, O, true>
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32> + Default,
+        SC: StackCtor<SCC>,
+        SCC: const StackCtorConst,
+        O: IOOracle,
+    > FinishIO for FullIO<A, R, P, SC, SCC, O, true>
 where
     ExtraCheck<SCC, A>:,
 {
-    type FinalData = (FullIO<A, R, P, SC, SCC, O, true>, BlockMetadataFromOracle, Bytes32, Bytes32);
+    type FinalData = (
+        FullIO<A, R, P, SC, SCC, O, true>,
+        BlockMetadataFromOracle,
+        Bytes32,
+        Bytes32,
+    );
     fn finish(
         self,
         block_metadata: BlockMetadataFromOracle,
@@ -758,23 +763,24 @@ where
 
 #[cfg(feature = "multiblock-batch")]
 impl<
-    A: Allocator + Clone + Default,
-    R: Resources,
-    P: StorageAccessPolicy<R, Bytes32> + Default,
-    SC: StackCtor<SCC>,
-    SCC: const StackCtorConst,
-    O: IOOracle,
-    const PROOF_ENV: bool,
-> FullIO<A, R, P, SC, SCC, O, PROOF_ENV>
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32> + Default,
+        SC: StackCtor<SCC>,
+        SCC: const StackCtorConst,
+        O: IOOracle,
+        const PROOF_ENV: bool,
+    > FullIO<A, R, P, SC, SCC, O, PROOF_ENV>
 where
     ExtraCheck<SCC, A>:,
     Self: FinishIO,
 {
-    pub fn apply_to_batch(mut self,
-      block_metadata: BlockMetadataFromOracle,
-      current_block_hash: Bytes32,
-      upgrade_tx_hash: Bytes32,
-      builder: &mut BatchPublicInputBuilder
+    pub fn apply_to_batch(
+        mut self,
+        block_metadata: BlockMetadataFromOracle,
+        current_block_hash: Bytes32,
+        upgrade_tx_hash: Bytes32,
+        builder: &mut BatchPublicInputBuilder,
     ) -> O {
         let (mut state_commitment, last_block_timestamp) = {
             let mut initialization_iterator = self
@@ -785,7 +791,7 @@ where
                 <ProofData<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(
                     &mut initialization_iterator,
                 )
-                    .unwrap();
+                .unwrap();
             assert_eq!(initialization_iterator.len(), 0);
             (proof_data.state_root_view, proof_data.last_block_timestamp)
         };
@@ -804,7 +810,9 @@ where
             last_block_timestamp,
         };
 
-        builder.pubdata_hasher.update(current_block_hash.as_u8_ref());
+        builder
+            .pubdata_hasher
+            .update(current_block_hash.as_u8_ref());
 
         self.storage
             .finish(
@@ -818,12 +826,11 @@ where
 
         self.logs_storage
             .apply_pubdata(&mut builder.pubdata_hasher, &mut NopResultKeeper);
-        self.logs_storage.apply_to_array_vec(&mut builder.logs_storage);
-        (builder.number_of_layer_1_txs, builder.l1_txs_rolling_hash) =
-        self.logs_storage.apply_l1_txs_to_commitment(
-            builder.number_of_layer_1_txs, builder.l1_txs_rolling_hash
-        );
-
+        self.logs_storage
+            .apply_to_array_vec(&mut builder.logs_storage);
+        (builder.number_of_layer_1_txs, builder.l1_txs_rolling_hash) = self
+            .logs_storage
+            .apply_l1_txs_to_commitment(builder.number_of_layer_1_txs, builder.l1_txs_rolling_hash);
 
         blocks_hasher = Blake2s256::new();
         for block_hash in block_metadata.block_hashes.0.iter().skip(1) {
@@ -848,7 +855,7 @@ where
             chain_state_commitment_after.hash().into(),
             block_metadata.timestamp,
             U256::try_from(block_metadata.chain_id).unwrap(),
-            upgrade_tx_hash
+            upgrade_tx_hash,
         );
 
         self.oracle

@@ -337,7 +337,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         self.block_number += 1;
         self.block_timestamp = block_context.timestamp;
         for i in 0..255 {
-            self.block_hashes[i] = self.block_hashes[i+1];
+            self.block_hashes[i] = self.block_hashes[i + 1];
         }
         self.block_hashes[255] = U256::from_be_bytes(block_output.header.hash());
 
@@ -351,7 +351,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         }
 
         for (hash, preimage, _preimage_type) in block_output.published_preimages.iter() {
-            self.preimage_source.inner.insert(hash.clone(), preimage.clone());
+            self.preimage_source
+                .inner
+                .insert(hash.clone(), preimage.clone());
         }
 
         let proof_input = if let Some(path) = witness_output_file {
@@ -432,7 +434,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 );
             }
 
-            let proof_input = items.borrow().iter().map(|word| *word).collect::<Vec<u32>>();
+            let proof_input = items
+                .borrow()
+                .iter()
+                .map(|word| *word)
+                .collect::<Vec<u32>>();
 
             debug!(
                 "{}Proof running output{} = 0x",
