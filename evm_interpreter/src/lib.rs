@@ -102,53 +102,80 @@ pub struct Interpreter<'a, S: SystemTypes> {
     pub pending_os_request: Option<PendingOsRequest<S>>,
 }
 
-impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for Interpreter<'ee, S> {
+/// Wrapper to provide external access to EVM frame state
+pub struct InterpreterExternal<'ee, S: EthereumLikeTypes> {
+    interpreter: &'ee Interpreter<'ee, S>,
+    #[allow(dead_code)]
+    system: &'ee System<S>,
+}
+
+impl<'ee, S: EthereumLikeTypes> InterpreterExternal<'ee, S> {
+    pub fn new_from(interpreter: &'ee Interpreter<'ee, S>, system: &'ee System<S>) -> Self {
+        Self {
+            interpreter,
+            system,
+        }
+    }
+}
+
+impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for InterpreterExternal<'ee, S> {
     fn instruction_pointer(&self) -> usize {
-        self.instruction_pointer
+        self.interpreter.instruction_pointer
     }
 
     fn resources(&self) -> &<S as SystemTypes>::Resources {
-        &self.gas.resources
+        &self.interpreter.gas.resources
     }
 
     fn stack(&self) -> &impl EvmStackInterface {
-        &self.stack
+        &self.interpreter.stack
     }
 
     fn caller(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
-        self.caller
+        self.interpreter.caller
     }
 
     fn address(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
-        self.address
+        self.interpreter.address
     }
 
     fn calldata(&self) -> &[u8] {
-        &self.calldata
+        &self.interpreter.calldata
     }
 
     fn return_data(&self) -> &[u8] {
-        &self.returndata
+        &self.interpreter.returndata
     }
 
     fn heap(&self) -> &[u8] {
-        &self.heap
+        &self.interpreter.heap
     }
 
     fn bytecode(&self) -> &[u8] {
-        &self.bytecode
+        &self.interpreter.bytecode
     }
 
     fn call_value(&self) -> &U256 {
-        &self.call_value
+        &self.interpreter.call_value
     }
 
     fn is_static(&self) -> bool {
-        self.is_static
+        self.interpreter.is_static
     }
 
     fn is_constructor(&self) -> bool {
-        self.is_constructor
+        self.interpreter.is_constructor
+    }
+
+    #[cfg(feature = "evm_refunds")]
+    fn refund_counter(&self) -> u32 {
+        use zk_ee::system::IOSubsystem;
+        self.system.io.get_refund_counter()
+    }
+
+    #[cfg(not(feature = "evm_refunds"))]
+    fn refund_counter(&self) -> u32 {
+        0
     }
 }
 
