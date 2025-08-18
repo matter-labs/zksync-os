@@ -20,15 +20,17 @@ core::arch::global_asm!(include_str!(
     "../../../../../zksync_os/src/asm/asm_reduced.S"
 ));
 
-unsafe fn load_to_ram(src: *const u8, start: *mut u8, end: *mut u8) {
+unsafe fn load_to_ram(src: *const u8, dst_start: *mut u8, dst_end: *mut u8) {
     assert!(src != start);
-    assert!(end.addr() > start.addr());
+    assert!(dst_end.addr() >= dst_start.addr());
 
-    let offset = end.addr() - start.addr();
+    let offset = dst_end.addr() - dst_start.addr();
 
-    for i in 0..offset  {
-        *start.add(i) = *src.add(i);
-    }
+    core::ptr::copy_nonoverlapping(
+        src,
+        start,
+        offset
+    );
 }
 
 unsafe fn workload() -> ! {
