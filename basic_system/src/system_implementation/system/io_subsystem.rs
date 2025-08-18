@@ -780,7 +780,7 @@ where
         block_metadata: BlockMetadataFromOracle,
         current_block_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
-        builder: &mut BatchPublicInputBuilder,
+        builder: &mut crate::system_implementation::system::public_input::BatchPublicInputBuilder,
     ) -> O {
         let (mut state_commitment, last_block_timestamp) = {
             let mut initialization_iterator = self

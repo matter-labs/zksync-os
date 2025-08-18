@@ -306,12 +306,10 @@ impl BatchPublicInputBuilder {
             self.current_state_commitment.unwrap()
         ));
         let _ = logger.write_fmt(format_args!(
-            "PI calculation: batch output {:?}\n",
-            batch_output,
+            "PI calculation: batch output {batch_output:?}\n",
         ));
         let _ = logger.write_fmt(format_args!(
-            "PI calculation: final batch public input {:?}\n",
-            public_input,
+            "PI calculation: final batch public input {public_input:?}\n",
         ));
 
         public_input
