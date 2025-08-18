@@ -147,9 +147,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 }
             }
 
-            tracer
-                .evm_tracer()
-                .before_evm_interpreter_execution_step(opcode, self);
+            tracer.evm_tracer().before_evm_interpreter_execution_step(
+                opcode,
+                &InterpreterExternal::new_from(&self, system),
+            );
 
             self.instruction_pointer += 1;
             let result = self
@@ -310,9 +311,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     x => Err(EvmError::InvalidOpcode(x).into()),
                 });
 
-            tracer
-                .evm_tracer()
-                .after_evm_interpreter_execution_step(opcode, self);
+            tracer.evm_tracer().after_evm_interpreter_execution_step(
+                opcode,
+                &InterpreterExternal::new_from(&self, system),
+            );
 
             if Self::PRINT_OPCODES {
                 let _ = system.get_logger().write_str("\n");
@@ -359,7 +361,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 // Spend all remaining resources on EVM error
                 self.gas.consume_all_gas();
             }
-            tracer.evm_tracer().on_opcode_error(&evm_error, self);
+            tracer
+                .evm_tracer()
+                .on_opcode_error(&evm_error, &InterpreterExternal::new_from(&self, system));
             return Ok(ExecutionEnvironmentPreemptionPoint::End(
                 CompletedExecution {
                     resources_returned: self.gas.take_resources(),
@@ -407,7 +411,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 // Spend all remaining resources
                 self.gas.consume_all_gas();
 
-                tracer.evm_tracer().on_opcode_error(&error, self);
+                tracer
+                    .evm_tracer()
+                    .on_opcode_error(&error, &InterpreterExternal::new_from(&self, system));
 
                 CallResult::Failed {
                     return_values: ReturnValues::empty(),
