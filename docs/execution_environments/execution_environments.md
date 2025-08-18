@@ -6,38 +6,41 @@ Execution Environments (EEs) are ZKsyncOS's abstraction for a VM. They define th
 
 ZKsyncOS provides an interface to define EEs and some concrete instances. We start by describing the key elements of this interface, which is located in this [directory](../../zk_ee/src/system/execution_environment/mod.rs).
 
+Execution environments offer methods to:
+
+- Create an empty instance (or frame),
+- Perform initial checks on a new instance given the launch state, as well as apply some init logic (e.g. bumping the caller's nonce during deployment),
+- Actually launch the EE execution, which runs until reaching a *preemption point*, and
+- Continue after the system handles the preemption.
+
 ### Launch parameters
 
 An EE needs some initial data to be ran. This data includes:
 
 - Resources for execution,
-- Bytecode to be run,
 - Call information (caller, callee, modifier),
 - Call values (calldata, token value).
 
-Execution environments offer a method to create a new instance (or frame) given some initial data. Once launched with this data, the EE will execute the bytecode until reaching a *preemption point*.
-
 ### Preemption points and their continuation
 
-Preemption points are the possible states on which an EE will yield back to the bootloader. These are:
+Preemption points are the possible states on which an EE will yield back to the bootloader. There are two of these:
 
-- External call request,
-- Deployment request,
-- External call completed, and
-- Deployment completed.
+- Call request, and
+- Execution completed.
 
-The last two mark that the execution of the EE is done, and declare the resources returned and the execution result. For the first two, the EE expects the bootloader to do some preparation work (see [Runner flow](../bootloader/runner_flow.md) for more detail) and launch a new EE frame for the call/constructor execution. After this sub-frame is finished, the bootloader will continue the execution of the original EE frame, forwarding the result of the sub-frame.
+The first one is used both for external calls and constructor execution in deployments.
+The EE expects the bootloader to do some preparation work (see [Runner flow](../bootloader/runner_flow.md) for more detail) and launch a new EE frame for the call/constructor execution. After this sub-frame is finished, the bootloader will continue the execution of the original EE frame, forwarding the result of the sub-frame. The second one marks that the execution of the EE is done, and declare the resources returned and the execution result.
 
-Thus, execution environments have to provide methods for the bootloader to continue their execution after a call or deployment request. These methods need to take back the resources returned by the sub-call, handle its result and continue executing its own bytecode until reaching another preemption point.
+Thus, execution environments have to provide a method for the bootloader to continue their execution after a call request. This method needs to take back the resources returned by the sub-call, handle its result and continue executing its own bytecode until reaching another preemption point.
+
+### A note on deployments
+
+Deployments are mostly handled by the EE, which calls into the runner to execute the constructor code. For example, the EVM EE keeps an internal flag in it's state to distinguish between external calls and deployments. This EE calls into the system to deploy the code produced by the constructor once the execution is completed but before yielding to the bootloader.
 
 ### EE-specific functionality for the bootloader
 
-Execution environments also provide methods that don't involve bytecode execution. Instead, they expose certain information that is specific to the EE type, or expose some element of the inner frame state. These include:
-
-- Whether a call modifier is supported,
-- Whether the context is static,
-- How caller gas should be adjusted before passing them to the callee (think 63/64 rule for EVM),
-- How to prepare for a deployment (init code checks, address derivation).
+Execution environments also provide methods that don't involve bytecode execution. Instead, they expose certain information that is specific to the EE type, or expose some element of the inner frame state.
+For now, the only such method is a helper to calculate resources to be passed from caller to callee according to EE-specific rules.
 
 ## Implementations
 

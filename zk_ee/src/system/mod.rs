@@ -108,7 +108,7 @@ impl<S: SystemTypes> System<S> {
             // Out of range
             ruint::aliases::U256::ZERO
         } else {
-            let index = current_block_number - block_number - 1;
+            let index = 256 - (current_block_number - block_number);
             self.metadata.block_level_metadata.block_hashes.0[index as usize]
         }
     }

@@ -384,6 +384,34 @@ where
         Ok(())
     }
 
+    fn increment_nonce(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        increment_by: u64,
+    ) -> Result<u64, NonceSubsystemError> {
+        self.storage
+            .increment_nonce(ee_type, resources, address, increment_by, &mut self.oracle)
+    }
+
+    fn read_nonce(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+    ) -> Result<u64, SystemError> {
+        self.storage
+            .read_account_properties(
+                ee_type,
+                resources,
+                address,
+                AccountDataRequest::empty().with_nonce(),
+                &mut self.oracle,
+            )
+            .map(|account_data| account_data.nonce.0)
+    }
+
     #[cfg(feature = "evm_refunds")]
     fn get_refund_counter(&self) -> u32 {
         self.storage.get_refund_counter()
@@ -905,34 +933,6 @@ where
         )
     }
 
-    fn read_nonce(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut Self::Resources,
-        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-    ) -> Result<u64, SystemError> {
-        self.storage
-            .read_account_properties(
-                ee_type,
-                resources,
-                address,
-                AccountDataRequest::empty().with_nonce(),
-                &mut self.oracle,
-            )
-            .map(|account_data| account_data.nonce.0)
-    }
-
-    fn increment_nonce(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut Self::Resources,
-        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-        increment_by: u64,
-    ) -> Result<u64, NonceSubsystemError> {
-        self.storage
-            .increment_nonce(ee_type, resources, address, increment_by, &mut self.oracle)
-    }
-
     fn touch_account(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -1090,10 +1090,11 @@ where
         _resources: &mut Self::Resources,
         tx_hash: Bytes32,
         success: bool,
+        is_priority: bool,
     ) -> Result<(), SystemError> {
         // Resources for it charged as part of intrinsic
         self.logs_storage
-            .push_l1_l2_tx_log(self.tx_number, tx_hash, success)
+            .push_l1_l2_tx_log(self.tx_number, tx_hash, success, is_priority)
     }
 
     fn update_account_nominal_token_balance(

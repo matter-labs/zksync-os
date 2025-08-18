@@ -120,18 +120,17 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         let ee_type = ExecutionEnvironmentType::parse_ee_version_byte(ee_version)?;
 
-        let initial_request =
-            ExecutionEnvironmentSpawnRequest::RequestedExternalCall(ExternalCallRequest {
-                available_resources: resources.clone(),
-                ergs_to_pass: Ergs(0),      // Doesn't matter in this case
-                callers_caller: B160::ZERO, // Fine to use placeholder
-                caller: *caller,
-                callee: *callee,
-                modifier: CallModifier::NoModifier,
-                calldata,
-                call_scratch_space: None,
-                nominal_token_value: *nominal_token_value,
-            });
+        let initial_request = ExternalCallRequest {
+            available_resources: resources.clone(),
+            ergs_to_pass: resources.ergs(),
+            callers_caller: B160::ZERO, // Fine to use placeholder
+            caller: *caller,
+            callee: *callee,
+            modifier: CallModifier::NoModifier,
+            input: calldata,
+            call_scratch_space: None,
+            nominal_token_value: *nominal_token_value,
+        };
 
         let final_state = run_till_completion(
             memories,
@@ -142,24 +141,19 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             tracer,
         )?;
 
-        let TransactionEndPoint::CompletedExecution(CompletedExecution {
-            return_values,
+        let CompletedExecution {
             resources_returned,
-            reverted,
-        }) = final_state
-        else {
-            return Err(internal_error!("attempt to run ended up in invalid state").into());
-        };
+            result,
+        } = final_state;
 
         if let Some(ref rollback_handle) = rollback_handle {
             system
-                .finish_global_frame(reverted.then_some(rollback_handle))
+                .finish_global_frame(result.failed().then_some(rollback_handle))
                 .map_err(|_| internal_error!("must finish execution frame"))?;
         }
         Ok(CompletedExecution {
-            return_values,
             resources_returned,
-            reverted,
+            result,
         })
     }
 }

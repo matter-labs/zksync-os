@@ -46,7 +46,7 @@ proptest = "1.6.0"
 crypto = { path = "../crypto", default-features = false, features = ["secp256k1-static-context", "testing"]}
 num-bigint = "*"
 num-traits = "*"
-arbitrary = "1"
+arbitrary = { version = "1", features = ["derive"] }
 serde_json = "*"
 alloy-rpc-types-debug = { version = "*", default-features = false }
 alloy = { version = "1", features = ["rlp", "full"] }

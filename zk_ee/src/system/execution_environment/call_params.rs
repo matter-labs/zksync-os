@@ -1,3 +1,5 @@
+use ruint::aliases::{B160, U256};
+
 use super::*;
 use crate::system::MAX_SCRATCH_SPACE_USIZE_WORDS;
 use core::ops::Range;
@@ -61,21 +63,40 @@ impl<S: SystemTypes> ReturnValues<'_, S> {
 }
 
 ///
-/// Result after requesting to execute a call.
+/// Result after call execution
 ///
 pub enum CallResult<'a, S: SystemTypes> {
     /// Call preparations failed.
-    CallFailedToExecute,
+    PreparationStepFailed,
     /// Call failed after preparation.
     Failed { return_values: ReturnValues<'a, S> },
     /// Call succeeded.
     Successful { return_values: ReturnValues<'a, S> },
 }
 
+impl<'a, S: SystemTypes> CallResult<'a, S> {
+    #[inline]
+    pub fn failed(&self) -> bool {
+        matches!(self, CallResult::Failed { .. })
+            || matches!(self, CallResult::PreparationStepFailed)
+    }
+
+    #[inline]
+    pub fn return_values(self) -> ReturnValues<'a, S> {
+        match self {
+            CallResult::PreparationStepFailed => ReturnValues::empty(), // TODO: should not be part of this enum
+            CallResult::Failed { return_values } => return_values,
+            CallResult::Successful { return_values } => return_values,
+        }
+    }
+}
+
 impl<S: SystemTypes> core::fmt::Debug for CallResult<'_, S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::CallFailedToExecute => f.debug_struct("CallResult::CallFailedToExecute").finish(),
+            Self::PreparationStepFailed => {
+                f.debug_struct("CallResult::CallFailedToExecute").finish()
+            }
             Self::Failed { return_values } => f
                 .debug_struct("CallResult::Failed")
                 .field("return_values", return_values)
@@ -91,10 +112,15 @@ impl<S: SystemTypes> core::fmt::Debug for CallResult<'_, S> {
 impl<S: SystemTypes> CallResult<'_, S> {
     pub fn has_scratch_space(&self) -> bool {
         match self {
-            CallResult::CallFailedToExecute => false,
+            CallResult::PreparationStepFailed => false,
             CallResult::Failed { return_values } | CallResult::Successful { return_values } => {
                 return_values.return_scratch_space.is_some()
             }
         }
     }
+}
+
+pub struct TransferInfo {
+    pub value: U256,
+    pub target: B160,
 }

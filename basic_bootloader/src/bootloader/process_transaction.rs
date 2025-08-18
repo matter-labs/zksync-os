@@ -365,6 +365,7 @@ where
             &mut inf_resources,
             tx_hash,
             success,
+            is_priority_op,
         )?;
 
         // Add back the intrinsic native charged in get_resources_for_tx,
@@ -383,7 +384,7 @@ where
             gas_used,
             gas_refunded: evm_refund,
             computational_native_used,
-            pubdata_used: pubdata_used + L1_TX_INTRINSIC_PUBDATA as u64,
+            pubdata_used: pubdata_used + L1_TX_INTRINSIC_PUBDATA,
         })
     }
 
@@ -441,9 +442,7 @@ where
 
         let CompletedExecution {
             resources_returned,
-            reverted,
-            return_values,
-            ..
+            result,
         } = BasicBootloader::run_single_interaction(
             system,
             system_functions,
@@ -456,6 +455,9 @@ where
             false,
             tracer,
         )?;
+        let reverted = result.failed();
+        let return_values = result.return_values();
+
         *resources = resources_returned;
         system.finish_global_frame(reverted.then_some(&rollback_handle))?;
 
@@ -734,7 +736,7 @@ where
             gas_used,
             gas_refunded: evm_refund,
             computational_native_used,
-            pubdata_used: pubdata_used + L2_TX_INTRINSIC_PUBDATA as u64,
+            pubdata_used: pubdata_used + L2_TX_INTRINSIC_PUBDATA,
         })
     }
 
