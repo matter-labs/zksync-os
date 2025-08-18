@@ -365,6 +365,7 @@ where
             &mut inf_resources,
             tx_hash,
             success,
+            is_priority_op,
         )?;
 
         // Add back the intrinsic native charged in get_resources_for_tx,
