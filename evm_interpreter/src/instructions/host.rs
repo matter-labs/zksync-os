@@ -267,9 +267,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             )
             .map_err(wrap_error!())?;
 
-        tracer
-            .evm_tracer()
-            .on_selfdestruct(beneficiary, amount_transferred, self);
+        tracer.evm_tracer().on_selfdestruct(
+            beneficiary,
+            amount_transferred,
+            &InterpreterExternal::new_from(&self, system),
+        );
 
         Err(ExitCode::SelfDestruct)
     }
