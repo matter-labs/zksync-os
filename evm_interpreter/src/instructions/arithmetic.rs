@@ -87,7 +87,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         if let Some((gas_cost, native_cost)) = exp_cost(&op2) {
             self.gas.spend_gas_and_native(gas_cost, native_cost)?;
         } else {
-            return Err(ExitCode::OutOfGas);
+            return Err(ExitCode::EvmError(EvmError::OutOfGas));
         }
         *op2 = op1.pow(*op2);
         Ok(())

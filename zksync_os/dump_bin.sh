@@ -13,7 +13,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|debug-in-simulator|pectra]"
+      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|debug-in-simulator|pectra|multiblock-batch|multiblock-batch-logging-enabled]"
       exit 1
       ;;
   esac
@@ -69,12 +69,24 @@ case "$TYPE" in
     ELF_NAME="app.elf"
     TEXT_NAME="app.text"
     ;;
+  multiblock-batch)
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/multiblock-batch"
+    BIN_NAME="multiblock_batch.bin"
+    ELF_NAME="multiblock_batch.elf"
+    TEXT_NAME="multiblock_batch.text"
+    ;;
+  multiblock-batch-logging-enabled)
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/multiblock-batch,print_debug_info"
+    BIN_NAME="multiblock_batch_logging_enabled.bin"
+    ELF_NAME="multiblock_batch_logging_enabled.elf"
+    TEXT_NAME="multiblock_batch_logging_enabled.text"
+    ;;
   default)
     # leave defaults
     ;;
   *)
     echo "Invalid --type: $TYPE"
-    echo "Valid types are: default, server, server-logging-enabled, evm-replay, benchmarking, evm-replay-benchmarking, debug-in-simulator"
+    echo "Valid types are: default, server, server-logging-enabled, evm-replay, benchmarking, evm-replay-benchmarking, debug-in-simulator, multiblock-batch"
     exit 1
     ;;
 esac
