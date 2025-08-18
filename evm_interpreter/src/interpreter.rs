@@ -361,7 +361,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 // Spend all remaining resources on EVM error
                 self.gas.consume_all_gas();
             }
-            tracer.evm_tracer().on_opcode_error(&evm_error, self);
+            tracer
+                .evm_tracer()
+                .on_opcode_error(&evm_error, &InterpreterExternal::new_from(&self, system));
             return Ok(ExecutionEnvironmentPreemptionPoint::End(
                 CompletedExecution {
                     resources_returned: self.gas.take_resources(),
@@ -409,7 +411,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 // Spend all remaining resources
                 self.gas.consume_all_gas();
 
-                tracer.evm_tracer().on_opcode_error(&error, self);
+                tracer
+                    .evm_tracer()
+                    .on_opcode_error(&error, &InterpreterExternal::new_from(&self, system));
 
                 CallResult::Failed {
                     return_values: ReturnValues::empty(),
