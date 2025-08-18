@@ -379,6 +379,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             {
                 // Spend all remaining resources
                 self.gas.consume_all_gas();
+                // Clear returndata
+                return_values.returndata = &[];
                 CallResult::Failed { return_values }
             } else {
                 let deployed_code = return_values.returndata;
