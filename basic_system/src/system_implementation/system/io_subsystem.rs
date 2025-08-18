@@ -964,10 +964,11 @@ where
         _resources: &mut Self::Resources,
         tx_hash: Bytes32,
         success: bool,
+        is_priority: bool,
     ) -> Result<(), SystemError> {
         // Resources for it charged as part of intrinsic
         self.logs_storage
-            .push_l1_l2_tx_log(self.tx_number, tx_hash, success)
+            .push_l1_l2_tx_log(self.tx_number, tx_hash, success, is_priority)
     }
 
     fn update_account_nominal_token_balance(
