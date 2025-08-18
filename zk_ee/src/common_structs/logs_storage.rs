@@ -102,6 +102,7 @@ pub struct UserMsgData<DATA, HASH, ADDRESS> {
 pub struct L1TxLog<HASH> {
     pub tx_hash: HASH,
     pub success: bool,
+    pub is_priority: bool,
 }
 
 /// Log content reference to be returned from the storage
@@ -118,6 +119,7 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
             GenericLogContentData::L1TxLog(l) => GenericLogContentData::L1TxLog(L1TxLog {
                 tx_hash: &l.tx_hash,
                 success: l.success,
+                is_priority: l.is_priority,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
                 address: &m.address,
@@ -136,6 +138,7 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
             GenericLogContentData::L1TxLog(l) => GenericLogContentData::L1TxLog(L1TxLog {
                 tx_hash: *l.tx_hash,
                 success: l.success,
+                is_priority: l.is_priority,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
                 address: *m.address,
@@ -224,6 +227,7 @@ where
         tx_number: u32,
         tx_hash: Bytes32,
         success: bool,
+        is_priority: bool,
     ) -> Result<(), SystemError> {
         let total_pubdata = L2_TO_L1_LOG_SERIALIZE_SIZE;
         let total_pubdata = total_pubdata as u32;
@@ -236,7 +240,11 @@ where
         self.list.push(
             LogContent {
                 tx_number,
-                data: GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }),
+                data: GenericLogContentData::L1TxLog(L1TxLog {
+                    tx_hash,
+                    success,
+                    is_priority,
+                }),
             },
             total_pubdata,
         );
@@ -453,11 +461,13 @@ where
         ]);
         for log in self.list.iter() {
             if let GenericLogContentData::L1TxLog(l1_tx) = &log.data {
-                count += 1;
-                let mut hasher = Keccak256::new();
-                hasher.update(rolling_hash.as_u8_ref());
-                hasher.update(l1_tx.tx_hash.as_u8_ref());
-                rolling_hash = hasher.finalize().into();
+                if l1_tx.is_priority {
+                    count += 1;
+                    let mut hasher = Keccak256::new();
+                    hasher.update(rolling_hash.as_u8_ref());
+                    hasher.update(l1_tx.tx_hash.as_u8_ref());
+                    rolling_hash = hasher.finalize().into();
+                }
             }
         }
         (count, rolling_hash)
@@ -525,7 +535,9 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
                 address.into(),
                 data_hash,
             ),
-            GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => {
+            GenericLogContentData::L1TxLog(L1TxLog {
+                tx_hash, success, ..
+            }) => {
                 let data = if success { U256::from(1) } else { U256::ZERO };
                 (
                     // TODO: move into const

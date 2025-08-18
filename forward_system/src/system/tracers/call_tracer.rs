@@ -2,15 +2,15 @@
 
 // TODO: SELFDESTRUCT should be tracked as well
 
+use std::mem;
+
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use zk_ee::system::{
-    tracer::{
-        evm_tracer::{EvmTracer, NopEvmTracer},
-        Tracer,
-    },
-    CallModifier, CallOrDeployResultRef, EthereumLikeTypes, ExecutionEnvironmentLaunchParams,
-    Resources, SystemTypes,
+    evm::{errors::EvmError, EvmFrameInterface},
+    tracer::{evm_tracer::EvmTracer, Tracer},
+    CallModifier, CallResult, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources,
+    SystemTypes,
 };
 use zk_ee::types_config::SystemIOTypesConfig;
 
@@ -56,9 +56,15 @@ pub struct Call {
     gas_used: u64,
     input: Vec<u8>,
     output: Vec<u8>,
-    error: Option<String>,
+    error: Option<CallError>,
     reverted: bool,
     calls: Vec<Call>,
+}
+
+#[derive(Debug)]
+pub enum CallError {
+    EvmError(EvmError),
+    FatalError(String),
 }
 
 #[derive(Default)]
@@ -67,7 +73,6 @@ pub struct CallTracer {
     pub unfinished_calls: Vec<Call>,
     pub finished_calls: Vec<Call>,
     pub current_call_depth: usize,
-    nop_evm_tracer: NopEvmTracer,
 }
 
 impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
@@ -81,18 +86,15 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
             value: initial_state.external_call.nominal_token_value,
             gas: initial_state.external_call.available_resources.ergs().0 / ERGS_PER_GAS,
             gas_used: 0, // will be populated later
-            input: initial_state.external_call.calldata.to_vec(),
-            output: vec![], // will be populated later
-            error: None,
+            input: initial_state.external_call.input.to_vec(),
+            output: vec![],  // will be populated later
+            error: None,     // can be populated later
             reverted: false, // will be populated later
             calls: vec![],   // will be populated later
         })
     }
 
-    fn after_execution_frame_completed(
-        &mut self,
-        result: Option<(&S::Resources, CallOrDeployResultRef<S>)>,
-    ) {
+    fn after_execution_frame_completed(&mut self, result: Option<(&S::Resources, &CallResult<S>)>) {
         assert_ne!(self.current_call_depth, 0);
         self.current_call_depth -= 1;
 
@@ -105,46 +107,28 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
                     .saturating_sub(result.0.ergs().0 / ERGS_PER_GAS);
 
                 match &result.1 {
-                    CallOrDeployResultRef::CallResult(call_result) => match call_result {
-                        zk_ee::system::CallResult::CallFailedToExecute => {
-                            finished_call.reverted = true;
-                            finished_call.error =
-                                Some("Unexpected failure before tx execution".to_owned());
-                        }
-                        zk_ee::system::CallResult::Failed { return_values } => {
-                            finished_call.reverted = true;
-                            finished_call.output = return_values.returndata.to_vec();
-                        }
-                        zk_ee::system::CallResult::Successful { return_values } => {
-                            finished_call.output = return_values.returndata.to_vec();
-                        }
-                    },
-                    CallOrDeployResultRef::DeploymentResult(deployment_result) => {
-                        match deployment_result {
-                            zk_ee::system::DeploymentResult::Failed {
-                                return_values,
-                                execution_reverted: _,
-                            } => {
-                                finished_call.reverted = true;
-                                finished_call.output = return_values.returndata.to_vec();
-                            }
-                            zk_ee::system::DeploymentResult::Successful {
-                                deployed_code: _,
-                                return_values: _,
-                                deployed_at: _,
-                            } => {}
-                        }
+                    zk_ee::system::CallResult::PreparationStepFailed => {
+                        panic!("Should not happen") // ZKsync OS should not call tracer in this case
                     }
-                }
+                    zk_ee::system::CallResult::Failed { return_values } => {
+                        finished_call.reverted = true;
+                        finished_call.output = return_values.returndata.to_vec();
+                    }
+                    zk_ee::system::CallResult::Successful { return_values } => {
+                        finished_call.output = return_values.returndata.to_vec();
+                    }
+                };
             }
             None => {
-                // Some unexpected internal failure happened
+                // Some unexpected internal failure happened (maybe out of native resources)
                 // Should revert whole tx
                 finished_call.gas_used = finished_call.gas;
                 finished_call.reverted = true;
-                finished_call.error = Some("Internal error".to_owned()); // TODO we could return better errors here
+                finished_call.error = Some(CallError::FatalError("Internal error".to_owned()));
             }
         }
+
+        finished_call.calls = mem::take(&mut self.finished_calls);
 
         self.finished_calls.push(finished_call);
     }
@@ -196,6 +180,39 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
 
     #[inline(always)]
     fn evm_tracer(&mut self) -> &mut impl EvmTracer<S> {
-        &mut self.nop_evm_tracer
+        self
+    }
+}
+
+impl<S: EthereumLikeTypes> EvmTracer<S> for CallTracer {
+    #[inline(always)]
+    fn before_evm_interpreter_execution_step(
+        &mut self,
+        _opcode: u8,
+        _interpreter_state: &impl EvmFrameInterface<S>,
+    ) {
+    }
+
+    #[inline(always)]
+    fn after_evm_interpreter_execution_step(
+        &mut self,
+        _opcode: u8,
+        _interpreter_state: &impl EvmFrameInterface<S>,
+    ) {
+    }
+
+    /// Opcode failed for some reason. Note: call frame ends immediately
+    fn on_opcode_error(&mut self, error: &EvmError, _frame_state: &impl EvmFrameInterface<S>) {
+        let current_call = self.unfinished_calls.last_mut().expect("Should exist");
+        current_call.error = Some(CallError::EvmError(error.clone()));
+        current_call.reverted = true;
+    }
+
+    /// Special cases, when error happens in frame before any opcode is executed (unfortunately we can't provide access to state)
+    /// Note: call frame ends immediately
+    fn on_call_error(&mut self, error: &EvmError) {
+        let current_call = self.unfinished_calls.last_mut().expect("Should exist");
+        current_call.error = Some(CallError::EvmError(error.clone()));
+        current_call.reverted = true;
     }
 }

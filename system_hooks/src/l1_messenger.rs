@@ -29,7 +29,7 @@ where
     let ExternalCallRequest {
         available_resources,
         ergs_to_pass: _,
-        calldata,
+        input: calldata,
         call_scratch_space: _,
         nominal_token_value,
         caller,
