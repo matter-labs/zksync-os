@@ -24,9 +24,9 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     native_per_pubdata: U256,
     native_per_gas: U256,
     calldata: &[u8],
-    intrinsic_gas: usize,
-    intrinsic_pubdata: usize,
-    intrinsic_native: usize,
+    intrinsic_gas: u64,
+    intrinsic_pubdata: u64,
+    intrinsic_native: u64,
 ) -> Result<ResourcesForTx<S>, TxError> {
     // TODO: operator trusted gas limit?
 
@@ -45,7 +45,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
 
     // Charge pubdata overhead
     let intrinsic_pubdata_overhead = u256_to_u64_saturated(&native_per_pubdata)
-        .checked_mul(intrinsic_pubdata as u64)
+        .checked_mul(intrinsic_pubdata)
         .ok_or(internal_error!("npp*ip"))?;
     let native_limit =
         native_limit
@@ -79,7 +79,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     let (calldata_gas, calldata_native) = cost_for_calldata(calldata)?;
 
     let intrinsic_computational_native_charged = calldata_native
-        .checked_add(intrinsic_native as u64)
+        .checked_add(intrinsic_native)
         .ok_or(TxError::Validation(
             errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
         ))?;
@@ -96,9 +96,9 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         );
 
     // Intrinsic overhead
-    let intrinsic_overhead = intrinsic_gas as u64;
+    let intrinsic_overhead = intrinsic_gas;
 
-    let total_gas_to_charge = (calldata_gas as u64)
+    let total_gas_to_charge = calldata_gas
         .checked_add(intrinsic_overhead)
         .ok_or(internal_error!("tuo+io"))?;
 
@@ -122,9 +122,9 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
 ///
 /// Computes the (gas, native) cost for the transaction's calldata.
 ///
-pub fn cost_for_calldata(calldata: &[u8]) -> Result<(usize, u64), InternalError> {
-    let zero_bytes = calldata.iter().filter(|byte| **byte == 0).count();
-    let non_zero_bytes = calldata.len() - zero_bytes;
+pub fn cost_for_calldata(calldata: &[u8]) -> Result<(u64, u64), InternalError> {
+    let zero_bytes = calldata.iter().filter(|byte| **byte == 0).count() as u64;
+    let non_zero_bytes = calldata.len() as u64 - zero_bytes;
     let zero_cost = zero_bytes
         .checked_mul(CALLDATA_ZERO_BYTE_GAS_COST)
         .ok_or(internal_error!("zb*CZBGC"))?;

@@ -35,9 +35,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         let CompletedExecution {
             resources_returned,
-            reverted,
-            return_values,
-            ..
+            result,
         } = BasicBootloader::call_account_method(
             system,
             system_functions,
@@ -51,6 +49,9 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             tracer,
         )
         .map_err(TxError::oon_as_validation)?;
+
+        let reverted = result.failed();
+        let return_values = result.return_values();
 
         *resources = resources_returned;
         // Return memory isn't flushed, as it's read by

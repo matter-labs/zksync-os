@@ -4,7 +4,7 @@ use crate::{
     execution_environment_type::ExecutionEnvironmentType, types_config::SystemIOTypesConfig,
 };
 
-use super::{CallOrDeployResultRef, ExecutionEnvironmentLaunchParams, SystemTypes};
+use super::{CallResult, ExecutionEnvironmentLaunchParams, SystemTypes};
 
 pub mod evm_tracer;
 
@@ -16,10 +16,7 @@ pub trait Tracer<S: SystemTypes> {
     fn on_new_execution_frame(&mut self, request: &ExecutionEnvironmentLaunchParams<S>);
 
     /// Hook immediately after external call or deployment frame execution
-    fn after_execution_frame_completed(
-        &mut self,
-        result: Option<(&S::Resources, CallOrDeployResultRef<S>)>,
-    );
+    fn after_execution_frame_completed(&mut self, result: Option<(&S::Resources, &CallResult<S>)>);
 
     /// Is called on storage read produced by bytecode execution in EE
     fn on_storage_read(
@@ -69,7 +66,7 @@ impl<S: SystemTypes> Tracer<S> for NopTracer {
     #[inline(always)]
     fn after_execution_frame_completed(
         &mut self,
-        _result: Option<(&S::Resources, CallOrDeployResultRef<S>)>,
+        _result: Option<(&S::Resources, &CallResult<S>)>,
     ) {
     }
 
