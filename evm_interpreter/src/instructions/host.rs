@@ -65,7 +65,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let address = u256_to_b160(address);
         // first deal with locals memory
         let (memory_offset, len) =
-            Self::cast_offset_and_len(&memory_offset, &len, ExitCode::InvalidOperandOOG)?;
+            Self::cast_offset_and_len(&memory_offset, &len, EvmError::InvalidOperandOOG.into())?;
 
         // resize memory to account for the destination memory required
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, memory_offset, len)?;
@@ -148,10 +148,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     ) -> InstructionResult {
         self.gas.spend_gas_and_native(0, SSTORE_NATIVE_COST)?;
         if self.is_static_frame() {
-            return Err(ExitCode::StateChangeDuringStaticCall);
+            return Err(EvmError::StateChangeDuringStaticCall.into());
         }
         if self.gas.gas_left() <= CALL_STIPEND {
-            return Err(ExitCode::InvalidOperandOOG);
+            return Err(EvmError::InvalidOperandOOG.into());
         }
         let (index, value) = self.stack.pop_2()?;
         let index = Bytes32::from_u256_be(index);
@@ -186,7 +186,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     ) -> InstructionResult {
         self.gas.spend_gas_and_native(0, TSTORE_NATIVE_COST)?;
         if self.is_static_frame() {
-            return Err(ExitCode::StateChangeDuringStaticCall);
+            return Err(EvmError::StateChangeDuringStaticCall.into());
         }
         let (index, value) = self.stack.pop_2()?;
         let index = Bytes32::from_u256_be(index);
@@ -213,12 +213,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.gas.spend_gas_and_native(0, LOG_NATIVE_COST)?;
 
         if self.is_static_frame() {
-            return Err(ExitCode::StateChangeDuringStaticCall);
+            return Err(EvmError::StateChangeDuringStaticCall.into());
         }
 
         let (mem_offset, len) = self.stack.pop_2()?;
         let (mem_offset, len) =
-            Self::cast_offset_and_len(&mem_offset, &len, ExitCode::InvalidOperandOOG)?;
+            Self::cast_offset_and_len(&mem_offset, &len, EvmError::InvalidOperandOOG.into())?;
         let mut topics: arrayvec::ArrayVec<Bytes32, 4> = arrayvec::ArrayVec::new();
         for _ in 0..N {
             topics.push(Bytes32::from_u256_be(self.stack.pop_1()?));
@@ -246,7 +246,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             .spend_gas_and_native(gas_constants::SELFDESTRUCT, SELFDESTRUCT_NATIVE_COST)?;
 
         if self.is_static_frame() {
-            return Err(ExitCode::StateChangeDuringStaticCall);
+            return Err(EvmError::StateChangeDuringStaticCall.into());
         }
 
         let beneficiary = u256_to_b160(self.stack.pop_1()?);
@@ -280,7 +280,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         )?;
 
         if self.is_static_frame() {
-            return Err(ExitCode::StateChangeDuringStaticCall);
+            return Err(EvmError::StateChangeDuringStaticCall.into());
         }
         self.clear_last_returndata();
 
@@ -288,13 +288,13 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value = *value;
 
         let (code_offset, len) =
-            Self::cast_offset_and_len(code_offset, len, ExitCode::InvalidOperandOOG)?;
+            Self::cast_offset_and_len(code_offset, len, EvmError::InvalidOperandOOG.into())?;
 
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, code_offset, len)?;
 
         // Create code size is limited
         if len > MAX_INITCODE_SIZE {
-            return Err(ExitCode::CreateInitcodeSizeLimit);
+            return Err(EvmError::CreateInitcodeSizeLimit.into());
         }
 
         // Charge for dynamic gas
@@ -399,7 +399,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             CallScheme::Call => {
                 let value = self.stack.pop_1()?;
                 if self.is_static && *value != U256::ZERO {
-                    return Err(ExitCode::CallNotAllowedInsideStatic);
+                    return Err(EvmError::CallNotAllowedInsideStatic.into());
                 }
                 *value
             }
@@ -410,10 +410,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let (in_offset, in_len, out_offset, out_len) = self.stack.pop_4()?;
 
         let (in_offset, in_len) =
-            Self::cast_offset_and_len(in_offset, in_len, ExitCode::InvalidOperandOOG)?;
+            Self::cast_offset_and_len(in_offset, in_len, EvmError::InvalidOperandOOG.into())?;
 
         let (out_offset, out_len) =
-            Self::cast_offset_and_len(out_offset, out_len, ExitCode::InvalidOperandOOG)?;
+            Self::cast_offset_and_len(out_offset, out_len, EvmError::InvalidOperandOOG.into())?;
 
         self.resize_heap(in_offset, in_len)?;
         self.resize_heap(out_offset, out_len)?;

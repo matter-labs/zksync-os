@@ -67,15 +67,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             });
         }
 
-        let (empty_returndata, reverted) = match exit_code {
-            ExitCode::Stop => (true, false),
-            ExitCode::SelfDestruct => (true, false),
-            ExitCode::Return => (false, false),
-            ExitCode::Revert => (false, true),
-            _ => (true, true),
-        };
-
-        self.create_immediate_return_state(system, empty_returndata, reverted, exit_code.is_error())
+        self.create_immediate_return_state(system, exit_code, tracer)
     }
 }
 
@@ -283,7 +275,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
                     opcodes::RETURN => self.ret(),
                     opcodes::REVERT => self.revert(),
-                    opcodes::INVALID => Err(ExitCode::InvalidFEOpcode),
+                    opcodes::INVALID => Err(EvmError::InvalidOpcode(opcodes::INVALID).into()),
                     opcodes::BASEFEE => self.basefee(system),
                     opcodes::ORIGIN => self.origin(system),
                     opcodes::CALLER => self.caller(),
@@ -315,7 +307,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::CHAINID => self.chainid(system),
                     opcodes::BLOBHASH => self.blobhash(system),
                     opcodes::BLOBBASEFEE => self.blobbasefee(system),
-                    _ => Err(ExitCode::OpcodeNotFound),
+                    x => Err(EvmError::InvalidOpcode(x).into()),
                 });
 
             tracer
@@ -344,46 +336,49 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub(crate) fn create_immediate_return_state<'a>(
         &'a mut self,
         system: &mut System<S>,
-        empty_returndata: bool,
-        execution_reverted: bool,
-        is_error: bool,
+        exit_code: ExitCode,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
-        if is_error {
-            // Spend all remaining resources on error
-            self.gas.consume_all_gas();
-        };
         let mut return_values = ReturnValues::empty();
-        if empty_returndata == false {
-            return_values.returndata = &self.heap[self.returndata_location.clone()];
-        }
+        // Set returndata if exit code is Return or Revert
+        match exit_code {
+            ExitCode::Return | ExitCode::EvmError(EvmError::Revert) => {
+                return_values.returndata = &self.heap[self.returndata_location.clone()];
+            }
+            ExitCode::Stop | ExitCode::SelfDestruct | ExitCode::EvmError(_) => (),
+            ExitCode::ExternalCall | ExitCode::FatalError(_) => {
+                return Err(internal_error!("Invalid exit code passed").into())
+            }
+        };
 
-        if execution_reverted {
+        if let ExitCode::EvmError(evm_error) = exit_code {
+            if evm_error != EvmError::Revert {
+                // Spend all remaining resources on EVM error
+                self.gas.consume_all_gas();
+            }
+            tracer.evm_tracer().on_opcode_error(&evm_error, self);
             return Ok(ExecutionEnvironmentPreemptionPoint::End(
                 CompletedExecution {
                     resources_returned: self.gas.take_resources(),
                     result: CallResult::Failed { return_values },
                 },
             ));
-        }
+        };
 
         let result = if self.is_constructor {
-            let deployed_code_len = return_values.returndata.len() as u64;
-            // EIP-3541: reject code starting with 0xEF.
-            // EIP-158: reject code of length > 24576.
-            let deployed = return_values.returndata;
-            if deployed_code_len >= 1 && deployed[0] == 0xEF
-                || return_values.returndata.len() > MAX_CODE_SIZE
-            {
-                // Spend all remaining resources
-                self.gas.consume_all_gas();
-                CallResult::Failed { return_values }
-            } else {
-                let deployed_code = return_values.returndata;
-                return_values.returndata = &[];
+            let deployed_code = return_values.returndata;
 
+            let mut error_after_constructor = None;
+            if deployed_code.len() > MAX_CODE_SIZE {
+                // EIP-158: reject code of length > 24576.
+                error_after_constructor = Some(EvmError::CreateContractSizeLimit)
+            } else if !deployed_code.is_empty() && deployed_code[0] == 0xEF {
+                // EIP-3541: reject code starting with 0xEF.
+                error_after_constructor = Some(EvmError::CreateContractStartingWithEF);
+            } else {
                 match system.deploy_bytecode(
                     THIS_EE_TYPE,
                     self.gas.resources_mut(),
@@ -397,19 +392,29 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                             "Successfully deployed contract at {:?} \n",
                             self.address
                         ));
-                        CallResult::Successful {
-                            return_values: ReturnValues::empty(),
-                        }
                     }
                     Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-                        CallResult::Failed {
-                            return_values: ReturnValues::empty(),
-                        }
+                        error_after_constructor = Some(EvmError::CodeStoreOutOfGas);
                     }
                     Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
                         return Err(RuntimeError::OutOfNativeResources(loc).into())
                     }
                     Err(SystemError::LeafDefect(e)) => return Err(e.into()),
+                }
+            }
+
+            if let Some(error) = error_after_constructor {
+                // Spend all remaining resources
+                self.gas.consume_all_gas();
+
+                tracer.evm_tracer().on_opcode_error(&error, self);
+
+                CallResult::Failed {
+                    return_values: ReturnValues::empty(),
+                }
+            } else {
+                CallResult::Successful {
+                    return_values: ReturnValues::empty(),
                 }
             }
         } else {

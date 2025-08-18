@@ -4,10 +4,9 @@ use std::{collections::HashMap, marker::PhantomData};
 
 use evm_interpreter::{opcodes::OpCode, ERGS_PER_GAS};
 use ruint::aliases::U256;
-use serde::Serialize;
 use zk_ee::{
     system::{
-        evm::{EvmFrameInterface, EvmStackInterface},
+        evm::{errors::EvmError, EvmFrameInterface, EvmStackInterface},
         tracer::{evm_tracer::EvmTracer, Tracer},
         CallResult, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources, SystemTypes,
     },
@@ -15,7 +14,8 @@ use zk_ee::{
     utils::Bytes32,
 };
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Default, Debug)]
+#[allow(dead_code)]
 pub struct EvmExecutionStep {
     pc: usize,
     opcode_raw: u8,
@@ -29,9 +29,10 @@ pub struct EvmExecutionStep {
     transient_storage: Option<Vec<(Bytes32, Bytes32)>>,
     depth: usize,
     refund: u64, // Always zero for now
+    error: Option<EvmError>,
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Default, Debug)]
 pub struct TransactionLog {
     pub finished: bool,
     pub steps: Vec<EvmExecutionStep>,
@@ -173,7 +174,8 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
             storage,
             transient_storage,
             depth: self.current_call_depth,
-            refund: 0, // Always zero for now
+            refund: 0,   // Always zero for now
+            error: None, // Can be populated in `on_opcode_error` or `on_call_error`
         })
     }
 
@@ -183,6 +185,24 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
         _opcode: u8,
         _interpreter_state: &impl EvmFrameInterface<S>,
     ) {
+    }
+
+    /// Opcode failed for some reason
+    fn on_opcode_error(&mut self, error: &EvmError, _frame_state: &impl EvmFrameInterface<S>) {
+        let tx_log = self.transaction_logs.last_mut().expect("Should exist");
+        let last_opcode_record = tx_log.steps.last_mut().expect("Should exist");
+
+        last_opcode_record.error = Some(error.clone());
+    }
+
+    /// Special cases, when error happens in frame before any opcode is executed (unfortunately we can't provide access to state)
+    fn on_call_error(&mut self, error: &EvmError) {
+        let tx_log = self.transaction_logs.last_mut().expect("Should exist");
+        let last_opcode_record = tx_log.steps.last_mut().expect("Should exist");
+
+        // Assume that last opcode is correct
+
+        last_opcode_record.error = Some(error.clone());
     }
 }
 
