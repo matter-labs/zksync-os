@@ -13,7 +13,9 @@ use crate::{
     utils::{Bytes32, UsizeAlignedByteBox},
 };
 use alloc::alloc::Global;
+use arrayvec::ArrayVec;
 use core::alloc::Allocator;
+use core::ops::AddAssign;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
@@ -102,6 +104,7 @@ pub struct UserMsgData<DATA, HASH, ADDRESS> {
 pub struct L1TxLog<HASH> {
     pub tx_hash: HASH,
     pub success: bool,
+    pub is_priority: bool,
 }
 
 /// Log content reference to be returned from the storage
@@ -118,6 +121,7 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
             GenericLogContentData::L1TxLog(l) => GenericLogContentData::L1TxLog(L1TxLog {
                 tx_hash: &l.tx_hash,
                 success: l.success,
+                is_priority: l.is_priority,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
                 address: &m.address,
@@ -136,6 +140,7 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
             GenericLogContentData::L1TxLog(l) => GenericLogContentData::L1TxLog(L1TxLog {
                 tx_hash: *l.tx_hash,
                 success: l.success,
+                is_priority: l.is_priority,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
                 address: *m.address,
@@ -224,6 +229,7 @@ where
         tx_number: u32,
         tx_hash: Bytes32,
         success: bool,
+        is_priority: bool,
     ) -> Result<(), SystemError> {
         let total_pubdata = L2_TO_L1_LOG_SERIALIZE_SIZE;
         let total_pubdata = total_pubdata as u32;
@@ -236,7 +242,11 @@ where
         self.list.push(
             LogContent {
                 tx_number,
-                data: GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }),
+                data: GenericLogContentData::L1TxLog(L1TxLog {
+                    tx_hash,
+                    success,
+                    is_priority,
+                }),
             },
             total_pubdata,
         );
@@ -316,6 +326,32 @@ where
         })
     }
 
+    pub fn apply_to_array_vec(&self, array_vec: &mut ArrayVec<Bytes32, 16384>) {
+        self.list.iter().for_each(|el| {
+            let log: L2ToL1Log = el.into();
+            array_vec.push(log.hash())
+        });
+    }
+
+    pub fn apply_l1_txs_to_commitment(
+        &self,
+        mut count: U256,
+        mut rolling_keccak: Bytes32,
+    ) -> (U256, Bytes32) {
+        let mut hasher = Keccak256::new();
+        for log in self.list.iter() {
+            if let GenericLogContentData::L1TxLog(l1_tx) = &log.data {
+                if l1_tx.is_priority {
+                    count.add_assign(U256::ONE);
+                    hasher.update(rolling_keccak.as_u8_ref());
+                    hasher.update(l1_tx.tx_hash.as_u8_ref());
+                    rolling_keccak = hasher.finalize_reset().into();
+                }
+            }
+        }
+        (count, rolling_keccak)
+    }
+
     // we use it for tests to generate single block batches
     ///
     /// Calculate l2 logs merkle tree root.
@@ -338,7 +374,7 @@ where
         //     0xa707d1c62d8be699d34cb74804fdd7b4c568b6c1a821066f126c680d4b83e00b,
         //     0xf6e093070e0389d2e529d60fadb855fdded54976ec50ac709e3a36ceaa64c291,
         //     0x375a5bf909cb02143e3695ca658e0641e739aa590f0004dba93572c44cdb9d2d
-        const EMPTY_HASHES: [[u8; 32]; 15] = [
+        const EMPTY_HASHES: [[u8; 32]; TREE_HEIGHT + 1] = [
             [
                 0x72, 0xab, 0xee, 0x45, 0xb5, 0x9e, 0x34, 0x4a, 0xf8, 0xa6, 0xe5, 0x20, 0x24, 0x1c,
                 0x47, 0x44, 0xaf, 0xf2, 0x6e, 0xd4, 0x11, 0xf4, 0xc4, 0xb0, 0x0f, 0x8a, 0xf0, 0x9a,
@@ -421,17 +457,17 @@ where
             elements.push(log.hash())
         });
         let mut curr_non_default = self.list.len();
+        let mut hasher = crypto::sha3::Keccak256::new();
         #[allow(clippy::needless_range_loop)]
         for level in 0..TREE_HEIGHT {
             for i in 0..curr_non_default.div_ceil(2) {
-                let mut hasher = crypto::sha3::Keccak256::new();
                 hasher.update(elements[i * 2].as_u8_ref());
                 if i * 2 + 1 < curr_non_default {
                     hasher.update(elements[i * 2 + 1].as_u8_ref());
                 } else {
                     hasher.update(EMPTY_HASHES[level]);
                 }
-                elements[i] = hasher.finalize().into();
+                elements[i] = hasher.finalize_reset().into();
             }
             curr_non_default = curr_non_default.div_ceil(2);
         }
@@ -451,13 +487,15 @@ where
             0x03, 0xc0, 0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b, 0x7b, 0xfa, 0xd8, 0x04,
             0x5d, 0x85, 0xa4, 0x70,
         ]);
+        let mut hasher = Keccak256::new();
         for log in self.list.iter() {
             if let GenericLogContentData::L1TxLog(l1_tx) = &log.data {
-                count += 1;
-                let mut hasher = Keccak256::new();
-                hasher.update(rolling_hash.as_u8_ref());
-                hasher.update(l1_tx.tx_hash.as_u8_ref());
-                rolling_hash = hasher.finalize().into();
+                if l1_tx.is_priority {
+                    count += 1;
+                    hasher.update(rolling_hash.as_u8_ref());
+                    hasher.update(l1_tx.tx_hash.as_u8_ref());
+                    rolling_hash = hasher.finalize_reset().into();
+                }
             }
         }
         (count, rolling_hash)
@@ -525,7 +563,9 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
                 address.into(),
                 data_hash,
             ),
-            GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => {
+            GenericLogContentData::L1TxLog(L1TxLog {
+                tx_hash, success, ..
+            }) => {
                 let data = if success { U256::from(1) } else { U256::ZERO };
                 (
                     // TODO: move into const

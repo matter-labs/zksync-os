@@ -77,7 +77,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     ) -> Result<(), ExitCode> {
         let max_offset = offset.saturating_add(len);
         let new_heap_size = if max_offset > ((u32::MAX - 31) as usize) {
-            return Err(ExitCode::MemoryLimitOOG);
+            return Err(ExitCode::EvmError(EvmError::MemoryLimitOOG));
         } else {
             max_offset.next_multiple_of(32)
         };
@@ -86,7 +86,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             gas.pay_for_memory_growth(current_heap_size, new_heap_size)?;
 
             heap.resize(new_heap_size, 0)
-                .map_err(|_| ExitCode::MemoryOOG)?;
+                .map_err(|_| ExitCode::EvmError(EvmError::OutOfGas))?;
         }
 
         Ok(())

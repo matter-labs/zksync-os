@@ -28,6 +28,7 @@ members = [
     "tests/instances/unit",
     "tests/instances/eth_runner",
     "tests/instances/system_hooks",
+    "tests/instances/multiblock_batch",
     "cycle_marker",
     "tests/binary_checker"
 , "supporting_crates/delegated_u256", "supporting_crates/u256"]

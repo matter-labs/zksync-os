@@ -198,7 +198,10 @@ pub trait StorageModel: Sized + SnapshottableIo {
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
         in_constructor: bool,
-    ) -> Result<(), DeconstructionSubsystemError>;
+    ) -> Result<
+        <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        DeconstructionSubsystemError,
+    >;
 
     type Allocator: core::alloc::Allocator + Clone;
     type InitData;
