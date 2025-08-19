@@ -58,11 +58,11 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     // But for the real world, we bound the available resources.
 
     #[cfg(feature = "resources_for_tester")]
-    let withheld = S::Resources::from_ergs(Ergs(0));
+    let withheld = S::Resources::from_ergs(Ergs::empty());
 
     #[cfg(not(feature = "resources_for_tester"))]
     let (native_limit, withheld) = if native_limit <= MAX_NATIVE_COMPUTATIONAL {
-        (native_limit, S::Resources::from_ergs(Ergs(0)))
+        (native_limit, S::Resources::from_ergs(Ergs::empty()))
     } else {
         let withheld =
             <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(

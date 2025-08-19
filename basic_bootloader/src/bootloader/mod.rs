@@ -374,10 +374,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                     .expect("must be able to move funds to coinbase");
             }
 
-            let tx_stats = system.flush_tx();
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Tx stats = {tx_stats:?}\n"));
+            system.flush_tx()?;
 
             let mut logger = system.get_logger();
             let _ = logger.write_fmt(format_args!("TX execution ends\n"));

@@ -335,7 +335,7 @@ where {
         Ok((old_value, val_at_tx_start))
     }
 
-    /// Cleae state at specified address
+    /// Clear state at specified address
     pub fn clear_state_impl(&mut self, address: impl AsRef<B160>) -> Result<(), SystemError>
     where
         K::Subspace: TyEq<B160>,

@@ -127,7 +127,7 @@ pub trait IOSubsystem: Sized {
 
     fn net_pubdata_used(&self) -> Result<u64, InternalError>;
 
-    /// Starts a new "local" frame that does not that memory (like `near_call` in the EraVM).
+    /// Starts a new "local" frame that does not track memory (like `near_call` in the EraVM).
     /// Returns a snapshot to which the system can rollback to on frame finish.
     fn start_io_frame(&mut self) -> Result<<Self as IOSubsystem>::StateSnapshot, InternalError>;
 
