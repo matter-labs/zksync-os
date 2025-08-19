@@ -135,7 +135,7 @@ pub struct BatchOutput {
     pub used_l2_da_validator_address: B160,
     /// Pubdata commitment.
     pub pubdata_commitment: Bytes32,
-    /// Number of l1 -> l2 rocessed txs in the batch.
+    /// Number of l1 -> l2 processed txs in the batch.
     pub number_of_layer_1_txs: U256,
     /// Rolling keccak256 hash of l1 -> l2 txs processed in the batch.
     pub priority_operations_hash: Bytes32,
