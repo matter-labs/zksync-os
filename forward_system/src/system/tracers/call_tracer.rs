@@ -46,7 +46,6 @@ impl From<CallModifier> for CallType {
 }
 
 #[derive(Default, Debug)]
-#[allow(dead_code)]
 pub struct Call {
     pub call_type: CallType,
     pub from: B160,
@@ -81,6 +80,19 @@ pub struct CallTracer {
     pub unfinished_calls: Vec<Call>,
     pub finished_calls: Vec<Call>,
     pub current_call_depth: usize,
+    pub collect_logs: bool,
+}
+
+impl CallTracer {
+    pub fn new_with_config(collect_logs: bool) -> Self {
+        Self {
+            transactions: vec![],
+            unfinished_calls: vec![],
+            finished_calls: vec![],
+            current_call_depth: 0,
+            collect_logs,
+        }
+    }
 }
 
 impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
@@ -185,12 +197,14 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         topics: &[<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::EventKey],
         data: &[u8],
     ) {
-        let call = self.unfinished_calls.last_mut().expect("Should exist");
-        call.logs.push(CallLogFrame {
-            address: *address,
-            topics: topics.to_vec(),
-            data: data.to_vec(),
-        })
+        if self.collect_logs {
+            let call = self.unfinished_calls.last_mut().expect("Should exist");
+            call.logs.push(CallLogFrame {
+                address: *address,
+                topics: topics.to_vec(),
+                data: data.to_vec(),
+            })
+        }
     }
 
     #[inline(always)]
