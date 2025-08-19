@@ -5,7 +5,7 @@
 use crate::chain::BlockContext;
 use crate::Chain;
 use alloy::consensus::Transaction;
-use alloy::consensus::{TxEip1559, TxEip2930, TxLegacy};
+use alloy::consensus::TxEip1559;
 use alloy::primitives::TxKind;
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
@@ -329,7 +329,7 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
     let wallets: Vec<_> = (1..=n).map(|_| PrivateKeySigner::random()).collect();
     let dsts: Vec<_> = (1..=n)
         .map(|i| {
-            let hex = format!("{:04x}", i);
+            let hex = format!("{i:04x}");
             let repeated = hex.repeat(40 / hex.len());
             let array: [u8; 20] = hex::decode(repeated).unwrap().try_into().unwrap();
             alloy::primitives::Address::from(array)
@@ -379,7 +379,7 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
         let success = r.clone().is_ok_and(|o| o.is_success());
         if !success {
-            println!("Transaction {} failed with: {:?}", i, r)
+            println!("Transaction {i} failed with: {r:?}")
         }
         success
     }));
