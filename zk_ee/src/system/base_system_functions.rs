@@ -60,7 +60,7 @@ define_subsystem!(MissingSystemFunction);
 pub trait SystemFunction<R: Resources, E: Subsystem> {
     /// Writes result to the `output` and returns actual output slice length that was used.
     /// Should return error on invalid inputs and if resources do not even cover basic parsing cost.
-    /// in practice only pairing can have invalid input(size) on charging stage.
+    /// In practice only pairing can have invalid input(size) on charging stage.
     fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
