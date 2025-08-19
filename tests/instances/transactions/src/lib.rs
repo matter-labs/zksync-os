@@ -219,7 +219,7 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
             chain_id: Some(37),
             from: Some(alloy::signers::Signer::address(&wallet)),
             to: Some(TxKind::Call(to)),
-            gas: Some(25_000),
+            gas: Some(40_000),
             max_fee_per_gas: Some(1000),
             max_priority_fee_per_gas: Some(1000),
             nonce: Some(if use_aa { 4 } else { 3 }),
