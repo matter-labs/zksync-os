@@ -11,6 +11,7 @@ use zk_ee::system::{
     SystemTypes,
 };
 use zk_ee::types_config::SystemIOTypesConfig;
+use zk_ee::utils::Bytes32;
 
 #[derive(Default, Debug)]
 pub enum CallType {
@@ -47,17 +48,25 @@ impl From<CallModifier> for CallType {
 #[derive(Default, Debug)]
 #[allow(dead_code)]
 pub struct Call {
-    call_type: CallType,
-    from: B160,
-    to: B160,
-    value: U256,
-    gas: u64,
-    gas_used: u64,
-    input: Vec<u8>,
-    output: Vec<u8>,
-    error: Option<CallError>,
-    reverted: bool,
-    calls: Vec<Call>,
+    pub call_type: CallType,
+    pub from: B160,
+    pub to: B160,
+    pub value: U256,
+    pub gas: u64,
+    pub gas_used: u64,
+    pub input: Vec<u8>,
+    pub output: Vec<u8>,
+    pub error: Option<CallError>,
+    pub reverted: bool,
+    pub calls: Vec<Call>,
+    pub logs: Vec<CallLogFrame>,
+}
+
+#[derive(Default, Debug)]
+pub struct CallLogFrame {
+    pub address: B160,
+    pub topics: Vec<Bytes32>,
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -90,6 +99,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
             error: None,     // can be populated later
             reverted: false, // will be populated later
             calls: vec![],   // will be populated later
+            logs: vec![],    // will be populated later
         })
     }
 
@@ -171,10 +181,16 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
     fn on_event(
         &mut self,
         _ee_type: zk_ee::execution_environment_type::ExecutionEnvironmentType,
-        _address: &<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address,
-        _topics: &[<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::EventKey],
-        _data: &[u8],
+        address: &<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address,
+        topics: &[<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::EventKey],
+        data: &[u8],
     ) {
+        let call = self.unfinished_calls.last_mut().expect("Should exist");
+        call.logs.push(CallLogFrame {
+            address: *address,
+            topics: topics.to_vec(),
+            data: data.to_vec(),
+        })
     }
 
     #[inline(always)]
@@ -235,6 +251,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for CallTracer {
             error: None,
             reverted: false,
             calls: vec![],
+            logs: vec![],
         })
     }
 }
