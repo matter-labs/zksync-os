@@ -360,6 +360,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             if evm_error != EvmError::Revert {
                 // Spend all remaining resources on EVM error
                 self.gas.consume_all_gas();
+                // Clear returndata
+                return_values.returndata = &[];
             }
             tracer
                 .evm_tracer()
@@ -374,7 +376,6 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         let result = if self.is_constructor {
             let deployed_code = return_values.returndata;
-
             let mut error_after_constructor = None;
             if deployed_code.len() > MAX_CODE_SIZE {
                 // EIP-158: reject code of length > 24576.

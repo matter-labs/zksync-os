@@ -249,6 +249,11 @@ impl<R: Resources, A: Allocator + Clone> SnapshottableIo
         self.publication_storage.begin_new_tx();
     }
 
+    fn finish_tx(&mut self) -> Result<(), InternalError> {
+        self.publication_storage.finish_tx();
+        Ok(())
+    }
+
     fn start_frame(&mut self) -> Self::StateSnapshot {
         self.publication_storage.start_frame()
     }

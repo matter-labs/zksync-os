@@ -26,7 +26,7 @@ impl Default for BlockHashes {
     }
 }
 
-#[cfg(feature = "testing")]
+#[cfg(feature = "serde")]
 impl serde::Serialize for BlockHashes {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -36,7 +36,7 @@ impl serde::Serialize for BlockHashes {
     }
 }
 
-#[cfg(feature = "testing")]
+#[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for BlockHashes {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -75,7 +75,7 @@ impl UsizeDeserializable for BlockHashes {
 // those that define "block", like uniform fee for block,
 // block number, etc
 
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BlockMetadataFromOracle {
     // Chain id is temporarily also added here (so that it can be easily passed from the oracle)

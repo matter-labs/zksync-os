@@ -9,7 +9,7 @@ pub const BYTES32_USIZE_SIZE: usize = 4;
 
 #[repr(align(8))]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Bytes32 {
     inner: [usize; BYTES32_USIZE_SIZE],
 }

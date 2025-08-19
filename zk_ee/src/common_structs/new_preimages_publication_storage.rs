@@ -10,7 +10,7 @@ use super::{
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PreimageType {
     Bytecode = 0,
     AccountData = 1,
@@ -55,6 +55,8 @@ impl<A: Allocator + Clone> NewPreimagesPublicationStorage<A> {
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
     }
+
+    pub fn finish_tx(&mut self) {}
 
     #[track_caller]
     pub fn start_frame(&mut self) -> CacheSnapshotId {

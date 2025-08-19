@@ -23,8 +23,6 @@ pub trait StorageModel: Sized + SnapshottableIo {
     type Resources: Resources;
     type StorageCommitment;
 
-    fn finish_tx(&mut self) -> Result<(), InternalError>;
-
     fn storage_read(
         &mut self,
         ee_type: ExecutionEnvironmentType,
