@@ -81,16 +81,18 @@ pub struct CallTracer {
     pub finished_calls: Vec<Call>,
     pub current_call_depth: usize,
     pub collect_logs: bool,
+    pub only_top_call: bool,
 }
 
 impl CallTracer {
-    pub fn new_with_config(collect_logs: bool) -> Self {
+    pub fn new_with_config(collect_logs: bool, only_top_call: bool) -> Self {
         Self {
             transactions: vec![],
             unfinished_calls: vec![],
             finished_calls: vec![],
             current_call_depth: 0,
             collect_logs,
+            only_top_call,
         }
     }
 }
@@ -99,59 +101,64 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
     fn on_new_execution_frame(&mut self, initial_state: &ExecutionEnvironmentLaunchParams<S>) {
         self.current_call_depth += 1;
 
-        self.unfinished_calls.push(Call {
-            call_type: CallType::from(initial_state.external_call.modifier),
-            from: initial_state.external_call.caller,
-            to: initial_state.external_call.callee,
-            value: initial_state.external_call.nominal_token_value,
-            gas: initial_state.external_call.available_resources.ergs().0 / ERGS_PER_GAS,
-            gas_used: 0, // will be populated later
-            input: initial_state.external_call.input.to_vec(),
-            output: vec![],  // will be populated later
-            error: None,     // can be populated later
-            reverted: false, // will be populated later
-            calls: vec![],   // will be populated later
-            logs: vec![],    // will be populated later
-        })
+        if !self.only_top_call || self.current_call_depth == 1 {
+            self.unfinished_calls.push(Call {
+                call_type: CallType::from(initial_state.external_call.modifier),
+                from: initial_state.external_call.caller,
+                to: initial_state.external_call.callee,
+                value: initial_state.external_call.nominal_token_value,
+                gas: initial_state.external_call.available_resources.ergs().0 / ERGS_PER_GAS,
+                gas_used: 0, // will be populated later
+                input: initial_state.external_call.input.to_vec(),
+                output: vec![],  // will be populated later
+                error: None,     // can be populated later
+                reverted: false, // will be populated later
+                calls: vec![],   // will be populated later
+                logs: vec![],    // will be populated later
+            })
+        }
     }
 
     fn after_execution_frame_completed(&mut self, result: Option<(&S::Resources, &CallResult<S>)>) {
         assert_ne!(self.current_call_depth, 0);
-        self.current_call_depth -= 1;
 
-        let mut finished_call = self.unfinished_calls.pop().expect("Should exist");
+        if !self.only_top_call || self.current_call_depth == 1 {
+            let mut finished_call = self.unfinished_calls.pop().expect("Should exist");
 
-        match result {
-            Some(result) => {
-                finished_call.gas_used = finished_call
-                    .gas
-                    .saturating_sub(result.0.ergs().0 / ERGS_PER_GAS);
+            match result {
+                Some(result) => {
+                    finished_call.gas_used = finished_call
+                        .gas
+                        .saturating_sub(result.0.ergs().0 / ERGS_PER_GAS);
 
-                match &result.1 {
-                    zk_ee::system::CallResult::PreparationStepFailed => {
-                        panic!("Should not happen") // ZKsync OS should not call tracer in this case
-                    }
-                    zk_ee::system::CallResult::Failed { return_values } => {
-                        finished_call.reverted = true;
-                        finished_call.output = return_values.returndata.to_vec();
-                    }
-                    zk_ee::system::CallResult::Successful { return_values } => {
-                        finished_call.output = return_values.returndata.to_vec();
-                    }
-                };
+                    match &result.1 {
+                        zk_ee::system::CallResult::PreparationStepFailed => {
+                            panic!("Should not happen") // ZKsync OS should not call tracer in this case
+                        }
+                        zk_ee::system::CallResult::Failed { return_values } => {
+                            finished_call.reverted = true;
+                            finished_call.output = return_values.returndata.to_vec();
+                        }
+                        zk_ee::system::CallResult::Successful { return_values } => {
+                            finished_call.output = return_values.returndata.to_vec();
+                        }
+                    };
+                }
+                None => {
+                    // Some unexpected internal failure happened (maybe out of native resources)
+                    // Should revert whole tx
+                    finished_call.gas_used = finished_call.gas;
+                    finished_call.reverted = true;
+                    finished_call.error = Some(CallError::FatalError("Internal error".to_owned()));
+                }
             }
-            None => {
-                // Some unexpected internal failure happened (maybe out of native resources)
-                // Should revert whole tx
-                finished_call.gas_used = finished_call.gas;
-                finished_call.reverted = true;
-                finished_call.error = Some(CallError::FatalError("Internal error".to_owned()));
-            }
+
+            finished_call.calls = mem::take(&mut self.finished_calls);
+
+            self.finished_calls.push(finished_call);
         }
 
-        finished_call.calls = mem::take(&mut self.finished_calls);
-
-        self.finished_calls.push(finished_call);
+        self.current_call_depth -= 1;
     }
 
     fn begin_tx(&mut self, _calldata: &[u8]) {
