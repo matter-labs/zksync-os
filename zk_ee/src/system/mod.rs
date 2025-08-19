@@ -208,11 +208,9 @@ where
         Ok(())
     }
 
-    /// Finishes current transaction executions, returns execution stats.
-    pub fn flush_tx(&mut self) -> Result<u32, InternalError> {
-        self.io.finish_tx()?;
-
-        Ok(0)
+    /// Finishes current transaction execution
+    pub fn flush_tx(&mut self) -> Result<(), InternalError> {
+        self.io.finish_tx()
     }
 
     pub fn init_from_oracle(
