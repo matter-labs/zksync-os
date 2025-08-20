@@ -42,7 +42,7 @@ fn get_block_hashes_array(block_number: u64, db: &Database) -> Result<[U256; N_P
     // Add values for most recent blocks
     for offset in 1..=N_PREV_BLOCKS {
         if let Some(hash) = db.get_block_hash(block_number - (offset as u64))? {
-            hashes[offset - 1] = U256::from(hash);
+            hashes[N_PREV_BLOCKS - offset] = U256::from(hash);
         } else {
             return Err(anyhow!(format!(
                 "DB should have hash for block {}",
