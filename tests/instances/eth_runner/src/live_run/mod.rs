@@ -1,6 +1,6 @@
 use alloy::primitives::U256;
 use anyhow::{anyhow, Context, Ok, Result};
-use db::{BlockStatus, BlockTraces, Database};
+use db::{BlockStatus, BlockTraces, Database, ResourceInfo};
 mod db;
 mod rpc;
 use rig::log::{debug, error, info};
@@ -179,6 +179,22 @@ fn run_block(
         db.set_block_ratio(block_number, ratio)?;
     }
 
+    let resource_infos: Vec<ResourceInfo> = output
+        .tx_results
+        .iter()
+        .filter_map(|r| {
+            r.as_ref().ok().map(|r| ResourceInfo::V0 {
+                native_used: r.native_used,
+                computational_native_used: r.computational_native_used,
+                gas_used: r.gas_used,
+                pubdata_used: r.pubdata_used,
+                logs_used: r.logs.len() as u64,
+            })
+        })
+        .collect();
+
+    db.set_block_resource_infos(block_number, resource_infos)?;
+
     match post_check(
         output,
         receipts,
@@ -254,6 +270,7 @@ pub fn export_block_ratios(db: String, path: Option<String>) -> Result<()> {
     let db = Database::init(db)?;
     let path = path.unwrap_or("ratios.csv".to_string());
     db.export_block_ratios_to_csv(&path)?;
+    db.export_block_resource_info_to_csv("resource_info.csv")?;
     Ok(())
 }
 
