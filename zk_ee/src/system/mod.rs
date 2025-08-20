@@ -251,6 +251,9 @@ where
             Some(size) => size.get() as usize,
         };
         // Check to avoid usize overflow in 32-bit target.
+        // The maximum allowed length is u32::MAX - 3, as it is
+        // the last multiple of 4 (u32 byte size). Any value larger than that
+        // will overflow u32 in the next_multiple_of(USIZE_SIZE) call.
         if next_tx_len_bytes > u32::MAX as usize - (core::mem::size_of::<u32>() - 1) {
             return Some(Err(interface_error!(
                 crate::system::NextTxInterfaceError::TxLengthTooLarge
