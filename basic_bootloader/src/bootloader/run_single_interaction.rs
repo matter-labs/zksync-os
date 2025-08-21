@@ -99,7 +99,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                         SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
                             unreachable!("OOG on infinite resources")
                         }
-                        e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
+                        e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_)) => {
                             e.into()
                         }
                         SystemError::LeafDefect(e) => e.into(),

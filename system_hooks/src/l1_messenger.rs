@@ -100,7 +100,7 @@ where
                 .write_fmt(format_args!("Out of gas during system hook\n"));
             Ok((make_error_return_state(resources), return_memory))
         }
-        Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => Err(e),
+        Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => Err(e),
         Err(SystemError::LeafDefect(e)) => Err(e.into()),
     }
 }

@@ -4,7 +4,7 @@ use zk_ee::system::{
     errors::{
         internal::InternalError,
         root_cause::{GetRootCause, RootCause},
-        runtime::RuntimeError,
+        runtime::{FatalRuntimeError, RuntimeError},
         system::SystemError,
     },
     BalanceSubsystemError, NonceSubsystemError,
@@ -169,7 +169,10 @@ impl TxError {
     /// Do not implement From to avoid accidentally wrapping
     /// an out of native during Tx execution as a validation error.
     pub fn oon_as_validation(e: BootloaderSubsystemError) -> Self {
-        if let RootCause::Runtime(RuntimeError::OutOfNativeResources(_)) = e.root_cause() {
+        if let RootCause::Runtime(RuntimeError::FatalRuntimeError(
+            FatalRuntimeError::OutOfNativeResources(_),
+        )) = e.root_cause()
+        {
             Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
         } else {
             Self::Internal(e)
@@ -183,7 +186,8 @@ impl From<SystemError> for TxError {
             SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
                 TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
             }
-            SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
+            SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_)) => {
+                // Out of return memory cannot happen outside of execution.
                 Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
             }
             SystemError::LeafDefect(e) => TxError::Internal(e.into()),
@@ -197,7 +201,7 @@ macro_rules! revert_on_recoverable {
         match $e {
             Ok(x) => Ok(x),
             Err(SystemError::LeafDefect(err)) => Err(err),
-            Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+            Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => {
                 return Ok(ExecutionResult::Revert {
                     output: MemoryRegion::empty_shared(),
                 })
