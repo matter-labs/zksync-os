@@ -223,9 +223,14 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         // we will go BE case to quickly strip leading zeroes
         let mut first_found = false;
         // Exp is BE, so do not need to reverse iterator
-        for &byte in exp.iter() {
+        'outer: for &byte in exp.iter() {
             // But here we should go from MSB
             for i in (0..8).rev() {
+                if current.digits == 0 {
+                    // in case if modulus is composite, we can get accumulator
+                    // to be 0, and then we can exit the loop early
+                    break 'outer;
+                }
                 let bit = byte & (1 << i) > 0;
                 if first_found {
                     (current, (scratch_0, scratch_1, scratch_2, scratch_3)) = Self::square_step(
@@ -342,6 +347,8 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         digit_carry_propagation_scratch: &mut DelegatedU256,
         advisor: &mut impl ModexpAdvisor,
     ) -> (Self, (Self, Self, Self, Self)) {
+        assert!(current.digits > 0); // case if it is 0 is handled by outer loop
+        debug_assert_eq!(other.digits, modulus.digits); // we multiply accumulator by base, and base if fully reduced
         assert!(scratch_0.capacity() >= modulus.digits + 1);
         assert!(scratch_1.capacity() >= modulus.digits);
         assert!(scratch_2.capacity() >= modulus.digits * 2);
@@ -402,6 +409,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         digit_carry_propagation_scratch: &mut DelegatedU256,
         advisor: &mut impl ModexpAdvisor,
     ) -> (Self, (Self, Self, Self, Self)) {
+        assert!(a.digits > 0); // case if it is 0 is handled by outer loop
         assert!(scratch_0.capacity() >= modulus.digits + 1);
         assert!(scratch_1.capacity() >= modulus.digits);
         assert!(scratch_2.capacity() >= modulus.digits * 2);
@@ -499,13 +507,20 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         carry_propagation_scratch: &mut DelegatedU256, // this one has top limbs to be 0s
         max_product_digits: usize,
     ) {
-        assert!(max_product_digits > 0);
         debug_assert_eq!(carry_propagation_scratch.as_limbs_mut()[1], 0);
         debug_assert_eq!(carry_propagation_scratch.as_limbs_mut()[2], 0);
         debug_assert_eq!(carry_propagation_scratch.as_limbs_mut()[3], 0);
 
         let dst_scratch_capacity = dst_scratch.clear_as_capacity_mut();
         assert!(dst_scratch_capacity.len() >= max_product_digits);
+        if max_product_digits == 0 {
+            if let Some(c) = c {
+                assert_eq!(c.digits, 0);
+            }
+            dst_scratch.set_num_digits(0);
+            return;
+        }
+
         // schoolbook
 
         let mut next_to_init_digit = 0;
