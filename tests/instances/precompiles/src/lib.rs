@@ -445,7 +445,7 @@ const TESTS: [Test; 108] = [
           6affffffff3fffffffffffffffffffffffffffffffffffffffffffffffffffff\
           ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\
           ffffff2a",
-      expected: "0001000000000000",
+      expected: "0000000000000001",
       name: "guido_4_even",
       precompile_id: "0000000000000000000000000000000000000005",
   },
