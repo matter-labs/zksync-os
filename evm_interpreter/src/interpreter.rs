@@ -401,8 +401,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                         error_after_constructor = Some(EvmError::CodeStoreOutOfGas);
                     }
-                    Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(loc))) => {
-                        return Err(RuntimeError::OutOfNativeResources(loc).into())
+                    Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(e))) => {
+                        return Err(RuntimeError::FatalRuntimeError(e).into())
                     }
                     Err(SystemError::LeafDefect(e)) => return Err(e.into()),
                 }
@@ -488,7 +488,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     })
                     .map_err(|e| -> EvmSubsystemError {
                         match e.root_cause() {
-                            RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
+                            RootCause::Runtime(e @ RuntimeError::FatalRuntimeError(_)) => {
                                 e.clone_or_copy().into()
                             }
                             _ => internal_error!("Keccak in create2 cannot fail").into(),

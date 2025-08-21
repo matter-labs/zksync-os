@@ -268,7 +268,7 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
                     SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
                         SystemError::LeafDefect(internal_error!("OOE when charging only native"))
                     }
-                    e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => e,
+                    e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_)) => e,
                 }
             })?;
         Ok(Self::create_artifacts_inner(allocator, deployed_code))

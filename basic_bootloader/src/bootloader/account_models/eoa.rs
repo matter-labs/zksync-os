@@ -98,7 +98,7 @@ where
                     InvalidTransaction::OutOfGasDuringValidation,
                 ))
             }
-            Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+            Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfNativeResourcesDuringValidation,
                 ))
@@ -361,7 +361,7 @@ where
                 }
                 SubsystemError::LeafDefect(internal_error) => internal_error.into(),
                 SubsystemError::LeafRuntime(runtime_error) => match runtime_error {
-                    RuntimeError::OutOfNativeResources(_) => {
+                    RuntimeError::FatalRuntimeError(_) => {
                         TxError::oon_as_validation(out_of_native_resources!().into())
                     }
                     RuntimeError::OutOfErgs(_) => {
@@ -511,7 +511,7 @@ where
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+                Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => {
                     return Err(TxError::oon_as_validation(e.into()))
                 }
                 Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
@@ -530,7 +530,7 @@ where
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+                Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => {
                     return Err(TxError::oon_as_validation(e.into()))
                 }
                 Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
