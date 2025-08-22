@@ -1241,7 +1241,7 @@ struct RefundInfo {
     gas_refund: U256,
     // EVM gas used by the transaction
     gas_used: u64,
-    //EVM-specific refund
+    // EVM-specific refund
     evm_refund: u64,
     // Total native resource used by the transaction (includes pubdata)
     native_used: u64,
