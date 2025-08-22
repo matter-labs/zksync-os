@@ -12,7 +12,6 @@ use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use crate::bootloader::supported_ees::errors::EESubsystemError;
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
-use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
@@ -112,7 +111,9 @@ where
             let r = &signature[..32];
             let s = &signature[32..64];
             let v = &signature[64];
-            if !Config::ONLY_SIMULATE && U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
+            if !Config::ONLY_SIMULATE
+                && U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF)
+            {
                 return Err(InvalidTransaction::MalleableSignature.into());
             }
 
@@ -129,7 +130,7 @@ where
                 resources,
                 system.get_allocator(),
             )
-                .map_err(SystemError::from)?;
+            .map_err(SystemError::from)?;
 
             if !Config::ONLY_SIMULATE {
                 if ecrecover_output.is_empty() {
@@ -137,7 +138,7 @@ where
                         recovered: B160::ZERO,
                         tx: from,
                     }
-                        .into());
+                    .into());
                 }
 
                 let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
@@ -148,7 +149,7 @@ where
                         recovered: recovered_from,
                         tx: from,
                     }
-                        .into());
+                    .into());
                 }
             }
         }

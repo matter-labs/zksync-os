@@ -21,7 +21,6 @@ use zk_ee::system::*;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use zk_ee::utils::Bytes32;
 
-use super::config::BasicBootloaderExecutionConfig;
 use super::errors::BootloaderSubsystemError;
 
 /// The execution step output
@@ -75,7 +74,6 @@ where
     S::IO: IOSubsystemExt,
 {
     /// Validate transaction
-<<<<<<< HEAD
     ///
     /// `callstack` expected to be empty at the beginning and at the end of this function execution.
     /// It's passed to reuse memory between transactions.
