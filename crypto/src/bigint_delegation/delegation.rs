@@ -1,13 +1,5 @@
 use super::u256::U256;
-enum BigIntOps {
-    Add = 0,
-    Sub = 1,
-    SubAndNegate = 2,
-    MulLow = 3,
-    MulHigh = 4,
-    Eq = 5,
-    MemCpy = 7,
-}
+use crate::BigIntOps;
 
 #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
 const CARRY_BIT_IDX: usize = 6;
@@ -97,6 +89,17 @@ fn bigint_op_delegation(a: &mut U256, b: &U256, op: BigIntOps) -> u32 {
 fn bigint_op_delegation_with_carry_bit(a: &mut U256, b: &U256, carry: bool, op: BigIntOps) -> u32 {
     let a = a as *mut U256;
     let b = b as *const U256;
+    bigint_op_delegation_with_carry_bit_by_ptr(a, b, carry, op)
+}
+
+#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
+#[inline(always)]
+pub(crate) fn bigint_op_delegation_with_carry_bit_by_ptr(
+    a: *mut U256,
+    b: *const U256,
+    carry: bool,
+    op: BigIntOps,
+) -> u32 {
     debug_assert!(a.cast_const() != b);
 
     let a_adrr = a.addr();
@@ -122,23 +125,34 @@ fn bigint_op_delegation_with_carry_bit(a: &mut U256, b: &U256, carry: bool, op: 
 
 #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
 #[inline(always)]
-fn bigint_op_delegation_with_carry_bit(
-    _a: &mut U256,
-    _b: &U256,
+fn bigint_op_delegation_with_carry_bit(a: &mut U256, b: &U256, carry: bool, op: BigIntOps) -> u32 {
+    let a_ptr = a as *mut U256;
+    let b_ptr = b as *const U256;
+    bigint_op_delegation_with_carry_bit_by_ptr(a_ptr, b_ptr, carry, op)
+}
+
+#[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
+#[inline(always)]
+pub(crate) fn bigint_op_delegation_with_carry_bit_by_ptr(
+    _a_ptr: *mut U256,
+    _b_ptr: *const U256,
     _carry: bool,
     _op: BigIntOps,
 ) -> u32 {
-    let a_ptr = _a as *mut U256;
-    let b_ptr = _b as *const U256;
-    debug_assert!(a_ptr.cast_const() != b_ptr);
-    debug_assert!(a_ptr.addr() % 32 == 0);
-    debug_assert!(b_ptr.addr() % 32 == 0);
+    debug_assert!(_a_ptr.cast_const() != _b_ptr);
+    debug_assert!(_a_ptr.addr() % 32 == 0);
+    debug_assert!(_b_ptr.addr() % 32 == 0);
 
-    #[cfg(test)]
-    {
+    #[cfg(any(feature = "testing", test))]
+    unsafe {
         use ruint::aliases::{U256 as rU256, U512 as rU512};
 
-        let (a, b) = (rU256::from_limbs(_a.0), rU256::from_limbs(_b.0));
+        use core::ptr::addr_of;
+
+        let (a, b) = (
+            rU256::from_limbs(addr_of!((*_a_ptr).0).read()),
+            rU256::from_limbs(addr_of!((*_b_ptr).0).read()),
+        );
 
         let carry_or_borrow = rU256::from(_carry as u64);
 
@@ -190,11 +204,12 @@ fn bigint_op_delegation_with_carry_bit(
             }
         };
 
-        _a.0 = *result.as_limbs();
+        use core::ptr::addr_of_mut;
+        addr_of_mut!((*_a_ptr).0).write(*result.as_limbs());
 
         of as u32
     }
 
-    #[cfg(not(test))]
+    #[cfg(not(any(feature = "testing", test)))]
     unimplemented!()
 }

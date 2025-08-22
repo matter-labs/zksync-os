@@ -12,16 +12,20 @@ pub mod chain;
 pub mod utils;
 
 pub use alloy;
+pub use alloy_rlp;
 pub use chain::BlockContext;
 pub use chain::Chain;
 pub use ethers;
 pub use forward_system;
+pub use log;
 pub use risc_v_simulator::sim::ProfilerConfig;
 pub use ruint;
+pub use zk_ee;
+pub use zksync_os_api;
 pub use zksync_web3_rs;
 
 static INIT_LOGGER_ONCE: Once = Once::new();
-fn init_logger() {
+pub fn init_logger() {
     INIT_LOGGER_ONCE.call_once(env_logger::init);
 }
 

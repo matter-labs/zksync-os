@@ -15,59 +15,19 @@
 use super::*;
 use core::fmt::Write;
 use evm_interpreter::ERGS_PER_GAS;
-use zk_ee::system::{
-    errors::{SystemError, SystemFunctionError},
-    CallModifier, Resources, System,
+use zk_ee::{
+    define_subsystem, internal_error,
+    system::{
+        errors::{
+            root_cause::{GetRootCause, RootCause},
+            runtime::RuntimeError,
+            subsystem::SubsystemError,
+            system::SystemError,
+        },
+        CallModifier, Resources, System,
+    },
+    utils::cheap_clone::CheapCloneRiscV as _,
 };
-
-struct QuasiVec<'a, S: SystemTypes> {
-    buffer: OSResizableSlice<S>,
-    offset: usize,
-    system: &'a mut System<S>,
-}
-
-impl<'a, S: SystemTypes> QuasiVec<'a, S> {
-    const INITIAL_LEN: usize = 32;
-
-    fn new(system: &'a mut System<S>) -> Self {
-        let buffer = system.memory.empty_managed_region();
-        let buffer = system
-            .memory
-            .grow_heap(buffer, Self::INITIAL_LEN)
-            .expect("must grow buffer for precompiles")
-            .expect("must grow buffer for precompiles");
-
-        Self {
-            buffer,
-            offset: 0,
-            system,
-        }
-    }
-}
-
-impl<'a, S: SystemTypes> Extend<u8> for QuasiVec<'a, S> {
-    fn extend<T: IntoIterator<Item = u8>>(&mut self, iter: T) {
-        for byte in iter {
-            if self.offset == self.buffer.len() {
-                // grow
-                let new_len = self.buffer.len() * 2;
-                let buffer =
-                    core::mem::replace(&mut self.buffer, self.system.memory.empty_managed_region());
-                self.buffer = self
-                    .system
-                    .memory
-                    .grow_heap(buffer, new_len)
-                    .expect("must grow buffer for precompiles")
-                    .expect("must grow buffer for precompiles");
-            }
-            unsafe {
-                core::hint::assert_unchecked(self.buffer.len() >= self.offset);
-            }
-            self.buffer[self.offset] = byte;
-            self.offset += 1;
-        }
-    }
-}
 
 ///
 /// Generic system function hook implementation.
@@ -76,88 +36,88 @@ impl<'a, S: SystemTypes> Extend<u8> for QuasiVec<'a, S> {
 /// NOTE: "pure" here means that we do not expect to trigger any state changes (and calling with static flag is ok),
 /// so for all the purposes we remain in the callee frame in terms of memory for efficiency
 ///
-pub fn pure_system_function_hook_impl<F: SystemFunction<S::Resources>, S: EthereumLikeTypes>(
+pub fn pure_system_function_hook_impl<'a, F, E, S>(
     request: ExternalCallRequest<S>,
     _caller_ee: u8,
     system: &mut System<S>,
-) -> Result<CompletedExecution<S>, FatalError>
+    return_memory: &'a mut [MaybeUninit<u8>],
+) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
 where
-    S::Memory: MemorySubsystemExt,
+    F: SystemFunctionInvocation<S, E>,
+    S: EthereumLikeTypes,
+    S::IO: IOSubsystemExt,
+    E: Subsystem,
 {
     let ExternalCallRequest {
         available_resources,
-        calldata,
+        input: calldata,
         modifier,
         ..
     } = request;
 
     // We allow static calls as we are "pure" hook
     if modifier == CallModifier::Constructor {
-        return Err(InternalError("precompile called with constructor modifier").into());
+        return Err(internal_error!("precompile called with constructor modifier").into());
     }
-    // NOTE: we did NOT start a frame here, so we are in the caller frame in terms of memory, and must be extra careful
-    // here on how we will make returndata
 
     let mut resources = available_resources;
 
     let allocator = system.get_allocator();
-    // TODO: use returndata region directly
 
-    // cheat
-    let snapshot = system.memory.start_memory_frame();
-    let mut buffer = QuasiVec::new(system);
-    let result = F::execute(&calldata, &mut buffer, &mut resources, allocator);
-    let returndata = if result.is_ok() {
-        let QuasiVec {
-            buffer,
-            offset,
-            system,
-        } = buffer;
-        // copy it
-        system
-            .memory
-            .copy_into_return_memory(&buffer[..offset])
-            .expect("must copy into returndata")
-            .take_slice(0..offset)
-    } else {
-        system.memory.empty_immutable_slice()
-    };
-    system.memory.finish_memory_frame(Some(snapshot));
+    let mut return_vec = SliceVec::new(return_memory);
+    let mut logger = system.get_logger();
+    let result = F::invoke(
+        system.io.oracle(),
+        &mut logger,
+        &calldata,
+        &mut return_vec,
+        &mut resources,
+        allocator,
+    );
 
     match result {
-        Ok(()) => Ok(make_return_state_from_returndata_region(
-            system, resources, returndata,
-        )),
-        Err(SystemFunctionError::System(SystemError::OutOfErgs))
-        | Err(SystemFunctionError::InvalidInput) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Out of gas during system hook\n"));
-            resources.exhaust_ergs();
-            Ok(make_error_return_state(system, resources))
+        Ok(()) => {
+            let (returndata, rest) = return_vec.destruct();
+            Ok((
+                make_return_state_from_returndata_region(resources, returndata),
+                rest,
+            ))
         }
-        Err(SystemFunctionError::System(SystemError::OutOfNativeResources)) => {
-            Err(FatalError::OutOfNativeResources)
-        }
-        Err(SystemFunctionError::System(SystemError::Internal(e))) => Err(e.into()),
+        Err(e) => match e.root_cause() {
+            RootCause::Runtime(RuntimeError::OutOfErgs(_))
+            | RootCause::Internal(_)
+            | RootCause::Usage(_) => {
+                let _ = system
+                    .get_logger()
+                    .write_fmt(format_args!("Out of gas during system hook\nError:{e:?}"));
+                resources.exhaust_ergs();
+                let (_, rest) = return_vec.destruct();
+                Ok((make_error_return_state(resources), rest))
+            }
+            RootCause::Runtime(e @ RuntimeError::FatalRuntimeError(_)) => {
+                Err(Into::<SystemError>::into(e.clone_or_copy()))
+            }
+        },
     }
 }
 
-/// as there is no system function for identity(memcopy)
-/// we define one following the system functions interface
-/// to use same logic as for other hooks
+// as there is no system function for identity(memcopy)
+// we define one following the system functions interface
+// to use same logic as for other hooks
+define_subsystem!(IdentityPrecompile);
+
 pub struct IdentityPrecompile;
 const ID_STATIC_COST_ERGS: Ergs = Ergs(15 * ERGS_PER_GAS);
 const ID_WORD_COST_ERGS: Ergs = Ergs(3 * ERGS_PER_GAS);
 const ID_BASE_NATIVE_COST: u64 = 20;
 const ID_BYTE_NATIVE_COST: u64 = 10;
-impl<R: Resources> SystemFunction<R> for IdentityPrecompile {
+impl<R: Resources> SystemFunction<R, IdentityPrecompileErrors> for IdentityPrecompile {
     fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         src: &[u8],
         dst: &mut D,
         resources: &mut R,
         _: A,
-    ) -> Result<(), SystemFunctionError> {
+    ) -> Result<(), SubsystemError<IdentityPrecompileErrors>> {
         cycle_marker::wrap_with_resources!("id", resources, {
             let cost_ergs =
                 ID_STATIC_COST_ERGS + ID_WORD_COST_ERGS.times((src.len() as u64).div_ceil(32));

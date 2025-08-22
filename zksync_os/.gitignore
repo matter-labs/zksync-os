@@ -1,7 +1,4 @@
-os.elf
-app.bin
-app.elf
-app.text
+*.elf
+*.text
+app_debug.bin
 /target
-/Cargo.lock
-Cargo.lock

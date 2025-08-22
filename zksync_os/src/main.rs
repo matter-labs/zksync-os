@@ -3,17 +3,8 @@
 #![feature(allocator_api)]
 #![feature(generic_const_exprs)]
 #![no_main]
-#![no_builtins]
 
 extern "C" {
-    // // Boundaries of the .bss section
-    // static mut _ebss: u32;
-    // static mut _sbss: u32;
-
-    // // Boundaries of the .data section
-    // static mut _edata: u32;
-    // static mut _sdata: u32;
-
     // Boundaries of the heap
     static mut _sheap: usize;
     static mut _eheap: usize;
@@ -21,6 +12,16 @@ extern "C" {
     // Boundaries of the stack
     static mut _sstack: usize;
     static mut _estack: usize;
+
+    // Boundaries of the .data section (and it's part in ROM)
+    static mut _sidata: usize;
+    static mut _sdata: usize;
+    static mut _edata: usize;
+
+    // Boundaries of the .rodata section
+    static mut _sirodata: usize;
+    static mut _srodata: usize;
+    static mut _erodata: usize;
 }
 
 // core::arch::global_asm!(include_str!("asm/asm.S"));
@@ -108,7 +109,10 @@ mod csr {
     {
         #[inline(always)]
         fn csr_read_impl() -> usize {
-            core::hint::black_box(csr_read_word().try_into().unwrap())
+            const {
+                assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
+            }
+            csr_read_word() as usize
         }
         #[inline(always)]
         fn csr_write_impl(value: usize) {
@@ -150,10 +154,43 @@ static GLOBAL_ALLOC: OptionalGlobalAllocator = OptionalGlobalAllocator;
 // TODO: disable global alloc once dependencies are fixed
 // static GLOBAL_ALLOCATOR_PLACEHOLDER: NullAllocator = NullAllocator;
 
+core::arch::global_asm!(include_str!("memset.s"));
+core::arch::global_asm!(include_str!("memcpy.s"));
+
+unsafe fn load_to_ram(src: *const u8, dst_start: *mut u8, dst_end: *mut u8) {
+    #[cfg(debug_assertions)]
+    {
+        const ROM_BOUND: usize = 1 << 21;
+    
+        debug_assert!(src.addr() < ROM_BOUND);
+        debug_assert!(dst_start.addr() >= ROM_BOUND);
+        debug_assert!(dst_end.addr() >= dst_start.addr());
+    }
+
+    let offset = dst_end.addr() - dst_start.addr();
+
+    core::ptr::copy_nonoverlapping(
+        src,
+        dst_start,
+        offset
+    );
+}
+
 unsafe fn workload() -> ! {
     use core::ptr::addr_of_mut;
     let heap_start = addr_of_mut!(_sheap);
     let heap_end = addr_of_mut!(_eheap);
+
+    let load_address = addr_of_mut!(_sirodata);
+    let rodata_start = addr_of_mut!(_srodata);
+    let rodata_end = addr_of_mut!(_erodata);
+    load_to_ram(load_address as *const u8, rodata_start as *mut u8, rodata_end as *mut u8);
+
+    let load_address = addr_of_mut!(_sidata);
+    let data_start = addr_of_mut!(_sdata);
+    let data_end = addr_of_mut!(_edata);
+    load_to_ram(load_address as *const u8, data_start as *mut u8, data_end as *mut u8);
+
     use proof_running_system::system::bootloader::init_allocator;
     init_allocator(heap_start, heap_end);
 

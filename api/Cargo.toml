@@ -13,9 +13,15 @@ categories.workspace = true
 
 forward_system = { path = "../forward_system"}
 oracle_provider = { path = "../oracle_provider" }
+callable_oracles = { path = "../callable_oracles/" }
 zksync_os_runner = { path = "../zksync_os_runner"}
 risc_v_simulator = { workspace = true }
-
+zk_ee = { path = "../zk_ee" }
+crypto = { path = "../crypto" }
+basic_system = { path = "../basic_system" }
+evm_interpreter = { path = "../evm_interpreter" }
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+alloy = { version = "=1", default-features = false, features = ["eip712", "consensus", "rpc-types", "signer-local", "dyn-abi", "network"] }
 
 [features]
 # By default, use the risc_v_simulator with delegation (which is faster).

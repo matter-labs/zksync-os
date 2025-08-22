@@ -2,7 +2,7 @@
 use alloy::consensus::{TxEip1559, TxEip2930};
 use alloy::primitives::{address, TxKind, U256};
 use alloy::signers::local::PrivateKeySigner;
-use rig::forward_system::run::BatchOutput;
+use rig::forward_system::run::BlockOutput;
 use rig::ruint::aliases::B160;
 use rig::{alloy, ruint};
 use std::collections::HashSet;
@@ -16,7 +16,7 @@ use zk_ee::utils::Bytes32;
 fn run_transactions_as_eoa(
     eoa_address: alloy::primitives::Address,
     encoded_txs: Vec<Vec<u8>>,
-) -> BatchOutput {
+) -> BlockOutput {
     let mut chain = rig::Chain::empty(None);
     chain.set_balance(
         B160::from_be_bytes(eoa_address.0 .0),
@@ -30,7 +30,7 @@ fn address_to_bytecodehash_key(address: &alloy::primitives::Address) -> Bytes32 
 
     derive_flat_storage_key(
         &account_properties_address,
-        &Bytes32::from_u256_be(U256::from_be_slice(&address.0 .0)),
+        &Bytes32::from_u256_be(&U256::from_be_slice(&address.0 .0)),
     )
 }
 

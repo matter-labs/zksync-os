@@ -10,8 +10,8 @@ pub mod dyn_usize_iterator;
 use core::num::NonZeroU32;
 
 use super::kv_markers::{ExactSizeChain, StorageAddress, UsizeDeserializable, UsizeSerializable};
-use super::system::errors::InternalError;
 use super::types_config::SystemIOTypesConfig;
+use crate::system::errors::internal::InternalError;
 use crate::utils::Bytes32;
 
 ///
@@ -43,10 +43,10 @@ impl OracleIteratorTypeMarker for NewTxContentIterator {
 }
 
 ///
-/// IO Implementer initial data query type.
+/// Proof data query type.
 ///
-pub struct InitializeIOImplementerIterator;
-impl OracleIteratorTypeMarker for InitializeIOImplementerIterator {
+pub struct ProofDataIterator;
+impl OracleIteratorTypeMarker for ProofDataIterator {
     const ID: u32 = 2;
     type Params = ();
 }
@@ -135,6 +135,13 @@ impl OracleIteratorTypeMarker for ExactIndexIterator {
     type Params = Bytes32;
 }
 
+pub struct Arithmetics;
+
+impl OracleIteratorTypeMarker for Arithmetics {
+    const ID: u32 = 0x101;
+    type Params = u32;
+}
+
 ///
 /// UART access query type.
 ///
@@ -191,6 +198,17 @@ impl<IOTypes: SystemIOTypesConfig> UsizeDeserializable for InitialStorageSlotDat
 
         Ok(new)
     }
+}
+
+#[repr(C)]
+pub struct ArithmeticsParam {
+    pub op: u32,
+    pub a_ptr: u32,
+    pub a_len: u32,
+    pub b_ptr: u32,
+    pub b_len: u32,
+    pub modulus_ptr: u32,
+    pub modulus_len: u32,
 }
 
 ///

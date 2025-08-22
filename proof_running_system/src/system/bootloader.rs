@@ -5,6 +5,7 @@ use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use zk_ee::memory::ZSTAllocator;
+use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
 use zk_ee::system_io_oracle::{DisconnectOracleFormalIterator, IOOracle};
 
@@ -166,6 +167,7 @@ pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default
     run_proving_inner::<_, I, L>(oracle)
 }
 
+#[cfg(not(feature = "multiblock-batch"))]
 pub fn run_proving_inner<
     O: IOOracle,
     I: NonDeterminismCSRSourceImplementation,
@@ -178,7 +180,8 @@ pub fn run_proving_inner<
     // Load all transactions from oracle and apply them.
     let (mut oracle, public_input) = ProvingBootloader::<O, L>::run_prepared::<
         BasicBootloaderProvingExecutionConfig,
-    >(oracle, &mut NopResultKeeper);
+    >(oracle, &mut NopResultKeeper, &mut NopTracer::default())
+    .expect("Tried to prove a failing batch");
 
     // disconnect oracle before returning
     // TODO: check this is the intended behaviour (ignoring the result)
@@ -188,4 +191,46 @@ pub fn run_proving_inner<
         .expect("must disconnect an oracle before performing arbitrary CSR access");
 
     public_input.as_u32_array()
+}
+
+#[cfg(feature = "multiblock-batch")]
+pub fn run_proving_inner<
+    O: IOOracle,
+    I: NonDeterminismCSRSourceImplementation,
+    L: Logger + Default,
+>(
+    mut oracle: O,
+) -> [u32; 8] {
+    let _ = L::default().write_fmt(format_args!("IO implementer init is complete"));
+
+    // simulating query, just in case
+    I::csr_write_impl(0xdeadbeef);
+    I::csr_write_impl(0);
+    let count = I::csr_read_impl();
+    let mut batch_pi_builder =
+        basic_system::system_implementation::system::BatchPublicInputBuilder::new();
+    for _ in 0..count {
+        let (io, block_metadata, current_block_hash, upgrade_tx_hash) =
+            ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
+                oracle,
+                &mut NopResultKeeper,
+                &mut NopTracer::default(),
+            )
+            .expect("Tried to prove a failing batch");
+        oracle = io.apply_to_batch(
+            block_metadata,
+            current_block_hash,
+            upgrade_tx_hash,
+            &mut batch_pi_builder,
+        );
+        // we do this query for consistency with block based input generation(there is empty iterator as response to this query)
+        // but during proving this request shouldn't have the effect with "u32 array based" oracle
+        #[allow(unused_must_use)]
+        oracle
+            .create_oracle_access_iterator::<DisconnectOracleFormalIterator>(())
+            .expect("must disconnect an oracle before performing arbitrary CSR access");
+    }
+
+    zk_ee::utils::Bytes32::from_array(batch_pi_builder.into_public_input(L::default()).hash())
+        .as_u32_array()
 }

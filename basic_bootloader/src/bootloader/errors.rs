@@ -1,5 +1,14 @@
+use crate::bootloader::supported_ees::errors::EESubsystemError;
 use ruint::aliases::{B160, U256};
-use zk_ee::system::errors::{FatalError, InternalError, SystemError, SystemFunctionError};
+use zk_ee::system::{
+    errors::{
+        internal::InternalError,
+        root_cause::{GetRootCause, RootCause},
+        runtime::{FatalRuntimeError, RuntimeError},
+        system::SystemError,
+    },
+    BalanceSubsystemError, NonceSubsystemError,
+};
 
 // Taken from revm, contains changes
 ///
@@ -59,31 +68,23 @@ pub enum InvalidTransaction {
     InvalidChainId,
     /// Access list is not supported for blocks before the Berlin hardfork.
     AccessListNotSupported,
-    /// AA validation errors.
-    AAValidationError(InvalidAA),
     /// Unacceptable gas per pubdata price.
     GasPerPubdataTooHigh,
     /// Block gas limit is too high.
     BlockGasLimitTooHigh,
     /// Protocol upgrade tx should be first in the block.
     UpgradeTxNotFirst,
-    /// Protocol upgrade txs should always be successful.
-    // TODO: it's not really a validation error
-    UpgradeTxFailed,
-}
 
-///
-/// Error in AA validation
-///
-#[derive(Debug, Clone)]
-pub enum InvalidAA {
     /// Call during AA validation reverted
     Revert {
         method: AAMethod,
         output: Option<&'static [u8]>,
     },
     /// Bootloader received insufficient fees
-    ReceivedInsufficientFees { received: U256, required: U256 },
+    ReceivedInsufficientFees {
+        received: U256,
+        required: U256,
+    },
     /// Invalid magic returned by validation
     InvalidMagic,
     /// Validation returndata is of invalid length
@@ -104,6 +105,19 @@ pub enum InvalidAA {
     PaymasterContextInvalid,
     /// Paymaster context offset is greater than returndata length
     PaymasterContextOffsetTooLong,
+
+    /// Protocol upgrade txs should always be successful.
+    // TODO: it's not really a validation error
+    UpgradeTxFailed,
+
+    /// Transaction makes the block reach the gas limit
+    BlockGasLimitReached,
+    /// Transaction makes the block reach the native resource limit
+    BlockNativeLimitReached,
+    /// Transaction makes the block reach the pubdata limit
+    BlockPubdataLimitReached,
+    /// Transaction makes the block reach the l2->l1 logs limit
+    BlockL2ToL1LogsLimitReached,
 }
 
 ///
@@ -130,7 +144,13 @@ pub enum TxError {
     /// shouldn't terminate the block execution
     Validation(InvalidTransaction),
     /// Internal error.
-    Internal(InternalError),
+    Internal(BootloaderSubsystemError),
+}
+
+impl From<BootloaderSubsystemError> for TxError {
+    fn from(v: BootloaderSubsystemError) -> Self {
+        Self::Internal(v)
+    }
 }
 
 impl From<InvalidTransaction> for TxError {
@@ -141,21 +161,21 @@ impl From<InvalidTransaction> for TxError {
 
 impl From<InternalError> for TxError {
     fn from(e: InternalError) -> Self {
-        TxError::Internal(e)
+        TxError::Internal(e.into())
     }
 }
 
 impl TxError {
     /// Do not implement From to avoid accidentally wrapping
     /// an out of native during Tx execution as a validation error.
-    pub fn oon_as_validation(e: FatalError) -> Self {
-        match e {
-            FatalError::Internal(e) => Self::Internal(e),
-            FatalError::OutOfNativeResources => {
-                Self::Validation(InvalidTransaction::AAValidationError(
-                    InvalidAA::OutOfNativeResourcesDuringValidation,
-                ))
-            }
+    pub fn oon_as_validation(e: BootloaderSubsystemError) -> Self {
+        if let RootCause::Runtime(RuntimeError::FatalRuntimeError(
+            FatalRuntimeError::OutOfNativeResources(_),
+        )) = e.root_cause()
+        {
+            Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
+        } else {
+            Self::Internal(e)
         }
     }
 }
@@ -163,26 +183,14 @@ impl TxError {
 impl From<SystemError> for TxError {
     fn from(e: SystemError) -> Self {
         match e {
-            SystemError::OutOfErgs => TxError::Validation(InvalidTransaction::AAValidationError(
-                InvalidAA::OutOfGasDuringValidation,
-            )),
-            SystemError::OutOfNativeResources => {
-                Self::Validation(InvalidTransaction::AAValidationError(
-                    InvalidAA::OutOfNativeResourcesDuringValidation,
-                ))
+            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                TxError::Validation(InvalidTransaction::OutOfGasDuringValidation)
             }
-            SystemError::Internal(e) => TxError::Internal(e),
-        }
-    }
-}
-
-impl From<SystemFunctionError> for TxError {
-    fn from(e: SystemFunctionError) -> Self {
-        match e {
-            SystemFunctionError::InvalidInput => {
-                TxError::Internal(InternalError("Invalid system function input"))
+            SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_)) => {
+                // Out of return memory cannot happen outside of execution.
+                Self::Validation(InvalidTransaction::OutOfNativeResourcesDuringValidation)
             }
-            SystemFunctionError::System(e) => e.into(),
+            SystemError::LeafDefect(e) => TxError::Internal(e.into()),
         }
     }
 }
@@ -192,8 +200,8 @@ macro_rules! revert_on_recoverable {
     ($e:expr) => {
         match $e {
             Ok(x) => Ok(x),
-            Err(SystemError::Internal(err)) => Err(err),
-            Err(SystemError::OutOfResources) => {
+            Err(SystemError::LeafDefect(err)) => Err(err),
+            Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => {
                 return Ok(ExecutionResult::Revert {
                     output: MemoryRegion::empty_shared(),
                 })
@@ -242,7 +250,29 @@ macro_rules! require_internal {
                 .get_logger()
                 .write_fmt(format_args!("Check failed: {}\n", $s))
                 .expect("Failed to write log");
-            Err(InternalError($s))
+            Err(zk_ee::internal_error!($s))
         }
     };
+}
+
+zk_ee::define_subsystem!(Bootloader,
+interface BootloaderInterfaceError {
+    CantPayRefundInsufficientBalance,
+    CantPayRefundOverflow,
+    MintingBalanceOverflow,
+    TopLevelInsufficientBalance,
+},
+cascade WrappedError {
+    Balance(BalanceSubsystemError),
+    EEError(EESubsystemError),
+    Nonce(NonceSubsystemError),
+});
+
+// We don't need anything more than Debug here -- the error should be passed to
+// the sequencer, converted to an appropriate public error through zksync-error
+// framework and then passed to the clients.
+impl core::fmt::Display for InvalidTransaction {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{self:?}")
+    }
 }

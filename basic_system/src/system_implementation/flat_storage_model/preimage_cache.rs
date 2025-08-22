@@ -1,11 +1,12 @@
 use alloc::{alloc::Global, collections::BTreeMap};
 use core::{alloc::Allocator, marker::PhantomData};
-use storage_models::common_structs::PreimageCacheModel;
+use storage_models::common_structs::{snapshottable_io::SnapshottableIo, PreimageCacheModel};
 use zk_ee::{
     common_structs::{history_map::CacheSnapshotId, NewPreimagesPublicationStorage, PreimageType},
     execution_environment_type::ExecutionEnvironmentType,
+    internal_error,
     system::{
-        errors::{InternalError, SystemError},
+        errors::{internal::InternalError, system::SystemError},
         IOResultKeeper, Resources,
     },
     system_io_oracle::{IOOracle, PreimageContentWordsIterator},
@@ -13,9 +14,7 @@ use zk_ee::{
     utils::{Bytes32, UsizeAlignedByteBox},
 };
 
-use crate::system_implementation::flat_storage_model::cost_constants::{
-    BLAKE2S_BASE_NATIVE_COST, BLAKE2S_CHUNK_SIZE, BLAKE2S_ROUND_NATIVE_COST,
-};
+use crate::system_implementation::flat_storage_model::cost_constants::blake2s_native_cost;
 
 use super::cost_constants::PREIMAGE_CACHE_GET_NATIVE_COST;
 
@@ -58,7 +57,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             (
                 x.key(),
                 preimage.as_slice(),
-                x.current().value.preimage_type,
+                x.current().value().preimage_type,
             )
         }));
 
@@ -76,6 +75,12 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError> {
         use zk_ee::system::Computational;
+
+        // Special case, for 0 hash we return an empty slice.
+        if hash.is_zero() {
+            return Ok(&[]);
+        }
+
         resources.charge(&R::from_native(R::Native::from_computational(
             PREIMAGE_CACHE_GET_NATIVE_COST,
         )))?;
@@ -97,10 +102,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             // truncate
             buffered.truncated_to_byte_length(expected_preimage_len_in_bytes);
 
-            let num_rounds = (expected_preimage_len_in_bytes as u64).div_ceil(BLAKE2S_CHUNK_SIZE);
-            let native_cost = num_rounds
-                .saturating_mul(BLAKE2S_ROUND_NATIVE_COST)
-                .saturating_add(BLAKE2S_BASE_NATIVE_COST);
+            let native_cost = blake2s_native_cost(expected_preimage_len_in_bytes);
             resources.charge(&R::from_native(R::Native::from_computational(native_cost)))?;
 
             if PROOF_ENV {
@@ -108,35 +110,21 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                     PreimageType::AccountData => {
                         use crypto::blake2s::Blake2s256;
                         use crypto::MiniDigest;
-                        let digest = Blake2s256::digest(buffered.as_slice());
-                        let mut result = Bytes32::uninit();
-                        let recomputed_hash = unsafe {
-                            result
-                                .assume_init_mut()
-                                .as_u8_array_mut()
-                                .copy_from_slice(digest.as_slice());
-                            result.assume_init()
-                        };
+                        let recomputed_hash =
+                            Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
 
                         if recomputed_hash != *hash {
-                            return Err(InternalError("Account hash mismatch").into());
+                            return Err(internal_error!("Account hash mismatch").into());
                         }
                     }
                     PreimageType::Bytecode => {
                         use crypto::blake2s::Blake2s256;
                         use crypto::MiniDigest;
-                        let digest = Blake2s256::digest(buffered.as_slice());
-                        let mut result = Bytes32::uninit();
-                        let recomputed_hash = unsafe {
-                            result
-                                .assume_init_mut()
-                                .as_u8_array_mut()
-                                .copy_from_slice(digest.as_slice());
-                            result.assume_init()
-                        };
+                        let recomputed_hash =
+                            Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
 
                         if recomputed_hash != *hash {
-                            return Err(InternalError("Bytecode hash mismatch").into());
+                            return Err(internal_error!("Bytecode hash mismatch").into());
                         }
                     }
                 };
@@ -146,30 +134,16 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                         PreimageType::AccountData => {
                             use crypto::blake2s::Blake2s256;
                             use crypto::MiniDigest;
-                            let digest = Blake2s256::digest(buffered.as_slice());
-                            let mut result = Bytes32::uninit();
-                            let recomputed_hash = unsafe {
-                                result
-                                    .assume_init_mut()
-                                    .as_u8_array_mut()
-                                    .copy_from_slice(digest.as_slice());
-                                result.assume_init()
-                            };
+                            let recomputed_hash =
+                                Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
 
                             recomputed_hash == *hash
                         }
                         PreimageType::Bytecode => {
                             use crypto::blake2s::Blake2s256;
                             use crypto::MiniDigest;
-                            let digest = Blake2s256::digest(buffered.as_slice());
-                            let mut result = Bytes32::uninit();
-                            let recomputed_hash = unsafe {
-                                result
-                                    .assume_init_mut()
-                                    .as_u8_array_mut()
-                                    .copy_from_slice(digest.as_slice());
-                                result.assume_init()
-                            };
+                            let recomputed_hash =
+                                Bytes32::from_array(Blake2s256::digest(buffered.as_slice()));
 
                             recomputed_hash == *hash
                         }
@@ -178,7 +152,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             }
 
             let inserted = self.storage.entry(*hash).or_insert(buffered);
-            // Safety: IO implementer that will use it is expected to live beoynd any frame (as it's part of the OS),
+            // Safety: IO implementer that will use it is expected to live beyond any frame (as it's part of the OS),
             // so we can extend the lifetime
             unsafe {
                 let cached: &'static [u8] = core::mem::transmute(inserted.as_slice());
@@ -211,20 +185,6 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
 {
     type Resources = R;
     type PreimageRequest = PreimageRequest;
-    type TxStats = i32;
-    type StateSnapshot = CacheSnapshotId;
-
-    fn begin_new_tx(&mut self) {
-        self.publication_storage.begin_new_tx();
-    }
-
-    fn start_frame(&mut self) -> Self::StateSnapshot {
-        self.publication_storage.start_frame()
-    }
-
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
-        self.publication_storage.finish_frame(rollback_handle);
-    }
 
     fn get_preimage<const PROOF_ENV: bool>(
         &mut self,
@@ -257,7 +217,7 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
         _ee_type: ExecutionEnvironmentType,
         preimage_type: &Self::PreimageRequest,
         resources: &mut Self::Resources,
-        preimage: &[u8],
+        preimage: &[&[u8]],
     ) -> Result<&'static [u8], SystemError> {
         use crate::system_implementation::flat_storage_model::cost_constants::PREIMAGE_CACHE_SET_NATIVE_COST;
         use zk_ee::system::Computational;
@@ -272,13 +232,36 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
             preimage_type,
         } = preimage_type;
 
-        let boxed_data = UsizeAlignedByteBox::from_slice_in(preimage, self.allocator.clone());
+        let preimage_len = preimage.iter().fold(0, |acc, chunk| acc + chunk.len());
+        let boxed_data = UsizeAlignedByteBox::from_slices_in(preimage, self.allocator.clone());
 
-        assert_eq!(*expected_preimage_len_in_bytes, preimage.len() as u32);
+        assert_eq!(*expected_preimage_len_in_bytes, preimage_len as u32);
         self.insert_verified_preimage(*preimage_type, hash, boxed_data)
     }
+}
 
-    fn tx_stats(&self) -> Self::TxStats {
-        todo!()
+impl<R: Resources, A: Allocator + Clone> SnapshottableIo
+    for BytecodeAndAccountDataPreimagesStorage<R, A>
+{
+    type StateSnapshot = CacheSnapshotId;
+
+    fn begin_new_tx(&mut self) {
+        self.publication_storage.begin_new_tx();
+    }
+
+    fn finish_tx(&mut self) -> Result<(), InternalError> {
+        self.publication_storage.finish_tx();
+        Ok(())
+    }
+
+    fn start_frame(&mut self) -> Self::StateSnapshot {
+        self.publication_storage.start_frame()
+    }
+
+    fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&Self::StateSnapshot>,
+    ) -> Result<(), InternalError> {
+        self.publication_storage.finish_frame(rollback_handle)
     }
 }

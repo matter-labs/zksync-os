@@ -1,4 +1,4 @@
-use crate::{system::errors::InternalError, utils::*};
+use crate::{internal_error, system::errors::internal::InternalError, utils::*};
 use ruint::aliases::B160;
 
 use super::*;
@@ -45,7 +45,7 @@ impl UsizeDeserializable for u8 {
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         let word = <u64 as UsizeDeserializable>::from_iter(src)?;
         if word > u8::MAX as u64 {
-            return Err(InternalError("u8 deserialization failed"));
+            return Err(internal_error!("u8 deserialization failed"));
         }
         Ok(word as u8)
     }
@@ -81,7 +81,7 @@ impl UsizeDeserializable for bool {
         } else if word == true as u64 {
             Ok(true)
         } else {
-            Err(InternalError("bool deserialization failed"))
+            Err(internal_error!("bool deserialization failed"))
         }
     }
 }
@@ -112,7 +112,7 @@ impl UsizeDeserializable for u32 {
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         let word = <u64 as UsizeDeserializable>::from_iter(src)?;
         if word > u32::MAX as u64 {
-            return Err(InternalError("u32 deserialization failed"));
+            return Err(internal_error!("u32 deserialization failed"));
         }
         Ok(word as u32)
     }
@@ -160,11 +160,11 @@ impl UsizeDeserializable for u64 {
             if #[cfg(target_endian = "big")] {
                 compile_error!("unsupported architecture: big endian arch is not supported")
             } else if #[cfg(target_pointer_width = "32")] {
-                let low = src.next().ok_or(InternalError("u64 low deserialization failed"))?;
-                let high = src.next().ok_or(InternalError("u64 high deserialization failed"))?;
+                let low = src.next().ok_or(internal_error!("u64 low deserialization failed"))?;
+                let high = src.next().ok_or(internal_error!("u64 high deserialization failed"))?;
                 return Ok(((high as u64) << 32) | (low as u64));
             } else if #[cfg(target_pointer_width = "64")] {
-                let value = src.next().ok_or(InternalError("u64 deserialization failed"))?;
+                let value = src.next().ok_or(internal_error!("u64 deserialization failed"))?;
                 return Ok(value as u64);
             } else {
                 compile_error!("unsupported architecture")
@@ -214,14 +214,14 @@ impl UsizeDeserializable for U256 {
                 compile_error!("unsupported architecture: big endian arch is not supported")
             } else if #[cfg(target_pointer_width = "32")] {
                 for dst in this.assume_init_mut().as_limbs_mut() {
-                    let low = src.next().ok_or(InternalError("u256 limb low deserialization failed"))?;
-                    let high = src.next().ok_or(InternalError("u256 limb high deserialization failed"))?;
+                    let low = src.next().ok_or(internal_error!("u256 limb low deserialization failed"))?;
+                    let high = src.next().ok_or(internal_error!("u256 limb high deserialization failed"))?;
                     *dst = ((high as u64) << 32) | (low as u64);
                 }
                 return Ok(())
             } else if #[cfg(target_pointer_width = "64")] {
                 for dst in this.assume_init_mut().as_limbs_mut() {
-                    *dst = src.next().ok_or(InternalError("u256 limb deserialization failed"))? as u64;
+                    *dst = src.next().ok_or(internal_error!("u256 limb deserialization failed"))? as u64;
                 }
                 return Ok(())
             } else {
@@ -270,7 +270,7 @@ impl UsizeDeserializable for B160 {
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
-            return Err(InternalError("b160 deserialization failed: too short"));
+            return Err(internal_error!("b160 deserialization failed: too short"));
         }
         let mut new = B160::ZERO;
         unsafe {
@@ -287,7 +287,7 @@ impl UsizeDeserializable for B160 {
         src: &mut impl ExactSizeIterator<Item = usize>,
     ) -> Result<(), InternalError> {
         if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
-            return Err(InternalError("b160 deserialization failed: too short"));
+            return Err(internal_error!("b160 deserialization failed: too short"));
         }
         for dst in this.assume_init_mut().as_limbs_mut().iter_mut() {
             *dst = <u64 as UsizeDeserializable>::from_iter(src).unwrap_unchecked();
@@ -334,7 +334,7 @@ impl UsizeDeserializable for Bytes32 {
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
-            return Err(InternalError("Bytes32 deserialization failed: too short"));
+            return Err(internal_error!("Bytes32 deserialization failed: too short"));
         }
         let mut new = Bytes32::ZERO;
         for dst in new.as_array_mut().iter_mut() {
@@ -349,7 +349,7 @@ impl UsizeDeserializable for Bytes32 {
         src: &mut impl ExactSizeIterator<Item = usize>,
     ) -> Result<(), InternalError> {
         if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
-            return Err(InternalError("b160 deserialization failed: too short"));
+            return Err(internal_error!("b160 deserialization failed: too short"));
         }
         for dst in this.assume_init_mut().as_array_mut().iter_mut() {
             *dst = src.next().unwrap_unchecked()

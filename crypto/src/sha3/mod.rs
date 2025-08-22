@@ -25,9 +25,11 @@ impl crate::MiniDigest for Keccak256 {
 
     #[inline(always)]
     fn finalize(self) -> Self::HashOutput {
-        let digest = <Keccak256 as Digest>::finalize(self);
-        let mut result = [0u8; 32];
-        result.copy_from_slice(digest.as_slice());
-        result
+        <Keccak256 as Digest>::finalize(self).into()
+    }
+
+    #[inline(always)]
+    fn finalize_reset(&mut self) -> Self::HashOutput {
+        <Keccak256 as Digest>::finalize_reset(self).into()
     }
 }

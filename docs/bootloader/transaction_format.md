@@ -19,7 +19,7 @@ ZKsyncOS expects transactions with the following fields:
 | `signature`               | `bytes`      | Signature of the transaction.                                                                                                                                                                                                   |
 | `factory_deps`            | `bytes`      | Only for EraVM. Properly formatted hashes of bytecodes to be published on L1 with this transaction. Previously published bytecodes won't incur additional fees.                                                                  |
 | `paymaster_input`         | `bytes`      | Input for the paymaster.                                                                                                                                                                                                        |
-| `reserved_dynamic`        | `bytes`      | Reserved dynamic type for future use. Usage should be avoided unless enabling additional functionality.                                                                                                                          |
+| `reserved_dynamic`        | `bytes`      | Field used for extra functionality.  Currently, it's used for access and authorization lists. The field is encoded as a list, to be able to extend it in the future. The field is encoded a the ABI encoding of a bytestring containing the ABI encoding of the list itself. Currently the list contains 2 elements. First, the access list: encoded as `tuple(address, bytes32[])[]`, i.e. a list of (address, keys) pairs. Second, the authorization list: encoded as `tuple(chain_id, address, nonce, y_parity, r, s)[]`.                                                  |
 
 ### Transaction Types
 
@@ -28,6 +28,7 @@ ZKsyncOS expects transactions with the following fields:
 | `0x0`   | Legacy transaction.                                                                              |
 | `0x1`   | EIP-2930 transaction.                                                                            |
 | `0x2`   | EIP-1559 transaction.                                                                            |
+| `0x4`   | EIP-7702 transaction.                                                                            |
 | `0x71`  | EIP-712 transaction following the [Era format](https://docs.zksync.io/zksync-protocol/rollup/transaction-lifecycle#eip-712-0x71). |
 | `0xFF`  | L1 -> L2 transaction.                                                                            |
 

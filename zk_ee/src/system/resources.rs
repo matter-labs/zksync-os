@@ -3,7 +3,9 @@
 //! - EE resource: measured in ergs. Includes EVM gas, converted as 1 gas = ERGS_PER_GAS ergs.
 //! - Native resource: model for prover complexity.
 
-use super::errors::SystemError;
+use crate::out_of_ergs_error;
+
+use super::errors::system::SystemError;
 
 ///
 /// Single resource, both resources will implement this, as well as
@@ -33,16 +35,15 @@ pub trait Resource: 'static + Sized + Clone + core::fmt::Debug + PartialEq + Eq 
     /// Adds [to_reclaim] to a given resource.
     fn reclaim(&mut self, to_reclaim: Self);
 
+    /// Reclaims a withheld resource. Should be only used by the bootloader at the end
+    /// of a transaction.
+    fn reclaim_withheld(&mut self, to_reclaim: Self);
+
     /// Computes the absolute difference between [self] and [other].
     fn diff(&self, other: Self) -> Self;
 
     // Returns the remaining part of the resource.
     fn remaining(&self) -> Self;
-
-    /// To be called when initially setting a resource limit.
-    /// Used to make a distinction between resource limits and resources
-    /// to be charged.
-    fn set_as_limit(&mut self);
 }
 
 ///
@@ -56,7 +57,7 @@ pub trait Computational: 'static + Sized + Clone + core::fmt::Debug + PartialEq 
 ///
 /// Ergs, the resource for EEs.
 ///
-#[derive(Clone, Copy, core::fmt::Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, core::fmt::Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Ergs(pub u64);
 
 impl core::ops::Add for Ergs {
@@ -76,7 +77,7 @@ impl Resource for Ergs {
     const FORMAL_INFINITE: Self = Ergs(u64::MAX);
 
     fn empty() -> Self {
-        Ergs(0)
+        Self(0)
     }
 
     fn is_empty(&self) -> bool {
@@ -90,7 +91,7 @@ impl Resource for Ergs {
     fn charge(&mut self, to_charge: &Self) -> Result<(), SystemError> {
         if self.0 < to_charge.0 {
             self.0 = 0;
-            return Err(SystemError::OutOfErgs);
+            return Err(out_of_ergs_error!());
         }
         self.0 -= to_charge.0;
         Ok(())
@@ -104,6 +105,10 @@ impl Resource for Ergs {
         self.0 += to_reclaim.0
     }
 
+    fn reclaim_withheld(&mut self, to_reclaim: Self) {
+        self.0 += to_reclaim.0
+    }
+
     fn diff(&self, other: Self) -> Self {
         Self(self.0.abs_diff(other.0))
     }
@@ -111,8 +116,6 @@ impl Resource for Ergs {
     fn remaining(&self) -> Self {
         *self
     }
-
-    fn set_as_limit(&mut self) {}
 }
 
 ///

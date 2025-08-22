@@ -18,8 +18,6 @@ This component is, as the name suggest, the entrypoint of the system. The functi
 The bootloader can be configured with the following parameters (found in the [`BasicBootloaderExecutionConfig`](../../basic_bootloader/src/bootloader/mod.rs) struct):
 
 - `ONLY_SIMULATE`: skips the [validation](./transaction_processing.md#validation) step when processing a transaction. Used for call simulation in the node.
-- `IS_PROVING_ENVIRONMENT`: to skip some checks during sequencing.
-- `SPECIAL_ADDRESS_SPACE_BOUND`: the range of address (starting from 0) where system contracts can be deployed.
 - `AA_ENABLED`: whether native account abstraction is enabled.
 
 In addition, the `basic_bootloader` crate has the following compilation flags:
@@ -41,13 +39,13 @@ A contract call is executed through an interplay between the bootloader and (pot
 
 ## Block header
 
-At the end of the execution bootloader outputs block header.
+At the end of the execution bootloader outputs block header to the system.
 
-For the block header, the Ethereum format will be used.
-However, some of the fields will be set differently in the first version for simplification.
+For the block header, we use Ethereum block header format.
+However, some of the fields will be set differently in the first version for simplification (most likely it will change before the mainnet launch).
 
 The block header should determine the block fully, i.e. include all the inputs needed to execute the block.
-
+Currently it misses `gas_per_pubdata` and `native_price`, but we already working on design and implementation to solve this issue.
 
 | Ethereum field name | Ethereum value                                                                   | ZKsync OS value                                                    | Comments                                |
 |---------------------|----------------------------------------------------------------------------------|--------------------------------------------------------------------|-----------------------------------------|
@@ -63,7 +61,7 @@ The block header should determine the block fully, i.e. include all the inputs n
 | gas_limit           | block gas limit                                                                  | constant, not defined yet, 10-15m most likely                      |                                         |
 | gas_used            | block gas used                                                                   | block gas used                                                     | TBD with or without pubdata             |
 | timestamp           | block timestamp                                                                  | block timestamp                                                    |                                         |
-| extra_data          | any extra data included by proposer                                              | TBD, possibly gas_per_pubdata                                      |                                         |
+| extra_data          | any extra data included by proposer                                              | TBD, possibly gas_per_pubdata and native price                     |                                         |
 | mix_hash            | beacon chain provided random, prevrandao (post merge)                            | 0                                                                  | after consensus will be provided random |
 | nonce               | 0 (post merge)                                                                   | 0                                                                  |                                         |
 | base_fee_per_gas    | base_fee_per_gas                                                                 | base_fee_per_gas                                                   |                                         |

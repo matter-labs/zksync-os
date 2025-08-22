@@ -19,11 +19,15 @@ pub use self::storage_cache::*;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
-use storage_models::common_structs::PreimageCacheModel;
+use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageCacheModel;
 use storage_models::common_structs::StorageModel;
-use zk_ee::common_structs::{derive_flat_storage_key, ValueDiffCompressionStrategy};
-use zk_ee::system::errors::InternalError;
+use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ValueDiffCompressionStrategy};
+use zk_ee::internal_error;
+use zk_ee::system::errors::internal::InternalError;
+use zk_ee::system::BalanceSubsystemError;
+use zk_ee::system::DeconstructionSubsystemError;
+use zk_ee::system::NonceSubsystemError;
 use zk_ee::system::Resources;
 use zk_ee::{
     common_structs::{
@@ -32,9 +36,8 @@ use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     memory::stack_trait::{StackCtor, StackCtorConst},
     system::{
-        errors::{SystemError, UpdateQueryError},
-        logger::Logger,
-        AccountData, AccountDataRequest, IOResultKeeper, Maybe,
+        errors::system::SystemError, logger::Logger, AccountData, AccountDataRequest,
+        IOResultKeeper, Maybe,
     },
     system_io_oracle::IOOracle,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
@@ -42,8 +45,6 @@ use zk_ee::{
 };
 
 use super::system::ExtraCheck;
-
-pub const DEFAULT_CODE_VERSION_BYTE: u8 = 1;
 
 pub fn address_into_special_storage_key(address: &B160) -> Bytes32 {
     let mut key = Bytes32::zero();
@@ -74,7 +75,7 @@ pub struct FlatTreeWithAccountsUnderHashesStorageModel<
 }
 
 pub struct FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
-    storage: CacheSnapshotId,
+    storage: StorageSnapshotId,
     account_data: CacheSnapshotId,
     preimages: CacheSnapshotId,
 }
@@ -95,41 +96,7 @@ where
     type StorageCommitment = FlatStorageCommitment<TREE_HEIGHT>;
 
     type IOTypes = EthereumIOTypesConfig;
-
     type InitData = P;
-
-    type StateSnapshot = FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot;
-
-    fn begin_new_tx(&mut self) {
-        self.storage_cache.begin_new_tx();
-        self.preimages_cache.begin_new_tx();
-        self.account_data_cache.begin_new_tx();
-    }
-
-    fn finish_tx(&mut self) -> Result<(), zk_ee::system::errors::InternalError> {
-        self.account_data_cache.finish_tx(&mut self.storage_cache)
-    }
-
-    fn start_frame(&mut self) -> Self::StateSnapshot {
-        let storage_handle = self.storage_cache.start_frame();
-        let preimages_handle = self.preimages_cache.start_frame();
-        let account_handle = self.account_data_cache.start_frame();
-
-        FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
-            storage: storage_handle,
-            preimages: preimages_handle,
-            account_data: account_handle,
-        }
-    }
-
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>) {
-        self.storage_cache
-            .finish_frame(rollback_handle.map(|x| &x.storage));
-        self.preimages_cache
-            .finish_frame(rollback_handle.map(|x| &x.preimages));
-        self.account_data_cache
-            .finish_frame(rollback_handle.map(|x| &x.account_data));
-    }
 
     fn construct(init_data: Self::InitData, allocator: Self::Allocator) -> Self {
         let resources_policy = init_data;
@@ -149,8 +116,9 @@ where
         }
     }
 
-    fn pubdata_used(&self) -> u32 {
-        self.account_data_cache.net_pubdata_used() + self.storage_cache.net_pubdata_used()
+    fn pubdata_used_by_tx(&self) -> u32 {
+        self.account_data_cache.calculate_pubdata_used_by_tx()
+            + self.storage_cache.calculate_pubdata_used_by_tx()
     }
 
     fn finish(
@@ -191,16 +159,18 @@ where
         pubdata_hasher.update(&encdoded_state_diffs_count);
         result_keeper.pubdata(&encdoded_state_diffs_count);
 
+        let mut hasher = crypto::blake2s::Blake2s256::new();
         storage_cache
             .0
             .cache
-            .for_total_diff_operands::<_, ()>(|l, r, k| {
-                // TODO: use tree index instead of key for repeated writes
-                let derived_key = derive_flat_storage_key(&k.address, &k.key);
+            .apply_to_all_updated_elements::<_, ()>(|l, r, k| {
+                // TODO(EVM-1074): use tree index instead of key for repeated writes
+                let derived_key =
+                    derive_flat_storage_key_with_hasher(&k.address, &k.key, &mut hasher);
                 pubdata_hasher.update(derived_key.as_u8_ref());
                 result_keeper.pubdata(derived_key.as_u8_ref());
 
-                if l.value == r.value {
+                if l.value() == r.value() {
                     return Ok(());
                 }
                 // we publish preimages for account details
@@ -208,14 +178,12 @@ where
                     let account_address = B160::try_from_be_slice(&k.key.as_u8_ref()[12..])
                         .unwrap()
                         .into();
-                    let cache_item = account_data_cache
-                        .cache
-                        .get_current(&account_address)
-                        .ok_or(())?;
-                    let (l, r) = cache_item.diff_operands_total().ok_or(())?;
+                    let cache_item = account_data_cache.cache.get(&account_address).ok_or(())?;
+                    let (l, r) = cache_item.get_initial_and_last_values().ok_or(())?;
                     AccountProperties::diff_compression::<PROOF_ENV, _, _>(
-                        &l.value,
-                        &r.value,
+                        l.value(),
+                        r.value(),
+                        r.metadata().not_publish_bytecode,
                         pubdata_hasher,
                         result_keeper,
                         &mut preimages_cache,
@@ -224,15 +192,15 @@ where
                     .map_err(|_| ())?;
                 } else {
                     ValueDiffCompressionStrategy::optimal_compression(
-                        &l.value,
-                        &r.value,
+                        l.value(),
+                        r.value(),
                         pubdata_hasher,
                         result_keeper,
                     );
                 }
                 Ok(())
             })
-            .map_err(|_| InternalError("Failed to compute pubdata"))?;
+            .map_err(|_| internal_error!("Failed to compute pubdata"))?;
 
         // 3. Verify/apply reads and writes
         cycle_marker::wrap!("verify_and_apply_batch", {
@@ -258,6 +226,19 @@ where
             .read(ee_type, resources, address, key, oracle)
     }
 
+    fn storage_touch(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        oracle: &mut impl IOOracle,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.storage_cache
+            .touch(ee_type, resources, address, key, oracle, is_access_list)
+    }
+
     fn storage_write(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -266,7 +247,7 @@ where
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         new_value: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
         oracle: &mut impl IOOracle,
-    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
+    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError> {
         self.storage_cache
             .write(ee_type, resources, address, key, new_value, oracle)
     }
@@ -281,6 +262,8 @@ where
         ArtifactsLen: Maybe<u32>,
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
+        CodeVersion: Maybe<u8>,
+        IsDelegated: Maybe<bool>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -297,6 +280,8 @@ where
                 ArtifactsLen,
                 NominalTokenBalance,
                 Bytecode,
+                CodeVersion,
+                IsDelegated,
             >,
         >,
         oracle: &mut impl IOOracle,
@@ -311,11 +296,13 @@ where
             ArtifactsLen,
             NominalTokenBalance,
             Bytecode,
+            CodeVersion,
+            IsDelegated,
         >,
         SystemError,
     > {
         self.account_data_cache
-            .read_account_properties::<PROOF_ENV, _, _, _, _, _, _, _, _, _>(
+            .read_account_properties::<PROOF_ENV, _, _, _, _, _, _, _, _, _, _, _>(
                 ee_type,
                 resources,
                 address,
@@ -324,6 +311,25 @@ where
                 &mut self.preimages_cache,
                 oracle,
             )
+    }
+
+    fn touch_account(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        oracle: &mut impl IOOracle,
+        is_access_list: bool,
+    ) -> Result<(), SystemError> {
+        self.account_data_cache.touch_account::<PROOF_ENV>(
+            ee_type,
+            resources,
+            address,
+            &mut self.storage_cache,
+            &mut self.preimages_cache,
+            oracle,
+            is_access_list,
+        )
     }
 
     fn get_selfbalance(
@@ -342,8 +348,6 @@ where
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-        bytecode_len: u32,
-        artifacts_len: u32,
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError> {
         self.account_data_cache.deploy_code::<PROOF_ENV>(
@@ -351,8 +355,50 @@ where
             resources,
             at_address,
             bytecode,
+            &mut self.storage_cache,
+            &mut self.preimages_cache,
+            oracle,
+        )
+    }
+
+    fn set_bytecode_details(
+        &mut self,
+        resources: &mut R,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        ee: ExecutionEnvironmentType,
+        bytecode_hash: Bytes32,
+        bytecode_len: u32,
+        artifacts_len: u32,
+        observable_bytecode_hash: Bytes32,
+        observable_bytecode_len: u32,
+        oracle: &mut impl IOOracle,
+    ) -> Result<(), SystemError> {
+        self.account_data_cache.set_bytecode_details::<PROOF_ENV>(
+            resources,
+            at_address,
+            ee,
+            bytecode_hash,
             bytecode_len,
             artifacts_len,
+            observable_bytecode_hash,
+            observable_bytecode_len,
+            &mut self.storage_cache,
+            &mut self.preimages_cache,
+            oracle,
+        )
+    }
+
+    fn set_delegation(
+        &mut self,
+        resources: &mut R,
+        at_address: &B160,
+        delegate: &B160,
+        oracle: &mut impl IOOracle,
+    ) -> Result<(), SystemError> {
+        self.account_data_cache.set_delegation::<PROOF_ENV>(
+            resources,
+            at_address,
+            delegate,
             &mut self.storage_cache,
             &mut self.preimages_cache,
             oracle,
@@ -366,7 +412,11 @@ where
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
-    ) -> Result<(), SystemError> {
+        in_constructor: bool,
+    ) -> Result<
+        <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        DeconstructionSubsystemError,
+    > {
         self.account_data_cache
             .mark_for_deconstruction::<PROOF_ENV>(
                 from_ee,
@@ -376,6 +426,7 @@ where
                 &mut self.storage_cache,
                 &mut self.preimages_cache,
                 oracle,
+                in_constructor,
             )
     }
 
@@ -386,7 +437,7 @@ where
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         increment_by: u64,
         oracle: &mut impl IOOracle,
-    ) -> Result<u64, UpdateQueryError> {
+    ) -> Result<u64, NonceSubsystemError> {
         self.account_data_cache.increment_nonce::<PROOF_ENV>(
             ee_type,
             resources,
@@ -406,7 +457,7 @@ where
         to: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         amount: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         oracle: &mut impl IOOracle,
-    ) -> Result<(), UpdateQueryError> {
+    ) -> Result<(), BalanceSubsystemError> {
         self.account_data_cache
             .transfer_nominal_token_value::<PROOF_ENV>(
                 from_ee,
@@ -429,10 +480,11 @@ where
             &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         ) -> Result<
             <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
-            UpdateQueryError,
+            BalanceSubsystemError,
         >,
         oracle: &mut impl IOOracle,
-    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue, UpdateQueryError> {
+    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue, BalanceSubsystemError>
+    {
         self.account_data_cache
             .update_nominal_token_value::<PROOF_ENV>(
                 from_ee,
@@ -443,5 +495,82 @@ where
                 &mut self.preimages_cache,
                 oracle,
             )
+    }
+
+    #[cfg(feature = "evm_refunds")]
+    fn get_refund_counter(&self) -> u32 {
+        *self
+            .storage_cache
+            .0
+            .evm_refunds_counter
+            .value()
+            .unwrap_or(&0)
+    }
+
+    // Add EVM refund to counter
+    #[cfg(feature = "evm_refunds")]
+    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError> {
+        let mut gas_refunds = self
+            .storage_cache
+            .0
+            .evm_refunds_counter
+            .value()
+            .copied()
+            .unwrap_or_default();
+        gas_refunds += refund;
+        self.storage_cache.0.evm_refunds_counter.update(gas_refunds);
+        Ok(())
+    }
+}
+
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+        SC: StackCtor<SCC>,
+        SCC: const StackCtorConst,
+        const PROOF_ENV: bool,
+    > SnapshottableIo for FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SC, SCC, PROOF_ENV>
+where
+    ExtraCheck<SCC, A>:,
+{
+    type StateSnapshot = FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot;
+
+    fn begin_new_tx(&mut self) {
+        self.storage_cache.begin_new_tx();
+        self.preimages_cache.begin_new_tx();
+        self.account_data_cache.begin_new_tx();
+    }
+
+    fn finish_tx(&mut self) -> Result<(), zk_ee::system::errors::internal::InternalError> {
+        self.account_data_cache.finish_tx(&mut self.storage_cache)?;
+        self.storage_cache.finish_tx()?;
+        self.preimages_cache.finish_tx()
+    }
+
+    fn start_frame(&mut self) -> Self::StateSnapshot {
+        let storage_handle = self.storage_cache.start_frame();
+        let preimages_handle = self.preimages_cache.start_frame();
+        let account_handle = self.account_data_cache.start_frame();
+
+        FlatTreeWithAccountsUnderHashesStorageModelStateSnapshot {
+            storage: storage_handle,
+            preimages: preimages_handle,
+            account_data: account_handle,
+        }
+    }
+
+    fn finish_frame(
+        &mut self,
+        rollback_handle: Option<&Self::StateSnapshot>,
+    ) -> Result<(), InternalError> {
+        self.storage_cache
+            .finish_frame(rollback_handle.map(|x| &x.storage))?;
+        self.preimages_cache
+            .finish_frame(rollback_handle.map(|x| &x.preimages))?;
+        self.account_data_cache
+            .finish_frame(rollback_handle.map(|x| &x.account_data))?;
+
+        Ok(())
     }
 }

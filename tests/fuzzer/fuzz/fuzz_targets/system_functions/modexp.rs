@@ -5,8 +5,11 @@ use arbitrary::{Arbitrary, Unstructured};
 use basic_system::system_functions::modexp::ModExpImpl;
 use libfuzzer_sys::fuzz_target;
 use std::convert::TryInto;
-use zk_ee::reference_implementations::{BaseComputationalResources, BaseResources};
+use zk_ee::reference_implementations::BaseResources;
 use zk_ee::system::SystemFunction;
+use zk_ee::system::Resource;
+use zk_ee::reference_implementations::DecreasingNative;
+use zk_ee::system::SystemFunctionExt;
 
 #[derive(Debug)]
 struct ModexpInput {
@@ -91,9 +94,7 @@ fn fuzz(data: &[u8]) {
     }
 
     let allocator = std::alloc::Global;
-    let mut resource = BaseResources {
-        spendable: BaseComputationalResources { ergs: u64::MAX },
-    };
+    let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
     let mut dst = dst.clone();
 
@@ -101,8 +102,24 @@ fn fuzz(data: &[u8]) {
         &src.to_bytes().as_slice()[0..src.n],
         &mut dst,
         &mut resource,
+        // We're in x86 target, so oracle and logger aren't going to be used.
+        &mut DummyOracle {},
+        &mut zk_ee::system::NullLogger,
         allocator,
     );
+}
+
+struct DummyOracle {}
+
+impl zk_ee::system_io_oracle::IOOracle for DummyOracle {
+    type MarkerTiedIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+
+    fn create_oracle_access_iterator<'a, M: zk_ee::system_io_oracle::OracleIteratorTypeMarker>(
+        &'a mut self,
+        _init_value: M::Params,
+    ) -> Result<Self::MarkerTiedIterator<'a>, zk_ee::system::errors::internal::InternalError> {
+        unreachable!("oracle should not be consulted on native targets");
+    }
 }
 
 fuzz_target!(|data: &[u8]| {

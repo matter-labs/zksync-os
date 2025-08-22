@@ -1,8 +1,7 @@
 PROVIDE(_stext = ORIGIN(REGION_TEXT));
-PROVIDE(_stack_start = ORIGIN(REGION_STACK) + LENGTH(REGION_STACK));
 PROVIDE(_max_hart_id = 0);
-PROVIDE(_hart_stack_size = 128M);
-PROVIDE(_heap_size = 3584M);
+PROVIDE(_hart_stack_size = 64M);
+PROVIDE(_heap_size = 768M);
 
 /*
 PROVIDE(UserSoft = DefaultHandler);
@@ -40,6 +39,7 @@ PROVIDE(_machine_start_trap = machine_default_start_trap);
 PHDRS
 {
   text PT_LOAD;
+  rodata PT_LOAD;
   data PT_LOAD;
   bss PT_LOAD;
 }
@@ -65,16 +65,29 @@ SECTIONS
     *(.text .text.*);
   } > REGION_TEXT AT > REGION_TEXT :text
 
+  /* fictitious region that represents the memory available for the stack */
+  .stack ORIGIN(REGION_STACK) (NOLOAD) : ALIGN(4096)
+  {
+    _estack = .;
+    . += (_max_hart_id + 1) * _hart_stack_size;
+    . = ALIGN(4);
+    _sstack = .;
+  } > REGION_STACK
+
   .rodata : ALIGN(4)
   {
+    _sirodata = LOADADDR(.rodata);
+    _srodata = .;
     *(.srodata .srodata.*);
     *(.rodata .rodata.*);
 
     /* 4-byte align the end (VMA) of this section.
-       This is required by LLD to ensure the LMA of the following .data
+       This is required by LLD to ensure the LMA of the following
        section will have the correct alignment. */
     . = ALIGN(4);
-  } > REGION_RODATA AT > REGION_RODATA :text
+
+    _erodata = .;
+  } > REGION_RODATA AT > REGION_RODATAINIT :rodata
 
   .data : ALIGN(4096)
   {
@@ -86,7 +99,7 @@ SECTIONS
     *(.data .data.*);
     . = ALIGN(4);
     _edata = .;
-  } > REGION_DATA AT > REGION_DATA :data
+  } > REGION_DATA AT > REGION_DATAINIT :data
 
   .bss (NOLOAD) : ALIGN(4096)
   {
@@ -105,14 +118,6 @@ SECTIONS
     _eheap = .;
   } > REGION_HEAP
 
-  /* fictitious region that represents the memory available for the stack */
-  .stack (NOLOAD) : ALIGN(4096)
-  {
-    _estack = .;
-    . = ABSOLUTE(_stack_start);
-    _sstack = .;
-  } > REGION_STACK
-
   /* fake output .got section */
   /* Dynamic relocations are unsupported. This section is only used to detect
      relocatable code in the input files and raise an error if relocatable code
@@ -130,8 +135,14 @@ SECTIONS
 ASSERT(ORIGIN(REGION_TEXT) % 4 == 0, "
 ERROR(riscv-rt): the start of the REGION_TEXT must be 4-byte aligned");
 
+ASSERT(ORIGIN(REGION_RODATAINIT) % 4 == 0, "
+ERROR(riscv-rt): the start of the REGION_RODATAINIT must be 4-byte aligned");
+
 ASSERT(ORIGIN(REGION_RODATA) % 4 == 0, "
 ERROR(riscv-rt): the start of the REGION_RODATA must be 4-byte aligned");
+
+ASSERT(ORIGIN(REGION_DATAINIT) % 4 == 0, "
+ERROR(riscv-rt): the start of the REGION_DATAINIT must be 4-byte aligned");
 
 ASSERT(ORIGIN(REGION_DATA) % 4 == 0, "
 ERROR(riscv-rt): the start of the REGION_DATA must be 4-byte aligned");
@@ -147,6 +158,12 @@ ERROR(riscv-rt): the start of the REGION_STACK must be 4-byte aligned");
 
 ASSERT(_stext % 4 == 0, "
 ERROR(riscv-rt): `_stext` must be 4-byte aligned");
+
+ASSERT(_srodata % 4 == 0 && _erodata % 4 == 0, "
+BUG(riscv-rt): .rodata is not 4-byte aligned");
+
+ASSERT(_sirodata % 4 == 0, "
+BUG(riscv-rt): the LMA of .rodata is not 4-byte aligned");
 
 ASSERT(_sdata % 4 == 0 && _edata % 4 == 0, "
 BUG(riscv-rt): .data is not 4-byte aligned");
@@ -164,7 +181,15 @@ ASSERT(_stext + SIZEOF(.text) < ORIGIN(REGION_TEXT) + LENGTH(REGION_TEXT), "
 ERROR(riscv-rt): The .text section must be placed inside the REGION_TEXT region.
 Set _stext to an address smaller than 'ORIGIN(REGION_TEXT) + LENGTH(REGION_TEXT)'");
 
-ASSERT(SIZEOF(.stack) > (_max_hart_id + 1) * _hart_stack_size, "
+/* ASSERT(_sirodata + SIZEOF(.rodata) < ORIGIN(REGION_RODATAINIT) + LENGTH(REGION_RODATAINIT), "
+ERROR(riscv-rt): The init data for .rodata section must be placed inside the REGION_RODATAINIT region.
+Set _sirodata to an address smaller than 'ORIGIN(REGION_RODATAINIT) + LENGTH(REGION_RODATAINIT)'"); */
+
+ASSERT(_sidata + SIZEOF(.data) < ORIGIN(REGION_DATAINIT) + LENGTH(REGION_DATAINIT), "
+ERROR(riscv-rt): The init data for .data section must be placed inside the REGION_DATAINIT region.
+Set _sidata to an address smaller than 'ORIGIN(REGION_DATAINIT) + LENGTH(REGION_DATAINIT)'");
+
+ASSERT(SIZEOF(.stack) >= (_max_hart_id + 1) * _hart_stack_size, "
 ERROR(riscv-rt): .stack section is too small for allocating stacks for all the harts.
 Consider changing `_max_hart_id` or `_hart_stack_size`.");
 

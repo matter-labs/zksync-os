@@ -17,11 +17,12 @@
 #![allow(clippy::op_ref)]
 #![allow(clippy::precedence)]
 
+pub mod arithmetic;
 pub mod utils;
 
 use zk_ee::{
     kv_markers::{ExactSizeChain, UsizeDeserializable, UsizeSerializable},
-    system::errors::InternalError,
+    system::errors::internal::InternalError,
 };
 
 pub mod hash_to_prime;

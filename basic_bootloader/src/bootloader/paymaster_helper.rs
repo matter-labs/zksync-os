@@ -1,35 +1,33 @@
 use super::transaction::ZkSyncTransaction;
 use super::*;
-use crate::bootloader::errors::InvalidTransaction::AAValidationError;
-use crate::bootloader::errors::{InvalidAA, TxError};
+use crate::bootloader::errors::TxError;
+use crate::bootloader::supported_ees::SupportedEEVMState;
 use constants::{PAYMASTER_VALIDATE_AND_PAY_SELECTOR, TX_CALLDATA_OFFSET};
+use errors::{BootloaderSubsystemError, InvalidTransaction};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
-use zk_ee::memory::stack_trait::Stack;
-use zk_ee::system::errors::{FatalError, InternalError};
-use zk_ee::system::{EthereumLikeTypes, System, SystemFrameSnapshot};
+use zk_ee::internal_error;
+use zk_ee::system::{EthereumLikeTypes, System};
 
 // Helpers for paymaster flow.
 
 impl<S: EthereumLikeTypes> BasicBootloader<S> {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)]
-    pub(crate) fn validate_and_pay_for_paymaster_transaction<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-    >(
+    pub(crate) fn validate_and_pay_for_paymaster_transaction<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
-        transaction: &mut ZkSyncTransaction<'static>,
+        memories: RunnerMemoryBuffers<'a>,
+        transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         paymaster: B160,
         _caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
-    ) -> Result<ReturnValues<S>, TxError>
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<ReturnValues<'a, S>, TxError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         let _ = system.get_logger().write_fmt(format_args!(
             "About to start call to validateAndPayForPaymasterTransaction\n"
@@ -37,30 +35,32 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         let CompletedExecution {
             resources_returned,
-            reverted,
-            return_values,
-            ..
-        } = BasicBootloader::call_account_method::<CS>(
+            result,
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
             paymaster,
             PAYMASTER_VALIDATE_AND_PAY_SELECTOR,
             resources,
+            tracer,
         )
         .map_err(TxError::oon_as_validation)?;
+
+        let reverted = result.failed();
+        let return_values = result.return_values();
 
         *resources = resources_returned;
         // Return memory isn't flushed, as it's read by
         // store_paymaster_context_and_check_magic
         if reverted {
-            Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
+            Err(TxError::Validation(InvalidTransaction::Revert {
                 method: errors::AAMethod::PaymasterValidateAndPay,
                 output: None, // TODO
-            })))
+            }))
         } else {
             Ok(return_values)
         }
@@ -120,7 +120,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         //     system
         // )?;
         // let rounded_context_len = Self::length_rounded_by_words(context_len)
-        //     .ok_or(InternalError("rounding context length"))?;
+        //     .ok_or(internal_error!("rounding context length"))?;
         // require!(
         //     rounded_context_len <= U256::from(MAX_PAYMASTER_CONTEXT_LEN_BYTES),
         //     AAValidationError(InvalidAA::PaymasterReturnDataTooShort),
@@ -162,13 +162,11 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)]
     #[allow(dead_code)]
-    pub(crate) fn paymaster_post_op<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-    >(
+    pub(crate) fn paymaster_post_op(
         _system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _callstack: &mut CS,
-        _transaction: &mut ZkSyncTransaction<'static>,
+        _callstack: &mut SliceVec<SupportedEEVMState<S>>,
+        _transaction: &mut ZkSyncTransaction,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         _success: bool,
@@ -177,10 +175,8 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         _gas_per_pubdata: U256,
         _validation_pubdata: u64,
         _resources: &mut S::Resources,
-    ) -> Result<bool, FatalError>
-    where
-        S::Memory: MemorySubsystemExt,
-    {
+    ) -> Result<bool, BootloaderSubsystemError>
+where {
         todo!();
 
         // let _ = system
@@ -208,7 +204,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         // let unpadded_context_length = U256::from_be_slice(&pre_tx_buffer[..32]);
         // let context_length = Self::length_rounded_by_words(unpadded_context_length)
-        //     .ok_or(InternalError("Rounding context length"))?;
+        //     .ok_or(internal_error!("Rounding context length"))?;
         // let context_length_u = u256_to_u64_saturated(&context_length) as usize;
         // // Selector + Initial offsets + fixed sized fields
         // let header_length = 4 + U256::BYTES * 6;
@@ -328,26 +324,26 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     /// )
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)]
-    pub fn call_account_method<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn call_account_method<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
-        transaction: &mut ZkSyncTransaction<'static>,
+        memories: RunnerMemoryBuffers<'a>,
+        transaction: &mut ZkSyncTransaction,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         from: B160,
         selector: &[u8],
         resources: &mut S::Resources,
-    ) -> Result<CompletedExecution<S>, FatalError>
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<CompletedExecution<'a, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
-        S::Memory: MemorySubsystemExt,
     {
         let header_length = 4 + U256::BYTES * 3;
         let calldata_start = TX_OFFSET - header_length;
         let calldata_end = calldata_start
             .checked_add(transaction.tx_body_length())
-            .ok_or(InternalError("overflow"))?;
+            .ok_or(internal_error!("overflow"))?;
 
         let pre_tx_buffer = transaction.pre_tx_buffer();
         Self::write_calldata_prefix(
@@ -359,29 +355,21 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         );
 
         // we can now take and cast as transaction is static relative to EEs
-        let calldata = unsafe {
-            let buffer = transaction.underlying_buffer();
-            system
-                .memory
-                .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                    &buffer[calldata_start..calldata_end],
-                ))
-        };
+        let calldata = &transaction.underlying_buffer()[calldata_start..calldata_end];
 
         let resources_for_tx = resources.clone();
 
-        assert!(Stack::len(callstack) == 0);
-
-        BasicBootloader::run_single_interaction::<_>(
+        BasicBootloader::run_single_interaction(
             system,
             system_functions,
-            callstack,
+            memories,
             calldata,
             &BOOTLOADER_FORMAL_ADDRESS,
             &from,
             resources_for_tx,
             &U256::ZERO,
             true,
+            tracer,
         )
     }
 }

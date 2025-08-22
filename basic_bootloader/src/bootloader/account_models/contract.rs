@@ -4,41 +4,36 @@ use crate::bootloader::constants::PREPARE_FOR_PAYMASTER_SELECTOR;
 use crate::bootloader::constants::{
     EXECUTE_SELECTOR, PAY_FOR_TRANSACTION_SELECTOR, VALIDATE_SELECTOR,
 };
-use crate::bootloader::errors::{
-    AAMethod, InvalidAA, InvalidTransaction::AAValidationError, TxError,
-};
+use crate::bootloader::errors::{AAMethod, BootloaderSubsystemError, InvalidTransaction, TxError};
+use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
-use crate::bootloader::{BasicBootloader, Bytes32, StackFrame};
+use crate::bootloader::{BasicBootloader, Bytes32};
 use crate::require;
 use core::fmt::Write;
-use errors::FatalError;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
-use zk_ee::system::{logger::Logger, EthereumLikeTypes, System, SystemFrameSnapshot, *};
+use zk_ee::system::tracer::Tracer;
+use zk_ee::system::{logger::Logger, *};
 
 pub struct Contract;
 
 impl<S: EthereumLikeTypes> AccountModel<S> for Contract
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
-    fn validate<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-        Config: BasicBootloaderExecutionConfig,
-    >(
+    fn validate<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         _caller_ee_type: ExecutionEnvironmentType,
         _caller_is_code: bool,
         _caller_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         let from = transaction.from.read();
 
@@ -48,40 +43,38 @@ where
 
         let CompletedExecution {
             resources_returned,
-            reverted,
-            return_values,
-            ..
-        } = BasicBootloader::call_account_method::<CS>(
+            result,
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
             from,
             VALIDATE_SELECTOR,
             resources,
+            tracer,
         )
         .map_err(TxError::oon_as_validation)?;
 
-        let returndata_region = return_values.returndata;
+        let reverted = result.failed();
+        let return_values = result.return_values();
+
+        let returndata_slice = return_values.returndata;
         *resources = resources_returned;
 
-        let returndata_slice = &*returndata_region;
-
         let res: Result<(), TxError> = if reverted {
-            Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
+            Err(TxError::Validation(InvalidTransaction::Revert {
                 method: AAMethod::AccountValidate,
                 output: None, // TODO
-            })))
+            }))
         } else if returndata_slice.len() != 32 {
-            Err(TxError::Validation(AAValidationError(
-                InvalidAA::InvalidReturndataLength,
-            )))
+            Err(TxError::Validation(
+                InvalidTransaction::InvalidReturndataLength,
+            ))
         } else if &returndata_slice[..4] != VALIDATE_SELECTOR {
-            Err(TxError::Validation(AAValidationError(
-                InvalidAA::InvalidMagic,
-            )))
+            Err(TxError::Validation(InvalidTransaction::InvalidMagic))
         } else {
             Ok(())
         };
@@ -91,16 +84,17 @@ where
         res
     }
 
-    fn execute<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn execute<'a>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers<'a>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         _current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<S>, FatalError> {
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         let _ = system
             .get_logger()
             .write_fmt(format_args!("About to start AA execution\n"));
@@ -109,20 +103,22 @@ where
 
         let CompletedExecution {
             resources_returned,
-            reverted,
-            return_values,
-            ..
-        } = BasicBootloader::call_account_method::<CS>(
+            result,
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
             from,
             EXECUTE_SELECTOR,
             resources,
+            tracer,
         )?;
+
+        let reverted = result.failed();
+        let return_values = result.return_values();
 
         let resources_after_main_tx = resources_returned;
 
@@ -137,14 +133,10 @@ where
             .write_fmt(format_args!("Main TX body successful = {}\n", !reverted));
 
         let _ = system.get_logger().write_fmt(format_args!(
-            "Resources to refund = {:?}\n",
-            resources_after_main_tx
+            "Resources to refund = {resources_after_main_tx:?}\n"
         ));
 
         *resources = resources_after_main_tx;
-
-        // TODO: when to purge memory?
-        // system.purge_return_memory();
 
         let res = if reverted {
             ExecutionResult::Revert {
@@ -165,9 +157,7 @@ where
     ///
     fn check_nonce_is_not_used(account_data_nonce: u64, tx_nonce: u64) -> Result<(), TxError> {
         if tx_nonce < account_data_nonce {
-            return Err(TxError::Validation(AAValidationError(
-                InvalidAA::NonceUsedAlready,
-            )));
+            return Err(TxError::Validation(InvalidTransaction::NonceUsedAlready));
         }
         Ok(())
     }
@@ -183,21 +173,22 @@ where
         let acc_nonce = system.io.read_nonce(caller_ee_type, resources, &from)?;
         require!(
             acc_nonce > tx_nonce,
-            TxError::Validation(AAValidationError(InvalidAA::NonceNotIncreased,)),
+            TxError::Validation(InvalidTransaction::NonceNotIncreased),
             system
         )
     }
 
-    fn pay_for_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pay_for_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         _caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         let _ = system
             .get_logger()
@@ -205,28 +196,30 @@ where
 
         let CompletedExecution {
             resources_returned,
-            reverted,
-            ..
-        } = BasicBootloader::call_account_method::<CS>(
+            result,
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
             from,
             PAY_FOR_TRANSACTION_SELECTOR,
             resources,
+            tracer,
         )
         .map_err(TxError::oon_as_validation)?;
+
+        let reverted = result.failed();
 
         *resources = resources_returned;
 
         let res: Result<(), TxError> = if reverted {
-            Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
+            Err(TxError::Validation(InvalidTransaction::Revert {
                 method: AAMethod::AccountPayForTransaction,
                 output: None, // TODO
-            })))
+            }))
         } else {
             Ok(())
         };
@@ -236,17 +229,18 @@ where
         res
     }
 
-    fn pre_paymaster<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    fn pre_paymaster(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         _paymaster: B160,
         _caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         let _ = system
             .get_logger()
@@ -254,27 +248,29 @@ where
 
         let CompletedExecution {
             resources_returned,
-            reverted,
-            ..
-        } = BasicBootloader::call_account_method::<CS>(
+            result,
+        } = BasicBootloader::call_account_method(
             system,
             system_functions,
-            callstack,
+            memories,
             transaction,
             tx_hash,
             suggested_signed_hash,
             from,
             PREPARE_FOR_PAYMASTER_SELECTOR,
             resources,
+            tracer,
         )
         .map_err(TxError::oon_as_validation)?;
         *resources = resources_returned;
 
+        let reverted = result.failed();
+
         let res: Result<(), TxError> = if reverted {
-            Err(TxError::Validation(AAValidationError(InvalidAA::Revert {
+            Err(TxError::Validation(InvalidTransaction::Revert {
                 method: AAMethod::AccountPrePaymaster,
                 output: None, // todo
-            })))
+            }))
         } else {
             Ok(())
         };

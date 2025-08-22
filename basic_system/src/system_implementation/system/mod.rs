@@ -5,7 +5,7 @@ use crate::system_implementation::system::public_input::{
     BlocksOutput, BlocksPublicInput, ChainStateCommitment,
 };
 use core::alloc::Allocator;
-use errors::SystemError;
+use errors::system::SystemError;
 use evm_interpreter::gas_constants::COLD_SLOAD_COST;
 use evm_interpreter::gas_constants::SSTORE_RESET_EXTRA;
 use evm_interpreter::gas_constants::SSTORE_SET_EXTRA;
@@ -22,7 +22,7 @@ use zk_ee::utils::NopHasher;
 use zk_ee::{
     kv_markers::MAX_EVENT_TOPICS,
     memory::stack_trait::{StackCtor, StackCtorConst},
-    system::{errors::InternalError, logger::Logger, Resources, *},
+    system::{errors::internal::InternalError, logger::Logger, Resources, *},
     system_io_oracle::IOOracle,
 };
 
@@ -32,6 +32,7 @@ mod public_input;
 pub use self::io_subsystem::*;
 pub use self::public_input::BatchOutput;
 pub use self::public_input::BatchPublicInput;
+pub use self::public_input::BatchPublicInputBuilder;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EthereumLikeStorageAccessCostModel;
@@ -41,11 +42,19 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         &self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
+        is_access_list: bool,
     ) -> Result<(), SystemError> {
         let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => Ergs::empty(),
+            ExecutionEnvironmentType::NoEE => {
+                // For access lists, EVM charges the full cost as many
+                // times as a slot is in the list.
+                if is_access_list {
+                    Ergs(1900 * ERGS_PER_GAS)
+                } else {
+                    Ergs::empty()
+                }
+            }
             ExecutionEnvironmentType::EVM => Ergs(WARM_STORAGE_READ_COST * ERGS_PER_GAS),
-            _ => return Err(InternalError("Unsupported EE").into()),
         };
         let native = R::Native::from_computational(
             crate::system_implementation::flat_storage_model::cost_constants::WARM_STORAGE_READ_NATIVE_COST,
@@ -64,7 +73,6 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
             ExecutionEnvironmentType::EVM => {
                 Ergs((COLD_SLOAD_COST - WARM_STORAGE_READ_COST) * ERGS_PER_GAS)
             }
-            _ => return Err(InternalError("Unsupported EE").into()),
         };
         let native = if is_new_slot {
             R::Native::from_computational(
@@ -111,7 +119,6 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
 
                 Ergs(total_cost * ERGS_PER_GAS)
             }
-            _ => return Err(InternalError("Unsupported EE").into()),
         };
         let native = if is_new_slot {
             R::Native::from_computational(
@@ -126,8 +133,9 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
 }
 
 pub type ExtraCheck<SCC: const StackCtorConst, A: Allocator> =
-    [[[[[[[(); SCC::extra_const_param::<(EventContent<MAX_EVENT_TOPICS, A>, ()), A>()];
+    [[[[[[[[(); SCC::extra_const_param::<(u32, ()), A>()];
+        SCC::extra_const_param::<(EventContent<MAX_EVENT_TOPICS, A>, ()), A>()];
         SCC::extra_const_param::<(LogContent<A>, u32), A>()];
         SCC::extra_const_param::<usize, A>()]; SCC::extra_const_param::<(usize, i32), A>()];
-        SCC::extra_const_param::<CacheSnapshotId, A>()];
+        SCC::extra_const_param::<StorageSnapshotId, A>()];
         SCC::extra_const_param::<Bytes32, A>()]; SCC::extra_const_param::<BitsOrd160, A>()];

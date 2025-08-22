@@ -1,0 +1,16 @@
+*
+!Cargo.toml
+
+!basic_bootloader
+!basic_system
+!crypto
+!cycle_marker
+!evm_interpreter
+!proof_running_system
+!storage_models
+!supporting_crates
+!system_hooks
+!zk_ee
+
+!zksync_os
+zksync_os/target

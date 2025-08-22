@@ -37,32 +37,6 @@ macro_rules! vec_in {
     }};
 }
 
-/// Trait providing the interface for the modexp function.
-/// The implementation provided by this crate is `AuroraModExp` below,
-/// but other users of Aurora Engine may wish to select a different implementation.
-pub trait ModExpAlgorithm: 'static {
-    /// Computes `(base ^ exp) % modulus`, where all values are given as big-endian encoded bytes.
-    fn modexp<A: Allocator + Clone>(
-        base: &[u8],
-        exp: &[u8],
-        modulus: &[u8],
-        allocator: A,
-    ) -> Vec<u8, A>;
-}
-
-pub struct AuroraModExp;
-
-impl ModExpAlgorithm for AuroraModExp {
-    fn modexp<A: Allocator + Clone>(
-        base: &[u8],
-        exp: &[u8],
-        modulus: &[u8],
-        allocator: A,
-    ) -> Vec<u8, A> {
-        modexp(base, exp, modulus, allocator)
-    }
-}
-
 /// Computes `(base ^ exp) % modulus`, where all values are given as big-endian
 /// encoded bytes.
 pub fn modexp<A: Allocator + Clone>(
@@ -71,11 +45,11 @@ pub fn modexp<A: Allocator + Clone>(
     modulus: &[u8],
     allocator: A,
 ) -> Vec<u8, A> {
-    let mut x = mpnat::MPNat::from_big_endian(base, allocator.clone());
     let m = mpnat::MPNat::from_big_endian(modulus, allocator.clone());
     if m.digits.len() == 1 && m.digits[0] == 0 {
         return Vec::new_in(allocator);
     }
+    let mut x = mpnat::MPNat::from_big_endian(base, allocator.clone());
     let result = x.modpow(exp, &m, allocator.clone());
     result.to_big_endian(allocator)
 }

@@ -1,7 +1,7 @@
 #[derive(Debug, Clone)]
 pub enum NextTxResponse {
     Tx(Vec<u8>),
-    SealBatch,
+    SealBlock,
 }
 
 pub trait TxSource: 'static {

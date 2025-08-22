@@ -40,8 +40,12 @@ where
         self.list.push((value, md));
     }
 
-    pub fn peek(&mut self) -> Option<(&mut V, &mut M)> {
+    pub fn top(&self) -> Option<(&V, &M)> {
         self.list.top().map(|(v, m)| (v, m))
+    }
+
+    pub fn top_mut(&mut self) -> Option<(&mut V, &mut M)> {
+        self.list.top_mut().map(|(v, m)| (v, m))
     }
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &V> {

@@ -4,8 +4,10 @@
 use arbitrary::Unstructured;
 use basic_system::system_functions::p256_verify::P256VerifyImpl;
 use libfuzzer_sys::fuzz_target;
-use zk_ee::reference_implementations::{BaseComputationalResources, BaseResources};
+use zk_ee::reference_implementations::BaseResources;
 use zk_ee::system::SystemFunction;
+use zk_ee::system::Resource;
+use zk_ee::reference_implementations::DecreasingNative;
 
 const P256_INPUT_REQUIRED_LENGTH: usize = 160;
 
@@ -23,9 +25,7 @@ fn fuzz(data: &[u8]) {
         return;
     }
     let allocator = std::alloc::Global;
-    let mut resource = BaseResources {
-        spendable: BaseComputationalResources { ergs: u64::MAX },
-    };
+    let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
     let mut dst = dst.clone();
 

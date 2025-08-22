@@ -5,7 +5,9 @@
 use basic_bootloader::bootloader::transaction::ZkSyncTransaction;
 use common::mutate_transaction;
 use libfuzzer_sys::{fuzz_mutator, fuzz_target};
+use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
 mod common;
+use zk_ee::system::Resource;
 
 fuzz_mutator!(|data: &mut [u8], size: usize, max_size: usize, seed: u32| {
     mutate_transaction(data, size, max_size, seed)
@@ -20,6 +22,8 @@ fn fuzz(data: &[u8]) {
         return;
     };
 
+    let mut inf_resources = BaseResources::<DecreasingNative>::FORMAL_INFINITE;
+
     let _ = transaction.tx_type.read();
     let _ = transaction.required_balance();
     let _ = transaction.calldata();
@@ -29,8 +33,8 @@ fn fuzz(data: &[u8]) {
     let _ = transaction.tx_body_length();
 
     let chain_id = 0;
-    let _ = transaction.calculate_signed_hash(chain_id);
-    let _ = transaction.calculate_hash(chain_id);
+    let _ = transaction.calculate_signed_hash(chain_id, &mut inf_resources);
+    let _ = transaction.calculate_hash(chain_id, &mut inf_resources);
     let _ = transaction.get_user_gas_per_pubdata_limit();
 
     let mut transaction = transaction;

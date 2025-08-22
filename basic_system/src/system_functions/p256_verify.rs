@@ -1,10 +1,14 @@
 use super::*;
 
 use crate::cost_constants::P256_VERIFY_COST_ERGS;
-use zk_ee::system::errors::SystemFunctionError;
-use zk_ee::system::{errors::InternalError, SystemFunction};
+use zk_ee::interface_error;
+use zk_ee::system::{
+    base_system_functions::{P256VerifyErrors, SystemFunction},
+    errors::subsystem::SubsystemError,
+    P256VerifyInterfaceError,
+};
 
-// TODO: think about error cases, as others follow evm specs
+// TODO(EVM-1072): think about error cases, as others follow evm specs
 /// p256 verify system function implementation.
 /// Returns the size in bytes of output.
 ///
@@ -15,13 +19,13 @@ use zk_ee::system::{errors::InternalError, SystemFunction};
 /// If dst len less than needed(1) returns `InternalError`.
 pub struct P256VerifyImpl;
 
-impl<R: Resources> SystemFunction<R> for P256VerifyImpl {
+impl<R: Resources> SystemFunction<R, P256VerifyErrors> for P256VerifyImpl {
     fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         src: &[u8],
         dst: &mut D,
         resources: &mut R,
         _: A,
-    ) -> Result<(), SystemFunctionError> {
+    ) -> Result<(), SubsystemError<P256VerifyErrors>> {
         cycle_marker::wrap_with_resources!("p256_verify", resources, {
             p256_verify_as_system_function_inner(src, dst, resources)
         })
@@ -36,9 +40,11 @@ fn p256_verify_as_system_function_inner<
     src: &S,
     dst: &mut D,
     resources: &mut R,
-) -> Result<(), SystemFunctionError> {
+) -> Result<(), SubsystemError<P256VerifyErrors>> {
     if src.len() != 160 {
-        return Err(InternalError("p256: src length").into());
+        return Err(SubsystemError::LeafUsage(interface_error!(
+            P256VerifyInterfaceError::InvalidInputLength
+        )));
     }
     resources.charge(&R::from_ergs(P256_VERIFY_COST_ERGS))?;
     // digest, r, s, x, y
@@ -74,30 +80,5 @@ pub fn secp256r1_verify_inner(
     x: &[u8; 32],
     y: &[u8; 32],
 ) -> Result<bool, ()> {
-    use crypto::p256::ecdsa::signature::hazmat::PrehashVerifier;
-    use crypto::p256::ecdsa::{Signature, VerifyingKey};
-    use crypto::p256::elliptic_curve::generic_array::GenericArray;
-    use crypto::p256::elliptic_curve::sec1::FromEncodedPoint;
-    use crypto::p256::{AffinePoint, EncodedPoint};
-
-    // we expect pre-validation, so this check always works
-    let signature = Signature::from_scalars(*r, *s).map_err(|_| ())?;
-
-    let encoded_pk = EncodedPoint::from_affine_coordinates(
-        &GenericArray::clone_from_slice(x),
-        &GenericArray::clone_from_slice(y),
-        false,
-    );
-
-    let may_be_pk_point = AffinePoint::from_encoded_point(&encoded_pk);
-    if bool::from(may_be_pk_point.is_none()) {
-        return Err(());
-    }
-    let pk_point = may_be_pk_point.unwrap();
-
-    let verifier = VerifyingKey::from_affine(pk_point).map_err(|_| ())?;
-
-    let result = verifier.verify_prehash(digest, &signature);
-
-    Ok(result.is_ok())
+    crypto::secp256r1::verify(digest, r, s, x, y).map_err(|_| ())
 }

@@ -71,6 +71,22 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
         result
     }
 
+    pub fn from_slices_in(srcs: &[&[u8]], allocator: A) -> Self {
+        let total_len: usize = srcs.iter().map(|s| s.len()).sum();
+
+        let mut result = Self::preallocated_in(total_len, allocator);
+
+        unsafe {
+            let mut dst = result.inner.as_mut_ptr().cast::<u8>();
+            for src in srcs {
+                core::ptr::copy_nonoverlapping(src.as_ptr(), dst, src.len());
+                dst = dst.add(src.len());
+            }
+        }
+
+        result
+    }
+
     pub fn from_usize_iterator_in(src: impl ExactSizeIterator<Item = usize>, allocator: A) -> Self {
         let mut inner: alloc::boxed::Box<[usize], A> =
             unsafe { alloc::boxed::Box::new_uninit_slice_in(src.len(), allocator).assume_init() };

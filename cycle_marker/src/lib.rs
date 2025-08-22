@@ -29,6 +29,7 @@ thread_local! {
   /// Forward run collects the labels, so that we don't incur in more RISC-V cycles
   static LABELS: std::cell::RefCell<Vec<Label>> = const { std::cell::RefCell::new(Vec::new()) };
 
+  #[cfg(feature="log_to_file")]
   static MARKER_FILE: std::cell::RefCell<std::fs::File> = std::cell::RefCell::new(init_marker_file());
 }
 
@@ -40,7 +41,10 @@ fn init_marker_file() -> std::fs::File {
 }
 
 #[allow(dead_code)]
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(all(not(feature = "log_to_file"), not(target_arch = "riscv32")))]
+pub fn log_marker(_msg: &str) {}
+
+#[cfg(all(feature = "log_to_file", not(target_arch = "riscv32")))]
 pub fn log_marker(msg: &str) {
     use std::io::Write;
     MARKER_FILE.with(|f| {
@@ -154,7 +158,12 @@ macro_rules! wrap_with_resources {
 }
 
 #[cfg(all(feature = "use_risc_v_simulator", not(target_arch = "riscv32")))]
-pub fn print_cycle_markers() {
+pub fn print_cycle_markers() -> Option<u64> {
+    const BLAKE_DELEGATION_ID: u32 = 1991;
+    const BIGINT_DELEGATION_ID: u32 = 1994;
+    const BLAKE_DELEGATION_COEFF: u64 = 16;
+    const BIGINT_DELEGATION_COEFF: u64 = 4;
+    const BLOCK_WIDE_LABEL: &str = "run_prepared";
     use risc_v_simulator::cycle::state::*;
     let cm = take_cycle_marker();
     let labels = LABELS.with(|l| std::mem::take(&mut *l.borrow_mut()));
@@ -196,15 +205,39 @@ pub fn print_cycle_markers() {
         .collect();
     markers.sort_by_key(|(_, (start, _))| start.cycles);
 
+    let mut block_effective: Option<u64> = None;
+
     for (label, (start, end)) in markers {
         let diff = end.diff(&start);
         log_marker(&format!(
             "{}: net cycles: {}, net delegations: {:?}",
             label, diff.cycles, diff.delegations
-        ))
+        ));
+        if label == BLOCK_WIDE_LABEL {
+            // We compute effective cycles for the block execution.
+            // That is: raw cycles plus the delegation counts, weighted by
+            // the delegation coefficients (derived from the circuits
+            // geometry)
+            block_effective = Some(
+                diff.cycles
+                    + BLAKE_DELEGATION_COEFF
+                        * diff
+                            .delegations
+                            .get(&BLAKE_DELEGATION_ID)
+                            .cloned()
+                            .unwrap_or_default()
+                    + BIGINT_DELEGATION_COEFF
+                        * diff
+                            .delegations
+                            .get(&BIGINT_DELEGATION_ID)
+                            .cloned()
+                            .unwrap_or_default(),
+            )
+        }
     }
     log_marker(&format!(
         "Total delegations: {:?}\n==================",
         cm.delegation_counter
-    ))
+    ));
+    block_effective
 }

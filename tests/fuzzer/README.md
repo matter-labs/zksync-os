@@ -25,21 +25,19 @@ To run smoke fuzz tests:
 To run all fuzz tests use the following command:
 
 ```shell
-./fuzz.sh parallel --jobs=8 --timeout=3600 --zkos --revm
+./fuzz.sh parallel --jobs=8 --timeout=3600
 ```
 
 To run all precompiles use the following command:
 
 ```shell
-./fuzz.sh parallel --jobs=8 --target=precompiles --timeout=3600 --zkos --revm
+./fuzz.sh parallel --jobs=8 --target=precompiles --timeout=3600
 ```
 
 This command runs fuzzing targets using the `fuzz.sh` script with the following options:
 - **`parallel` **: Enables parallel mode to execute multiple instances at the same time.
 - **`8`**: Sets the maximum number of parallel jobs (fuzzing instances) to 8.
 - **`precompiles`**: Filters the fuzzing targets to run only those whose names start with `precompiles`.
-- **`zkos` **: Enables the ZKsync OS differential fuzzing mode.
-- **`revm` **: Enables the REVM differential fuzzing mode.
 - **`3600`**: Sets the total fuzzing runtime limit to 3600 seconds (1 hour).
 
 To check if there are any crashes run the following command:

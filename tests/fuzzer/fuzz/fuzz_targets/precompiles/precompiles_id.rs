@@ -17,9 +17,9 @@ fuzz_target!(|data: &[u8]| {
         U256::from(1_000_000_000_000_000_u64),
     );
 
-    let batch_output = chain.run_block(vec![tx], None, None);
+    let block_output = chain.run_block(vec![tx], None, None);
 
-    let output = batch_output
+    let output = block_output
         .tx_results
         .first()
         .unwrap()

@@ -19,12 +19,20 @@ arrayvec = { version = "0.7.4", default-features = false }
 bitflags = { version = "2.6.0", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
 cycle_marker = { path = "../cycle_marker" }
+strum_macros = "0.27.1"
+paste = "1.0.15"
 
 
 [features]
-testing = ["serde", "ruint/serde"]
-default = ["testing"]
-cycle_marker = []
+# serde derivation has to be disabled for risc-v target until we update ruint version
+serde = ["dep:serde", "ruint/serde"]
+testing = ["serde"]
+default = ["serde", "error_origins"]
+cycle_marker = ["cycle_marker/log_to_file"]
+# Adds location (file, line number) where an error is raised
+error_origins = []
+detailed_errors = []
+prevrandao = []
+evm_refunds = []
 
 [dev-dependencies]
-

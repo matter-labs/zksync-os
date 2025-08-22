@@ -50,8 +50,7 @@ impl<M: MemorySource> ZkEENonDeterminismSource<M> {
             let existing = self.ranges.insert(id, processor_id);
             assert!(
                 existing.is_none(),
-                "more than one processor for query id 0x{:08x}",
-                id
+                "more than one processor for query id 0x{id:08x}"
             );
         }
         self.processors.push(Box::new(processor));
@@ -70,7 +69,7 @@ impl<M: MemorySource> ZkEENonDeterminismSource<M> {
         } else {
             let buffer = buffer.buffer;
             let Some(processor_id) = self.ranges.get(&query_id).copied() else {
-                panic!("Can not process query with ID = 0x{:08x}", query_id);
+                panic!("Can not process query with ID = 0x{query_id:08x}");
             };
             let processor = &mut self.processors[processor_id];
             let new_iterator = processor.process_buffered_query(query_id, buffer, memory);
@@ -140,8 +139,7 @@ impl<M: MemorySource> ZkEENonDeterminismSource<M> {
         if self.current_iterator.is_some() {
             if self.current_iterator.as_ref().unwrap().len() != 0 {
                 println!(
-                    "Current iterator is not consumed in full, but received value 0x{:08x}",
-                    value
+                    "Current iterator is not consumed in full, but received value 0x{value:08x}"
                 );
             }
             self.current_iterator = None;
@@ -265,7 +263,7 @@ where
         let supported = &[
             NextTxSize::ID,
             NewTxContentIterator::ID,
-            InitializeIOImplementerIterator::ID,
+            ProofDataIterator::ID,
             BlockLevelMetadataIterator::ID,
             InitialStorageSlotDataIterator::<EthereumIOTypesConfig>::ID,
             PreimageContentWordsIterator::ID,
@@ -309,13 +307,13 @@ where
                     .expect("must make an iterator");
                 it
             }
-            InitializeIOImplementerIterator::ID => {
+            ProofDataIterator::ID => {
                 let mut src_it = query.into_iter();
-                let params : () = <<InitializeIOImplementerIterator as OracleIteratorTypeMarker>::Params as UsizeDeserializable>::from_iter(&mut src_it).expect("must deserialize query params");
+                let params : () = <<ProofDataIterator as OracleIteratorTypeMarker>::Params as UsizeDeserializable>::from_iter(&mut src_it).expect("must deserialize query params");
                 assert!(src_it.len() == 0);
                 let it = self
                     .oracle
-                    .create_oracle_access_iterator::<InitializeIOImplementerIterator>(params)
+                    .create_oracle_access_iterator::<ProofDataIterator>(params)
                     .expect("must make an iterator");
                 it
             }
@@ -424,7 +422,7 @@ where
                 return None;
             }
             a => {
-                panic!("Can not proceed query with ID = 0x{:08x}", a);
+                panic!("Can not proceed query with ID = 0x{a:08x}");
             }
         };
 

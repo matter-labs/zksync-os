@@ -3,21 +3,27 @@
 //! - user messages (sent via l1 messenger system hook).
 //! - l1 -> l2 txs logs, to prove execution result on l1.
 use super::history_list::HistoryList;
+use crate::internal_error;
+use crate::system::errors::internal::InternalError;
 use crate::system::IOResultKeeper;
 use crate::{
     memory::stack_trait::{StackCtor, StackCtorConst},
-    system::errors::SystemError,
+    system::errors::system::SystemError,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::{Bytes32, UsizeAlignedByteBox},
 };
 use alloc::alloc::Global;
+use arrayvec::ArrayVec;
 use core::alloc::Allocator;
+use core::ops::AddAssign;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
 
-const L2_TO_L1_LOG_SERIALIZE_SIZE: usize = 88;
+pub const L2_TO_L1_LOG_SERIALIZE_SIZE: usize = 88;
+// Taken from the size of the Merkle tree.
+pub const MAX_NUMBER_OF_LOGS: u64 = 16_384;
 
 ///
 /// L2 to l1 log structure, used for merkle tree leaves.
@@ -30,34 +36,34 @@ pub struct L2ToL1Log {
     /// Shard id.
     /// Deprecated, kept for compatibility, always set to 0.
     ///
-    l2_shard_id: u8,
+    pub l2_shard_id: u8,
     ///
     /// Boolean flag.
     /// Deprecated, kept for compatibility, always set to `true`.
     ///
-    is_service: bool,
+    pub is_service: bool,
     ///
     /// The L2 transaction number in a block, in which the log was sent
     ///
-    tx_number_in_block: u16,
+    pub tx_number_in_block: u16,
     ///
     /// The L2 address which sent the log.
     /// For user messages set to `L1Messenger` system hook address,
     /// for l1 -> l2 txs logs - `BootloaderFormalAddress`.
     ///
-    sender: B160,
+    pub sender: B160,
     ///
     /// The 32 bytes of information that was sent in the log.
     /// For user messages used to save message sender address(padded),
     /// for l1 -> l2 txs logs - transaction hash.
     ///
-    key: Bytes32,
+    pub key: Bytes32,
     ///
     /// The 32 bytes of information that was sent in the log.
     /// For user messages used to save message hash.
     /// for l1 -> l2 txs logs - success flag(padded).
     ///
-    value: Bytes32,
+    pub value: Bytes32,
 }
 
 ///
@@ -98,6 +104,7 @@ pub struct UserMsgData<DATA, HASH, ADDRESS> {
 pub struct L1TxLog<HASH> {
     pub tx_hash: HASH,
     pub success: bool,
+    pub is_priority: bool,
 }
 
 /// Log content reference to be returned from the storage
@@ -114,6 +121,7 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
             GenericLogContentData::L1TxLog(l) => GenericLogContentData::L1TxLog(L1TxLog {
                 tx_hash: &l.tx_hash,
                 success: l.success,
+                is_priority: l.is_priority,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
                 address: &m.address,
@@ -132,6 +140,7 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
             GenericLogContentData::L1TxLog(l) => GenericLogContentData::L1TxLog(L1TxLog {
                 tx_hash: *l.tx_hash,
                 success: l.success,
+                is_priority: l.is_priority,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
                 address: *m.address,
@@ -157,6 +166,7 @@ where
     LogsStorageStackCheck<SCC, A>:,
 {
     list: HistoryList<LogContent<A>, u32, SC, SCC, A>,
+    pubdata_used_by_committed_logs: u32,
     _marker: core::marker::PhantomData<A>,
 }
 
@@ -168,11 +178,14 @@ where
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
             list: HistoryList::new(allocator),
+            pubdata_used_by_committed_logs: 0,
             _marker: core::marker::PhantomData,
         }
     }
 
-    pub fn begin_new_tx(&mut self) {}
+    pub fn begin_new_tx(&mut self) {
+        self.pubdata_used_by_committed_logs = self.list.top().map_or(0, |(_, m)| *m);
+    }
 
     #[track_caller]
     pub fn start_frame(&mut self) -> usize {
@@ -187,12 +200,13 @@ where
         data_hash: Bytes32,
     ) -> Result<(), SystemError> {
         // We are publishing message data(4 bytes to encode length) and underlying log
+        // TODO: double check that we should have 4 here
         let total_pubdata = 4 + data.len() + L2_TO_L1_LOG_SERIALIZE_SIZE;
         let total_pubdata = total_pubdata as u32;
 
         let total_pubdata = self
             .list
-            .peek()
+            .top()
             .map_or(total_pubdata, |(_, m)| *m + total_pubdata);
 
         self.list.push(
@@ -215,24 +229,33 @@ where
         tx_number: u32,
         tx_hash: Bytes32,
         success: bool,
+        is_priority: bool,
     ) -> Result<(), SystemError> {
         let total_pubdata = L2_TO_L1_LOG_SERIALIZE_SIZE;
         let total_pubdata = total_pubdata as u32;
 
         let total_pubdata = self
             .list
-            .peek()
+            .top()
             .map_or(total_pubdata, |(_, m)| *m + total_pubdata);
 
         self.list.push(
             LogContent {
                 tx_number,
-                data: GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }),
+                data: GenericLogContentData::L1TxLog(L1TxLog {
+                    tx_hash,
+                    success,
+                    is_priority,
+                }),
             },
             total_pubdata,
         );
 
         Ok(())
+    }
+
+    pub fn len(&self) -> u64 {
+        self.list.len() as u64
     }
 
     #[track_caller]
@@ -258,16 +281,16 @@ where
         }
     }
 
-    pub fn pubdata_used(&self) -> u32 {
-        // TODO: should be constant complexity
-        let mut pubdata_used = 0u32;
-        self.list.iter().for_each(|el| {
-            if let GenericLogContentData::UserMsg(msg) = &el.data {
-                pubdata_used += msg.data.len() as u32;
-            }
-            pubdata_used += L2_TO_L1_LOG_SERIALIZE_SIZE as u32;
-        });
-        pubdata_used
+    pub fn calculate_pubdata_used_by_tx(&self) -> Result<u32, InternalError> {
+        let total_pubdata_used = self.list.top().map_or(0, |(_, m)| *m);
+
+        if total_pubdata_used < self.pubdata_used_by_committed_logs {
+            Err(internal_error!(
+                "Pubdata used by logs unexpectedly decreased"
+            ))
+        } else {
+            Ok(total_pubdata_used - self.pubdata_used_by_committed_logs)
+        }
     }
 
     pub fn apply_pubdata(
@@ -303,6 +326,32 @@ where
         })
     }
 
+    pub fn apply_to_array_vec(&self, array_vec: &mut ArrayVec<Bytes32, 16384>) {
+        self.list.iter().for_each(|el| {
+            let log: L2ToL1Log = el.into();
+            array_vec.push(log.hash())
+        });
+    }
+
+    pub fn apply_l1_txs_to_commitment(
+        &self,
+        mut count: U256,
+        mut rolling_keccak: Bytes32,
+    ) -> (U256, Bytes32) {
+        let mut hasher = Keccak256::new();
+        for log in self.list.iter() {
+            if let GenericLogContentData::L1TxLog(l1_tx) = &log.data {
+                if l1_tx.is_priority {
+                    count.add_assign(U256::ONE);
+                    hasher.update(rolling_keccak.as_u8_ref());
+                    hasher.update(l1_tx.tx_hash.as_u8_ref());
+                    rolling_keccak = hasher.finalize_reset().into();
+                }
+            }
+        }
+        (count, rolling_keccak)
+    }
+
     // we use it for tests to generate single block batches
     ///
     /// Calculate l2 logs merkle tree root.
@@ -325,7 +374,7 @@ where
         //     0xa707d1c62d8be699d34cb74804fdd7b4c568b6c1a821066f126c680d4b83e00b,
         //     0xf6e093070e0389d2e529d60fadb855fdded54976ec50ac709e3a36ceaa64c291,
         //     0x375a5bf909cb02143e3695ca658e0641e739aa590f0004dba93572c44cdb9d2d
-        const EMPTY_HASHES: [[u8; 32]; 15] = [
+        const EMPTY_HASHES: [[u8; 32]; TREE_HEIGHT + 1] = [
             [
                 0x72, 0xab, 0xee, 0x45, 0xb5, 0x9e, 0x34, 0x4a, 0xf8, 0xa6, 0xe5, 0x20, 0x24, 0x1c,
                 0x47, 0x44, 0xaf, 0xf2, 0x6e, 0xd4, 0x11, 0xf4, 0xc4, 0xb0, 0x0f, 0x8a, 0xf0, 0x9a,
@@ -408,17 +457,17 @@ where
             elements.push(log.hash())
         });
         let mut curr_non_default = self.list.len();
+        let mut hasher = crypto::sha3::Keccak256::new();
         #[allow(clippy::needless_range_loop)]
         for level in 0..TREE_HEIGHT {
             for i in 0..curr_non_default.div_ceil(2) {
-                let mut hasher = crypto::sha3::Keccak256::new();
                 hasher.update(elements[i * 2].as_u8_ref());
                 if i * 2 + 1 < curr_non_default {
                     hasher.update(elements[i * 2 + 1].as_u8_ref());
                 } else {
                     hasher.update(EMPTY_HASHES[level]);
                 }
-                elements[i] = hasher.finalize().into();
+                elements[i] = hasher.finalize_reset().into();
             }
             curr_non_default = curr_non_default.div_ceil(2);
         }
@@ -438,13 +487,15 @@ where
             0x03, 0xc0, 0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b, 0x7b, 0xfa, 0xd8, 0x04,
             0x5d, 0x85, 0xa4, 0x70,
         ]);
+        let mut hasher = Keccak256::new();
         for log in self.list.iter() {
             if let GenericLogContentData::L1TxLog(l1_tx) = &log.data {
-                count += 1;
-                let mut hasher = Keccak256::new();
-                hasher.update(rolling_hash.as_u8_ref());
-                hasher.update(l1_tx.tx_hash.as_u8_ref());
-                rolling_hash = hasher.finalize().into();
+                if l1_tx.is_priority {
+                    count += 1;
+                    hasher.update(rolling_hash.as_u8_ref());
+                    hasher.update(l1_tx.tx_hash.as_u8_ref());
+                    rolling_hash = hasher.finalize_reset().into();
+                }
             }
         }
         (count, rolling_hash)
@@ -512,12 +563,17 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
                 address.into(),
                 data_hash,
             ),
-            GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => (
-                // TODO: move into const
-                B160::from_limbs([0x8001, 0, 0]),
-                tx_hash,
-                Bytes32::from_u256_be(if success { U256::from(1) } else { U256::ZERO }),
-            ),
+            GenericLogContentData::L1TxLog(L1TxLog {
+                tx_hash, success, ..
+            }) => {
+                let data = if success { U256::from(1) } else { U256::ZERO };
+                (
+                    // TODO: move into const
+                    B160::from_limbs([0x8001, 0, 0]),
+                    tx_hash,
+                    Bytes32::from_u256_be(&data),
+                )
+            }
         };
         Self {
             l2_shard_id: 0,

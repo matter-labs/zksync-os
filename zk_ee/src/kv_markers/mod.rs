@@ -5,7 +5,7 @@ use arrayvec::ArrayVec;
 use core::mem::MaybeUninit;
 use ruint::aliases::U256;
 
-use super::system::errors::InternalError;
+use super::system::errors::internal::InternalError;
 use super::types_config::SystemIOTypesConfig;
 
 bitflags::bitflags! {

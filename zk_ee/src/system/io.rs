@@ -5,9 +5,11 @@
 
 use core::marker::PhantomData;
 
-use super::errors::{InternalError, SystemError, UpdateQueryError};
+use super::errors::internal::InternalError;
+use super::errors::system::SystemError;
 use super::logger::Logger;
 use super::{IOResultKeeper, Resources};
+use crate::define_subsystem;
 use crate::execution_environment_type::ExecutionEnvironmentType;
 use crate::kv_markers::MAX_EVENT_TOPICS;
 use crate::system::metadata::BlockMetadataFromOracle;
@@ -110,18 +112,22 @@ pub trait IOSubsystem: Sized {
     ) -> Result<Bytes32, SystemError>;
 
     /// Mark an account to be destructed at the end of the transaction.
-    /// Perform token transfer to beneficiary.
+    /// Perform token transfer to beneficiary. Returns amount of token transferred.
     fn mark_for_deconstruction(
         &mut self,
         from_ee: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-    ) -> Result<(), SystemError>;
+        in_constructor: bool,
+    ) -> Result<
+        <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        DeconstructionSubsystemError,
+    >;
 
-    fn net_pubdata_used(&self) -> u64;
+    fn net_pubdata_used(&self) -> Result<u64, InternalError>;
 
-    /// Starts a new "local" frame that does not that memory (like `near_call` in the EraVM).
+    /// Starts a new "local" frame that does not track memory (like `near_call` in the EraVM).
     /// Returns a snapshot to which the system can rollback to on frame finish.
     fn start_io_frame(&mut self) -> Result<<Self as IOSubsystem>::StateSnapshot, InternalError>;
 
@@ -131,16 +137,35 @@ pub trait IOSubsystem: Sized {
         &mut self,
         rollback_handle: Option<&<Self as IOSubsystem>::StateSnapshot>,
     ) -> Result<(), InternalError>;
+
+    /// Read an account's nonce.
+    fn read_nonce(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+    ) -> Result<u64, SystemError>;
+
+    /// Increments an account's nonce and
+    /// returns the old nonce.
+    fn increment_nonce(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        increment_by: u64,
+    ) -> Result<u64, NonceSubsystemError>;
+
+    #[cfg(feature = "evm_refunds")]
+    /// Get current gas refund counter
+    fn get_refund_counter(&self) -> u32;
 }
 
 pub trait Maybe<T> {
     fn construct(f: impl FnOnce() -> T) -> Self;
     fn try_construct<E>(f: impl FnOnce() -> Result<T, E>) -> Result<Self, E>
     where
-        Self: Sized,
-    {
-        f().map(|x| Self::construct(|| x))
-    }
+        Self: Sized;
 }
 
 pub struct Just<T>(pub T);
@@ -148,11 +173,26 @@ impl<T> Maybe<T> for Just<T> {
     fn construct(f: impl FnOnce() -> T) -> Self {
         Self(f())
     }
+
+    fn try_construct<E>(f: impl FnOnce() -> Result<T, E>) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        f().map(Self)
+    }
 }
+
 pub struct Nothing;
 impl<T> Maybe<T> for Nothing {
     fn construct(_: impl FnOnce() -> T) -> Self {
         Self
+    }
+
+    fn try_construct<E>(_f: impl FnOnce() -> Result<T, E>) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
+        Ok(Self)
     }
 }
 
@@ -167,31 +207,35 @@ pub struct AccountData<
     ObservableBytecodeLen,
     Nonce,
     BytecodeHash,
-    BytecodeLen,
+    UnpaddedCodeLen,
     ArtifactsLen,
     NominalTokenBalance,
     Bytecode,
+    CodeVersion,
+    IsDelegated,
 > {
     pub ee_version: EEVersion,
     pub observable_bytecode_hash: ObservableBytecodeHash,
     pub observable_bytecode_len: ObservableBytecodeLen,
     pub nonce: Nonce,
     pub bytecode_hash: BytecodeHash,
-    pub bytecode_len: BytecodeLen,
+    pub unpadded_code_len: UnpaddedCodeLen,
     pub artifacts_len: ArtifactsLen,
     pub nominal_token_balance: NominalTokenBalance,
     pub bytecode: Bytecode,
+    pub code_version: CodeVersion,
+    pub is_delegated: IsDelegated,
 }
 
-impl<A, B, C, D, E, F, G> AccountData<A, B, C, D, E, Just<u32>, Just<u32>, F, G> {
+impl<A, B, C, D, E, F, G, H> AccountData<A, B, C, D, E, Just<u32>, Just<u32>, F, G, H, Just<bool>> {
     pub fn is_contract(&self) -> bool {
-        self.bytecode_len.0 > 0 || self.artifacts_len.0 > 0
+        !self.is_delegated.0 && (self.unpadded_code_len.0 > 0 || self.artifacts_len.0 > 0)
     }
 }
 
-impl<A, B, C, D, E, F> AccountData<A, B, C, Just<u64>, D, Just<u32>, Just<u32>, E, F> {
+impl<A, B, C, D, E, F, G, H> AccountData<A, B, C, Just<u64>, D, Just<u32>, Just<u32>, E, F, G, H> {
     pub fn can_deploy_into(&self) -> bool {
-        self.bytecode_len.0 == 0 && self.artifacts_len.0 == 0 && self.nonce.0 == 0
+        self.unpadded_code_len.0 == 0 && self.artifacts_len.0 == 0 && self.nonce.0 == 0
     }
 }
 
@@ -210,6 +254,8 @@ impl
             Nothing,
             Nothing,
             Nothing,
+            Nothing,
+            Nothing,
         >,
     >
 {
@@ -218,55 +264,71 @@ impl
     }
 }
 
-impl<A, B, C, D, E, F, G, H, I> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I>> {
+impl<A, B, C, D, E, F, G, H, I, J, K>
+    AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, J, K>>
+{
     pub fn with_ee_version(
         self,
-    ) -> AccountDataRequest<AccountData<Just<u8>, B, C, D, E, F, G, H, I>> {
+    ) -> AccountDataRequest<AccountData<Just<u8>, B, C, D, E, F, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
     pub fn with_observable_bytecode_hash<T>(
         self,
-    ) -> AccountDataRequest<AccountData<A, Just<T>, C, D, E, F, G, H, I>> {
+    ) -> AccountDataRequest<AccountData<A, Just<T>, C, D, E, F, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_observable_bytecode_len(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, Just<u32>, D, E, F, G, H, I>> {
+    ) -> AccountDataRequest<AccountData<A, B, Just<u32>, D, E, F, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
-    pub fn with_nonce(self) -> AccountDataRequest<AccountData<A, B, C, Just<u64>, E, F, G, H, I>> {
+    pub fn with_nonce(
+        self,
+    ) -> AccountDataRequest<AccountData<A, B, C, Just<u64>, E, F, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_bytecode_hash<T>(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, Just<T>, F, G, H, I>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, Just<T>, F, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
-    pub fn with_bytecode_len(
+    pub fn with_unpadded_code_len(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, Just<u32>, G, H, I>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, Just<u32>, G, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_artifacts_len(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, Just<u32>, H, I>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, Just<u32>, H, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_nominal_token_balance<T>(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, Just<T>, I>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, Just<T>, I, J, K>> {
         AccountDataRequest(PhantomData)
     }
 
     pub fn with_bytecode(
         self,
-    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, Just<&'static [u8]>>> {
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, Just<&'static [u8]>, J, K>> {
+        AccountDataRequest(PhantomData)
+    }
+
+    pub fn with_code_version(
+        self,
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, Just<u8>, J>> {
+        AccountDataRequest(PhantomData)
+    }
+
+    pub fn with_is_delegated(
+        self,
+    ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, J, Just<bool>>> {
         AccountDataRequest(PhantomData)
     }
 }
@@ -289,23 +351,15 @@ pub trait IOSubsystemExt: IOSubsystem {
     /// selfdestruct.
     fn finish_tx(&mut self) -> Result<(), InternalError>;
 
-    /// Read an account's nonce.
-    fn read_nonce(
+    /// Touch a slot (address, key) to make it warm.
+    fn storage_touch(
         &mut self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-    ) -> Result<u64, SystemError>;
-
-    /// Increments an account's nonce and
-    /// returns the old nonce.
-    fn increment_nonce(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut Self::Resources,
-        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-        increment_by: u64,
-    ) -> Result<u64, UpdateQueryError>;
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        is_access_list: bool,
+    ) -> Result<(), SystemError>;
 
     /// Perform a transfer of token balance.
     fn transfer_nominal_token_value(
@@ -315,7 +369,16 @@ pub trait IOSubsystemExt: IOSubsystem {
         from: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         to: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         amount: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
-    ) -> Result<(), UpdateQueryError>;
+    ) -> Result<(), BalanceSubsystemError>;
+
+    /// Touch an account to make it warm.
+    fn touch_account(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        is_access_list: bool,
+    ) -> Result<(), SystemError>;
 
     /// Generic function to read some of an account's properties
     fn read_account_properties<
@@ -328,6 +391,8 @@ pub trait IOSubsystemExt: IOSubsystem {
         ArtifactsLen: Maybe<u32>,
         NominalTokenBalance: Maybe<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue>,
         Bytecode: Maybe<&'static [u8]>,
+        CodeVersion: Maybe<u8>,
+        IsDelegated: Maybe<bool>,
     >(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -344,6 +409,8 @@ pub trait IOSubsystemExt: IOSubsystem {
                 ArtifactsLen,
                 NominalTokenBalance,
                 Bytecode,
+                CodeVersion,
+                IsDelegated,
             >,
         >,
     ) -> Result<
@@ -357,6 +424,8 @@ pub trait IOSubsystemExt: IOSubsystem {
             ArtifactsLen,
             NominalTokenBalance,
             Bytecode,
+            CodeVersion,
+            IsDelegated,
         >,
         SystemError,
     >;
@@ -368,9 +437,31 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
+    ) -> Result<&'static [u8], SystemError>;
+
+    /// Special method that allows to set bytecode under address by hash.
+    /// Also, pubdata for such bytecode will not be published.
+    /// This method can be only triggered during special protocol upgrade txs.
+    /// Assumes bytecode is of default code version for the EE.
+    fn set_bytecode_details(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        ee: ExecutionEnvironmentType,
+        bytecode_hash: Bytes32,
         bytecode_len: u32,
         artifacts_len: u32,
-    ) -> Result<&'static [u8], SystemError>;
+        observable_bytecode_hash: Bytes32,
+        observable_bytecode_len: u32,
+    ) -> Result<(), SystemError>;
+
+    /// Special method used for EIP-7702
+    fn set_delegation(
+        &mut self,
+        resources: &mut Self::Resources,
+        at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        delegate: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+    ) -> Result<(), SystemError>;
 
     fn finish(
         self,
@@ -389,6 +480,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         tx_hash: Bytes32,
         success: bool,
+        is_priority: bool,
     ) -> Result<(), SystemError>;
 
     /// Returns old balance
@@ -399,7 +491,32 @@ pub trait IOSubsystemExt: IOSubsystem {
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         diff: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         should_subtract: bool,
-    ) -> Result<U256, UpdateQueryError>;
+    ) -> Result<U256, BalanceSubsystemError>;
+
+    // Get number of logs emitted so far.
+    fn logs_len(&self) -> u64;
+
+    // Add EVM refund to counter
+    #[cfg(feature = "evm_refunds")]
+    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError>;
 }
 
 pub trait EthereumLikeIOSubsystem: IOSubsystem<IOTypes = EthereumIOTypesConfig> {}
+
+define_subsystem!(Nonce,
+interface NonceError {
+    NonceOverflow
+});
+
+define_subsystem!(Balance,
+interface BalanceError {
+    InsufficientBalance,
+    Overflow,
+});
+
+define_subsystem!(Deconstruction,
+interface DeconstructionError {
+},
+cascade DeconstructionWrapped {
+    Balance(BalanceSubsystemError),
+});

@@ -2,10 +2,11 @@ use crate::run::{NextTxResponse, PreimageSource, ReadStorageTree, TxSource};
 use basic_system::system_implementation::flat_storage_model::*;
 use serde::{Deserialize, Serialize};
 use zk_ee::common_structs::derive_flat_storage_key;
-use zk_ee::common_structs::BasicIOImplementerFSM;
+use zk_ee::common_structs::ProofData;
+use zk_ee::internal_error;
 use zk_ee::kv_markers::StorageAddress;
 use zk_ee::oracle::*;
-use zk_ee::system::errors::InternalError;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::system_io_oracle::dyn_usize_iterator::DynUsizeIterator;
 use zk_ee::system_io_oracle::*;
@@ -15,74 +16,8 @@ use zk_ee::utils::*;
 use super::ReadStorage;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ForwardRunningOracleAux<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> {
-    pub storage_commitment: Option<FlatStorageCommitment<TREE_HEIGHT>>,
-    pub block_metadata: BlockMetadataFromOracle,
-    pub tree: T,
-    pub tx_source: TS,
-    pub preimage_source: PS,
-    pub next_tx: Option<Vec<u8>>,
-}
-
-impl<T: ReadStorageTree + Clone, PS: PreimageSource + Clone, TS: TxSource + Clone> Clone
-    for ForwardRunningOracleAux<T, PS, TS>
-{
-    fn clone(&self) -> Self {
-        ForwardRunningOracleAux {
-            storage_commitment: self.storage_commitment,
-            block_metadata: self.block_metadata,
-            tree: self.tree.clone(),
-            tx_source: self.tx_source.clone(),
-            preimage_source: self.preimage_source.clone(),
-            next_tx: self.next_tx.clone(),
-        }
-    }
-}
-
-impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> From<ForwardRunningOracle<T, PS, TS>>
-    for ForwardRunningOracleAux<T, PS, TS>
-{
-    fn from(oracle: ForwardRunningOracle<T, PS, TS>) -> Self {
-        ForwardRunningOracleAux {
-            storage_commitment: oracle.io_implementer_init_data.map(|x| x.state_root_view),
-            block_metadata: oracle.block_metadata,
-            tree: oracle.tree,
-            tx_source: oracle.tx_source,
-            preimage_source: oracle.preimage_source,
-            next_tx: oracle.next_tx,
-        }
-    }
-}
-
-impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> From<ForwardRunningOracleAux<T, PS, TS>>
-    for ForwardRunningOracle<T, PS, TS>
-{
-    fn from(oracle: ForwardRunningOracleAux<T, PS, TS>) -> Self {
-        ForwardRunningOracle {
-            io_implementer_init_data: Some(BasicIOImplementerFSM {
-                state_root_view: match oracle.storage_commitment {
-                    Some(storage_commitment) => storage_commitment,
-                    None => FlatStorageCommitment {
-                        root: Default::default(),
-                        next_free_slot: 0,
-                    },
-                },
-                pubdata_diffs_log_hash: Bytes32::ZERO,
-                num_pubdata_diffs_logs: 0,
-                block_functionality_is_completed: false,
-            }),
-            block_metadata: oracle.block_metadata,
-            tree: oracle.tree,
-            tx_source: oracle.tx_source,
-            preimage_source: oracle.preimage_source,
-            next_tx: oracle.next_tx,
-        }
-    }
-}
-
-#[derive(Debug)]
 pub struct ForwardRunningOracle<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> {
-    pub io_implementer_init_data: Option<BasicIOImplementerFSM<FlatStorageCommitment<TREE_HEIGHT>>>,
+    pub proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
     pub block_metadata: BlockMetadataFromOracle,
     pub tree: T,
     pub tx_source: TS,
@@ -95,7 +30,7 @@ impl<T: ReadStorageTree + Clone, PS: PreimageSource + Clone, TS: TxSource + Clon
 {
     fn clone(&self) -> Self {
         ForwardRunningOracle {
-            io_implementer_init_data: self.io_implementer_init_data,
+            proof_data: self.proof_data,
             block_metadata: self.block_metadata,
             tree: self.tree.clone(),
             tx_source: self.tx_source.clone(),
@@ -116,7 +51,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
                     Some(next_tx) => next_tx.len(),
                     None => {
                         match self.tx_source.get_next_tx() {
-                            NextTxResponse::SealBatch => 0,
+                            NextTxResponse::SealBlock => 0,
                             NextTxResponse::Tx(next_tx) => {
                                 let next_tx_len = next_tx.len();
                                 // `0` interpreted as seal batch
@@ -134,7 +69,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
             }
             a if a == core::any::TypeId::of::<NewTxContentIterator>() => {
                 let Some(tx) = self.next_tx.take() else {
-                    return Err(InternalError(
+                    return Err(internal_error!(
                         "trying to read next tx content before size query or after seal response",
                     ));
                 };
@@ -145,9 +80,9 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
 
                 Ok(Box::new(iterator))
             }
-            a if a == core::any::TypeId::of::<InitializeIOImplementerIterator>() => {
+            a if a == core::any::TypeId::of::<ProofDataIterator>() => {
                 let iterator = DynUsizeIterator::from_owned(
-                    self.io_implementer_init_data
+                    self.proof_data
                         .take()
                         .expect("io implementer data is none (second read or not set initially)"),
                 );
@@ -199,7 +134,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
                 let preimage = self
                     .preimage_source
                     .get_preimage(hash)
-                    .ok_or(InternalError("must know a preimage for hash"))?;
+                    .ok_or(internal_error!("must know a preimage for hash"))?;
 
                 let iterator = DynUsizeIterator::from_constructor(preimage, |inner_ref| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
@@ -244,7 +179,12 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
                 let iterator = DynUsizeIterator::from_owned(prev_index);
                 Ok(Box::new(iterator))
             }
-            _ => Err(InternalError("Invalid marker")),
+            a if a == core::any::TypeId::of::<Arithmetics>() => {
+                let iterator = DynUsizeIterator::from_owned(init_value);
+
+                Ok(Box::new(iterator))
+            }
+            _ => Err(internal_error!("Invalid marker")),
         }
     }
 }
@@ -264,8 +204,7 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> IOOracle
 
 #[derive(Clone, Debug)]
 pub struct CallSimulationOracle<S: ReadStorage, PS: PreimageSource, TS: TxSource> {
-    pub io_implementer_init_data:
-        Option<BasicIOImplementerFSM<FlatStorageCommitment<TESTING_TREE_HEIGHT>>>,
+    pub proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
     pub block_metadata: BlockMetadataFromOracle,
     pub storage: S,
     pub tx_source: TS,
@@ -284,7 +223,7 @@ impl<S: ReadStorage, PS: PreimageSource, TS: TxSource> CallSimulationOracle<S, P
                     Some(next_tx) => next_tx.len(),
                     None => {
                         match self.tx_source.get_next_tx() {
-                            NextTxResponse::SealBatch => 0,
+                            NextTxResponse::SealBlock => 0,
                             NextTxResponse::Tx(next_tx) => {
                                 let next_tx_len = next_tx.len();
                                 // `0` interpreted as seal batch
@@ -302,7 +241,7 @@ impl<S: ReadStorage, PS: PreimageSource, TS: TxSource> CallSimulationOracle<S, P
             }
             a if a == core::any::TypeId::of::<NewTxContentIterator>() => {
                 let Some(tx) = self.next_tx.take() else {
-                    return Err(InternalError(
+                    return Err(internal_error!(
                         "trying to read next tx content before size query or after seal response",
                     ));
                 };
@@ -313,9 +252,9 @@ impl<S: ReadStorage, PS: PreimageSource, TS: TxSource> CallSimulationOracle<S, P
 
                 Ok(Box::new(iterator))
             }
-            a if a == core::any::TypeId::of::<InitializeIOImplementerIterator>() => {
+            a if a == core::any::TypeId::of::<ProofDataIterator>() => {
                 let iterator = DynUsizeIterator::from_owned(
-                    self.io_implementer_init_data
+                    self.proof_data
                         .take()
                         .expect("reading io implementer init data twice"),
                 );
@@ -367,7 +306,7 @@ impl<S: ReadStorage, PS: PreimageSource, TS: TxSource> CallSimulationOracle<S, P
                 let preimage = self
                     .preimage_source
                     .get_preimage(hash)
-                    .ok_or(InternalError("must know a preimage for hash"))?;
+                    .ok_or(internal_error!("must know a preimage for hash"))?;
 
                 let iterator = DynUsizeIterator::from_constructor(preimage, |inner_ref| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
@@ -375,7 +314,7 @@ impl<S: ReadStorage, PS: PreimageSource, TS: TxSource> CallSimulationOracle<S, P
 
                 Ok(Box::new(iterator))
             }
-            _ => Err(InternalError("Invalid marker")),
+            _ => Err(internal_error!("Invalid marker")),
         }
     }
 }

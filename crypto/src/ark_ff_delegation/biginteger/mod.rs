@@ -87,6 +87,7 @@ impl<const N: usize> CanonicalDeserialize for BigInt<N> {
 ///     assert_eq!(ONE, BigInt::from(1u8));
 /// }
 /// ```
+#[allow(unused_macros)]
 macro_rules! BigIntMacro {
     ($c0:expr) => {{
         let (is_positive, limbs) = ark_ff::ark_ff_macros::to_sign_and_limbs!($c0);

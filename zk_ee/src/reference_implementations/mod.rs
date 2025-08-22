@@ -4,19 +4,14 @@
 //! - EE resource: measured in ergs. Includes EVM gas, converted as 1 gas = ERGS_PER_GAS ergs.
 //! - Native resource: model for prover complexity.
 
-use crate::system::{errors::SystemError, Computational, Ergs, Resource, Resources};
+use crate::{
+    out_of_native_resources,
+    system::{errors::system::SystemError, Computational, Ergs, Resource, Resources},
+};
 
 /// Native resource that counts down, as done for ergs.
-#[derive(Clone, core::fmt::Debug, PartialEq, Eq)]
+#[derive(Clone, core::fmt::Debug, Default, PartialEq, Eq)]
 pub struct DecreasingNative(u64);
-
-/// Native resource that counts up. The limit is saved
-/// to check at the end.
-#[derive(Clone, core::fmt::Debug, PartialEq, Eq)]
-pub struct IncreasingNative {
-    limit: u64,
-    count: u64,
-}
 
 impl Resource for DecreasingNative {
     const FORMAL_INFINITE: Self = DecreasingNative(u64::MAX);
@@ -32,7 +27,7 @@ impl Resource for DecreasingNative {
     fn charge(&mut self, to_charge: &Self) -> Result<(), SystemError> {
         if self.0 < to_charge.0 {
             self.0 = 0;
-            return Err(SystemError::OutOfNativeResources);
+            return Err(out_of_native_resources!().into());
         }
         self.0 -= to_charge.0;
         Ok(())
@@ -52,6 +47,10 @@ impl Resource for DecreasingNative {
         self.0 += to_reclaim.0
     }
 
+    fn reclaim_withheld(&mut self, to_reclaim: Self) {
+        self.0 += to_reclaim.0
+    }
+
     fn diff(&self, other: Self) -> Self {
         Self(self.0.abs_diff(other.0))
     }
@@ -59,8 +58,6 @@ impl Resource for DecreasingNative {
     fn remaining(&self) -> Self {
         self.clone()
     }
-
-    fn set_as_limit(&mut self) {}
 }
 
 impl Computational for DecreasingNative {
@@ -73,73 +70,7 @@ impl Computational for DecreasingNative {
     }
 }
 
-impl Resource for IncreasingNative {
-    const FORMAL_INFINITE: Self = Self {
-        count: 0,
-        limit: u64::MAX,
-    };
-
-    fn empty() -> Self {
-        Self { count: 0, limit: 0 }
-    }
-
-    fn is_empty(&self) -> bool {
-        false
-    }
-
-    fn charge(&mut self, to_charge: &Self) -> Result<(), SystemError> {
-        self.count += to_charge.count;
-        Ok(())
-    }
-
-    fn charge_unchecked(&mut self, to_charge: &Self) {
-        self.count += to_charge.count
-    }
-
-    fn has_enough(&self, _to_spend: &Self) -> bool {
-        true
-    }
-
-    fn reclaim(&mut self, to_reclaim: Self) {
-        self.count += to_reclaim.count;
-        self.limit = to_reclaim.limit
-    }
-
-    fn diff(&self, other: Self) -> Self {
-        Self {
-            limit: self.limit.min(other.limit),
-            count: self.count.abs_diff(other.count),
-        }
-    }
-
-    fn set_as_limit(&mut self) {
-        self.limit = self.count;
-        self.count = 0;
-    }
-
-    fn remaining(&self) -> Self {
-        let remaining = self.limit.saturating_sub(self.count);
-        Self {
-            limit: self.limit,
-            count: remaining,
-        }
-    }
-}
-
-impl Computational for IncreasingNative {
-    fn from_computational(value: u64) -> Self {
-        Self {
-            limit: u64::MAX,
-            count: value,
-        }
-    }
-
-    fn as_u64(&self) -> u64 {
-        self.count
-    }
-}
-
-#[derive(Clone, core::fmt::Debug, PartialEq, Eq)]
+#[derive(Clone, core::fmt::Debug, PartialEq, Eq, Default)]
 pub struct BaseResources<Native: Resource> {
     ergs: Ergs,
     native: Native,
@@ -188,6 +119,11 @@ impl<Native: Resource> Resource for BaseResources<Native> {
         self.native.reclaim(to_reclaim.native);
     }
 
+    fn reclaim_withheld(&mut self, to_reclaim: Self) {
+        self.ergs.reclaim(to_reclaim.ergs);
+        self.native.reclaim_withheld(to_reclaim.native);
+    }
+
     fn diff(&self, other: Self) -> Self {
         Self {
             ergs: self.ergs.diff(other.ergs),
@@ -200,10 +136,6 @@ impl<Native: Resource> Resource for BaseResources<Native> {
             ergs: self.ergs.remaining(),
             native: self.native.remaining(),
         }
-    }
-
-    fn set_as_limit(&mut self) {
-        self.native.set_as_limit()
     }
 }
 
@@ -219,7 +151,7 @@ impl<Native: Resource + Computational> Resources for BaseResources<Native> {
 
     fn from_native(native: Native) -> Self {
         Self {
-            ergs: Ergs(0),
+            ergs: Ergs::empty(),
             native,
         }
     }
@@ -241,7 +173,7 @@ impl<Native: Resource + Computational> Resources for BaseResources<Native> {
     }
 
     fn exhaust_ergs(&mut self) {
-        self.ergs = Ergs(0)
+        self.ergs = Ergs::empty()
     }
 
     fn give_native_to(&mut self, other: &mut Self) {

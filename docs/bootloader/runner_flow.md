@@ -6,7 +6,7 @@ This section describes how the bootloader interacts with the execution environme
 
 The bootloader implements (and uses) two entrypoints for code execution.
 
-The first one is `run_till_completion` from the [`runner`](../../basic_bootloader/src/bootloader/runner.rs) module of the bootloader. This function implements the main execution loop given an initial request (either external call or deployment), which is explained in the next section.
+The first one is `run_till_completion` from the [`runner`](../../basic_bootloader/src/bootloader/runner.rs) module of the bootloader. This function implements the main execution loop given an initial call request, which is explained in the next section.
 
  The second one, [`run_single_interaction`](../../basic_bootloader/src/bootloader/run_single_interaction.rs), is just a simple wrapper over the previous to simplify external calls from the bootloader. It just adds the logic for starting and finishing the topmost execution frame and prepares the inputs for `run_till_completion`.
 
@@ -14,12 +14,7 @@ The first one is `run_till_completion` from the [`runner`](../../basic_bootloade
 
 The runner's responsibility is to coordinate calls into the execution environments. For this, the runner keeps a callstack of execution environment states and will be responsible of starting and finishing system frames. Frames are used to take snapshots for storage and memory to which the system can revert to in case of a failure.
 
-The runner is implemented as an infinite loop that dispatches the preemption reasons returned by the execution environment. As a reminder, these are:
-
-- External call request,
-- Deployment request,
-- External call completed, and
-- Deployment completed.
+The runner is implemented as an infinite loop that dispatches the call requests returned by the execution environment. As a reminder, these are used both for external calls and execution of constructor code for deployments.
 
 The runner breaks out of the infinite loop after processing the completion of the initial request (when the callstack becomes empty).
 
@@ -27,51 +22,10 @@ The runner breaks out of the infinite loop after processing the completion of th
 
 For the external call request, the bootloader needs to:
 
-1. Start frame for call.
-2. Run the call preparation in the system, this will return the callee's bytecode, transfer token value and charge gas according to the EE's policy.
-3. Create a new EE state for the call and push it to the callstack.
-4. Call into the newly created EE to start executing the frame.
-
-There's a special case in which the callee is a special address (for example, precompile or system contract). In this case the flow is similar, but there's no new EE. Instead, the [System Hooks](../system_hooks.md) are used.
-
-### Deployment request
-
-For deployment request, the bootloader needs to:
-
-1. Start frame for deployment preparation.
-2. Call into EE to run deployment preparation. This will compute the deployed address, perform some checks and charge gas.
-3. Create new EE state for constructor using the output from the previous call and push it to the callstack.
-4. Start frame for constructor execution.
-5. Set nonce to 1 (see EIP-161).
-6. Perform token transfer.
-7. Call into the newly created EE to start executing the constructor frame.
-
-### Call completed
-
-When the EE returns with a completed call, the runner has to:
-
-1. Perform a selfdestruct if the execution ended up in that state.
-2. Pop the caller from the callstack.
-3. Finish callee frame, reverting if the execution ended in a reverting state.
-4. Copy return data into the return memory of the caller.
-5. Continue execution of the caller.
-
-### Deployment completed
-
-When the EE returns with a completed deployment, the runner has to:
-
-1. Perform a selfdestruct if the execution ended up in that state.
-2. If the constructor execution was successful, ask the system to actually deploy the code.
-3. Finish the constructor frame, reverting if the constructor ended in a revert state.
-4. Pop the deployer from the callstack.
-5. Finish the deployment preparation frame, reverting only if deployment preparations failed.
-6. Copy return data into the return memory of the deployer.
-7. Continue execution of the deployer.
-
-## Flow diagram
-
-We illustrate the flow of an interaction in which an EOA transaction execution calls a contract that, in turn, deploys a new contract. The entry point in the following diagram is `Run single interaction`, which is called by the EOA transaction execution, as described in [Transaction processing](./transaction_processing.md).
-
-![Runner flow](../figs/runner_flow.svg)
-
-In this diagram, the dotted lines from the EE to the bootloader are conceptual. In the implementation, the bootloader calls into the EE and handles the return value in the next iteration of the main loop.
+1. Read callee account, potentially charging for this access.
+2. Perform some preparation for the call, such as calling into the EE to calculate resources to pass to callee.
+3. Call into Execution Environment to perform EE-specific checks and logic. For example, for EVM this includes balance check for value transfer and, in case of deployment, nonce increase and address collision check. Up to this point, execution remains in caller's frame.
+4. Create a new frame for the callee.
+5. Perform value transfer, if any.
+6. Create a new EE state and start executing it if there's any code to run. If the target is a special address (addresses used for precompiles or system contracts), the corresponding [System Hook](../system_hooks.md) is invoked instead.
+7. Handle the returned preemption point, either recursively handling a new call request (for a nested call/deployment) or the completion of the original call.

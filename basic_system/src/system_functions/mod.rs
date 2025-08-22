@@ -1,6 +1,6 @@
 use core::alloc::Allocator;
 use zk_ee::memory::MinimalByteAddressableSlice;
-use zk_ee::system::{MissingSystemFunction, Resources, SystemFunctions};
+use zk_ee::system::{MissingSystemFunction, Resources, SystemFunctions, SystemFunctionsExt};
 
 pub mod bn254_ecadd;
 pub mod bn254_ecmul;
@@ -43,5 +43,8 @@ impl<R: Resources> SystemFunctions<R> for NoStdSystemFunctions {
     type Bn254Mul = bn254_ecmul::Bn254MulImpl;
     type Bn254PairingCheck = bn254_pairing_check::Bn254PairingCheckImpl;
     type RipeMd160 = ripemd160::RipeMd160Impl;
+}
+
+impl<R: Resources> SystemFunctionsExt<R> for NoStdSystemFunctions {
     type ModExp = modexp::ModExpImpl;
 }

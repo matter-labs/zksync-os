@@ -1,18 +1,6 @@
 use zk_ee::utils::Bytes32;
 
-use super::*;
-
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-// #[repr(usize)]
-// pub enum AccountProperties {
-//     AccountAggregateData,
-//     Nonce,
-//     DeploymentNonce,
-//     ObservableBytecodeHash,
-//     ObservableBytecodeLen,
-//     BytecodeHash,
-//     BytecodeLen,
-// }
+use super::{snapshottable_io::SnapshottableIo, *};
 
 pub trait SpecialAccountProperty: 'static + Clone + Copy + core::fmt::Debug {
     type Value: 'static + Clone + Copy + core::fmt::Debug;
@@ -29,17 +17,9 @@ impl SpecialAccountProperty for AccountAggregateDataHash {
 
 // We call it "cache model" because real work do dump everything into KV-storage
 // is somewhere outside of it, but this "cache" is fully responsible for resources management
-pub trait StorageCacheModel: Sized {
+pub trait StorageCacheModel: Sized + SnapshottableIo {
     type IOTypes: SystemIOTypesConfig;
     type Resources: Resources;
-    type StateSnapshot;
-    type TxStats;
-
-    fn begin_new_tx(&mut self);
-    fn tx_stats(&self) -> Self::TxStats;
-
-    fn start_frame(&mut self) -> Self::StateSnapshot;
-    fn finish_frame(&mut self, rollback_handle: Option<&Self::StateSnapshot>);
 
     fn read(
         &mut self,
@@ -50,6 +30,16 @@ pub trait StorageCacheModel: Sized {
         oracle: &mut impl IOOracle,
         // cold_value_oracle_fn: impl FnMut() -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, InternalError>
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError>;
+
+    fn touch(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
+        oracle: &mut impl IOOracle,
+        is_access_list: bool,
+    ) -> Result<(), SystemError>;
 
     // returns old value
     fn write(

@@ -16,25 +16,42 @@ ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 crypto = { path = "../crypto", default-features = false, features = ["secp256k1-static-context"]}
 arrayvec = { version = "0.7.4", default-features = false }
 either = { version = "*", default-features = false }
-system_hooks = { path = "../system_hooks", default-features = false }
 storage_models = { path = "../storage_models", default-features = false }
+modexp = { path = "../supporting_crates/modexp" }
 cycle_marker = { path = "../cycle_marker" }
 
 cfg-if = "1.0.0"
 const_for = "0.1.5"
 
-hex = {version = "*", optional = true}
 rand = {version = "0.9.0", optional = true}
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
-
+strum_macros = "0.27.1"
+paste = "1.0.15"
 
 [features]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "hex", "serde", "ruint/serde", "rand"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "rand", "crypto/testing"]
 evm-compatibility = []
 default = ["testing"]
-cycle_marker = []
+cycle_marker = ["cycle_marker/log_to_file"]
 wrap-in-batch = []
+proving = ["crypto/proving"]
+evm_refunds = ["storage_models/evm_refunds"]
+# The finish method will just return inputs, so outputs can be procesed outside bootloader
+# Used for proving multi block batch within 1 run
+multiblock-batch = []
 
 [dev-dependencies]
 hex = {version = "0.4.3"}
 proptest = "1.6.0"
+crypto = { path = "../crypto", default-features = false, features = ["secp256k1-static-context", "testing"]}
+num-bigint = "*"
+num-traits = "*"
+arbitrary = { version = "1", features = ["derive"] }
+serde_json = "*"
+alloy-rpc-types-debug = { version = "*", default-features = false }
+alloy = { version = "1", features = ["rlp", "full"] }
+alloy-rlp = { version = "*" }
+alloy-primitives = { version = "1", features = ["arbitrary"] }
+reqwest = { version = "*", features = ["blocking", "json"] }
+reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git" }
+reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git" }

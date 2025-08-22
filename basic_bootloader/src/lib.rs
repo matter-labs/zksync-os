@@ -12,6 +12,7 @@
 #![feature(ptr_metadata)]
 #![feature(alloc_layout_extra)]
 #![feature(int_roundings)]
+#![feature(maybe_uninit_write_slice)]
 #![allow(clippy::type_complexity)]
 #![allow(clippy::new_without_default)]
 #![allow(clippy::needless_lifetimes)]
@@ -22,6 +23,14 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::len_zero)]
 #![allow(clippy::result_unit_err)]
+#![cfg_attr(
+    any(feature = "error_origins", not(target_arch = "riscv32")),
+    allow(clippy::result_large_err)
+)]
+#![cfg_attr(
+    any(feature = "error_origins", not(target_arch = "riscv32")),
+    allow(clippy::large_enum_variant)
+)]
 
 extern crate alloc;
 

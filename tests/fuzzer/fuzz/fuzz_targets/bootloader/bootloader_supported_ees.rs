@@ -5,21 +5,23 @@
 
 use arbitrary::{Arbitrary, Unstructured};
 use basic_bootloader::bootloader::supported_ees::SupportedEEVMState;
-use evm_interpreter::Interpreter;
 use libfuzzer_sys::fuzz_target;
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource};
 use rig::forward_system::system::system::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
+use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::reference_implementations::FORMAL_INFINITE_BASE_RESOURCES;
+use zk_ee::memory::slice_vec::SliceVec;
+use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
 use zk_ee::system::CallModifier;
 use zk_ee::system::ExecutionEnvironmentLaunchParams;
 use zk_ee::system::NopResultKeeper;
 use zk_ee::system::{
-    CallResult, DeploymentPreparationParameters, DeploymentResult, EnvironmentParameters,
-    ExecutionEnvironment, ExternalCallRequest, MemorySubsystemExt, ReturnValues, System,
+    CallResult, EnvironmentParameters,
+    ExternalCallRequest, Resource, Resources, ReturnValues, System,
 };
 use zk_ee::utils::Bytes32;
+use zk_ee::system::tracer::NopTracer;
 
 extern crate alloc;
 
@@ -28,10 +30,10 @@ use common::mock_oracle;
 
 #[derive(Arbitrary, Debug)]
 struct FuzzInput<'a> {
-    // To run specific fuzz sub-test: #[arbitrary(value = 2)]
-    // To exclude specific fuzz sub-tests: #[arbitrary(with = |u: &mut Unstructured| Ok(*u.choose(&[1,3]).unwrap()))]
-    // To run all: #[arbitrary(with = |u: &mut Unstructured| u.int_in_range(0..=3))]
-    #[arbitrary(with = |u: &mut Unstructured| u.int_in_range(0..=3))]
+    // To run specific fuzz sub-test: #[arbitrary(value = 1)]
+    // To exclude specific fuzz sub-tests: #[arbitrary(with = |u: &mut Unstructured| Ok(*u.choose(&[1]).unwrap()))]
+    // To run all: #[arbitrary(with = |u: &mut Unstructured| u.int_in_range(0..=1))]
+    #[arbitrary(with = |u: &mut Unstructured| u.int_in_range(0..=1))]
     selector: u8,
 
     #[arbitrary(value = 1)] // Only allow EVM
@@ -50,8 +52,6 @@ struct FuzzInput<'a> {
     #[arbitrary(with = |u: &mut Unstructured| u.int_in_range(0..=8))]
     modifier: u8,
 
-    bool_1: bool,
-
     #[arbitrary(with = |u: &mut Unstructured| u.int_in_range(0..=2))]
     call_deployment_result: u8,
 }
@@ -64,9 +64,9 @@ fn fuzz(input: FuzzInput) {
     >::init_from_oracle(mock_oracle())
     .expect("Failed to initialize the mock system");
 
-    let Ok(mut vm_state) = SupportedEEVMState::create_initial(input.ee_version, &mut system) else {
-        return;
-    };
+    pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27;
+    let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
+    let heap = SliceVec::new(&mut heaps);
 
     // choose a CallModifier
     let modifier = match input.modifier {
@@ -97,13 +97,7 @@ fn fuzz(input: FuzzInput) {
     }
 
     // wrap calldata
-    let calldata = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                input.raw_calldata,
-            ))
-    };
+    let calldata = input.raw_calldata;
 
     let mut bytecode = input.raw_bytecode.to_vec();
     if bytecode.len() > 0 && bytecode[0] == 91 {
@@ -111,25 +105,13 @@ fn fuzz(input: FuzzInput) {
     }
 
     // wrap bytecode
-    let decommitted_bytecode = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                &bytecode,
-            ))
-    };
-
-    let bytecode_len = decommitted_bytecode.len() as u32;
-
-    let empty = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(&[]))
-    };
+    let decommitted_bytecode = &bytecode;
 
     let Ok(_) = system.start_global_frame() else {
         return;
     };
+
+    let inf_resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
     match selector {
         0 => {
@@ -142,113 +124,90 @@ fn fuzz(input: FuzzInput) {
             let callee = B160::from_be_bytes(input.address3);
             let nominal_token_value = U256::from_be_bytes(input.amount);
 
+            let (actual_bytecode, actual_calldata) = if modifier == CallModifier::Constructor {
+                (vec![], bytecode.as_slice())
+            } else {
+                (bytecode, calldata)
+            };
+
+            let callee_account_properties
+            = CalleeAccountProperties {
+                ee_type: 0,
+                nonce: 0,
+                nominal_token_balance: U256::ZERO,
+                bytecode: &actual_bytecode,
+                code_version: 0,
+                unpadded_code_len: 0,
+                artifacts_len: 0,
+            };
+            
+            
             // Pack everything into ExecutionEnvironmentLaunchParams
             let ee_launch_params: ExecutionEnvironmentLaunchParams<
                 ForwardRunningSystem<InMemoryTree, InMemoryPreimageSource, TxListSource>,
             > = ExecutionEnvironmentLaunchParams {
                 environment_parameters: EnvironmentParameters {
-                    decommitted_bytecode,
-                    bytecode_len,
                     scratch_space_len: 0,
+                    callee_account_properties,
+                    callstack_depth: 1 // To not trigger any special cases
                 },
                 external_call: ExternalCallRequest {
-                    resources_to_pass: FORMAL_INFINITE_BASE_RESOURCES,
+                    available_resources: inf_resources.clone(),
+                    ergs_to_pass: inf_resources.ergs(),
                     callers_caller,
                     caller,
                     callee,
                     modifier,
-                    calldata,
+                    input: &actual_calldata,
                     call_scratch_space: None,
                     nominal_token_value,
                 },
             };
 
-            let _ = vm_state.start_executing_frame(&mut system, ee_launch_params);
+            let Ok(mut vm_state) =
+                SupportedEEVMState::create_initial(ExecutionEnvironmentType::parse_ee_version_byte(input.ee_version).expect("Should succeed"), &mut system)
+            else {
+                return;
+            };
+
+            let _ = vm_state.start_executing_frame(&mut system, ee_launch_params, heap, &mut NopTracer::default());
         }
         1 => {
-            // Fuzz-test SupportedEEVMState::continue_after_external_call
-            let return_values = ReturnValues::from_immutable_slice(calldata);
+            // Fuzz-test SupportedEEVMState::continue_after_preemption
+            let return_values = ReturnValues {
+                returndata: calldata,
+                return_scratch_space: None,
+            };
 
             let call_result = match input.call_deployment_result {
-                0 => CallResult::CallFailedToExecute,
+                0 => CallResult::PreparationStepFailed,
                 1 => CallResult::Failed { return_values },
                 _ => CallResult::Successful { return_values },
             };
 
-            // set bytecode
+            let Ok(mut vm_state) =
+                SupportedEEVMState::create_initial(ExecutionEnvironmentType::parse_ee_version_byte(input.ee_version).expect("Should succeed"), &mut system)
+            else {
+                return;
+            };
+
+            // set bytecode and internal state
             #[allow(clippy::single_match)]
             match input.ee_version {
                 0 => {
                     let SupportedEEVMState::EVM(evm_frame) = &mut vm_state;
                     evm_frame.bytecode = decommitted_bytecode;
+                    evm_frame.pending_os_request = if modifier == CallModifier::Constructor {
+                        Some(evm_interpreter::PendingOsRequest::Create(B160::from_be_bytes(input.address3)))
+                    } else {
+                        Some(evm_interpreter::PendingOsRequest::Call)
+                    };
                 }
                 _ => (),
             }
 
-            let _ = vm_state.continue_after_external_call(
-                &mut system,
-                FORMAL_INFINITE_BASE_RESOURCES,
-                call_result,
-            );
-        }
-        2 => {
-            // Fuzz-test SupportedEEVMState::continue_after_deployment
-            let deployed_at = B160::from_be_bytes(input.address1);
-            let execution_reverted = input.bool_1;
-
-            let return_values = ReturnValues::from_immutable_slice(calldata);
-
-            let return_values_successful = ReturnValues::from_immutable_slice(empty);
-
-            let deployment_result = match input.call_deployment_result {
-                0 => DeploymentResult::Failed {
-                    return_values,
-                    execution_reverted,
-                },
-                _ => DeploymentResult::Successful {
-                    bytecode: decommitted_bytecode,
-                    bytecode_len,
-                    artifacts_len: 0,
-                    return_values: return_values_successful,
-                    deployed_at,
-                },
-            };
-
-            let _ = vm_state.continue_after_deployment(
-                &mut system,
-                FORMAL_INFINITE_BASE_RESOURCES,
-                deployment_result,
-            );
-        }
-        3 => {
-            // Fuzz-test SupportedEEVMState::prepare_for_deployment
-            let address_of_deployer = B160::from_be_bytes(input.address1);
-            let nominal_token_value = U256::from_be_bytes(input.amount);
-
-            #[allow(clippy::match_single_binding)]
-            let ee_specific_deployment_processing_data = match input.ee_version {
-                _ => Interpreter::default_ee_deployment_options(&mut system),
-            };
-
-            #[allow(clippy::match_single_binding)]
-            let ee_type = match input.ee_version {
-                _ => ExecutionEnvironmentType::EVM,
-            };
-
-            let _ = SupportedEEVMState::prepare_for_deployment(
-                ee_type,
-                &mut system,
-                DeploymentPreparationParameters {
-                    address_of_deployer,
-                    call_scratch_space: None,
-                    constructor_parameters: empty,
-                    deployment_code: calldata,
-                    ee_specific_deployment_processing_data,
-                    deployer_full_resources: FORMAL_INFINITE_BASE_RESOURCES,
-                    deployer_nonce: None,
-                    nominal_token_value,
-                },
-            );
+            
+            let _ = vm_state.continue_after_preemption(&mut system, inf_resources, call_result, &mut NopTracer::default());
         }
         _ => (),
     }
@@ -257,7 +216,12 @@ fn fuzz(input: FuzzInput) {
         return;
     };
 
-    system.finish(Bytes32::default(), Bytes32::default(), &mut NopResultKeeper);
+    system.finish(
+        Bytes32::default(),
+        Bytes32::default(),
+        Bytes32::default(),
+        &mut NopResultKeeper,
+    );
 }
 
 fuzz_target!(|input: FuzzInput| {

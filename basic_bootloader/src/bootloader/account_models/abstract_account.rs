@@ -4,18 +4,16 @@ use crate::bootloader::account_models::contract::Contract;
 use crate::bootloader::account_models::eoa::EOA;
 use crate::bootloader::account_models::AccountModel;
 use crate::bootloader::account_models::{ExecutionResult, TxError};
-use crate::bootloader::config::BasicBootloaderExecutionConfig;
+use crate::bootloader::errors::BootloaderSubsystemError;
+use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
+use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::Bytes32;
-use crate::bootloader::StackFrame;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::stack_trait::Stack;
-use zk_ee::system::errors::FatalError;
-use zk_ee::system::{
-    EthereumLikeTypes, IOSubsystemExt, MemorySubsystemExt, System, SystemFrameSnapshot,
-};
+use zk_ee::system::tracer::Tracer;
+use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System};
 
 pub enum AA<S> {
     EOA(PhantomData<S>),
@@ -25,7 +23,6 @@ pub enum AA<S> {
 impl<S: EthereumLikeTypes> AA<S>
 where
     S::IO: IOSubsystemExt,
-    S::Memory: MemorySubsystemExt,
 {
     pub fn account_model_for_account(
         tx: &ZkSyncTransaction,
@@ -72,27 +69,25 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn validate<
-        CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>,
-        Config: BasicBootloaderExecutionConfig,
-    >(
+    pub fn validate<Config: BasicBootloaderExecutionConfig>(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         caller_ee_type: ExecutionEnvironmentType,
         caller_is_code: bool,
         caller_nonce: u64,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         match self {
-            AA::EOA(_) => EOA::validate::<CS, Config>(
+            AA::EOA(_) => EOA::validate::<Config>(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -100,11 +95,12 @@ where
                 caller_is_code,
                 caller_nonce,
                 resources,
+                tracer,
             ),
-            AA::Contract(_) => Contract::validate::<CS, Config>(
+            AA::Contract(_) => Contract::validate::<Config>(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -112,43 +108,47 @@ where
                 caller_is_code,
                 caller_nonce,
                 resources,
+                tracer,
             ),
         }
     }
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn execute<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn execute<'a>(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers<'a>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
-    ) -> Result<ExecutionResult<S>, FatalError> {
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         match self {
-            AA::EOA(_) => EOA::execute::<CS>(
+            AA::EOA(_) => EOA::execute(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
                 current_tx_nonce,
                 resources,
+                tracer,
             ),
-            AA::Contract(_) => Contract::execute::<CS>(
+            AA::Contract(_) => Contract::execute(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
                 current_tx_nonce,
                 resources,
+                tracer,
             ),
         }
     }
@@ -181,63 +181,67 @@ where
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn pay_for_transaction<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn pay_for_transaction(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers<'_>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         match self {
-            AA::EOA(_) => EOA::pay_for_transaction::<CS>(
+            AA::EOA(_) => EOA::pay_for_transaction(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
                 from,
                 caller_ee_type,
                 resources,
+                tracer,
             ),
-            AA::Contract(_) => Contract::pay_for_transaction::<CS>(
+            AA::Contract(_) => Contract::pay_for_transaction(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
                 from,
                 caller_ee_type,
                 resources,
+                tracer,
             ),
         }
     }
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn pre_paymaster<CS: Stack<StackFrame<S, SystemFrameSnapshot<S>>, S::Allocator>>(
+    pub fn pre_paymaster(
         &self,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        callstack: &mut CS,
+        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction<'static>,
+        transaction: &mut ZkSyncTransaction,
         from: B160,
         paymaster: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
+        tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         match self {
-            AA::EOA(_) => EOA::pre_paymaster::<CS>(
+            AA::EOA(_) => EOA::pre_paymaster(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -245,11 +249,12 @@ where
                 paymaster,
                 caller_ee_type,
                 resources,
+                tracer,
             ),
-            AA::Contract(_) => Contract::pre_paymaster::<CS>(
+            AA::Contract(_) => Contract::pre_paymaster(
                 system,
                 system_functions,
-                callstack,
+                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,
@@ -257,6 +262,7 @@ where
                 paymaster,
                 caller_ee_type,
                 resources,
+                tracer,
             ),
         }
     }

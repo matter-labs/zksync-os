@@ -9,12 +9,15 @@ use libfuzzer_sys::fuzz_target;
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource};
 use rig::forward_system::system::system::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
-use zk_ee::reference_implementations::FORMAL_INFINITE_BASE_RESOURCES;
+use zk_ee::common_structs::CalleeAccountProperties;
+use zk_ee::memory::slice_vec::SliceVec;
+use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
 use zk_ee::system::CallModifier;
 use zk_ee::system::ExecutionEnvironmentLaunchParams;
 use zk_ee::system::NopResultKeeper;
-use zk_ee::system::{EnvironmentParameters, ExternalCallRequest, MemorySubsystemExt, System};
+use zk_ee::system::{EnvironmentParameters, ExternalCallRequest, Resource, Resources, System};
 use zk_ee::utils::Bytes32;
+use zk_ee::system::tracer::NopTracer;
 
 extern crate alloc;
 
@@ -45,18 +48,8 @@ fn fuzz(input: FuzzInput) {
     let mut system = System::<ForwardRunningSystem<_, _, _>>::init_from_oracle(mock_oracle())
         .expect("Failed to initialize the mock system");
 
-    let Ok(mut vm_state) = SupportedEEVMState::create_initial(input.ee_version, &mut system) else {
-        return;
-    };
-
     // wrap calldata
-    let calldata = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                input.raw_calldata,
-            ))
-    };
+    let calldata = input.raw_calldata;
 
     let mut bytecode = Vec::<u8>::new();
     bytecode.push(0x7f); // PUSH32
@@ -71,16 +64,7 @@ fn fuzz(input: FuzzInput) {
     bytecode.extend_from_slice(&input.args[128..160]);
     bytecode.push(input.opcode); // Random opcode
 
-    // wrap bytecode
-    let decommitted_bytecode = unsafe {
-        system
-            .memory
-            .construct_immutable_slice_from_static_slice(core::mem::transmute::<&[u8], &[u8]>(
-                bytecode.as_ref(),
-            ))
-    };
-
-    let bytecode_len = decommitted_bytecode.len() as u32;
+    let inf_resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
     let Ok(_) = system.start_global_frame() else {
         return;
@@ -91,34 +75,58 @@ fn fuzz(input: FuzzInput) {
     let callee = B160::from_be_bytes(input.address3);
     let nominal_token_value = U256::from_be_bytes(input.amount);
 
+    let callee_account_properties
+    = CalleeAccountProperties {
+        ee_type: 0,
+        nonce: 0,
+        nominal_token_balance: U256::ZERO,
+        bytecode: &[],
+        code_version: 0,
+        unpadded_code_len: 0,
+        artifacts_len: 0,
+    };
     // Pack everything into ExecutionEnvironmentLaunchParams
     let ee_launch_params: ExecutionEnvironmentLaunchParams<
         ForwardRunningSystem<InMemoryTree, InMemoryPreimageSource, TxListSource>,
     > = ExecutionEnvironmentLaunchParams {
         environment_parameters: EnvironmentParameters {
-            decommitted_bytecode,
-            bytecode_len,
             scratch_space_len: 0,
+            callstack_depth: 1, // to not trigger any special cases for root frame
+            callee_account_properties
         },
         external_call: ExternalCallRequest {
-            resources_to_pass: FORMAL_INFINITE_BASE_RESOURCES,
+            available_resources: inf_resources.clone(),
+            ergs_to_pass: inf_resources.ergs(),
             callers_caller,
             caller,
             callee,
-            modifier: CallModifier::NoModifier,
-            calldata,
+            modifier: CallModifier::Constructor,
+            input: &bytecode,
             call_scratch_space: None,
             nominal_token_value,
         },
     };
 
-    let _ = vm_state.start_executing_frame(&mut system, ee_launch_params);
+    pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27;
+    let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
+    let heap = SliceVec::new(&mut heaps);
+
+    let Ok(mut vm_state) = SupportedEEVMState::create_initial(zk_ee::execution_environment_type::ExecutionEnvironmentType::parse_ee_version_byte(input.ee_version).expect("Should succeed"), &mut system) else {
+        return;
+    };
+
+    let _ = vm_state.start_executing_frame(&mut system, ee_launch_params, heap, &mut NopTracer::default());
 
     let Ok(_) = system.finish_global_frame(None) else {
         return;
     };
 
-    system.finish(Bytes32::default(), Bytes32::default(), &mut NopResultKeeper);
+    system.finish(
+        Bytes32::default(),
+        Bytes32::default(),
+        Bytes32::default(),
+        &mut NopResultKeeper,
+    );
 }
 
 fuzz_target!(|input: FuzzInput| {

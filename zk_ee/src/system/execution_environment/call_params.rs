@@ -1,7 +1,7 @@
-use super::System;
+use ruint::aliases::{B160, U256};
+
 use super::*;
 use crate::system::MAX_SCRATCH_SPACE_USIZE_WORDS;
-use core::ops::Deref;
 use core::ops::Range;
 
 /// range for `T` with offset at.
@@ -37,61 +37,66 @@ pub fn get_pieces_of_slice<const N: usize, T>(
     Some((immutable_slices, mutable_slice))
 }
 
-///
 /// Return values from a call.
-///
-pub struct ReturnValues<S: SystemTypes> {
-    pub returndata:
-        <<S::Memory as MemorySubsystem>::ManagedRegion as OSManagedRegion>::OSManagedImmutableSlice,
+pub struct ReturnValues<'a, S: SystemTypes> {
+    pub returndata: &'a [u8],
     pub return_scratch_space:
-        Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], OSAllocator<S>>>,
+        Option<alloc::boxed::Box<[usize; MAX_SCRATCH_SPACE_USIZE_WORDS], S::Allocator>>,
 }
 
-impl<S: SystemTypes> core::fmt::Debug for ReturnValues<S> {
+impl<S: SystemTypes> core::fmt::Debug for ReturnValues<'_, S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ReturnValues")
-            .field("returndata", &self.returndata.deref())
+            .field("returndata", &self.returndata)
             .field("return_scratch_space", &self.return_scratch_space)
             .finish()
     }
 }
 
-impl<S: SystemTypes> ReturnValues<S> {
-    pub fn empty(system: &mut System<S>) -> Self {
+impl<S: SystemTypes> ReturnValues<'_, S> {
+    pub fn empty() -> Self {
         Self {
-            returndata: system.memory.empty_immutable_slice(),
+            returndata: &[],
             return_scratch_space: None,
         }
-    }
-
-    pub fn from_immutable_slice(region: OSImmutableSlice<S>) -> Self {
-        Self {
-            returndata: region,
-            return_scratch_space: None,
-        }
-    }
-
-    pub fn returndata(&self) -> Option<&OSImmutableSlice<S>> {
-        Some(&self.returndata)
     }
 }
 
 ///
-/// Result after requesting to execute a call.
+/// Result after call execution
 ///
-pub enum CallResult<S: SystemTypes> {
+pub enum CallResult<'a, S: SystemTypes> {
     /// Call preparations failed.
-    CallFailedToExecute,
+    PreparationStepFailed,
     /// Call failed after preparation.
-    Failed { return_values: ReturnValues<S> },
+    Failed { return_values: ReturnValues<'a, S> },
     /// Call succeeded.
-    Successful { return_values: ReturnValues<S> },
+    Successful { return_values: ReturnValues<'a, S> },
 }
 
-impl<S: SystemTypes> core::fmt::Debug for CallResult<S> {
+impl<'a, S: SystemTypes> CallResult<'a, S> {
+    #[inline]
+    pub fn failed(&self) -> bool {
+        matches!(self, CallResult::Failed { .. })
+            || matches!(self, CallResult::PreparationStepFailed)
+    }
+
+    #[inline]
+    pub fn return_values(self) -> ReturnValues<'a, S> {
+        match self {
+            CallResult::PreparationStepFailed => ReturnValues::empty(), // TODO: should not be part of this enum
+            CallResult::Failed { return_values } => return_values,
+            CallResult::Successful { return_values } => return_values,
+        }
+    }
+}
+
+impl<S: SystemTypes> core::fmt::Debug for CallResult<'_, S> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::CallFailedToExecute => f.debug_struct("CallResult::CallFailedToExecute").finish(),
+            Self::PreparationStepFailed => {
+                f.debug_struct("CallResult::CallFailedToExecute").finish()
+            }
             Self::Failed { return_values } => f
                 .debug_struct("CallResult::Failed")
                 .field("return_values", return_values)
@@ -104,13 +109,18 @@ impl<S: SystemTypes> core::fmt::Debug for CallResult<S> {
     }
 }
 
-impl<S: SystemTypes> CallResult<S> {
+impl<S: SystemTypes> CallResult<'_, S> {
     pub fn has_scratch_space(&self) -> bool {
         match self {
-            CallResult::CallFailedToExecute => false,
+            CallResult::PreparationStepFailed => false,
             CallResult::Failed { return_values } | CallResult::Successful { return_values } => {
                 return_values.return_scratch_space.is_some()
             }
         }
     }
+}
+
+pub struct TransferInfo {
+    pub value: U256,
+    pub target: B160,
 }

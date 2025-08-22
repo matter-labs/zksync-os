@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "testing"), no_std)]
+#![cfg_attr(not(feature = "serde"), no_std)]
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 #![feature(const_type_id)]
@@ -27,6 +27,14 @@
 #![allow(clippy::len_without_is_empty)]
 #![allow(clippy::needless_return)]
 #![allow(clippy::wrong_self_convention)]
+#![cfg_attr(
+    any(feature = "error_origins", not(target_arch = "riscv32")),
+    allow(clippy::result_large_err)
+)]
+#![cfg_attr(
+    any(feature = "error_origins", not(target_arch = "riscv32")),
+    allow(clippy::large_enum_variant)
+)]
 
 extern crate alloc;
 

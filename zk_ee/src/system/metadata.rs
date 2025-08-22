@@ -1,5 +1,5 @@
 use super::{
-    errors::InternalError,
+    errors::internal::InternalError,
     kv_markers::{ExactSizeChain, UsizeDeserializable, UsizeSerializable},
     types_config::SystemIOTypesConfig,
 };
@@ -14,8 +14,8 @@ pub struct Metadata<IOTypes: SystemIOTypesConfig> {
 }
 
 /// Array of previous block hashes.
-/// Hash for block number N will be at index [current_block_number - N - 1]
-/// (most recent will be at the start) if N is one of the most recent
+/// Hash for block number N will be at index [256 - (current_block_number - N)]
+/// (most recent will be at the end) if N is one of the most recent
 /// 256 blocks.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BlockHashes(pub [U256; 256]);
@@ -26,7 +26,7 @@ impl Default for BlockHashes {
     }
 }
 
-#[cfg(feature = "testing")]
+#[cfg(feature = "serde")]
 impl serde::Serialize for BlockHashes {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -36,7 +36,7 @@ impl serde::Serialize for BlockHashes {
     }
 }
 
-#[cfg(feature = "testing")]
+#[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for BlockHashes {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -75,7 +75,8 @@ impl UsizeDeserializable for BlockHashes {
 // those that define "block", like uniform fee for block,
 // block number, etc
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BlockMetadataFromOracle {
     // Chain id is temporarily also added here (so that it can be easily passed from the oracle)
     // long term, we have to decide whether we want to keep it here, or add a separate oracle
@@ -88,8 +89,11 @@ pub struct BlockMetadataFromOracle {
     pub gas_per_pubdata: U256,
     pub native_price: U256,
     pub coinbase: B160,
-    // TODO: gas_limit needed?
     pub gas_limit: u64,
+    pub pubdata_limit: u64,
+    /// Source of randomness, currently holds the value
+    /// of prevRandao.
+    pub mix_hash: U256,
 }
 
 impl BlockMetadataFromOracle {
@@ -102,15 +106,17 @@ impl BlockMetadataFromOracle {
             timestamp: 42,
             chain_id: 37,
             gas_limit: u64::MAX / 256,
+            pubdata_limit: u64::MAX,
             coinbase: B160::ZERO,
             block_hashes: BlockHashes::default(),
+            mix_hash: U256::ONE,
         }
     }
 }
 
 impl UsizeSerializable for BlockMetadataFromOracle {
-    const USIZE_LEN: usize = <U256 as UsizeSerializable>::USIZE_LEN * (3 + 256)
-        + <u64 as UsizeSerializable>::USIZE_LEN * 4
+    const USIZE_LEN: usize = <U256 as UsizeSerializable>::USIZE_LEN * (4 + 256)
+        + <u64 as UsizeSerializable>::USIZE_LEN * 5
         + <B160 as UsizeDeserializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
@@ -122,22 +128,28 @@ impl UsizeSerializable for BlockMetadataFromOracle {
                             ExactSizeChain::new(
                                 ExactSizeChain::new(
                                     ExactSizeChain::new(
-                                        UsizeSerializable::iter(&self.eip1559_basefee),
-                                        UsizeSerializable::iter(&self.gas_per_pubdata),
+                                        ExactSizeChain::new(
+                                            ExactSizeChain::new(
+                                                UsizeSerializable::iter(&self.eip1559_basefee),
+                                                UsizeSerializable::iter(&self.gas_per_pubdata),
+                                            ),
+                                            UsizeSerializable::iter(&self.native_price),
+                                        ),
+                                        UsizeSerializable::iter(&self.block_number),
                                     ),
-                                    UsizeSerializable::iter(&self.native_price),
+                                    UsizeSerializable::iter(&self.timestamp),
                                 ),
-                                UsizeSerializable::iter(&self.block_number),
+                                UsizeSerializable::iter(&self.chain_id),
                             ),
-                            UsizeSerializable::iter(&self.timestamp),
+                            UsizeSerializable::iter(&self.gas_limit),
                         ),
-                        UsizeSerializable::iter(&self.chain_id),
+                        UsizeSerializable::iter(&self.pubdata_limit),
                     ),
-                    UsizeSerializable::iter(&self.gas_limit),
+                    UsizeSerializable::iter(&self.coinbase),
                 ),
-                UsizeSerializable::iter(&self.coinbase),
+                UsizeSerializable::iter(&self.block_hashes),
             ),
-            UsizeSerializable::iter(&self.block_hashes),
+            UsizeSerializable::iter(&self.mix_hash),
         )
     }
 }
@@ -153,8 +165,10 @@ impl UsizeDeserializable for BlockMetadataFromOracle {
         let timestamp = UsizeDeserializable::from_iter(src)?;
         let chain_id = UsizeDeserializable::from_iter(src)?;
         let gas_limit = UsizeDeserializable::from_iter(src)?;
+        let pubdata_limit = UsizeDeserializable::from_iter(src)?;
         let coinbase = UsizeDeserializable::from_iter(src)?;
         let block_hashes = UsizeDeserializable::from_iter(src)?;
+        let mix_hash = UsizeDeserializable::from_iter(src)?;
 
         let new = Self {
             eip1559_basefee,
@@ -164,8 +178,10 @@ impl UsizeDeserializable for BlockMetadataFromOracle {
             timestamp,
             chain_id,
             gas_limit,
+            pubdata_limit,
             coinbase,
             block_hashes,
+            mix_hash,
         };
 
         Ok(new)

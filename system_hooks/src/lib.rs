@@ -33,10 +33,23 @@ use crate::contract_deployer::contract_deployer_hook;
 use crate::l1_messenger::l1_messenger_hook;
 use crate::l2_base_token::l2_base_token_hook;
 use alloc::collections::BTreeMap;
-use core::alloc::Allocator;
-use errors::FatalError;
-use precompiles::{pure_system_function_hook_impl, IdentityPrecompile};
-use zk_ee::system::{errors::InternalError, EthereumLikeTypes, System, SystemTypes, *};
+use core::marker::PhantomData;
+use core::{alloc::Allocator, mem::MaybeUninit};
+use precompiles::{pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors};
+use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::errors::system::SystemError;
+use zk_ee::{
+    memory::slice_vec::SliceVec,
+    system::{
+        base_system_functions::{
+            Bn254AddErrors, Bn254MulErrors, Bn254PairingCheckErrors, MissingSystemFunctionErrors,
+            ModExpErrors, P256VerifyErrors, RipeMd160Errors, Secp256k1ECRecoverErrors,
+            Sha256Errors,
+        },
+        errors::subsystem::Subsystem,
+        EthereumLikeTypes, System, SystemTypes, *,
+    },
+};
 
 pub mod addresses_constants;
 #[cfg(feature = "mock-unsupported-precompiles")]
@@ -49,37 +62,90 @@ mod l1_messenger;
 mod l2_base_token;
 mod precompiles;
 
-///
 /// System hooks process the given call request.
 ///
 /// The inputs are:
 /// - call request
 /// - caller ee(logic may depend on it some cases)
 /// - system
-///
-/// And output is execution result.
-///
+/// - output buffer
 pub struct SystemHook<S: SystemTypes>(
-    fn(ExternalCallRequest<S>, u8, &mut System<S>) -> Result<CompletedExecution<S>, FatalError>,
-)
+    for<'a> fn(
+        ExternalCallRequest<S>,
+        u8,
+        &mut System<S>,
+        &'a mut [MaybeUninit<u8>],
+    ) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>,
+);
+
+pub trait SystemFunctionInvocation<S: SystemTypes, E: Subsystem>
 where
-    S::Memory: MemorySubsystemExt;
+    S::IO: IOSubsystemExt,
+{
+    fn invoke<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
+        logger: &mut S::Logger,
+        input: &[u8],
+        output: &mut D,
+        resources: &mut S::Resources,
+        allocator: A,
+    ) -> Result<(), SubsystemError<E>>;
+}
+
+struct SystemFunctionInvocationUser<
+    S: SystemTypes,
+    E: Subsystem,
+    F: SystemFunction<S::Resources, E>,
+>(PhantomData<(S, E, F)>);
+struct SystemFunctionInvocationExt<
+    S: SystemTypes,
+    E: Subsystem,
+    F: SystemFunctionExt<S::Resources, E>,
+>(PhantomData<(S, E, F)>);
+
+impl<S: SystemTypes, E: Subsystem, F: SystemFunction<S::Resources, E>>
+    SystemFunctionInvocation<S, E> for SystemFunctionInvocationUser<S, E, F>
+where
+    S::IO: IOSubsystemExt,
+{
+    fn invoke<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        _oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
+        _logger: &mut S::Logger,
+        input: &[u8],
+        output: &mut D,
+        resources: &mut S::Resources,
+        allocator: A,
+    ) -> Result<(), SubsystemError<E>> {
+        F::execute(input, output, resources, allocator)
+    }
+}
+
+impl<S: SystemTypes, E: Subsystem, F: SystemFunctionExt<S::Resources, E>>
+    SystemFunctionInvocation<S, E> for SystemFunctionInvocationExt<S, E, F>
+where
+    S::IO: IOSubsystemExt,
+{
+    fn invoke<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+        oracle: &mut <S::IO as IOSubsystemExt>::IOOracle,
+        logger: &mut S::Logger,
+        input: &[u8],
+        output: &mut D,
+        resources: &mut S::Resources,
+        allocator: A,
+    ) -> Result<(), SubsystemError<E>> {
+        F::execute(input, output, resources, oracle, logger, allocator)
+    }
+}
 
 ///
 /// System hooks storage.
 /// Stores hooks implementations and processes calls to system addresses.
 ///
-pub struct HooksStorage<S: SystemTypes, A: Allocator + Clone>
-where
-    S::Memory: MemorySubsystemExt,
-{
+pub struct HooksStorage<S: SystemTypes, A: Allocator + Clone> {
     inner: BTreeMap<u16, SystemHook<S>, A>,
 }
 
-impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A>
-where
-    S::Memory: MemorySubsystemExt,
-{
+impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
     ///
     /// Creates empty hooks storage with a given allocator.
     ///
@@ -102,20 +168,22 @@ where
     ///
     /// Intercepts calls to low addresses (< 2^16) and executes hooks
     /// stored under that address. If no hook is stored there, return `Ok(None)`.
+    /// Always return unused return_memory.
     ///
-    pub fn try_intercept(
+    pub fn try_intercept<'a>(
         &mut self,
         address_low: u16,
         request: ExternalCallRequest<S>,
         caller_ee: u8,
         system: &mut System<S>,
-    ) -> Result<Option<CompletedExecution<S>>, FatalError> {
+        return_memory: &'a mut [MaybeUninit<u8>],
+    ) -> Result<(Option<CompletedExecution<'a, S>>, &'a mut [MaybeUninit<u8>]), SystemError> {
         let Some(hook) = self.inner.get(&address_low) else {
-            return Ok(None);
+            return Ok((None, return_memory));
         };
-        let res = hook.0(request, caller_ee, system)?;
+        let (res, remaining_memory) = hook.0(request, caller_ee, system, return_memory)?;
 
-        Ok(Some(res))
+        Ok((Some(res), remaining_memory))
     }
 
     ///
@@ -128,42 +196,48 @@ where
 
 impl<S: EthereumLikeTypes, A: Allocator + Clone> HooksStorage<S, A>
 where
-    S::Memory: MemorySubsystemExt,
     S::IO: IOSubsystemExt,
 {
     ///
     /// Adds EVM precompiles hooks.
     ///
     pub fn add_precompiles(&mut self) {
-        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Secp256k1ECRecover>(
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Secp256k1ECRecover, Secp256k1ECRecoverErrors>(
             ECRECOVER_HOOK_ADDRESS_LOW,
         );
-        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Sha256>(
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Sha256, Sha256Errors>(
             SHA256_HOOK_ADDRESS_LOW,
         );
-        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::RipeMd160>(
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::RipeMd160, RipeMd160Errors>(
             RIPEMD160_HOOK_ADDRESS_LOW,
         );
-        self.add_precompile::<IdentityPrecompile>(ID_HOOK_ADDRESS_LOW);
-        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::ModExp>(
+        self.add_precompile::<IdentityPrecompile, IdentityPrecompileErrors>(ID_HOOK_ADDRESS_LOW);
+        self.add_precompile_ext::<<S::SystemFunctionsExt as SystemFunctionsExt<_>>::ModExp, ModExpErrors>(
             MODEXP_HOOK_ADDRESS_LOW,
         );
-        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Bn254Add>(
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Bn254Add, Bn254AddErrors>(
             ECADD_HOOK_ADDRESS_LOW,
         );
-        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Bn254Mul>(
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Bn254Mul, Bn254MulErrors>(
             ECMUL_HOOK_ADDRESS_LOW,
         );
-        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Bn254PairingCheck>(
+        self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::Bn254PairingCheck, Bn254PairingCheckErrors>(
             ECPAIRING_HOOK_ADDRESS_LOW,
         );
         #[cfg(feature = "mock-unsupported-precompiles")]
         {
-            self.add_precompile::<crate::mock_precompiles::mock_precompiles::Blake>(
+            self.add_precompile::<crate::mock_precompiles::mock_precompiles::Blake, MissingSystemFunctionErrors>(
                 BLAKE_HOOK_ADDRESS_LOW,
             );
-            self.add_precompile::<crate::mock_precompiles::mock_precompiles::PointEval>(
+            self.add_precompile::<crate::mock_precompiles::mock_precompiles::PointEval, MissingSystemFunctionErrors>(
                 POINT_EVAL_HOOK_ADDRESS_LOW,
+            );
+        }
+
+        #[cfg(feature = "p256_precompile")]
+        {
+            self.add_precompile::<<S::SystemFunctions as SystemFunctions<_>>::P256Verify, P256VerifyErrors>(
+                P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW,
             );
         }
     }
@@ -183,10 +257,28 @@ where
         )
     }
 
-    fn add_precompile<P: SystemFunction<S::Resources>>(&mut self, address_low: u16) {
+    fn add_precompile<P, E>(&mut self, address_low: u16)
+    where
+        P: SystemFunction<S::Resources, E>,
+        E: Subsystem,
+    {
         self.add_hook(
             address_low,
-            SystemHook(pure_system_function_hook_impl::<P, S>),
+            SystemHook(
+                pure_system_function_hook_impl::<SystemFunctionInvocationUser<S, E, P>, E, S>,
+            ),
+        )
+    }
+
+    fn add_precompile_ext<P: SystemFunctionExt<S::Resources, E>, E: Subsystem>(
+        &mut self,
+        address_low: u16,
+    ) {
+        self.add_hook(
+            address_low,
+            SystemHook(
+                pure_system_function_hook_impl::<SystemFunctionInvocationExt<S, E, P>, E, S>,
+            ),
         )
     }
 
@@ -201,14 +293,14 @@ where
 ///
 /// Utility function to create empty revert state.
 ///
-fn make_error_return_state<S: SystemTypes>(
-    system: &mut System<S>,
+fn make_error_return_state<'a, S: SystemTypes>(
     remaining_resources: S::Resources,
-) -> CompletedExecution<S> {
+) -> CompletedExecution<'a, S> {
     CompletedExecution {
-        return_values: ReturnValues::empty(system),
         resources_returned: remaining_resources,
-        reverted: true,
+        result: CallResult::Failed {
+            return_values: ReturnValues::empty(),
+        },
     }
 }
 
@@ -216,17 +308,15 @@ fn make_error_return_state<S: SystemTypes>(
 /// Utility function to create return state with returndata region reference.
 ///
 fn make_return_state_from_returndata_region<S: SystemTypes>(
-    _system: &mut System<S>,
     remaining_resources: S::Resources,
-    returndata: OSImmutableSlice<S>,
+    returndata: &[u8],
 ) -> CompletedExecution<S> {
     let return_values = ReturnValues {
         returndata,
         return_scratch_space: None,
     };
     CompletedExecution {
-        return_values,
         resources_returned: remaining_resources,
-        reverted: false,
+        result: CallResult::Successful { return_values },
     }
 }

@@ -48,3 +48,11 @@ pub const WARM_TSTORAGE_WRITE_NATIVE_COST: u64 = 4000;
 pub const EVENT_STORAGE_BASE_NATIVE_COST: u64 = 6000;
 pub const EVENT_TOPIC_NATIVE_COST: u64 = 200;
 pub const EVENT_DATA_PER_BYTE_COST: u64 = 2;
+
+// Helper to compute hashing native cost
+pub fn blake2s_native_cost(len: usize) -> u64 {
+    let num_rounds = (len as u64).div_ceil(BLAKE2S_CHUNK_SIZE);
+    num_rounds
+        .saturating_mul(BLAKE2S_ROUND_NATIVE_COST)
+        .saturating_add(BLAKE2S_BASE_NATIVE_COST)
+}

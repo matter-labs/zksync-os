@@ -1,6 +1,7 @@
 pub mod aligned_buffer;
 pub mod aligned_vector;
 pub mod bytes32;
+pub mod cheap_clone;
 pub mod convenience;
 pub mod integer_utils;
 pub mod stack_linked_list;
@@ -26,4 +27,5 @@ impl MiniDigest for NopHasher {
     fn digest(_input: impl AsRef<[u8]>) -> Self::HashOutput {}
     fn update(&mut self, _input: impl AsRef<[u8]>) {}
     fn finalize(self) -> Self::HashOutput {}
+    fn finalize_reset(&mut self) -> Self::HashOutput {}
 }

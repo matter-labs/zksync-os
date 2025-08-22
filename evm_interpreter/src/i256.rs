@@ -10,22 +10,20 @@ pub enum Sign {
     Zero,
 }
 
-pub const MIN_NEGATIVE_VALUE: U256 = U256::from_limbs([
+const MIN_NEGATIVE_VALUE_REPR: [u64; 4] = [
     0x0000000000000000,
     0x0000000000000000,
     0x0000000000000000,
     0x8000000000000000,
-]);
-
-const FLIPH_BITMASK_U64: u64 = 0x7FFFFFFFFFFFFFFF;
+];
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct I256(pub Sign, pub U256);
 
 #[inline(always)]
 pub fn i256_sign<const DO_TWO_COMPL: bool>(val: &mut U256) -> Sign {
-    if !val.bit(U256::BITS - 1) {
-        if *val == U256::ZERO {
+    if val.as_limbs()[3] >> 63 == 0 {
+        if val.is_zero() {
             Sign::Zero
         } else {
             Sign::Plus
@@ -39,9 +37,15 @@ pub fn i256_sign<const DO_TWO_COMPL: bool>(val: &mut U256) -> Sign {
 }
 
 #[inline(always)]
-fn u256_remove_sign(val: &mut U256) {
-    unsafe {
-        val.as_limbs_mut()[3] &= FLIPH_BITMASK_U64;
+pub fn i256_sign_by_ref(val: &U256) -> Sign {
+    if val.as_limbs()[3] >> 63 == 0 {
+        if val.is_zero() {
+            Sign::Zero
+        } else {
+            Sign::Plus
+        }
+    } else {
+        Sign::Minus
     }
 }
 
@@ -55,72 +59,95 @@ pub fn two_compl(op: U256) -> U256 {
 }
 
 #[inline(always)]
-pub fn i256_cmp(mut first: U256, mut second: U256) -> Ordering {
-    let first_sign = i256_sign::<false>(&mut first);
-    let second_sign = i256_sign::<false>(&mut second);
+pub fn i256_cmp(first: &U256, second: &U256) -> Ordering {
+    let first_sign = first.bit(255);
+    let second_sign = second.bit(255);
     match (first_sign, second_sign) {
-        (Sign::Zero, Sign::Zero) => Ordering::Equal,
-        (Sign::Zero, Sign::Plus) => Ordering::Less,
-        (Sign::Zero, Sign::Minus) => Ordering::Greater,
-        (Sign::Minus, Sign::Zero) => Ordering::Less,
-        (Sign::Minus, Sign::Plus) => Ordering::Less,
-        (Sign::Minus, Sign::Minus) => first.cmp(&second),
-        (Sign::Plus, Sign::Minus) => Ordering::Greater,
-        (Sign::Plus, Sign::Zero) => Ordering::Greater,
-        (Sign::Plus, Sign::Plus) => first.cmp(&second),
+        (true, false) => Ordering::Less,    // negative < positive,
+        (false, true) => Ordering::Greater, // positive > negative,
+        _ => {
+            // same sign, trivial for both positives
+            // in two complements min negative value is < -1 if viewed as unsigned bit patterns, so we can perform same ops
+            let (tmp, uf) = first.overflowing_sub(*second);
+            if uf {
+                Ordering::Less
+            } else if tmp.is_zero() {
+                Ordering::Equal
+            } else {
+                Ordering::Greater
+            }
+        }
     }
 }
 
 #[inline(always)]
-pub fn i256_div(mut first: U256, mut second: U256) -> U256 {
-    let second_sign = i256_sign::<true>(&mut second);
-    if second_sign == Sign::Zero {
-        return U256::ZERO;
-    }
-    let first_sign = i256_sign::<true>(&mut first);
-    if first_sign == Sign::Minus && first == MIN_NEGATIVE_VALUE && second == U256::from(1) {
-        return two_compl(MIN_NEGATIVE_VALUE);
+pub fn i256_div(dividend: &mut U256, divisor_or_quotient: &mut U256) {
+    let divisor_sign = i256_sign::<true>(divisor_or_quotient);
+    if divisor_sign == Sign::Zero {
+        *divisor_or_quotient = U256::ZERO;
+        return;
     }
 
-    //let mut d = first / second;
-    let mut d = first.div_rem(second).0;
-
-    u256_remove_sign(&mut d);
-    //set sign bit to zero
-
-    if d == U256::ZERO {
-        return U256::ZERO;
+    let dividend_sign = i256_sign::<true>(dividend);
+    if dividend_sign == Sign::Minus
+        && *dividend.as_limbs() == MIN_NEGATIVE_VALUE_REPR
+        && *divisor_or_quotient == U256::ONE
+    {
+        // it's signed division overflow
+        *divisor_or_quotient = U256::ZERO;
+        unsafe {
+            divisor_or_quotient.as_limbs_mut()[3] = 0x80000000_00000000;
+        }
+        two_compl_mut(divisor_or_quotient);
+        return;
     }
 
-    match (first_sign, second_sign) {
-        (Sign::Zero, Sign::Plus)
-        | (Sign::Plus, Sign::Zero)
-        | (Sign::Zero, Sign::Zero)
-        | (Sign::Plus, Sign::Plus)
-        | (Sign::Minus, Sign::Minus) => d,
-        (Sign::Zero, Sign::Minus)
-        | (Sign::Plus, Sign::Minus)
-        | (Sign::Minus, Sign::Zero)
-        | (Sign::Minus, Sign::Plus) => two_compl(d),
-    }
-}
+    // this is unsigned division of moduluses
+    let (quotient, _) = dividend.div_rem(*divisor_or_quotient);
 
-#[inline(always)]
-pub fn i256_mod(mut first: U256, mut second: U256) -> U256 {
-    let first_sign = i256_sign::<true>(&mut first);
-    if first_sign == Sign::Zero {
-        return U256::ZERO;
-    }
+    // set sign bit to zero
 
-    let _ = i256_sign::<true>(&mut second);
-    let mut r = first % second;
-    u256_remove_sign(&mut r);
-    if r == U256::ZERO {
-        return U256::ZERO;
-    }
-    if first_sign == Sign::Minus {
-        two_compl(r)
+    if quotient.is_zero() {
+        *divisor_or_quotient = U256::ZERO;
     } else {
-        r
+        match (dividend_sign, divisor_sign) {
+            (Sign::Zero, Sign::Plus)
+            | (Sign::Plus, Sign::Zero)
+            | (Sign::Zero, Sign::Zero)
+            | (Sign::Plus, Sign::Plus)
+            | (Sign::Minus, Sign::Minus) => {
+                // no extra manipulation required
+                Clone::clone_from(divisor_or_quotient, &quotient);
+            }
+            (Sign::Zero, Sign::Minus)
+            | (Sign::Plus, Sign::Minus)
+            | (Sign::Minus, Sign::Zero)
+            | (Sign::Minus, Sign::Plus) => {
+                let (res, _) = U256::ZERO.overflowing_sub(quotient);
+                *divisor_or_quotient = res;
+            }
+        }
+    }
+}
+
+#[inline(always)]
+pub fn i256_mod(dividend: &mut U256, divisor_or_remainder: &mut U256) {
+    let dividend_sign = i256_sign::<true>(dividend);
+    if dividend_sign == Sign::Zero {
+        *divisor_or_remainder = U256::ZERO;
+        return;
+    }
+
+    let _ = i256_sign::<true>(divisor_or_remainder);
+
+    // this is unsigned division of moduluses
+    let (_q, r) = dividend.div_rem(*divisor_or_remainder);
+    *divisor_or_remainder = r;
+
+    if divisor_or_remainder.is_zero() {
+        return;
+    }
+    if dividend_sign == Sign::Minus {
+        two_compl_mut(divisor_or_remainder);
     }
 }

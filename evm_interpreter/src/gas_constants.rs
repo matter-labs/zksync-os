@@ -49,3 +49,5 @@ pub const ADDRESS_ACCESS_COST_WARM: u64 = 100;
 pub const TSTORE: u64 = 100;
 pub const TLOAD: u64 = 100;
 pub const SELFBALANCE: u64 = 5;
+
+pub const PER_AUTH_BASE_COST: u64 = 12_500;

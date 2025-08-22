@@ -23,13 +23,14 @@ use alloc::vec::Vec;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use either::Either;
-use zk_ee::common_structs::derive_flat_storage_key;
+use zk_ee::common_structs::derive_flat_storage_key_with_hasher;
 use zk_ee::common_structs::state_root_view::StateRootView;
 use zk_ee::common_structs::{WarmStorageKey, WarmStorageValue};
+use zk_ee::internal_error;
 use zk_ee::{
     kv_markers::{ExactSizeChain, ExactSizeChainN, UsizeDeserializable, UsizeSerializable},
     memory::stack_trait::Stack,
-    system::{errors::InternalError, logger::Logger},
+    system::{errors::internal::InternalError, logger::Logger},
     system_io_oracle::*,
     types_config::EthereumIOTypesConfig,
     utils::Bytes32,
@@ -51,7 +52,7 @@ pub struct FlatStorageLeaf<const N: usize> {
 
 impl<const N: usize> UsizeSerializable for FlatStorageLeaf<N> {
     const USIZE_LEN: usize =
-        <Bytes32 as UsizeSerializable>::USIZE_LEN * 2 + <u64 as UsizeSerializable>::USIZE_LEN * 2;
+        <Bytes32 as UsizeSerializable>::USIZE_LEN * 2 + <u64 as UsizeSerializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
         ExactSizeChain::new(
@@ -98,40 +99,32 @@ impl<const N: usize> FlatStorageLeaf<N> {
     }
 }
 
-pub trait FlatStorageHasher: 'static + Send + Sync + Default + core::fmt::Debug {
-    fn hash_leaf<const N: usize>(&self, leaf: &FlatStorageLeaf<N>) -> Bytes32;
-    fn hash_node(&self, left_node: &Bytes32, right_node: &Bytes32) -> Bytes32;
+pub trait FlatStorageHasher: 'static + Send + Sync + core::fmt::Debug {
+    fn new() -> Self;
+    fn hash_leaf<const N: usize>(&mut self, leaf: &FlatStorageLeaf<N>) -> Bytes32;
+    fn hash_node(&mut self, left_node: &Bytes32, right_node: &Bytes32) -> Bytes32;
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Blake2sStorageHasher;
+#[derive(Clone, Debug)]
+pub struct Blake2sStorageHasher {
+    hasher: crypto::blake2s::Blake2s256,
+}
 
 impl FlatStorageHasher for Blake2sStorageHasher {
-    fn hash_leaf<const N: usize>(&self, leaf: &FlatStorageLeaf<N>) -> Bytes32 {
-        let mut hasher = crypto::blake2s::Blake2s256::new();
-        leaf.update_digest(&mut hasher);
-        let hasher = hasher.finalize();
-        let mut dst = Bytes32::uninit();
-        unsafe {
-            dst.assume_init_mut()
-                .as_u8_array_mut()
-                .copy_from_slice(hasher.as_slice());
-            dst.assume_init()
+    fn new() -> Self {
+        Self {
+            hasher: crypto::blake2s::Blake2s256::new(),
         }
     }
+    fn hash_leaf<const N: usize>(&mut self, leaf: &FlatStorageLeaf<N>) -> Bytes32 {
+        leaf.update_digest(&mut self.hasher);
+        Bytes32::from_array(self.hasher.finalize_reset())
+    }
 
-    fn hash_node(&self, left_node: &Bytes32, right_node: &Bytes32) -> Bytes32 {
-        let mut hasher = crypto::blake2s::Blake2s256::new();
-        hasher.update(left_node.as_u8_array_ref());
-        hasher.update(right_node.as_u8_array_ref());
-        let hasher = hasher.finalize();
-        let mut dst = Bytes32::uninit();
-        unsafe {
-            dst.assume_init_mut()
-                .as_u8_array_mut()
-                .copy_from_slice(hasher.as_slice());
-            dst.assume_init()
-        }
+    fn hash_node(&mut self, left_node: &Bytes32, right_node: &Bytes32) -> Bytes32 {
+        self.hasher.update(left_node.as_u8_array_ref());
+        self.hasher.update(right_node.as_u8_array_ref());
+        Bytes32::from_array(self.hasher.finalize_reset())
     }
 }
 
@@ -239,8 +232,9 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
 
         let mut num_nonexisting_reads = 0;
 
+        let mut hasher = crypto::blake2s::Blake2s256::new();
         for (key, value) in reads_iter {
-            let flat_key = derive_flat_storage_key(&key.address, &key.key);
+            let flat_key = derive_flat_storage_key_with_hasher(&key.address, &key.key, &mut hasher);
             // reads
             let expect_new = value.is_new_storage_slot;
             assert!(value.initial_value_used);
@@ -252,7 +246,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                 // );
                 num_nonexisting_reads += 1;
 
-                // TODO: debug implementation for B160 uses global alloc, which panics in ZKsync OS
+                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
                 #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "checking empty read for address = {:?}, key = {:?}\n",
@@ -315,7 +309,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                 }
                 // now we will need to check merkle paths for that indexes
             } else {
-                // TODO: debug implementation for B160 uses global alloc, which panics in ZKsync OS
+                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
                 #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "checking existing read for address = {:?}, key = {:?}, value = {:?}\n",
@@ -356,11 +350,11 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
 
         for (key, value) in writes_iter {
             num_total_writes += 1;
-            let flat_key = derive_flat_storage_key(&key.address, &key.key);
+            let flat_key = derive_flat_storage_key_with_hasher(&key.address, &key.key, &mut hasher);
             // writes
             let expect_new = value.is_new_storage_slot;
             if expect_new {
-                // TODO: debug implementation for B160 uses global alloc, which panics in ZKsync OS
+                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
                 #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "applying initial write for address = {:?}, key = {:?}, value {:?} -> {:?}\n",
@@ -439,7 +433,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                     },
                 ));
             } else {
-                // TODO: debug implementation for B160 uses global alloc, which panics in ZKsync OS
+                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
                 #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "applying repeated write for address = {:?}, key = {:?}, value {:?} -> {:?}\n",
@@ -591,8 +585,9 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
         }
 
         // and now we join
-        let hasher = Blake2sStorageHasher;
-        let empty_hashes = compute_empty_hashes::<N, Blake2sStorageHasher, A>(allocator.clone());
+        let mut hasher = Blake2sStorageHasher::new();
+        let empty_hashes =
+            compute_empty_hashes::<N, Blake2sStorageHasher, A>(&mut hasher, allocator.clone());
 
         // now we should have fun and join the paths
         let buffer_size = index_to_leaf_cache.len() + num_new_writes;
@@ -631,55 +626,55 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
             a & !1 == b & !1
         }
 
-        let process_single =
-            |a: &(u64, u64, Option<Bytes32>, Option<Bytes32>),
-             level: u32,
-             dst: &mut Vec<(u64, u64, Option<Bytes32>, Option<Bytes32>), A>| {
-                let is_left = a.0 & 1 == 0;
-                let proof = match index_to_leaf_cache.get(&a.1) {
-                    Some((leaf, _)) => &leaf.path[level as usize],
-                    None => {
-                        // use default
-                        &empty_hashes[level as usize]
-                    }
-                };
-
-                let read_path = if let Some(read_path) = a.2.as_ref() {
-                    let (left, right) = if is_left {
-                        (read_path, proof)
-                    } else {
-                        (proof, read_path)
-                    };
-                    let node_hash = hasher.hash_node(left, right);
-
-                    Some(node_hash)
-                } else {
-                    None
-                };
-
-                let write_path = if let Some(write_path) = a.3.as_ref() {
-                    let (left, right) = if is_left {
-                        (write_path, proof)
-                    } else {
-                        (proof, write_path)
-                    };
-                    let node_hash = hasher.hash_node(left, right);
-
-                    Some(node_hash)
-                } else {
-                    None
-                };
-
-                let index = a.0 >> 1;
-                dst.push((index, a.1, read_path, write_path));
+        let process_single = |a: &(u64, u64, Option<Bytes32>, Option<Bytes32>),
+                              level: u32,
+                              dst: &mut Vec<(u64, u64, Option<Bytes32>, Option<Bytes32>), A>,
+                              hasher: &mut Blake2sStorageHasher| {
+            let is_left = a.0 & 1 == 0;
+            let proof = match index_to_leaf_cache.get(&a.1) {
+                Some((leaf, _)) => &leaf.path[level as usize],
+                None => {
+                    // use default
+                    &empty_hashes[level as usize]
+                }
             };
+
+            let read_path = if let Some(read_path) = a.2.as_ref() {
+                let (left, right) = if is_left {
+                    (read_path, proof)
+                } else {
+                    (proof, read_path)
+                };
+                let node_hash = hasher.hash_node(left, right);
+
+                Some(node_hash)
+            } else {
+                None
+            };
+
+            let write_path = if let Some(write_path) = a.3.as_ref() {
+                let (left, right) = if is_left {
+                    (write_path, proof)
+                } else {
+                    (proof, write_path)
+                };
+                let node_hash = hasher.hash_node(left, right);
+
+                Some(node_hash)
+            } else {
+                None
+            };
+
+            let index = a.0 >> 1;
+            dst.push((index, a.1, read_path, write_path));
+        };
 
         for level in 0..N {
             assert!(!current_hashes_buffer.is_empty());
             if current_hashes_buffer.len() == 1 {
                 // just progress
                 let a = &current_hashes_buffer[0];
-                process_single(a, level as u32, &mut next_hashes_buffer);
+                process_single(a, level as u32, &mut next_hashes_buffer, &mut hasher);
 
                 current_hashes_buffer.clear();
                 core::mem::swap(&mut current_hashes_buffer, &mut next_hashes_buffer);
@@ -750,14 +745,15 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                     }
                 } else {
                     // progress for `a`` only
-                    process_single(a, level as u32, &mut next_hashes_buffer);
+                    process_single(a, level as u32, &mut next_hashes_buffer, &mut hasher);
                 }
             }
 
             if last_merged == false {
                 // we need to progress last
-                let a = current_hashes_buffer.last().unwrap();
-                process_single(a, level as u32, &mut next_hashes_buffer);
+                let a: &(u64, u64, Option<Bytes32>, Option<Bytes32>) =
+                    current_hashes_buffer.last().unwrap();
+                process_single(a, level as u32, &mut next_hashes_buffer, &mut hasher);
             }
 
             current_hashes_buffer.clear();
@@ -919,6 +915,17 @@ pub struct LeafProof<const N: usize, H: FlatStorageHasher, A: Allocator = Global
     pub leaf: FlatStorageLeaf<N>,
     pub path: Box<[Bytes32; N], A>,
     _marker: core::marker::PhantomData<H>,
+}
+
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> LeafProof<N, H, A> {
+    pub fn new(index: u64, leaf: FlatStorageLeaf<N>, path: Box<[Bytes32; N], A>) -> Self {
+        Self {
+            index,
+            leaf,
+            path,
+            _marker: core::marker::PhantomData,
+        }
+    }
 }
 
 impl<const N: usize, H: FlatStorageHasher, A: Allocator> core::fmt::Debug for LeafProof<N, H, A> {
@@ -1165,7 +1172,7 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
                 };
                 Ok(new)
             }
-            _ => Err(InternalError("ReadValueWithProof deserialization failed")),
+            _ => Err(internal_error!("ReadValueWithProof deserialization failed")),
         }
     }
 }
@@ -1217,7 +1224,9 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
                 let new = Self::New { proof };
                 Ok(new)
             }
-            _ => Err(InternalError("WriteValueWithProof deserialization failed")),
+            _ => Err(internal_error!(
+                "WriteValueWithProof deserialization failed"
+            )),
         }
     }
 }
@@ -1252,18 +1261,19 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserial
 }
 
 pub fn verify_proof_for_root<const N: usize, H: FlatStorageHasher, A: Allocator>(
+    hasher: &mut H,
     proof: &LeafProof<N, H, A>,
     root: &Bytes32,
 ) -> bool {
-    let computed = recompute_root_from_proof(proof);
+    let computed = recompute_root_from_proof(hasher, proof);
 
     &computed == root
 }
 
 pub fn recompute_root_from_proof<const N: usize, H: FlatStorageHasher, A: Allocator>(
+    hasher: &mut H,
     proof: &LeafProof<N, H, A>,
 ) -> Bytes32 {
-    let hasher = H::default();
     let leaf_hash = hasher.hash_leaf(&proof.leaf);
 
     let mut current = leaf_hash;
@@ -1285,11 +1295,11 @@ pub fn recompute_root_from_proof<const N: usize, H: FlatStorageHasher, A: Alloca
 }
 
 pub fn compute_empty_hashes<const N: usize, H: FlatStorageHasher, A: Allocator>(
+    hasher: &mut H,
     allocator: A,
 ) -> Box<[Bytes32; N], A> {
     let mut result = Box::new_in([Bytes32::ZERO; N], allocator);
     let empty_leaf = FlatStorageLeaf::<N>::empty();
-    let hasher = H::default();
     let empty_leaf_hash = hasher.hash_leaf(&empty_leaf);
     result[0] = empty_leaf_hash;
     let mut previous = empty_leaf_hash;
@@ -1405,7 +1415,7 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Clone, const RANDOMIZE
         });
 
         let empty_leaf = FlatStorageLeaf::<N>::empty();
-        let hasher = H::default();
+        let mut hasher = H::new();
         let empty_leaf_hash = hasher.hash_leaf(&empty_leaf);
 
         let mut empty_hashes = Vec::with_capacity_in(N + 1, allocator.clone());
@@ -1475,13 +1485,13 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Clone, const RANDOMIZE
         &self.hashes.0.get(&0).unwrap().get(&0).unwrap()
     }
 
-    pub fn verify_proof<AA: Allocator>(&self, proof: &LeafProof<N, H, AA>) -> bool {
-        verify_proof_for_root(proof, &self.root())
+    pub fn verify_proof<AA: Allocator>(&self, hasher: &mut H, proof: &LeafProof<N, H, AA>) -> bool {
+        verify_proof_for_root(hasher, proof, &self.root())
     }
 
     pub fn get_index_for_existing(&self, key: &Bytes32) -> u64 {
         let Some(existing) = self.key_lookup.get(key).copied() else {
-            panic!("expected existing leaf for key {:?}", key);
+            panic!("expected existing leaf for key {key:?}");
         };
 
         existing
@@ -1521,14 +1531,14 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Clone, const RANDOMIZE
             _marker: core::marker::PhantomData,
         };
 
-        debug_assert!(self.verify_proof(&proof));
+        debug_assert!(self.verify_proof(&mut H::new(), &proof));
 
         proof
     }
 
     fn insert_at_position(&mut self, position: u64, leaf: FlatStorageLeaf<N>) {
         // we assume that it was pre-linked
-        let hasher = H::default();
+        let mut hasher = H::new();
         let leaf_hash = hasher.hash_leaf(&leaf);
 
         if let Some(existing) = self.leaves.get_mut(&position) {
@@ -1674,6 +1684,7 @@ mod test {
     use proptest::{prelude::*, sample::Index};
     use ruint::aliases::{B160, U256};
     use std::{any, collections::HashMap, ops};
+    use zk_ee::common_structs::derive_flat_storage_key;
     use zk_ee::{system::NullLogger, system_io_oracle::dyn_usize_iterator::DynUsizeIterator};
 
     fn hex_bytes(s: &str) -> Bytes32 {
@@ -1696,6 +1707,7 @@ mod test {
     #[test]
     fn test_create() {
         let tree = TestingTree::<false>::new_in(Global);
+        let mut hasher = Blake2sStorageHasher::new();
 
         // Test reference hash values.
         assert_eq!(
@@ -1741,24 +1753,26 @@ mod test {
         let ReadValueWithProof::Existing { proof } = start_guard_proof else {
             panic!()
         };
-        assert!(tree.verify_proof(&proof.existing));
+        assert!(tree.verify_proof(&mut hasher, &proof.existing));
         assert!(proof.existing.leaf.key == Bytes32::ZERO);
         let end_guard_proof = tree.get(&Bytes32::MAX);
         let ReadValueWithProof::Existing { proof } = end_guard_proof else {
             panic!()
         };
-        assert!(tree.verify_proof(&proof.existing));
+        assert!(tree.verify_proof(&mut hasher, &proof.existing));
         assert!(proof.existing.leaf.key == Bytes32::MAX);
 
         // Check that mutating a Merkle path in the proof invalidates it.
         let mut mutated_proof = proof.existing;
         *mutated_proof.path.last_mut().unwrap() = Bytes32::zero();
-        assert!(!tree.verify_proof(&mutated_proof));
+        assert!(!tree.verify_proof(&mut hasher, &mutated_proof));
     }
 
     #[test]
     fn test_insert() {
         let mut tree = TestingTree::<false>::new_in(Global);
+        let mut hasher = Blake2sStorageHasher::new();
+
         let initial_root = *tree.root();
         let next_available = tree.next_free_slot;
         let key_to_insert = Bytes32::from_byte_fill(0x01);
@@ -1783,31 +1797,37 @@ mod test {
             panic!()
         };
         assert!(new_insert.leaf == FlatStorageLeaf::empty());
-        assert!(verify_proof_for_root(&previous, &initial_root));
+        assert!(verify_proof_for_root(&mut hasher, &previous, &initial_root));
         let insert_pos = new_insert.index;
         assert!(previous.index < next_available);
         assert!(previous.leaf.key < key_to_insert);
         let mut previous = previous;
         previous.leaf.next = insert_pos;
-        let mut new_intermediate = recompute_root_from_proof(&previous);
-        assert!(verify_proof_for_root(&next, &new_intermediate));
+        let mut new_intermediate = recompute_root_from_proof(&mut hasher, &previous);
+        assert!(verify_proof_for_root(&mut hasher, &next, &new_intermediate));
         assert!(next.index < next_available);
         assert!(next.leaf.key > key_to_insert);
-        new_intermediate = recompute_root_from_proof(&next);
-        assert!(verify_proof_for_root(&new_insert, &new_intermediate));
+        new_intermediate = recompute_root_from_proof(&mut hasher, &next);
+        assert!(verify_proof_for_root(
+            &mut hasher,
+            &new_insert,
+            &new_intermediate
+        ));
         assert!(new_insert.index == next_available);
 
         let mut new_insert = new_insert;
         new_insert.leaf.key = key_to_insert;
         new_insert.leaf.value = value_to_insert;
         new_insert.leaf.next = next.index;
-        new_intermediate = recompute_root_from_proof(&new_insert);
+        new_intermediate = recompute_root_from_proof(&mut hasher, &new_insert);
         assert_eq!(new_intermediate, new_root);
     }
 
     #[test]
     fn test_insert_many_and_update() {
         let mut tree = TestingTree::<false>::new_in(Global);
+        let mut hasher = Blake2sStorageHasher::new();
+
         let next_available = tree.next_free_slot;
         let key_to_insert_0 = Bytes32::from_byte_fill(0x01);
         let value_to_insert_0 = Bytes32::from_byte_fill(0x10);
@@ -1839,14 +1859,14 @@ mod test {
         assert!(existing.leaf.key == key_to_insert_0);
         assert!(existing.leaf.value == value_to_insert_0);
         assert!(existing.index == next_available);
-        assert!(verify_proof_for_root(&existing, &initial_root));
+        assert!(verify_proof_for_root(&mut hasher, &existing, &initial_root));
         let mut existing = existing;
         existing.leaf.value = value_to_insert;
-        assert!(verify_proof_for_root(&existing, &new_root));
+        assert!(verify_proof_for_root(&mut hasher, &existing, &new_root));
     }
 
     fn to_be_bytes(value: u64) -> Bytes32 {
-        Bytes32::from_u256_be(U256::try_from(value).unwrap())
+        Bytes32::from_u256_be(&U256::try_from(value).unwrap())
     }
 
     #[test]
