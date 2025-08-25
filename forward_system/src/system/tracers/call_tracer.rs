@@ -1,7 +1,5 @@
 // Reference implementation of call tracer.
 
-use std::mem;
-
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use zk_ee::system::{
@@ -181,9 +179,11 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
                 }
             }
 
-            finished_call.calls = mem::take(&mut self.finished_calls);
-
-            self.finished_calls.push(finished_call);
+            if let Some(parent_call) = self.unfinished_calls.last_mut() {
+                parent_call.calls.push(finished_call);
+            } else {
+                self.finished_calls.push(finished_call);
+            }
         }
 
         self.current_call_depth -= 1;
@@ -334,7 +334,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for CallTracer {
         frame_state: &impl EvmFrameInterface<S>,
     ) {
         // Following Geth implementation: https://github.com/ethereum/go-ethereum/blob/2dbb580f51b61d7ff78fceb44b06835827704110/core/vm/instructions.go#L894
-        self.finished_calls.push(Call {
+        let call_frame = Call {
             call_type: CallType::Selfdestruct,
             from: frame_state.address(),
             to: beneficiary,
@@ -347,7 +347,13 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for CallTracer {
             reverted: false,
             calls: vec![],
             logs: vec![],
-        })
+        };
+
+        if let Some(parent_call) = self.unfinished_calls.last_mut() {
+            parent_call.calls.push(call_frame);
+        } else {
+            self.finished_calls.push(call_frame);
+        }
     }
 
     /// Called on CREATE/CREATE2 system request.
