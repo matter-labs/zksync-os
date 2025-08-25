@@ -228,7 +228,6 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
     ) {
     }
 
-    #[inline(always)]
     fn on_event(
         &mut self,
         _ee_type: zk_ee::execution_environment_type::ExecutionEnvironmentType,
@@ -244,6 +243,19 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
                 data: data.to_vec(),
             })
         }
+    }
+
+    #[inline(always)]
+    /// Is called on a change of bytecode for some account.
+    /// `new_bytecode` can be None if bytecode is unknown at the moment of change (e.g. force deploy by hash in system hook)
+    fn on_bytecode_change(
+        &mut self,
+        _ee_type: zk_ee::execution_environment_type::ExecutionEnvironmentType,
+        _address: <S::IOTypes as SystemIOTypesConfig>::Address,
+        _new_bytecode: Option<&[u8]>,
+        _new_bytecode_hash: <S::IOTypes as SystemIOTypesConfig>::BytecodeHashValue,
+        _new_observable_bytecode_length: u32,
+    ) {
     }
 
     #[inline(always)]

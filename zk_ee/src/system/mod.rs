@@ -292,14 +292,21 @@ where
         resources: &mut S::Resources,
         at_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-    ) -> Result<&'static [u8], SystemError> {
+    ) -> Result<
+        (
+            &'static [u8],
+            <S::IOTypes as SystemIOTypesConfig>::BytecodeHashValue,
+            u32,
+        ),
+        SystemError,
+    > {
         // IO is fully responsible to to deploy
         // and at the end we just need to remap slice
-        let bytecode = self
+        let (bytecode, bytecode_hash, observable_bytecode_len) = self
             .io
             .deploy_code(for_ee, resources, at_address, &bytecode)?;
 
-        Ok(bytecode)
+        Ok((bytecode, bytecode_hash, observable_bytecode_len))
     }
 
     pub fn set_bytecode_details(

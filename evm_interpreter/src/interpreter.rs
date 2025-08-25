@@ -390,13 +390,25 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     &self.address,
                     deployed_code,
                 ) {
-                    Ok(_) => {
+                    Ok((
+                        actual_deployed_bytecode,
+                        internal_bytecode_hash,
+                        observable_bytecode_len,
+                    )) => {
                         // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
                         #[cfg(not(target_arch = "riscv32"))]
                         let _ = system.get_logger().write_fmt(format_args!(
                             "Successfully deployed contract at {:?} \n",
                             self.address
                         ));
+
+                        tracer.on_bytecode_change(
+                            THIS_EE_TYPE,
+                            self.address,
+                            Some(actual_deployed_bytecode),
+                            internal_bytecode_hash,
+                            observable_bytecode_len,
+                        );
                     }
                     Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
                         error_after_constructor = Some(EvmError::CodeStoreOutOfGas);
