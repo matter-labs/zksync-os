@@ -293,25 +293,36 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                                 "Tx execution result = {:?}\n",
                                 &tx_processing_result,
                             ));
-                            block_gas_used += tx_processing_result.gas_used;
-                            block_computational_native_used +=
-                                tx_processing_result.computational_native_used;
-                            block_pubdata_used += tx_processing_result.pubdata_used;
+                            // Do not update the accumulators yet, we may need to revert the transaction
+                            let next_block_gas_used =
+                                block_gas_used + tx_processing_result.gas_used;
+                            let next_block_computational_native_used =
+                                block_computational_native_used
+                                    + tx_processing_result.computational_native_used;
+                            let next_block_pubdata_used =
+                                block_pubdata_used + tx_processing_result.pubdata_used;
                             let block_logs_used = system.io.logs_len();
 
                             // Check if the transaction made the block reach any of the limits
                             // for gas, native, pubdata or logs.
                             if let Err(err) = Self::check_for_block_limits(
                                 &mut system,
-                                block_gas_used,
-                                block_computational_native_used,
-                                block_pubdata_used,
+                                next_block_gas_used,
+                                next_block_computational_native_used,
+                                next_block_pubdata_used,
                                 block_logs_used,
                             ) {
                                 // Revert to state before transaction
                                 system.finish_global_frame(Some(&pre_tx_rollback_handle))?;
                                 result_keeper.tx_processed(Err(err));
                             } else {
+                                // Now update the accumulators
+                                block_gas_used = next_block_gas_used;
+                                block_computational_native_used =
+                                    next_block_computational_native_used;
+                                block_pubdata_used = next_block_pubdata_used;
+                                first_tx = false;
+
                                 // Finish the frame opened before processing the tx
                                 system.finish_global_frame(None)?;
 
@@ -352,8 +363,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                             }
                         }
                     }
-
-                    first_tx = false;
 
                     // The fee is transferred to the coinbase address before
                     // finishing the transaction.
