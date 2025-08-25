@@ -108,7 +108,7 @@ impl<S: SystemTypes> System<S> {
             // Out of range
             ruint::aliases::U256::ZERO
         } else {
-            let index = current_block_number - block_number - 1;
+            let index = 256 - (current_block_number - block_number);
             self.metadata.block_level_metadata.block_hashes.0[index as usize]
         }
     }
@@ -208,11 +208,9 @@ where
         Ok(())
     }
 
-    /// Finishes current transaction executions, returns execution stats.
-    pub fn flush_tx(&mut self) -> Result<u32, InternalError> {
-        self.io.finish_tx()?;
-
-        Ok(0)
+    /// Finishes current transaction execution
+    pub fn flush_tx(&mut self) -> Result<(), InternalError> {
+        self.io.finish_tx()
     }
 
     pub fn init_from_oracle(
@@ -239,17 +237,33 @@ where
         Ok(system)
     }
 
+    ///
+    /// Get the length of the next transaction from the oracle.
+    /// Returns None when there are no more transactions to process.
+    /// Returns Some(Err(_)) if there's an encoding error.
+    ///
     pub fn try_begin_next_tx(
         &mut self,
         tx_write_iter: &mut impl crate::oracle::SafeUsizeWritable,
-    ) -> Result<Option<usize>, ()> {
+    ) -> Option<Result<usize, NextTxSubsystemError>> {
         let next_tx_len_bytes = match self.io.oracle().try_begin_next_tx() {
-            None => return Ok(None),
+            None => return None,
             Some(size) => size.get() as usize,
         };
+        // Check to avoid usize overflow in 32-bit target.
+        // The maximum allowed length is u32::MAX - 3, as it is
+        // the last multiple of 4 (u32 byte size). Any value larger than that
+        // will overflow u32 in the next_multiple_of(USIZE_SIZE) call.
+        if next_tx_len_bytes > u32::MAX as usize - (core::mem::size_of::<u32>() - 1) {
+            return Some(Err(interface_error!(
+                crate::system::NextTxInterfaceError::TxLengthTooLarge
+            )));
+        }
         let next_tx_len_usize_words = next_tx_len_bytes.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
         if tx_write_iter.len() < next_tx_len_usize_words {
-            return Err(());
+            return Some(Err(interface_error!(
+                crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
+            )));
         }
         let tx_iterator = self
             .io
@@ -257,7 +271,9 @@ where
             .create_oracle_access_iterator::<NewTxContentIterator>(())
             .expect("must create iterator for the content");
         if tx_iterator.len() != next_tx_len_usize_words {
-            return Err(());
+            return Some(Err(interface_error!(
+                crate::system::NextTxInterfaceError::TxIteratorLengthMismatch
+            )));
         }
         for word in tx_iterator {
             unsafe {
@@ -267,7 +283,7 @@ where
 
         self.io.begin_next_tx();
 
-        Ok(Some(next_tx_len_bytes))
+        Some(Ok(next_tx_len_bytes))
     }
 
     pub fn deploy_bytecode(
@@ -328,3 +344,11 @@ where
         )
     }
 }
+
+define_subsystem!(NextTx,
+  interface NextTxInterfaceError {
+    TxLengthTooLarge,
+    TxWriteIteratorTooSmall,
+    TxIteratorLengthMismatch,
+  }
+);

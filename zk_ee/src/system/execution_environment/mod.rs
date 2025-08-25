@@ -7,13 +7,10 @@
 pub mod call_params;
 pub mod environment_state;
 pub mod evm;
-pub mod interaction_params;
-use alloc::boxed::Box;
 use core::any::Any;
 
 pub use self::call_params::*;
 pub use self::environment_state::*;
-pub use self::interaction_params::*;
 
 use super::errors::internal::InternalError;
 use super::errors::subsystem::Subsystem;
@@ -25,13 +22,6 @@ use super::IOSubsystemExt;
 use crate::common_structs::CalleeAccountProperties;
 use crate::internal_error;
 use crate::memory::slice_vec::SliceVec;
-use crate::system::CallModifier;
-use crate::types_config::*;
-
-pub enum CallOrDeployResultRef<'a, 'external, S: SystemTypes> {
-    CallResult(&'a CallResult<'external, S>),
-    DeploymentResult(&'a DeploymentResult<'external, S>),
-}
 
 // we should consider some bound of amount of data that is deployment-specific,
 // for now it's arbitrary
@@ -61,29 +51,19 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     fn new(system: &mut System<S>) -> Result<Self, Self::SubsystemError>;
 
     ///
-    /// The contract address where the EE is being executed.
+    /// Pre-checks and operations that should not be rolled back if actual frame execution fails.
     ///
-    fn self_address(&self) -> &<S::IOTypes as SystemIOTypesConfig>::Address;
-
-    ///
-    /// Available resources in the current frame.
-    ///
-    fn resources_mut(&mut self) -> &mut S::Resources;
-
-    ///
-    /// Whether this EE supports a given call modifier.
-    ///
-    fn is_modifier_supported(modifier: &CallModifier) -> bool;
-
-    ///
-    /// Whether the EE is running in a static context, i.e. in
-    /// a context where state changes are not allowed.
-    ///
-    fn is_static_context(&self) -> bool;
+    fn before_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
+        system: &mut System<S>,
+        frame_state: &mut ExecutionEnvironmentLaunchParams<'i, S>,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<bool, Self::SubsystemError>
+    where
+        S::IO: IOSubsystemExt;
 
     ///
     /// Start the execution of an EE frame in a given initial state.
-    /// Returns a preemption point for the bootloader to handle.
+    /// Returns a preemption point for the runner to handle.
     ///
     fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         &'a mut self,
@@ -91,7 +71,9 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>;
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>
+    where
+        S::IO: IOSubsystemExt;
 
     ///
     /// EE can decide how to provide resources to the callee frame on external call.
@@ -103,45 +85,17 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
         callee_account_properties: &CalleeAccountProperties,
     ) -> Result<S::Resources, Self::SubsystemError>;
 
-    /// Continues after the bootloader handled a completed external call.
-    fn continue_after_external_call<'a, 'res: 'ee>(
+    ///
+    /// Continue the execution of an EE frame after preemtion.
+    /// Returns a preemption point for the runner to handle.
+    ///
+    fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
         returned_resources: S::Resources,
-        call_result: CallResult<'res, S>,
+        call_request_result: CallResult<'res, S>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>;
-
-    /// Continues after the bootloader handled a completed deployment.
-    fn continue_after_deployment<'a, 'res: 'ee>(
-        &'a mut self,
-        system: &mut System<S>,
-        returned_resources: S::Resources,
-        deployment_result: DeploymentResult<'res, S>,
-        tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>;
-
-    type DeploymentExtraParameters: EEDeploymentExtraParameters<S>;
-
-    fn default_ee_deployment_options(
-        system: &mut System<S>,
-    ) -> Option<Box<dyn Any, <S as SystemTypes>::Allocator>>;
-
-    /// Runs some pre-deployment preparation and checks.
-    /// The result can be None to represent unsuccessful preparation for deployment.
-    /// EE should prepare a new state to run as "constructor" and potentially OS/IO related data.
-    /// OS then will perform it's own checks and decide whether deployment should proceed or not
-    /// Returns the resources to give back to the deployer
-    fn prepare_for_deployment<'a>(
-        system: &mut System<S>,
-        deployment_parameters: DeploymentPreparationParameters<'a, S>,
-    ) -> Result<
-        (
-            S::Resources,
-            Option<ExecutionEnvironmentLaunchParams<'a, S>>,
-        ),
-        Self::SubsystemError,
-    >
+    ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, Self::SubsystemError>
     where
         S::IO: IOSubsystemExt;
 }

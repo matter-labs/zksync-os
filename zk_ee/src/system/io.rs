@@ -112,7 +112,7 @@ pub trait IOSubsystem: Sized {
     ) -> Result<Bytes32, SystemError>;
 
     /// Mark an account to be destructed at the end of the transaction.
-    /// Perform token transfer to beneficiary.
+    /// Perform token transfer to beneficiary. Returns amount of token transferred.
     fn mark_for_deconstruction(
         &mut self,
         from_ee: ExecutionEnvironmentType,
@@ -120,11 +120,14 @@ pub trait IOSubsystem: Sized {
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         in_constructor: bool,
-    ) -> Result<(), DeconstructionSubsystemError>;
+    ) -> Result<
+        <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        DeconstructionSubsystemError,
+    >;
 
     fn net_pubdata_used(&self) -> Result<u64, InternalError>;
 
-    /// Starts a new "local" frame that does not that memory (like `near_call` in the EraVM).
+    /// Starts a new "local" frame that does not track memory (like `near_call` in the EraVM).
     /// Returns a snapshot to which the system can rollback to on frame finish.
     fn start_io_frame(&mut self) -> Result<<Self as IOSubsystem>::StateSnapshot, InternalError>;
 
@@ -134,6 +137,24 @@ pub trait IOSubsystem: Sized {
         &mut self,
         rollback_handle: Option<&<Self as IOSubsystem>::StateSnapshot>,
     ) -> Result<(), InternalError>;
+
+    /// Read an account's nonce.
+    fn read_nonce(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+    ) -> Result<u64, SystemError>;
+
+    /// Increments an account's nonce and
+    /// returns the old nonce.
+    fn increment_nonce(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
+        increment_by: u64,
+    ) -> Result<u64, NonceSubsystemError>;
 
     #[cfg(feature = "evm_refunds")]
     /// Get current gas refund counter
@@ -340,24 +361,6 @@ pub trait IOSubsystemExt: IOSubsystem {
         is_access_list: bool,
     ) -> Result<(), SystemError>;
 
-    /// Read an account's nonce.
-    fn read_nonce(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut Self::Resources,
-        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-    ) -> Result<u64, SystemError>;
-
-    /// Increments an account's nonce and
-    /// returns the old nonce.
-    fn increment_nonce(
-        &mut self,
-        ee_type: ExecutionEnvironmentType,
-        resources: &mut Self::Resources,
-        address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-        increment_by: u64,
-    ) -> Result<u64, NonceSubsystemError>;
-
     /// Perform a transfer of token balance.
     fn transfer_nominal_token_value(
         &mut self,
@@ -477,6 +480,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         tx_hash: Bytes32,
         success: bool,
+        is_priority: bool,
     ) -> Result<(), SystemError>;
 
     /// Returns old balance

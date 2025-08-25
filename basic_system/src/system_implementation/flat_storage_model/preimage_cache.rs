@@ -152,7 +152,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             }
 
             let inserted = self.storage.entry(*hash).or_insert(buffered);
-            // Safety: IO implementer that will use it is expected to live beoynd any frame (as it's part of the OS),
+            // Safety: IO implementer that will use it is expected to live beyond any frame (as it's part of the OS),
             // so we can extend the lifetime
             unsafe {
                 let cached: &'static [u8] = core::mem::transmute(inserted.as_slice());
@@ -247,6 +247,11 @@ impl<R: Resources, A: Allocator + Clone> SnapshottableIo
 
     fn begin_new_tx(&mut self) {
         self.publication_storage.begin_new_tx();
+    }
+
+    fn finish_tx(&mut self) -> Result<(), InternalError> {
+        self.publication_storage.finish_tx();
+        Ok(())
     }
 
     fn start_frame(&mut self) -> Self::StateSnapshot {

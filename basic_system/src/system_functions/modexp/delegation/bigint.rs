@@ -198,7 +198,9 @@ impl<A: Allocator + Clone> BigintRepr<A> {
 
         let mut current = self;
 
-        if current.digits > modulus.digits {
+        // we will be a little conservative here, and also will handle the case of trivial exponent == 1,
+        // but base > modulus
+        if current.digits >= modulus.digits {
             (current, (scratch_0, scratch_1, scratch_2)) = Self::reduce_initially(
                 current,
                 &modulus,
@@ -221,9 +223,14 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         // we will go BE case to quickly strip leading zeroes
         let mut first_found = false;
         // Exp is BE, so do not need to reverse iterator
-        for &byte in exp.iter() {
+        'outer: for &byte in exp.iter() {
             // But here we should go from MSB
             for i in (0..8).rev() {
+                if current.digits == 0 {
+                    // in case if modulus is composite, we can get accumulator
+                    // to be 0, and then we can exit the loop early
+                    break 'outer;
+                }
                 let bit = byte & (1 << i) > 0;
                 if first_found {
                     (current, (scratch_0, scratch_1, scratch_2, scratch_3)) = Self::square_step(
@@ -311,6 +318,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                 digit_scratch_1,
                 digit_scratch_2,
                 digit_carry_propagation_scratch,
+                scratch_0.digits + modulus.digits,
             );
         }
 
@@ -339,6 +347,10 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         digit_carry_propagation_scratch: &mut DelegatedU256,
         advisor: &mut impl ModexpAdvisor,
     ) -> (Self, (Self, Self, Self, Self)) {
+        assert!(current.digits > 0); // case if it is 0 is handled by outer loop
+        debug_assert_eq!(other.digits, modulus.digits); // we multiply accumulator by base, and base if fully reduced
+        assert!(scratch_0.capacity() >= modulus.digits + 1);
+        assert!(scratch_1.capacity() >= modulus.digits);
         assert!(scratch_2.capacity() >= modulus.digits * 2);
         assert!(scratch_3.capacity() >= modulus.digits * 2);
 
@@ -353,11 +365,11 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                 digit_scratch_1,
                 digit_scratch_2,
                 digit_carry_propagation_scratch,
+                current.digits + other.digits,
             );
-
             advisor.get_reduction_op_advise(&scratch_2, modulus, &mut scratch_0, &mut scratch_1);
             // now we should enforce everything backwards
-            assert!(scratch_0.digits <= modulus.digits);
+            assert!(scratch_0.digits <= scratch_2.digits + 1 - modulus.digits);
             assert!(scratch_1.digits <= modulus.digits);
 
             Self::fma(
@@ -369,6 +381,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                 digit_scratch_1,
                 digit_scratch_2,
                 digit_carry_propagation_scratch,
+                scratch_2.digits,
             );
         }
 
@@ -396,6 +409,9 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         digit_carry_propagation_scratch: &mut DelegatedU256,
         advisor: &mut impl ModexpAdvisor,
     ) -> (Self, (Self, Self, Self, Self)) {
+        assert!(a.digits > 0); // case if it is 0 is handled by outer loop
+        assert!(scratch_0.capacity() >= modulus.digits + 1);
+        assert!(scratch_1.capacity() >= modulus.digits);
         assert!(scratch_2.capacity() >= modulus.digits * 2);
         assert!(scratch_3.capacity() >= modulus.digits * 2);
 
@@ -410,11 +426,11 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                 digit_scratch_1,
                 digit_scratch_2,
                 digit_carry_propagation_scratch,
+                a.digits * 2,
             );
             advisor.get_reduction_op_advise(&scratch_2, modulus, &mut scratch_0, &mut scratch_1);
-
             // now we should enforce everything backwards
-            assert!(scratch_0.digits <= modulus.digits);
+            assert!(scratch_0.digits <= scratch_2.digits + 1 - modulus.digits);
             assert!(scratch_1.digits <= modulus.digits);
 
             Self::fma(
@@ -426,6 +442,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                 digit_scratch_1,
                 digit_scratch_2,
                 digit_carry_propagation_scratch,
+                scratch_2.digits,
             );
         }
 
@@ -488,12 +505,22 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         scratch_1: &mut DelegatedU256, // before trying to read
         scratch_2: &mut DelegatedU256,
         carry_propagation_scratch: &mut DelegatedU256, // this one has top limbs to be 0s
+        max_product_digits: usize,
     ) {
         debug_assert_eq!(carry_propagation_scratch.as_limbs_mut()[1], 0);
         debug_assert_eq!(carry_propagation_scratch.as_limbs_mut()[2], 0);
         debug_assert_eq!(carry_propagation_scratch.as_limbs_mut()[3], 0);
 
         let dst_scratch_capacity = dst_scratch.clear_as_capacity_mut();
+        assert!(dst_scratch_capacity.len() >= max_product_digits);
+        if max_product_digits == 0 {
+            if let Some(c) = c {
+                assert_eq!(c.digits, 0);
+            }
+            dst_scratch.set_num_digits(0);
+            return;
+        }
+
         // schoolbook
 
         let mut next_to_init_digit = 0;
@@ -618,25 +645,31 @@ impl<A: Allocator + Clone> BigintRepr<A> {
             if a.digits > 0 {
                 // make final carry write - if can also initialize
                 let dst_digit = a.digits + b_digit_idx;
-                assert!(next_to_init_digit >= dst_digit);
-                if dst_digit == next_to_init_digit {
-                    let _ = bigint_op_delegation_raw(
-                        dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
-                        carry_scratch.cast(),
-                        BigIntOps::MemCpy,
-                    );
-                    next_to_init_digit = dst_digit + 1;
+                if dst_digit >= max_product_digits {
+                    // abort propagation - we apriori expect that in well-formed case
+                    // those digits can not exist
                 } else {
-                    let of = bigint_op_delegation_raw(
-                        dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
-                        carry_scratch.cast(),
-                        BigIntOps::Add,
-                    );
-                    assert_eq!(of, 0);
+                    assert!(next_to_init_digit >= dst_digit);
+                    if dst_digit == next_to_init_digit {
+                        let _ = bigint_op_delegation_raw(
+                            dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
+                            carry_scratch.cast(),
+                            BigIntOps::MemCpy,
+                        );
+                        next_to_init_digit = dst_digit + 1;
+                    } else {
+                        let of = bigint_op_delegation_raw(
+                            dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
+                            carry_scratch.cast(),
+                            BigIntOps::Add,
+                        );
+                        assert_eq!(of, 0);
+                    }
                 }
             }
         }
 
+        assert!(next_to_init_digit <= max_product_digits);
         dst_scratch.set_num_digits(next_to_init_digit);
     }
 

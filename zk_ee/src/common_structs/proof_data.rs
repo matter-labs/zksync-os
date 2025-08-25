@@ -11,7 +11,7 @@ use super::state_root_view::StateRootView;
 /// At the end we'll calculate chain state commitment before using this fields and other metadata values(block number, hashes) used during execution.
 ///
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProofData<SR: StateRootView<EthereumIOTypesConfig>> {
     pub state_root_view: SR,
     pub last_block_timestamp: u64,

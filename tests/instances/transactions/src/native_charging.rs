@@ -36,7 +36,7 @@ fn run_tx(tx: Vec<u8>, basefee: u64, native_price: u64, should_succeed: bool, si
         B160::from_be_bytes(from.0),
         U256::from(1_000_000_000_000_000_u64),
     );
-    let key = crate::compute_balance_slot(wallet.address());
+    let key = crate::compute_erc20_balance_slot(wallet.address());
     let value = rig::ruint::aliases::B256::from(U256::from(1_000_000_000_000_000_u64));
     chain.set_storage_slot(B160::from_be_bytes(TO.0 .0), key, value);
 

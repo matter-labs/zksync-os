@@ -24,9 +24,12 @@ paste = "1.0.15"
 
 
 [features]
-testing = ["serde", "ruint/serde"]
-default = ["testing", "error_origins"]
+# serde derivation has to be disabled for risc-v target until we update ruint version
+serde = ["dep:serde", "ruint/serde"]
+testing = ["serde"]
+default = ["serde", "error_origins"]
 cycle_marker = ["cycle_marker/log_to_file"]
+# Adds location (file, line number) where an error is raised
 error_origins = []
 detailed_errors = []
 prevrandao = []

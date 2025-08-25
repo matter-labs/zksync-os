@@ -1,2 +1,3 @@
+# If changed, also change reproduce/Dockerfile
 [toolchain]
 channel = "nightly-2025-05-24"

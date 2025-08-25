@@ -151,7 +151,7 @@ impl<Native: Resource + Computational> Resources for BaseResources<Native> {
 
     fn from_native(native: Native) -> Self {
         Self {
-            ergs: Ergs(0),
+            ergs: Ergs::empty(),
             native,
         }
     }
@@ -173,7 +173,7 @@ impl<Native: Resource + Computational> Resources for BaseResources<Native> {
     }
 
     fn exhaust_ergs(&mut self) {
-        self.ergs = Ergs(0)
+        self.ergs = Ergs::empty()
     }
 
     fn give_native_to(&mut self, other: &mut Self) {

@@ -36,6 +36,9 @@ cycle_marker = ["cycle_marker/log_to_file"]
 wrap-in-batch = []
 proving = ["crypto/proving"]
 evm_refunds = ["storage_models/evm_refunds"]
+# The finish method will just return inputs, so outputs can be procesed outside bootloader
+# Used for proving multi block batch within 1 run
+multiblock-batch = []
 
 [dev-dependencies]
 hex = {version = "0.4.3"}
@@ -43,7 +46,7 @@ proptest = "1.6.0"
 crypto = { path = "../crypto", default-features = false, features = ["secp256k1-static-context", "testing"]}
 num-bigint = "*"
 num-traits = "*"
-arbitrary = "1"
+arbitrary = { version = "1", features = ["derive"] }
 serde_json = "*"
 alloy-rpc-types-debug = { version = "*", default-features = false }
 alloy = { version = "1", features = ["rlp", "full"] }

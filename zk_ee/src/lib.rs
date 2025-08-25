@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "testing"), no_std)]
+#![cfg_attr(not(feature = "serde"), no_std)]
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 #![feature(const_type_id)]

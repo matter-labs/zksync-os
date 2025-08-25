@@ -24,6 +24,7 @@ paste = "1.0.15"
 
 [features]
 eip-7645 = []
+evm_refunds = []
 default = []
 testing = ["zk_ee/testing"]
 cycle_marker = ["cycle_marker/log_to_file"]

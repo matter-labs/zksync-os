@@ -5,6 +5,7 @@ use gas_constants::{CALL_STIPEND, INITCODE_WORD_COST, SHA3WORD};
 
 use native_resource_constants::*;
 use zk_ee::kv_markers::MAX_EVENT_TOPICS;
+use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::{system::*, wrap_error};
 
@@ -65,7 +66,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let address = u256_to_b160(address);
         // first deal with locals memory
         let (memory_offset, len) =
-            Self::cast_offset_and_len(&memory_offset, &len, ExitCode::InvalidOperandOOG)?;
+            Self::cast_offset_and_len(&memory_offset, &len, EvmError::InvalidOperandOOG.into())?;
 
         // resize memory to account for the destination memory required
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, memory_offset, len)?;
@@ -148,10 +149,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     ) -> InstructionResult {
         self.gas.spend_gas_and_native(0, SSTORE_NATIVE_COST)?;
         if self.is_static_frame() {
-            return Err(ExitCode::StateChangeDuringStaticCall);
+            return Err(EvmError::StateChangeDuringStaticCall.into());
         }
         if self.gas.gas_left() <= CALL_STIPEND {
-            return Err(ExitCode::InvalidOperandOOG);
+            return Err(EvmError::InvalidOperandOOG.into());
         }
         let (index, value) = self.stack.pop_2()?;
         let index = Bytes32::from_u256_be(index);
@@ -186,7 +187,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     ) -> InstructionResult {
         self.gas.spend_gas_and_native(0, TSTORE_NATIVE_COST)?;
         if self.is_static_frame() {
-            return Err(ExitCode::StateChangeDuringStaticCall);
+            return Err(EvmError::StateChangeDuringStaticCall.into());
         }
         let (index, value) = self.stack.pop_2()?;
         let index = Bytes32::from_u256_be(index);
@@ -213,12 +214,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.gas.spend_gas_and_native(0, LOG_NATIVE_COST)?;
 
         if self.is_static_frame() {
-            return Err(ExitCode::StateChangeDuringStaticCall);
+            return Err(EvmError::StateChangeDuringStaticCall.into());
         }
 
         let (mem_offset, len) = self.stack.pop_2()?;
         let (mem_offset, len) =
-            Self::cast_offset_and_len(&mem_offset, &len, ExitCode::InvalidOperandOOG)?;
+            Self::cast_offset_and_len(&mem_offset, &len, EvmError::InvalidOperandOOG.into())?;
         let mut topics: arrayvec::ArrayVec<Bytes32, 4> = arrayvec::ArrayVec::new();
         for _ in 0..N {
             topics.push(Bytes32::from_u256_be(self.stack.pop_1()?));
@@ -241,17 +242,21 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         Ok(())
     }
 
-    pub fn selfdestruct(&mut self, system: &mut System<S>) -> InstructionResult {
+    pub fn selfdestruct(
+        &mut self,
+        system: &mut System<S>,
+        tracer: &mut impl Tracer<S>,
+    ) -> InstructionResult {
         self.gas
             .spend_gas_and_native(gas_constants::SELFDESTRUCT, SELFDESTRUCT_NATIVE_COST)?;
 
         if self.is_static_frame() {
-            return Err(ExitCode::StateChangeDuringStaticCall);
+            return Err(EvmError::StateChangeDuringStaticCall.into());
         }
 
         let beneficiary = u256_to_b160(self.stack.pop_1()?);
 
-        system
+        let amount_transferred = system
             .io
             .mark_for_deconstruction(
                 THIS_EE_TYPE,
@@ -262,13 +267,19 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             )
             .map_err(wrap_error!())?;
 
+        tracer.evm_tracer().on_selfdestruct(
+            beneficiary,
+            amount_transferred,
+            &InterpreterExternal::new_from(&self, system),
+        );
+
         Err(ExitCode::SelfDestruct)
     }
 
     pub fn create<const IS_CREATE2: bool>(
         &mut self,
         system: &mut System<S>,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
     ) -> InstructionResult {
         self.gas.spend_gas_and_native(
             gas_constants::CREATE,
@@ -280,7 +291,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         )?;
 
         if self.is_static_frame() {
-            return Err(ExitCode::StateChangeDuringStaticCall);
+            return Err(EvmError::StateChangeDuringStaticCall.into());
         }
         self.clear_last_returndata();
 
@@ -288,13 +299,13 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let value = *value;
 
         let (code_offset, len) =
-            Self::cast_offset_and_len(code_offset, len, ExitCode::InvalidOperandOOG)?;
+            Self::cast_offset_and_len(code_offset, len, EvmError::InvalidOperandOOG.into())?;
 
         Self::resize_heap_implementation(&mut self.heap, &mut self.gas, code_offset, len)?;
 
         // Create code size is limited
         if len > MAX_INITCODE_SIZE {
-            return Err(ExitCode::CreateInitcodeSizeLimit);
+            return Err(EvmError::CreateInitcodeSizeLimit.into());
         }
 
         // Charge for dynamic gas
@@ -318,46 +329,62 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // TODO: not necessary once heaps get the same treatment as calldata
         let deployment_code = code_offset..end;
 
-        let ee_specific_data = alloc::boxed::Box::try_new_in(scheme, system.get_allocator())
-            .expect("system allocator must be capable to allocate for EE deployment parameters");
-        // at this preemption point we give all resources for preparation
+        let deployer_nonce = self.gas.resources.with_infinite_ergs(|inf_resources| {
+            system
+                .io
+                .read_nonce(THIS_EE_TYPE, inf_resources, &self.address)
+        })?;
+
+        let deployed_address = Self::derive_address_for_deployment(
+            system,
+            self.gas.resources_mut(),
+            scheme,
+            &self.address,
+            deployer_nonce,
+            &self.heap[deployment_code.clone()],
+        )?;
+
+        // at this preemption point we give all resources to the system
         let all_resources = self.gas.take_resources();
 
-        let deployment_parameters = EVMDeploymentRequest {
-            deployment_code,
-            ee_specific_deployment_processing_data: Some(
-                ee_specific_data as alloc::boxed::Box<dyn core::any::Any, S::Allocator>,
-            ),
-            nominal_token_value: value,
-            deployer_full_resources: all_resources,
-        };
+        self.pending_os_request = Some(PendingOsRequest::Create(deployed_address));
 
-        *external_call_dest = Some(ExternalCall::Create(deployment_parameters));
+        *external_call_dest = Some(EVMCallRequest {
+            ergs_to_pass: all_resources.ergs(),
+            call_value: value,
+            destination_address: deployed_address,
+            input_data: deployment_code,
+            modifier: CallModifier::Constructor,
+            full_caller_resources: all_resources,
+        });
 
         Err(ExitCode::ExternalCall)
     }
 
-    pub fn call(&mut self, external_call_dest: &mut Option<ExternalCall<S>>) -> InstructionResult {
+    pub fn call(
+        &mut self,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
+    ) -> InstructionResult {
         self.call_impl(CallScheme::Call, external_call_dest)
     }
 
     pub fn call_code(
         &mut self,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
     ) -> InstructionResult {
         self.call_impl(CallScheme::CallCode, external_call_dest)
     }
 
     pub fn delegate_call(
         &mut self,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
     ) -> InstructionResult {
         self.call_impl(CallScheme::DelegateCall, external_call_dest)
     }
 
     pub fn static_call(
         &mut self,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
     ) -> InstructionResult {
         self.call_impl(CallScheme::StaticCall, external_call_dest)
     }
@@ -365,7 +392,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     fn call_impl(
         &mut self,
         scheme: CallScheme,
-        external_call_dest: &mut Option<ExternalCall<S>>,
+        external_call_dest: &mut Option<EVMCallRequest<S>>,
     ) -> InstructionResult {
         self.gas
             .spend_gas_and_native(0, native_resource_constants::CALL_NATIVE_COST)?;
@@ -383,7 +410,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             CallScheme::Call => {
                 let value = self.stack.pop_1()?;
                 if self.is_static && *value != U256::ZERO {
-                    return Err(ExitCode::CallNotAllowedInsideStatic);
+                    return Err(EvmError::CallNotAllowedInsideStatic.into());
                 }
                 *value
             }
@@ -394,10 +421,10 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let (in_offset, in_len, out_offset, out_len) = self.stack.pop_4()?;
 
         let (in_offset, in_len) =
-            Self::cast_offset_and_len(in_offset, in_len, ExitCode::InvalidOperandOOG)?;
+            Self::cast_offset_and_len(in_offset, in_len, EvmError::InvalidOperandOOG.into())?;
 
         let (out_offset, out_len) =
-            Self::cast_offset_and_len(out_offset, out_len, ExitCode::InvalidOperandOOG)?;
+            Self::cast_offset_and_len(out_offset, out_len, EvmError::InvalidOperandOOG.into())?;
 
         self.resize_heap(in_offset, in_len)?;
         self.resize_heap(out_offset, out_len)?;
@@ -429,15 +456,20 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // we also set "last returndata" as a placeholder place for "to where to copy"
         self.returndata_location = out_offset..(out_offset + out_len);
 
-        let call_request = EVMCallRequest {
-            destination_address: to,
-            calldata,
-            modifier: call_modifier,
-            gas_to_pass,
-            call_value: value,
-        };
+        self.pending_os_request = Some(PendingOsRequest::Call);
 
-        *external_call_dest = Some(ExternalCall::Call(call_request));
+        // at this preemption point we give all resources to the system
+        let all_resources = self.gas.take_resources();
+
+        *external_call_dest = Some(EVMCallRequest {
+            ergs_to_pass: Ergs(gas_to_pass.saturating_mul(ERGS_PER_GAS)),
+            call_value: value,
+            destination_address: to,
+            input_data: calldata,
+            modifier: call_modifier,
+            full_caller_resources: all_resources,
+        });
+
         Err(ExitCode::ExternalCall)
     }
 }

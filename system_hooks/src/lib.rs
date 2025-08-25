@@ -297,9 +297,10 @@ fn make_error_return_state<'a, S: SystemTypes>(
     remaining_resources: S::Resources,
 ) -> CompletedExecution<'a, S> {
     CompletedExecution {
-        return_values: ReturnValues::empty(),
         resources_returned: remaining_resources,
-        reverted: true,
+        result: CallResult::Failed {
+            return_values: ReturnValues::empty(),
+        },
     }
 }
 
@@ -315,8 +316,7 @@ fn make_return_state_from_returndata_region<S: SystemTypes>(
         return_scratch_space: None,
     };
     CompletedExecution {
-        return_values,
         resources_returned: remaining_resources,
-        reverted: false,
+        result: CallResult::Successful { return_values },
     }
 }
