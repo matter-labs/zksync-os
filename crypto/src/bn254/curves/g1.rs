@@ -11,7 +11,7 @@ use ark_ec::{
 };
 #[cfg(not(any(all(target_arch = "riscv32", feature = "bigint_ops"), test)))]
 use ark_ff::MontFp;
-use ark_ff::{AdditiveGroup, BigInt, BigInteger, Field, PrimeField, Zero};
+use ark_ff::{AdditiveGroup, BigInt, Field, PrimeField, Zero};
 
 use crate::bn254::fields::{Fq, Fr};
 
@@ -96,7 +96,7 @@ impl GLVConfig for Config {
 
     // TODO(yoaveshel):
     //  - change to delegated U256
-    //  - using U512 everywhere is overkill
+    //  - using U512 everywhere is overkill (e.g. mul_and_shift can return U256)
     fn scalar_decomposition(
         k: Self::ScalarField,
     ) -> ((bool, Self::ScalarField), (bool, Self::ScalarField)) {
@@ -109,9 +109,9 @@ impl GLVConfig for Config {
 
         fn sub(lhs: U512, rhs: U512) -> (bool, U512) {
             if lhs > rhs {
-                (true, lhs.checked_sub(rhs).unwrap())
+                (true, lhs.wrapping_sub(rhs))
             } else {
-                (false, rhs.checked_sub(lhs).unwrap())
+                (false, rhs.wrapping_sub(lhs))
             }
         }
 
@@ -148,12 +148,12 @@ impl GLVConfig for Config {
         let beta_1 = mul_and_shift(&BETA_1, s);
         let beta_2 = mul_and_shift(&BETA_2, s);
 
-        let b11 = beta_1.checked_mul(n11).unwrap();
-        let b12 = beta_2.checked_mul(n21).unwrap();
-        let b1 = b11.checked_add(b12).unwrap();
+        let b11 = beta_1.wrapping_mul(n11);
+        let b12 = beta_2.wrapping_mul(n21);
+        let b1 = b11.wrapping_add(b12);
 
-        let b21 = beta_1.checked_mul(n12).unwrap();
-        let b22 = beta_2.checked_mul(n22).unwrap();
+        let b21 = beta_1.wrapping_mul(n12);
+        let b22 = beta_2.wrapping_mul(n22);
         let (b2_sign, b2) = sub(b22, b21);
 
         let (k1_sign, k1) = sub(s, b1);
