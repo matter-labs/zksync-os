@@ -62,13 +62,15 @@ pub const ERC20_ALLOWANCE_SELECTOR: &[u8] = &[0xdd, 0x62, 0xed, 0x3e];
 // 0x095ea7b3
 pub const ERC20_APPROVE_SELECTOR: &[u8] = &[0x09, 0x5e, 0xa7, 0xb3];
 
-// Value taken from system-contracts, to adjust.
-pub const L1_TX_INTRINSIC_L2_GAS: u64 = 11000;
+// Just for EVM compatibility.
+pub const L1_TX_INTRINSIC_L2_GAS: u64 = 21_000;
 
-// Includes storing the l1 tx log.
-pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 10_000;
+// Includes:
+//  - Storing and hashing the l1 tx log.
+//  - Transferring fee to coinbase.
+pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 70_000;
 
-// Value taken from system-contracts, to adjust.
+// Needed to publish the l1 tx log.
 pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88;
 
 /// Does not include signature verification.
@@ -80,8 +82,10 @@ pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
 /// Value taken from system-contracts, to adjust.
 pub const L2_TX_INTRINSIC_PUBDATA: u64 = 0;
 
-// To be adjusted
-pub const L2_TX_INTRINSIC_NATIVE_COST: u64 = 4_000;
+// Includes:
+//  - Transferring fee to coinbase.
+//  - Transferring the gas refund.
+pub const L2_TX_INTRINSIC_NATIVE_COST: u64 = 10_000;
 
 /// Cost in gas to store one zero byte of calldata
 pub const CALLDATA_ZERO_BYTE_GAS_COST: u64 = 4;
