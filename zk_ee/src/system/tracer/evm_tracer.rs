@@ -17,6 +17,9 @@ pub trait EvmTracer<S: SystemTypes> {
 
     /// Called after opcode execution
     /// EE provides an access to EVM frame state, but it is not possible to read global state (storage etc) now
+    ///
+    /// Note: for Create/Call opcodes this hook is called BEFORE new execution frame is created.
+    /// Due to current design, EVM frame state can be changed after this hook (because of charging for reading callee's account properties).
     fn after_evm_interpreter_execution_step(
         &mut self,
         opcode: u8,

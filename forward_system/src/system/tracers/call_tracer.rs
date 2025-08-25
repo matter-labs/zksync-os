@@ -180,6 +180,11 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         }
 
         self.current_call_depth -= 1;
+
+        // Reset flag in case if frame terminated due to out-of-native / other internal ZKsync OS error
+        if self.create_operation_requested.is_some() {
+            self.create_operation_requested = None;
+        }
     }
 
     fn begin_tx(&mut self, _calldata: &[u8]) {
