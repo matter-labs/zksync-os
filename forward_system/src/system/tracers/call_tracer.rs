@@ -161,7 +161,14 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
                             finished_call.output = return_values.returndata.to_vec();
                         }
                         zk_ee::system::CallResult::Successful { return_values } => {
-                            finished_call.output = return_values.returndata.to_vec();
+                            match finished_call.call_type {
+                                CallType::Create | CallType::Create2 => {
+                                    // output should be already populated in `on_bytecode_change` hook
+                                }
+                                _ => {
+                                    finished_call.output = return_values.returndata.to_vec();
+                                }
+                            }
                         }
                     };
                 }
@@ -245,17 +252,33 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         }
     }
 
-    #[inline(always)]
     /// Is called on a change of bytecode for some account.
     /// `new_bytecode` can be None if bytecode is unknown at the moment of change (e.g. force deploy by hash in system hook)
     fn on_bytecode_change(
         &mut self,
         _ee_type: zk_ee::execution_environment_type::ExecutionEnvironmentType,
-        _address: <S::IOTypes as SystemIOTypesConfig>::Address,
-        _new_bytecode: Option<&[u8]>,
+        address: <S::IOTypes as SystemIOTypesConfig>::Address,
+        new_bytecode: Option<&[u8]>,
         _new_bytecode_hash: <S::IOTypes as SystemIOTypesConfig>::BytecodeHashValue,
-        _new_observable_bytecode_length: u32,
+        new_observable_bytecode_length: u32,
     ) {
+        let call = self.unfinished_calls.last_mut().expect("Should exist");
+
+        match call.call_type {
+            CallType::Create | CallType::Create2 => {
+                assert_eq!(address, call.to);
+                let deployed_raw_bytecode = new_bytecode.expect("Should be present");
+
+                assert!(deployed_raw_bytecode.len() >= new_observable_bytecode_length as usize);
+
+                // raw bytecode may include internal artifacts (jumptable), so we need to trim it
+                call.output =
+                    deployed_raw_bytecode[..new_observable_bytecode_length as usize].to_vec();
+            }
+            _ => {
+                // should not happen now (system hooks currently do not trigger this hook)
+            }
+        }
     }
 
     #[inline(always)]
