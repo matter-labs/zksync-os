@@ -275,4 +275,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for CallTracer {
             logs: vec![],
         })
     }
+
+    #[inline(always)]
+    fn on_create_request(&mut self, _is_create2: bool) {}
 }

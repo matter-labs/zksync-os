@@ -37,6 +37,11 @@ pub trait EvmTracer<S: SystemTypes> {
         token_value: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         frame_state: &impl EvmFrameInterface<S>,
     );
+
+    /// Called on CREATE/CREATE2 system request.
+    /// Hook is called before new execution frame is created.
+    /// Note: CREATE/CREATE2 opcode execution can fail after this hook (and call on_opcode_error correspondingly)
+    fn on_create_request(&mut self, is_create2: bool);
 }
 
 #[derive(Default)]
@@ -73,4 +78,7 @@ impl<S: SystemTypes> EvmTracer<S> for NopEvmTracer {
         _frame_state: &impl EvmFrameInterface<S>,
     ) {
     }
+
+    #[inline(always)]
+    fn on_create_request(&mut self, _is_create2: bool) {}
 }

@@ -157,8 +157,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                 .gas
                 .spend_gas_and_native(0, STEP_NATIVE_COST)
                 .and_then(|_| match opcode {
-                    opcodes::CREATE => self.create::<false>(system, external_call_dest),
-                    opcodes::CREATE2 => self.create::<true>(system, external_call_dest),
+                    opcodes::CREATE => self.create::<false>(system, external_call_dest, tracer),
+                    opcodes::CREATE2 => self.create::<true>(system, external_call_dest, tracer),
                     opcodes::CALL => self.call(external_call_dest),
                     opcodes::CALLCODE => self.call_code(external_call_dest),
                     opcodes::DELEGATECALL => self.delegate_call(external_call_dest),

@@ -267,6 +267,9 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
         _frame_state: &impl EvmFrameInterface<S>,
     ) {
     }
+
+    #[inline(always)]
+    fn on_create_request(&mut self, _is_create2: bool) {}
 }
 
 impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
