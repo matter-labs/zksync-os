@@ -44,6 +44,7 @@ pub trait EvmTracer<S: SystemTypes> {
     /// Called on CREATE/CREATE2 system request.
     /// Hook is called before new execution frame is created.
     /// Note: CREATE/CREATE2 opcode execution can fail after this hook (and call on_opcode_error correspondingly)
+    /// Note: top-level deployment won't trigger this hook
     fn on_create_request(&mut self, is_create2: bool);
 }
 

@@ -113,11 +113,21 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         self.current_call_depth += 1;
 
         if !self.only_top_call || self.current_call_depth == 1 {
+            // Top-level deployment (initiated by EOA) won't trigger `on_create_request` hook
+            // This is always a CREATE
+            if self.current_call_depth == 1
+                && initial_state.external_call.modifier == CallModifier::Constructor
+            {
+                self.create_operation_requested = Some(CreateType::Create);
+            }
+
+            let call_type = CallType::from(
+                initial_state.external_call.modifier,
+                &self.create_operation_requested,
+            );
+
             self.unfinished_calls.push(Call {
-                call_type: CallType::from(
-                    initial_state.external_call.modifier,
-                    &self.create_operation_requested,
-                ),
+                call_type,
                 from: initial_state.external_call.caller,
                 to: initial_state.external_call.callee,
                 value: initial_state.external_call.nominal_token_value,
@@ -359,6 +369,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for CallTracer {
     /// Called on CREATE/CREATE2 system request.
     /// Hook is called *before* new execution frame is created.
     /// Note: CREATE/CREATE2 opcode execution can fail after this hook (and call on_opcode_error correspondingly)
+    /// Note: top-level deployment won't trigger this hook
     fn on_create_request(&mut self, is_create2: bool) {
         // Can't be some - `on_new_execution_frame` or `on_opcode_error` should reset flag
         assert!(self.create_operation_requested.is_none());
