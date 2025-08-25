@@ -321,6 +321,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                                 block_computational_native_used =
                                     next_block_computational_native_used;
                                 block_pubdata_used = next_block_pubdata_used;
+                                first_tx = false;
 
                                 // Finish the frame opened before processing the tx
                                 system.finish_global_frame(None)?;
@@ -362,8 +363,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                             }
                         }
                     }
-
-                    first_tx = false;
 
                     // The fee is transferred to the coinbase address before
                     // finishing the transaction.
