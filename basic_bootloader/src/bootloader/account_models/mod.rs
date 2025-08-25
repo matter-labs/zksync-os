@@ -74,10 +74,6 @@ where
     S::IO: IOSubsystemExt,
 {
     /// Validate transaction
-    ///
-    /// `callstack` expected to be empty at the beginning and at the end of this function execution.
-    /// It's passed to reuse memory between transactions.
-    ///
     fn validate<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,

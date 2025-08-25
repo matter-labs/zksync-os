@@ -1,5 +1,4 @@
 use crate::bootloader::account_models::{AccountModel, ExecutionOutput, ExecutionResult};
-use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::ERC20_APPROVE_SELECTOR;
 use crate::bootloader::constants::PAYMASTER_APPROVAL_BASED_SELECTOR;
 use crate::bootloader::constants::PAYMASTER_GENERAL_SELECTOR;
@@ -12,7 +11,9 @@ use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use crate::bootloader::supported_ees::errors::EESubsystemError;
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
+use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::{BasicBootloader, Bytes32};
+use basic_system::cost_constants::{ECRECOVER_COST_ERGS, ECRECOVER_NATIVE_COST};
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
 use evm_interpreter::interpreter::CreateScheme;
@@ -106,14 +107,20 @@ where
             Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
         }
 
-        if Config::VALIDATE_EOA_SIGNATURE {
+        // Even if we don't validate a signature, we still need to charge for ecrecover for equivalent behavior
+        if !Config::VALIDATE_EOA_SIGNATURE | Config::SIMULATION {
+            resources.charge(&Resources::from_ergs_and_native(
+                ECRECOVER_COST_ERGS,
+                <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
+                    ECRECOVER_NATIVE_COST,
+                ),
+            ))?;
+        } else {
             let signature = transaction.signature();
             let r = &signature[..32];
             let s = &signature[32..64];
             let v = &signature[64];
-            if !Config::ONLY_SIMULATE
-                && U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF)
-            {
+            if U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
                 return Err(InvalidTransaction::MalleableSignature.into());
             }
 
@@ -132,25 +139,23 @@ where
             )
             .map_err(SystemError::from)?;
 
-            if !Config::ONLY_SIMULATE {
-                if ecrecover_output.is_empty() {
-                    return Err(InvalidTransaction::IncorrectFrom {
-                        recovered: B160::ZERO,
-                        tx: from,
-                    }
-                    .into());
+            if ecrecover_output.is_empty() {
+                return Err(InvalidTransaction::IncorrectFrom {
+                    recovered: B160::ZERO,
+                    tx: from,
                 }
+                .into());
+            }
 
-                let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
-                    .ok_or(internal_error!("Invalid ecrecover return value"))?;
+            let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
+                .ok_or(internal_error!("Invalid ecrecover return value"))?;
 
-                if recovered_from != from {
-                    return Err(InvalidTransaction::IncorrectFrom {
-                        recovered: recovered_from,
-                        tx: from,
-                    }
-                    .into());
+            if recovered_from != from {
+                return Err(InvalidTransaction::IncorrectFrom {
+                    recovered: recovered_from,
+                    tx: from,
                 }
+                .into());
             }
         }
 
