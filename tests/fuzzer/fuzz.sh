@@ -257,6 +257,8 @@ function smoke() {
     parse_args "$@"
 
     timeout="${timeout:-60}"
+    jobs="${jobs:-8}"
+
     FUZZ_TARGETS=(
         "bootloader_run_single_interaction"
         "bootloader_supported_ees"
@@ -280,7 +282,7 @@ function smoke() {
         echo "Running fuzz target: $TARGET"
         echo "Duration: $timeout seconds"
         echo "============================================"
-        cargo fuzz run -D "$TARGET" -- -max_total_time="$timeout" -rss_limit_mb=8192 -close_fd_mask=3
+        cargo fuzz run -D "$TARGET" -- -max_total_time="$timeout" -jobs="$jobs" -rss_limit_mb=8192 -close_fd_mask=3
         exit_code=$?
         if [ $exit_code -eq 0 ]; then
           echo "$TARGET: finished fuzz target"
