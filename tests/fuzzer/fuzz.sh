@@ -272,6 +272,7 @@ function smoke() {
         "precompiles_id"
         "precompiles_ecadd"
         "precompiles_ecmul"
+        "precompiles_p256"
     )
 
     for TARGET in "${FUZZ_TARGETS[@]}"; do

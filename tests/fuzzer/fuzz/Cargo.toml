@@ -22,7 +22,7 @@ system_hooks = { path = "../../../system_hooks" }
 zk_ee = { path = "../../../zk_ee" }
 alloy = { version = "1", features = ["full", "eip712"]}
 fuzzer = { path = "../../fuzzer"}
-rig = { path = "../../rig" }
+rig = { path = "../../rig", features = ["p256_precompile"] }
 crypto = { path = "../../../crypto"}
 libfuzzer-sys = "0.4"
 hex = "*"
@@ -228,6 +228,13 @@ bench = false
 [[bin]]
 name = "precompiles_modexplen"
 path = "fuzz_targets/precompiles/precompiles_modexp_len.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "precompiles_p256"
+path = "fuzz_targets/precompiles/precompiles_p256.rs"
 test = false
 doc = false
 bench = false
