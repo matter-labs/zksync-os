@@ -3,13 +3,13 @@
 #![feature(generic_const_exprs)]
 
 use prover_examples::prover::VectorMemoryImplWithRom;
+use risc_v_simulator::sim::BinarySource;
 use risc_v_simulator::{
     abstractions::{memory::VectorMemoryImpl, non_determinism::NonDeterminismCSRSource},
     cycle::IMStandardIsaConfig,
     sim::{DiagnosticsConfig, ProfilerConfig, SimulatorConfig},
 };
 use std::{alloc::Global, io::Read, path::PathBuf, str::FromStr};
-use risc_v_simulator::sim::BinarySource;
 
 /// Runs the zksync_os binary on a simulator with a given non_determinism source for that many cycles.
 /// If you enable diagnostics, it will print the flamegraph - but the run will be a lot slower.
@@ -148,7 +148,7 @@ pub fn simulate_witness_tracing(
             num_instances_upper_bound,
             &binary,
             non_determinism_source,
-            1<<22,
+            1 << 22,
             &worker,
         );
     let elapsed = now.elapsed();
