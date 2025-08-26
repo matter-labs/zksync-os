@@ -9,6 +9,7 @@ use risc_v_simulator::{
     sim::{DiagnosticsConfig, ProfilerConfig, SimulatorConfig},
 };
 use std::{alloc::Global, io::Read, path::PathBuf, str::FromStr};
+use risc_v_simulator::sim::BinarySource;
 
 /// Runs the zksync_os binary on a simulator with a given non_determinism source for that many cycles.
 /// If you enable diagnostics, it will print the flamegraph - but the run will be a lot slower.
@@ -93,13 +94,13 @@ pub fn run_and_get_effective_cycles(
     file.read_to_end(&mut buffer).expect("must read the file");
 
     let config = SimulatorConfig {
-        bin_path: img_path,
+        bin: BinarySource::Path(img_path),
         cycles,
         entry_point: 0,
         diagnostics,
     };
 
-    let (_non_determinism_source, final_state) =
+    let run_result =
         risc_v_simulator::runner::run_simple_with_entry_point_and_non_determimism_source(
             config,
             non_determinism_source,
@@ -120,7 +121,7 @@ pub fn run_and_get_effective_cycles(
     // TODO: move to new simulator
     #[allow(deprecated)]
     (
-        final_state.registers[10..18].try_into().unwrap(),
+        run_result.state.registers[10..18].try_into().unwrap(),
         block_effective,
     )
 }
@@ -147,6 +148,7 @@ pub fn simulate_witness_tracing(
             num_instances_upper_bound,
             &binary,
             non_determinism_source,
+            1<<22,
             &worker,
         );
     let elapsed = now.elapsed();
