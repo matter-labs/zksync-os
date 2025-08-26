@@ -57,9 +57,9 @@ mod mock_precompiles;
 
 // Temporarily disabled, only used for AA.
 // pub mod nonce_holder;
-mod contract_deployer;
-mod l1_messenger;
-mod l2_base_token;
+pub mod contract_deployer;
+pub mod l1_messenger;
+pub mod l2_base_token;
 mod precompiles;
 
 /// System hooks process the given call request.

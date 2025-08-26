@@ -16,12 +16,12 @@ use std::collections::{HashMap, VecDeque};
 use std::convert::TryInto;
 use web3::ethabi::{encode, Address, Token, Uint};
 use zk_ee::common_structs::derive_flat_storage_key;
+use zk_ee::common_structs::ProofData;
 use zk_ee::reference_implementations::BaseResources;
 use zk_ee::reference_implementations::DecreasingNative;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::system::Resource;
 use zk_ee::utils::Bytes32;
-use zk_ee::common_structs::ProofData;
 
 // a test private key from anvil
 #[allow(unused)]
@@ -180,9 +180,7 @@ pub fn mock_oracle() -> ForwardRunningOracle<InMemoryTree, InMemoryPreimageSourc
     };
     ForwardRunningOracle {
         proof_data: Some(ProofData {
-            state_root_view: FlatStorageCommitment::<
-                { TESTING_TREE_HEIGHT },
-            > {
+            state_root_view: FlatStorageCommitment::<{ TESTING_TREE_HEIGHT }> {
                 root: *tree.storage_tree.root(),
                 next_free_slot: tree.storage_tree.next_free_slot,
             },
@@ -229,9 +227,7 @@ pub fn mock_oracle_balance(
 
     ForwardRunningOracle {
         proof_data: Some(ProofData {
-            state_root_view: FlatStorageCommitment::<
-                { TESTING_TREE_HEIGHT },
-            > {
+            state_root_view: FlatStorageCommitment::<{ TESTING_TREE_HEIGHT }> {
                 root: *tree.storage_tree.root(),
                 next_free_slot: tree.storage_tree.next_free_slot,
             },
@@ -393,4 +389,64 @@ fn mutate_address_inplace(addr: &mut Address, rng: &mut StdRng) {
     let addr_bytes: &mut [u8] = addr.as_bytes_mut();
     let idx = rng.gen_range(0..addr_bytes.len());
     addr_bytes[idx] ^= rng.gen::<u8>();
+}
+
+// helpers
+fn word32_be(bytes_be: &[u8]) -> [u8; 32] {
+    let mut w = [0u8; 32];
+    let n = bytes_be.len().min(32);
+    w[32 - n..].copy_from_slice(&bytes_be[bytes_be.len() - n..]);
+    w
+}
+
+pub(crate) fn enc_addr(a20: [u8; 20]) -> [u8; 32] {
+    let mut w = [0u8; 32];
+    w[12..].copy_from_slice(&a20);
+    w
+}
+
+pub(crate) fn enc_u256(u: U256) -> [u8; 32] {
+    word32_be(&u.to_be_bytes_vec())
+}
+pub(crate) fn enc_u32(u: u32) -> [u8; 32] {
+    enc_u256(U256::from(u))
+}
+pub(crate) fn enc_u16(u: u16) -> [u8; 32] {
+    enc_u256(U256::from(u))
+}
+
+fn pad32(v: &mut Vec<u8>) {
+    let pad = (32 - (v.len() % 32)) % 32;
+    if pad != 0 {
+        v.resize(v.len() + pad, 0);
+    }
+}
+
+// Push a dynamic `bytes` arg: put its offset in head, then tail = len + data + pad
+pub(crate) fn abi_push_bytes(
+    head: &mut Vec<[u8; 32]>,
+    tail: &mut Vec<u8>,
+    data: &[u8],
+    head_size_bytes: usize,
+) {
+    let offset = U256::from(head_size_bytes + tail.len());
+    head.push(enc_u256(offset));
+    tail.extend_from_slice(&enc_u256(U256::from(data.len() as u64)));
+    tail.extend_from_slice(data);
+    pad32(tail);
+}
+
+// Push a dynamic `bytes32[]` arg
+pub(crate) fn abi_push_bytes32_array(
+    head: &mut Vec<[u8; 32]>,
+    tail: &mut Vec<u8>,
+    items: &[[u8; 32]],
+    head_size_bytes: usize,
+) {
+    let offset = U256::from(head_size_bytes + tail.len());
+    head.push(enc_u256(offset));
+    tail.extend_from_slice(&enc_u256(U256::from(items.len() as u64)));
+    for it in items {
+        tail.extend_from_slice(it);
+    }
 }
