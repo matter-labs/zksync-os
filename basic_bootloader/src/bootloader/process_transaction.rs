@@ -128,7 +128,7 @@ where
         // For L1->L2 txs, we use a constant native price to avoid censorship.
         let native_price = L1_TX_NATIVE_PRICE;
         let native_per_gas = if is_priority_op {
-            if Config::ONLY_SIMULATE {
+            if Config::SIMULATION {
                 SIMULATION_NATIVE_PER_GAS
             } else {
                 U256::from(gas_price).div_ceil(native_price)
@@ -544,7 +544,7 @@ where
         };
         let native_per_gas = if cfg!(feature = "resources_for_tester") {
             U256::from(crate::bootloader::constants::TESTER_NATIVE_PER_GAS)
-        } else if Config::ONLY_SIMULATE {
+        } else if Config::SIMULATION {
             SIMULATION_NATIVE_PER_GAS
         } else {
             U256::from(gas_price).div_ceil(native_price)
@@ -776,7 +776,7 @@ where
             InvalidTransaction::NonceOverflowInTransaction,
         ))?;
 
-        if !Config::ONLY_SIMULATE {
+        if !Config::SIMULATION {
             account_model.check_nonce_is_not_used(caller_nonce, tx_nonce)?;
         }
 
@@ -796,7 +796,7 @@ where
         )?;
 
         // Check nonce has been marked
-        if !Config::ONLY_SIMULATE {
+        if !Config::SIMULATION {
             account_model.check_nonce_is_used_after_validation(
                 system,
                 caller_ee_type,
