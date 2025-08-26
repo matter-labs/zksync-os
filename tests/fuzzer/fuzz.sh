@@ -266,6 +266,12 @@ function smoke() {
         "precompiles_ecpairing"
         "precompiles_ecrecover"
         "precompiles_modexp"
+        "precompiles_modexplen"
+        "precompiles_ripemd160"
+        "precompiles_sha256"
+        "precompiles_id"
+        "precompiles_ecadd"
+        "precompiles_ecmul"
     )
 
     for TARGET in "${FUZZ_TARGETS[@]}"; do

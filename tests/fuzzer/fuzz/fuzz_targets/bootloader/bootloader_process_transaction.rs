@@ -14,8 +14,8 @@ use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, 
 use rig::forward_system::system::system::ForwardRunningSystem;
 use rig::ruint::aliases::U256;
 use system_hooks::HooksStorage;
-use zk_ee::system::System;
 use zk_ee::system::tracer::NopTracer;
+use zk_ee::system::System;
 
 mod common;
 
@@ -44,7 +44,7 @@ fn fuzz(data: &[u8]) {
         _,
     > = HooksStorage::new_in(system.get_allocator());
     pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
-    pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 27; // 128 MB
+    pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 28; // 256 MB
 
     let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
     let mut return_data = Box::new_uninit_slice_in(MAX_RETURN_BUFFER_SIZE, system.get_allocator());
