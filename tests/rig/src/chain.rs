@@ -1,7 +1,7 @@
 use crate::{colors, init_logger};
 use alloy::signers::local::PrivateKeySigner;
 use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
-use basic_bootloader::bootloader::config::BasicBootloaderForwardSimulationConfig;
+use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use basic_system::system_implementation::flat_storage_model::FlatStorageCommitment;
 use basic_system::system_implementation::flat_storage_model::{
@@ -305,7 +305,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
         let mut nop_tracer = NopTracer::default();
 
-        run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
+        // we use proving config here for benchmarking,
+        // although sequencer can have extra optimizations
+        run_forward::<BasicBootloaderProvingExecutionConfig, _, _, _>(
             oracle.clone(),
             &mut result_keeper,
             &mut nop_tracer,

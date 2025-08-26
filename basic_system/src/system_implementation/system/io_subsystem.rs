@@ -1101,7 +1101,10 @@ where
         success: bool,
         is_priority: bool,
     ) -> Result<(), SystemError> {
-        // Resources for it charged as part of intrinsic
+        // Resources for it charged as part of intrinsic:
+        // Storage: EVENT_STORAGE_BASE_NATIVE_COST
+        // Hashing: keccak256_native_cost(L1_L2_TX_LOG_SERIALIZE_SIZE) + 2 * keccak256_native_cost(64).
+        // See emit_l1_message for more details.
         self.logs_storage
             .push_l1_l2_tx_log(self.tx_number, tx_hash, success, is_priority)
     }
