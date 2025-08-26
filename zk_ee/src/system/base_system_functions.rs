@@ -14,12 +14,7 @@ define_subsystem!(Secp256k1AddProjective);
 define_subsystem!(Secp256k1MulProjective);
 define_subsystem!(Secp256r1AddProjective);
 define_subsystem!(Secp256r1MulProjective);
-define_subsystem!(P256Verify,
-                  interface P256VerifyInterfaceError
-                  {
-                      InvalidInputLength
-                  }
-);
+define_subsystem!(P256Verify);
 
 define_subsystem!(Bn254Add,
                   interface Bn254AddInterfaceError

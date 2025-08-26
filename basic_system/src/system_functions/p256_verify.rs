@@ -5,19 +5,13 @@ use zk_ee::common_traits::TryExtend;
 use zk_ee::system::{
     base_system_functions::{P256VerifyErrors, SystemFunction},
     errors::subsystem::SubsystemError,
-    P256VerifyInterfaceError,
 };
 use zk_ee::{interface_error, out_of_return_memory};
 
-// TODO(EVM-1072): think about error cases, as others follow evm specs
+///
 /// p256 verify system function implementation.
-/// Returns the size in bytes of output.
+/// Follows the spec in: https://eips.ethereum.org/EIPS/eip-7951
 ///
-/// Input length should be 160, otherwise `InternalError` will be returned.
-///
-/// In case of invalid input `Ok(0)` will be returned and resources will be charged.
-///
-/// If dst len less than needed(1) returns `InternalError`.
 pub struct P256VerifyImpl;
 
 impl<R: Resources> SystemFunction<R, P256VerifyErrors> for P256VerifyImpl {
@@ -33,6 +27,28 @@ impl<R: Resources> SystemFunction<R, P256VerifyErrors> for P256VerifyImpl {
     }
 }
 
+///
+/// Return value should be 1 if successful or empty in any other case:
+///  - signature is invalid
+///  - input is invalid
+///
+/// Input is considered invalid if:
+///  1. input length is not 160
+///  2. invalid field encoding (overflow p)
+///  3. signature components are out of the following bounds: 0 < r < n and 0 < s < n
+///  4. point not in curve, (x,y) should satisfy = y^2 ≡ x^3 + a*x + b (mod p)
+///  5. point (x, y) must no be infinity (represented as (0,0))
+///
+///  Post checks:
+///  6. modular comp r' ≡ r (mod n) for recovered
+///  7. recovered is not infinity
+///
+///
+///  (2), (4), (5) are checked by crypto
+///
+///  Need to add (Yoav): (3) (6) (7)
+///  Need to fix (Antonio): (1)
+///
 fn p256_verify_as_system_function_inner<
     S: ?Sized + MinimalByteAddressableSlice,
     D: ?Sized + TryExtend<u8>,
@@ -43,10 +59,9 @@ fn p256_verify_as_system_function_inner<
     resources: &mut R,
 ) -> Result<(), SubsystemError<P256VerifyErrors>> {
     if src.len() != 160 {
-        return Err(SubsystemError::LeafUsage(interface_error!(
-            P256VerifyInterfaceError::InvalidInputLength
-        )));
+        return Ok(());
     }
+    // TODO(EVM-1159): charge native
     resources.charge(&R::from_ergs(P256_VERIFY_COST_ERGS))?;
     // digest, r, s, x, y
     let mut buffer = [0u8; 160];
