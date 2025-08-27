@@ -293,6 +293,7 @@ impl BatchPublicInputBuilder {
             priority_operations_hash: self.l1_txs_rolling_hash,
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash: self.upgrade_tx_hash.unwrap(),
+            interop_root_rolling_hash: Bytes32::from([0u8; 32]), // for now no interop roots
         };
         let public_input = BatchPublicInput {
             state_before: self.initial_state_commitment.unwrap(),
