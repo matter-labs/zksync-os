@@ -140,6 +140,8 @@ pub struct BatchOutput {
     pub l2_logs_tree_root: Bytes32,
     /// Protocol upgrade tx hash (0 if there wasn't)
     pub upgrade_tx_hash: Bytes32,
+    /// Rolling hash of all the interop roots included in this batch.
+    pub interop_root_rolling_hash: Bytes32,
 }
 
 impl BatchOutput {
@@ -157,6 +159,7 @@ impl BatchOutput {
         hasher.update(self.priority_operations_hash.as_u8_ref());
         hasher.update(self.l2_logs_tree_root.as_u8_ref());
         hasher.update(self.upgrade_tx_hash.as_u8_ref());
+        hasher.update(self.interop_root_rolling_hash.as_u8_ref());
         hasher.finalize()
     }
 }
