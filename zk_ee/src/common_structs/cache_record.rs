@@ -1,6 +1,9 @@
 //! Wraps values with additional metadata used by IO caches
 
-use crate::system::errors::{internal::InternalError, system::SystemError};
+use crate::{
+    internal_error,
+    system::errors::{internal::InternalError, system::SystemError},
+};
 use core::fmt::Debug;
 
 #[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
@@ -46,6 +49,17 @@ impl<V, M> CacheRecord<V, M> {
 
     pub fn metadata(&self) -> &M {
         &self.metadata
+    }
+
+    // TODO: it doesn't make sense to have this method here, will be
+    // moved in next release.
+    pub fn finish_deconstruction(&mut self) -> Result<(), InternalError> {
+        if self.appearance == Appearance::Deconstructed {
+            self.appearance = Appearance::Updated;
+            Ok(())
+        } else {
+            Err(internal_error!("Cannot finish deconstruction",))
+        }
     }
 
     #[must_use]

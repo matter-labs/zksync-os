@@ -30,8 +30,15 @@ impl Display for InternalError {
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            RuntimeError::OutOfNativeResources(metadata) => {
+            RuntimeError::FatalRuntimeError(
+                super::runtime::FatalRuntimeError::OutOfNativeResources(metadata),
+            ) => {
                 write!(f, "Out of native resources\n{metadata}")
+            }
+            RuntimeError::FatalRuntimeError(
+                super::runtime::FatalRuntimeError::OutOfReturnMemory(metadata),
+            ) => {
+                write!(f, "Out of return memory\n{metadata}")
             }
             RuntimeError::OutOfErgs(metadata) => write!(f, "Out of ergs\n{metadata}"),
         }

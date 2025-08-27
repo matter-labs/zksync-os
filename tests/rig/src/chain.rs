@@ -1,7 +1,7 @@
 use crate::{colors, init_logger};
 use alloy::signers::local::PrivateKeySigner;
 use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
-use basic_bootloader::bootloader::config::BasicBootloaderForwardSimulationConfig;
+use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use basic_system::system_implementation::flat_storage_model::FlatStorageCommitment;
 use basic_system::system_implementation::flat_storage_model::{
@@ -36,7 +36,7 @@ pub struct Chain<const RANDOMIZED_TREE: bool = false> {
     state_tree: InMemoryTree<RANDOMIZED_TREE>,
     preimage_source: InMemoryPreimageSource,
     chain_id: u64,
-    block_number: u64,
+    previous_block_number: Option<u64>,
     block_hashes: [U256; 256],
     block_timestamp: u64,
 }
@@ -83,7 +83,7 @@ impl Chain<false> {
                 inner: HashMap::new(),
             },
             chain_id: chain_id.unwrap_or(37),
-            block_number: 0,
+            previous_block_number: None,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
         }
@@ -106,7 +106,7 @@ impl Chain<true> {
                 inner: HashMap::new(),
             },
             chain_id: chain_id.unwrap_or(37),
-            block_number: 0,
+            previous_block_number: None,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
         }
@@ -121,7 +121,11 @@ pub struct BlockExtraStats {
 
 impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     pub fn set_last_block_number(&mut self, prev: u64) {
-        self.block_number = prev
+        self.previous_block_number = Some(prev)
+    }
+
+    pub fn next_block_number(&self) -> u64 {
+        self.previous_block_number.map(|n| n + 1).unwrap_or(0)
     }
 
     pub fn set_block_hashes(&mut self, block_hashes: [U256; 256]) {
@@ -176,7 +180,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
-            block_number: self.block_number + 1,
+            block_number: self.next_block_number(),
             block_hashes: BlockHashes(self.block_hashes),
             timestamp: block_context.timestamp,
             eip1559_basefee: block_context.eip1559_basefee,
@@ -252,11 +256,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         profiler_config: Option<ProfilerConfig>,
         witness_output_file: Option<PathBuf>,
         app: Option<String>,
-    ) -> (BlockOutput, BlockExtraStats) {
+    ) -> (BlockOutput, BlockExtraStats, Vec<u32>) {
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
-            block_number: self.block_number + 1,
+            block_number: self.next_block_number(),
             block_hashes: BlockHashes(self.block_hashes),
             timestamp: block_context.timestamp,
             eip1559_basefee: block_context.eip1559_basefee,
@@ -301,7 +305,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
         let mut nop_tracer = NopTracer::default();
 
-        run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
+        // we use proving config here for benchmarking,
+        // although sequencer can have extra optimizations
+        run_forward::<BasicBootloaderProvingExecutionConfig, _, _, _>(
             oracle.clone(),
             &mut result_keeper,
             &mut nop_tracer,
@@ -333,13 +339,35 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             stats.computational_native_used = Some(native_used);
         }
 
-        if let Some(path) = witness_output_file {
+        // update state
+        self.previous_block_number = Some(self.next_block_number());
+        self.block_timestamp = block_context.timestamp;
+        for i in 0..255 {
+            self.block_hashes[i] = self.block_hashes[i + 1];
+        }
+        self.block_hashes[255] = U256::from_be_bytes(block_output.header.hash());
+
+        for storage_write in block_output.storage_writes.iter() {
+            self.state_tree
+                .cold_storage
+                .insert(storage_write.key, storage_write.value);
+            self.state_tree
+                .storage_tree
+                .insert(&storage_write.key, &storage_write.value);
+        }
+
+        for (hash, preimage, _preimage_type) in block_output.published_preimages.iter() {
+            self.preimage_source.inner.insert(*hash, preimage.clone());
+        }
+
+        let proof_input = if let Some(path) = witness_output_file {
             let result = Self::run_block_generate_witness(oracle.clone(), &app);
             let mut file = File::create(&path).expect("should create file");
             let witness: Vec<u8> = result.iter().flat_map(|x| x.to_be_bytes()).collect();
             let hex = hex::encode(witness);
             file.write_all(hex.as_bytes())
                 .expect("should write to file");
+            result
         } else {
             // proof run
             let oracle_wrapper = BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle);
@@ -410,6 +438,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 );
             }
 
+            let proof_input = items.borrow().iter().copied().collect::<Vec<u32>>();
+
             debug!(
                 "{}Proof running output{} = 0x",
                 colors::GREEN,
@@ -424,9 +454,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
             #[cfg(feature = "e2e_proving")]
             run_prover(items.borrow().as_slice());
-            // TODO: we also need to update state if we want to execute next block on top
-        }
-        (block_output, stats)
+
+            proof_input
+        };
+        (block_output, stats, proof_input)
     }
 
     fn get_account_properties(&mut self, address: &B160) -> AccountProperties {

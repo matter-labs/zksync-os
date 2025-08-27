@@ -2,18 +2,21 @@ use crate::bootloader::account_models::{AccountModel, ExecutionOutput, Execution
 use crate::bootloader::constants::ERC20_APPROVE_SELECTOR;
 use crate::bootloader::constants::PAYMASTER_APPROVAL_BASED_SELECTOR;
 use crate::bootloader::constants::PAYMASTER_GENERAL_SELECTOR;
+use crate::bootloader::constants::TX_OFFSET;
 use crate::bootloader::constants::{DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS, ERC20_ALLOWANCE_SELECTOR};
-use crate::bootloader::constants::{SPECIAL_ADDRESS_TO_WASM_DEPLOY, TX_OFFSET};
 use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
 use crate::bootloader::errors::{AAMethod, BootloaderSubsystemError};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
+use crate::bootloader::supported_ees::errors::EESubsystemError;
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::{BasicBootloader, Bytes32};
+use basic_system::cost_constants::{ECRECOVER_COST_ERGS, ECRECOVER_NATIVE_COST};
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
+use evm_interpreter::interpreter::CreateScheme;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
@@ -96,7 +99,7 @@ where
                     InvalidTransaction::OutOfGasDuringValidation,
                 ))
             }
-            Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+            Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfNativeResourcesDuringValidation,
                 ))
@@ -104,30 +107,38 @@ where
             Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
         }
 
-        let signature = transaction.signature();
-        let r = &signature[..32];
-        let s = &signature[32..64];
-        let v = &signature[64];
-        if !Config::ONLY_SIMULATE && U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
-            return Err(InvalidTransaction::MalleableSignature.into());
-        }
+        // Even if we don't validate a signature, we still need to charge for ecrecover for equivalent behavior
+        if !Config::VALIDATE_EOA_SIGNATURE | Config::SIMULATION {
+            resources.charge(&Resources::from_ergs_and_native(
+                ECRECOVER_COST_ERGS,
+                <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
+                    ECRECOVER_NATIVE_COST,
+                ),
+            ))?;
+        } else {
+            let signature = transaction.signature();
+            let r = &signature[..32];
+            let s = &signature[32..64];
+            let v = &signature[64];
+            if U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
+                return Err(InvalidTransaction::MalleableSignature.into());
+            }
 
-        let mut ecrecover_input = [0u8; 128];
-        ecrecover_input[0..32].copy_from_slice(suggested_signed_hash.as_u8_array_ref());
-        ecrecover_input[63] = *v;
-        ecrecover_input[64..96].copy_from_slice(r);
-        ecrecover_input[96..128].copy_from_slice(s);
+            let mut ecrecover_input = [0u8; 128];
+            ecrecover_input[0..32].copy_from_slice(suggested_signed_hash.as_u8_array_ref());
+            ecrecover_input[63] = *v;
+            ecrecover_input[64..96].copy_from_slice(r);
+            ecrecover_input[96..128].copy_from_slice(s);
 
-        let mut ecrecover_output = ArrayBuilder::default();
-        S::SystemFunctions::secp256k1_ec_recover(
-            ecrecover_input.as_slice(),
-            &mut ecrecover_output,
-            resources,
-            system.get_allocator(),
-        )
-        .map_err(SystemError::from)?;
+            let mut ecrecover_output = ArrayBuilder::default();
+            S::SystemFunctions::secp256k1_ec_recover(
+                ecrecover_input.as_slice(),
+                &mut ecrecover_output,
+                resources,
+                system.get_allocator(),
+            )
+            .map_err(SystemError::from)?;
 
-        if !Config::ONLY_SIMULATE {
             if ecrecover_output.is_empty() {
                 return Err(InvalidTransaction::IncorrectFrom {
                     recovered: B160::ZERO,
@@ -227,11 +238,12 @@ where
                 )?;
 
                 let CompletedExecution {
-                    return_values,
                     resources_returned,
-                    reverted,
-                    ..
+                    result,
                 } = final_state;
+
+                let reverted = result.failed();
+                let return_values = result.return_values();
 
                 TxExecutionResult {
                     return_values,
@@ -358,7 +370,7 @@ where
                 }
                 SubsystemError::LeafDefect(internal_error) => internal_error.into(),
                 SubsystemError::LeafRuntime(runtime_error) => match runtime_error {
-                    RuntimeError::OutOfNativeResources(_) => {
+                    RuntimeError::FatalRuntimeError(_) => {
                         TxError::oon_as_validation(out_of_native_resources!().into())
                     }
                     RuntimeError::OutOfErgs(_) => {
@@ -491,9 +503,7 @@ where
         resources: &mut S::Resources,
         transaction: &ZkSyncTransaction,
     ) -> Result<(), TxError> {
-        let to = transaction.to.read();
-        let is_deployment =
-            !transaction.reserved[1].read().is_zero() || to == SPECIAL_ADDRESS_TO_WASM_DEPLOY;
+        let is_deployment = !transaction.reserved[1].read().is_zero();
         if is_deployment {
             let calldata_len = transaction.calldata().len() as u64;
             if calldata_len > MAX_INITCODE_SIZE as u64 {
@@ -501,7 +511,7 @@ where
             }
             let initcode_gas_cost = evm_interpreter::gas_constants::INITCODE_WORD_COST
                 * (calldata_len.next_multiple_of(32) / 32)
-                + DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS as u64;
+                + DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS;
             let ergs_to_spend = Ergs(initcode_gas_cost.saturating_mul(ERGS_PER_GAS));
             match resources.charge(&S::Resources::from_ergs(ergs_to_spend)) {
                 Ok(_) => (),
@@ -510,7 +520,7 @@ where
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+                Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => {
                     return Err(TxError::oon_as_validation(e.into()))
                 }
                 Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
@@ -529,7 +539,7 @@ where
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+                Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => {
                     return Err(TxError::oon_as_validation(e.into()))
                 }
                 Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
@@ -580,25 +590,39 @@ where
             deployed_address: DeployedAddress::RevertedNoAddress,
         });
     }
-    let ee_specific_deployment_processing_data = match to_ee_type {
+
+    let deployed_address = match to_ee_type {
         ExecutionEnvironmentType::NoEE => {
             return Err(internal_error!("Deployment cannot target NoEE").into())
         }
         ExecutionEnvironmentType::EVM => {
-            SystemBoundEVMInterpreter::<S>::default_ee_deployment_options(system)
+            SystemBoundEVMInterpreter::<S>::derive_address_for_deployment(
+                system,
+                resources,
+                CreateScheme::Create,
+                &from,
+                existing_nonce,
+                main_calldata,
+            )
+            .map_err(|e| {
+                let ee_error: EESubsystemError = wrap_error!(e);
+                wrap_error!(ee_error)
+            })?
         }
     };
 
-    let deployment_parameters = DeploymentPreparationParameters {
-        address_of_deployer: from,
-        call_scratch_space: None,
-        constructor_parameters: &[],
+    let deployment_request = ExternalCallRequest {
+        available_resources: resources.clone(),
+        ergs_to_pass: resources.ergs(),
+        caller: from,
+        callee: deployed_address,
+        callers_caller: Default::default(), // Fine to use placeholder, should not be used
+        modifier: CallModifier::Constructor,
+        input: main_calldata,
         nominal_token_value,
-        deployment_code: main_calldata,
-        ee_specific_deployment_processing_data,
-        deployer_full_resources: resources.clone(),
-        deployer_nonce: Some(existing_nonce),
+        call_scratch_space: None,
     };
+
     let rollback_handle = system.start_global_frame()?;
 
     let final_state = run_till_completion(
@@ -606,24 +630,23 @@ where
         system,
         system_functions,
         to_ee_type,
-        ExecutionEnvironmentSpawnRequest::RequestedDeployment(deployment_parameters),
+        deployment_request,
         tracer,
     )?;
-    let TransactionEndPoint::CompletedDeployment(CompletedDeployment {
+
+    let CompletedExecution {
         resources_returned,
-        deployment_result,
-    }) = final_state
-    else {
-        return Err(internal_error!("attempt to deploy ended up in invalid state").into());
-    };
+        result: deployment_result,
+    } = final_state;
 
     let (deployment_success, reverted, return_values, at) = match deployment_result {
-        DeploymentResult::Successful {
-            return_values,
-            deployed_at,
-            ..
-        } => (true, false, return_values, Some(deployed_at)),
-        DeploymentResult::Failed { return_values, .. } => (false, true, return_values, None),
+        CallResult::Successful { return_values } => {
+            (true, false, return_values, Some(deployed_address))
+        }
+        CallResult::Failed { return_values, .. } => (false, true, return_values, None),
+        CallResult::PreparationStepFailed => {
+            return Err(internal_error!("Preparation step failed in root call").into())
+        } // Should not happen
     };
     // Do not forget to reassign it back after potential copy when finishing frame
     system.finish_global_frame(reverted.then_some(&rollback_handle))?;
@@ -691,9 +714,7 @@ where
 
     let CompletedExecution {
         resources_returned,
-        return_values,
-        reverted,
-        ..
+        result,
     } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
@@ -707,6 +728,9 @@ where
         tracer,
     )
     .map_err(TxError::oon_as_validation)?;
+
+    let reverted = result.failed();
+    let return_values = result.return_values();
 
     let returndata_region = return_values.returndata;
     let returndata_slice = &returndata_region;
@@ -773,9 +797,7 @@ where
 
     let CompletedExecution {
         resources_returned,
-        return_values,
-        reverted,
-        ..
+        result,
     } = BasicBootloader::run_single_interaction(
         system,
         system_functions,
@@ -789,6 +811,9 @@ where
         tracer,
     )
     .map_err(TxError::oon_as_validation)?;
+
+    let reverted = result.failed();
+    let return_values = result.return_values();
 
     let returndata_region = return_values.returndata;
     let returndata_slice = &returndata_region;

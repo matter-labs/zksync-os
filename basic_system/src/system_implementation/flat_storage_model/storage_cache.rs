@@ -149,7 +149,9 @@ where
         {
             self.evm_refunds_counter = HistoryCounter::new(self.alloc.clone());
         }
+    }
 
+    pub fn finish_tx(&mut self) {
         self.current_tx_number.0 += 1;
     }
 
@@ -333,7 +335,7 @@ where {
         Ok((old_value, val_at_tx_start))
     }
 
-    /// Cleae state at specified address
+    /// Clear state at specified address
     pub fn clear_state_impl(&mut self, address: impl AsRef<B160>) -> Result<(), SystemError>
     where
         K::Subspace: TyEq<B160>,
@@ -444,7 +446,7 @@ where
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         new_value: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
         oracle: &mut impl IOOracle,
-    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
+    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError> {
         let sa = StorageAddress {
             address: *address,
             key: *key,
@@ -598,6 +600,11 @@ where
 
     fn begin_new_tx(&mut self) {
         self.0.begin_new_tx();
+    }
+
+    fn finish_tx(&mut self) -> Result<(), InternalError> {
+        self.0.finish_tx();
+        Ok(())
     }
 
     fn start_frame(&mut self) -> Self::StateSnapshot {

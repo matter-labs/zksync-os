@@ -214,176 +214,201 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let mut block_pubdata_used = 0;
 
         // now we can run every transaction
-        while let Some(next_tx_data_len_bytes) = {
+        while let Some(r) = {
             let mut writable = initial_calldata_buffer.into_writable();
-            system
-                .try_begin_next_tx(&mut writable)
-                .expect("TX start call must always succeed")
+            system.try_begin_next_tx(&mut writable)
         } {
-            let mut inf_resources = S::Resources::FORMAL_INFINITE;
-            system
-                .io
-                .read_account_properties(
-                    ExecutionEnvironmentType::NoEE,
-                    &mut inf_resources,
-                    &system.get_coinbase(),
-                    AccountDataRequest::empty(),
-                )
-                .expect("must heat coinbase");
-
-            let mut logger: <S as SystemTypes>::Logger = system.get_logger();
-            let _ = logger.write_fmt(format_args!("====================================\n"));
-            let _ = logger.write_fmt(format_args!("TX execution begins\n"));
-
-            let initial_calldata_buffer =
-                initial_calldata_buffer.as_tx_buffer(next_tx_data_len_bytes);
-
-            tracer.begin_tx(initial_calldata_buffer);
-
-            // Take a snapshot in case we need to invalidate the
-            // transaction to seal the block.
-            // This can happen if any of the block limits (native, gas, pubdata
-            // logs) is reached by the current transaction.
-            let pre_tx_rollback_handle = system.start_global_frame()?;
-
-            // We will give the full buffer here, and internally we will use parts of it to give forward to EEs
-            cycle_marker::start!("process_transaction");
-
-            let tx_result = Self::process_transaction::<Config>(
-                initial_calldata_buffer,
-                &mut system,
-                &mut system_functions,
-                memories.reborrow(),
-                first_tx,
-                tracer,
-            );
-
-            cycle_marker::end!("process_transaction");
-
-            tracer.finish_tx();
-
-            match tx_result {
-                Err(TxError::Internal(err)) => {
+            match r {
+                Err(err) => {
                     let _ = system.get_logger().write_fmt(format_args!(
-                        "Tx execution result: Internal error = {err:?}\n",
+                        "Failure while reading tx from oracle: decoding error = {err:?}\n",
                     ));
-                    // Finish the frame opened before processing the tx
-                    system.finish_global_frame(None)?;
-                    return Err(err);
+                    result_keeper.tx_processed(Err(InvalidTransaction::InvalidEncoding));
                 }
-                Err(TxError::Validation(err)) => {
-                    let _ = system.get_logger().write_fmt(format_args!(
-                        "Tx execution result: Validation error = {err:?}\n",
-                    ));
-                    // Finish the frame opened before processing the tx
-                    system.finish_global_frame(None)?;
-                    result_keeper.tx_processed(Err(err));
-                }
-                Ok(tx_processing_result) => {
-                    // TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
-                    #[cfg(not(target_arch = "riscv32"))]
-                    let _ = system.get_logger().write_fmt(format_args!(
-                        "Tx execution result = {:?}\n",
-                        &tx_processing_result,
-                    ));
-                    block_gas_used += tx_processing_result.gas_used;
-                    block_computational_native_used +=
-                        tx_processing_result.computational_native_used;
-                    block_pubdata_used += tx_processing_result.pubdata_used;
-                    let block_logs_used = system.io.logs_len();
+                Ok(next_tx_data_len_bytes) => {
+                    let mut inf_resources = S::Resources::FORMAL_INFINITE;
+                    system
+                        .io
+                        .read_account_properties(
+                            ExecutionEnvironmentType::NoEE,
+                            &mut inf_resources,
+                            &system.get_coinbase(),
+                            AccountDataRequest::empty(),
+                        )
+                        .expect("must heat coinbase");
 
-                    // Check if the transaction made the block reach any of the limits
-                    // for gas, native, pubdata or logs.
-                    if let Err(err) = Self::check_for_block_limits(
+                    let mut logger: <S as SystemTypes>::Logger = system.get_logger();
+                    let _ =
+                        logger.write_fmt(format_args!("====================================\n"));
+                    let _ = logger.write_fmt(format_args!("TX execution begins\n"));
+
+                    let initial_calldata_buffer =
+                        initial_calldata_buffer.as_tx_buffer(next_tx_data_len_bytes);
+
+                    tracer.begin_tx(initial_calldata_buffer);
+
+                    // Take a snapshot in case we need to invalidate the
+                    // transaction to seal the block.
+                    // This can happen if any of the block limits (native, gas, pubdata
+                    // logs) is reached by the current transaction.
+                    let pre_tx_rollback_handle = system.start_global_frame()?;
+
+                    // We will give the full buffer here, and internally we will use parts of it to give forward to EEs
+                    cycle_marker::start!("process_transaction");
+
+                    let tx_result = Self::process_transaction::<Config>(
+                        initial_calldata_buffer,
                         &mut system,
-                        block_gas_used,
-                        block_computational_native_used,
-                        block_pubdata_used,
-                        block_logs_used,
-                    ) {
-                        // Revert to state before transaction
-                        system.finish_global_frame(Some(&pre_tx_rollback_handle))?;
-                        result_keeper.tx_processed(Err(err));
-                    } else {
-                        // Finish the frame opened before processing the tx
-                        system.finish_global_frame(None)?;
+                        &mut system_functions,
+                        memories.reborrow(),
+                        first_tx,
+                        tracer,
+                    );
 
-                        let (status, output, contract_address) = match tx_processing_result.result {
-                            ExecutionResult::Success { output } => match output {
-                                ExecutionOutput::Call(output) => (true, output, None),
-                                ExecutionOutput::Create(output, contract_address) => {
-                                    (true, output, Some(contract_address))
-                                }
-                            },
-                            ExecutionResult::Revert { output } => (false, output, None),
-                        };
-                        result_keeper.tx_processed(Ok(TxProcessingOutput {
-                            status,
-                            output: &output,
-                            contract_address,
-                            gas_used: tx_processing_result.gas_used,
-                            gas_refunded: tx_processing_result.gas_refunded,
-                            computational_native_used: tx_processing_result
-                                .computational_native_used,
-                            pubdata_used: tx_processing_result.pubdata_used,
-                        }));
+                    cycle_marker::end!("process_transaction");
 
-                        let mut keccak = Keccak256::new();
-                        keccak.update(tx_rolling_hash);
-                        keccak.update(tx_processing_result.tx_hash.as_u8_ref());
-                        tx_rolling_hash = keccak.finalize();
+                    tracer.finish_tx();
 
-                        if tx_processing_result.is_l1_tx {
-                            l1_to_l2_txs_hasher.update(tx_processing_result.tx_hash.as_u8_ref());
+                    match tx_result {
+                        Err(TxError::Internal(err)) => {
+                            let _ = system.get_logger().write_fmt(format_args!(
+                                "Tx execution result: Internal error = {err:?}\n",
+                            ));
+                            // Finish the frame opened before processing the tx
+                            system.finish_global_frame(None)?;
+                            return Err(err);
                         }
+                        Err(TxError::Validation(err)) => {
+                            let _ = system.get_logger().write_fmt(format_args!(
+                                "Tx execution result: Validation error = {err:?}\n",
+                            ));
+                            // Finish the frame opened before processing the tx
+                            system.finish_global_frame(None)?;
+                            result_keeper.tx_processed(Err(err));
+                        }
+                        Ok(tx_processing_result) => {
+                            // TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
+                            #[cfg(not(target_arch = "riscv32"))]
+                            let _ = system.get_logger().write_fmt(format_args!(
+                                "Tx execution result = {:?}\n",
+                                &tx_processing_result,
+                            ));
+                            // Do not update the accumulators yet, we may need to revert the transaction
+                            let next_block_gas_used =
+                                block_gas_used + tx_processing_result.gas_used;
+                            let next_block_computational_native_used =
+                                block_computational_native_used
+                                    + tx_processing_result.computational_native_used;
+                            let next_block_pubdata_used =
+                                block_pubdata_used + tx_processing_result.pubdata_used;
+                            let block_logs_used = system.io.logs_len();
 
-                        if tx_processing_result.is_upgrade_tx {
-                            upgrade_tx_hash = tx_processing_result.tx_hash;
+                            // Check if the transaction made the block reach any of the limits
+                            // for gas, native, pubdata or logs.
+                            if let Err(err) = Self::check_for_block_limits(
+                                &mut system,
+                                next_block_gas_used,
+                                next_block_computational_native_used,
+                                next_block_pubdata_used,
+                                block_logs_used,
+                            ) {
+                                // Revert to state before transaction
+                                system.finish_global_frame(Some(&pre_tx_rollback_handle))?;
+                                result_keeper.tx_processed(Err(err));
+                            } else {
+                                // Now update the accumulators
+                                block_gas_used = next_block_gas_used;
+                                block_computational_native_used =
+                                    next_block_computational_native_used;
+                                block_pubdata_used = next_block_pubdata_used;
+                                first_tx = false;
+
+                                // Finish the frame opened before processing the tx
+                                system.finish_global_frame(None)?;
+
+                                let (status, output, contract_address) =
+                                    match tx_processing_result.result {
+                                        ExecutionResult::Success { output } => match output {
+                                            ExecutionOutput::Call(output) => (true, output, None),
+                                            ExecutionOutput::Create(output, contract_address) => {
+                                                (true, output, Some(contract_address))
+                                            }
+                                        },
+                                        ExecutionResult::Revert { output } => (false, output, None),
+                                    };
+                                result_keeper.tx_processed(Ok(TxProcessingOutput {
+                                    status,
+                                    output: &output,
+                                    contract_address,
+                                    gas_used: tx_processing_result.gas_used,
+                                    gas_refunded: tx_processing_result.gas_refunded,
+                                    computational_native_used: tx_processing_result
+                                        .computational_native_used,
+                                    pubdata_used: tx_processing_result.pubdata_used,
+                                }));
+
+                                let mut keccak = Keccak256::new();
+                                keccak.update(tx_rolling_hash);
+                                keccak.update(tx_processing_result.tx_hash.as_u8_ref());
+                                tx_rolling_hash = keccak.finalize();
+
+                                if tx_processing_result.is_l1_tx {
+                                    l1_to_l2_txs_hasher
+                                        .update(tx_processing_result.tx_hash.as_u8_ref());
+                                }
+
+                                if tx_processing_result.is_upgrade_tx {
+                                    upgrade_tx_hash = tx_processing_result.tx_hash;
+                                }
+                            }
                         }
                     }
+
+                    // The fee is transferred to the coinbase address before
+                    // finishing the transaction.
+                    let coinbase = system.get_coinbase();
+                    let mut inf_resources = S::Resources::FORMAL_INFINITE;
+                    let bootloader_balance = system
+                        .io
+                        .read_account_properties(
+                            ExecutionEnvironmentType::NoEE,
+                            &mut inf_resources,
+                            &BOOTLOADER_FORMAL_ADDRESS,
+                            AccountDataRequest::empty().with_nominal_token_balance(),
+                        )
+                        .expect("must read bootloader balance")
+                        .nominal_token_balance
+                        .0;
+                    if !bootloader_balance.is_zero() {
+                        system
+                            .io
+                            .transfer_nominal_token_value(
+                                ExecutionEnvironmentType::NoEE,
+                                &mut inf_resources,
+                                &BOOTLOADER_FORMAL_ADDRESS,
+                                &coinbase,
+                                &bootloader_balance,
+                            )
+                            .expect("must be able to move funds to coinbase");
+                    }
+
+                    system.flush_tx()?;
+
+                    let mut logger = system.get_logger();
+                    let _ = logger.write_fmt(format_args!("TX execution ends\n"));
+                    let _ =
+                        logger.write_fmt(format_args!("====================================\n"));
                 }
             }
-
-            let tx_stats = system.flush_tx();
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Tx stats = {tx_stats:?}\n"));
-
-            first_tx = false;
-
-            let coinbase = system.get_coinbase();
-            let mut inf_resources = S::Resources::FORMAL_INFINITE;
-            let bootloader_balance = system
-                .io
-                .read_account_properties(
-                    ExecutionEnvironmentType::NoEE,
-                    &mut inf_resources,
-                    &BOOTLOADER_FORMAL_ADDRESS,
-                    AccountDataRequest::empty().with_nominal_token_balance(),
-                )
-                .expect("must read bootloader balance")
-                .nominal_token_balance
-                .0;
-            if !bootloader_balance.is_zero() {
-                system
-                    .io
-                    .transfer_nominal_token_value(
-                        ExecutionEnvironmentType::NoEE,
-                        &mut inf_resources,
-                        &BOOTLOADER_FORMAL_ADDRESS,
-                        &coinbase,
-                        &bootloader_balance,
-                    )
-                    .expect("must be able to move funds to coinbase");
-            }
-
-            let mut logger = system.get_logger();
-            let _ = logger.write_fmt(format_args!("TX execution ends\n"));
-            let _ = logger.write_fmt(format_args!("====================================\n"));
         }
 
         let block_number = system.get_block_number();
-        let previous_block_hash = system.get_blockhash(block_number);
+
+        let previous_block_hash = if block_number == 0 {
+            ruint::aliases::U256::ZERO
+        } else {
+            system.get_blockhash(block_number - 1)
+        };
         let beneficiary = system.get_coinbase();
         let gas_limit = system.get_gas_limit();
         let timestamp = system.get_timestamp();

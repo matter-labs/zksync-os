@@ -21,7 +21,7 @@ crypto = { path = "../crypto" }
 basic_system = { path = "../basic_system" }
 evm_interpreter = { path = "../evm_interpreter" }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
-alloy = { version = "=1", features = ["full", "eip712", "consensus"]}
+alloy = { version = "=1", default-features = false, features = ["eip712", "consensus", "rpc-types", "signer-local", "dyn-abi", "network"] }
 
 [features]
 # By default, use the risc_v_simulator with delegation (which is faster).
