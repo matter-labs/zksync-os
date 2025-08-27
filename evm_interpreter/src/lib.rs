@@ -31,6 +31,7 @@ use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::{internal::InternalError, system::SystemError};
+use zk_ee::system::evm::errors::EvmError;
 use zk_ee::system::evm::{EvmFrameInterface, EvmStackInterface};
 use zk_ee::system::{EthereumLikeTypes, Resource, Resources, System, SystemTypes};
 
@@ -101,53 +102,80 @@ pub struct Interpreter<'a, S: SystemTypes> {
     pub pending_os_request: Option<PendingOsRequest<S>>,
 }
 
-impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for Interpreter<'ee, S> {
+/// Wrapper to provide external access to EVM frame state
+pub struct InterpreterExternal<'ee, S: EthereumLikeTypes> {
+    interpreter: &'ee Interpreter<'ee, S>,
+    #[allow(dead_code)]
+    system: &'ee System<S>,
+}
+
+impl<'ee, S: EthereumLikeTypes> InterpreterExternal<'ee, S> {
+    pub fn new_from(interpreter: &'ee Interpreter<'ee, S>, system: &'ee System<S>) -> Self {
+        Self {
+            interpreter,
+            system,
+        }
+    }
+}
+
+impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for InterpreterExternal<'ee, S> {
     fn instruction_pointer(&self) -> usize {
-        self.instruction_pointer
+        self.interpreter.instruction_pointer
     }
 
     fn resources(&self) -> &<S as SystemTypes>::Resources {
-        &self.gas.resources
+        &self.interpreter.gas.resources
     }
 
     fn stack(&self) -> &impl EvmStackInterface {
-        &self.stack
+        &self.interpreter.stack
     }
 
     fn caller(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
-        self.caller
+        self.interpreter.caller
     }
 
     fn address(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
-        self.address
+        self.interpreter.address
     }
 
     fn calldata(&self) -> &[u8] {
-        &self.calldata
+        &self.interpreter.calldata
     }
 
     fn return_data(&self) -> &[u8] {
-        &self.returndata
+        &self.interpreter.returndata
     }
 
     fn heap(&self) -> &[u8] {
-        &self.heap
+        &self.interpreter.heap
     }
 
     fn bytecode(&self) -> &[u8] {
-        &self.bytecode
+        &self.interpreter.bytecode
     }
 
     fn call_value(&self) -> &U256 {
-        &self.call_value
+        &self.interpreter.call_value
     }
 
     fn is_static(&self) -> bool {
-        self.is_static
+        self.interpreter.is_static
     }
 
     fn is_constructor(&self) -> bool {
-        self.is_constructor
+        self.interpreter.is_constructor
+    }
+
+    #[cfg(feature = "evm_refunds")]
+    fn refund_counter(&self) -> u32 {
+        use zk_ee::system::IOSubsystem;
+        self.system.io.get_refund_counter()
+    }
+
+    #[cfg(not(feature = "evm_refunds"))]
+    fn refund_counter(&self) -> u32 {
+        0
     }
 }
 
@@ -240,7 +268,7 @@ impl<'a, A: Allocator> BytecodePreprocessingData<'a, A> {
                     SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
                         SystemError::LeafDefect(internal_error!("OOE when charging only native"))
                     }
-                    e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => e,
+                    e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_)) => e,
                 }
             })?;
         Ok(Self::create_artifacts_inner(allocator, deployed_code))
@@ -397,48 +425,25 @@ pub enum ExitCode {
 
     ExternalCall,
 
-    // revert code
-    Revert = 0x20, // revert opcode
-    CallTooDeep = 0x21,
-    OutOfFund = 0x22,
-
-    // error codes
-    OutOfGas = 0x50,
-    MemoryOOG = 0x51,
-    MemoryLimitOOG = 0x52,
-    PrecompileOOG = 0x53,
-    InvalidOperandOOG = 0x54,
-    OpcodeNotFound,
-    CallNotAllowedInsideStatic,
-    StateChangeDuringStaticCall,
-    InvalidFEOpcode,
-    InvalidJump,
-    NotActivated,
-    StackUnderflow,
-    StackOverflow,
-    OutOfOffset,
-    CreateCollision,
-    OverflowPayment,
-    PrecompileError,
-    NonceOverflow,
-    /// Create init code size exceeds limit (runtime).
-    CreateContractSizeLimit,
-    /// Error on created contract that begins with EF
-    CreateContractStartingWithEF,
-    /// EIP-3860: Limit and meter initcode. Initcode size limit exceeded.
-    CreateInitcodeSizeLimit,
-
-    // Fatal external error. Returned by database.
-    FatalExternalError,
+    // EVM-defined error
+    EvmError(EvmError),
 
     // Fatal internal error
     FatalError(EvmSubsystemError),
 }
 
+impl From<EvmError> for ExitCode {
+    fn from(e: EvmError) -> Self {
+        Self::EvmError(e)
+    }
+}
+
 impl From<SystemError> for ExitCode {
     fn from(e: SystemError) -> Self {
         match e {
-            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => Self::OutOfGas,
+            SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
+                Self::EvmError(EvmError::OutOfGas)
+            }
             e => Self::FatalError(e.into()),
         }
     }
@@ -449,7 +454,7 @@ impl From<SystemError> for ExitCode {
 impl From<EvmSubsystemError> for ExitCode {
     fn from(e: EvmSubsystemError) -> Self {
         if let RootCause::Runtime(RuntimeError::OutOfErgs(_)) = e.root_cause() {
-            Self::OutOfGas
+            Self::EvmError(EvmError::OutOfGas)
         } else {
             Self::FatalError(e)
         }
@@ -459,34 +464,5 @@ impl From<EvmSubsystemError> for ExitCode {
 impl From<InternalError> for ExitCode {
     fn from(e: InternalError) -> Self {
         ExitCode::FatalError(e.into())
-    }
-}
-
-impl ExitCode {
-    fn is_error(&self) -> bool {
-        matches!(
-            self,
-            Self::OutOfGas
-                | Self::MemoryOOG
-                | Self::MemoryLimitOOG
-                | Self::PrecompileOOG
-                | Self::InvalidOperandOOG
-                | Self::OpcodeNotFound
-                | Self::CallNotAllowedInsideStatic
-                | Self::StateChangeDuringStaticCall
-                | Self::InvalidFEOpcode
-                | Self::InvalidJump
-                | Self::NotActivated
-                | Self::StackUnderflow
-                | Self::StackOverflow
-                | Self::OutOfOffset
-                | Self::CreateCollision
-                | Self::OverflowPayment
-                | Self::PrecompileError
-                | Self::NonceOverflow
-                | Self::CreateContractSizeLimit
-                | Self::CreateContractStartingWithEF
-                | Self::CreateInitcodeSizeLimit
-        )
     }
 }

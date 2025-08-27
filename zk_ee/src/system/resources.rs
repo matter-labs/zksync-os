@@ -77,7 +77,7 @@ impl Resource for Ergs {
     const FORMAL_INFINITE: Self = Ergs(u64::MAX);
 
     fn empty() -> Self {
-        Ergs(0)
+        Self(0)
     }
 
     fn is_empty(&self) -> bool {

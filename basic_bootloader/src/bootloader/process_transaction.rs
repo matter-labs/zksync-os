@@ -128,7 +128,7 @@ where
         // For L1->L2 txs, we use a constant native price to avoid censorship.
         let native_price = L1_TX_NATIVE_PRICE;
         let native_per_gas = if is_priority_op {
-            if Config::ONLY_SIMULATE {
+            if Config::SIMULATION {
                 SIMULATION_NATIVE_PER_GAS
             } else {
                 U256::from(gas_price).div_ceil(native_price)
@@ -245,9 +245,9 @@ where
                     match e.root_cause() {
                         // Out of native is converted to a top-level revert and
                         // gas is exhausted.
-                        RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
+                        RootCause::Runtime(e @ RuntimeError::FatalRuntimeError(_)) => {
                             let _ = system.get_logger().write_fmt(format_args!(
-                                "L1 transaction ran out of native resources {e:?}\n"
+                                "L1 transaction ran out of native resources or memory {e:?}\n"
                             ));
                             resources.exhaust_ergs();
                             system.finish_global_frame(Some(&rollback_handle))?;
@@ -303,7 +303,7 @@ where
             RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
                 internal_error!("Out of ergs on infinite ergs").into()
             }
-            RootCause::Runtime(RuntimeError::OutOfNativeResources(_)) => {
+            RootCause::Runtime(RuntimeError::FatalRuntimeError(_)) => {
                 internal_error!("Out of native on infinite").into()
             }
             _ => e,
@@ -349,7 +349,7 @@ where
                     RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
                         internal_error!("Out of ergs on infinite ergs").into()
                     }
-                    RootCause::Runtime(RuntimeError::OutOfNativeResources(_)) => {
+                    RootCause::Runtime(RuntimeError::FatalRuntimeError(_)) => {
                         internal_error!("Out of native on infinite").into()
                     }
                     _ => e,
@@ -544,7 +544,7 @@ where
         };
         let native_per_gas = if cfg!(feature = "resources_for_tester") {
             U256::from(crate::bootloader::constants::TESTER_NATIVE_PER_GAS)
-        } else if Config::ONLY_SIMULATE {
+        } else if Config::SIMULATION {
             SIMULATION_NATIVE_PER_GAS
         } else {
             U256::from(gas_price).div_ceil(native_price)
@@ -671,9 +671,9 @@ where
             // Out of native is converted to a top-level revert and
             // gas is exhausted.
             Err(e) => match e.root_cause() {
-                RootCause::Runtime(e @ RuntimeError::OutOfNativeResources(_)) => {
+                RootCause::Runtime(e @ RuntimeError::FatalRuntimeError(_)) => {
                     let _ = system.get_logger().write_fmt(format_args!(
-                        "Transaction ran out of native resources: {e:?}\n"
+                        "Transaction ran out of native resources or memory: {e:?}\n"
                     ));
                     resources.exhaust_ergs();
                     system.finish_global_frame(Some(&rollback_handle))?;
@@ -776,7 +776,7 @@ where
             InvalidTransaction::NonceOverflowInTransaction,
         ))?;
 
-        if !Config::ONLY_SIMULATE {
+        if !Config::SIMULATION {
             account_model.check_nonce_is_not_used(caller_nonce, tx_nonce)?;
         }
 
@@ -796,7 +796,7 @@ where
         )?;
 
         // Check nonce has been marked
-        if !Config::ONLY_SIMULATE {
+        if !Config::SIMULATION {
             account_model.check_nonce_is_used_after_validation(
                 system,
                 caller_ee_type,

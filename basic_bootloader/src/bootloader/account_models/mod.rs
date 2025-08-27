@@ -18,9 +18,9 @@ use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system::System;
 use zk_ee::system::*;
 
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use zk_ee::utils::Bytes32;
 
-use super::config::BasicBootloaderExecutionConfig;
 use super::errors::BootloaderSubsystemError;
 
 /// The execution step output

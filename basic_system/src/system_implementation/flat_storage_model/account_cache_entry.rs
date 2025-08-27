@@ -23,7 +23,7 @@ use zk_ee::utils::Bytes32;
 /// - EE version/type (EVM, EraVM, etc.) (u8, 6th byte)
 /// - code version (u8) - ee specific (currently both EVM and IWASM use 1, 5th byte)
 /// - system aux bitmask (u8, 4th byte)
-/// - EE aux bitmask (u8, 3th byte)
+/// - EE aux bitmask (u8, 3rd byte)
 /// - 3 less significant(0-2) bytes currently set to 0, may be used in the future.
 ///
 pub struct VersioningData<const DEPLOYED: u8, const DELEGATED: u8>(u64);
@@ -395,7 +395,7 @@ impl AccountProperties {
                         SystemError::LeafRuntime(RuntimeError::OutOfErgs(_)) => {
                             internal_error!("Out of ergs on infinite ergs")
                         }
-                        SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_)) => {
+                        SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_)) => {
                             internal_error!("Out of native on infinite")
                         }
                         SystemError::LeafDefect(i) => i,

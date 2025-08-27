@@ -98,10 +98,6 @@ where
     type IOTypes = EthereumIOTypesConfig;
     type InitData = P;
 
-    fn finish_tx(&mut self) -> Result<(), zk_ee::system::errors::internal::InternalError> {
-        self.account_data_cache.finish_tx(&mut self.storage_cache)
-    }
-
     fn construct(init_data: Self::InitData, allocator: Self::Allocator) -> Self {
         let resources_policy = init_data;
         let storage_cache = NewStorageWithAccountPropertiesUnderHash::<A, SC, SCC, R, P>(
@@ -251,7 +247,7 @@ where
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         new_value: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
         oracle: &mut impl IOOracle,
-    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
+    ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError> {
         self.storage_cache
             .write(ee_type, resources, address, key, new_value, oracle)
     }
@@ -353,7 +349,14 @@ where
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
         oracle: &mut impl IOOracle,
-    ) -> Result<&'static [u8], SystemError> {
+    ) -> Result<
+        (
+            &'static [u8],
+            <Self::IOTypes as SystemIOTypesConfig>::BytecodeHashValue,
+            u32,
+        ),
+        SystemError,
+    > {
         self.account_data_cache.deploy_code::<PROOF_ENV>(
             from_ee,
             resources,
@@ -417,7 +420,10 @@ where
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
         in_constructor: bool,
-    ) -> Result<(), DeconstructionSubsystemError> {
+    ) -> Result<
+        <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        DeconstructionSubsystemError,
+    > {
         self.account_data_cache
             .mark_for_deconstruction::<PROOF_ENV>(
                 from_ee,
@@ -541,6 +547,12 @@ where
         self.storage_cache.begin_new_tx();
         self.preimages_cache.begin_new_tx();
         self.account_data_cache.begin_new_tx();
+    }
+
+    fn finish_tx(&mut self) -> Result<(), zk_ee::system::errors::internal::InternalError> {
+        self.account_data_cache.finish_tx(&mut self.storage_cache)?;
+        self.storage_cache.finish_tx()?;
+        self.preimages_cache.finish_tx()
     }
 
     fn start_frame(&mut self) -> Self::StateSnapshot {

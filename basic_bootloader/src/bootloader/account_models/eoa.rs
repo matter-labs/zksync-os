@@ -13,6 +13,7 @@ use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::{BasicBootloader, Bytes32};
+use basic_system::cost_constants::{ECRECOVER_COST_ERGS, ECRECOVER_NATIVE_COST};
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
 use evm_interpreter::interpreter::CreateScheme;
@@ -98,7 +99,7 @@ where
                     InvalidTransaction::OutOfGasDuringValidation,
                 ))
             }
-            Err(SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+            Err(SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => {
                 return Err(TxError::Validation(
                     InvalidTransaction::OutOfNativeResourcesDuringValidation,
                 ))
@@ -106,30 +107,38 @@ where
             Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
         }
 
-        let signature = transaction.signature();
-        let r = &signature[..32];
-        let s = &signature[32..64];
-        let v = &signature[64];
-        if !Config::ONLY_SIMULATE && U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
-            return Err(InvalidTransaction::MalleableSignature.into());
-        }
+        // Even if we don't validate a signature, we still need to charge for ecrecover for equivalent behavior
+        if !Config::VALIDATE_EOA_SIGNATURE | Config::SIMULATION {
+            resources.charge(&Resources::from_ergs_and_native(
+                ECRECOVER_COST_ERGS,
+                <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
+                    ECRECOVER_NATIVE_COST,
+                ),
+            ))?;
+        } else {
+            let signature = transaction.signature();
+            let r = &signature[..32];
+            let s = &signature[32..64];
+            let v = &signature[64];
+            if U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
+                return Err(InvalidTransaction::MalleableSignature.into());
+            }
 
-        let mut ecrecover_input = [0u8; 128];
-        ecrecover_input[0..32].copy_from_slice(suggested_signed_hash.as_u8_array_ref());
-        ecrecover_input[63] = *v;
-        ecrecover_input[64..96].copy_from_slice(r);
-        ecrecover_input[96..128].copy_from_slice(s);
+            let mut ecrecover_input = [0u8; 128];
+            ecrecover_input[0..32].copy_from_slice(suggested_signed_hash.as_u8_array_ref());
+            ecrecover_input[63] = *v;
+            ecrecover_input[64..96].copy_from_slice(r);
+            ecrecover_input[96..128].copy_from_slice(s);
 
-        let mut ecrecover_output = ArrayBuilder::default();
-        S::SystemFunctions::secp256k1_ec_recover(
-            ecrecover_input.as_slice(),
-            &mut ecrecover_output,
-            resources,
-            system.get_allocator(),
-        )
-        .map_err(SystemError::from)?;
+            let mut ecrecover_output = ArrayBuilder::default();
+            S::SystemFunctions::secp256k1_ec_recover(
+                ecrecover_input.as_slice(),
+                &mut ecrecover_output,
+                resources,
+                system.get_allocator(),
+            )
+            .map_err(SystemError::from)?;
 
-        if !Config::ONLY_SIMULATE {
             if ecrecover_output.is_empty() {
                 return Err(InvalidTransaction::IncorrectFrom {
                     recovered: B160::ZERO,
@@ -361,7 +370,7 @@ where
                 }
                 SubsystemError::LeafDefect(internal_error) => internal_error.into(),
                 SubsystemError::LeafRuntime(runtime_error) => match runtime_error {
-                    RuntimeError::OutOfNativeResources(_) => {
+                    RuntimeError::FatalRuntimeError(_) => {
                         TxError::oon_as_validation(out_of_native_resources!().into())
                     }
                     RuntimeError::OutOfErgs(_) => {
@@ -511,7 +520,7 @@ where
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+                Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => {
                     return Err(TxError::oon_as_validation(e.into()))
                 }
                 Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
@@ -530,7 +539,7 @@ where
                         InvalidTransaction::OutOfGasDuringValidation,
                     ))
                 }
-                Err(e @ SystemError::LeafRuntime(RuntimeError::OutOfNativeResources(_))) => {
+                Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => {
                     return Err(TxError::oon_as_validation(e.into()))
                 }
                 Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),

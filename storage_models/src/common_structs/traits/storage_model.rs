@@ -23,8 +23,6 @@ pub trait StorageModel: Sized + SnapshottableIo {
     type Resources: Resources;
     type StorageCommitment;
 
-    fn finish_tx(&mut self) -> Result<(), InternalError>;
-
     fn storage_read(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -167,7 +165,14 @@ pub trait StorageModel: Sized + SnapshottableIo {
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
         oracle: &mut impl IOOracle,
-    ) -> Result<&'static [u8], SystemError>;
+    ) -> Result<
+        (
+            &'static [u8],
+            <Self::IOTypes as SystemIOTypesConfig>::BytecodeHashValue,
+            u32,
+        ),
+        SystemError,
+    >;
 
     fn set_bytecode_details(
         &mut self,
@@ -198,7 +203,10 @@ pub trait StorageModel: Sized + SnapshottableIo {
         nominal_token_beneficiary: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
         in_constructor: bool,
-    ) -> Result<(), DeconstructionSubsystemError>;
+    ) -> Result<
+        <Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
+        DeconstructionSubsystemError,
+    >;
 
     type Allocator: core::alloc::Allocator + Clone;
     type InitData;
