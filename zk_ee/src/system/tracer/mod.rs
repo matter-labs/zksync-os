@@ -16,6 +16,8 @@ pub trait Tracer<S: SystemTypes> {
     fn on_new_execution_frame(&mut self, request: &ExecutionEnvironmentLaunchParams<S>);
 
     /// Hook immediately after external call or deployment frame execution
+    ///
+    /// Note: `result` is None if execution is terminated due to internal ZKsync OS error (e.g. out-of-native-resources)
     fn after_execution_frame_completed(&mut self, result: Option<(&S::Resources, &CallResult<S>)>);
 
     /// Is called on storage read produced by bytecode execution in EE
@@ -36,6 +38,19 @@ pub trait Tracer<S: SystemTypes> {
         address: <S::IOTypes as SystemIOTypesConfig>::Address,
         key: <S::IOTypes as SystemIOTypesConfig>::StorageKey,
         value: <S::IOTypes as SystemIOTypesConfig>::StorageValue,
+    );
+
+    /// Is called on a change of bytecode for some account.
+    /// `new_raw_bytecode` can be None if bytecode is unknown at the moment of change (e.g. force deploy by hash in system hook)
+    ///
+    /// Note: currently is *not* triggered by system hooks
+    fn on_bytecode_change(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        address: <S::IOTypes as SystemIOTypesConfig>::Address,
+        new_raw_bytecode: Option<&[u8]>,
+        new_internal_bytecode_hash: <S::IOTypes as SystemIOTypesConfig>::BytecodeHashValue,
+        new_observable_bytecode_length: u32,
     );
 
     /// Is called before EE emits and event
@@ -95,6 +110,17 @@ impl<S: SystemTypes> Tracer<S> for NopTracer {
         _address: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address,
         _key: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::StorageKey,
         _value: <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::StorageValue,
+    ) {
+    }
+
+    #[inline(always)]
+    fn on_bytecode_change(
+        &mut self,
+        _ee_type: ExecutionEnvironmentType,
+        _address: <S::IOTypes as SystemIOTypesConfig>::Address,
+        _new_bytecode: Option<&[u8]>,
+        _new_bytecode_hash: <S::IOTypes as SystemIOTypesConfig>::BytecodeHashValue,
+        _new_observable_bytecode_length: u32,
     ) {
     }
 

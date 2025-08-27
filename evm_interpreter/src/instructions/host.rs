@@ -280,6 +280,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         &mut self,
         system: &mut System<S>,
         external_call_dest: &mut Option<EVMCallRequest<S>>,
+        tracer: &mut impl Tracer<S>,
     ) -> InstructionResult {
         self.gas.spend_gas_and_native(
             gas_constants::CREATE,
@@ -348,6 +349,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         let all_resources = self.gas.take_resources();
 
         self.pending_os_request = Some(PendingOsRequest::Create(deployed_address));
+
+        tracer.evm_tracer().on_create_request(IS_CREATE2);
 
         *external_call_dest = Some(EVMCallRequest {
             ergs_to_pass: all_resources.ergs(),
