@@ -252,10 +252,14 @@ where
                 ee_type,
                 resources,
                 address,
-                AccountDataRequest::empty().with_bytecode(),
+                AccountDataRequest::empty()
+                    .with_bytecode()
+                    .with_unpadded_code_len(),
                 &mut self.oracle,
             )
-            .map(|account_data| account_data.bytecode.0)
+            .map(|account_data| {
+                account_data.bytecode.0[..account_data.unpadded_code_len.0 as usize].as_ref()
+            })
     }
 
     fn get_observable_bytecode_hash(
