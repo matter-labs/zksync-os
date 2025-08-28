@@ -63,7 +63,6 @@ categories = ["cryptography"]
 risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.3.1"}
 blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.3.1"}
 prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.3.1"}
-trace_and_split = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.3.1"}
 execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.3.1"}
 
 # [profile.dev]
@@ -85,6 +84,5 @@ debug = true
 
 # blake2s_u32 = { path = "../zksync-airbender/blake2s_u32" }
 # prover_examples = { path = "../zksync-airbender/circuit_defs/prover_examples" }
-# trace_and_split = { path = "../zksync-airbender/circuit_defs/trace_and_split" }
 # risc_v_simulator = { path = "../zksync-airbender/risc_v_simulator" }
 # execution_utils = { path = "../zksync-airbender/execution_utils" }

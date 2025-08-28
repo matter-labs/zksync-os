@@ -139,7 +139,8 @@ pub fn simulate_witness_tracing(
 
     let num_instances_upper_bound = 1 << 14;
     let binary = execution_utils::get_padded_binary(&buffer);
-    let worker = trace_and_split::setups::prover::worker::Worker::new();
+
+    let worker = prover_examples::prover::worker::Worker::new();
 
     let now = std::time::Instant::now();
     let (all_witness_instances, _, _, _) =
