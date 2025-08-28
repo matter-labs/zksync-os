@@ -60,11 +60,12 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [workspace.dependencies]
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.1"}
-blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.1"}
-prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.1"}
-trace_and_split = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.1"}
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.1"}
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.2"}
+blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.2"}
+prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.2"}
+trace_and_split = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.2"}
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.2"}
+prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.2" }
 
 # [profile.dev]
 # opt-level = 0
