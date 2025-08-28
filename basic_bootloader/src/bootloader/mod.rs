@@ -344,6 +344,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                                     gas_refunded: tx_processing_result.gas_refunded,
                                     computational_native_used: tx_processing_result
                                         .computational_native_used,
+                                    native_used: tx_processing_result.native_used,
                                     pubdata_used: tx_processing_result.pubdata_used,
                                 }));
 

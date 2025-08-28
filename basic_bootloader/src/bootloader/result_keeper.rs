@@ -19,6 +19,7 @@ pub struct TxProcessingOutput<'a> {
     pub gas_used: u64,
     pub gas_refunded: u64,
     pub computational_native_used: u64,
+    pub native_used: u64,
     pub pubdata_used: u64,
 }
 
