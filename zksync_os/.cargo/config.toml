@@ -10,7 +10,6 @@ rustflags = [
   "--remap-path-prefix= /=/src",
   "-C", "link-arg=--build-id=sha1",
   "-C", "codegen-units=1",
-  "-C", "debuginfo=0",
 ]
 
 

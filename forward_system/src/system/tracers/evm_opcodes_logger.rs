@@ -267,6 +267,9 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
         _frame_state: &impl EvmFrameInterface<S>,
     ) {
     }
+
+    #[inline(always)]
+    fn on_create_request(&mut self, _is_create2: bool) {}
 }
 
 impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
@@ -414,6 +417,17 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
         _address: &<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address,
         _topics: &[<<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::EventKey],
         _data: &[u8],
+    ) {
+    }
+
+    #[inline(always)]
+    fn on_bytecode_change(
+        &mut self,
+        _ee_type: zk_ee::execution_environment_type::ExecutionEnvironmentType,
+        _address: <S::IOTypes as SystemIOTypesConfig>::Address,
+        _new_bytecode: Option<&[u8]>,
+        _new_bytecode_hash: <S::IOTypes as SystemIOTypesConfig>::BytecodeHashValue,
+        _new_observable_bytecode_length: u32,
     ) {
     }
 
