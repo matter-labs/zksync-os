@@ -39,7 +39,17 @@ impl Scalar {
 
     pub(crate) fn from_be_bytes(bytes: &[u8; 32]) -> Result<Self, Secp256r1Err> {
         let val = Self::from_be_bytes_unchecked(bytes);
-        Ok(val)
+        if val.overflow()  {
+           Err(Secp256r1Err::InvalidSignature) 
+        } else {
+            Ok(val)
+        }
+    }
+    
+    fn overflow(&self) -> bool {
+        let (_, of) = overflowing_sub(&self.0, &MODULUS);
+        of
+        
     }
 
     #[cfg(test)]
