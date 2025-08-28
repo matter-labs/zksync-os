@@ -94,6 +94,7 @@ pub const CALLDATA_ZERO_BYTE_GAS_COST: u64 = 4;
 pub const CALLDATA_NON_ZERO_BYTE_GAS_COST: u64 = 16;
 
 /// Default value of gasPerPubdata for non EIP-712 txs.
+/// TODO (EVM-1157): set to a reasonable value.
 pub const DEFAULT_GAS_PER_PUBDATA: U256 = U256::from_limbs([1, 0, 0, 0]);
 
 /// EVM tester requires a high native_per_gas, but it hard-codes
@@ -107,7 +108,7 @@ pub const TESTER_NATIVE_PER_GAS: u64 = 25_000;
 pub const SIMULATION_NATIVE_PER_GAS: U256 = U256::from_limbs([100, 0, 0, 0]);
 
 // Default native price for L1->L2 transactions.
-// TODO: find a reasonable value for it.
+// TODO (EVM-1157): find a reasonable value for it.
 pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
 
 // Upgrade transactions are expected to have ~72 million gas. We will use enough
