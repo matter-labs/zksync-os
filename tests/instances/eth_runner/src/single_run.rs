@@ -5,8 +5,12 @@ use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
 use crate::prestate::{populate_prestate, DiffTrace, PrestateTrace};
 use crate::receipts::{BlockReceipts, TransactionReceipt};
+use alloy::primitives::U256;
+use arrayvec::ArrayVec;
 use rig::log::info;
 use rig::*;
+use zk_ee::common_structs::interop_root::InteropRoot;
+use zk_ee::utils::Bytes32;
 use std::fs::{self, File};
 use std::io::BufReader;
 
@@ -94,7 +98,22 @@ pub fn single_run(
     // assert!(block.result.header.gas_used <= 11_000_000);
     let miner = block.result.header.beneficiary;
 
-    let block_context = block.get_block_context();
+    let mut block_context = block.get_block_context();
+
+    // To check benchmarks
+    // TODO remove
+    let mut test_interop_roots = ArrayVec::new();
+
+    for i in 0..100 {
+        test_interop_roots.push(InteropRoot {
+            root: Bytes32::from_u256_be(&U256::ONE),
+            block_or_batch_number: i,
+            chain_id: 1,
+        });
+    }
+
+    block_context.interop_roots = test_interop_roots.into();
+
     let (transactions, skipped) = block.get_transactions(&calltrace);
 
     let receipts = receipts
