@@ -11,7 +11,7 @@ pub mod helpers;
 
 /// Runs the batch, and returns the output (that contains gas usage, transaction status etc.).
 pub use forward_system::run::run_block;
-use zk_ee::common_structs::ProofData;
+use zk_ee::common_structs::{interop_root::InteropRoot, ProofData};
 
 /// Runs a block in riscV - using zksync_os binary - and returns the
 /// witness that can be passed to the prover subsystem.
@@ -22,6 +22,7 @@ pub fn run_block_generate_witness(
     tx_source: TxListSource,
     proof_data: ProofData<StorageCommitment>,
     zksync_os_bin_path: &str,
+    interop_roots: Vec<InteropRoot>,
 ) -> Vec<u32> {
     let oracle: ForwardRunningOracle<InMemoryTree, InMemoryPreimageSource, TxListSource> =
         ForwardRunningOracle {
@@ -31,6 +32,7 @@ pub fn run_block_generate_witness(
             preimage_source,
             tx_source,
             next_tx: None,
+            interop_roots,
         };
 
     let oracle_wrapper = BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle.clone());

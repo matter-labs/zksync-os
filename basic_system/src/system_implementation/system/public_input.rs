@@ -251,7 +251,7 @@ impl BatchPublicInputBuilder {
         block_timestamp: u64,
         chain_id: U256,
         upgrade_tx_hash: Bytes32,
-        interop_roots: &ArrayVec<InteropRoot, MAX_NUMBER_INTEROP_ROOTS>,
+        interop_roots: &[InteropRoot],
     ) {
         if self.is_first_block {
             self.initial_state_commitment = Some(state_commitment_before);

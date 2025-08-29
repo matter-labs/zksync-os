@@ -5,6 +5,7 @@ use errors::{BootloaderInterfaceError, BootloaderSubsystemError, InvalidTransact
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
+use zk_ee::common_structs::interop_root::InteropRoot;
 use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
@@ -220,7 +221,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let mut block_pubdata_used = 0;
 
         // Get interop roots and set them in the L2_INTEROP_ROOT_STORAGE_ADDRESS storage
-        let interop_root_hash =
+        let interop_roots =
             Self::process_interop_roots(&mut system, &mut system_functions, &mut memories, tracer)?;
 
         // now we can run every transaction
@@ -467,7 +468,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             block_hash,
             l1_to_l2_tx_hash,
             upgrade_tx_hash,
-            interop_root_hash,
+            interop_roots.as_slice(),
             result_keeper,
         );
         cycle_marker::end!("run_prepared");
@@ -524,13 +525,12 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: &mut RunnerMemoryBuffers,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<Bytes32, BootloaderSubsystemError>
+    ) -> Result<Vec<InteropRoot, S::Allocator>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
-        if system.get_interop_roots().len() == 0 {
-            return Ok(Bytes32::ZERO);
-        }
+        // TODO proper error
+        let interop_roots = system.get_interop_roots().expect("Should not fail");
 
         // Block of code needed for interop.
         // We need to add interop roots to the interop root storage.
@@ -546,7 +546,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         let mut rolling_hash = Bytes32::zero();
         let mut interop_root_hasher = crypto::sha3::Keccak256::new();
 
-        for interop_root in system.get_interop_roots().iter() {
+        for interop_root in interop_roots.iter() {
             Self::add_interop_root_to_l2_interop_root_storage(
                 interop_root.chain_id,
                 interop_root.block_or_batch_number,
@@ -566,7 +566,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
             );
         }
 
-        Ok(rolling_hash)
+        Ok(interop_roots)
     }
 
     fn add_interop_root_to_l2_interop_root_storage(

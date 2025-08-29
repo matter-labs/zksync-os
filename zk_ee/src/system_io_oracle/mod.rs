@@ -135,6 +135,16 @@ impl OracleIteratorTypeMarker for ExactIndexIterator {
     type Params = Bytes32;
 }
 
+///
+/// Interop roots query
+///
+pub struct InteropRootsIterator;
+
+impl OracleIteratorTypeMarker for InteropRootsIterator {
+    const ID: u32 = 10;
+    type Params = ();
+}
+
 pub struct Arithmetics;
 
 impl OracleIteratorTypeMarker for Arithmetics {

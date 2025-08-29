@@ -9,6 +9,7 @@ use super::errors::internal::InternalError;
 use super::errors::system::SystemError;
 use super::logger::Logger;
 use super::{IOResultKeeper, Resources};
+use crate::common_structs::interop_root::InteropRoot;
 use crate::define_subsystem;
 use crate::execution_environment_type::ExecutionEnvironmentType;
 use crate::kv_markers::MAX_EVENT_TOPICS;
@@ -476,7 +477,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         current_block_hash: Bytes32,
         l1_to_l2_txs_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
-        interop_root_rolling_hash: Bytes32,
+        interop_roots: &[InteropRoot],
         result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
         logger: impl Logger,
     ) -> Self::FinalData;

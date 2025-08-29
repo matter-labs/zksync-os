@@ -17,6 +17,7 @@ use evm_interpreter::gas_constants::TSTORE;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
+use zk_ee::common_structs::interop_root::InteropRoot;
 use zk_ee::common_structs::ProofData;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
 use zk_ee::interface_error;
@@ -433,7 +434,7 @@ pub trait FinishIO {
         current_block_hash: Bytes32,
         l1_to_l2_txs_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
-        interop_root_rolling_hash: Bytes32,
+        interop_roots: &[InteropRoot],
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         logger: impl Logger,
     ) -> Self::FinalData;
@@ -457,7 +458,7 @@ where
         current_block_hash: Bytes32,
         _l1_to_l2_txs_hash: Bytes32,
         _upgrade_tx_hash: Bytes32,
-        _interop_root_rolling_hash: Bytes32,
+        _interop_roots: &[InteropRoot],
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
@@ -504,7 +505,7 @@ where
         current_block_hash: Bytes32,
         l1_to_l2_txs_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
-        interop_root_rolling_hash: Bytes32,
+        interop_roots: &[InteropRoot],
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
@@ -577,6 +578,9 @@ where
             last_block_timestamp: block_metadata.timestamp,
         };
 
+        // TODO
+        let interop_root_rolling_hash = Bytes32::ZERO;
+
         // other outputs to be opened on the settlement layer/aggregation program
         let block_output = BlocksOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
@@ -618,7 +622,7 @@ where
         current_block_hash: Bytes32,
         _l1_to_l2_txs_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
-        interop_root_rolling_hash: Bytes32,
+        interop_roots: &[InteropRoot],
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
@@ -700,6 +704,10 @@ where
             "PI calculation: state commitment after {:?}\n",
             chain_state_commitment_after
         ));
+
+        // TODO
+        let interop_root_rolling_hash = Bytes32::ZERO;
+
         let mut da_commitment_hasher = crypto::sha3::Keccak256::new();
         da_commitment_hasher.update([0u8; 32]); // we don't have to validate state diffs hash
         da_commitment_hasher.update(pubdata_hash); // full pubdata keccak
@@ -757,6 +765,7 @@ where
     type FinalData = (
         FullIO<A, R, P, SC, SCC, O, true>,
         BlockMetadataFromOracle,
+        alloc::vec::Vec<InteropRoot, A>,
         Bytes32,
         Bytes32,
     );
@@ -766,11 +775,20 @@ where
         current_block_hash: Bytes32,
         _l1_to_l2_txs_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
-        _interop_root_rolling_hash: Bytes32,
+        interop_roots: &[InteropRoot],
         _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         _logger: impl Logger,
     ) -> Self::FinalData {
-        (self, block_metadata, current_block_hash, upgrade_tx_hash)
+        let mut roots =
+            alloc::vec::Vec::with_capacity_in(interop_roots.len(), self.allocator.clone());
+        roots.extend(interop_roots.iter());
+        (
+            self,
+            block_metadata,
+            roots,
+            current_block_hash,
+            upgrade_tx_hash,
+        )
     }
 }
 
@@ -791,6 +809,7 @@ where
     pub fn apply_to_batch(
         mut self,
         block_metadata: BlockMetadataFromOracle,
+        interop_roots: &[InteropRoot],
         current_block_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
         builder: &mut crate::system_implementation::system::public_input::BatchPublicInputBuilder,
@@ -869,7 +888,7 @@ where
             block_metadata.timestamp,
             U256::try_from(block_metadata.chain_id).unwrap(),
             upgrade_tx_hash,
-            block_metadata.interop_roots.roots(),
+            interop_roots,
         );
 
         self.oracle
@@ -1098,7 +1117,7 @@ where
         current_block_hash: Bytes32,
         l1_to_l2_txs_hash: Bytes32,
         upgrade_tx_hash: Bytes32,
-        interop_root_rolling_hash: Bytes32,
+        interop_roots: &[InteropRoot],
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         logger: impl Logger,
     ) -> Self::FinalData {
@@ -1108,7 +1127,7 @@ where
             current_block_hash,
             l1_to_l2_txs_hash,
             upgrade_tx_hash,
-            interop_root_rolling_hash,
+            interop_roots,
             result_keeper,
             logger,
         )

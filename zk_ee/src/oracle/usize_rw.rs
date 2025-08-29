@@ -62,6 +62,22 @@ impl<I: ExactSizeIterator<Item = u8>> ExactSizeIterator for ReadIterWrapper<u8, 
     }
 }
 
+impl<I: ExactSizeIterator<Item = usize>> Iterator for ReadIterWrapper<usize, I> {
+    type Item = usize;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.inner.len() == 0 {
+            return None;
+        }
+        self.inner.next()
+    }
+}
+
+impl<I: ExactSizeIterator<Item = usize>> ExactSizeIterator for ReadIterWrapper<usize, I> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
 #[derive(Clone)]
 pub struct ExactSizeIterReadWrapper<I: ExactSizeIterator<Item = usize>> {
     inner: I,

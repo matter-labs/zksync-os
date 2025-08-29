@@ -20,6 +20,7 @@ use basic_bootloader::bootloader::config::{
 use errors::ForwardSubsystemError;
 use oracle::CallSimulationOracle;
 pub use oracle::ForwardRunningOracle;
+use zk_ee::common_structs::interop_root::InteropRoot;
 use zk_ee::common_structs::ProofData;
 use zk_ee::system::tracer::Tracer;
 
@@ -59,6 +60,7 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     preimage_source: PS,
     tx_source: TS,
     tx_result_callback: TR,
+    interop_roots: Vec<InteropRoot>,
     tracer: &mut impl Tracer<ForwardRunningSystem<T, PS, TS>>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
@@ -68,6 +70,7 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
         preimage_source,
         tx_source,
         next_tx: None,
+        interop_roots,
     };
 
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
@@ -87,6 +90,7 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     proof_data: ProofData<StorageCommitment>,
     tree: T,
     preimage_source: PS,
+    interop_roots: Vec<InteropRoot>,
     tx_source: TS,
 ) -> Result<Vec<u32>, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
@@ -96,6 +100,7 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
         preimage_source,
         tx_source,
         next_tx: None,
+        interop_roots,
     };
     let oracle_wrapper = BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle);
 
@@ -125,6 +130,7 @@ pub fn run_block_with_oracle_dump<
     preimage_source: PS,
     tx_source: TS,
     tx_result_callback: TR,
+    interop_roots: Vec<InteropRoot>,
     tracer: &mut impl Tracer<ForwardRunningSystem<T, PS, TS>>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
@@ -134,6 +140,7 @@ pub fn run_block_with_oracle_dump<
         preimage_source,
         tx_source,
         next_tx: None,
+        interop_roots,
     };
 
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);

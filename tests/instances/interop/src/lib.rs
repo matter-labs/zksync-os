@@ -6,7 +6,6 @@
 use alloy::consensus::TxLegacy;
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
-use arrayvec::ArrayVec;
 use rig::alloy::primitives::address;
 use rig::ruint::aliases::{B160, U256};
 use rig::utils::{ERC_20_BYTECODE, ERC_20_MINT_CALLDATA};
@@ -61,7 +60,7 @@ fn run_processes_one_interop_root() {
 
     let mut block_context = BlockContext::default();
 
-    let mut interops_roots = ArrayVec::new();
+    let mut interops_roots = Vec::new();
 
     // Create some dummy interop root
     interops_roots.push(InteropRoot {
@@ -70,9 +69,15 @@ fn run_processes_one_interop_root() {
         chain_id: 1,
     });
 
-    block_context.interop_roots = interops_roots.into();
+    block_context.interop_roots = interops_roots;
 
-    chain.run_block_with_extra_stats(vec![encoded_mint_tx], Some(block_context), None, None, None);
+    chain.run_block_with_extra_stats(
+        vec![encoded_mint_tx],
+        Some(block_context),
+        None,
+        None,
+        Some("server_app_logging_enabled".to_owned()),
+    );
 }
 
 #[test]
@@ -116,7 +121,7 @@ fn run_fails_if_interop_root_is_incorrect() {
 
     let mut block_context = BlockContext::default();
 
-    let mut interops_roots = ArrayVec::new();
+    let mut interops_roots = Vec::new();
 
     // Create some dummy interop root
     interops_roots.push(InteropRoot {
@@ -125,7 +130,7 @@ fn run_fails_if_interop_root_is_incorrect() {
         chain_id: 1,
     });
 
-    block_context.interop_roots = interops_roots.into();
+    block_context.interop_roots = interops_roots;
 
     chain.run_block_with_extra_stats(vec![encoded_mint_tx], Some(block_context), None, None, None);
 }

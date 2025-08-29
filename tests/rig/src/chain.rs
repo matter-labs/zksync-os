@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use zk_ee::common_structs::interop_root::InteropRootsContainer;
+use zk_ee::common_structs::interop_root::InteropRoot;
 use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
 use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
@@ -52,7 +52,7 @@ pub struct BlockContext {
     pub gas_limit: u64,
     pub pubdata_limit: u64,
     pub mix_hash: U256,
-    pub interop_roots: InteropRootsContainer,
+    pub interop_roots: Vec<InteropRoot>,
 }
 
 impl Default for BlockContext {
@@ -66,7 +66,7 @@ impl Default for BlockContext {
             gas_limit: MAX_BLOCK_GAS_LIMIT,
             pubdata_limit: u64::MAX,
             mix_hash: U256::ONE,
-            interop_roots: InteropRootsContainer::default(),
+            interop_roots: Default::default(),
         }
     }
 }
@@ -181,6 +181,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
     ) -> BlockOutput {
         let block_context = block_context.unwrap_or_default();
+        let interop_roots = block_context.interop_roots;
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
             block_number: self.next_block_number(),
@@ -193,7 +194,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             gas_limit: block_context.gas_limit,
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
-            interop_roots: block_context.interop_roots,
         };
         let tx_source = TxListSource {
             transactions: transactions.into(),
@@ -206,6 +206,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             block_metadata,
             next_tx: None,
             tx_source: tx_source.clone(),
+            interop_roots,
         };
 
         // dump oracle if env variable set
@@ -262,6 +263,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         app: Option<String>,
     ) -> (BlockOutput, BlockExtraStats, Vec<u32>) {
         let block_context = block_context.unwrap_or_default();
+        let interop_roots = block_context.interop_roots;
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
             block_number: self.next_block_number(),
@@ -274,7 +276,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             gas_limit: block_context.gas_limit,
             pubdata_limit: block_context.pubdata_limit,
             mix_hash: block_context.mix_hash,
-            interop_roots: block_context.interop_roots,
         };
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),
@@ -295,6 +296,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             block_metadata,
             next_tx: None,
             tx_source: tx_source.clone(),
+            interop_roots,
         };
 
         // dump oracle if env variable set
