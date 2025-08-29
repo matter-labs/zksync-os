@@ -85,7 +85,7 @@ fn p256_verify_as_system_function_inner<
 
     // Only set return data if valid, otherwise it should be empty
     if is_valid {
-        dst.try_extend(core::iter::once(1u8))
+        dst.try_extend(ruint::aliases::U256::ONE.to_be_bytes::<32>())
             .map_err(|_| out_of_return_memory!())?;
     }
 
