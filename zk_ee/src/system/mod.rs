@@ -292,17 +292,11 @@ where
     pub fn get_interop_roots(
         &mut self,
     ) -> Result<alloc::vec::Vec<InteropRoot, S::Allocator>, InteropRootsSubsystemError> {
-        let mut logger = self.get_logger();
         let mut interop_roots_iterator = self
             .io
             .oracle()
             .create_oracle_access_iterator::<InteropRootsIterator>(())
             .expect("must create iterator for the interop roots");
-
-        let _ = logger.write_fmt(format_args!(
-            "Iterator len: {}\n",
-            interop_roots_iterator.len()
-        ));
 
         // TODO usize vs u64 forward/proving run
         let len: u32 = if interop_roots_iterator.len() > 0 {
@@ -312,15 +306,6 @@ where
         };
 
         // TODO validate len
-
-        let _ = logger.write_fmt(format_args!(
-            "Expected len: {}\n",
-            <InteropRoot as UsizeDeserializable>::USIZE_LEN * len as usize
-        ));
-        let _ = logger.write_fmt(format_args!(
-            "Actual len: {}\n",
-            interop_roots_iterator.len()
-        ));
 
         if interop_roots_iterator.len()
             != <InteropRoot as UsizeDeserializable>::USIZE_LEN * len as usize
