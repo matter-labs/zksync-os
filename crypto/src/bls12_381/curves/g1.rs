@@ -273,9 +273,11 @@ mod tests {
     use proptest::{prop_assert_eq, proptest};
     type ScalarField = <Config as CurveConfig>::ScalarField;
 
-    #[ignore = "ark deserialization panics"]
+    #[ignore = "requires single thread runner"]
     #[test]
     fn compare_scalar_decomposition() {
+        crate::init_lib();
+
         proptest!(|(bytes: [u8; 32])| {
             let k = ScalarField::from_be_bytes_mod_order(&bytes);
 
