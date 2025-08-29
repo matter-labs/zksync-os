@@ -44,10 +44,7 @@ impl<R: Resources> SystemFunction<R, P256VerifyErrors> for P256VerifyImpl {
 ///  7. recovered is not infinity
 ///
 ///
-///  (2), (4), (5) are checked by crypto
-///
-///  Need to add (Yoav): (3) (6) (7)
-///  Need to fix (Antonio): (1)
+///  2-7 are checked internally by crypto crate.
 ///
 fn p256_verify_as_system_function_inner<
     S: ?Sized + MinimalByteAddressableSlice,
@@ -59,6 +56,7 @@ fn p256_verify_as_system_function_inner<
     resources: &mut R,
 ) -> Result<(), SubsystemError<P256VerifyErrors>> {
     if src.len() != 160 {
+        // Empty returndata indicates failure.
         return Ok(());
     }
     // TODO(EVM-1159): charge native
@@ -78,14 +76,18 @@ fn p256_verify_as_system_function_inner<
         let y = it.next().unwrap_unchecked();
 
         let Ok(result) = secp256r1_verify_inner(digest, r, s, x, y) else {
+            // Empty returndata indicates failure.
             return Ok(());
         };
 
         result
     };
 
-    dst.try_extend(core::iter::once(is_valid as u8))
-        .map_err(|_| out_of_return_memory!())?;
+    // Only set return data if valid, otherwise it should be empty
+    if is_valid {
+        dst.try_extend(core::iter::once(1u8))
+            .map_err(|_| out_of_return_memory!())?;
+    }
 
     Ok(())
 }
