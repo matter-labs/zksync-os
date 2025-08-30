@@ -1,11 +1,13 @@
 //! Serialization and deserialization helpers for keys and values for storage.
 pub mod kv_impls;
 
+use alloc::alloc::Allocator;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 use arrayvec::ArrayVec;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use ruint::aliases::U256;
-use std::alloc::Allocator;
 
 use super::system::errors::internal::InternalError;
 use super::types_config::SystemIOTypesConfig;
@@ -37,8 +39,8 @@ pub trait UsizeSerializable {
     fn iter(&self) -> impl ExactSizeIterator<Item = usize>;
 }
 
-pub trait UsizeSerializableDynamic {
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize>;
+pub trait UsizeSerializableDynamic<A: Allocator + Clone> {
+    fn iter(&self, alloc: A) -> impl ExactSizeIterator<Item = usize>;
 }
 
 pub trait UsizeDeserializable: Sized {
@@ -89,37 +91,40 @@ impl<T: UsizeDeserializable, A: Allocator + Clone> UsizeDeserializableDynamic<A>
     }
 }
 
-impl<T: UsizeSerializable, A: Allocator + Clone> UsizeSerializableDynamic
+impl<T: UsizeSerializable, A: Allocator + Clone> UsizeSerializableDynamic<A>
     for alloc::vec::Vec<T, A>
 {
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        UsizeSerializableArrayIterator::from(self.as_slice())
+    fn iter(&self, alloc: A) -> impl ExactSizeIterator<Item = usize> {
+        UsizeSerializableArrayIterator::<T, A>::from(self.as_slice(), alloc)
     }
 }
 
-pub struct UsizeSerializableArrayIterator<'a, T: UsizeSerializable> {
-    iter: Box<dyn Iterator<Item = usize> + 'a>,
+pub struct UsizeSerializableArrayIterator<'a, T: UsizeSerializable, A: Allocator + Clone> {
+    iter: Box<dyn Iterator<Item = usize> + 'a, A>,
     len: usize,
     _marker: PhantomData<T>,
 }
 
-impl<'a, T: UsizeSerializable> UsizeSerializableArrayIterator<'a, T> {
-    pub fn from(input: &'a [T]) -> Self {
-        let prefix: Vec<_> = (input.len() as u64).iter().collect();
+impl<'a, T: UsizeSerializable, A: Allocator + Clone + 'a> UsizeSerializableArrayIterator<'a, T, A> {
+    pub fn from(input: &'a [T], alloc: A) -> Self {
+        let mut prefix = Vec::with_capacity_in(2, alloc.clone());
+        prefix.extend((input.len() as u64).iter());
         let prefix_len = prefix.len();
 
         let input_iter = input.iter().flat_map(|x| x.iter());
         let input_iter_len = input.len() * T::USIZE_LEN;
 
         Self {
-            iter: Box::new(core::iter::once(prefix).flatten().chain(input_iter)),
+            iter: Box::new_in(core::iter::once(prefix).flatten().chain(input_iter), alloc),
             len: prefix_len + input_iter_len,
             _marker: Default::default(),
         }
     }
 }
 
-impl<'a, T: UsizeSerializable> Iterator for UsizeSerializableArrayIterator<'a, T> {
+impl<'a, T: UsizeSerializable, A: Allocator + Clone> Iterator
+    for UsizeSerializableArrayIterator<'a, T, A>
+{
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -128,7 +133,9 @@ impl<'a, T: UsizeSerializable> Iterator for UsizeSerializableArrayIterator<'a, T
     }
 }
 
-impl<'a, T: UsizeSerializable> ExactSizeIterator for UsizeSerializableArrayIterator<'a, T> {
+impl<'a, T: UsizeSerializable, A: Allocator + Clone> ExactSizeIterator
+    for UsizeSerializableArrayIterator<'a, T, A>
+{
     fn len(&self) -> usize {
         self.len
     }

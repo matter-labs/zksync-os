@@ -1,4 +1,5 @@
 use crate::kv_markers::{UsizeSerializable, UsizeSerializableDynamic};
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use core::pin::Pin;
 
@@ -46,11 +47,11 @@ impl<I: UsizeSerializable + 'static> DynUsizeIterator<I> {
     }
 }
 
-impl<I: UsizeSerializableDynamic + 'static> DynUsizeIterator<I> {
+impl<I: UsizeSerializableDynamic<Global> + 'static> DynUsizeIterator<I> {
     pub fn from_owned_dynamic(item: I) -> Self {
         let item = Box::pin(item);
         let static_ref: &'static I = unsafe { core::mem::transmute(item.as_ref().get_ref()) };
-        let iterator = I::iter(static_ref);
+        let iterator = I::iter(static_ref, Global);
 
         Self {
             item,
