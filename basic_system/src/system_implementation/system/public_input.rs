@@ -5,7 +5,6 @@ use crypto::MiniDigest;
 use ruint::aliases::{B160, U256};
 use zk_ee::common_structs::interop_root::InteropRoot;
 use zk_ee::system::logger::Logger;
-use zk_ee::system::MAX_NUMBER_INTEROP_ROOTS;
 use zk_ee::utils::Bytes32;
 
 ///
