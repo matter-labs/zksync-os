@@ -5,7 +5,7 @@ use zk_ee::common_structs::derive_flat_storage_key;
 use zk_ee::common_structs::interop_root::InteropRoot;
 use zk_ee::common_structs::ProofData;
 use zk_ee::internal_error;
-use zk_ee::kv_markers::StorageAddress;
+use zk_ee::kv_markers::{StorageAddress, UsizeSerializableArrayIterator};
 use zk_ee::oracle::*;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
@@ -188,15 +188,8 @@ impl<T: ReadStorageTree, PS: PreimageSource, TS: TxSource> ForwardRunningOracle<
                 Ok(Box::new(iterator))
             }
             a if a == core::any::TypeId::of::<InteropRootsIterator>() => {
-                use zk_ee::kv_markers::UsizeSerializable;
-                // TODO into iter
-                let mut serialized_roots = vec![self.interop_roots.len()];
-
-                serialized_roots.extend(self.interop_roots.iter().flat_map(|root| root.iter()));
-
-                let iterator = DynUsizeIterator::from_constructor(serialized_roots, |inner_ref| {
-                    ReadIterWrapper::from(inner_ref.iter().copied())
-                });
+                // TODO use take instead of clone?
+                let iterator = DynUsizeIterator::from_owned_dynamic(self.interop_roots.clone());
 
                 Ok(Box::new(iterator))
             }

@@ -37,6 +37,7 @@ use self::{
 };
 use crate::common_structs::interop_root::InteropRoot;
 use crate::kv_markers::UsizeDeserializable;
+use crate::kv_markers::UsizeDeserializableDynamic;
 use crate::system_io_oracle::InteropRootsIterator;
 use crate::utils::Bytes32;
 use crate::{
@@ -298,28 +299,10 @@ where
             .create_oracle_access_iterator::<InteropRootsIterator>(())
             .expect("must create iterator for the interop roots");
 
-        // TODO usize vs u64 forward/proving run
-        let len: u32 = if interop_roots_iterator.len() > 0 {
-            UsizeDeserializable::from_iter(&mut interop_roots_iterator)?
-        } else {
-            0
-        };
-
-        // TODO validate len
-
-        if interop_roots_iterator.len()
-            != <InteropRoot as UsizeDeserializable>::USIZE_LEN * len as usize
-        {
-            return Err(interface_error!(
-                crate::system::InteropRootsInterfaceError::InteropRootsIteratorLengthMismatch
-            ));
-        }
-
-        let mut res = alloc::vec::Vec::with_capacity_in(len as usize, self.allocator.clone());
-
-        for _ in 0..len {
-            res.push(InteropRoot::from_iter(&mut interop_roots_iterator)?);
-        }
+        let res = UsizeDeserializableDynamic::from_iter(
+            &mut interop_roots_iterator,
+            self.allocator.clone(),
+        )?;
 
         Ok(res)
     }

@@ -2,11 +2,10 @@
 pub mod kv_impls;
 
 use arrayvec::ArrayVec;
-use core::iter::Chain;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
-use std::alloc::Allocator;
 use ruint::aliases::U256;
+use std::alloc::Allocator;
 
 use super::system::errors::internal::InternalError;
 use super::types_config::SystemIOTypesConfig;
@@ -66,11 +65,19 @@ pub trait UsizeDeserializable: Sized {
 }
 
 pub trait UsizeDeserializableDynamic<A: Allocator + Clone>: Sized {
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>, alloc: A) -> Result<Self, InternalError>;
+    fn from_iter(
+        src: &mut impl ExactSizeIterator<Item = usize>,
+        alloc: A,
+    ) -> Result<Self, InternalError>;
 }
 
-impl <T: UsizeDeserializable, A: Allocator + Clone> UsizeDeserializableDynamic<A> for alloc::vec::Vec<T, A> {
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>, alloc: A) -> Result<Self, InternalError> {
+impl<T: UsizeDeserializable, A: Allocator + Clone> UsizeDeserializableDynamic<A>
+    for alloc::vec::Vec<T, A>
+{
+    fn from_iter(
+        src: &mut impl ExactSizeIterator<Item = usize>,
+        alloc: A,
+    ) -> Result<Self, InternalError> {
         let len: u32 = UsizeDeserializable::from_iter(src)?;
 
         let mut res = Vec::with_capacity_in(len as usize, alloc.clone());
@@ -82,10 +89,18 @@ impl <T: UsizeDeserializable, A: Allocator + Clone> UsizeDeserializableDynamic<A
     }
 }
 
+impl<T: UsizeSerializable, A: Allocator + Clone> UsizeSerializableDynamic
+    for alloc::vec::Vec<T, A>
+{
+    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
+        UsizeSerializableArrayIterator::from(self.as_slice())
+    }
+}
+
 pub struct UsizeSerializableArrayIterator<'a, T: UsizeSerializable> {
-    iter: Box<dyn Iterator<Item = usize>  + 'a>,
+    iter: Box<dyn Iterator<Item = usize> + 'a>,
     len: usize,
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<'a, T: UsizeSerializable> UsizeSerializableArrayIterator<'a, T> {
@@ -95,11 +110,11 @@ impl<'a, T: UsizeSerializable> UsizeSerializableArrayIterator<'a, T> {
 
         let input_iter = input.iter().flat_map(|x| x.iter());
         let input_iter_len = input.len() * T::USIZE_LEN;
-        
+
         Self {
             iter: Box::new(core::iter::once(prefix).flatten().chain(input_iter)),
             len: prefix_len + input_iter_len,
-            _marker: Default::default()
+            _marker: Default::default(),
         }
     }
 }
