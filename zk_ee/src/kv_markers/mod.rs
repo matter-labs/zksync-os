@@ -107,7 +107,8 @@ pub struct UsizeSerializableArrayIterator<'a, T: UsizeSerializable, A: Allocator
 
 impl<'a, T: UsizeSerializable, A: Allocator + Clone + 'a> UsizeSerializableArrayIterator<'a, T, A> {
     pub fn from(input: &'a [T], alloc: A) -> Self {
-        let mut prefix = Vec::with_capacity_in(2, alloc.clone());
+        let mut prefix =
+            Vec::with_capacity_in(<u64 as UsizeSerializable>::USIZE_LEN, alloc.clone());
         prefix.extend((input.len() as u64).iter());
         let prefix_len = prefix.len();
 
