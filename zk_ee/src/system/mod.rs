@@ -36,7 +36,7 @@ use self::{
     metadata::{BlockMetadataFromOracle, Metadata},
 };
 use crate::common_structs::interop_root::InteropRoot;
-use crate::kv_markers::UsizeDeserializableDynamic;
+use crate::common_traits::usize_serializable_dynamic::UsizeDeserializableDynamic;
 use crate::system_io_oracle::InteropRootsIterator;
 use crate::utils::Bytes32;
 use crate::{

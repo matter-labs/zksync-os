@@ -5,7 +5,7 @@ use zk_ee::common_structs::derive_flat_storage_key;
 use zk_ee::common_structs::interop_root::InteropRoot;
 use zk_ee::common_structs::ProofData;
 use zk_ee::internal_error;
-use zk_ee::kv_markers::{StorageAddress, UsizeSerializableArrayIterator};
+use zk_ee::kv_markers::StorageAddress;
 use zk_ee::oracle::*;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::metadata::BlockMetadataFromOracle;

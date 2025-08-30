@@ -1,4 +1,5 @@
-use crate::kv_markers::{UsizeSerializable, UsizeSerializableDynamic};
+use crate::common_traits::usize_serializable_dynamic::UsizeSerializableDynamic;
+use crate::kv_markers::UsizeSerializable;
 use alloc::alloc::Global;
 use alloc::boxed::Box;
 use core::pin::Pin;
