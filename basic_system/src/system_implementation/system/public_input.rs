@@ -1,3 +1,4 @@
+use crate::system_functions::keccak256::keccak256_native_cost_u64;
 use crate::system_implementation::system::public_input;
 use arrayvec::ArrayVec;
 use crypto::sha3::Keccak256;
@@ -271,16 +272,11 @@ impl BatchPublicInputBuilder {
             assert!(upgrade_tx_hash.is_zero());
         }
 
-        let mut interop_root_hasher = crypto::sha3::Keccak256::new();
-        for interop_root in interop_roots {
-            self.interop_root_rolling_hash = calculate_interop_roots_rolling_hash(
-                self.interop_root_rolling_hash,
-                interop_root.chain_id,
-                interop_root.block_or_batch_number,
-                &[interop_root.root],
-                &mut interop_root_hasher,
-            );
-        }
+        self.interop_root_rolling_hash = calculate_interop_roots_rolling_hash(
+            self.interop_root_rolling_hash,
+            interop_roots,
+            &mut crypto::sha3::Keccak256::new(),
+        );
     }
 
     ///
@@ -457,19 +453,32 @@ impl BatchPublicInputBuilder {
 
 pub fn calculate_interop_roots_rolling_hash(
     old_rolling_hash: Bytes32,
-    chain_id: u64,
-    block_number: u64,
-    sides: &[Bytes32],
+    roots: &[InteropRoot],
     hasher: &mut crypto::sha3::Keccak256,
 ) -> Bytes32 {
     let mut data = [0u8; 96];
-    data[0..32].copy_from_slice(&old_rolling_hash.as_u8_ref());
-    data[56..64].copy_from_slice(&chain_id.to_be_bytes());
-    data[88..96].copy_from_slice(&block_number.to_be_bytes());
-    hasher.update(data);
-    for side in sides {
-        hasher.update(side.as_u8_ref());
+
+    let mut rolling_hash = old_rolling_hash;
+    for root in roots {
+        data[0..32].copy_from_slice(&rolling_hash.as_u8_ref());
+        data[56..64].copy_from_slice(&root.chain_id.to_be_bytes());
+        data[88..96].copy_from_slice(&root.block_or_batch_number.to_be_bytes());
+        hasher.update(data);
+
+        // Note: now we have only one side
+        hasher.update(root.root.as_u8_ref());
+
+        rolling_hash = hasher.finalize_reset().into()
     }
 
-    hasher.finalize_reset().into()
+    rolling_hash
+}
+
+pub fn native_resource_cost_of_hashing_interop_roots(roots: &[InteropRoot]) -> u64 {
+    // old_hash + chain_id + block_number = 96 bytes
+    // 1 side = 32 bytes
+    let len = 96 + 32;
+    let cost_per_root = keccak256_native_cost_u64(len);
+
+    cost_per_root * roots.len() as u64
 }
