@@ -252,10 +252,14 @@ where
                 ee_type,
                 resources,
                 address,
-                AccountDataRequest::empty().with_bytecode(),
+                AccountDataRequest::empty()
+                    .with_bytecode()
+                    .with_unpadded_code_len(),
                 &mut self.oracle,
             )
-            .map(|account_data| account_data.bytecode.0)
+            .map(|account_data| {
+                account_data.bytecode.0[..account_data.unpadded_code_len.0 as usize].as_ref()
+            })
     }
 
     fn get_observable_bytecode_hash(
@@ -707,6 +711,7 @@ where
             priority_operations_hash: l1_txs_commitment.1,
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash,
+            interop_root_rolling_hash: Bytes32::from([0u8; 32]), // for now no interop roots
         };
         let _ = logger.write_fmt(format_args!(
             "PI calculation: batch output {:?}\n",
@@ -1034,7 +1039,14 @@ where
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-    ) -> Result<&'static [u8], SystemError> {
+    ) -> Result<
+        (
+            &'static [u8],
+            <Self::IOTypes as SystemIOTypesConfig>::BytecodeHashValue,
+            u32,
+        ),
+        SystemError,
+    > {
         self.storage
             .deploy_code(from_ee, resources, at_address, bytecode, &mut self.oracle)
     }
@@ -1101,7 +1113,10 @@ where
         success: bool,
         is_priority: bool,
     ) -> Result<(), SystemError> {
-        // Resources for it charged as part of intrinsic
+        // Resources for it charged as part of intrinsic:
+        // Storage: EVENT_STORAGE_BASE_NATIVE_COST
+        // Hashing: keccak256_native_cost(L1_L2_TX_LOG_SERIALIZE_SIZE) + 2 * keccak256_native_cost(64).
+        // See emit_l1_message for more details.
         self.logs_storage
             .push_l1_l2_tx_log(self.tx_number, tx_hash, success, is_priority)
     }

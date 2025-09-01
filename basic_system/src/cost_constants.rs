@@ -39,8 +39,4 @@ pub const BN254_PAIRING_BASE_NATIVE_COST: u64 = native_with_delegations!(13_000_
 // TODO (EVM-1071): make sure what the worst-case is
 pub const BN254_PAIRING_PER_PAIR_NATIVE_COST: u64 = BN254_PAIRING_BASE_NATIVE_COST;
 // TODO (EVM-1071): add more precise calculation
-// Note: after the modexp optimization, it should be ~200.
-#[cfg(feature = "evm-compatibility")]
-pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 200;
-#[cfg(not(feature = "evm-compatibility"))]
-pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 5_600;
+pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 300;

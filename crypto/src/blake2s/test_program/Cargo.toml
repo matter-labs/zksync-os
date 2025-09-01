@@ -10,7 +10,7 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [dependencies]
-riscv_common = {git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.3.1"}
+riscv_common = {git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
 crypto = { path = "../../../", features = ["blake2s_tests"]}
 
 [workspace]

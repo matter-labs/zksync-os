@@ -22,7 +22,7 @@ impl BlockHashes {
         // Add values for most recent 256 block, if present
         for offset in 1..=256 {
             if let Some(hash) = map.get(&(block_number - offset)) {
-                array[(offset - 1) as usize] = *hash;
+                array[256 - offset as usize] = *hash;
             }
         }
         array
