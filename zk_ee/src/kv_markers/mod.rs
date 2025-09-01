@@ -1,11 +1,7 @@
 //! Serialization and deserialization helpers for keys and values for storage.
 pub mod kv_impls;
 
-use alloc::alloc::Allocator;
-use alloc::boxed::Box;
-use alloc::vec::Vec;
 use arrayvec::ArrayVec;
-use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use ruint::aliases::U256;
 

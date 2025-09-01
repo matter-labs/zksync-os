@@ -1,3 +1,5 @@
+//! Serialization/deserialization to/from streams of `usize` elements for objects with dynamic size (e.g. vectors)
+
 use crate::kv_markers::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::internal::InternalError;
 use alloc::alloc::Allocator;
