@@ -7,7 +7,7 @@ use zk_ee::system::{
         runtime::{FatalRuntimeError, RuntimeError},
         system::SystemError,
     },
-    BalanceSubsystemError, NonceSubsystemError,
+    BalanceSubsystemError, InteropRootsSubsystemError, NonceSubsystemError,
 };
 
 // Taken from revm, contains changes
@@ -267,6 +267,7 @@ cascade WrappedError {
     Balance(BalanceSubsystemError),
     EEError(EESubsystemError),
     Nonce(NonceSubsystemError),
+    Interop(InteropRootsSubsystemError)
 });
 
 // We don't need anything more than Debug here -- the error should be passed to

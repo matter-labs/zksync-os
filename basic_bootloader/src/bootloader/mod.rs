@@ -37,7 +37,7 @@ use core::fmt::Write;
 use core::mem::MaybeUninit;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
-use zk_ee::{interface_error, internal_error, oracle::*};
+use zk_ee::{interface_error, internal_error, oracle::*, wrap_error};
 
 use crate::bootloader::account_models::{ExecutionOutput, ExecutionResult, TxProcessingResult};
 use crate::bootloader::block_header::BlockHeader;
@@ -532,8 +532,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
     where
         S::IO: IOSubsystemExt,
     {
-        // TODO proper error
-        let interop_roots = system.get_interop_roots().expect("Should not fail");
+        let interop_roots = system.get_interop_roots().map_err(|x| wrap_error!(x))?;
 
         if interop_roots.is_empty() {
             return Ok((interop_roots, 0));
