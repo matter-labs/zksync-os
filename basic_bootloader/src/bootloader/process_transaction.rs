@@ -319,7 +319,7 @@ where
             ExecutionResult::Revert { .. } => {
                 // Upgrade transactions must always succeed
                 if !is_priority_op {
-                    return Err(Validation(InvalidTransaction::UpgradeTxFailed));
+                    return Err(internal_error!("Upgrade transaction must succeed").into());
                 }
                 // If the transaction reverts, then minting the msg.value to the
                 // user has been reverted as well, so we can simply mint everything
