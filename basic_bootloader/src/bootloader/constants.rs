@@ -68,7 +68,9 @@ pub const L1_TX_INTRINSIC_L2_GAS: u64 = 21_000;
 // Includes:
 //  - Storing and hashing the l1 tx log.
 //  - Transferring fee to coinbase.
-pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 70_000;
+//  - Hashing of tx hash into rolling hash.
+//  - Adding tx hash into l1 tx linear hasher
+pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 130_000;
 
 // Needed to publish the l1 tx log.
 pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88;
@@ -85,7 +87,8 @@ pub const L2_TX_INTRINSIC_PUBDATA: u64 = 0;
 // Includes:
 //  - Transferring fee to coinbase.
 //  - Transferring the gas refund.
-pub const L2_TX_INTRINSIC_NATIVE_COST: u64 = 10_000;
+//  - Hashing of tx hash into rolling hash.
+pub const L2_TX_INTRINSIC_NATIVE_COST: u64 = 30_000;
 
 /// Cost in gas to store one zero byte of calldata
 pub const CALLDATA_ZERO_BYTE_GAS_COST: u64 = 4;
