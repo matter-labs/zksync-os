@@ -4,6 +4,8 @@ use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 use core::ptr;
 
+use crate::common_traits::TryExtend;
+
 #[derive(Default)]
 pub struct SliceVec<'a, T> {
     memory: &'a mut [MaybeUninit<T>],
@@ -127,6 +129,32 @@ impl<T> Extend<T> for SliceVec<'_, T> {
             self.length += 1;
         }
         // If there is not enough memory left, the whole iterator will not be consumed!
+    }
+}
+
+impl<T> TryExtend<T> for SliceVec<'_, T> {
+    type Error = ();
+
+    fn try_extend<I>(&mut self, iter: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = T>,
+    {
+        let it = iter.into_iter();
+        let cap = self.memory.len();
+        let mut idx = self.length;
+
+        // Fill until either iterator ends or capacity is exhausted
+        for item in it {
+            if idx == cap {
+                // Ran out of space, partial write!
+                return Err(());
+            }
+            self.memory[idx].write(item);
+            idx += 1;
+        }
+
+        self.length = idx;
+        Ok(())
     }
 }
 
