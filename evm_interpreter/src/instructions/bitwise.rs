@@ -122,7 +122,12 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SHL_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        *op2 <<= u256_to_u64_saturated(op1);
+        if op1 >= &U256::from(256) {
+            *op2 = U256::ZERO
+        } else {
+            // Safe conversion to u32 because of the previous check
+            *op2 <<= u256_to_u64_saturated(op1) as u32;
+        }
         Ok(())
     }
 
@@ -130,7 +135,12 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SHR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        *op2 >>= u256_to_u64_saturated(op1);
+        if op1 >= &U256::from(256) {
+            *op2 = U256::ZERO
+        } else {
+            // Safe conversion to u32 because of the previous check
+            *op2 >>= u256_to_u64_saturated(op1) as u32;
+        }
         Ok(())
     }
 
