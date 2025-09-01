@@ -70,7 +70,7 @@ pub struct BlocksOutput {
     /// Protocol upgrade tx hash (0 if there wasn't)
     pub upgrade_tx_hash: Bytes32,
     /// Linear keccak256 hash of interop roots
-    pub interop_root_rolling_hash: Bytes32,
+    pub interop_roots_rolling_hash: Bytes32,
 }
 
 impl BlocksOutput {
@@ -89,7 +89,7 @@ impl BlocksOutput {
         hasher.update(self.priority_ops_hashes_hash.as_u8_ref());
         hasher.update(self.l2_to_l1_logs_hashes_hash.as_u8_ref());
         hasher.update(self.upgrade_tx_hash.as_u8_ref());
-        hasher.update(self.interop_root_rolling_hash.as_u8_ref());
+        hasher.update(self.interop_roots_rolling_hash.as_u8_ref());
         hasher.finalize()
     }
 }
@@ -152,7 +152,7 @@ pub struct BatchOutput {
     /// Protocol upgrade tx hash (0 if there wasn't)
     pub upgrade_tx_hash: Bytes32,
     /// Rolling keccak256 hash of all the interop roots included in this batch (0 if there weren't)
-    pub interop_root_rolling_hash: Bytes32,
+    pub interop_roots_rolling_hash: Bytes32,
 }
 
 impl BatchOutput {
@@ -170,7 +170,7 @@ impl BatchOutput {
         hasher.update(self.priority_operations_hash.as_u8_ref());
         hasher.update(self.l2_logs_tree_root.as_u8_ref());
         hasher.update(self.upgrade_tx_hash.as_u8_ref());
-        hasher.update(self.interop_root_rolling_hash.as_u8_ref());
+        hasher.update(self.interop_roots_rolling_hash.as_u8_ref());
         hasher.finalize()
     }
 }
@@ -307,7 +307,7 @@ impl BatchPublicInputBuilder {
             priority_operations_hash: self.l1_txs_rolling_hash,
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash: self.upgrade_tx_hash.unwrap(),
-            interop_root_rolling_hash: self.interop_root_rolling_hash,
+            interop_roots_rolling_hash: self.interop_root_rolling_hash,
         };
         let public_input = BatchPublicInput {
             state_before: self.initial_state_commitment.unwrap(),

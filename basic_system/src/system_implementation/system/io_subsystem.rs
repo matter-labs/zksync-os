@@ -2,6 +2,7 @@
 use super::*;
 use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_functions::keccak256::Keccak256Impl;
+use crate::system_implementation::system::public_input::calculate_interop_roots_rolling_hash;
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
@@ -578,8 +579,11 @@ where
             last_block_timestamp: block_metadata.timestamp,
         };
 
-        // TODO
-        let interop_root_rolling_hash = Bytes32::ZERO;
+        let interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
+            Bytes32::zero(),
+            interop_roots,
+            &mut crypto::sha3::Keccak256::new(),
+        );
 
         // other outputs to be opened on the settlement layer/aggregation program
         let block_output = BlocksOutput {
@@ -590,7 +594,7 @@ where
             priority_ops_hashes_hash: l1_to_l2_txs_hash,
             l2_to_l1_logs_hashes_hash: l2_to_l1_logs_hashes_hash.into(),
             upgrade_tx_hash,
-            interop_root_rolling_hash,
+            interop_roots_rolling_hash,
         };
 
         let public_input = BlocksPublicInput {
@@ -705,8 +709,11 @@ where
             chain_state_commitment_after
         ));
 
-        // TODO
-        let interop_root_rolling_hash = Bytes32::ZERO;
+        let interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
+            Bytes32::zero(),
+            interop_roots,
+            &mut crypto::sha3::Keccak256::new(),
+        );
 
         let mut da_commitment_hasher = crypto::sha3::Keccak256::new();
         da_commitment_hasher.update([0u8; 32]); // we don't have to validate state diffs hash
@@ -724,7 +731,7 @@ where
             priority_operations_hash: l1_txs_commitment.1,
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash,
-            interop_root_rolling_hash,
+            interop_roots_rolling_hash,
         };
         let _ = logger.write_fmt(format_args!(
             "PI calculation: batch output {:?}\n",
@@ -779,13 +786,13 @@ where
         _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         _logger: impl Logger,
     ) -> Self::FinalData {
-        let mut roots =
+        let mut interop_roots_vec =
             alloc::vec::Vec::with_capacity_in(interop_roots.len(), self.allocator.clone());
-        roots.extend(interop_roots.iter());
+        interop_roots_vec.extend(interop_roots.iter());
         (
             self,
             block_metadata,
-            roots,
+            interop_roots_vec,
             current_block_hash,
             upgrade_tx_hash,
         )

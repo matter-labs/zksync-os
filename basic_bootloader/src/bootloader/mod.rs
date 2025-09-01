@@ -1,7 +1,5 @@
 use alloc::vec::Vec;
-use basic_system::system_implementation::system::public_input::{
-    calculate_interop_roots_rolling_hash, native_resource_cost_of_hashing_interop_roots,
-};
+use basic_system::system_implementation::system::public_input::native_resource_cost_of_hashing_interop_roots;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
 use errors::{BootloaderInterfaceError, BootloaderSubsystemError, InvalidTransaction};
 use result_keeper::ResultKeeperExt;
@@ -551,12 +549,6 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
 
         let mut native_resource_used =
             native_resource_cost_of_hashing_interop_roots(interop_roots.as_slice());
-
-        let rolling_hash = calculate_interop_roots_rolling_hash(
-            Bytes32::zero(),
-            interop_roots.as_slice(),
-            &mut crypto::sha3::Keccak256::new(),
-        );
 
         let mut resources = S::Resources::FORMAL_INFINITE;
         let native_resource_before_processing = resources.native().as_u64();
