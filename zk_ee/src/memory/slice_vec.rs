@@ -119,19 +119,6 @@ impl<T> DerefMut for SliceVec<'_, T> {
     }
 }
 
-impl<T> Extend<T> for SliceVec<'_, T> {
-    fn extend<I>(&mut self, iter: I)
-    where
-        I: IntoIterator<Item = T>,
-    {
-        for (m, x) in self.memory[self.length..].iter_mut().zip(iter) {
-            m.write(x);
-            self.length += 1;
-        }
-        // If there is not enough memory left, the whole iterator will not be consumed!
-    }
-}
-
 impl<T> TryExtend<T> for SliceVec<'_, T> {
     type Error = ();
 

@@ -39,15 +39,6 @@ impl ArrayBuilder {
     }
 }
 
-impl Extend<u8> for ArrayBuilder {
-    fn extend<T: IntoIterator<Item = u8>>(&mut self, iter: T) {
-        for byte in iter {
-            self.bytes[self.offset] = byte;
-            self.offset += 1;
-        }
-    }
-}
-
 impl TryExtend<u8> for ArrayBuilder {
     type Error = ();
 
@@ -86,16 +77,6 @@ impl U256Builder {
     pub fn build(self) -> U256 {
         assert!(self.previously_written == 0);
         U256::from_le_bytes(self.bytes)
-    }
-}
-
-impl Extend<u8> for U256Builder {
-    fn extend<T: IntoIterator<Item = u8>>(&mut self, iter: T) {
-        for byte in iter {
-            assert!(self.previously_written > 0, "receiving more than 32 bytes");
-            self.previously_written -= 1;
-            self.bytes[self.previously_written] = byte;
-        }
     }
 }
 

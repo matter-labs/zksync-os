@@ -1,12 +1,13 @@
 use super::*;
 
 use crate::cost_constants::P256_VERIFY_COST_ERGS;
-use zk_ee::interface_error;
+use zk_ee::common_traits::TryExtend;
 use zk_ee::system::{
     base_system_functions::{P256VerifyErrors, SystemFunction},
     errors::subsystem::SubsystemError,
     P256VerifyInterfaceError,
 };
+use zk_ee::{interface_error, out_of_return_memory};
 
 // TODO(EVM-1072): think about error cases, as others follow evm specs
 /// p256 verify system function implementation.
@@ -20,7 +21,7 @@ use zk_ee::system::{
 pub struct P256VerifyImpl;
 
 impl<R: Resources> SystemFunction<R, P256VerifyErrors> for P256VerifyImpl {
-    fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         src: &[u8],
         dst: &mut D,
         resources: &mut R,
@@ -34,7 +35,7 @@ impl<R: Resources> SystemFunction<R, P256VerifyErrors> for P256VerifyImpl {
 
 fn p256_verify_as_system_function_inner<
     S: ?Sized + MinimalByteAddressableSlice,
-    D: ?Sized + Extend<u8>,
+    D: ?Sized + TryExtend<u8>,
     R: Resources,
 >(
     src: &S,
@@ -68,7 +69,8 @@ fn p256_verify_as_system_function_inner<
         result
     };
 
-    dst.extend(core::iter::once(is_valid as u8));
+    dst.try_extend(core::iter::once(is_valid as u8))
+        .map_err(|_| out_of_return_memory!())?;
 
     Ok(())
 }

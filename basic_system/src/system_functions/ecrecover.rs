@@ -1,5 +1,7 @@
 use super::*;
 use crate::cost_constants::{ECRECOVER_COST_ERGS, ECRECOVER_NATIVE_COST};
+use zk_ee::common_traits::TryExtend;
+use zk_ee::out_of_return_memory;
 use zk_ee::system::base_system_functions::{Secp256k1ECRecoverErrors, SystemFunction};
 use zk_ee::system::errors::{subsystem::SubsystemError, system::SystemError};
 use zk_ee::system::Computational;
@@ -15,7 +17,7 @@ impl<R: Resources> SystemFunction<R, Secp256k1ECRecoverErrors> for EcRecoverImpl
     /// If the input is invalid(v != 27|28 or failed to recover signer) returns `Ok(0)`.
     ///
     /// Returns `OutOfGas` if not enough resources provided.
-    fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -31,7 +33,7 @@ impl<R: Resources> SystemFunction<R, Secp256k1ECRecoverErrors> for EcRecoverImpl
 
 fn ecrecover_as_system_function_inner<
     S: ?Sized + MinimalByteAddressableSlice,
-    D: ?Sized + Extend<u8>,
+    D: ?Sized + TryExtend<u8>,
     R: Resources,
 >(
     src: &S,
@@ -77,7 +79,8 @@ fn ecrecover_as_system_function_inner<
     use crypto::sha3::{Digest, Keccak256};
     let address_hash = Keccak256::digest(&bytes_ref[1..]);
 
-    dst.extend(core::iter::repeat_n(0, 12).chain(address_hash.into_iter().skip(12)));
+    dst.try_extend(core::iter::repeat_n(0, 12).chain(address_hash.into_iter().skip(12)))
+        .map_err(|_| out_of_return_memory!())?;
 
     Ok(())
 }
