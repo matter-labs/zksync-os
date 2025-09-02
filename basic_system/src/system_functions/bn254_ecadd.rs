@@ -55,37 +55,32 @@ fn bn254_ecadd_as_system_function_inner<
         *dst = *src;
     }
 
-    let &[ref x0, ref y0, ref x1, ref y1] = buffer.as_chunks::<32>().0.try_into().unwrap();
+    let coordinates = buffer.as_chunks::<64>().0.try_into().unwrap();
 
-    let serialized_result =
-        bn254_ecadd_inner(x0, y0, x1, y1).map_err(|_| -> SubsystemError<_> {
-            interface_error!(Bn254AddInterfaceError::InvalidPoint)
-        })?;
+    let serialized_result = bn254_ecadd_inner(coordinates).map_err(|_| -> SubsystemError<_> {
+        interface_error!(Bn254AddInterfaceError::InvalidPoint)
+    })?;
 
     dst.extend(serialized_result);
 
     Ok(())
 }
 
-pub fn bn254_ecadd_inner(
-    x0: &[u8; 32],
-    y0: &[u8; 32],
-    x1: &[u8; 32],
-    y1: &[u8; 32],
-) -> Result<[u8; 64], ()> {
+pub fn bn254_ecadd_inner(coordinates: &[[u8; 64]; 2]) -> Result<[u8; 64], ()> {
     use crypto::ark_ec::AffineRepr;
     use crypto::ark_ff::PrimeField;
     use crypto::ark_serialize::CanonicalDeserialize;
     use crypto::bn254::*;
 
     let mut points = [G1Affine::identity(); 2];
-    for (dst, [x, y]) in points.iter_mut().zip([[x0, y0], [x1, y1]].into_iter()) {
+    for (dst, xy) in points.iter_mut().zip(coordinates.into_iter()) {
+        let [mut x, mut y] = xy.as_chunks::<32>().0.try_into().unwrap();
+
         let is_zero = x.iter().all(|el| *el == 0) && y.iter().all(|el| *el == 0);
         if is_zero {
             continue;
         }
-        let mut x = *x;
-        let mut y = *y;
+
         bytereverse(&mut x);
         bytereverse(&mut y);
         let x_bigint =
