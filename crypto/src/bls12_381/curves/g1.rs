@@ -211,7 +211,7 @@ impl GLVConfigNoAllocator for Config {
             7203196592358157870,
             8965520006802549469,
             1,
-            0
+            0,
         ]),
     );
 

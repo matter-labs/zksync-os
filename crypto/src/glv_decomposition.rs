@@ -138,41 +138,32 @@ pub struct I512 {
 
 impl Debug for I512 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let sign = if self.sign { "" } else {"-"};
+        let sign = if self.sign { "" } else { "-" };
         f.write_fmt(format_args!("{}{}", sign, self.data))
     }
 }
 
 impl I512 {
-    const ZERO: Self = Self { sign: true, data: U512::ZERO };
-
-
     #[inline(always)]
     pub fn from_limbs_slice_and_sign(sign: bool, slice: &[u64]) -> Self {
         let data = U512::from_limbs_slice(slice);
         Self { sign, data }
     }
 
-    fn is_zero(&self) -> bool {
-        self.data.is_zero()
-    }
-
     #[inline(always)]
     pub fn mul_and_shift(&self, rhs: &Self) -> Self {
+        let wide_prod: U1024 = self.data.widening_mul(rhs.data);
+        let limbs = wide_prod.as_limbs();
+
+        let mut high = U512::from_limbs(limbs[8..].try_into().unwrap());
         let sign = !(self.sign ^ rhs.sign);
 
-        let wide_prod: U1024 = self.data.widening_mul(rhs.data);
-        let (low, high) = wide_prod.as_limbs().split_at(8);
-        let (low, mut high) = (U512::from_limbs(low.try_into().unwrap()), U512::from_limbs(high.try_into().unwrap()));
-        
-        if low >= (U512::ONE << 511) && sign {
+        // Round up for positive results when lower half >= 2^511
+        if sign && limbs[7] >> 63 == 1 {
             high = high.wrapping_add(U512::ONE);
         }
 
-        Self {
-            sign,
-            data: high
-        }
+        Self { sign, data: high }
     }
 
     #[inline(always)]
