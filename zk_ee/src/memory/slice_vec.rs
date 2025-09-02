@@ -1,5 +1,4 @@
 use core::hint::assert_unchecked;
-use core::iter::Extend;
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 use core::ptr;
@@ -160,7 +159,7 @@ mod test {
         let mut memory = [MaybeUninit::uninit(); 10];
         let mut slice_vec = SliceVec::new(&mut memory);
 
-        slice_vec.extend(0..5);
+        slice_vec.try_extend(0..5).unwrap();
         assert_eq!(*slice_vec, [0, 1, 2, 3, 4]);
         slice_vec.resize(3, 0).unwrap();
         assert_eq!(*slice_vec, [0, 1, 2]);
@@ -169,7 +168,7 @@ mod test {
 
         let (slice, mut slice_vec) = slice_vec.freeze();
         assert_eq!(slice, &[0, 1, 2, 0, 0]);
-        slice_vec.extend(5..10);
+        slice_vec.try_extend(5..10).unwrap();
         assert_eq!(*slice_vec, [5, 6, 7, 8, 9]);
         slice_vec.clear();
         assert_eq!(*slice_vec, []);
