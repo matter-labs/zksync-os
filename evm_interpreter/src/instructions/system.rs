@@ -18,19 +18,21 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     pub fn sha3(&mut self, system: &mut System<S>) -> InstructionResult {
         let (memory_offset, len) = self.stack.pop_2()?;
 
-        let memory_offset =
-            Self::cast_to_usize(&memory_offset, EvmError::InvalidOperandOOG.into())?;
         let len = Self::cast_to_usize(&len, EvmError::InvalidOperandOOG.into())?;
-        let (_, of) = memory_offset.overflowing_add(len);
-        if of {
-            return Err(EvmError::MemoryLimitOOG.into());
-        }
         self.gas.spend_gas_and_native(0, KECCAK256_NATIVE_COST)?;
 
         let hash = if len == 0 {
             self.gas.spend_gas(gas_constants::SHA3)?;
             Self::EMPTY_SLICE_SHA3
         } else {
+            let memory_offset =
+                Self::cast_to_usize(&memory_offset, EvmError::InvalidOperandOOG.into())?;
+
+            let (_, of) = memory_offset.overflowing_add(len);
+            if of {
+                return Err(EvmError::MemoryLimitOOG.into());
+            }
+
             self.resize_heap(memory_offset, len)?;
 
             let allocator = system.get_allocator();

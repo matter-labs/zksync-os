@@ -18,9 +18,9 @@ use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system::System;
 use zk_ee::system::*;
 
+use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use zk_ee::utils::Bytes32;
 
-use super::config::BasicBootloaderExecutionConfig;
 use super::errors::BootloaderSubsystemError;
 
 /// The execution step output
@@ -63,9 +63,8 @@ pub struct TxProcessingResult<'a> {
     pub is_upgrade_tx: bool,
     pub gas_used: u64,
     pub gas_refunded: u64,
-
     pub computational_native_used: u64,
-
+    pub native_used: u64,
     pub pubdata_used: u64,
 }
 

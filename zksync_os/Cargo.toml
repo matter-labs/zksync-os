@@ -17,7 +17,7 @@ riscv = "0.11"
 heapless = { version = "*", default-features = false }
 proof_running_system = { path = "../proof_running_system", default-features = false}
 crypto = { path = "../crypto", optional = true }
-riscv_common = {git = "https://github.com/matter-labs/zksync-airbender.git", tag = "v0.3.1", features = ["custom_panic", "custom_allocator"]}
+riscv_common = {git = "https://github.com/matter-labs/zksync-airbender.git", tag = "v0.4.3", features = ["custom_panic", "custom_allocator"]}
 #riscv_common = {path = "../../zksync-airbender/riscv_common" , features = ["custom_panic", "custom_allocator"]}
 
 [profile.dev]

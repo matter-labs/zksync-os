@@ -437,7 +437,14 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
-    ) -> Result<&'static [u8], SystemError>;
+    ) -> Result<
+        (
+            &'static [u8],
+            <Self::IOTypes as SystemIOTypesConfig>::BytecodeHashValue,
+            u32,
+        ),
+        SystemError,
+    >;
 
     /// Special method that allows to set bytecode under address by hash.
     /// Also, pubdata for such bytecode will not be published.

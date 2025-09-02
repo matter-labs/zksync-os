@@ -62,13 +62,15 @@ pub const ERC20_ALLOWANCE_SELECTOR: &[u8] = &[0xdd, 0x62, 0xed, 0x3e];
 // 0x095ea7b3
 pub const ERC20_APPROVE_SELECTOR: &[u8] = &[0x09, 0x5e, 0xa7, 0xb3];
 
-// Value taken from system-contracts, to adjust.
-pub const L1_TX_INTRINSIC_L2_GAS: u64 = 11000;
+// Just for EVM compatibility.
+pub const L1_TX_INTRINSIC_L2_GAS: u64 = 21_000;
 
-// Includes storing the l1 tx log.
-pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 10_000;
+// Includes:
+//  - Storing and hashing the l1 tx log.
+//  - Transferring fee to coinbase.
+pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 70_000;
 
-// Value taken from system-contracts, to adjust.
+// Needed to publish the l1 tx log.
 pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88;
 
 /// Does not include signature verification.
@@ -80,8 +82,10 @@ pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
 /// Value taken from system-contracts, to adjust.
 pub const L2_TX_INTRINSIC_PUBDATA: u64 = 0;
 
-// To be adjusted
-pub const L2_TX_INTRINSIC_NATIVE_COST: u64 = 4_000;
+// Includes:
+//  - Transferring fee to coinbase.
+//  - Transferring the gas refund.
+pub const L2_TX_INTRINSIC_NATIVE_COST: u64 = 10_000;
 
 /// Cost in gas to store one zero byte of calldata
 pub const CALLDATA_ZERO_BYTE_GAS_COST: u64 = 4;
@@ -90,6 +94,7 @@ pub const CALLDATA_ZERO_BYTE_GAS_COST: u64 = 4;
 pub const CALLDATA_NON_ZERO_BYTE_GAS_COST: u64 = 16;
 
 /// Default value of gasPerPubdata for non EIP-712 txs.
+/// TODO (EVM-1157): set to a reasonable value.
 pub const DEFAULT_GAS_PER_PUBDATA: U256 = U256::from_limbs([1, 0, 0, 0]);
 
 /// EVM tester requires a high native_per_gas, but it hard-codes
@@ -103,7 +108,7 @@ pub const TESTER_NATIVE_PER_GAS: u64 = 25_000;
 pub const SIMULATION_NATIVE_PER_GAS: U256 = U256::from_limbs([100, 0, 0, 0]);
 
 // Default native price for L1->L2 transactions.
-// TODO: find a reasonable value for it.
+// TODO (EVM-1157): find a reasonable value for it.
 pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
 
 // Upgrade transactions are expected to have ~72 million gas. We will use enough

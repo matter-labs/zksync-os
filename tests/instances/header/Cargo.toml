@@ -1,5 +1,5 @@
 [package]
-name = "binary_checker"
+name = "header"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,4 +10,11 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-prover = { workspace = true , features = ["prover"] }
+rig = { path = "../../rig" }
+hex = "*"
+basic_bootloader = { path = "../../../basic_bootloader" }
+
+[features]
+e2e_proving = ["rig/e2e_proving"]
+cycle_marker = ["rig/cycle_marker"]
+pectra = ["rig/pectra"]
