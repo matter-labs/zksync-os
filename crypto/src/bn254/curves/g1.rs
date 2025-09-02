@@ -154,7 +154,7 @@ mod tests {
             let k = ScalarField::from_be_bytes_mod_order(&bytes);
 
             let (k1, k2) = Config::scalar_decomposition(k.clone());
-            let (k1_ref, k2_ref) = Config::scalar_decomposition(k);
+            let (k1_ref, k2_ref) = Config::scalar_decomposition_ref(k);
 
             prop_assert_eq!(k1, k1_ref);
             prop_assert_eq!(k2, k2_ref);
@@ -163,10 +163,9 @@ mod tests {
 
     #[test]
     fn test_betas() {
-        use ark_std::ops::{AddAssign, Neg};
+        use ark_std::ops::Neg;
         use num_bigint::{BigInt, BigUint, Sign};
         use num_integer::Integer;
-        use num_traits::One;
         use ruint::aliases::U512;
 
         let coeff_bigints: [BigInt; 4] = Config::SCALAR_DECOMP_COEFFS.map(|x| {
@@ -178,13 +177,7 @@ mod tests {
         let n = 512u64;
         let r = BigInt::from(<<Config as CurveConfig>::ScalarField>::MODULUS);
 
-        let beta_1_ref = {
-            let (mut div, rem) = (n22 << n).div_rem(&r);
-            if (&rem + &rem) > r {
-                div.add_assign(BigInt::one());
-            }
-            div
-        };
+        let beta_1_ref = (n22 << n).div_rem(&r).0;
 
         let sign = Config::BETA_1
             .0
@@ -194,13 +187,7 @@ mod tests {
         let beta_1 = BigInt::from_biguint(sign, data);
         assert_eq!(beta_1, beta_1_ref);
 
-        let beta_2_ref = {
-            let (mut div, rem) = ((n12 << n).neg()).div_rem(&r);
-            if (&rem + &rem) > r {
-                div.add_assign(BigInt::one());
-            }
-            div
-        };
+        let beta_2_ref = ((n12 << n).neg()).div_rem(&r).0;
 
         let sign = Config::BETA_2
             .0

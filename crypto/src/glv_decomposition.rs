@@ -1,4 +1,4 @@
-use core::array;
+use core::{array, fmt::Debug};
 
 use ark_ec::{scalar_mul::glv::GLVConfig, CurveConfig};
 use ark_ff::PrimeField;
@@ -16,7 +16,7 @@ where
 
     // TODO(yoaveshel):
     //  - change to delegated U256
-    //  - using U512 everywhere is overkill (e.g. mul_and_shift can return U256)
+    //  - using U512 everywhere is probably overkill
     #[inline(always)]
     fn scalar_decomposition_no_allocator(
         k: Self::ScalarField,
@@ -136,27 +136,48 @@ pub struct I512 {
     pub data: U512,
 }
 
+impl Debug for I512 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let sign = if self.sign { "" } else {"-"};
+        f.write_fmt(format_args!("{}{}", sign, self.data))
+    }
+}
+
 impl I512 {
+    const ZERO: Self = Self { sign: true, data: U512::ZERO };
+
+
     #[inline(always)]
     pub fn from_limbs_slice_and_sign(sign: bool, slice: &[u64]) -> Self {
         let data = U512::from_limbs_slice(slice);
         Self { sign, data }
     }
 
+    fn is_zero(&self) -> bool {
+        self.data.is_zero()
+    }
+
     #[inline(always)]
     pub fn mul_and_shift(&self, rhs: &Self) -> Self {
-        let data: U1024 = self.data.widening_mul(rhs.data);
-        let data = U512::from_limbs(data.as_limbs().split_at(8).1.try_into().unwrap());
+        let sign = !(self.sign ^ rhs.sign);
+
+        let wide_prod: U1024 = self.data.widening_mul(rhs.data);
+        let (low, high) = wide_prod.as_limbs().split_at(8);
+        let (low, mut high) = (U512::from_limbs(low.try_into().unwrap()), U512::from_limbs(high.try_into().unwrap()));
+        
+        if low >= (U512::ONE << 511) && sign {
+            high = high.wrapping_add(U512::ONE);
+        }
 
         Self {
-            sign: !(self.sign ^ rhs.sign),
-            data,
+            sign,
+            data: high
         }
     }
 
     #[inline(always)]
     pub fn mul(&self, rhs: &Self) -> Self {
-        let data = self.data.wrapping_mul(rhs.data);
+        let data = self.data.checked_mul(rhs.data).unwrap();
         Self {
             sign: !(self.sign ^ rhs.sign),
             data,
@@ -169,11 +190,11 @@ impl I512 {
             (true, false) | (false, true) => match self.data.cmp(&rhs.data) {
                 core::cmp::Ordering::Less => Self {
                     sign: rhs.sign,
-                    data: rhs.data.wrapping_sub(self.data),
+                    data: rhs.data.checked_sub(self.data).unwrap(),
                 },
                 core::cmp::Ordering::Greater => Self {
                     sign: self.sign,
-                    data: self.data.wrapping_sub(rhs.data),
+                    data: self.data.checked_sub(rhs.data).unwrap(),
                 },
                 core::cmp::Ordering::Equal => Self {
                     sign: false,
@@ -182,7 +203,7 @@ impl I512 {
             },
             (true, true) | (false, false) => Self {
                 sign: self.sign,
-                data: self.data.wrapping_add(rhs.data),
+                data: self.data.checked_add(rhs.data).unwrap(),
             },
         }
     }
