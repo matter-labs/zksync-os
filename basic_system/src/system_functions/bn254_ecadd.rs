@@ -73,7 +73,7 @@ pub fn bn254_ecadd_inner(coordinates: &[[u8; 64]; 2]) -> Result<[u8; 64], ()> {
     use crypto::bn254::*;
 
     let mut points = [G1Affine::identity(); 2];
-    for (dst, xy) in points.iter_mut().zip(coordinates.into_iter()) {
+    for (dst, xy) in points.iter_mut().zip(coordinates.iter()) {
         let [mut x, mut y] = xy.as_chunks::<32>().0.try_into().unwrap();
 
         let is_zero = x.iter().all(|el| *el == 0) && y.iter().all(|el| *el == 0);
