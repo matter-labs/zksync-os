@@ -30,7 +30,7 @@ impl<R: Resources> SystemFunction<R, P256VerifyErrors> for P256VerifyImpl {
 
 ///
 /// Return value should be 1 if successful or empty in any other case:
-///  - signature is invalid
+///  - signature verification failure
 ///  - input is invalid
 ///
 /// Input is considered invalid if:
