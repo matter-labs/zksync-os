@@ -122,7 +122,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SHL_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        match u32::try_from(u256_to_u64_saturated(op1)) {
+        match u32::try_from(op1) {
             Err(_) => *op2 = U256::ZERO,
             Ok(shift) => *op2 <<= shift,
         }
@@ -133,7 +133,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SHR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        match u32::try_from(u256_to_u64_saturated(op1)) {
+        match u32::try_from(op1) {
             Err(_) => *op2 = U256::ZERO,
             Ok(shift) => *op2 >>= shift,
         }
