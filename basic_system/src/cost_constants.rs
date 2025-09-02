@@ -35,3 +35,4 @@ pub const BN254_ECMUL_NATIVE_COST: u64 = native_with_delegations!(600_000, 41_00
 pub const BN254_PAIRING_BASE_NATIVE_COST: u64 = native_with_delegations!(13_000_000, 500_000, 0);
 pub const BN254_PAIRING_PER_PAIR_NATIVE_COST: u64 = BN254_PAIRING_BASE_NATIVE_COST;
 pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 300;
+pub const P256_NATIVE_COST: u64 = native_with_delegations!(500_000, 71_000, 0);
