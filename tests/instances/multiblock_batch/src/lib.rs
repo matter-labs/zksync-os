@@ -58,6 +58,7 @@ fn run_many_blocks_proof_run() {
 
     let proof_input_1 = chain
         .run_block_with_extra_stats(vec![encoded_mint_tx], None, None, None, None)
+        .unwrap()
         .2;
     let encoded_transfer_tx = {
         let transfer_tx = TxEip1559 {
@@ -76,6 +77,7 @@ fn run_many_blocks_proof_run() {
 
     let proof_input_2 = chain
         .run_block_with_extra_stats(vec![encoded_transfer_tx], None, None, None, None)
+        .unwrap()
         .2;
 
     let mut batch_input = Vec::with_capacity(1 + proof_input_1.len() + proof_input_2.len());

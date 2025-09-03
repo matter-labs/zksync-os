@@ -165,13 +165,15 @@ fn run_block(
         suffix.push_str("_witness");
         std::path::Path::new(&dir).join(suffix)
     });
-    let (output, stats, _) = chain.run_block_with_extra_stats(
-        transactions,
-        Some(block_context),
-        None,
-        output_path,
-        Some("evm_replay".to_string()),
-    );
+    let (output, stats, _) = chain
+        .run_block_with_extra_stats(
+            transactions,
+            Some(block_context),
+            None,
+            output_path,
+            Some("evm_replay".to_string()),
+        )
+        .unwrap();
 
     info!("Actual gas used: {}", output.header.gas_used);
 
