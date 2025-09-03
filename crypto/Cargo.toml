@@ -18,7 +18,7 @@ k256 =  { version = "0.13", default-features = false, features = ["ecdsa-core", 
 p256 =  { version = "0.13", default-features = false, features = ["ecdsa-core", "ecdsa", "arithmetic"] }
 blake2s_u32 = { workspace = true, optional = true, default-features = false }
 ripemd = { version = "0.1", default-features = false }
-ruint = { version = "1.12.4", default-features = false, optional = true }
+ruint = { version = "1.12.4", default-features = false }
 
 cfg-if = "1.0.0"
 const_for = "0.1.5"
@@ -50,7 +50,6 @@ num-traits = { version = "0.2", default-features = false }
 zksync_os_runner = { path = "../zksync_os_runner"}
 risc_v_simulator = { workspace = true, features = ["delegation"] }
 # blake2s_u32 = {path = "../../zksync-airbender/blake2s_u32", optional = true, default-features = false}
-ruint = { version = "1.12.4", default-features = false }
 ark-std = { version = "0.5" }
 zeroize = { version = "1", default-features = false }
 num-traits = { version = "0.2", default-features = false }
@@ -72,4 +71,4 @@ single_round_with_control = ["blake2s_u32/blake2_with_compression"]
 blake2s_tests = []
 secp256k1-static-context = []
 alloc = []
-testing = ["ruint"]
+testing = []
