@@ -4,11 +4,12 @@ use crate::system_functions::bytereverse;
 use crypto::ark_ec::CurveGroup;
 use crypto::ark_ff::PrimeField;
 use crypto::ark_serialize::{CanonicalSerialize, Valid};
-use zk_ee::interface_error;
+use zk_ee::common_traits::TryExtend;
 use zk_ee::system::base_system_functions::{
     Bn254AddErrors, Bn254AddInterfaceError, SystemFunction,
 };
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::{interface_error, out_of_return_memory};
 
 ///
 /// bn254 ecadd system function implementation.
@@ -24,7 +25,7 @@ impl<R: Resources> SystemFunction<R, Bn254AddErrors> for Bn254AddImpl {
     /// If output len less than needed(64) returns `InternalError`.
     /// Returns `OutOfGas` if not enough resources provided.
     /// Returns `InvalidInput` error only if failed to create affine points from inputs.
-    fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         src: &[u8],
         dst: &mut D,
         resources: &mut R,
@@ -38,7 +39,7 @@ impl<R: Resources> SystemFunction<R, Bn254AddErrors> for Bn254AddImpl {
 
 fn bn254_ecadd_as_system_function_inner<
     S: ?Sized + MinimalByteAddressableSlice,
-    D: ?Sized + Extend<u8>,
+    D: ?Sized + TryExtend<u8>,
     R: Resources,
 >(
     src: &S,
@@ -55,42 +56,33 @@ fn bn254_ecadd_as_system_function_inner<
         *dst = *src;
     }
 
-    let mut it = buffer.array_chunks::<32>();
-    let serialized_result = unsafe {
-        let x0 = it.next().unwrap_unchecked();
-        let y0 = it.next().unwrap_unchecked();
-        let x1 = it.next().unwrap_unchecked();
-        let y1 = it.next().unwrap_unchecked();
+    let coordinates = buffer.as_chunks::<64>().0.try_into().unwrap();
 
-        bn254_ecadd_inner(x0, y0, x1, y1).map_err(|_| -> SubsystemError<_> {
-            interface_error!(Bn254AddInterfaceError::InvalidPoint)
-        })?
-    };
+    let serialized_result = bn254_ecadd_inner(coordinates).map_err(|_| -> SubsystemError<_> {
+        interface_error!(Bn254AddInterfaceError::InvalidPoint)
+    })?;
 
-    dst.extend(serialized_result);
+    dst.try_extend(serialized_result)
+        .map_err(|_| out_of_return_memory!())?;
 
     Ok(())
 }
 
-pub fn bn254_ecadd_inner(
-    x0: &[u8; 32],
-    y0: &[u8; 32],
-    x1: &[u8; 32],
-    y1: &[u8; 32],
-) -> Result<[u8; 64], ()> {
+pub fn bn254_ecadd_inner(coordinates: &[[u8; 64]; 2]) -> Result<[u8; 64], ()> {
     use crypto::ark_ec::AffineRepr;
     use crypto::ark_ff::PrimeField;
     use crypto::ark_serialize::CanonicalDeserialize;
     use crypto::bn254::*;
 
     let mut points = [G1Affine::identity(); 2];
-    for (dst, [x, y]) in points.iter_mut().zip([[x0, y0], [x1, y1]].into_iter()) {
+    for (dst, xy) in points.iter_mut().zip(coordinates.iter()) {
+        let [mut x, mut y] = xy.as_chunks::<32>().0.try_into().unwrap();
+
         let is_zero = x.iter().all(|el| *el == 0) && y.iter().all(|el| *el == 0);
         if is_zero {
             continue;
         }
-        let mut x = *x;
-        let mut y = *y;
+
         bytereverse(&mut x);
         bytereverse(&mut y);
         let x_bigint =

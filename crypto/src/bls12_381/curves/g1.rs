@@ -8,6 +8,7 @@ use ark_ec::{
     AffineRepr, PrimeGroup,
 };
 use ark_ff::{AdditiveGroup, One, PrimeField, Zero};
+use ruint::aliases::U512;
 
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 use crate::ark_ff_delegation::{BigIntMacro as BigInt, MontFp};
@@ -17,11 +18,15 @@ use ark_serialize::{Compress, SerializationError};
 use core::ops::Neg;
 
 use super::g1_swu_iso;
-use crate::bls12_381::{
-    util::{
-        read_g1_compressed, read_g1_uncompressed, serialize_fq, EncodingFlags, G1_SERIALIZED_SIZE,
+use crate::{
+    bls12_381::{
+        util::{
+            read_g1_compressed, read_g1_uncompressed, serialize_fq, EncodingFlags,
+            G1_SERIALIZED_SIZE,
+        },
+        Fq, Fr,
     },
-    Fq, Fr,
+    glv_decomposition::GLVConfigNoAllocator,
 };
 
 pub type G1Affine = bls12::G1Affine<crate::bls12_381::curves::Config>;
@@ -62,6 +67,11 @@ impl SWCurveConfig for Config {
     fn mul_projective(p: &G1Projective, scalar: &[u64]) -> G1Projective {
         let s = Self::ScalarField::from_sign_and_limbs(true, scalar);
         GLVConfig::glv_mul_projective(*p, s)
+    }
+
+    #[inline]
+    fn mul_affine(base: &Affine<Self>, scalar: &[u64]) -> G1Projective {
+        Self::mul_projective(&base.into_group(), scalar)
     }
 
     #[inline]
@@ -182,6 +192,42 @@ impl GLVConfig for Config {
         res.x *= Self::ENDO_COEFFS[0];
         res
     }
+
+    fn scalar_decomposition(
+        k: Self::ScalarField,
+    ) -> ((bool, Self::ScalarField), (bool, Self::ScalarField)) {
+        Self::scalar_decomposition_no_allocator(k)
+    }
+}
+
+impl GLVConfigNoAllocator for Config {
+    const BETA_1: (bool, U512) = (
+        true,
+        U512::from_limbs([
+            2263426366270003411,
+            10926721885838854917,
+            11648686701815784454,
+            238326537624862759,
+            7203196592358157870,
+            8965520006802549469,
+            1,
+            0,
+        ]),
+    );
+
+    const BETA_2: (bool, U512) = (
+        false,
+        U512::from_limbs([
+            4788304978035696531,
+            7279011843745230193,
+            4086414915577876179,
+            3841734232051169148,
+            2,
+            0,
+            0,
+            0,
+        ]),
+    );
 }
 
 fn one_minus_x() -> Fr {
@@ -218,4 +264,65 @@ pub fn endomorphism(p: &Affine<Config>) -> Affine<Config> {
     let mut res = (*p).clone();
     res.x *= BETA;
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GLVConfigNoAllocator;
+    use super::{Config, CurveConfig, GLVConfig, PrimeField};
+    use proptest::{prop_assert_eq, proptest};
+    type ScalarField = <Config as CurveConfig>::ScalarField;
+
+    #[ignore = "requires single thread runner"]
+    #[test]
+    fn compare_scalar_decomposition() {
+        crate::init_lib();
+
+        proptest!(|(bytes: [u8; 32])| {
+            let k = ScalarField::from_be_bytes_mod_order(&bytes);
+
+            let (k1, k2) = Config::scalar_decomposition(k.clone());
+            let (k1_ref, k2_ref) = Config::scalar_decomposition_ref(k);
+
+            prop_assert_eq!(k1, k1_ref);
+            prop_assert_eq!(k2, k2_ref);
+        })
+    }
+
+    #[test]
+    fn test_betas() {
+        use ark_std::ops::Neg;
+        use num_bigint::{BigInt, BigUint, Sign};
+        use num_integer::Integer;
+        use ruint::aliases::U512;
+
+        let coeff_bigints: [BigInt; 4] = Config::SCALAR_DECOMP_COEFFS.map(|x| {
+            BigInt::from_biguint(x.0.then_some(Sign::Plus).unwrap_or(Sign::Minus), x.1.into())
+        });
+
+        let [_, n12, _, n22] = coeff_bigints;
+
+        let n = 512u64;
+        let r = BigInt::from(<<Config as CurveConfig>::ScalarField>::MODULUS);
+
+        let beta_1_ref = (n22 << n).div_rem(&r).0;
+
+        let sign = Config::BETA_1
+            .0
+            .then_some(Sign::Plus)
+            .unwrap_or(Sign::Minus);
+        let data = BigUint::from_bytes_be(&Config::BETA_1.1.to_be_bytes::<{ U512::BYTES }>());
+        let beta_1 = BigInt::from_biguint(sign, data);
+        assert_eq!(beta_1, beta_1_ref);
+
+        let beta_2_ref = ((n12 << n).neg()).div_rem(&r).0;
+
+        let sign = Config::BETA_2
+            .0
+            .then_some(Sign::Plus)
+            .unwrap_or(Sign::Minus);
+        let data = BigUint::from_bytes_be(&Config::BETA_2.1.to_be_bytes::<{ U512::BYTES }>());
+        let beta_2 = BigInt::from_biguint(sign, data);
+        assert_eq!(beta_2, beta_2_ref);
+    }
 }

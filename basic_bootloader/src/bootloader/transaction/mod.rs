@@ -108,9 +108,9 @@ impl<'a> ZkSyncTransaction<'a> {
     /// The type id of EIP712 transactions.
     pub const EIP_712_TX_TYPE: u8 = 0x71;
     /// The type id of protocol upgrade transactions.
-    pub const UPGRADE_TX_TYPE: u8 = 0xFE;
+    pub const UPGRADE_TX_TYPE: u8 = 0x7e;
     /// The type id of L1 -> L2 transactions.
-    pub const L1_L2_TX_TYPE: u8 = 0xFF;
+    pub const L1_L2_TX_TYPE: u8 = 0x7f;
 
     /// Expected dynamic part(tail) offset in the transaction encoding.
     /// 16 fields, reserved takes 4 words in the static part(head) as static array.
@@ -232,11 +232,13 @@ impl<'a> ZkSyncTransaction<'a> {
     fn validate_structure(&self) -> Result<(), ()> {
         let tx_type = self.tx_type.read();
 
+        // we don't support eip-712 txs anymore
+        // there is still a logic to process 712 txs, but it shouldn't be reachable,
+        // as 712 tx validation would fail here
         match tx_type {
             Self::LEGACY_TX_TYPE
             | Self::EIP_2930_TX_TYPE
             | Self::EIP_1559_TX_TYPE
-            | Self::EIP_712_TX_TYPE
             | Self::UPGRADE_TX_TYPE
             | Self::L1_L2_TX_TYPE => {}
             #[cfg(feature = "pectra")]
