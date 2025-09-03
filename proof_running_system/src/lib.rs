@@ -10,7 +10,6 @@
 extern crate alloc;
 
 pub mod io_oracle;
-pub mod memory_aux;
 pub mod skip_list_quasi_vec;
 pub mod system;
 pub mod talc;

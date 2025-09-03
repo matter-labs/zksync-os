@@ -1,6 +1,6 @@
 use alloy::primitives::U256;
 use anyhow::{anyhow, Context, Ok, Result};
-use db::{BlockStatus, BlockTraces, Database};
+use db::{BlockStatus, BlockTraces, Database, ResourceInfo};
 mod db;
 mod rpc;
 use rig::log::{debug, error, info};
@@ -42,7 +42,7 @@ fn get_block_hashes_array(block_number: u64, db: &Database) -> Result<[U256; N_P
     // Add values for most recent blocks
     for offset in 1..=N_PREV_BLOCKS {
         if let Some(hash) = db.get_block_hash(block_number - (offset as u64))? {
-            hashes[offset - 1] = U256::from(hash);
+            hashes[N_PREV_BLOCKS - offset] = U256::from(hash);
         } else {
             return Err(anyhow!(format!(
                 "DB should have hash for block {}",
@@ -179,6 +179,22 @@ fn run_block(
         db.set_block_ratio(block_number, ratio)?;
     }
 
+    let resource_infos: Vec<ResourceInfo> = output
+        .tx_results
+        .iter()
+        .filter_map(|r| {
+            r.as_ref().ok().map(|r| ResourceInfo::V0 {
+                native_used: r.native_used,
+                computational_native_used: r.computational_native_used,
+                gas_used: r.gas_used,
+                pubdata_used: r.pubdata_used,
+                logs_used: r.logs.len() as u64,
+            })
+        })
+        .collect();
+
+    db.set_block_resource_infos(block_number, resource_infos)?;
+
     match post_check(
         output,
         receipts,
@@ -254,6 +270,7 @@ pub fn export_block_ratios(db: String, path: Option<String>) -> Result<()> {
     let db = Database::init(db)?;
     let path = path.unwrap_or("ratios.csv".to_string());
     db.export_block_ratios_to_csv(&path)?;
+    db.export_block_resource_info_to_csv("resource_info.csv")?;
     Ok(())
 }
 

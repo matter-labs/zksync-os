@@ -164,15 +164,16 @@ where
             .0
             .cache
             .apply_to_all_updated_elements::<_, ()>(|l, r, k| {
+                // Skip on empty diff
+                if l.value() == r.value() {
+                    return Ok(());
+                }
                 // TODO(EVM-1074): use tree index instead of key for repeated writes
                 let derived_key =
                     derive_flat_storage_key_with_hasher(&k.address, &k.key, &mut hasher);
                 pubdata_hasher.update(derived_key.as_u8_ref());
                 result_keeper.pubdata(derived_key.as_u8_ref());
 
-                if l.value() == r.value() {
-                    return Ok(());
-                }
                 // we publish preimages for account details
                 if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
                     let account_address = B160::try_from_be_slice(&k.key.as_u8_ref()[12..])
@@ -349,7 +350,14 @@ where
         at_address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         bytecode: &[u8],
         oracle: &mut impl IOOracle,
-    ) -> Result<&'static [u8], SystemError> {
+    ) -> Result<
+        (
+            &'static [u8],
+            <Self::IOTypes as SystemIOTypesConfig>::BytecodeHashValue,
+            u32,
+        ),
+        SystemError,
+    > {
         self.account_data_cache.deploy_code::<PROOF_ENV>(
             from_ee,
             resources,

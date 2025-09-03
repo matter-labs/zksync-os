@@ -15,6 +15,14 @@ macro_rules! native_with_delegations {
     };
 }
 
-pub const MAX_NATIVE_COMPUTATIONAL: u64 = 1 << 36;
+///
+/// Maximum amount of computational native resources a full program
+/// execution (be it block or batch) can spend.
+/// Actual limit is the largest multiple of 2^22 - 1 (segment limit)
+/// that is less than 2^36. To be safe, in case our native model
+/// is not upper-bounding for some corner cases, we set this limit
+/// conservatively to 2^35.
+///
+pub const MAX_NATIVE_COMPUTATIONAL: u64 = 1 << 35;
 
 pub const EIP7702_DELEGATION_MARKER: [u8; 3] = [0xef, 0x01, 0x00];

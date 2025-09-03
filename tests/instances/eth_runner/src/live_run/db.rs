@@ -20,12 +20,66 @@ pub struct Database {
     block_traces: Tree,
     block_status: Tree,
     block_ratios: Tree,
+    block_resource_info: Tree,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BlockStatus {
     Success,
     Error(PostCheckError),
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ResourceInfo {
+    V0 {
+        computational_native_used: u64,
+        native_used: u64,
+        gas_used: u64,
+        pubdata_used: u64,
+        logs_used: u64,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TxId {
+    pub block_number: u64,
+    pub tx_index: u64,
+}
+
+impl ResourceInfo {
+    pub fn native_used(&self) -> u64 {
+        match self {
+            ResourceInfo::V0 { native_used, .. } => *native_used,
+        }
+    }
+
+    pub fn computational_native_used(&self) -> u64 {
+        match self {
+            ResourceInfo::V0 {
+                computational_native_used,
+                ..
+            } => *computational_native_used,
+        }
+    }
+
+    pub fn gas_used(&self) -> u64 {
+        match self {
+            ResourceInfo::V0 { gas_used, .. } => *gas_used,
+        }
+    }
+
+    pub fn pubdata_used(&self) -> u64 {
+        match self {
+            ResourceInfo::V0 { pubdata_used, .. } => *pubdata_used,
+        }
+    }
+
+    pub fn logs_used(&self) -> u64 {
+        match self {
+            ResourceInfo::V0 { logs_used, .. } => *logs_used,
+        }
+    }
 }
 
 // We serialize blocks using json, as the bincode serializer for them is broken
@@ -71,6 +125,7 @@ impl Database {
         let block_traces = db.open_tree("block_traces")?;
         let block_status = db.open_tree("block_status")?;
         let block_ratios = db.open_tree("block_ratios")?;
+        let block_resource_info = db.open_tree("block_resource_info")?;
 
         Ok(Self {
             db,
@@ -78,6 +133,7 @@ impl Database {
             block_traces,
             block_status,
             block_ratios,
+            block_resource_info,
         })
     }
 
@@ -139,7 +195,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn export_block_ratios_to_csv(self, path: &str) -> Result<()> {
+    pub fn export_block_ratios_to_csv(&self, path: &str) -> Result<()> {
         let mut writer = Writer::from_writer(File::create(path)?);
         writer.write_record(["block_number", "ratio"])?;
 
@@ -167,5 +223,67 @@ impl Database {
             }
         }
         Ok(entries)
+    }
+
+    fn set_block_resource_info(
+        &self,
+        block_number: u64,
+        tx_index: u64,
+        resource_info: ResourceInfo,
+    ) -> Result<()> {
+        let bytes = encode_to_vec(&resource_info, standard())
+            .context("Failed to encode block resource info")?;
+        let tx_id = TxId {
+            block_number,
+            tx_index,
+        };
+        let id_bytes = encode_to_vec(&tx_id, standard()).context("Failed to encode tx id")?;
+        self.block_resource_info.insert(id_bytes, bytes)?;
+        self.block_resource_info.flush()?;
+        Ok(())
+    }
+
+    pub fn set_block_resource_infos(
+        &self,
+        block_number: u64,
+        resource_infos: Vec<ResourceInfo>,
+    ) -> Result<()> {
+        for (tx_index, resource_info) in resource_infos.into_iter().enumerate() {
+            self.set_block_resource_info(block_number, tx_index as u64, resource_info)?;
+        }
+        Ok(())
+    }
+
+    pub fn export_block_resource_info_to_csv(&self, path: &str) -> Result<()> {
+        let mut writer = Writer::from_writer(File::create(path)?);
+        writer.write_record([
+            "block_number",
+            "tx_index",
+            "native_used",
+            "computational_native_used",
+            "gas_used",
+            "pubdata_used",
+            "logs_used",
+        ])?;
+
+        for entry in self.block_resource_info.iter() {
+            let (key, value) = entry?;
+            let tx_id =
+                bincode::serde::decode_from_slice::<TxId, _>(&key, bincode::config::standard())?.0;
+            let resource_info: ResourceInfo =
+                bincode::serde::decode_from_slice(&value, bincode::config::standard())?.0;
+            writer.write_record(&[
+                tx_id.block_number.to_string(),
+                tx_id.tx_index.to_string(),
+                format!("{:?}", resource_info.native_used()),
+                format!("{:?}", resource_info.computational_native_used()),
+                format!("{:?}", resource_info.gas_used()),
+                format!("{:?}", resource_info.pubdata_used()),
+                format!("{:?}", resource_info.logs_used()),
+            ])?;
+        }
+
+        writer.flush()?;
+        Ok(())
     }
 }

@@ -1,8 +1,9 @@
 use core::hint::assert_unchecked;
-use core::iter::Extend;
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 use core::ptr;
+
+use crate::common_traits::TryExtend;
 
 #[derive(Default)]
 pub struct SliceVec<'a, T> {
@@ -117,16 +118,29 @@ impl<T> DerefMut for SliceVec<'_, T> {
     }
 }
 
-impl<T> Extend<T> for SliceVec<'_, T> {
-    fn extend<I>(&mut self, iter: I)
+impl<T> TryExtend<T> for SliceVec<'_, T> {
+    type Error = ();
+
+    fn try_extend<I>(&mut self, iter: I) -> Result<(), Self::Error>
     where
         I: IntoIterator<Item = T>,
     {
-        for (m, x) in self.memory[self.length..].iter_mut().zip(iter) {
-            m.write(x);
-            self.length += 1;
+        let it = iter.into_iter();
+        let cap = self.memory.len();
+        let mut idx = self.length;
+
+        // Fill until either iterator ends or capacity is exhausted
+        for item in it {
+            if idx == cap {
+                // Ran out of space, partial write!
+                return Err(());
+            }
+            self.memory[idx].write(item);
+            idx += 1;
         }
-        // If there is not enough memory left, the whole iterator will not be consumed!
+
+        self.length = idx;
+        Ok(())
     }
 }
 
@@ -145,7 +159,7 @@ mod test {
         let mut memory = [MaybeUninit::uninit(); 10];
         let mut slice_vec = SliceVec::new(&mut memory);
 
-        slice_vec.extend(0..5);
+        slice_vec.try_extend(0..5).unwrap();
         assert_eq!(*slice_vec, [0, 1, 2, 3, 4]);
         slice_vec.resize(3, 0).unwrap();
         assert_eq!(*slice_vec, [0, 1, 2]);
@@ -154,7 +168,7 @@ mod test {
 
         let (slice, mut slice_vec) = slice_vec.freeze();
         assert_eq!(slice, &[0, 1, 2, 0, 0]);
-        slice_vec.extend(5..10);
+        slice_vec.try_extend(5..10).unwrap();
         assert_eq!(*slice_vec, [5, 6, 7, 8, 9]);
         slice_vec.clear();
         assert_eq!(*slice_vec, []);

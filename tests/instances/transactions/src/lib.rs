@@ -149,21 +149,6 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
         rig::utils::sign_and_encode_alloy_tx(transfer_to_eoa, &eoa_wallet)
     };
 
-    let encoded_712_transfer_to_eoa_tx = {
-        let eoa_to = Address::from_str("0x4242000000000000000000000000000000000000").unwrap();
-        let transfer_to_eoa = zksync_web3_rs::eip712::Eip712TransactionRequest::new()
-            .chain_id(37)
-            .from(eoa_wallet_ethers.address())
-            .to(eoa_to)
-            .gas_limit(21_000 + paymaster_gas)
-            .max_fee_per_gas(1000)
-            .value(100)
-            .max_priority_fee_per_gas(1000)
-            .custom_data(meta)
-            .nonce(1);
-        rig::utils::sign_and_encode_eip712_tx(transfer_to_eoa, &eoa_wallet_ethers)
-    };
-
     let deployed = Address::from_str("0x14c252e395055507b10f199dd569f2379465d874").unwrap();
 
     let _encoded_mint2_tx = if use_aa {
@@ -229,7 +214,6 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
         encoded_transfer_tx,
         encoded_deployment_tx,
         encoded_transfer_to_eoa_tx,
-        encoded_712_transfer_to_eoa_tx,
         // TODO: removed bc of cycle limit
         // encoded_mint2_tx,
         encoded_l1_l2_transfer,

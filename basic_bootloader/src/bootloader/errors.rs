@@ -105,11 +105,6 @@ pub enum InvalidTransaction {
     PaymasterContextInvalid,
     /// Paymaster context offset is greater than returndata length
     PaymasterContextOffsetTooLong,
-
-    /// Protocol upgrade txs should always be successful.
-    // TODO: it's not really a validation error
-    UpgradeTxFailed,
-
     /// Transaction makes the block reach the gas limit
     BlockGasLimitReached,
     /// Transaction makes the block reach the native resource limit
