@@ -26,9 +26,7 @@ fn parse_full_tx(data: &mut [u8]) -> Result<ZkSyncTransaction, ()> {
 fn fuzz(data: &[u8]) {
     let mut data = data.to_owned();
     let Ok(tx) = parse_full_tx(&mut data) else {
-        if data.len() != 0 {
-            panic!("input is not valid {:?}", data);
-        }
+        // Input is not valid
         return;
     };
 

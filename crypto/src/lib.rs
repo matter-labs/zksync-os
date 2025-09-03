@@ -29,6 +29,7 @@ pub mod blake2s;
 pub mod bls12_381;
 #[allow(clippy::all)]
 pub mod bn254;
+mod glv_decomposition;
 pub mod k256;
 pub mod p256;
 pub mod ripemd160;

@@ -122,7 +122,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SHL_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        core::ops::ShlAssign::shl_assign(op2, u256_to_usize_saturated(op1) as u32);
+        match u32::try_from(op1) {
+            Err(_) => *op2 = U256::ZERO,
+            Ok(shift) => *op2 <<= shift,
+        }
         Ok(())
     }
 
@@ -130,7 +133,10 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SHR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        core::ops::ShrAssign::shr_assign(op2, u256_to_usize_saturated(op1) as u32);
+        match u32::try_from(op1) {
+            Err(_) => *op2 = U256::ZERO,
+            Ok(shift) => *op2 >>= shift,
+        }
         Ok(())
     }
 
@@ -138,35 +144,9 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         self.gas
             .spend_gas_and_native(gas_constants::VERYLOW, SAR_NATIVE_COST)?;
         let (op1, op2) = self.stack.pop_1_and_peek_mut()?;
-        let sign_bit = op2.bit(255);
-        if let Some(shift) = u256_try_to_usize_capped::<256>(op1) {
-            if sign_bit == false {
-                core::ops::ShrAssign::shr_assign(op2, shift as u32);
-            } else {
-                // perform unsigned shift, then OR with mask
-                core::ops::ShrAssign::shr_assign(op2, shift as u32);
-                let (words, bits) = (shift / 64, shift % 64);
-                unsafe {
-                    for i in 0..words {
-                        op2.as_limbs_mut()[3 - i] = u64::MAX;
-                    }
-                    if bits != 0 {
-                        op2.as_limbs_mut()[3 - words] |= u64::MAX << (64 - bits);
-                    }
-                }
-            }
-        } else {
-            // shift overflowed
-            if sign_bit == false {
-                // value is 0 or >=1, pushing 0
-                *op2 = U256::ZERO;
-            } else {
-                // value is <0, pushing -1
-                unsafe {
-                    op2.as_limbs_mut().iter_mut().for_each(|el| *el = u64::MAX);
-                }
-            }
-        }
+
+        let shift = usize::try_from(op1).unwrap_or(256);
+        *op2 = op2.arithmetic_shr(shift);
         Ok(())
     }
 }

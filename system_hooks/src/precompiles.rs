@@ -16,7 +16,7 @@ use super::*;
 use core::fmt::Write;
 use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::{
-    define_subsystem, internal_error,
+    define_subsystem, internal_error, out_of_return_memory,
     system::{
         errors::{
             root_cause::{GetRootCause, RootCause},
@@ -112,7 +112,7 @@ const ID_WORD_COST_ERGS: Ergs = Ergs(3 * ERGS_PER_GAS);
 const ID_BASE_NATIVE_COST: u64 = 20;
 const ID_BYTE_NATIVE_COST: u64 = 10;
 impl<R: Resources> SystemFunction<R, IdentityPrecompileErrors> for IdentityPrecompile {
-    fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         src: &[u8],
         dst: &mut D,
         resources: &mut R,
@@ -126,7 +126,8 @@ impl<R: Resources> SystemFunction<R, IdentityPrecompileErrors> for IdentityPreco
                 cost_ergs,
                 <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
             ))?;
-            dst.extend(src.iter().cloned());
+            dst.try_extend(src.iter().cloned())
+                .map_err(|_| out_of_return_memory!())?;
             Ok(())
         })
     }
