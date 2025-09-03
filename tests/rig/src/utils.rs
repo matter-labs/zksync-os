@@ -268,7 +268,7 @@ pub fn sign_and_encode_eip712_tx(
 /// Panics if needed fields are unset/set incorrectly.
 ///
 pub fn encode_l1_tx(tx: TransactionRequest) -> Vec<u8> {
-    let tx_type = 255;
+    let tx_type = 0x7f;
     let from = tx.from.unwrap().into_array();
     let to = Some(tx.to.unwrap().to().unwrap().into_array());
     let gas_limit = tx.gas.unwrap() as u128;

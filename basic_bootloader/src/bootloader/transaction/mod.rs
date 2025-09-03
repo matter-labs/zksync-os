@@ -108,9 +108,9 @@ impl<'a> ZkSyncTransaction<'a> {
     /// The type id of EIP712 transactions.
     pub const EIP_712_TX_TYPE: u8 = 0x71;
     /// The type id of protocol upgrade transactions.
-    pub const UPGRADE_TX_TYPE: u8 = 0xFE;
+    pub const UPGRADE_TX_TYPE: u8 = 0x7e;
     /// The type id of L1 -> L2 transactions.
-    pub const L1_L2_TX_TYPE: u8 = 0xFF;
+    pub const L1_L2_TX_TYPE: u8 = 0x7f;
 
     /// Expected dynamic part(tail) offset in the transaction encoding.
     /// 16 fields, reserved takes 4 words in the static part(head) as static array.
