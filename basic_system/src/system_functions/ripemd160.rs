@@ -4,6 +4,8 @@ use crate::cost_constants::{
     RIPEMD160_BASE_NATIVE_COST, RIPEMD160_CHUNK_SIZE, RIPEMD160_ROUND_NATIVE_COST,
     RIPEMD_160_PER_WORD_COST_ERGS, RIPEMD_160_STATIC_COST_ERGS,
 };
+use zk_ee::common_traits::TryExtend;
+use zk_ee::out_of_return_memory;
 use zk_ee::system::base_system_functions::{RipeMd160Errors, SystemFunction};
 use zk_ee::system::errors::{subsystem::SubsystemError, system::SystemError};
 use zk_ee::system::Computational;
@@ -14,7 +16,7 @@ use zk_ee::system::Computational;
 pub struct RipeMd160Impl;
 impl<R: Resources> SystemFunction<R, RipeMd160Errors> for RipeMd160Impl {
     /// Returns `OutOfGas` if not enough resources provided.
-    fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -37,7 +39,7 @@ fn nb_rounds(len: usize) -> u64 {
     }
 }
 
-fn ripemd160_as_system_function_inner<D: ?Sized + Extend<u8>, R: Resources>(
+fn ripemd160_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resources>(
     input: &[u8],
     dst: &mut D,
     resources: &mut R,
@@ -56,7 +58,8 @@ fn ripemd160_as_system_function_inner<D: ?Sized + Extend<u8>, R: Resources>(
     hasher.update(input);
     let hash = hasher.finalize();
 
-    dst.extend(core::iter::repeat_n(0, 12).chain(hash));
+    dst.try_extend(core::iter::repeat_n(0, 12).chain(hash))
+        .map_err(|_| out_of_return_memory!())?;
 
     Ok(())
 }
