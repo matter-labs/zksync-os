@@ -4,6 +4,7 @@ use crate::cost_constants::{MODEXP_MINIMAL_COST_ERGS, MODEXP_WORST_CASE_NATIVE_P
 use alloc::vec::Vec;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
+use zk_ee::common_traits::TryExtend;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::SystemFunctionExt;
 use zk_ee::system_io_oracle::IOOracle;
@@ -37,7 +38,7 @@ impl<R: Resources> SystemFunctionExt<R, ModExpErrors> for ModExpImpl {
     fn execute<
         O: IOOracle,
         L: Logger,
-        D: Extend<u8> + ?Sized,
+        D: TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,
     >(
         input: &[u8],
@@ -80,7 +81,7 @@ fn read_padded(dst: &mut Vec<u8, impl Allocator>, src: &mut &[u8], provided_len:
 fn modexp_as_system_function_inner<
     O: IOOracle,
     L: Logger,
-    D: ?Sized + Extend<u8>,
+    D: ?Sized + TryExtend<u8>,
     A: Allocator + Clone,
     R: Resources,
 >(
@@ -213,9 +214,11 @@ fn modexp_as_system_function_inner<
 
     if output.len() >= mod_len {
         // truncate
-        dst.extend(output[(output.len() - mod_len)..].iter().copied());
+        dst.try_extend(output[(output.len() - mod_len)..].iter().copied())
+            .map_err(|_| out_of_ergs_error!())?;
     } else {
-        dst.extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output));
+        dst.try_extend(core::iter::repeat_n(0, mod_len - output.len()).chain(output))
+            .map_err(|_| out_of_ergs_error!())?;
     }
 
     Ok(())

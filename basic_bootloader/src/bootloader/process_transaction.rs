@@ -660,6 +660,7 @@ where
             caller_nonce,
             &mut resources,
             tracer,
+            withheld_resources.clone(),
         ) {
             Ok((r, pubdata_used, to_charge_for_pubdata)) => {
                 let pubdata_info = match r {
@@ -691,9 +692,7 @@ where
 
         // Just used for computing native used
         let resources_before_refund = resources.clone();
-        // After the transaction is executed, we reclaim the withheld resources.
-        // This is needed to ensure correct "gas_used" calculation, also these
-        // resources could be spent for pubdata.
+        // Now we can actually reclaim resources withheld for pubdata
         resources.reclaim_withheld(withheld_resources);
 
         let (
@@ -868,6 +867,7 @@ where
         current_tx_nonce: u64,
         resources: &mut S::Resources,
         tracer: &mut impl Tracer<S>,
+        withheld_resources: S::Resources,
     ) -> Result<(ExecutionResult<'a>, u64, S::Resources), BootloaderSubsystemError> {
         let _ = system
             .get_logger()
@@ -892,10 +892,18 @@ where
             .get_logger()
             .write_fmt(format_args!("Transaction execution completed\n"));
 
+        // After the transaction is executed, we reclaim the withheld resources.
+        // This is needed to ensure correct "gas_used" calculation, also these
+        // resources could be spent for pubdata.
+        // We do not reclaim it to the actual `resources` yet, as that would make
+        // the calculation of computational native used more complicated.
+        let mut resources_for_check = resources.clone();
+        resources_for_check.reclaim_withheld(withheld_resources);
+
         let (has_enough, to_charge_for_pubdata, pubdata_used) = check_enough_resources_for_pubdata(
             system,
             native_per_pubdata,
-            resources,
+            &resources_for_check,
             Some(validation_pubdata),
         )?;
         if !has_enough {
