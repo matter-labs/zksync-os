@@ -182,7 +182,7 @@ impl<'a> Arbitrary<'a> for FuzzInput<'a> {
                 )
             }
             2 => {
-                // l1_messanger: sendToL1(bytes)
+                // l1_messenger: sendToL1(bytes)
                 let payload: Vec<u8> = Arbitrary::arbitrary(u)?;
                 let mut vv = Vec::new();
                 vv.extend_from_slice(SEND_TO_L1_SELECTOR);
