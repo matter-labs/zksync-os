@@ -8,11 +8,12 @@ use alloc::vec::Vec;
 use crypto::ark_ec::AffineRepr;
 use crypto::ark_ff::Zero;
 use crypto::ark_serialize::{CanonicalDeserialize, Valid};
-use zk_ee::interface_error;
+use zk_ee::common_traits::TryExtend;
 use zk_ee::system::base_system_functions::{
     Bn254PairingCheckErrors, Bn254PairingCheckInterfaceError, SystemFunction,
 };
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::{interface_error, out_of_return_memory};
 
 ///
 /// bn254 pairing check system function implementation.
@@ -23,7 +24,7 @@ impl<R: Resources> SystemFunction<R, Bn254PairingCheckErrors> for Bn254PairingCh
     /// Returns `OutOfGas` if not enough resources provided.
     /// Returns `InvalidInput` error if the input size is not divisible by 192
     /// or failed to create affine points from inputs
-    fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         src: &[u8],
         dst: &mut D,
         resources: &mut R,
@@ -57,7 +58,8 @@ impl<R: Resources> SystemFunction<R, Bn254PairingCheckErrors> for Bn254PairingCh
                 })?
             };
 
-            dst.extend(core::iter::repeat_n(0, 31).chain(core::iter::once(success as u8)));
+            dst.try_extend(core::iter::repeat_n(0, 31).chain(core::iter::once(success as u8)))
+                .map_err(|_| out_of_return_memory!())?;
 
             Ok(())
         })
