@@ -114,7 +114,10 @@ fn cd_set_bytecode_details_evm(
 impl<'a> Arbitrary<'a> for FuzzInput<'a> {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         // Which branch we’ll execute later
-        let selector = u.int_in_range(0..=4)?;
+        // TODO: contract_deployer is disabled, as it's easy to make it panic
+        // by submitting a hash with no preimage.
+        // We need a smarter generator for it.
+        let selector = u.int_in_range(0..=3)?;
 
         // Base fields
         let mut from: [u8; 20] = Arbitrary::arbitrary(u)?;
