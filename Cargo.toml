@@ -66,6 +66,7 @@ prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag
 execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
 prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
 
+
 # [profile.dev]
 # opt-level = 0
 # lto = false
