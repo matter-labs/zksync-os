@@ -167,15 +167,9 @@ impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for InterpreterExternal<'ee
         self.interpreter.is_constructor
     }
 
-    #[cfg(feature = "evm_refunds")]
     fn refund_counter(&self) -> u32 {
         use zk_ee::system::IOSubsystem;
         self.system.io.get_refund_counter()
-    }
-
-    #[cfg(not(feature = "evm_refunds"))]
-    fn refund_counter(&self) -> u32 {
-        0
     }
 }
 

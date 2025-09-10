@@ -52,13 +52,13 @@ case "$TYPE" in
     TEXT_NAME="app_debug.text"
     ;;
   evm-replay)
-    FEATURES="$FEATURES,proof_running_system/disable_system_contracts,proof_running_system/prevrandao,proof_running_system/evm_refunds"
+    FEATURES="$FEATURES,proof_running_system/disable_system_contracts,proof_running_system/prevrandao"
     BIN_NAME="evm_replay.bin"
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
     ;;
   evm-replay-benchmarking)
-    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/cycle_marker,proof_running_system/prevrandao,proof_running_system/evm_refunds"
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/cycle_marker,proof_running_system/prevrandao"
     BIN_NAME="evm_replay.bin"
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
