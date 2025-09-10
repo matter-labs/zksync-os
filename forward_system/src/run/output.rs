@@ -28,6 +28,7 @@ use zksync_os_interface::types::{L2ToL1Log, L2ToL1LogWithPreimage};
 
 pub type TxResult = Result<TxOutput, InvalidTransaction>;
 
+/// Extension trait to create `StorageWrite` from components.
 trait StorageWriteExt {
     #[allow(clippy::new_ret_no_self)]
     fn new(address: B160, key: Bytes32, value: Bytes32) -> StorageWrite;
