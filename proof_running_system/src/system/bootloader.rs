@@ -194,7 +194,7 @@ pub fn run_proving_inner<
 
     // Load all transactions from oracle and apply them.
     let (mut oracle, public_input) =
-        ProvingBootloader::<O, L>::run::<BasicBootloaderProvingExecutionConfig>(
+        ProvingZkBootloader::<O, L>::run::<BasicBootloaderProvingExecutionConfig>(
             oracle,
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),

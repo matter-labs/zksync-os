@@ -79,6 +79,8 @@ impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L
 
 impl<O: IOOracle, L: Logger + Default> EthereumLikeBasicSTF for ProofRunningSystemTypes<O, L> {}
 
+pub type ProvingZkBootloader<O, L> = BasicBootloader<ProofRunningSystemTypes<O, L>>;
+
 pub struct EthereumStorageSystemTypesWithPostOps<O, L>(O, L);
 
 impl<O: IOOracle, L: Logger + Default> SystemTypes for EthereumStorageSystemTypesWithPostOps<O, L> {
@@ -130,4 +132,4 @@ impl<O: IOOracle, L: Logger + Default> EthereumLikeBasicSTF
 {
 }
 
-pub type ProvingBootloader<O, L> = BasicBootloader<EthereumStorageSystemTypesWithPostOps<O, L>>;
+pub type ProvingEthereumBootloader<O, L> = BasicBootloader<EthereumStorageSystemTypesWithPostOps<O, L>>;
