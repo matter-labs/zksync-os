@@ -35,6 +35,7 @@ default = ["testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
 wrap-in-batch = []
 proving = ["crypto/proving"]
+evm_refunds = ["storage_models/evm_refunds"]
 # The finish method will just return inputs, so outputs can be procesed outside bootloader
 # Used for proving multi block batch within 1 run
 multiblock-batch = []
