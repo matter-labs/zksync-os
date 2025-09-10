@@ -97,7 +97,7 @@ impl<const SHA3: bool> Keccak256Core<SHA3> {
         let mut dst = self.state.0.as_mut_ptr().cast::<u32>().add(u32_word_idx);
 
         let (fill_to_end_maybe, more) = u32_chunks.split_at_unchecked(words_to_absorb);
-        let mut it = fill_to_end_maybe.into_iter();
+        let mut it = fill_to_end_maybe.iter();
         for _ in 0..words_to_absorb {
             dst.write(dst.read() ^ u32::from_le_bytes(*it.next().unwrap_unchecked()));
             dst = dst.add(1);
@@ -110,7 +110,7 @@ impl<const SHA3: bool> Keccak256Core<SHA3> {
 
         // then as many full fills as possible
         let (full_buffer_fills, partial_fills) = more.as_chunks::<BUFFER_SIZE_U32_WORDS>();
-        for src in full_buffer_fills.into_iter() {
+        for src in full_buffer_fills.iter() {
             debug_assert_eq!(self.filled_bytes, 0);
             let dst = self
                 .state
@@ -119,7 +119,7 @@ impl<const SHA3: bool> Keccak256Core<SHA3> {
                 .cast::<[u32; BUFFER_SIZE_U32_WORDS]>()
                 .as_mut_unchecked();
             core::hint::assert_unchecked(src.len() == dst.len());
-            for (src, dst) in src.into_iter().zip(dst.iter_mut()) {
+            for (src, dst) in src.iter().zip(dst.iter_mut()) {
                 *dst ^= u32::from_le_bytes(*src);
             }
             keccak_f1600(&mut self.state);
@@ -131,7 +131,7 @@ impl<const SHA3: bool> Keccak256Core<SHA3> {
             debug_assert_eq!(self.filled_bytes, 0);
         }
         debug_assert!(words_to_absorb < BUFFER_SIZE_U32_WORDS);
-        let mut it = partial_fills.into_iter();
+        let mut it = partial_fills.iter();
         let mut dst = self.state.0.as_mut_ptr().cast::<u32>();
         for _ in 0..words_to_absorb {
             dst.write(dst.read() ^ u32::from_le_bytes(*it.next().unwrap_unchecked()));
@@ -174,7 +174,7 @@ impl<const SHA3: bool> MiniDigest for Keccak256Core<SHA3> {
     fn update(&mut self, input: impl AsRef<[u8]>) {
         let mut input = input.as_ref();
 
-        if input.len() == 0 {
+        if input.is_empty() {
             return;
         }
 
