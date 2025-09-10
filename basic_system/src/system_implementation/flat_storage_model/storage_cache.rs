@@ -140,9 +140,7 @@ where
 
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
-        {
-            self.evm_refunds_counter = HistoryCounter::new(self.alloc.clone());
-        }
+        self.evm_refunds_counter = HistoryCounter::new(self.alloc.clone());
     }
 
     pub fn finish_tx(&mut self) {
