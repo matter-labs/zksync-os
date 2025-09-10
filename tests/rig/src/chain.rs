@@ -274,6 +274,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let state_commitment = FlatStorageCommitment::<{ TREE_HEIGHT }> {
             root: *self.state_tree.storage_tree.root(),
             next_free_slot: self.state_tree.storage_tree.next_free_slot,
+            empty_slots_stack:
+                basic_system::system_implementation::flat_storage_model::SlotsStackState {
+                    state_commitment: self.state_tree.storage_tree.stack_state_encoding(),
+                    num_elements: self.state_tree.storage_tree.empty_elements_stack.len() as u64,
+                },
         };
         let proof_data = ProofData {
             state_root_view: state_commitment,
@@ -353,7 +358,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 .insert(storage_write.key, storage_write.value);
             self.state_tree
                 .storage_tree
-                .insert(&storage_write.key, &storage_write.value);
+                .insert_dense_or_update(&storage_write.key, &storage_write.value);
         }
 
         for (hash, preimage, _preimage_type) in block_output.published_preimages.iter() {
@@ -523,7 +528,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             .insert(flat_key, properties_hash);
         self.state_tree
             .storage_tree
-            .insert(&flat_key, &properties_hash);
+            .insert_dense_or_update(&flat_key, &properties_hash);
     }
 
     ///
@@ -536,7 +541,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let value = Bytes32::from_array(value.to_be_bytes());
 
         self.state_tree.cold_storage.insert(flat_key, value);
-        self.state_tree.storage_tree.insert(&flat_key, &value);
+        self.state_tree
+            .storage_tree
+            .insert_dense_or_update(&flat_key, &value);
     }
 
     ///
@@ -559,7 +566,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             .insert(flat_key, properties_hash);
         self.state_tree
             .storage_tree
-            .insert(&flat_key, &properties_hash);
+            .insert_dense_or_update(&flat_key, &properties_hash);
         self.preimage_source
             .inner
             .insert(properties_hash, encoding.to_vec());
@@ -587,7 +594,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             .insert(flat_key, properties_hash);
         self.state_tree
             .storage_tree
-            .insert(&flat_key, &properties_hash);
+            .insert_dense_or_update(&flat_key, &properties_hash);
         self.preimage_source
             .inner
             .insert(account.bytecode_hash, bytecode_and_artifacts);

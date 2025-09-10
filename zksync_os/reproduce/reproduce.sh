@@ -19,6 +19,7 @@ cid="$(docker create --platform=linux/amd64 zksync-os-bin)"
 FILES=(
     app.bin
     evm_replay.bin
+    evm_replay_logging_enabled.bin
     server_app.bin
     server_app_logging_enabled.bin
     multiblock_batch.bin

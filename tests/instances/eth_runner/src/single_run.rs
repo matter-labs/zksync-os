@@ -43,7 +43,7 @@ fn run<const RANDOMIZED: bool>(
         Some(block_context),
         None,
         output_path,
-        Some("evm_replay".to_string()),
+        Some("evm_replay_logging_enabled".to_string()),
     );
 
     let _ratio = compute_ratio(stats);

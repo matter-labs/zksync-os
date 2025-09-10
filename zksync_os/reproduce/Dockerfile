@@ -42,6 +42,7 @@ WORKDIR /zksync_os/zksync_os
 
 RUN ./dump_bin.sh
 RUN ./dump_bin.sh --type evm-replay
+RUN ./dump_bin.sh --type evm-replay-logging-enabled
 RUN ./dump_bin.sh --type server-logging-enabled
 RUN ./dump_bin.sh --type server
 RUN ./dump_bin.sh --type multiblock-batch

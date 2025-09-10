@@ -57,6 +57,12 @@ case "$TYPE" in
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
     ;;
+  evm-replay-logging-enabled)
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/cycle_marker,proof_running_system/prevrandao,proof_running_system/evm_refunds,print_debug_info"
+    BIN_NAME="evm_replay_logging_enabled.bin"
+    ELF_NAME="evm_replay_logging_enabled.elf"
+    TEXT_NAME="evm_replay_logging_enabled.text"
+    ;;
   evm-replay-benchmarking)
     FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/cycle_marker,proof_running_system/prevrandao,proof_running_system/evm_refunds"
     BIN_NAME="evm_replay.bin"
