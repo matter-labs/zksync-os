@@ -15,4 +15,3 @@ crypto = { path = "../crypto", default-features = false }
 
 [features]
 testing = ["zk_ee/testing"]
-evm_refunds = ["zk_ee/evm_refunds"]

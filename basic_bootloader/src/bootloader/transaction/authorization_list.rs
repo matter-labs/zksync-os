@@ -181,7 +181,6 @@ impl AuthorizationListItem {
             return Ok(false);
         }
         // 7. Add refund if authority is not empty.
-        #[cfg(feature = "evm_refunds")]
         {
             let is_empty = account_properties.nonce.0 == 0
                 && account_properties.unpadded_code_len.0 == 0

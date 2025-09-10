@@ -418,7 +418,6 @@ where
             .map(|account_data| account_data.nonce.0)
     }
 
-    #[cfg(feature = "evm_refunds")]
     fn get_refund_counter(&self) -> u32 {
         self.storage.get_refund_counter()
     }
@@ -1154,7 +1153,6 @@ where
     }
 
     // Add EVM refund to counter
-    #[cfg(feature = "evm_refunds")]
     fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError> {
         self.storage.add_evm_refund(refund)
     }

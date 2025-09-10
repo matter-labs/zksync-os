@@ -9,9 +9,7 @@ use ruint::aliases::B160;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
 use zk_ee::common_structs::cache_record::{Appearance, CacheRecord};
-#[cfg(feature = "evm_refunds")]
 use zk_ee::common_structs::history_counter::HistoryCounter;
-#[cfg(feature = "evm_refunds")]
 use zk_ee::common_structs::history_counter::HistoryCounterSnapshotId;
 use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -38,7 +36,6 @@ pub struct TransactionId(pub u32);
 
 pub struct StorageSnapshotId {
     pub cache: CacheSnapshotId,
-    #[cfg(feature = "evm_refunds")]
     pub evm_refunds_counter: HistoryCounterSnapshotId,
 }
 
@@ -106,7 +103,6 @@ pub struct GenericPubdataAwarePlainStorage<
     pub(crate) resources_policy: P,
     pub(crate) current_tx_number: TransactionId,
     pub(crate) initial_values: BTreeMap<K, (V, TransactionId), A>, // Used to cache initial values at the beginning of the tx (For EVM gas model)
-    #[cfg(feature = "evm_refunds")]
     pub(crate) evm_refunds_counter: HistoryCounter<u32, SC, SCC, A>, // Used to keep track of EVM gas refunds
     alloc: A,
     pub(crate) _marker: core::marker::PhantomData<(R, SC, SCC)>,
@@ -136,7 +132,6 @@ where
             current_tx_number: TransactionId(0),
             resources_policy,
             initial_values: BTreeMap::new_in(allocator.clone()),
-            #[cfg(feature = "evm_refunds")]
             evm_refunds_counter: HistoryCounter::new(allocator.clone()),
             alloc: allocator.clone(),
             _marker: core::marker::PhantomData,
@@ -145,7 +140,6 @@ where
 
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
-        #[cfg(feature = "evm_refunds")]
         {
             self.evm_refunds_counter = HistoryCounter::new(self.alloc.clone());
         }
@@ -159,7 +153,6 @@ where
     pub fn start_frame(&mut self) -> StorageSnapshotId {
         StorageSnapshotId {
             cache: self.cache.snapshot(),
-            #[cfg(feature = "evm_refunds")]
             evm_refunds_counter: self.evm_refunds_counter.snapshot(),
         }
     }
@@ -171,7 +164,6 @@ where
         rollback_handle: Option<&StorageSnapshotId>,
     ) -> Result<(), InternalError> {
         if let Some(x) = rollback_handle {
-            #[cfg(feature = "evm_refunds")]
             self.evm_refunds_counter.rollback(x.evm_refunds_counter);
             self.cache.rollback(x.cache)
         } else {
@@ -464,7 +456,6 @@ where
 
         if ee_type == ExecutionEnvironmentType::EVM {
             // EVM specific refunds calculation
-            #[cfg(feature = "evm_refunds")]
             if old_value != *new_value {
                 let val_at_tx_start = *val_at_tx_start;
 
