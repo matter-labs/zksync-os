@@ -11,7 +11,7 @@ use rig::utils::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
 use rig::zk_ee::utils::Bytes32;
-use rig::zksync_os_interface::output::ExecutionResult;
+use rig::zksync_os_interface::types::ExecutionResult;
 use rig::{alloy, Chain};
 
 #[test]

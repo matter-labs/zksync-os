@@ -3,7 +3,7 @@ use alloy::consensus::{TxEip1559, TxEip2930};
 use alloy::primitives::{address, TxKind, U256};
 use alloy::signers::local::PrivateKeySigner;
 use rig::ruint::aliases::B160;
-use rig::zksync_os_interface::output::BlockOutput;
+use rig::zksync_os_interface::types::BlockOutput;
 use rig::{alloy, ruint};
 use std::collections::HashSet;
 use std::str::FromStr;

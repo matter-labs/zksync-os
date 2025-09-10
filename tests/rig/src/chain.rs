@@ -24,12 +24,11 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
-use zk_ee::system::metadata::BlockMetadataFromOracle;
+use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
-use zksync_os_interface::output::BlockOutput;
-use zksync_os_interface::types::BlockHashes;
+use zksync_os_interface::types::BlockOutput;
 
 ///
 /// In memory chain state, mainly to be used in tests.
@@ -358,7 +357,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 .insert(&storage_write.key.0.into(), &storage_write.value.0.into());
         }
 
-        for (hash, preimage, _preimage_type) in block_output.published_preimages.iter() {
+        for (hash, preimage) in block_output.published_preimages.iter() {
             self.preimage_source
                 .inner
                 .insert(hash.0.into(), preimage.clone());

@@ -2,8 +2,8 @@
 #![feature(assert_matches)]
 
 use bytes::Bytes;
-use rig::zksync_os_interface::output::BlockOutput;
-use rig::zksync_os_interface::output::ExecutionResult::Revert;
+use rig::zksync_os_interface::types::BlockOutput;
+use rig::zksync_os_interface::types::ExecutionResult::Revert;
 use rig::BlockContext;
 use rig::ProfilerConfig;
 use rig::{

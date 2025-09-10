@@ -21,12 +21,11 @@ serde = { version = "1.0", default-features = false, features = ["derive", "allo
 cycle_marker = { path = "../cycle_marker" }
 strum_macros = "0.27.1"
 paste = "1.0.15"
-zksync_os_types = { workspace = true, default-features = false }
 
 
 [features]
 # serde derivation has to be disabled for risc-v target until we update ruint version
-serde = ["dep:serde", "ruint/serde", "zksync_os_types/serde"]
+serde = ["dep:serde", "ruint/serde"]
 testing = ["serde"]
 default = ["serde", "error_origins"]
 cycle_marker = ["cycle_marker/log_to_file"]

@@ -2,7 +2,7 @@ use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
 use alloy::hex;
 use rig::log::{error, info};
-use rig::zksync_os_interface::output::BlockOutput;
+use rig::zksync_os_interface::types::BlockOutput;
 use ruint::aliases::{B160, B256, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -265,7 +265,7 @@ fn zksync_os_output_into_account_state(
         output
             .published_preimages
             .into_iter()
-            .map(|(key, value, _)| (key.0, value)),
+            .map(|(key, value)| (key.0, value)),
     );
     for w in output.storage_writes {
         if rig::chain::is_account_properties_address(&B160::from_be_bytes(w.account.into_array())) {

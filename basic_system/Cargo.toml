@@ -16,7 +16,6 @@ crypto = { path = "../crypto", default-features = false, features = ["secp256k1-
 storage_models = { path = "../storage_models", default-features = false }
 modexp = { path = "../supporting_crates/modexp" }
 cycle_marker = { path = "../cycle_marker" }
-zksync_os_types = { workspace = true, default-features = false }
 
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 arrayvec = { version = "0.7.4", default-features = false }
@@ -36,7 +35,7 @@ evm-compatibility = []
 default = ["testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
 wrap-in-batch = []
-proving = ["crypto/proving", "zksync_os_types/unsafe-single-core-cas"]
+proving = ["crypto/proving"]
 evm_refunds = ["storage_models/evm_refunds"]
 # The finish method will just return inputs, so outputs can be procesed outside bootloader
 # Used for proving multi block batch within 1 run

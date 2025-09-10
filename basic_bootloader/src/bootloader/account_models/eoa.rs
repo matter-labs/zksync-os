@@ -33,7 +33,6 @@ use zk_ee::system::{
 };
 use zk_ee::utils::{b160_to_u256, u256_to_b160_checked};
 use zk_ee::{internal_error, out_of_native_resources, wrap_error};
-use zksync_os_types::primitives::Address;
 
 macro_rules! require_or_revert {
     ($b:expr, $m:expr, $s:expr, $system:expr) => {
@@ -142,8 +141,8 @@ where
 
             if ecrecover_output.is_empty() {
                 return Err(InvalidTransaction::IncorrectFrom {
-                    recovered: Address::ZERO,
-                    tx: from.to_be_bytes().into(),
+                    recovered: B160::ZERO,
+                    tx: from,
                 }
                 .into());
             }
@@ -153,8 +152,8 @@ where
 
             if recovered_from != from {
                 return Err(InvalidTransaction::IncorrectFrom {
-                    recovered: recovered_from.to_be_bytes().into(),
-                    tx: from.to_be_bytes().into(),
+                    recovered: recovered_from,
+                    tx: from,
                 }
                 .into());
             }

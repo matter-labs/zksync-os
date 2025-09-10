@@ -20,14 +20,51 @@ use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
-use zksync_os_types::L2ToL1LogWithPreimage;
 
 pub const L2_TO_L1_LOG_SERIALIZE_SIZE: usize = 88;
 // Taken from the size of the Merkle tree.
 pub const MAX_NUMBER_OF_LOGS: u64 = 16_384;
 
-// Re-export for backwards compatibility
-pub use zksync_os_types::L2ToL1Log;
+///
+/// L2 to l1 log structure, used for merkle tree leaves.
+/// This structure holds both kinds of logs (user messages
+/// and l1 -> l2 tx logs).
+///
+#[derive(Default, Debug, Clone)]
+pub struct L2ToL1Log {
+    ///
+    /// Shard id.
+    /// Deprecated, kept for compatibility, always set to 0.
+    ///
+    pub l2_shard_id: u8,
+    ///
+    /// Boolean flag.
+    /// Deprecated, kept for compatibility, always set to `true`.
+    ///
+    pub is_service: bool,
+    ///
+    /// The L2 transaction number in a block, in which the log was sent
+    ///
+    pub tx_number_in_block: u16,
+    ///
+    /// The L2 address which sent the log.
+    /// For user messages set to `L1Messenger` system hook address,
+    /// for l1 -> l2 txs logs - `BootloaderFormalAddress`.
+    ///
+    pub sender: B160,
+    ///
+    /// The 32 bytes of information that was sent in the log.
+    /// For user messages used to save message sender address(padded),
+    /// for l1 -> l2 txs logs - transaction hash.
+    ///
+    pub key: Bytes32,
+    ///
+    /// The 32 bytes of information that was sent in the log.
+    /// For user messages used to save message hash.
+    /// for l1 -> l2 txs logs - success flag(padded).
+    ///
+    pub value: Bytes32,
+}
 
 ///
 /// Message/log content to be saved in the storage.
@@ -36,21 +73,6 @@ pub use zksync_os_types::L2ToL1Log;
 pub struct GenericLogContent<IOTypes: SystemIOTypesConfig, A: Allocator = Global> {
     pub tx_number: u32,
     pub data: GenericLogContentData<UsizeAlignedByteBox<A>, Bytes32, IOTypes::Address>,
-}
-
-impl From<&GenericLogContent<EthereumIOTypesConfig>> for L2ToL1LogWithPreimage {
-    fn from(value: &GenericLogContent<EthereumIOTypesConfig>) -> Self {
-        use crate::common_structs::GenericLogContentData;
-        use crate::common_structs::UserMsgData;
-        let preimage = match &value.data {
-            GenericLogContentData::UserMsg(UserMsgData { data, .. }) => {
-                Some(data.as_slice().to_vec())
-            }
-            GenericLogContentData::L1TxLog(_) => None,
-        };
-        let log = value.into();
-        Self { log, preimage }
-    }
 }
 
 ///
@@ -480,52 +502,53 @@ where
     }
 }
 
-pub trait L2ToL1LogExt {
+impl L2ToL1Log {
+    ///
     /// Encode L2 to l1 log using solidity abi packed encoding.
-    fn encode(&self) -> [u8; L2_TO_L1_LOG_SERIALIZE_SIZE];
-    /// Returns keccak hash of the l2 to l1 log solidity abi packed encoding.
-    /// In fact, packed abi encoding in this case just equals to concatenation of all the fields big-endian representations.
-    fn hash(&self) -> Bytes32;
-    /// Adds the packed abi encoding of the log to the hasher.
-    fn add_encoding_to_hasher(&self, hasher: &mut impl MiniDigest);
-    /// Adds the packed abi encoding of the log to the pubdata.
-    fn pubdata(&self, result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>);
-}
-
-impl L2ToL1LogExt for L2ToL1Log {
-    fn encode(&self) -> [u8; L2_TO_L1_LOG_SERIALIZE_SIZE] {
+    ///
+    pub fn encode(&self) -> [u8; L2_TO_L1_LOG_SERIALIZE_SIZE] {
         let mut buffer = [0u8; L2_TO_L1_LOG_SERIALIZE_SIZE];
         buffer[0..1].copy_from_slice(&[self.l2_shard_id]);
         buffer[1..2].copy_from_slice(&[if self.is_service { 1 } else { 0 }]);
         buffer[2..4].copy_from_slice(&self.tx_number_in_block.to_be_bytes());
-        buffer[4..24].copy_from_slice(&self.sender.as_slice());
-        buffer[24..56].copy_from_slice(self.key.as_slice());
-        buffer[56..88].copy_from_slice(self.value.as_slice());
+        buffer[4..24].copy_from_slice(&self.sender.to_be_bytes::<20>());
+        buffer[24..56].copy_from_slice(self.key.as_u8_ref());
+        buffer[56..88].copy_from_slice(self.value.as_u8_ref());
         buffer
     }
 
+    ///
+    /// Returns keccak hash of the l2 to l1 log solidity abi packed encoding.
+    /// In fact, packed abi encoding in this case just equals to concatenation of all the fields big-endian representations.
+    ///
     fn hash(&self) -> Bytes32 {
         let mut hasher = crypto::sha3::Keccak256::new();
         self.add_encoding_to_hasher(&mut hasher);
         hasher.finalize().into()
     }
 
+    ///
+    /// Adds the packed abi encoding of the log to the hasher.
+    ///
     fn add_encoding_to_hasher(&self, hasher: &mut impl MiniDigest) {
         hasher.update([self.l2_shard_id]);
         hasher.update([if self.is_service { 1 } else { 0 }]);
         hasher.update(self.tx_number_in_block.to_be_bytes());
-        hasher.update(self.sender.as_slice());
-        hasher.update(self.key.as_slice());
-        hasher.update(self.value.as_slice());
+        hasher.update(self.sender.to_be_bytes::<20>());
+        hasher.update(self.key.as_u8_ref());
+        hasher.update(self.value.as_u8_ref());
     }
 
+    ///
+    /// Adds the packed abi encoding of the log to the pubdata.
+    ///
     fn pubdata(&self, result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>) {
         result_keeper.pubdata(&[self.l2_shard_id]);
         result_keeper.pubdata(&[if self.is_service { 1 } else { 0 }]);
         result_keeper.pubdata(&self.tx_number_in_block.to_be_bytes());
-        result_keeper.pubdata(&self.sender.as_slice());
-        result_keeper.pubdata(self.key.as_slice());
-        result_keeper.pubdata(self.value.as_slice());
+        result_keeper.pubdata(&self.sender.to_be_bytes::<20>());
+        result_keeper.pubdata(self.key.as_u8_ref());
+        result_keeper.pubdata(self.value.as_u8_ref());
     }
 }
 
@@ -556,9 +579,9 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
             l2_shard_id: 0,
             is_service: true,
             tx_number_in_block: m.tx_number as u16,
-            sender: sender.to_be_bytes().into(),
-            key: key.as_u8_array().into(),
-            value: value.as_u8_array().into(),
+            sender,
+            key,
+            value,
         }
     }
 }

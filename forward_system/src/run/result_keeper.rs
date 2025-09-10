@@ -5,16 +5,15 @@ use ruint::aliases::B160;
 use std::alloc::Global;
 use zk_ee::common_structs::{
     GenericEventContent, GenericEventContentWithTxRef, GenericLogContent,
-    GenericLogContentWithTxRef,
+    GenericLogContentWithTxRef, PreimageType,
 };
 use zk_ee::kv_markers::MAX_EVENT_TOPICS;
 use zk_ee::system::IOResultKeeper;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::{Bytes32, UsizeAlignedByteBox};
-use zksync_os_interface::types::PreimageType;
 
 // Use interface type as the direct place-in, can be changed in the future.
-pub use zksync_os_interface::output::TxProcessingOutputOwned;
+pub use zksync_os_interface::types::TxProcessingOutputOwned;
 
 pub struct ForwardRunningResultKeeper<TR: TxResultCallback> {
     pub block_header: Option<BlockHeader>,

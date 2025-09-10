@@ -4,10 +4,6 @@ use super::{
     types_config::SystemIOTypesConfig,
 };
 use ruint::aliases::{B160, U256};
-use zksync_os_types::BlockContext;
-
-// Re-export for backwards compatibility
-pub use zksync_os_types::BlockHashes;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Metadata<IOTypes: SystemIOTypesConfig> {
@@ -15,6 +11,43 @@ pub struct Metadata<IOTypes: SystemIOTypesConfig> {
     pub tx_origin: IOTypes::Address,
     pub tx_gas_price: U256,
     pub block_level_metadata: BlockMetadataFromOracle,
+}
+
+/// Array of previous block hashes.
+/// Hash for block number N will be at index [256 - (current_block_number - N)]
+/// (most recent will be at the end) if N is one of the most recent
+/// 256 blocks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlockHashes(pub [U256; 256]);
+
+impl Default for BlockHashes {
+    fn default() -> Self {
+        Self([U256::ZERO; 256])
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for BlockHashes {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.to_vec().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for BlockHashes {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let vec: Vec<U256> = Vec::deserialize(deserializer)?;
+        let array: [U256; 256] = vec
+            .try_into()
+            .map_err(|_| serde::de::Error::custom("Expected array of length 256"))?;
+        Ok(Self(array))
+    }
 }
 
 impl UsizeSerializable for BlockHashes {
@@ -152,24 +185,6 @@ impl UsizeDeserializable for BlockMetadataFromOracle {
         };
 
         Ok(new)
-    }
-}
-
-impl From<BlockContext> for BlockMetadataFromOracle {
-    fn from(value: BlockContext) -> Self {
-        Self {
-            chain_id: value.chain_id,
-            block_number: value.block_number,
-            block_hashes: value.block_hashes,
-            timestamp: value.timestamp,
-            eip1559_basefee: value.eip1559_basefee,
-            gas_per_pubdata: value.gas_per_pubdata,
-            native_price: value.native_price,
-            coinbase: B160::from_be_bytes(value.coinbase.0 .0),
-            gas_limit: value.gas_limit,
-            pubdata_limit: value.pubdata_limit,
-            mix_hash: value.mix_hash,
-        }
     }
 }
 
