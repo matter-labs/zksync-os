@@ -318,7 +318,7 @@ impl<SC: StackCtor<N>, const N: usize, A: Allocator + Clone + Default> LogsStora
         self.apply_logs_to_pubdata_and_record_log_hashes(
             results_keeper,
             pubdata_hasher,
-            Some(lfn), // otherwise type can not be deduced
+            Some(lfn).take(), // otherwise type can not be deduced
         )
     }
 
