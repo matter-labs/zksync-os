@@ -95,7 +95,7 @@ where
         );
 
     // Intrinsic overhead - he can quickly check deployment cost and calldata tokens cost
-    let mut intrinsic_overhead = intrinsic_gas as u64;
+    let mut intrinsic_overhead = intrinsic_gas;
 
     // NOTE: this one is up for debate - we can either charge it here,
     // or in the corresponding branch that does deployments. Latter is much better if we will
@@ -108,7 +108,7 @@ where
             intrinsic_overhead.saturating_add(DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS as u64);
         let initcode_gas_cost = evm_interpreter::gas_constants::INITCODE_WORD_COST
             * (calldata_len.next_multiple_of(32) / 32);
-        intrinsic_overhead = intrinsic_overhead.saturating_add(initcode_gas_cost as u64);
+        intrinsic_overhead = intrinsic_overhead.saturating_add(initcode_gas_cost);
     }
     intrinsic_overhead =
         intrinsic_overhead.saturating_add(calldata_tokens.saturating_mul(CALLDATA_TOKEN_GAS_COST));
@@ -404,21 +404,15 @@ where
 
     // Access list
     {
-        if let Err(e) =
-            transaction.parse_and_warm_up_access_list(system, &mut tx_resources.main_resources)
-        {
-            return Err(e);
-        }
+        transaction.parse_and_warm_up_access_list(system, &mut tx_resources.main_resources)?
     }
 
     #[cfg(feature = "pectra")]
     {
-        if let Err(e) = transaction.parse_authorization_list_and_apply_delegations(
+        transaction.parse_authorization_list_and_apply_delegations(
             system,
             &mut tx_resources.main_resources,
-        ) {
-            return Err(e);
-        }
+        )?
     }
 
     let worst_case_fee_amount = U256::from(transaction.max_fee_per_gas.read())

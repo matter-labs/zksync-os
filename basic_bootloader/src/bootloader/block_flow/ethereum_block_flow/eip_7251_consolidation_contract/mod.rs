@@ -204,7 +204,7 @@ where
         })?;
     } else {
         let value = Bytes32::from_array(new_queue_head_index.to_be_bytes::<32>());
-        let _ = resources.with_infinite_ergs(|resources| {
+        resources.with_infinite_ergs(|resources| {
             system.io.storage_write::<false>(
                 ExecutionEnvironmentType::NoEE,
                 resources,
@@ -262,7 +262,7 @@ where
     }
 
     let new_excess = Bytes32::from_array(maybe_new_excess.to_be_bytes::<32>());
-    let _ = resources.with_infinite_ergs(|resources| {
+    resources.with_infinite_ergs(|resources| {
         system.io.storage_write::<false>(
             ExecutionEnvironmentType::NoEE,
             resources,
@@ -273,7 +273,7 @@ where
     })?;
 
     // reset count
-    let _ = resources.with_infinite_ergs(|resources| {
+    resources.with_infinite_ergs(|resources| {
         system.io.storage_write::<false>(
             ExecutionEnvironmentType::NoEE,
             resources,

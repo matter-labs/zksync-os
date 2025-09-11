@@ -51,7 +51,7 @@ where
             .start_global_frame()
             .expect("must open frame to handle storage access");
 
-        let _ = Self::post_op_io_touching_impl(&mut system, block_data)
+        Self::post_op_io_touching_impl(&mut system, block_data)
             .expect("must process IO related part");
 
         system

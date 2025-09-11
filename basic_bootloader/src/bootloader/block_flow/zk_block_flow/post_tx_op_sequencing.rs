@@ -53,7 +53,7 @@ where
         //     .try_into()
         //     .map_err(|_| internal_error!("base_fee_per_gas exceeds max u64"))?;
         let block_header = BlockHeader::new(
-            Bytes32::from(previous_block_hash),
+            previous_block_hash,
             beneficiary,
             tx_rolling_hash,
             block_number,
@@ -71,9 +71,7 @@ where
         let mut logger = system.get_logger();
         let _ = logger.write_fmt(format_args!("Basic header information was created\n"));
 
-        let System {
-            mut io, metadata, ..
-        } = system;
+        let System { mut io, .. } = system;
 
         // Pubdata the block hash - we do not materialize root in it
         result_keeper.pubdata(current_block_hash.as_u8_ref());
@@ -111,7 +109,5 @@ where
         cycle_marker::wrap!("verify_and_apply_batch", {
             io.update_commitment(None, &mut logger, result_keeper);
         });
-
-        ()
     }
 }

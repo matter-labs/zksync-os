@@ -126,7 +126,5 @@ where
         cycle_marker::wrap!("verify_and_apply_batch", {
             io.update_commitment(None, &mut logger, result_keeper);
         });
-
-        ()
     }
 }

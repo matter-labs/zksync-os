@@ -208,9 +208,7 @@ where
     type ExecutionBodyExtraData = (); // we can use context for everything
 
     type ScratchSpace = ();
-    fn create_tx_loop_scratch_space(_system: &mut System<S>) -> Self::ScratchSpace {
-        ()
-    }
+    fn create_tx_loop_scratch_space(_system: &mut System<S>) -> Self::ScratchSpace {}
 
     type TransactionBuffer<'a> = UsizeAlignedByteBox<S::Allocator>;
     fn try_begin_next_tx<'a>(
@@ -433,7 +431,7 @@ where
 
                     ExecutionResult::Revert { output: &[] }
                 }
-                _ => return Err(e.into()),
+                _ => return Err(e),
             },
         };
         drop(main_body_rollback_handle);
@@ -467,7 +465,7 @@ where
         )?;
         context.gas_used = gas_used;
 
-        return Ok(());
+        Ok(())
     }
 
     fn refund_and_commit_fee<'a, Config: BasicBootloaderExecutionConfig>(
@@ -747,7 +745,7 @@ where
             return_values,
             reverted,
             deployed_address,
-        } = if let Some(_) = transaction.destination() {
+        } = if transaction.destination().is_some() {
             Self::execute_call::<Config>(
                 system,
                 system_functions,

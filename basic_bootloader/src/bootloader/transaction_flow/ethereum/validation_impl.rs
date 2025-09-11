@@ -42,7 +42,7 @@ fn create_resources_for_tx<S: EthereumLikeTypes>(
             intrinsic_overhead.saturating_add(DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS as u64);
         let initcode_gas_cost = evm_interpreter::gas_constants::INITCODE_WORD_COST
             * (calldata_len.next_multiple_of(32) / 32);
-        intrinsic_overhead = intrinsic_overhead.saturating_add(initcode_gas_cost as u64);
+        intrinsic_overhead = intrinsic_overhead.saturating_add(initcode_gas_cost);
     }
     intrinsic_overhead =
         intrinsic_overhead.saturating_add(calldata_tokens.saturating_mul(CALLDATA_TOKEN_GAS_COST));
@@ -650,11 +650,7 @@ where
 
     // Access list
     if let Some(access_list) = transaction.access_list() {
-        if let Err(e) =
-            parse_and_warm_up_access_list(system, &mut tx_resources.main_resources, access_list)
-        {
-            return Err(e);
-        }
+        parse_and_warm_up_access_list(system, &mut tx_resources.main_resources, access_list)?
     }
 
     let blobs = if let Some(blobs_list) = transaction.blobs_list() {
@@ -667,14 +663,13 @@ where
                 InvalidTransaction::BlobElementIsNotSupported,
             ));
         }
-        let blobs = match parse_blobs_list::<MAX_BLOBS_PER_BLOCK>(blobs_list) {
+
+        match parse_blobs_list::<MAX_BLOBS_PER_BLOCK>(blobs_list) {
             Ok(blobs) => blobs,
             Err(e) => {
                 return Err(e);
             }
-        };
-
-        blobs
+        }
     } else {
         arrayvec::ArrayVec::new()
     };
@@ -683,13 +678,11 @@ where
     let blob_gas_used = (blobs.len() as u64) * GAS_PER_BLOB;
 
     if let Some(auth_list) = transaction.authorization_list() {
-        if let Err(e) = parse_authorization_list_and_apply_delegations(
+        parse_authorization_list_and_apply_delegations(
             system,
             &mut tx_resources.main_resources,
             auth_list,
-        ) {
-            return Err(e);
-        }
+        )?
     }
 
     let worst_case_fee_amount = {

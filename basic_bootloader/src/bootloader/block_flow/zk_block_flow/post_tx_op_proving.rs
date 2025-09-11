@@ -57,7 +57,7 @@ where
         //     .try_into()
         //     .map_err(|_| internal_error!("base_fee_per_gas exceeds max u64"))?;
         let block_header = BlockHeader::new(
-            Bytes32::from(previous_block_hash),
+            previous_block_hash,
             beneficiary,
             tx_rolling_hash,
             block_number,

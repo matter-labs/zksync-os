@@ -70,9 +70,8 @@ where
         let refund_before_native = {
             let possible_refund = if let Some(refund) = system.io.get_refund_counter() {
                 let ergs = refund.ergs();
-                let as_gas = ergs.0.div_floor(ERGS_PER_GAS);
 
-                as_gas
+                ergs.0.div_floor(ERGS_PER_GAS)
             } else {
                 0
             };

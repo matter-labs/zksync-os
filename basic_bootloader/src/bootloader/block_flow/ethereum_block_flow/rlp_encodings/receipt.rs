@@ -23,7 +23,7 @@ impl<'a> RLPEncodable for GenericEventContentRef<'a, MAX_EVENT_TOPICS, EthereumI
         let topics_total_len = self.topics.len() * (1 + 32); // max 132 bytes
         if self.topics.len() == 0 {
             // empty list
-            buffer.write_byte(0xc0 + 0);
+            buffer.write_byte(0xc0);
         } else if self.topics.len() == 1 {
             buffer.write_byte(0xc0 + 33);
         } else {

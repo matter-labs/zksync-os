@@ -163,7 +163,7 @@ impl<'a> EthereumTxInner<'a> {
                 signed_payload_slice
             };
             // now we should peek
-            let mut parser_to_peek = parser.clone();
+            let mut parser_to_peek = parser;
             let v: u64 = RLPParsable::try_parse(&mut parser_to_peek)?;
             if v == 27 || v == 28 {
                 // we can stop right here

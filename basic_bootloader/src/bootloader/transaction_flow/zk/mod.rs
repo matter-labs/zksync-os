@@ -323,7 +323,7 @@ where
                     system.finish_global_frame(Some(&main_body_rollback_handle))?;
                     (ExecutionResult::Revert { output: &[] }, None)
                 }
-                _ => return Err(e.into()),
+                _ => return Err(e),
             },
         };
         drop(main_body_rollback_handle);

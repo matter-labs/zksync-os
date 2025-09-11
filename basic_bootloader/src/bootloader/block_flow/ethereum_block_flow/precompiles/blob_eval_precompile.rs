@@ -131,7 +131,7 @@ impl BlobEvaluationPrecompile {
             fn parse_g1_compressed(input: &[u8]) -> Result<crypto::bls12_381::G1Affine, ()> {
                 // format coincides with one defined in ZCash/Arkworks
                 use crypto::ark_serialize::CanonicalDeserialize;
-                crypto::bls12_381::G1Affine::deserialize_compressed(&input[..]).map_err(|_| ())
+                crypto::bls12_381::G1Affine::deserialize_compressed(input).map_err(|_| ())
             }
 
             // Parse the commitment and proof

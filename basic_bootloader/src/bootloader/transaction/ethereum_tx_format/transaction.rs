@@ -56,7 +56,7 @@ impl<A: Allocator> EthereumTransactionWithBuffer<A> {
                 expected_chain_id,
             )?;
         Ok(Self {
-            buffer: buffer,
+            buffer,
             inner,
             chain_id: expected_chain_id as u64,
             sig_hash,
