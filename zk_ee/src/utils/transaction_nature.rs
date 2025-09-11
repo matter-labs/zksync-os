@@ -22,7 +22,9 @@ impl UsizeSerializable for TransactionNature {
     const USIZE_LEN: usize = <u32 as UsizeSerializable>::USIZE_LEN;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        <u32 as UsizeSerializable>::iter(unsafe { core::mem::transmute::<&TransactionNature, &u32>(self) })
+        <u32 as UsizeSerializable>::iter(unsafe {
+            core::mem::transmute::<&TransactionNature, &u32>(self)
+        })
     }
 }
 
