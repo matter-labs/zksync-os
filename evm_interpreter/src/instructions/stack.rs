@@ -23,10 +23,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
         let mut value = U256::ZERO;
 
-        match self.bytecode.get(start) {
+        match self.bytecode.as_ref().get(start) {
             Some(src) => {
                 // we read is as LE, and then bytereverse
-                let to_copy = core::cmp::min(N, self.bytecode.len() - self.instruction_pointer);
+                let to_copy =
+                    core::cmp::min(N, self.bytecode.as_ref().len() - self.instruction_pointer);
                 unsafe {
                     core::ptr::copy_nonoverlapping(
                         src as *const u8,
