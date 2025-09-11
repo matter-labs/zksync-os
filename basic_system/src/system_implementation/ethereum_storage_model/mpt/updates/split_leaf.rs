@@ -25,7 +25,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor> EthereumMPT<'a, A, VC> {
                 leaf_to_split,
             )
         } else {
-            debug_assert!(existing_path_segment_len >= new_extension_prefix.len() + 1);
+            debug_assert!(existing_path_segment_len > new_extension_prefix.len());
             self.temporary_split_existing_leaf_as_extension_branch_leaf(
                 grand_parent,
                 grand_parent_branch_index,

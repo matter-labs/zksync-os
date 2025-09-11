@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 
 use super::*;
 use alloy::consensus::Header;
@@ -7,7 +6,7 @@ use basic_bootloader::bootloader::block_flow::ethereum_block_flow::oracle_querie
     ETHEREUM_HISTORICAL_HEADER_BUFFER_LEN_QUERY_ID, ETHEREUM_WITHDRAWALS_BUFFER_DATA_QUERY_ID,
     ETHEREUM_WITHDRAWALS_BUFFER_LEN_QUERY_ID,
 };
-use crypto::{ark_ec::AffineRepr, MiniDigest};
+use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
 use zk_ee::{oracle::ReadIterWrapper, system_io_oracle::HISTORICAL_BLOCK_HASH_QUERY_ID};
 

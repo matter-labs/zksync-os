@@ -179,7 +179,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
 
     if add_uart {
-        let uart_responder = UARTPrintReponsder::default();
+        let uart_responder = UARTPrintReponsder;
         oracle.add_external_processor(uart_responder);
     }
 

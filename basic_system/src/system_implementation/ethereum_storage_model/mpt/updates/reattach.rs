@@ -298,13 +298,11 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor> EthereumMPT<'a, A, VC> {
         for child in branch.child_nodes.iter_mut() {
             if child.is_empty() || child.is_unreferenced_key() || child.is_leaf() {
                 continue;
-            } else {
-                if let Some(attachment_form_child) =
-                    self.detach_and_propagate(*child, preimages_oracle, interner, hasher)?
-                {
-                    *child =
-                        self.collapse_detached(attachment_form_child, branch_node, interner)?;
-                }
+            } else if let Some(attachment_form_child) =
+                self.detach_and_propagate(*child, preimages_oracle, interner, hasher)?
+            {
+                *child =
+                    self.collapse_detached(attachment_form_child, branch_node, interner)?;
             }
         }
         debug_assert_eq!(branch.num_occupied(), occupied_before);

@@ -15,7 +15,7 @@ impl crate::PurePrecompileInvocation for Bls12381G1MappingPrecompile {
         resources: &mut R,
         _allocator: A,
     ) -> Result<(), SubsystemError<Self::Subsystem>> {
-        if input.len() == 0 {
+        if input.is_empty() {
             return Err(Bls12PrecompileSubsystemError::LeafUsage(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidInputSize
             )));
@@ -62,7 +62,7 @@ impl crate::PurePrecompileInvocation for Bls12381G2MappingPrecompile {
         resources: &mut R,
         _allocator: A,
     ) -> Result<(), SubsystemError<Self::Subsystem>> {
-        if input.len() == 0 {
+        if input.is_empty() {
             return Err(Bls12PrecompileSubsystemError::LeafUsage(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidInputSize
             )));

@@ -65,7 +65,7 @@ fn parse_integer(input: &[u8; SCALAR_SERIALIZATION_LEN]) -> <Fr as PrimeField>::
 fn parse_fq(
     input: &[u8; FIELD_ELEMENT_SERIALIZATION_LEN],
 ) -> Result<Fq, Bls12PrecompileSubsystemError> {
-    if input[..16].iter().all(|el| *el == 0) == false {
+    if !input[..16].iter().all(|el| *el == 0) {
         return Err(Bls12PrecompileSubsystemError::LeafUsage(interface_error!(
             Bls12PrecompileInterfaceError::InvalidFieldElement
         )));
@@ -106,7 +106,7 @@ fn parse_g1(input: &[u8; G1_SERIALIZATION_LEN]) -> Result<G1Affine, Bls12Precomp
         let y = parse_fq(input[64..128].try_into().unwrap())?;
         let maybe_point = G1Affine::new_unchecked(x, y);
 
-        if maybe_point.is_on_curve() == false {
+        if !maybe_point.is_on_curve() {
             return Err(Bls12PrecompileSubsystemError::LeafUsage(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidG1Point
             )));
@@ -125,7 +125,7 @@ fn parse_g2(input: &[u8; G2_SERIALIZATION_LEN]) -> Result<G2Affine, Bls12Precomp
         let y = parse_fq2(input[128..256].try_into().unwrap())?;
         let maybe_point = G2Affine::new_unchecked(x, y);
 
-        if maybe_point.is_on_curve() == false {
+        if !maybe_point.is_on_curve() {
             return Err(Bls12PrecompileSubsystemError::LeafUsage(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidG1Point
             )));
@@ -164,7 +164,7 @@ fn parse_g2_with_subgroup_check(
 fn write_fq(el: Fq, output: &mut SliceVec<'_, u8>) {
     output.extend_from_slice(&[0u8; 16]);
     // BE
-    for word in el.into_bigint().0[..6].into_iter().rev() {
+    for word in el.into_bigint().0[..6].iter().rev() {
         output.extend_from_slice(&word.to_be_bytes());
     }
 }

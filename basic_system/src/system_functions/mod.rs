@@ -17,7 +17,7 @@ pub mod sha256;
 ///
 #[inline(always)]
 fn bytereverse(input: &mut [u8]) {
-    assert!(input.len() % 2 == 0);
+    assert!(input.len().is_multiple_of(2));
     let len = input.len();
     for i in 0..len / 2 {
         input.swap(i, len - 1 - i);

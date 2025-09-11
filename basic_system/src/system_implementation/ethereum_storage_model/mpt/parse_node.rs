@@ -33,7 +33,7 @@ impl<'a> RLPSlice<'a> {
     pub fn from_slice(mut data: &'a [u8]) -> Result<Self, ()> {
         let new = Self::parse(&mut data)?;
         if data.is_empty() == false {
-            return Err(());
+            Err(())
         } else {
             Ok(new)
         }
@@ -261,6 +261,6 @@ pub(crate) fn parse_node_from_bytes<'a>(
 
         Ok((parsed, pieces, &[]))
     } else {
-        return Err(());
+        Err(())
     }
 }

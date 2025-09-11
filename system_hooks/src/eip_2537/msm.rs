@@ -47,10 +47,9 @@ fn compute_cost(
         discounts_table[num_pairs - 1]
     };
 
-    let cost =
-        (per_pair_cost * num_pairs as u64) * (discount as u64) / (DISCOUNT_DENOMINATOR as u64);
+    
 
-    cost
+    (per_pair_cost * num_pairs as u64) * (discount as u64) / (DISCOUNT_DENOMINATOR as u64)
 }
 
 fn log2(x: usize) -> u32 {
@@ -146,7 +145,7 @@ fn msm<G: CurveGroup, A: core::alloc::Allocator + Clone>(
         for el in reusable_buckets.iter_mut().rev() {
             tmp += &*el;
             window_result += &tmp;
-            if last_window == false {
+            if !last_window {
                 *el = zero;
             }
         }
@@ -160,7 +159,7 @@ fn msm<G: CurveGroup, A: core::alloc::Allocator + Clone>(
     let lowest = *window_sums.first().unwrap();
 
     lowest
-        + &window_sums[1..]
+        + window_sums[1..]
             .iter()
             .rev()
             .fold(zero, |mut total, sum_i| {
@@ -184,7 +183,7 @@ impl crate::PurePrecompileInvocation for Bls12381G1MSMPrecompile {
         resources: &mut R,
         allocator: A,
     ) -> Result<(), SubsystemError<Self::Subsystem>> {
-        if input.len() == 0 {
+        if input.is_empty() {
             return Err(Bls12PrecompileSubsystemError::LeafUsage(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidInputSize
             )));
@@ -202,7 +201,7 @@ impl crate::PurePrecompileInvocation for Bls12381G1MSMPrecompile {
             <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
         ))?;
 
-        if input.len() % G1_MSM_PAIR_LEN != 0 {
+        if !input.len().is_multiple_of(G1_MSM_PAIR_LEN) {
             return Err(Bls12PrecompileSubsystemError::LeafUsage(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidInputSize
             )));
@@ -252,7 +251,7 @@ impl crate::PurePrecompileInvocation for Bls12381G2MSMPrecompile {
         resources: &mut R,
         allocator: A,
     ) -> Result<(), SubsystemError<Self::Subsystem>> {
-        if input.len() == 0 {
+        if input.is_empty() {
             return Err(Bls12PrecompileSubsystemError::LeafUsage(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidInputSize
             )));
@@ -270,7 +269,7 @@ impl crate::PurePrecompileInvocation for Bls12381G2MSMPrecompile {
             <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
         ))?;
 
-        if input.len() % G2_MSM_PAIR_LEN != 0 {
+        if !input.len().is_multiple_of(G2_MSM_PAIR_LEN) {
             return Err(Bls12PrecompileSubsystemError::LeafUsage(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidInputSize
             )));

@@ -56,7 +56,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for InMemoryEthereumInitialStorage
             .unwrap_or(EthereumAccountProperties::EMPTY_ACCOUNT);
         let initial_root = data.storage_root;
         let mut value = Bytes32::ZERO;
-        if data.is_empty() == false && initial_root != EMPTY_ROOT_HASH {
+        if !data.is_empty() && initial_root != EMPTY_ROOT_HASH {
             use crypto::MiniDigest;
             let hash = crypto::sha3::Keccak256::digest(address.key.as_u8_array_ref());
             let digits = digits_from_key(&hash);
@@ -75,7 +75,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for InMemoryEthereumInitialStorage
                     address.key,
                 );
             };
-            if encoding.is_empty() == false {
+            if !encoding.is_empty() {
                 // strip one more RLP
                 let rlp_slice = RLPSlice::from_slice(encoding).unwrap();
                 value = bytes32_from_rlp_slice(&rlp_slice).unwrap();

@@ -32,7 +32,7 @@ pub const fn num_elements_in_backing_node<
         + core::mem::size_of::<ArrayVec<T, 0>>();
     let size = core::mem::size_of::<T>();
     let alignment = core::mem::align_of::<T>();
-    if min_consumed % alignment != 0 {
+    if !min_consumed.is_multiple_of(alignment) {
         // align up
         min_consumed += alignment - (min_consumed % alignment);
     }

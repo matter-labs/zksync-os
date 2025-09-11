@@ -241,7 +241,7 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     // to call a function with offset pointing to a faraway point in calldata. However,
     // when explicitly calling a contract Solidity encodes it via a strict encoding and allowing
     // only standard encoding here allows for cheaper and easier implementation.
-    if abi_encoded_message_len % 32 != 0 {
+    if !abi_encoded_message_len.is_multiple_of(32) {
         return Ok(Err("Calldata is not well formed"));
     }
 

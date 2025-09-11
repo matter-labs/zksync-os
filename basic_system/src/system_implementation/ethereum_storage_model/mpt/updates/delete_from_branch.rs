@@ -15,7 +15,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor> EthereumMPT<'a, A, VC> {
             // as now it makes minimal work
 
             // NOTE: this may delete well beyond the branch itself
-            let _ = self.cascade_delete_subtree(branch_node)?;
+            self.cascade_delete_subtree(branch_node)?;
 
             Ok(())
         } else {

@@ -781,7 +781,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
 pub struct PreviousIndexQuery;
 
 impl SimpleOracleQuery for PreviousIndexQuery {
-    const QUERY_ID: u32 = STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK | 0x00;
+    const QUERY_ID: u32 = STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK;
     type Input = Bytes32;
     type Output = u64;
 }

@@ -62,11 +62,11 @@ impl<M: MemorySource> OracleQueryProcessor<M> for InMemoryEthereumInitialAccount
             if let Ok(encoding) =
                 accounts_mpt.get(path, &mut self.preimages_oracle, &mut interner, &mut hasher)
             {
-                if encoding.is_empty() == false {
-                    let props = EthereumAccountProperties::parse_from_rlp_bytes(encoding)
-                        .expect("must parse account data");
+                if !encoding.is_empty() {
+                    
 
-                    props
+                    EthereumAccountProperties::parse_from_rlp_bytes(encoding)
+                        .expect("must parse account data")
                 } else {
                     EthereumAccountProperties::EMPTY_ACCOUNT
                 }
@@ -76,6 +76,6 @@ impl<M: MemorySource> OracleQueryProcessor<M> for InMemoryEthereumInitialAccount
             }
         };
 
-        DynUsizeIterator::from_constructor(account, |inner_ref| UsizeSerializable::iter(inner_ref))
+        DynUsizeIterator::from_constructor(account, UsizeSerializable::iter)
     }
 }

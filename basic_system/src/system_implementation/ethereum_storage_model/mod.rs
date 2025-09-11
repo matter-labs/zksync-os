@@ -38,25 +38,23 @@ pub(crate) fn compare_bytes32_and_mpt_integer(a: &Bytes32, b: &[u8]) -> bool {
     let expected_b_len_from_a = a.num_trailing_nonzero_bytes();
     if expected_b_len_from_a == 0 {
         b.is_empty() || b == EMPTY_SLICE_ENCODING
-    } else {
-        if expected_b_len_from_a == 1 {
-            if b.is_empty() {
-                return false;
-            }
-            let b0 = b[0];
-            if b[0] < 0x80 {
-                a.as_u8_array_ref()[31] == b0
-            } else {
-                if b.len() < 2 {
-                    return false;
-                }
-                a.as_u8_array_ref()[31] == b[1]
-            }
-        } else {
-            if b.len() < expected_b_len_from_a + 1 {
-                return false;
-            }
-            &a.as_u8_array_ref()[(32 - expected_b_len_from_a)..] == &b[1..]
+    } else if expected_b_len_from_a == 1 {
+        if b.is_empty() {
+            return false;
         }
+        let b0 = b[0];
+        if b[0] < 0x80 {
+            a.as_u8_array_ref()[31] == b0
+        } else {
+            if b.len() < 2 {
+                return false;
+            }
+            a.as_u8_array_ref()[31] == b[1]
+        }
+    } else {
+        if b.len() < expected_b_len_from_a + 1 {
+            return false;
+        }
+        a.as_u8_array_ref()[(32 - expected_b_len_from_a)..] == b[1..]
     }
 }

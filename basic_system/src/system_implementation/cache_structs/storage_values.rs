@@ -210,7 +210,7 @@ impl<
                 // Element doesn't exist in cache yet, initialize it
                 initialized_element = true;
 
-                let query_input = key.clone().into();
+                let query_input = (*key).into();
                 let data_from_oracle = InitialStorageSlotQuery::get(oracle, &query_input)
                     .expect("must get initial slot value from oracle");
 

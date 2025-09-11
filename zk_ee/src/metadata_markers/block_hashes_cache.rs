@@ -52,11 +52,7 @@ impl BlockHashesCache {
 impl DynamicMetadataResponder for BlockHashesCache {
     #[inline(always)]
     fn can_respond<M: MetadataRequest>() -> bool {
-        if core::any::TypeId::of::<M>() == core::any::TypeId::of::<BlockHashMetadataRequest>() {
-            true
-        } else {
-            false
-        }
+        core::any::TypeId::of::<M>() == core::any::TypeId::of::<BlockHashMetadataRequest>()
     }
 
     fn get_metadata_with_bookkeeping<M: MetadataRequest>(&mut self, input: M::Input) -> M::Output {

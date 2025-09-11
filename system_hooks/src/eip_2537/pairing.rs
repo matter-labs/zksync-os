@@ -19,7 +19,7 @@ impl crate::PurePrecompileInvocation for Bls12381PairingCheckPrecompile {
         resources: &mut R,
         allocator: A,
     ) -> Result<(), SubsystemError<Self::Subsystem>> {
-        if input.len() == 0 {
+        if input.is_empty() {
             return Err(Bls12PrecompileSubsystemError::LeafUsage(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidInputSize
             )));
@@ -35,7 +35,7 @@ impl crate::PurePrecompileInvocation for Bls12381PairingCheckPrecompile {
             <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
         ))?;
 
-        if input.len() % BLS12_381_PAIR_LEN != 0 {
+        if !input.len().is_multiple_of(BLS12_381_PAIR_LEN) {
             return Err(Bls12PrecompileSubsystemError::LeafUsage(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidInputSize
             )));

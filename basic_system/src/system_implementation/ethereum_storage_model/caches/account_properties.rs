@@ -122,7 +122,7 @@ impl EthereumAccountProperties {
                 // just as-is - single byte
             } else {
                 let bytes = bits.next_multiple_of(8) / 8;
-                concatenation_length += bytes as usize;
+                concatenation_length += bytes;
             }
 
             bits

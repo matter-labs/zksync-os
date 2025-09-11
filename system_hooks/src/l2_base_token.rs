@@ -278,7 +278,7 @@ where
             }
 
             // Burn nominal_token_value
-            let _ = match system.io.update_account_nominal_token_balance(
+            match system.io.update_account_nominal_token_balance(
                 ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
                     .map_err(SystemError::LeafDefect)?,
                 resources,
@@ -310,7 +310,7 @@ where
             // - additional_data (length of additional_data)
             let message_length = 76 + length;
             let abi_encoded_message_length = 32 + 32 + message_length;
-            let abi_encoded_message_length = if abi_encoded_message_length % 32 != 0 {
+            let abi_encoded_message_length = if !abi_encoded_message_length.is_multiple_of(32) {
                 abi_encoded_message_length + (32 - (abi_encoded_message_length % 32))
             } else {
                 abi_encoded_message_length

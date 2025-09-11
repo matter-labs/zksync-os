@@ -258,9 +258,9 @@ impl EthereumStoragePersister {
             // "inner" slice is at most 32 bytes, so outer is at most 33
             buffer[0].write(0x81 + (byte_len as u8));
             buffer[1].write(0x80 + (byte_len as u8));
-            buffer[2..][..byte_len as usize]
-                .write_copy_of_slice(&value.as_u8_array_ref()[(32 - byte_len as usize)..]);
-            offset = 2 + byte_len as usize;
+            buffer[2..][..byte_len]
+                .write_copy_of_slice(&value.as_u8_array_ref()[(32 - byte_len)..]);
+            offset = 2 + byte_len;
         }
         assert!(offset <= LEAF_VALUE_PRE_ENCODING_MAX_LEN);
 
@@ -289,9 +289,9 @@ impl EthereumStoragePersister {
             }
         } else {
             buffer[0].write(0x80 + (byte_len as u8));
-            buffer[1..][..byte_len as usize]
-                .write_copy_of_slice(&value.as_u8_array_ref()[(32 - byte_len as usize)..]);
-            offset = 1 + byte_len as usize;
+            buffer[1..][..byte_len]
+                .write_copy_of_slice(&value.as_u8_array_ref()[(32 - byte_len)..]);
+            offset = 1 + byte_len;
         }
         assert!(offset <= 33);
 

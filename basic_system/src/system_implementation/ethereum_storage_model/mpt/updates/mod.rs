@@ -248,7 +248,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor> EthereumMPT<'a, A, VC> {
     ) -> Result<(), ()> {
         let final_node = self.find_terminal_node_for_update_or_delete(path)?;
         assert!(final_node.is_leaf());
-        let _ = self.update_leaf_node(final_node, pre_encoded_value, interner)?;
+        self.update_leaf_node(final_node, pre_encoded_value, interner)?;
 
         Ok(())
     }

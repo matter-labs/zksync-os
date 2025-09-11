@@ -4,7 +4,7 @@ use core::{cell::Cell, ptr::NonNull};
 #[inline(always)]
 pub(crate) fn tag_pointer<T>(ptr: NonNull<T>, tag: usize) -> NonNull<()> {
     debug_assert!(tag < core::mem::align_of::<T>());
-    debug_assert!(ptr.addr().get() % core::mem::align_of::<T>() == 0);
+    debug_assert!(ptr.addr().get().is_multiple_of(core::mem::align_of::<T>()));
     let raw_addr = ptr.addr().get();
     let tagged_addr = raw_addr | tag;
     unsafe { NonNull::new_unchecked(core::ptr::with_exposed_provenance_mut(tagged_addr)) }

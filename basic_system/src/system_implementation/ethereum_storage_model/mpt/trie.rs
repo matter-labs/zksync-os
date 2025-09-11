@@ -193,14 +193,14 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor> EthereumMPT<'a, A, VC> {
 
         let interned_root_node_key = EMPTY_SLICE_ENCODING;
 
-        let new = Self {
+        
+
+        Self {
             root,
             interned_root_node_key,
             capacities,
             preimages_cache: BTreeMap::new_in(allocator.clone()),
-        };
-
-        new
+        }
     }
 
     pub fn set_root(
@@ -686,7 +686,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor> EthereumMPT<'a, A, VC> {
                             // nothing
                         } else {
                             // it is a leaf with empty nibbles
-                            let encoding = RLPSlice::from_slice(*&encoding)?;
+                            let encoding = RLPSlice::from_slice(encoding)?;
                             let leaf = LeafNode {
                                 cached_key: key_encoding,
                                 parent_node: to_be_inserted_node,
