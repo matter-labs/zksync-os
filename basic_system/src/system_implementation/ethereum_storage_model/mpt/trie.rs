@@ -193,8 +193,6 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor> EthereumMPT<'a, A, VC> {
 
         let interned_root_node_key = EMPTY_SLICE_ENCODING;
 
-        
-
         Self {
             root,
             interned_root_node_key,

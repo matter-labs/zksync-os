@@ -440,7 +440,6 @@ impl<A: Allocator + Clone, R: Resources, SC: StackCtor<N>, const N: usize>
         let bytecode = if needs_preimage {
             // NOTE: deconstruction happens at the end of the TX, so even deconstructed accounts would NOT
             // respond with empty bytecode (well, WTF)
-            
 
             {
                 if bytecode_hash_is_zero {

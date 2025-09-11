@@ -63,8 +63,6 @@ impl<M: MemorySource> OracleQueryProcessor<M> for InMemoryEthereumInitialAccount
                 accounts_mpt.get(path, &mut self.preimages_oracle, &mut interner, &mut hasher)
             {
                 if !encoding.is_empty() {
-                    
-
                     EthereumAccountProperties::parse_from_rlp_bytes(encoding)
                         .expect("must parse account data")
                 } else {

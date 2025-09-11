@@ -46,9 +46,13 @@ impl<PS: PreimageSource, M: MemorySource> OracleQueryProcessor<M> for GenericPre
         let preimage = if hash.is_zero() {
             vec![]
         } else {
-            self.preimage_source.get_preimage(hash).unwrap_or_else(|| panic!("must know a preimage for hash {} for query ID 0x{:016x}",
-                hex::encode(hash.as_u8_array_ref()),
-                query_id))
+            self.preimage_source.get_preimage(hash).unwrap_or_else(|| {
+                panic!(
+                    "must know a preimage for hash {} for query ID 0x{:016x}",
+                    hex::encode(hash.as_u8_array_ref()),
+                    query_id
+                )
+            })
         };
 
         if query_id == ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID

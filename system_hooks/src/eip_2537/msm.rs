@@ -47,8 +47,6 @@ fn compute_cost(
         discounts_table[num_pairs - 1]
     };
 
-    
-
     (per_pair_cost * num_pairs as u64) * (discount as u64) / (DISCOUNT_DENOMINATOR as u64)
 }
 

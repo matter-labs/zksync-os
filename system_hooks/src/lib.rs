@@ -34,7 +34,8 @@ use zk_ee::{
     memory::slice_vec::SliceVec,
     system::{
         base_system_functions::{
-            Bn254AddErrors, Bn254MulErrors, Bn254PairingCheckErrors, ModExpErrors, RipeMd160Errors, Secp256k1ECRecoverErrors, Sha256Errors,
+            Bn254AddErrors, Bn254MulErrors, Bn254PairingCheckErrors, ModExpErrors, RipeMd160Errors,
+            Secp256k1ECRecoverErrors, Sha256Errors,
         },
         errors::subsystem::Subsystem,
         EthereumLikeTypes, System, SystemTypes, *,

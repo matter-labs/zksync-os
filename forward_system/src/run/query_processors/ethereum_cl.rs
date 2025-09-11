@@ -1,4 +1,3 @@
-
 use super::*;
 use alloy::consensus::Header;
 use basic_bootloader::bootloader::block_flow::ethereum_block_flow::oracle_queries::{
