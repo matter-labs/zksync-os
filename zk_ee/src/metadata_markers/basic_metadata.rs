@@ -1,5 +1,3 @@
-use core::u64;
-
 use crate::{types_config::SystemIOTypesConfig, utils::Bytes32};
 use ruint::aliases::U256;
 

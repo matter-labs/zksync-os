@@ -118,7 +118,7 @@ fn msm<G: CurveGroup, A: core::alloc::Allocator + Clone>(
 
     let lowest_bits_mask = (1u64 << c) - 1;
 
-    for window_idx in 0..num_windows {
+    for (window_idx, window_sum) in window_sums.iter_mut().enumerate().take(num_windows) {
         let last_window = window_idx == num_windows - 1;
 
         unsafe {
@@ -147,7 +147,7 @@ fn msm<G: CurveGroup, A: core::alloc::Allocator + Clone>(
                 *el = zero;
             }
         }
-        window_sums[window_idx] = window_result;
+        *window_sum = window_result;
 
         window_start += c;
     }

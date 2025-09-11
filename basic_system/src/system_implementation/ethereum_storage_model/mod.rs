@@ -1,3 +1,6 @@
+// TODO the code should be cleaned up
+#![allow(clippy::all)]
+
 // Ethereum storage layout. There are multiple fundamental drawbacks of using it for zk:
 // - inefficient for state diffs (no space to encode indexes)
 // - inefficient for code analysis caching, or delegation caching (no space to put such data)
