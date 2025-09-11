@@ -153,13 +153,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let diagnostics_config = if FLAMEGRAPH {
             let mut profiler_config = ProfilerConfig::new("flamegraph.svg".into());
             profiler_config.frequency_recip = 10;
-            let diagnostics_config = Some(profiler_config).map(|cfg| {
-                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(&app));
+
+            Some(profiler_config).map(|cfg| {
+                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(app));
                 diagnostics_cfg.profiler_config = Some(cfg);
                 diagnostics_cfg
-            });
-
-            diagnostics_config
+            })
         } else {
             None
         };
@@ -459,7 +458,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             })
             .collect();
 
-        assert!(headers.len() > 0);
+        assert!(!headers.is_empty());
         assert!(headers.is_sorted_by(|a, b| a.number < b.number));
         headers.reverse();
         assert_eq!(headers.len(), witness.headers.len());

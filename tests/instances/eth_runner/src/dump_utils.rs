@@ -23,7 +23,7 @@ pub fn dump_eth_block(
     let block = rpc::get_block(endpoint, block_number)
         .context(format!("Failed to fetch block for {block_number}"))?;
 
-    if beacon_chain_endpoint.is_empty() == false {
+    if !beacon_chain_endpoint.is_empty() {
         let sidecars =
             rpc::get_blobs_from_beacon_chain(beacon_chain_endpoint, &block.result.header)?;
         serde_json::to_writer(fs::File::create(dir.join("blobs.json"))?, &sidecars)?;

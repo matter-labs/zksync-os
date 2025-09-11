@@ -323,7 +323,7 @@ fn zksync_os_output_into_account_state(
                     };
                     AccountProperties::decode(&encoded.try_into().unwrap())
                 };
-                assert!(updates.contains_key(&address) == false);
+                assert!(!updates.contains_key(&address));
                 let entry = updates.entry(address).or_default();
                 entry.balance = Some(props.balance);
                 entry.nonce = Some(props.nonce);

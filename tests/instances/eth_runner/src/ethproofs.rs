@@ -1,26 +1,11 @@
-use crate::block::Block;
-use crate::block_hashes::BlockHashes;
-use crate::calltrace::CallTrace;
-use crate::dump_utils::AccountStateDiffs;
 use crate::live_run::rpc;
-use crate::native_model::compute_ratio;
-use crate::post_check::{post_check, post_check_ext};
-use crate::prestate::{populate_prestate, DiffTrace, PrestateTrace};
-use crate::receipts::{BlockReceipts, TransactionReceipt};
 use alloy::consensus::Header;
-use alloy::eips::eip4844::BlobTransactionSidecarItem;
-use alloy_primitives::Address;
 use alloy_primitives::U256;
 use alloy_rlp::Encodable;
-use alloy_rpc_types_eth::Withdrawal;
 use anyhow::Context;
 use anyhow::Ok;
-use anyhow::Result;
-use forward_system::run::output::map_tx_results;
 use rig::log::info;
 use rig::*;
-use std::fs::{self, File};
-use std::io::BufReader;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -69,7 +54,7 @@ pub fn ethproofs_run(block_number: u64, reth_endpoint: &str) -> anyhow::Result<(
         .iter()
         .map(|el| alloy_rlp::decode_exact(&el[..]).expect("must decode headers from witness"))
         .collect();
-    assert!(headers.len() > 0);
+    assert!(!headers.is_empty());
     assert!(headers.is_sorted_by(|a, b| { a.number < b.number }));
     headers.reverse();
 

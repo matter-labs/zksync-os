@@ -131,10 +131,9 @@ fn eth_run<const PROOF_ENV: bool>(
                 // panic!("No account leaf encoding for {}", &el.address);
                 continue;
             };
-            if hex::decode(&el.post_leaf_encoding[2..])
+            if !hex::decode(&el.post_leaf_encoding[2..])
                 .unwrap()
                 .ends_with(&output)
-                == false
             {
                 use crate::single_run::log::error;
                 error!(
