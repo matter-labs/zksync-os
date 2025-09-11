@@ -433,6 +433,8 @@ where
         // use would be refunded based on potentially one gas price, and operator will be paid using different one. But those
         // changes are not "transfers" in nature
 
+        let mut inf_resources = S::Resources::FORMAL_INFINITE;
+
         assert!(
             context.gas_used <= context.tx_gas_limit,
             "gas limit is {}, but {} gas is reported as used",
@@ -451,18 +453,15 @@ where
             let refund = context.gas_price_for_metadata
                 * U256::from(context.tx_gas_limit - context.gas_used); // can not overflow
 
-            context
-                .resources
-                .main_resources
-                .with_infinite_ergs(|resources| {
-                    system.io.update_account_nominal_token_balance(
-                        ExecutionEnvironmentType::NoEE, // out of scope of other interactions
-                        resources,
-                        &receiver,
-                        &refund,
-                        false,
-                    )
-                })?;
+            inf_resources.with_infinite_ergs(|resources| {
+                system.io.update_account_nominal_token_balance(
+                    ExecutionEnvironmentType::NoEE, // out of scope of other interactions
+                    resources,
+                    &receiver,
+                    &refund,
+                    false,
+                )
+            })?;
         }
 
         assert!(context.gas_used > 0);
@@ -475,18 +474,15 @@ where
         let fee = context.gas_price_for_fee_commitment * U256::from(context.gas_used); // can not overflow
         let coinbase = system.get_coinbase();
 
-        context
-            .resources
-            .main_resources
-            .with_infinite_ergs(|resources| {
-                system.io.update_account_nominal_token_balance(
-                    ExecutionEnvironmentType::NoEE, // out of scope of other interactions
-                    resources,
-                    &coinbase,
-                    &fee,
-                    false,
-                )
-            })?;
+        inf_resources.with_infinite_ergs(|resources| {
+            system.io.update_account_nominal_token_balance(
+                ExecutionEnvironmentType::NoEE, // out of scope of other interactions
+                resources,
+                &coinbase,
+                &fee,
+                false,
+            )
+        })?;
 
         Ok(())
     }
