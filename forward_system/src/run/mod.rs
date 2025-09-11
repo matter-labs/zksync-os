@@ -6,6 +6,7 @@ mod tree;
 mod tx_result_callback;
 mod tx_source;
 
+pub mod convert;
 mod interface_impl;
 pub mod result_keeper;
 pub mod test_impl;

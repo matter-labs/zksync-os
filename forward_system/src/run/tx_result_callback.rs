@@ -1,5 +1,5 @@
 use super::result_keeper::TxProcessingOutputOwned;
-use crate::run::output::convert_error;
+use crate::run::convert::IntoInterface;
 use basic_bootloader::bootloader::errors::InvalidTransaction;
 
 pub trait TxResultCallback: 'static {
@@ -14,6 +14,6 @@ impl<T: zksync_os_interface::traits::TxResultCallback> TxResultCallback for T {
         &mut self,
         tx_execution_result: Result<TxProcessingOutputOwned, InvalidTransaction>,
     ) {
-        self.tx_executed(tx_execution_result.map_err(convert_error))
+        self.tx_executed(tx_execution_result.map_err(IntoInterface::into_interface))
     }
 }
