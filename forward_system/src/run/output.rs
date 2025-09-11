@@ -167,9 +167,8 @@ pub fn extract_account_diffs(
     for (address, key, value) in storage_writes {
         if address == &ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
             if let Some(properties) = account_properties_preimages.get(value) {
-                let flat_key = derive_flat_storage_key(address, key);
                 result.push(AccountDiff {
-                    address: Address::from_slice(&flat_key.as_u8_array_ref()[12..]),
+                    address: Address::from_slice(&key.as_u8_array_ref()[12..]),
                     nonce: properties.nonce,
                     balance: properties.balance,
                     bytecode_hash: properties.bytecode_hash.as_u8_array().into(),
