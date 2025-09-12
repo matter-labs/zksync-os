@@ -125,7 +125,7 @@ jobs:
               working-directory: ./era-evm-tester
               run: cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print
 
-    # We will keep it for a while just in case
+    # We will keep it for a while just in case.
     evm_state_tests_legacy:
       name: EF EVM state tests (legacy)
       runs-on: [matterlabs-ci-runner-high-performance]
