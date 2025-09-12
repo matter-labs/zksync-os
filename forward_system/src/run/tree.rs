@@ -16,3 +16,23 @@ pub trait ReadStorageTree: ReadStorage {
     /// Previous tree index must exist, since we add keys with minimal and maximal possible values to the tree by default.
     fn prev_tree_index(&mut self, key: Bytes32) -> u64;
 }
+
+impl<T: zksync_os_interface::traits::ReadStorage> ReadStorage for T {
+    fn read(&mut self, key: Bytes32) -> Option<Bytes32> {
+        self.read(key.as_u8_array().into()).map(|v| v.0.into())
+    }
+}
+
+impl<T: zksync_os_interface::traits::ReadStorage> ReadStorageTree for T {
+    fn tree_index(&mut self, _key: Bytes32) -> Option<u64> {
+        unreachable!("VM forward run should not invoke the tree")
+    }
+
+    fn merkle_proof(&mut self, _tree_index: u64) -> LeafProof {
+        unreachable!("VM forward run should not invoke the tree")
+    }
+
+    fn prev_tree_index(&mut self, _key: Bytes32) -> u64 {
+        unreachable!("VM forward run should not invoke the tree")
+    }
+}

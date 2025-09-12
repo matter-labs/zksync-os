@@ -1,159 +1,45 @@
 // Includes code adapted from https://github.com/bluealloy/revm/blob/fb80087996dfbd6c74eaf308538cfa707ecb763c/crates/context/interface/src/result.rs
 
+use crate::run::convert::IntoInterface;
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::run::TxResultCallback;
-use arrayvec::ArrayVec;
+use alloy::primitives::Address;
 pub use basic_bootloader::bootloader::block_header::BlockHeader;
-use basic_bootloader::bootloader::errors::InvalidTransaction;
 use ruint::aliases::B160;
-use zk_ee::common_structs::GenericLogContent;
-use zk_ee::common_structs::{
-    derive_flat_storage_key, GenericEventContent, L2ToL1Log, PreimageType,
-};
-use zk_ee::kv_markers::MAX_EVENT_TOPICS;
+use std::collections::HashMap;
+use zk_ee::common_structs::{derive_flat_storage_key, GenericLogContent, PreimageType};
 use zk_ee::system::errors::internal::InternalError;
-use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
+use zksync_os_interface::error::InvalidTransaction;
+use zksync_os_interface::types::{AccountDiff, ExecutionOutput, ExecutionResult, StorageWrite};
 
-#[derive(Debug, Clone)]
-// Output not observed for now, we allow dead code temporarily
-#[allow(dead_code)]
-pub enum ExecutionOutput {
-    Call(Vec<u8>),
-    Create(Vec<u8>, B160),
-}
+// Use interface type as the direct place-in, can be changed in the future.
+pub use zksync_os_interface::types::TxOutput;
 
-#[derive(Debug, Clone)]
-// Output not observed for now, we allow dead code temporarily
-#[allow(dead_code)]
-pub enum ExecutionResult {
-    /// Transaction executed successfully
-    Success(ExecutionOutput),
-    /// Transaction reverted
-    Revert(Vec<u8>),
-}
-
-///
-/// Transaction output in case of successful validation.
-/// This structure includes data to create receipts and update state.
-///
-#[derive(Debug, Clone)]
-// Output not observed for now, we allow dead code temporarily
-#[allow(dead_code)]
-pub struct TxOutput {
-    /// Transaction execution step result
-    pub execution_result: ExecutionResult,
-    /// Total gas used, including all the steps(validation, execution, postOp call)
-    pub gas_used: u64,
-    /// Amount of refunded gas
-    pub gas_refunded: u64,
-    /// Amount of native resource used in the entire transaction for computation.
-    pub computational_native_used: u64,
-    /// Total amount of native resource used in the entire transaction (includes spent on pubdata)
-    pub native_used: u64,
-    /// Amount of pubdata used in the entire transaction.
-    pub pubdata_used: u64,
-    /// Deployed contract address
-    /// - `Some(address)` for the deployment transaction
-    /// - `None` otherwise
-    pub contract_address: Option<B160>,
-    /// Total logs list emitted during all the steps(validation, execution, postOp call)
-    pub logs: Vec<Log>,
-    /// Total l2 to l1 logs list emitted during all the steps(validation, execution, postOp call)
-    pub l2_to_l1_logs: Vec<L2ToL1LogWithPreimage>,
-    /// Deduplicated storage writes happened during tx processing(validation, execution, postOp call)
-    /// TODO: now this field empty as we return writes on the blocks level, but eventually should be moved here
-    pub storage_writes: Vec<StorageWrite>,
-}
-
-#[derive(Debug, Clone)]
-pub struct L2ToL1LogWithPreimage {
-    pub log: L2ToL1Log,
-    pub preimage: Option<Vec<u8>>,
-}
-
-impl From<&GenericLogContent<EthereumIOTypesConfig>> for L2ToL1LogWithPreimage {
-    fn from(value: &GenericLogContent<EthereumIOTypesConfig>) -> Self {
-        use zk_ee::common_structs::GenericLogContentData;
-        use zk_ee::common_structs::UserMsgData;
-        let preimage = match &value.data {
-            GenericLogContentData::UserMsg(UserMsgData { data, .. }) => {
-                Some(data.as_slice().to_vec())
-            }
-            GenericLogContentData::L1TxLog(_) => None,
-        };
-        let log = value.into();
-        Self { log, preimage }
-    }
-}
-
-impl TxOutput {
-    pub fn is_success(&self) -> bool {
-        matches!(self.execution_result, ExecutionResult::Success(_))
-    }
-
-    pub fn as_returned_bytes(&self) -> &[u8] {
-        match &self.execution_result {
-            ExecutionResult::Success(o) => match o {
-                ExecutionOutput::Call(vec) => vec,
-                ExecutionOutput::Create(vec, _) => vec,
-            },
-            ExecutionResult::Revert(vec) => vec,
-        }
-    }
-}
+// Use interface type as the direct place-in, can be changed in the future.
+use basic_system::system_implementation::flat_storage_model::{
+    AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
+};
+use zk_ee::types_config::EthereumIOTypesConfig;
+pub use zksync_os_interface::types::BlockOutput;
+use zksync_os_interface::types::L2ToL1LogWithPreimage;
 
 pub type TxResult = Result<TxOutput, InvalidTransaction>;
 
-#[derive(Debug, Clone)]
-pub struct Log {
-    pub address: B160,
-    pub topics: ArrayVec<Bytes32, MAX_EVENT_TOPICS>,
-    pub data: Vec<u8>,
+/// Extension trait to create `StorageWrite` from components.
+trait StorageWriteExt {
+    #[allow(clippy::new_ret_no_self)]
+    fn new(address: B160, key: Bytes32, value: Bytes32) -> StorageWrite;
 }
 
-#[derive(Debug, Clone)]
-pub struct StorageWrite {
-    // TODO: maybe we should provide an index as well for efficiency?
-    pub key: Bytes32,
-    pub value: Bytes32,
-    // Additional information (account & account key).
-    // hash of them is equal to the key below.
-    // We export them for now, to make integration with existing systems (like anvil-zksync) easier.
-    // In the future, we might want to remove these for performance reasons.
-    pub account: B160,
-    pub account_key: Bytes32,
-}
-
-#[derive(Debug, Clone)]
-pub struct BlockOutput {
-    pub header: BlockHeader,
-    pub tx_results: Vec<TxResult>,
-    // TODO: will be returned per tx later
-    pub storage_writes: Vec<StorageWrite>,
-    pub published_preimages: Vec<(Bytes32, Vec<u8>, PreimageType)>,
-    pub pubdata: Vec<u8>,
-    pub computaional_native_used: u64,
-}
-
-impl From<&GenericEventContent<MAX_EVENT_TOPICS, EthereumIOTypesConfig>> for Log {
-    fn from(value: &GenericEventContent<MAX_EVENT_TOPICS, EthereumIOTypesConfig>) -> Self {
-        Self {
-            address: value.address,
-            topics: value.topics.clone(),
-            data: value.data.as_slice().to_vec(),
-        }
-    }
-}
-
-impl From<(B160, Bytes32, Bytes32)> for StorageWrite {
-    fn from(value: (B160, Bytes32, Bytes32)) -> Self {
-        let flat_key = derive_flat_storage_key(&value.0, &value.1);
-        Self {
-            key: flat_key,
-            value: value.2,
-            account: value.0,
-            account_key: value.1,
+impl StorageWriteExt for StorageWrite {
+    fn new(address: B160, key: Bytes32, value: Bytes32) -> StorageWrite {
+        let flat_key = derive_flat_storage_key(&address, &key);
+        StorageWrite {
+            key: flat_key.as_u8_array().into(),
+            value: value.as_u8_array().into(),
+            account: address.to_be_bytes().into(),
+            account_key: key.as_u8_array().into(),
         }
     }
 }
@@ -177,62 +63,137 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BlockOutput 
             .into_iter()
             .enumerate()
             .map(|(tx_number, result)| {
-                result.map(|output| {
-                    let execution_result = if output.status {
-                        ExecutionResult::Success(if output.contract_address.is_some() {
-                            ExecutionOutput::Create(output.output, output.contract_address.unwrap())
+                result
+                    .map(|output| {
+                        let execution_result = if output.status {
+                            ExecutionResult::Success(if output.contract_address.is_some() {
+                                ExecutionOutput::Create(
+                                    output.output,
+                                    output.contract_address.unwrap(),
+                                )
+                            } else {
+                                ExecutionOutput::Call(output.output)
+                            })
                         } else {
-                            ExecutionOutput::Call(output.output)
-                        })
-                    } else {
-                        ExecutionResult::Revert(output.output)
-                    };
-                    block_computaional_native_used += output.computational_native_used;
-                    TxOutput {
-                        gas_used: output.gas_used,
-                        gas_refunded: output.gas_refunded,
-                        native_used: output.native_used,
-                        computational_native_used: output.computational_native_used,
-                        pubdata_used: output.pubdata_used,
-                        contract_address: output.contract_address,
-                        logs: events
-                            .iter()
-                            .filter_map(|e| {
-                                if e.tx_number == tx_number as u32 {
-                                    Some(e.into())
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect(),
-                        l2_to_l1_logs: logs
-                            .iter()
-                            .filter_map(|m| {
-                                if m.tx_number == tx_number as u32 {
-                                    Some(m.into())
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect(),
-                        execution_result,
-                        storage_writes: vec![],
-                    }
-                })
+                            ExecutionResult::Revert(output.output)
+                        };
+                        block_computaional_native_used += output.computational_native_used;
+                        TxOutput {
+                            gas_used: output.gas_used,
+                            gas_refunded: output.gas_refunded,
+                            native_used: output.native_used,
+                            computational_native_used: output.computational_native_used,
+                            pubdata_used: output.pubdata_used,
+                            contract_address: output.contract_address,
+                            logs: events
+                                .iter()
+                                .filter_map(|e| {
+                                    if e.tx_number == tx_number as u32 {
+                                        Some(e.into_interface())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect(),
+                            l2_to_l1_logs: logs
+                                .iter()
+                                .filter_map(|m| {
+                                    if m.tx_number == tx_number as u32 {
+                                        Some(parse_l2_to_l1_log_w_preimages(m))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect(),
+                            execution_result,
+                            storage_writes: vec![],
+                        }
+                    })
+                    .map_err(IntoInterface::into_interface)
             })
             .collect();
 
-        let storage_writes = storage_writes.into_iter().map(|s| s.into()).collect();
+        let account_diffs = extract_account_diffs(&storage_writes, &new_preimages);
+        let storage_writes = storage_writes
+            .into_iter()
+            .map(|(address, key, value)| StorageWrite::new(address, key, value))
+            .collect();
+        let published_preimages = new_preimages
+            .into_iter()
+            .map(|(hash, data, _)| (hash.as_u8_array().into(), data))
+            .collect();
 
         Self {
-            header: block_header.unwrap(),
+            header: block_header.unwrap().into_interface(),
             tx_results,
             storage_writes,
-            published_preimages: new_preimages,
+            account_diffs,
+            published_preimages,
             pubdata,
             computaional_native_used: block_computaional_native_used,
         }
     }
+}
+
+/// Extract account diffs from a BlockOutput.
+///
+/// This method processes the published preimages and storage writes to extract
+/// accounts that were updated during block execution.
+pub fn extract_account_diffs(
+    storage_writes: &[(B160, Bytes32, Bytes32)],
+    published_preimages: &[(Bytes32, Vec<u8>, PreimageType)],
+) -> Vec<AccountDiff> {
+    // First, collect all account properties from published preimages
+    let mut account_properties_preimages = HashMap::new();
+    for (hash, preimage, preimage_type) in published_preimages {
+        match preimage_type {
+            PreimageType::Bytecode => {}
+            PreimageType::AccountData => {
+                account_properties_preimages.insert(
+                    *hash,
+                    AccountProperties::decode(
+                        &preimage
+                            .clone()
+                            .try_into()
+                            .expect("Preimage should be exactly 124 bytes"),
+                    ),
+                );
+            }
+        }
+    }
+
+    // Then, map storage writes to account addresses
+    let mut result = Vec::new();
+    for (address, key, value) in storage_writes {
+        if address == &ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
+            if let Some(properties) = account_properties_preimages.get(value) {
+                result.push(AccountDiff {
+                    address: Address::from_slice(&key.as_u8_array_ref()[12..]),
+                    nonce: properties.nonce,
+                    balance: properties.balance,
+                    bytecode_hash: properties.bytecode_hash.as_u8_array().into(),
+                });
+            } else {
+                unreachable!();
+            }
+        }
+    }
+
+    result
+}
+
+fn parse_l2_to_l1_log_w_preimages(
+    value: &GenericLogContent<EthereumIOTypesConfig>,
+) -> L2ToL1LogWithPreimage {
+    use zk_ee::common_structs::GenericLogContentData;
+    use zk_ee::common_structs::UserMsgData;
+    let preimage = match &value.data {
+        GenericLogContentData::UserMsg(UserMsgData { data, .. }) => Some(data.as_slice().to_vec()),
+        GenericLogContentData::L1TxLog(_) => None,
+    };
+    let log: zk_ee::common_structs::L2ToL1Log = value.into();
+    let log = log.into_interface();
+    L2ToL1LogWithPreimage { log, preimage }
 }
 
 #[allow(dead_code)]

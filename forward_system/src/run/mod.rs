@@ -6,6 +6,8 @@ mod tree;
 mod tx_result_callback;
 mod tx_source;
 
+pub mod convert;
+mod interface_impl;
 pub mod result_keeper;
 pub mod test_impl;
 
@@ -23,6 +25,7 @@ pub use oracle::ForwardRunningOracle;
 use zk_ee::common_structs::ProofData;
 use zk_ee::system::tracer::Tracer;
 
+pub use interface_impl::RunBlockForward;
 pub use tree::LeafProof;
 pub use tree::ReadStorage;
 pub use tree::ReadStorageTree;
@@ -38,12 +41,7 @@ pub use tx_result_callback::TxResultCallback;
 pub use tx_source::NextTxResponse;
 pub use tx_source::TxSource;
 
-pub use self::output::BlockOutput;
-pub use self::output::ExecutionOutput;
-pub use self::output::ExecutionResult;
-pub use self::output::Log;
-pub use self::output::StorageWrite;
-pub use self::output::TxOutput;
+use self::output::BlockOutput;
 use crate::run::output::TxResult;
 use crate::run::test_impl::{NoopTxCallback, TxListSource};
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;

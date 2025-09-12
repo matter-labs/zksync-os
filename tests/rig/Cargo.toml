@@ -23,6 +23,7 @@ system_hooks = { path = "../../system_hooks"}
 crypto = { path = "../../crypto" }
 cycle_marker = { path = "../../cycle_marker", optional = true }
 zksync_os_api = { path = "../../api" }
+zksync_os_interface = { workspace = true, default-features = false }
 
 prover_examples = { workspace = true, optional=true}
 

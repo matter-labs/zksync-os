@@ -5,6 +5,7 @@
 
 use basic_bootloader::bootloader::block_header::EMPTY_OMMER_ROOT_HASH;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
+use rig::alloy::primitives::{Address, B256};
 use rig::ruint::aliases::{B160, U256};
 use rig::utils::run_block_of_erc20;
 use rig::{zk_ee::utils::Bytes32, Chain};
@@ -17,10 +18,10 @@ fn test_block_header_invariants() {
     let header = output.header;
 
     // Check invariants on header for genesis block.
-    assert_eq!(header.parent_hash, Bytes32::ZERO);
-    assert_eq!(header.ommers_hash, Bytes32::from(EMPTY_OMMER_ROOT_HASH));
-    assert_eq!(header.beneficiary, B160::ZERO);
-    assert_eq!(header.state_root, Bytes32::ZERO);
+    assert_eq!(header.parent_hash, B256::ZERO);
+    assert_eq!(header.ommers_hash, B256::from(EMPTY_OMMER_ROOT_HASH));
+    assert_eq!(header.beneficiary, Address::ZERO);
+    assert_eq!(header.state_root, B256::ZERO);
     // TODO: enable when this is implemented
     // assert_ne!(header.transactions_root, Bytes32::ZERO);
     // assert_ne!(header.receipts_root, Bytes32::ZERO);
@@ -35,7 +36,7 @@ fn test_block_header_invariants() {
                 .sum::<u64>()
     );
     assert_eq!(header.timestamp, 42);
-    assert_eq!(header.base_fee_per_gas, 1000);
+    assert_eq!(header.base_fee_per_gas, Some(1000));
 
     let genesis_hash = header.hash();
 
@@ -55,10 +56,10 @@ fn test_block_header_invariants() {
     };
     let output = run_block_of_erc20::<false>(&mut chain, 10, Some(block_context));
     let header = output.header;
-    assert_eq!(header.parent_hash, Bytes32::from_array(genesis_hash));
-    assert_eq!(header.ommers_hash, Bytes32::from(EMPTY_OMMER_ROOT_HASH));
-    assert_eq!(header.beneficiary, coinbase);
-    assert_eq!(header.state_root, Bytes32::ZERO);
+    assert_eq!(header.parent_hash, genesis_hash);
+    assert_eq!(header.ommers_hash, EMPTY_OMMER_ROOT_HASH);
+    assert_eq!(header.beneficiary.0, coinbase.to_be_bytes());
+    assert_eq!(header.state_root, B256::ZERO);
     // TODO: enable when this is implemented
     // assert_ne!(header.transactions_root, Bytes32::ZERO);
     // assert_ne!(header.receipts_root, Bytes32::ZERO);
@@ -73,5 +74,8 @@ fn test_block_header_invariants() {
                 .sum::<u64>()
     );
     assert_eq!(header.timestamp, 43);
-    assert_eq!(U256::from(header.base_fee_per_gas), eip1559_basefee);
+    assert_eq!(
+        U256::from(header.base_fee_per_gas.unwrap()),
+        eip1559_basefee
+    );
 }

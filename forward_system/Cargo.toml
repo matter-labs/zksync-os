@@ -20,7 +20,10 @@ zk_ee = { path = "../zk_ee", default-features = false }
 evm_interpreter = { path = "../evm_interpreter", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
+zksync_os_interface = { workspace = true, default-features = false }
+
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+alloy = { version = "1", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
 hex = { version = "*", optional = true }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }

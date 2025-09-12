@@ -37,15 +37,14 @@ pub struct Log {
 }
 
 impl Log {
-    pub fn is_equal_to_excluding_data(&self, log: &rig::forward_system::run::Log) -> bool {
-        let address_check =
-            || ruint::aliases::B160::from_be_bytes(self.address.into()) == log.address;
-        let topics_length_check = || self.topics.len() == log.topics.len();
+    pub fn is_equal_to_excluding_data(&self, log: &rig::zksync_os_interface::types::Log) -> bool {
+        let address_check = || self.address == log.address;
+        let topics_length_check = || self.topics.len() == log.topics().len();
         let topics_check = || {
             self.topics
                 .iter()
-                .zip(log.topics.iter())
-                .all(|(l, r)| l.as_slice() == r.as_u8_ref())
+                .zip(log.topics().iter())
+                .all(|(l, r)| l == r)
         };
         address_check() && topics_length_check() && topics_check()
     }
