@@ -88,9 +88,6 @@ jobs:
     evm_state_tests:
         name: EF EVM state tests
         runs-on: [matterlabs-ci-runner-high-performance]
-        concurrency:
-            group: ${{ github.ref }}
-            cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
         steps:
             - uses: actions/checkout@v4
               with:
@@ -132,9 +129,6 @@ jobs:
     evm_state_tests_legacy:
       name: EF EVM state tests (legacy)
       runs-on: [matterlabs-ci-runner-high-performance]
-      concurrency:
-        group: ${{ github.ref }}
-        cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
       steps:
         - uses: actions/checkout@v4
           with:
