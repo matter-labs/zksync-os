@@ -7,7 +7,7 @@ use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
 use hex::FromHex;
 use rig::alloy::consensus::TxEip7702;
-use rig::alloy::primitives::{address, FixedBytes};
+use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::ethers::types::Address;
 use rig::ruint::aliases::{B160, U256};
@@ -376,10 +376,9 @@ fn test_tx_with_access_list() {
     let encoded_mint_tx = {
         let access_list = AccessList::from(vec![AccessListItem {
             address: to,
-            storage_keys: vec![FixedBytes::from_hex(
-                "0000000000000000000000000000000000000000000000000000000000000000",
-            )
-            .unwrap()],
+            storage_keys: vec![b256!(
+                "0x0000000000000000000000000000000000000000000000000000000000000000"
+            )],
         }]);
         let mint_tx = TxEip2930 {
             chain_id: 37u64,
