@@ -1,0 +1,19 @@
+{
+  "bootstrap-sha": "376c6d1c9d47fe306126b963a4f6374fd487d879",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "include-component-in-tag": false,
+  "release-type": "simple",
+  "packages": {
+    ".": {
+      "component": "zksync-os",
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "Cargo.toml",
+          "jsonpath": "$.workspace.package.version"
+        }
+      ]
+    }
+  }
+}

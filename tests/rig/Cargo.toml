@@ -8,24 +8,25 @@ repository.workspace = true
 license.workspace = true
 keywords.workspace = true
 categories.workspace = true
+publish = false
 
 [dependencies]
-basic_bootloader = { path = "../../basic_bootloader" }
+basic_bootloader = { workspace = true }
 risc_v_simulator = { workspace = true , features = ["delegation"] }
-basic_system = { path = "../../basic_system" }
-evm_interpreter = { path = "../../evm_interpreter" }
-forward_system = { path = "../../forward_system" }
-oracle_provider = { path = "../../oracle_provider" }
-callable_oracles = { path = "../../callable_oracles/" }
-zk_ee = { path = "../../zk_ee" }
-zksync_os_runner = { path = "../../zksync_os_runner"}
-system_hooks = { path = "../../system_hooks"}
-crypto = { path = "../../crypto" }
-cycle_marker = { path = "../../cycle_marker", optional = true }
-zksync_os_api = { path = "../../api" }
-zksync_os_interface = { workspace = true, default-features = false }
+basic_system = { workspace = true }
+evm_interpreter = { workspace = true }
+forward_system = { workspace = true }
+oracle_provider = { workspace = true }
+callable_oracles = { workspace = true }
+zk_ee = { workspace = true }
+zksync_os_runner = { workspace = true }
+system_hooks = { workspace = true }
+crypto = { workspace = true }
+cycle_marker = { workspace = true, optional = true }
+zksync_os_api = { workspace = true }
+zksync_os_interface = { workspace = true }
 
-prover_examples = { workspace = true, optional=true}
+prover_examples = { workspace = true, optional = true }
 
 ethers = "2.0.0" # ethers 2.0.0 is required due to dependency conflict TODO: replace with alloy
 futures = "0.3.30"

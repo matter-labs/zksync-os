@@ -8,6 +8,7 @@ repository = "https://github.com/matter-labs/zksync-os/"
 license = "MIT OR Apache-2.0"
 keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
+publish = false
 
 [lib]
 crate-type = ["cdylib"]

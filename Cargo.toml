@@ -16,9 +16,9 @@ members = [
     "zksync_os_runner",
     "system_hooks",
     "supporting_crates/modexp",
-    "supporting_crates/keccak",
-    "supporting_crates/solidity_abi",
-    "supporting_crates/solidity_abi_derive",
+#    "supporting_crates/keccak",
+#    "supporting_crates/solidity_abi",
+#    "supporting_crates/solidity_abi_derive",
     "tests/rig",
     "tests/instances/transactions",
     "tests/instances/erc20",
@@ -31,8 +31,10 @@ members = [
     "tests/instances/multiblock_batch",
     "tests/instances/header",
     "cycle_marker",
-    "tests/binary_checker"
-, "supporting_crates/delegated_u256", "supporting_crates/u256"]
+    "tests/binary_checker",
+#    "supporting_crates/delegated_u256",
+#    "supporting_crates/u256",
+]
 
 exclude = [
     "zksync_os",
@@ -50,7 +52,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.23"
 edition = "2021"
 authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
 homepage = "https://zksync.io/"
@@ -62,11 +64,26 @@ categories = ["cryptography"]
 [workspace.dependencies]
 zksync_os_interface = { version = "=0.0.5" }
 
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
-blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
-prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
-prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
+risc_v_simulator = { version = "0.1.0", git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
+blake2s_u32 = { version = "0.1.0", git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3", default-features = false }
+prover_examples = { version = "0.1.0", git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
+execution_utils = { version = "0.1.0", git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
+prover = { version = "0.1.0", git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
+
+forward_system = { package = "zksync_os_forward_system", version = "0.0.23", path = "forward_system"}
+oracle_provider = { package = "zksync_os_oracle_provider", version = "0.0.23", path = "oracle_provider" }
+callable_oracles = { package = "zksync_os_callable_oracles", version = "0.0.23", path = "callable_oracles" }
+zksync_os_runner = { version = "0.0.23", path = "zksync_os_runner"}
+zk_ee = { package = "zksync_os_ee", version = "0.0.23", path = "zk_ee", default-features = false }
+crypto = { package = "zksync_os_crypto", version = "0.0.23", path = "crypto", default-features = false }
+basic_system = { package = "zksync_os_basic_system", version = "0.0.23", path = "basic_system", default-features = false }
+basic_bootloader = { package = "zksync_os_basic_bootloader", version = "0.0.23", path = "basic_bootloader", default-features = false }
+evm_interpreter = { package = "zksync_os_evm_interpreter", version = "0.0.23", path = "evm_interpreter", default-features = false }
+cycle_marker = { package = "zksync_os_cycle_marker", version = "0.0.23", path = "cycle_marker" }
+storage_models = { package = "zksync_os_storage_models", version = "0.0.23", path = "storage_models", default-features = false }
+system_hooks = { package = "zksync_os_system_hooks", version = "0.0.23", path = "system_hooks", default-features = false }
+zksync_os_api = { path = "api" , version = "0.0.23"}
+modexp = { package = "zksync_os_modexp", version = "0.0.23", path = "supporting_crates/modexp" }
 
 # [profile.dev]
 # opt-level = 0

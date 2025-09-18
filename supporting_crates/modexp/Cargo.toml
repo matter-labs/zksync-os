@@ -1,5 +1,6 @@
 [package]
-name = "modexp"
+name = "zksync_os_modexp"
+description = "ZKsync OS modexp"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

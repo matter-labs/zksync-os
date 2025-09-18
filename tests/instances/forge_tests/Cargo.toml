@@ -8,8 +8,9 @@ repository.workspace = true
 license.workspace = true
 keywords.workspace = true
 categories.workspace = true
+publish = false
 
 [dependencies]
 rig = { path = "../../rig" }
-zk_ee = { path = "../../../zk_ee" }
+zk_ee = { workspace = true }
 hex = "*"

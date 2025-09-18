@@ -1,5 +1,6 @@
 [package]
-name = "crypto"
+name = "zksync_os_crypto"
+description = "ZKsync OS cryptography"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -47,7 +48,7 @@ num-traits = { version = "0.2", default-features = false }
 # ark-bls12-381 = { path = "../../git_copies/algebra/curves/bls12_381", default-features = false, features = ["curve", "scalar_field"] }
 
 [dev-dependencies]
-zksync_os_runner = { path = "../zksync_os_runner"}
+zksync_os_runner = { workspace = true }
 risc_v_simulator = { workspace = true, features = ["delegation"] }
 # blake2s_u32 = {path = "../../zksync-airbender/blake2s_u32", optional = true, default-features = false}
 ark-std = { version = "0.5" }
