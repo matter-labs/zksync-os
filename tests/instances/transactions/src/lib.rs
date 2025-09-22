@@ -10,8 +10,8 @@ use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::ethers::types::Address;
 use rig::ruint::aliases::{B160, U256};
-use rig::utils::*;
 use rig::{alloy, ethers, zksync_web3_rs, Chain};
+use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_web3_rs::eip712::Eip712Meta;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
@@ -250,6 +250,16 @@ fn run_base_system_common(use_712: bool) {
 fn test_block_of_erc20() {
     let mut chain = Chain::empty_randomized(None);
     run_block_of_erc20(&mut chain, 10, None);
+}
+
+#[test]
+fn test_gas_price_zero() {
+    let mut chain = Chain::empty_randomized(None);
+    let block_context = BlockContext {
+        eip1559_basefee: U256::ZERO,
+        ..BlockContext::default()
+    };
+    run_block_of_erc20(&mut chain, 10, Some(block_context));
 }
 
 #[test]
