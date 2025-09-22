@@ -2,12 +2,12 @@ use super::*;
 
 use crate::cost_constants::{P256_NATIVE_COST, P256_VERIFY_COST_ERGS};
 use zk_ee::common_traits::TryExtend;
+use zk_ee::out_of_return_memory;
 use zk_ee::system::{
     base_system_functions::{P256VerifyErrors, SystemFunction},
     errors::subsystem::SubsystemError,
     Computational,
 };
-use zk_ee::{interface_error, out_of_return_memory};
 
 ///
 /// p256 verify system function implementation.
@@ -56,12 +56,14 @@ fn p256_verify_as_system_function_inner<
     dst: &mut D,
     resources: &mut R,
 ) -> Result<(), SubsystemError<P256VerifyErrors>> {
+    let native = <R as Resources>::Native::from_computational(P256_NATIVE_COST);
+    resources.charge(&R::from_ergs_and_native(P256_VERIFY_COST_ERGS, native))?;
+
     if src.len() != 160 {
         // Empty returndata indicates failure.
         return Ok(());
     }
-    let native = <R as Resources>::Native::from_computational(P256_NATIVE_COST);
-    resources.charge(&R::from_ergs_and_native(P256_VERIFY_COST_ERGS, native))?;
+
     // digest, r, s, x, y
     let mut buffer = [0u8; 160];
     for (dst, src) in buffer.iter_mut().zip(src.iter()) {
