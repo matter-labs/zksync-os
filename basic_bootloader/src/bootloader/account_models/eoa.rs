@@ -78,7 +78,11 @@ where
         }
 
         // Balance check
-        let total_required_balance = transaction.required_balance()?;
+        let Some(total_required_balance) = transaction.required_balance() else {
+            return Err(TxError::Validation(
+                InvalidTransaction::OverflowPaymentInTransaction,
+            ));
+        };
 
         match system
             .io
