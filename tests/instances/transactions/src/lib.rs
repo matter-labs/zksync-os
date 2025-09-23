@@ -5,7 +5,6 @@
 use alloy::consensus::{TxEip1559, TxEip2930, TxLegacy};
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
-use hex::FromHex;
 use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
@@ -15,11 +14,10 @@ use rig::utils::*;
 use rig::{alloy, ethers, zksync_web3_rs, Chain};
 use std::str::FromStr;
 use zksync_web3_rs::eip712::Eip712Meta;
-use zksync_web3_rs::eip712::PaymasterParams;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 mod native_charging;
 
-fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
+fn run_base_system_common(use_712: bool) {
     let mut chain = Chain::empty(None);
     // FIXME: this address looks very similar to bridgehub/shared bridge on gateway.
     // Which seems to suggest that it is special.
@@ -40,25 +38,14 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
 
     let from = wallet_ethers.address();
     let to = address!("0000000000000000000000000000000000010002");
-    let paymaster = Address::from_str("0x0000000000000000000000000000000000010004").unwrap();
-    let meta = if use_paymaster {
-        Eip712Meta::new()
-            .gas_per_pubdata(1)
-            .paymaster_params(PaymasterParams {
-                paymaster,
-                paymaster_input: vec![0x8c, 0x5a, 0x34, 0x45],
-            })
-    } else {
-        Eip712Meta::new().gas_per_pubdata(1)
-    };
-    let paymaster_gas = if use_paymaster { 30_000 } else { 0 };
+    let meta = Eip712Meta::new().gas_per_pubdata(1);
 
-    let encoded_mint_tx = if use_aa {
+    let encoded_mint_tx = if use_712 {
         let mint_tx = rig::zksync_web3_rs::eip712::Eip712TransactionRequest::new()
             .chain_id(37)
             .from(from)
             .to(rig::ethers::abi::Address::from_str(to.to_string().as_str()).unwrap())
-            .gas_limit(120_000 + paymaster_gas)
+            .gas_limit(120_000)
             .max_fee_per_gas(1000)
             .max_priority_fee_per_gas(1000)
             .data(hex::decode(ERC_20_MINT_CALLDATA).unwrap())
@@ -78,12 +65,12 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
         rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
     };
 
-    let encoded_transfer_tx = if use_aa {
+    let encoded_transfer_tx = if use_712 {
         let transfer_tx = zksync_web3_rs::eip712::Eip712TransactionRequest::new()
             .chain_id(37)
             .from(from)
             .to(ethers::abi::Address::from_str(to.to_string().as_str()).unwrap())
-            .gas_limit(100_000 + paymaster_gas)
+            .gas_limit(100_000)
             .max_fee_per_gas(1000)
             .max_priority_fee_per_gas(1000)
             .data(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
@@ -106,11 +93,11 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
     };
 
     // `to` == null
-    let encoded_deployment_tx = if use_aa {
+    let encoded_deployment_tx = if use_712 {
         let deployment_tx = zksync_web3_rs::eip712::Eip712TransactionRequest::new()
             .chain_id(37)
             .from(from)
-            .gas_limit(1_200_000 + paymaster_gas)
+            .gas_limit(1_200_000)
             .max_fee_per_gas(1000)
             .max_priority_fee_per_gas(1000)
             .data(hex::decode(ERC_20_DEPLOYMENT_BYTECODE).unwrap())
@@ -133,7 +120,22 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
         };
         rig::utils::sign_and_encode_alloy_tx(deployment_tx, &wallet)
     };
-    let encoded_transfer_to_eoa_tx = {
+    let encoded_transfer_to_eoa_tx = if use_712 {
+        let eoa_to = "4242000000000000000000000000000000000000";
+        let deployment_tx = zksync_web3_rs::eip712::Eip712TransactionRequest::new()
+            .chain_id(37)
+            .from(eoa_wallet_ethers.address())
+            .gas_limit(21_000)
+            .max_fee_per_gas(1000)
+            .max_priority_fee_per_gas(1000)
+            .to(rig::ethers::abi::Address::from_str(eoa_to).unwrap())
+            .custom_data(meta.clone())
+            .nonce(0);
+        rig::utils::sign_and_encode_eip712_tx(
+            deployment_tx,
+            &LocalWallet::from_bytes(eoa_wallet.to_bytes().as_slice()).unwrap(),
+        )
+    } else {
         let eoa_to = address!("4242000000000000000000000000000000000000");
         let transfer_to_eoa = TxEip1559 {
             chain_id: 37u64,
@@ -151,16 +153,16 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
 
     let deployed = Address::from_str("0x14c252e395055507b10f199dd569f2379465d874").unwrap();
 
-    let _encoded_mint2_tx = if use_aa {
+    let encoded_mint2_tx = if use_712 {
         let mint_tx = zksync_web3_rs::eip712::Eip712TransactionRequest::new()
             .chain_id(37)
             .from(from)
             .to(deployed)
-            .gas_limit(100_000 + paymaster_gas)
+            .gas_limit(100_000)
             .max_fee_per_gas(1000)
             .max_priority_fee_per_gas(1000)
             .data(hex::decode(ERC_20_MINT_CALLDATA).unwrap())
-            .nonce(4);
+            .nonce(3);
         rig::utils::sign_and_encode_eip712_tx(mint_tx, &wallet_ethers)
     } else {
         let mint_tx = TxEip1559 {
@@ -202,7 +204,7 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
             gas: Some(40_000),
             max_fee_per_gas: Some(1000),
             max_priority_fee_per_gas: Some(1000),
-            nonce: Some(if use_aa { 4 } else { 3 }),
+            nonce: Some(3),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
         };
@@ -214,19 +216,10 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
         encoded_transfer_tx,
         encoded_deployment_tx,
         encoded_transfer_to_eoa_tx,
-        // TODO: removed bc of cycle limit
-        // encoded_mint2_tx,
+        encoded_mint2_tx,
         encoded_l1_l2_transfer,
         encoded_l1_l2_erc_transfer,
     ];
-
-    if use_aa {
-        let bytecode = rig::utils::load_sol_bytecode("c_aa", "DefaultAccount");
-        chain.set_evm_bytecode(B160::from_be_bytes(from.0), &bytecode);
-    }
-
-    let paymaster_bytecode = rig::utils::load_sol_bytecode("c_aa", "TestnetPaymaster");
-    chain.set_evm_bytecode(B160::from_be_bytes(paymaster.0), &paymaster_bytecode);
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
     chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
@@ -239,10 +232,6 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
         .set_balance(
             B160::from_be_bytes(eoa_wallet.address().0 .0),
             U256::from(1_000_000_000_000_000_u64),
-        )
-        .set_balance(
-            B160::from_be_bytes(paymaster.0),
-            U256::from(1_000_000_000_000_000_u64),
         );
 
     let output = chain.run_block(transactions, None, None);
@@ -251,7 +240,7 @@ fn run_base_system_common(use_aa: bool, use_paymaster: bool) {
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
         let success = r.clone().is_ok_and(|o| o.is_success());
         if !success {
-            println!("Transaction {} failed with: {:?}", i, r)
+            println!("Transaction {i} failed with: {r:?}",)
         }
         success
     }));
@@ -334,7 +323,7 @@ fn test_withdrawal() {
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
         let success = r.clone().is_ok_and(|o| o.is_success());
         if !success {
-            println!("Transaction {} failed with: {:?}", i, r)
+            println!("Transaction {i} failed with: {r:?}")
         }
         success
     }));
@@ -692,23 +681,10 @@ fn test_regression_returndata_empty_3541() {
 
 #[test]
 fn run_base_system() {
-    run_base_system_common(false, false);
+    run_base_system_common(false);
 }
 
 #[test]
-#[ignore = "AA is broken for now"]
-fn run_base_aa_system() {
-    run_base_system_common(true, false);
-}
-
-#[test]
-#[ignore = "AA is broken for now"]
-fn run_base_aa_paymaster_system() {
-    run_base_system_common(true, true);
-}
-
-#[test]
-#[ignore = "Paymaster flow is broken for now"]
-fn run_base_paymaster_system() {
-    run_base_system_common(false, true);
+fn run_base_712_system() {
+    run_base_system_common(true);
 }
