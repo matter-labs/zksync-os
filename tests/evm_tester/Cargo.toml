@@ -9,6 +9,10 @@ license = "MIT OR Apache-2.0"
 keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
+[[bin]]
+name = "evm-tester"
+path = "src/evm_tester/main.rs"
+
 [lib]
 doctest = false
 
