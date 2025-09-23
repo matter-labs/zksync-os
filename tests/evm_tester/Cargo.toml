@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "evm_tester",
+]
+resolver = "2"
