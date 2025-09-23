@@ -7,9 +7,9 @@ use zk_ee::utils::u256_to_u64_saturated;
 use zk_ee::utils::Bytes32;
 use zksync_os_basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use zksync_os_basic_bootloader::bootloader::errors::BootloaderSubsystemError;
-use zksync_os_interface::error::InvalidTransaction;
-use zksync_os_interface::types::{BlockOutput, TxOutput};
 use zksync_os_rig::zksync_os_api::helpers;
+use zksync_os_rig::zksync_os_interface::error::InvalidTransaction;
+use zksync_os_rig::zksync_os_interface::types::{BlockOutput, TxOutput};
 use zksync_os_rig::BlockContext;
 use zksync_os_rig::Chain;
 
@@ -126,18 +126,21 @@ impl ZKsyncOS {
                 // TODO events
 
                 match &tx_output.execution_result {
-                    zksync_os_interface::types::ExecutionResult::Success(execution_output) => {
-                        match execution_output {
-                            zksync_os_interface::types::ExecutionOutput::Call(data) => {
-                                execution_result.return_data = data.clone();
-                            }
-                            zksync_os_interface::types::ExecutionOutput::Create(data, address) => {
-                                execution_result.return_data = data.clone();
-                                execution_result.address_deployed = Some(*address);
-                            }
+                    zksync_os_rig::zksync_os_interface::types::ExecutionResult::Success(
+                        execution_output,
+                    ) => match execution_output {
+                        zksync_os_rig::zksync_os_interface::types::ExecutionOutput::Call(data) => {
+                            execution_result.return_data = data.clone();
                         }
-                    }
-                    zksync_os_interface::types::ExecutionResult::Revert(vec) => {
+                        zksync_os_rig::zksync_os_interface::types::ExecutionOutput::Create(
+                            data,
+                            address,
+                        ) => {
+                            execution_result.return_data = data.clone();
+                            execution_result.address_deployed = Some(*address);
+                        }
+                    },
+                    zksync_os_rig::zksync_os_interface::types::ExecutionResult::Revert(vec) => {
                         execution_result.exception = true;
                         execution_result.return_data = vec.clone();
                     }
