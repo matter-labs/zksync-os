@@ -232,15 +232,13 @@ impl<'a> ZkSyncTransaction<'a> {
     fn validate_structure(&self) -> Result<(), ()> {
         let tx_type = self.tx_type.read();
 
-        // we don't support eip-712 txs anymore
-        // there is still a logic to process 712 txs, but it shouldn't be reachable,
-        // as 712 tx validation would fail here
         match tx_type {
             Self::LEGACY_TX_TYPE
             | Self::EIP_2930_TX_TYPE
             | Self::EIP_1559_TX_TYPE
             | Self::UPGRADE_TX_TYPE
-            | Self::L1_L2_TX_TYPE => {}
+            | Self::L1_L2_TX_TYPE
+            | Self::EIP_712_TX_TYPE => {}
             #[cfg(feature = "pectra")]
             Self::EIP_7702_TX_TYPE => {}
             _ => return Err(()),
@@ -255,14 +253,9 @@ impl<'a> ZkSyncTransaction<'a> {
             _ => {}
         }
 
-        // paymasters can be used only with EIP712 txs
-        match tx_type {
-            Self::EIP_712_TX_TYPE => {}
-            _ => {
-                if self.paymaster.read() != B160::ZERO {
-                    return Err(());
-                }
-            }
+        // paymasters are not supported, even for EIP712 txs
+        if self.paymaster.read() != B160::ZERO {
+            return Err(());
         }
 
         // reserved[0] is EIP-155 flag for legacy txs,
@@ -306,7 +299,6 @@ impl<'a> ZkSyncTransaction<'a> {
                     return Err(());
                 }
             }
-            // TODO: with AA we should allow other signature length for EIP-712 txs
             _ => {
                 if self.signature.range.len() != 65 {
                     return Err(());
@@ -314,14 +306,9 @@ impl<'a> ZkSyncTransaction<'a> {
             }
         }
 
-        // paymasters can be used only with EIP712 txs
-        match tx_type {
-            Self::EIP_712_TX_TYPE => {}
-            _ => {
-                if !self.paymaster_input.range.is_empty() {
-                    return Err(());
-                }
-            }
+        // paymasters are not supported, even for EIP712 txs
+        if !self.paymaster_input.range.is_empty() {
+            return Err(());
         }
 
         // factory deps allowed only for eip712, or l1 to l2/upgrade txs
@@ -1224,7 +1211,11 @@ impl<'a> ZkSyncTransaction<'a> {
         resources: &mut R,
     ) -> Result<[u8; 32], TxError> {
         let signed_hash = self.eip712_tx_calculate_signed_hash(chain_id, resources)?;
-        charge_keccak(U256::BYTES * 2 + self.signature.range.len(), resources)?;
+        // First charge for hashing the signature
+        charge_keccak(self.signature.range.len(), resources)?;
+        // Next charge for combining the two hashes
+        charge_keccak(U256::BYTES * 2, resources)?;
+
         let signature_hash =
             <Keccak256 as MiniDigest>::digest(self.signature.encoding(&self.underlying_buffer));
 
@@ -1255,19 +1246,15 @@ impl<'a> ZkSyncTransaction<'a> {
 
     /// Returns the balance required to process the transaction.
     pub fn required_balance(&self) -> Result<U256, InternalError> {
-        if self.is_eip_712() && self.paymaster.read() != B160::ZERO {
-            Ok(self.value.read())
-        } else {
-            let fee_amount = self
-                .max_fee_per_gas
-                .read()
-                .checked_mul(self.gas_limit.read() as u128)
-                .ok_or(internal_error!("mfpg*gl"))?;
-            self.value
-                .read()
-                .checked_add(U256::from(fee_amount))
-                .ok_or(internal_error!("fa+v"))
-        }
+        let fee_amount = self
+            .max_fee_per_gas
+            .read()
+            .checked_mul(self.gas_limit.read() as u128)
+            .ok_or(internal_error!("mfpg*gl"))?;
+        self.value
+            .read()
+            .checked_add(U256::from(fee_amount))
+            .ok_or(internal_error!("fa+v"))
     }
 
     ///
