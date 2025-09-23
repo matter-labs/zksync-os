@@ -226,13 +226,13 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         'outer: for &byte in exp.iter() {
             // But here we should go from MSB
             for i in (0..8).rev() {
-                if current.digits == 0 {
-                    // in case if modulus is composite, we can get accumulator
-                    // to be 0, and then we can exit the loop early
-                    break 'outer;
-                }
                 let bit = byte & (1 << i) > 0;
                 if first_found {
+                    if current.digits == 0 {
+                        // in case if modulus is composite, we can get accumulator
+                        // to be 0, and then we can exit the loop early. And it's not 0^0 case
+                        break 'outer;
+                    }
                     (current, (scratch_0, scratch_1, scratch_2, scratch_3)) = Self::square_step(
                         current,
                         &modulus,

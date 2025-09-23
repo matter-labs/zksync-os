@@ -189,4 +189,40 @@ mod test {
 
         assert_eq!(output, expected);
     }
+
+    #[test]
+    fn test_5() {
+        // 0^1 mod 2 - somewhat degenerate
+
+        let base = hex::decode("00").unwrap();
+
+        let exp = hex::decode("01").unwrap();
+
+        let modulus = hex::decode("02").unwrap();
+
+        let output = invoke_precompile_no_prepadding(&modulus, &base, &exp);
+
+        let expected = hex::decode("").unwrap();
+
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_6() {
+        // 0^0 mod 2 - somewhat degenerate
+
+        let base = hex::decode("00").unwrap();
+
+        let exp = hex::decode("00").unwrap();
+
+        let modulus = hex::decode("02").unwrap();
+
+        let output = invoke_precompile_no_prepadding(&modulus, &base, &exp);
+
+        let expected =
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000001")
+                .unwrap();
+
+        assert_eq!(output, expected);
+    }
 }
