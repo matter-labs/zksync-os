@@ -68,6 +68,21 @@ prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag
 execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
 prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
 
+forward_system = { package = "zksync_os_forward_system", path = "forward_system"}
+oracle_provider = { package = "zksync_os_oracle_provider", path = "oracle_provider" }
+callable_oracles = { package = "zksync_os_callable_oracles", path = "callable_oracles" }
+zksync_os_runner = { path = "zksync_os_runner"}
+zk_ee = { package = "zksync_os_ee", path = "zk_ee", default-features = false }
+crypto = { package = "zksync_os_crypto", path = "crypto", default-features = false }
+basic_system = { package = "zksync_os_basic_system", path = "basic_system", default-features = false }
+basic_bootloader = { package = "zksync_os_basic_bootloader", path = "basic_bootloader", default-features = false }
+evm_interpreter = { package = "zksync_os_evm_interpreter", path = "evm_interpreter", default-features = false }
+cycle_marker = { package = "zksync_os_cycle_marker", path = "cycle_marker" }
+storage_models = { package = "zksync_os_storage_models", path = "storage_models", default-features = false }
+system_hooks = { package = "zksync_os_system_hooks", path = "system_hooks", default-features = false }
+zksync_os_api = { path = "api" }
+modexp = { package = "zksync_os_modexp", path = "supporting_crates/modexp" }
+
 # [profile.dev]
 # opt-level = 0
 # lto = false

@@ -1,5 +1,5 @@
 [package]
-name = "cycle_marker"
+name = "zksync_os_cycle_marker"
 edition = "2024"
 authors.workspace = true
 homepage.workspace = true

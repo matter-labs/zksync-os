@@ -175,41 +175,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
 
 [[package]]
-name = "basic_bootloader"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "basic_system",
- "crypto",
- "cycle_marker",
- "evm_interpreter",
- "paste",
- "ruint",
- "strum_macros",
- "system_hooks",
- "zk_ee",
-]
-
-[[package]]
-name = "basic_system"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "cfg-if",
- "const_for",
- "crypto",
- "cycle_marker",
- "either",
- "evm_interpreter",
- "modexp",
- "paste",
- "ruint",
- "storage_models",
- "strum_macros",
- "zk_ee",
-]
-
-[[package]]
 name = "bitflags"
 version = "2.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -227,7 +192,7 @@ dependencies = [
 [[package]]
 name = "blake2s_u32"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender?tag=v0.4.1#68953933e3a0846d2155ed0ee024437fc405558a"
+source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=v0.4.3#c23fd0085ee87872e25ff83f780d2d0ee102a166"
 dependencies = [
  "unroll",
 ]
@@ -287,32 +252,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
 
 [[package]]
-name = "crypto"
-version = "0.1.0"
-dependencies = [
- "ark-bls12-381",
- "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-serialize",
- "ark-std",
- "blake2",
- "blake2s_u32",
- "cfg-if",
- "const_for",
- "educe",
- "itertools 0.14.0",
- "k256",
- "num-bigint",
- "num-traits",
- "p256",
- "ripemd",
- "sha2",
- "sha3",
- "zeroize",
-]
-
-[[package]]
 name = "crypto-bigint"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -333,10 +272,6 @@ dependencies = [
  "generic-array",
  "typenum",
 ]
-
-[[package]]
-name = "cycle_marker"
-version = "0.0.0"
 
 [[package]]
 name = "der"
@@ -433,20 +368,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.104",
-]
-
-[[package]]
-name = "evm_interpreter"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "crypto",
- "cycle_marker",
- "either",
- "paste",
- "ruint",
- "strum_macros",
- "zk_ee",
 ]
 
 [[package]]
@@ -592,10 +513,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "modexp"
-version = "0.1.0"
-
-[[package]]
 name = "num-bigint"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -673,25 +590,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "beef09f85ae72cea1ef96ba6870c51e6382ebfa4f0e85b643459331f3daa5be0"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "proof_running_system"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "basic_bootloader",
- "basic_system",
- "cc-traits",
- "cfg-if",
- "crypto",
- "evm_interpreter",
- "lock_api",
- "ruint",
- "seq-macro",
- "system_hooks",
- "talc",
- "zk_ee",
 ]
 
 [[package]]
@@ -815,7 +713,7 @@ dependencies = [
 [[package]]
 name = "riscv_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=v0.3.1#44a1721e4597af363c1da7dfc9d01c2f6b9b61c1"
+source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=v0.4.3#c23fd0085ee87872e25ff83f780d2d0ee102a166"
 
 [[package]]
 name = "ruint"
@@ -921,14 +819,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
-name = "storage_models"
-version = "0.1.0"
-dependencies = [
- "crypto",
- "zk_ee",
-]
-
-[[package]]
 name = "strum_macros"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -966,19 +856,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "system_hooks"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "cycle_marker",
- "evm_interpreter",
- "paste",
- "ruint",
- "strum_macros",
- "zk_ee",
 ]
 
 [[package]]
@@ -1071,27 +948,151 @@ dependencies = [
 ]
 
 [[package]]
-name = "zk_ee"
+name = "zksync_os"
+version = "0.1.0"
+dependencies = [
+ "heapless",
+ "r0",
+ "riscv",
+ "riscv_common",
+ "zksync_os_crypto",
+ "zksync_os_proof_running_system",
+]
+
+[[package]]
+name = "zksync_os_basic_bootloader"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "paste",
+ "ruint",
+ "strum_macros",
+ "zksync_os_basic_system",
+ "zksync_os_crypto",
+ "zksync_os_cycle_marker",
+ "zksync_os_ee",
+ "zksync_os_evm_interpreter",
+ "zksync_os_system_hooks",
+]
+
+[[package]]
+name = "zksync_os_basic_system"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "cfg-if",
+ "const_for",
+ "either",
+ "paste",
+ "ruint",
+ "strum_macros",
+ "zksync_os_crypto",
+ "zksync_os_cycle_marker",
+ "zksync_os_ee",
+ "zksync_os_evm_interpreter",
+ "zksync_os_modexp",
+ "zksync_os_storage_models",
+]
+
+[[package]]
+name = "zksync_os_crypto"
+version = "0.1.0"
+dependencies = [
+ "ark-bls12-381",
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "ark-serialize",
+ "ark-std",
+ "blake2",
+ "blake2s_u32",
+ "cfg-if",
+ "const_for",
+ "educe",
+ "itertools 0.14.0",
+ "k256",
+ "num-bigint",
+ "num-traits",
+ "p256",
+ "ripemd",
+ "ruint",
+ "sha2",
+ "sha3",
+ "zeroize",
+]
+
+[[package]]
+name = "zksync_os_cycle_marker"
+version = "0.0.0"
+
+[[package]]
+name = "zksync_os_ee"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
  "bitflags",
  "cfg-if",
- "crypto",
- "cycle_marker",
  "paste",
  "ruint",
  "strum_macros",
+ "zksync_os_crypto",
+ "zksync_os_cycle_marker",
 ]
 
 [[package]]
-name = "zksync_os"
+name = "zksync_os_evm_interpreter"
 version = "0.1.0"
 dependencies = [
- "crypto",
- "heapless",
- "proof_running_system",
- "r0",
- "riscv",
- "riscv_common",
+ "arrayvec",
+ "either",
+ "paste",
+ "ruint",
+ "strum_macros",
+ "zksync_os_crypto",
+ "zksync_os_cycle_marker",
+ "zksync_os_ee",
+]
+
+[[package]]
+name = "zksync_os_modexp"
+version = "0.1.0"
+
+[[package]]
+name = "zksync_os_proof_running_system"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "cc-traits",
+ "cfg-if",
+ "lock_api",
+ "ruint",
+ "seq-macro",
+ "talc",
+ "zksync_os_basic_bootloader",
+ "zksync_os_basic_system",
+ "zksync_os_crypto",
+ "zksync_os_ee",
+ "zksync_os_evm_interpreter",
+ "zksync_os_system_hooks",
+]
+
+[[package]]
+name = "zksync_os_storage_models"
+version = "0.1.0"
+dependencies = [
+ "zksync_os_crypto",
+ "zksync_os_ee",
+]
+
+[[package]]
+name = "zksync_os_system_hooks"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "paste",
+ "ruint",
+ "strum_macros",
+ "zksync_os_cycle_marker",
+ "zksync_os_ee",
+ "zksync_os_evm_interpreter",
 ]

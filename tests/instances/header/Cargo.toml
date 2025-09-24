@@ -12,7 +12,7 @@ categories.workspace = true
 [dependencies]
 rig = { path = "../../rig" }
 hex = "*"
-basic_bootloader = { path = "../../../basic_bootloader" }
+basic_bootloader = { workspace = true }
 
 [features]
 e2e_proving = ["rig/e2e_proving"]

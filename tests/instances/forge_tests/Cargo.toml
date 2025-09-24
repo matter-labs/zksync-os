@@ -11,5 +11,5 @@ categories.workspace = true
 
 [dependencies]
 rig = { path = "../../rig" }
-zk_ee = { path = "../../../zk_ee" }
+zk_ee = { workspace = true }
 hex = "*"

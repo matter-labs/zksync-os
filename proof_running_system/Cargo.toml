@@ -1,5 +1,5 @@
 [package]
-name = "proof_running_system"
+name = "zksync_os_proof_running_system"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -12,13 +12,13 @@ categories.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zk_ee = { path = "../zk_ee", default-features = false }
-evm_interpreter = { path = "../evm_interpreter", default-features = false }
-basic_system = { path = "../basic_system", default-features = false }
-system_hooks = { path = "../system_hooks", default-features = false }
-basic_bootloader = { path = "../basic_bootloader", default-features = false }
+zk_ee = { workspace = true, default-features = false }
+evm_interpreter = { workspace = true, default-features = false }
+basic_system = { workspace = true, default-features = false }
+system_hooks = { workspace = true, default-features = false }
+basic_bootloader = { workspace = true, default-features = false }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
-crypto = { path = "../crypto", default-features = false }
+crypto = { workspace = true, default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
 cfg-if = "*"
 cc-traits = { version = "*", default-features = false }

@@ -11,7 +11,7 @@ categories = ["cryptography"]
 
 [dependencies]
 riscv_common = {git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
-crypto = { path = "../../../", features = ["blake2s_tests"]}
+crypto = { package = "zksync_os_crypto", path = "../../../", features = ["blake2s_tests"]}
 
 [workspace]
 

@@ -1,5 +1,5 @@
 [package]
-name = "basic_system"
+name = "zksync_os_basic_system"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,15 +10,15 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-zk_ee = { path = "../zk_ee", default-features = false }
-evm_interpreter = { path = "../evm_interpreter"  }
+zk_ee = { workspace = true, default-features = false }
+evm_interpreter = { workspace = true  }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
-crypto = { path = "../crypto", default-features = false, features = ["secp256k1-static-context"]}
+crypto = { workspace = true, default-features = false, features = ["secp256k1-static-context"]}
 arrayvec = { version = "0.7.4", default-features = false }
 either = { version = "*", default-features = false }
-storage_models = { path = "../storage_models", default-features = false }
-modexp = { path = "../supporting_crates/modexp" }
-cycle_marker = { path = "../cycle_marker" }
+storage_models = { workspace = true, default-features = false }
+modexp = { workspace = true }
+cycle_marker = { workspace = true }
 
 cfg-if = "1.0.0"
 const_for = "0.1.5"
@@ -43,7 +43,7 @@ multiblock-batch = []
 [dev-dependencies]
 hex = {version = "0.4.3"}
 proptest = "1.6.0"
-crypto = { path = "../crypto", default-features = false, features = ["secp256k1-static-context", "testing"]}
+crypto = { workspace = true, default-features = false, features = ["secp256k1-static-context", "testing"]}
 num-bigint = "*"
 num-traits = "*"
 arbitrary = { version = "1", features = ["derive"] }

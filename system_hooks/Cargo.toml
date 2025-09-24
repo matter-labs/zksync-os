@@ -1,5 +1,5 @@
 [package]
-name = "system_hooks"
+name = "zksync_os_system_hooks"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,10 +10,10 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-zk_ee = { path = "../zk_ee", default-features = false }
+zk_ee = { workspace = true, default-features = false }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
-evm_interpreter = { path = "../evm_interpreter", default-features = false }
-cycle_marker = { path = "../cycle_marker" }
+evm_interpreter = { workspace = true, default-features = false }
+cycle_marker = { workspace = true }
 
 arrayvec = { version = "0.7.4", default-features = false }
 strum_macros = "0.27.1"

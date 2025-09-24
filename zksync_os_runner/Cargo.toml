@@ -13,7 +13,7 @@ categories.workspace = true
 risc_v_simulator = { workspace = true, features = ["delegation"] }
 execution_utils = { workspace = true }
 prover_examples = { workspace = true }
-cycle_marker = { path = "../cycle_marker" }
+cycle_marker = { workspace = true }
 
 [features]
 opcode_stats = ["risc_v_simulator/opcode_stats"]

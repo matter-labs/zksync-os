@@ -1,5 +1,5 @@
 [package]
-name = "callable_oracles"
+name = "zksync_os_callable_oracles"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,10 +10,10 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-zk_ee = { path = "../zk_ee", default-features = false }
+zk_ee = { workspace = true, default-features = false }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
-crypto = { path = "../crypto", default-features = false }
-oracle_provider = { path = "../oracle_provider" }
+crypto = { workspace = true, default-features = false }
+oracle_provider = { workspace = true }
 
 risc_v_simulator = { workspace = true, optional = true }
 num-bigint = { version = "*", optional = true }

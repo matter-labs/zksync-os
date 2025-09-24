@@ -13,7 +13,7 @@ categories.workspace = true
 rig = { path = "../../rig", features = ["p256_precompile"] }
 hex = "*"
 bytes = "1.9.0"
-cycle_marker = { path = "../../../cycle_marker" }
+cycle_marker = { workspace = true }
 
 [features]
 cycle_marker = ["rig/cycle_marker"]

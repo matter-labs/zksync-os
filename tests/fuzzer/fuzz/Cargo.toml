@@ -13,17 +13,17 @@ default-features = false
 features = ["http-rustls-tls", "test", "signing"]
 
 [dependencies]
-evm_interpreter = { path = "../../../evm_interpreter" }
+evm_interpreter = { package = "zksync_os_evm_interpreter", path = "../../../evm_interpreter" }
 iwasm_ee = { path = "../../../iwasm_ee" }
-forward_system = { path = "../../../forward_system", features = ["no_print"] }
-basic_system = { path = "../../../basic_system" }
-basic_bootloader = { path = "../../../basic_bootloader" }
-system_hooks = { path = "../../../system_hooks" }
-zk_ee = { path = "../../../zk_ee" }
+forward_system = { package = "zksync_os_forward_system", path = "../../../forward_system", features = ["no_print"] }
+basic_system = { package = "zksync_os_basic_system", path = "../../../basic_system" }
+basic_bootloader = { package = "zksync_os_basic_bootloader", path = "../../../basic_bootloader" }
+system_hooks = { package = "zksync_os_system_hooks", path = "../../../system_hooks" }
+zk_ee = { package = "zksync_os_ee", path = "../../../zk_ee" }
 alloy = { version = "1", features = ["full", "eip712"]}
 fuzzer = { path = "../../fuzzer"}
 rig = { path = "../../rig", features = ["p256_precompile"] }
-crypto = { path = "../../../crypto"}
+crypto = { package = "zksync_os_crypto", path = "../../../crypto"}
 libfuzzer-sys = "0.4"
 hex = "*"
 sha2 = "0.10.8"

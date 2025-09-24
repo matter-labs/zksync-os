@@ -1,5 +1,5 @@
 [package]
-name = "oracle_provider"
+name = "zksync_os_oracle_provider"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,5 +10,5 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-zk_ee = { path = "../zk_ee", default-features = false }
+zk_ee = { workspace = true, default-features = false }
 risc_v_simulator = { workspace = true }

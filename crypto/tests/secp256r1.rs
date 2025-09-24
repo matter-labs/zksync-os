@@ -1,4 +1,5 @@
-use crypto::{
+use proptest::prelude::*;
+use zksync_os_crypto::{
     p256::{
         ecdsa::{
             signature::hazmat::{PrehashSigner, PrehashVerifier},
@@ -9,7 +10,6 @@ use crypto::{
     secp256r1::verify,
     sha3::{Digest, Keccak256},
 };
-use proptest::prelude::*;
 
 fn split_signature(sig: &Signature) -> ([u8; 32], [u8; 32]) {
     let r_bytes = sig.r().to_bytes();

@@ -1,5 +1,5 @@
-use crypto::secp256k1::recover;
-use crypto::{
+use zksync_os_crypto::secp256k1::recover;
+use zksync_os_crypto::{
     k256::elliptic_curve::{ops::Reduce, rand_core::OsRng},
     k256::{
         ecdsa::{hazmat::bits2field, SigningKey},
@@ -61,8 +61,8 @@ fn selftest() {
         let public_key = private_key.verifying_key().as_affine();
 
         let (signature, recovery_id) = private_key.sign_prehash_recoverable(&digest).unwrap();
-        let msg = <Scalar as Reduce<crypto::k256::U256>>::reduce_bytes(
-            &bits2field::<crypto::k256::Secp256k1>(&digest)
+        let msg = <Scalar as Reduce<zksync_os_crypto::k256::U256>>::reduce_bytes(
+            &bits2field::<zksync_os_crypto::k256::Secp256k1>(&digest)
                 .map_err(|_| ())
                 .unwrap(),
         );

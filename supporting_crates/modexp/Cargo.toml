@@ -1,5 +1,5 @@
 [package]
-name = "modexp"
+name = "zksync_os_modexp"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

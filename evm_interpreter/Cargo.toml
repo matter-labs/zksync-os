@@ -1,5 +1,5 @@
 [package]
-name = "evm_interpreter"
+name = "zksync_os_evm_interpreter"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -13,11 +13,11 @@ categories.workspace = true
 
 [dependencies]
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
-zk_ee = { path = "../zk_ee", default-features = false }
-crypto = { path = "../crypto", default-features = false }
+zk_ee = { workspace = true, default-features = false }
+crypto = { workspace = true, default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
 either = { version = "*", default-features = false }
-cycle_marker = { path = "../cycle_marker" }
+cycle_marker = { workspace = true }
 strum_macros = "0.27.1"
 paste = "1.0.15"
 

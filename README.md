@@ -14,13 +14,13 @@ The most recent documentation can be found here:
 
 The project contains the following crates (the list is not complete):
 
-* [zk_ee](./zk_ee/) - execution environment
+* [zksync_os_ee](./zk_ee/) - execution environment
 * [zksync_os](./zksync_os/) - operating system - that can handle multiple execution environments. Compiled into RISC-V.
 * [zksync_os_runner](./zksync_os_runner/) -  allows running programs on zksync_os using RISC-V simulator.
-* [basic_system](./basic_system/) - basic implementation of zk_ee::system and system functions
-* [basic_bootloader](./basic_bootloader/) - implementation of bootloader and main execution loop
-* [evm_interpreter](./evm_interpreter/) - EVM execution environment
-* [forward_system](./forward_system/) - implementation for "forward" running (sequencing)
+* [zksync_os_basic_system](./basic_system/) - basic implementation of zk_ee::system and system functions
+* [zksync_os_basic_bootloader](./basic_bootloader/) - implementation of bootloader and main execution loop
+* [zksync_os_evm_interpreter](./evm_interpreter/) - EVM execution environment
+* [zksync_os_forward_system](./forward_system/) - implementation for "forward" running (sequencing)
 
 ## How to build
 

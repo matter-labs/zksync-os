@@ -1,5 +1,5 @@
 [package]
-name = "forward_system"
+name = "zksync_os_forward_system"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -13,13 +13,13 @@ categories.workspace = true
 
 [dependencies]
 # temporary for witgen
-zksync_os_runner = {path = "../zksync_os_runner"}
-oracle_provider = { path = "../oracle_provider" }
-callable_oracles = { path = "../callable_oracles" }
-zk_ee = { path = "../zk_ee", default-features = false }
-evm_interpreter = { path = "../evm_interpreter", default-features = false }
-basic_system = { path = "../basic_system", default-features = false }
-basic_bootloader = { path = "../basic_bootloader", default-features = false }
+zksync_os_runner = { workspace = true }
+oracle_provider = { workspace = true }
+callable_oracles = { workspace = true }
+zk_ee = { workspace = true, default-features = false }
+evm_interpreter = { workspace = true, default-features = false }
+basic_system = { workspace = true, default-features = false }
+basic_bootloader = { workspace = true, default-features = false }
 zksync_os_interface = { workspace = true, default-features = false }
 
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }

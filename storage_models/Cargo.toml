@@ -1,5 +1,5 @@
 [package]
-name = "storage_models"
+name = "zksync_os_storage_models"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,8 +10,8 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-zk_ee = { path = "../zk_ee", default-features = false }
-crypto = { path = "../crypto", default-features = false }
+zk_ee = { workspace = true, default-features = false }
+crypto = { workspace = true, default-features = false }
 
 [features]
 testing = ["zk_ee/testing"]
