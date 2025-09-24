@@ -169,6 +169,18 @@ where
                     InvalidTransaction::NonceOverflowInTransaction,
                 ))
             }
+            Err(SubsystemError::LeafRuntime(runtime_error)) => match runtime_error {
+                RuntimeError::FatalRuntimeError(_) => {
+                    return Err(TxError::oon_as_validation(
+                        out_of_native_resources!().into(),
+                    ))
+                }
+                RuntimeError::OutOfErgs(_) => {
+                    return Err(TxError::Validation(
+                        InvalidTransaction::OutOfGasDuringValidation,
+                    ))
+                }
+            },
             Err(e) => Err(wrap_error!(e)),
         }?;
 
