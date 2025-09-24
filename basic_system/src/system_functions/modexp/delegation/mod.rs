@@ -24,6 +24,11 @@ pub(super) fn modexp<O: IOOracle, L: Logger, A: Allocator + Clone>(
     let output = if m.digits == 0 {
         Vec::new_in(allocator)
     } else {
+        // another short circuit (as parsing below is infailable - we can even skip parsing the base and exponent)
+        if m.digits == 1 && m.backing[0].is_one() {
+            // it is base ^ exponend mod 1 == 0 in all the cases
+            return Vec::new_in(allocator);
+        }
         let min_capacity = m.capacity();
         let x = BigintRepr::from_big_endian_with_double_capacity_or_min_capacity(
             &base,
