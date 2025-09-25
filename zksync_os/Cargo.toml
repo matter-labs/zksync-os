@@ -62,6 +62,7 @@ unlimited_native = ["proof_running_system/unlimited_native"]
 wrap-in-batch = ["proof_running_system/wrap-in-batch"]
 p256_precompile = ["proof_running_system/p256_precompile"]
 prevrandao = ["proof_running_system/prevrandao"]
+evm_refunds = ["proof_running_system/evm_refunds"]
 pectra = ["proof_running_system/pectra"]
 multiblock-batch = ["proof_running_system/multiblock-batch"]
 
