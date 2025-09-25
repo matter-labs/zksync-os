@@ -265,7 +265,7 @@ fn test_0_gas_price() {
         };
         rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
     };
-    run_tx(tx.clone(), gas_price, native_price, false, false);
+    run_tx(tx.clone(), gas_price, native_price, true, false);
     run_tx(tx, gas_price, native_price, true, true);
 
     let tx = {
@@ -282,7 +282,7 @@ fn test_0_gas_price() {
         };
         rig::utils::encode_l1_tx(tx)
     };
-    run_tx(tx.clone(), gas_price, native_price, false, false)
+    run_tx(tx.clone(), gas_price, native_price, true, false)
 }
 
 // Test delta gas, pass lower ratio

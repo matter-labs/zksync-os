@@ -1,0 +1,742 @@
+enabled: true
+entries:
+  berlin:
+    enabled: true
+    entries:
+      eip2929_gas_cost_increases:
+        enabled: true
+        entries:
+          precompile_warming:
+            enabled: true
+            entries:
+              precompile_warming.json:
+                hash: '0x1b0c4d4c85469043e2f717b5af0208d4'
+                enabled: true
+      eip2930_access_list:
+        enabled: true
+        entries:
+          acl:
+            enabled: true
+            entries:
+              access_list.json:
+                hash: '0xe399c2ea228f277ac36f3dca0feff75d'
+                enabled: true
+          tx_intrinsic_gas:
+            enabled: true
+            entries:
+              tx_intrinsic_gas.json:
+                hash: '0x16223decc7b855c25207a828376249d3'
+                enabled: true
+  byzantium:
+    enabled: true
+    entries:
+      eip198_modexp_precompile:
+        enabled: true
+        entries:
+          modexp:
+            enabled: true
+            entries:
+              modexp.json:
+                hash: '0x6770c7c31b476e0b6fddeb47b56770d5'
+                enabled: true
+  cancun:
+    enabled: true
+    entries:
+      eip1153_tstore:
+        enabled: true
+        entries:
+          basic_tload:
+            enabled: true
+            entries:
+              basic_tload_after_store.json:
+                hash: '0x2808b9a55aba1c16d3dd24b38f6e17e6'
+                enabled: true
+              basic_tload_gasprice.json:
+                hash: '0xd2f90636aa0d6c3c3f653b3b461c7ad9'
+                enabled: true
+              basic_tload_other_after_tstore.json:
+                hash: '0xe16262fc7c979daa50bc483d3294561d'
+                enabled: true
+              basic_tload_transaction_begin.json:
+                hash: '0x79e8b495d83232e2dfa4d831194b9de8'
+                enabled: true
+              basic_tload_works.json:
+                hash: '0x57963daf47cb237406824a21d901104b'
+                enabled: true
+          tload_calls:
+            enabled: true
+            entries:
+              tload_calls.json:
+                hash: '0xc2228479b73a38abeee689ab5c2e54e8'
+                enabled: true
+          tload_reentrancy:
+            enabled: true
+            entries:
+              tload_reentrancy.json:
+                hash: '0x41735b14830f9e38d4d8eecc61c9d174'
+                enabled: true
+          tstorage:
+            enabled: true
+            entries:
+              gas_usage.json:
+                hash: '0xc34f8e6e786a6f47e123ef8a41fabec3'
+                enabled: true
+              run_until_out_of_gas.json:
+                hash: '0x2d3a525f57637963b6e9a956e3ee2f48'
+                enabled: true
+              tload_after_sstore.json:
+                hash: '0x490847255f8b2dcc677bb716ac9065d3'
+                enabled: true
+              tload_after_tstore.json:
+                hash: '0x34ca146d688b02781b57dc5d1e5b7e8d'
+                enabled: true
+              tload_after_tstore_is_zero.json:
+                hash: '0x93b38536b9cb9a64e4ff4d342abb1b46'
+                enabled: true
+              transient_storage_unset_values.json:
+                hash: '0x4908588b7d67efa1353ab48c23a55271'
+                enabled: true
+          tstorage_clear_after_tx:
+            enabled: true
+            entries:
+              tstore_clear_after_deployment_tx.json:
+                hash: '0xd7580ae2e5b2fba9692a247b7ffb6dd3'
+                enabled: true
+              tstore_clear_after_tx.json:
+                hash: '0x1be237662245602679a0ee880bd03b63'
+                enabled: true
+          tstorage_create_contexts:
+            enabled: true
+            entries:
+              contract_creation.json:
+                hash: '0xf5b19b0494a298d65bce7ff2a8950725'
+                enabled: true
+          tstorage_execution_contexts:
+            enabled: true
+            entries:
+              subcall.json:
+                hash: '0x3e5c3818b29fc5875d8fdbddfe17fe42'
+                enabled: true
+          tstorage_reentrancy_contexts:
+            enabled: true
+            entries:
+              reentrant_call.json:
+                hash: '0xc6539df561d93061d029e4d05f0bac8f'
+                enabled: true
+          tstorage_selfdestruct:
+            enabled: true
+            entries:
+              reentrant_selfdestructing_call.json:
+                hash: '0xc84bcd22820b5f75b5136d3fda40c7e3'
+                enabled: true
+          tstore_reentrancy:
+            enabled: true
+            entries:
+              tstore_reentrancy.json:
+                hash: '0x960aba84d4029f2dafad8f47b43d29fe'
+                enabled: true
+      eip4788_beacon_root:
+        enabled: false
+        comment: EIP 4788 not supported
+        entries:
+          beacon_root_contract:
+            enabled: true
+            entries:
+              beacon_root_contract_calls.json:
+                hash: '0x2ad259222763eb76727b888e5bc7eb24'
+                enabled: true
+              beacon_root_contract_deploy.json:
+                hash: '0x67f3f6a3f10646fa1aaf2f5172f2e569'
+                enabled: true
+              beacon_root_contract_timestamps.json:
+                hash: '0x38ff8b541da8c55767bdbe3007aa2a26'
+                enabled: true
+              beacon_root_equal_to_timestamp.json:
+                hash: '0xcff11474844c983520035dfe09b1e41b'
+                enabled: true
+              beacon_root_selfdestruct.json:
+                hash: '0xa52f6f7e0ffc9e3ebd78a19eaa1980eb'
+                enabled: true
+              beacon_root_transition.json:
+                hash: '0x91afd4060f5b57aa82933a9e68d9cae8'
+                enabled: true
+              calldata_lengths.json:
+                hash: '0xf603b2146b8408c81146cd17c4ab72fa'
+                enabled: true
+              invalid_beacon_root_calldata_value.json:
+                hash: '0x1046d18cac4cabc25752b696651ed0b5'
+                enabled: true
+              multi_block_beacon_root_timestamp_calls.json:
+                hash: '0xc3892e0e7c430ad8b1abe084abf32d4e'
+                enabled: true
+              no_beacon_root_contract_at_transition.json:
+                hash: '0x9b1c68b160f03a1951bd0383891cbd72'
+                enabled: true
+              tx_to_beacon_root_contract.json:
+                hash: '0xf8af40449d9b8a1d5a5fb794703b6eb3'
+                enabled: true
+      eip4844_blobs:
+        enabled: false
+        comment: "Blobs not supported"
+        entries:
+          blob_txs:
+            enabled: true
+            entries:
+              blob_gas_subtraction_tx.json:
+                hash: '0x24b021dd5ad9096fcbf133ede675e390'
+                enabled: true
+              blob_tx_attribute_calldata_opcodes.json:
+                hash: '0xa0902b5771f2f3eced18718e60ca527a'
+                enabled: true
+              blob_tx_attribute_gasprice_opcode.json:
+                hash: '0x9156c146d88687109e47362f70aaf5fd'
+                enabled: true
+              blob_tx_attribute_opcodes.json:
+                hash: '0xe408687817cdda00adcc55fb22839dbe'
+                enabled: true
+              blob_tx_attribute_value_opcode.json:
+                hash: '0x26e8fc07a1685dc517d78871a18320fa'
+                enabled: true
+              blob_type_tx_pre_fork.json:
+                hash: '0xd47c21431446c2851a8684c9db5c6057'
+                enabled: true
+              insufficient_balance_blob_tx.json:
+                hash: '0xa237ce9d37e92721d1fb447556097b20'
+                enabled: true
+              insufficient_balance_blob_tx_combinations.json:
+                hash: '0x513f2d8c6b7a9669a7233d07b2b8782e'
+                enabled: true
+              invalid_blob_hash_versioning_multiple_txs.json:
+                hash: '0xe3eebe3672250d56183524b593402722'
+                enabled: true
+              invalid_blob_hash_versioning_single_tx.json:
+                hash: '0xcfe73e2285775fa18a7d1603351bb021'
+                enabled: true
+              invalid_blob_tx_contract_creation.json:
+                hash: '0xb00eb2d09344a75c47953b00807356e6'
+                enabled: true
+              invalid_block_blob_count.json:
+                hash: '0x0dea6779841d2a2900b95eb4dd990086'
+                enabled: true
+              invalid_normal_gas.json:
+                hash: '0x944215ad3ac9597bd85040583a81d63e'
+                enabled: true
+              invalid_tx_blob_count.json:
+                hash: '0xc096165ded04a312eb184e69fa993060'
+                enabled: true
+              invalid_tx_max_fee_per_blob_gas.json:
+                hash: '0x171506e74c48438879e790a9b26eaa94'
+                enabled: true
+              sufficient_balance_blob_tx.json:
+                hash: '0xe6dfda5dd72902aa3f746f3811088002'
+                enabled: true
+              sufficient_balance_blob_tx_pre_fund_tx.json:
+                hash: '0x6d25fec5777406a11db67af46ed8c7b3'
+                enabled: true
+              valid_blob_tx_combinations.json:
+                hash: '0x05f9c526e0061b6351febd85caf4629b'
+                enabled: true
+          blob_txs_full:
+            enabled: true
+            entries:
+              reject_valid_full_blob_in_block_rlp.json:
+                hash: '0x3efb18806684aee3ebdc7aa289e0524b'
+                enabled: true
+          blobhash_opcode:
+            enabled: true
+            entries:
+              blobhash_gas_cost.json:
+                hash: '0x0bcb754d9ed5252652d3177b8b10bb1d'
+                enabled: true
+              blobhash_invalid_blob_index.json:
+                hash: '0xdcaa50cb56a5b805bf00c83102c0e778'
+                enabled: true
+              blobhash_multiple_txs_in_block.json:
+                hash: '0x703da6fc79da5f52d3ab37fcf30a6adb'
+                enabled: true
+              blobhash_scenarios.json:
+                hash: '0x223f8494705d21c7b3c3bd1d44da705d'
+                enabled: true
+          blobhash_opcode_contexts:
+            enabled: true
+            entries:
+              blobhash_opcode_contexts.json:
+                hash: '0xe290db0ffd87b3037e524287c9d46b84'
+                enabled: true
+          excess_blob_gas:
+            enabled: true
+            entries:
+              correct_decreasing_blob_gas_costs.json:
+                hash: '0x2905ff31b999d8923ce6a5743db36705'
+                enabled: true
+              correct_excess_blob_gas_calculation.json:
+                hash: '0xae032628aa690bb40831e444070c10ee'
+                enabled: true
+              correct_increasing_blob_gas_costs.json:
+                hash: '0xb0283ff0b7313c97cf7c940ee56d99d9'
+                enabled: true
+              invalid_blob_gas_used_in_header.json:
+                hash: '0xc7dd99a07d7a1b3b27857ca7045a20b4'
+                enabled: true
+              invalid_excess_blob_gas_above_target_change.json:
+                hash: '0xa5c103a9f93a447a972c242fcf65e661'
+                enabled: true
+              invalid_excess_blob_gas_change.json:
+                hash: '0x35126a7b58ba11720625ab488a169583'
+                enabled: true
+              invalid_excess_blob_gas_target_blobs_increase_from_zero.json:
+                hash: '0xc8348f67c4e235e4182a43f9b99b6012'
+                enabled: true
+              invalid_negative_excess_blob_gas.json:
+                hash: '0x256d093811c8200512182235405d3bc4'
+                enabled: true
+              invalid_non_multiple_excess_blob_gas.json:
+                hash: '0x933c26fae3181c6ab3d822081c11877d'
+                enabled: true
+              invalid_static_excess_blob_gas.json:
+                hash: '0x3f71adb5cd6b391cdcf2b0290cac8720'
+                enabled: true
+              invalid_static_excess_blob_gas_from_zero_on_blobs_above_target.json:
+                hash: '0x57f36a07f2b36809d7dacbfa33e88bc3'
+                enabled: true
+              invalid_zero_excess_blob_gas_in_header.json:
+                hash: '0xe3b672b9bee5a9b7fd8fd81ef3409958'
+                enabled: true
+          excess_blob_gas_fork_transition:
+            enabled: true
+            entries:
+              fork_transition_excess_blob_gas_at_blob_genesis.json:
+                hash: '0x3209d77a99459d8616ee7abd814fcf56'
+                enabled: true
+              invalid_post_fork_block_without_blob_fields.json:
+                hash: '0x095bd102c53789dcc67c6909a2df46c8'
+                enabled: true
+              invalid_pre_fork_block_with_blob_fields.json:
+                hash: '0xc71558887a0128145328257a793a52ec'
+                enabled: true
+          point_evaluation_precompile:
+            enabled: true
+            entries:
+              call_opcode_types.json:
+                hash: '0xeb80f0e34aae779be27ab51801590331'
+                enabled: true
+              external_vectors.json:
+                hash: '0x18780ac56125fba26ae334c4b8409678'
+                enabled: true
+              invalid_inputs.json:
+                hash: '0x933fe6548ad812675cde15c092794999'
+                enabled: true
+              precompile_before_fork.json:
+                hash: '0xedda265c8f5917e91f74100e7e462cb3'
+                enabled: true
+              precompile_during_fork.json:
+                hash: '0x607c5be3a2c0315c5a8b92534e22851f'
+                enabled: true
+              tx_entry_point.json:
+                hash: '0x57b95490eb0219ffc09292c6c7672d0e'
+                enabled: true
+              valid_inputs.json:
+                hash: '0xc2a7eb0d507d259dabe2118ad9df435d'
+                enabled: true
+          point_evaluation_precompile_gas:
+            enabled: true
+            entries:
+              point_evaluation_precompile_gas_usage.json:
+                hash: '0xecfff529b9a6a3544d8f44710830349f'
+                enabled: true
+      eip5656_mcopy:
+        enabled: true
+        entries:
+          mcopy:
+            enabled: true
+            entries:
+              mcopy_on_empty_memory.json:
+                hash: '0x5a96b09ab705b43dd5a0275f525ac7cb'
+                enabled: true
+              valid_mcopy_operations.json:
+                hash: '0x2da1701cdacdc3f7632cd488f99906c8'
+                enabled: true
+          mcopy_contexts:
+            enabled: true
+            entries:
+              no_memory_corruption_on_upper_call_stack_levels.json:
+                hash: '0x28995d74383651619f36ba122783d5fe'
+                enabled: true
+              no_memory_corruption_on_upper_create_stack_levels.json:
+                hash: '0xcf0dbfccc16f93026a9590640ccd159d'
+                enabled: true
+          mcopy_memory_expansion:
+            enabled: true
+            entries:
+              mcopy_huge_memory_expansion.json:
+                hash: '0xe401911d2b2e462dfd22a6be6b43f9ce'
+                enabled: true
+              mcopy_memory_expansion.json:
+                hash: '0xb5b4102d339cb185079542adb72dfcd0'
+                enabled: true
+      eip6780_selfdestruct:
+        enabled: true
+        entries:
+          dynamic_create2_selfdestruct_collision:
+            enabled: true
+            entries:
+              dynamic_create2_selfdestruct_collision.json:
+                hash: '0x0dcbfc4961d9965924affc4f3f6f879d'
+                enabled: true
+              dynamic_create2_selfdestruct_collision_multi_tx.json:
+                hash: '0x5a572b626f4eee3ccf5197316ee2b811'
+                enabled: true
+              dynamic_create2_selfdestruct_collision_two_different_transactions.json:
+                hash: '0xb08626ca27e7fb133ed532678620bab6'
+                enabled: true
+          reentrancy_selfdestruct_revert:
+            enabled: true
+            entries:
+              reentrancy_selfdestruct_revert.json:
+                hash: '0x8cfd8a6d67a9ce9e52ae076c5e219edc'
+                enabled: true
+          selfdestruct:
+            enabled: true
+            entries:
+              calling_from_new_contract_to_pre_existing_contract.json:
+                hash: '0xe3fa936e3b640e73e9ce0d16c61e99ea'
+                enabled: true
+              calling_from_pre_existing_contract_to_new_contract.json:
+                hash: '0xfabfac2eba473a518f5fef0b07429d90'
+                enabled: true
+              create_selfdestruct_same_tx.json:
+                hash: '0x685cdbe2c263ef3a2180e08b860c073b'
+                enabled: true
+              create_selfdestruct_same_tx_increased_nonce.json:
+                hash: '0x346940f81ab24806d26156d9ca26fee4'
+                enabled: true
+              recreate_self_destructed_contract_different_txs.json:
+                hash: '0x5f6c2821c0bf5ecf011893eff12ed087'
+                enabled: true
+              self_destructing_initcode.json:
+                hash: '0xa8e788ff42bf2bed37815b41839bfbb5'
+                enabled: true
+              self_destructing_initcode_create_tx.json:
+                hash: '0xc32e04c058e25449e6dfcef2dbaed7dc'
+                enabled: true
+              selfdestruct_created_same_block_different_tx.json:
+                hash: '0xb929f972345ecbf3c5c6bbfc1c89c245'
+                enabled: true
+              selfdestruct_pre_existing.json:
+                hash: '0xaf0e9e4c0ca304e46b700fda1baa921d'
+                enabled: true
+          selfdestruct_revert:
+            enabled: true
+            entries:
+              selfdestruct_created_in_same_tx_with_revert.json:
+                hash: '0x58b8158cbde51c2646ad49c36320a526'
+                enabled: true
+              selfdestruct_not_created_in_same_tx_with_revert.json:
+                hash: '0x5a176e6bc65958e91a021e389d13ed03'
+                enabled: true
+      eip7516_blobgasfee:
+        enabled: false
+        comment: "Blobs not supported"
+        entries:
+          blobgasfee_opcode:
+            enabled: true
+            entries:
+              blobbasefee_before_fork.json:
+                hash: '0x1e616158c456839d2a5fd40056aaf8c4'
+                enabled: true
+              blobbasefee_during_fork.json:
+                hash: '0xde5af2737c889161d83118a247dcef1c'
+                enabled: true
+              blobbasefee_out_of_gas.json:
+                hash: '0x5ee69318a04b93e8c067e07ee35c83eb'
+                enabled: true
+              blobbasefee_stack_overflow.json:
+                hash: '0x609c341a1b9237751ad6c19b527143db'
+                enabled: true
+  constantinople:
+    enabled: true
+    entries:
+      eip1014_create2:
+        enabled: true
+        entries:
+          create_returndata:
+            enabled: true
+            entries:
+              create2_return_data.json:
+                hash: '0x11d1192dd35250182516c5562cd026d1'
+                enabled: true
+          recreate:
+            enabled: true
+            entries:
+              recreate.json:
+                hash: '0xc6ee33e8548fb7e45e439aab4bf2d6b3'
+                enabled: true
+  frontier:
+    enabled: true
+    entries:
+      examples:
+        enabled: true
+        entries:
+          block_intermediate_state:
+            enabled: true
+            entries:
+              block_intermidiate_state.json:
+                hash: '0x5d9d1f2b02b2145ae82026e831d3fdf1'
+                enabled: true
+      opcodes:
+        enabled: true
+        entries:
+          all_opcodes:
+            enabled: true
+            entries:
+              all_opcodes.json:
+                hash: '0x9d84ef9b4d85e00796363e45bda0f214'
+                enabled: true
+              cover_revert.json:
+                hash: '0xa54fa8e779f5bd325fd521b3ef9a15aa'
+                enabled: true
+          call_and_callcode_gas_calculation:
+            enabled: true
+            entries:
+              value_transfer_gas_calculation.json:
+                hash: '0xe86213060389f21293fc77a8c97b7ba0'
+                enabled: true
+          calldatacopy:
+            enabled: true
+            entries:
+              calldatacopy.json:
+                hash: '0x75f1a4676c5e4a037dfa44d475d9c4c2'
+                enabled: true
+          calldataload:
+            enabled: true
+            entries:
+              calldataload.json:
+                hash: '0x10909a567f7089db4bd3b2818f70fe9d'
+                enabled: true
+          calldatasize:
+            enabled: true
+            entries:
+              calldatasize.json:
+                hash: '0x4c0ff9c1daa7af456f97a56161089693'
+                enabled: true
+          dup:
+            enabled: true
+            entries:
+              dup.json:
+                hash: '0x8dea373926b9de6f9fc2f8b1d6deb8ef'
+                enabled: true
+          push:
+            enabled: true
+            entries:
+              push.json:
+                hash: '0x2970cd01c8ecff276d0ca163cab612b1'
+                enabled: true
+              stack_overflow.json:
+                hash: '0xf8ddfbc911d8f522a1334e0f60a91e5e'
+                enabled: true
+          selfdestruct:
+            enabled: true
+            entries:
+              double_kill.json:
+                hash: '0x3b6bb0ef74f6cdec455d1e45568f86c5'
+                enabled: true
+      precompiles:
+        enabled: true
+        entries:
+          precompile_absence:
+            enabled: true
+            entries:
+              precompile_absence.json:
+                hash: '0x042ffaffa2dc97330ec8c89bd0ec2c25'
+                enabled: true
+          precompiles:
+            enabled: true
+            entries:
+              precompiles.json:
+                hash: '0x171cca59d2a55df8821fa408ebf6754e'
+                enabled: true
+      scenarios:
+        enabled: true
+        entries:
+          scenarios:
+            enabled: true
+            entries:
+              scenarios.json:
+                hash: '0xb9735a59d35b78cb6921e6f15a2d8838'
+                enabled: true
+  homestead:
+    enabled: true
+    entries:
+      coverage:
+        enabled: true
+        entries:
+          coverage:
+            enabled: true
+            entries:
+              coverage.json:
+                hash: '0x81eafd9c45de4ac2cc2fe2a9fe4ae8e3'
+                enabled: true
+      yul:
+        enabled: true
+        entries:
+          yul_example:
+            enabled: true
+            entries:
+              yul.json:
+                hash: '0xfe52f69bc4b26639530204934867b74c'
+                enabled: true
+  istanbul:
+    enabled: true
+    entries:
+      eip1344_chainid:
+        enabled: true
+        entries:
+          chainid:
+            enabled: true
+            entries:
+              chainid.json:
+                hash: '0xc6ed4f2267f4faec138be6cc0b54b447'
+                enabled: true
+      eip152_blake2:
+        enabled: false
+        comment: Blake2b not supported
+        entries:
+          blake2:
+            enabled: true
+            entries:
+              blake2b.json:
+                hash: '0x51bc7e5aa7a21c6adc3f9d0bad0d1452'
+                enabled: true
+              blake2b_gas_limit.json:
+                hash: '0x58f56b4c3721f76f57475edf7711a724'
+                enabled: true
+              blake2b_invalid_gas.json:
+                hash: '0x970b9467db75a94e00d76fd7edcb5a2a'
+                enabled: true
+              blake2b_large_gas_limit.json:
+                hash: '0xfdb4a41bd901923a74fcc29c89a94cf0'
+                enabled: true
+          blake2_delegatecall:
+            enabled: true
+            entries:
+              blake2_precompile_delegatecall.json:
+                hash: '0x83acb0cb0df86b2cdc17344045ae3cae'
+                enabled: true
+  paris:
+    enabled: true
+    entries:
+      security:
+        enabled: true
+        entries:
+          selfdestruct_balance_bug:
+            enabled: true
+            entries:
+              tx_selfdestruct_balance_bug.json:
+                hash: '0x2fd23ba55ac50a52b2764bef807622cc'
+                enabled: true
+  shanghai:
+    enabled: true
+    entries:
+      eip3651_warm_coinbase:
+        enabled: true
+        entries:
+          warm_coinbase:
+            enabled: true
+            entries:
+              warm_coinbase_call_out_of_gas.json:
+                hash: '0x838397c62c9f5a5c1ba278371545298c'
+                enabled: true
+              warm_coinbase_gas_usage.json:
+                hash: '0x7508e3bf7e30f7de88363fa57047d8b8'
+                enabled: true
+      eip3855_push0:
+        enabled: true
+        entries:
+          push0:
+            enabled: true
+            entries:
+              push0_contract_during_call_contexts.json:
+                hash: '0x2cae0eb5590ac695a34a0a8b550567fb'
+                enabled: true
+              push0_contracts.json:
+                hash: '0x7a732d448014b11be3926d277b0cf2cb'
+                enabled: true
+      eip3860_initcode:
+        enabled: true
+        entries:
+          initcode:
+            enabled: true
+            entries:
+              contract_creating_tx.json:
+                hash: '0xd2ec50b65e68844fdff0bf97deda381c'
+                enabled: true
+              create_opcode_initcode.json:
+                hash: '0x1def1e8d8ed36d079040b5500e628bdf'
+                enabled: true
+              gas_usage.json:
+                hash: '0x2f1a7a67349688b57b17253cc8393029'
+                enabled: true
+          with_eof:
+            enabled: true
+            entries:
+              legacy_create_edge_code_size.json:
+                hash: '0xddcbdffadfdf5059a2c086341305d8a2'
+                enabled: true
+      eip4895_withdrawals:
+        enabled: false
+        comment: Withdrawals not supported
+        entries:
+          withdrawals:
+            enabled: true
+            entries:
+              balance_within_block.json:
+                hash: '0xc8bfbeb8f3f8b9916558eded2c3ca77a'
+                enabled: true
+              large_amount.json:
+                hash: '0xb00b7b59693b934ce6f4ff32461fb044'
+                enabled: true
+              many_withdrawals.json:
+                hash: '0xc7475e635c7ba82c89dc77e7367f3d72'
+                enabled: true
+              multiple_withdrawals_same_address.json:
+                hash: '0x2e15491a8db6d484fac30961e8829d9f'
+                enabled: true
+              newly_created_contract.json:
+                hash: '0x05a9624f8a818dd91d2ba865e5e4a1d2'
+                enabled: true
+              no_evm_execution.json:
+                hash: '0xf9738c0e2e07ae9d632187be7f54980b'
+                enabled: true
+              self_destructing_account.json:
+                hash: '0xb154ee2267dcecc0f45ce5a8e3cee627'
+                enabled: true
+              use_value_in_contract.json:
+                hash: '0x9660d975fb23293580cfc91017041a23'
+                enabled: true
+              use_value_in_tx.json:
+                hash: '0x3a0db54c96821bddbf7e08c667cf59f2'
+                enabled: true
+              withdrawing_to_precompiles.json:
+                hash: '0x587a935e70d5c42ff138688a8d928c1d'
+                enabled: true
+              zero_amount.json:
+                hash: '0x84e02d16b4017f54e7d5666b942e5b7f'
+                enabled: true
+  zkevm:
+    enabled: true
+    entries:
+      worst_bytecode:
+        enabled: true
+        entries:
+          worst_bytecode_single_opcode.json:
+            hash: '0x0a008f42309ea2d9e2f678cef9906e30'
+            enabled: true
+      worst_compute:
+        enabled: true
+        entries:
+          worst_keccak.json:
+            hash: '0xd81298d27838c2d40c08d393ce010061'
+            enabled: true
+          worst_modexp.json:
+            hash: '0x71fc0e3357acd31017e76f296aaeb0b4'
+            enabled: true

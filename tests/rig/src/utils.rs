@@ -336,6 +336,16 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
         })
         .collect();
 
+    // If base fee is zero, we can avoid paying priority fee.
+    let max_priority_fee_per_gas = if block_context
+        .as_ref()
+        .is_some_and(|bc| bc.eip1559_basefee.is_zero())
+    {
+        0
+    } else {
+        1000
+    };
+
     let transactions: Vec<_> = wallets
         .iter()
         .zip(dsts.clone())
@@ -344,7 +354,7 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
                 chain_id: 37u64,
                 nonce: 0,
                 max_fee_per_gas: 1000,
-                max_priority_fee_per_gas: 1000,
+                max_priority_fee_per_gas,
                 gas_limit: 60_000,
                 to: TxKind::Call(to),
                 value: Default::default(),

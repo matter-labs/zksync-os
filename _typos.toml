@@ -1,2 +1,2 @@
 [files]
-extend-exclude = ["crypto/*", "tests/fuzzer/fuzz/seeds"]
+extend-exclude = ["crypto/*", "tests/fuzzer/fuzz/seeds", "tests/evm_tester/indexes"]

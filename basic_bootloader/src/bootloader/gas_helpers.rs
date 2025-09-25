@@ -37,7 +37,10 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     // isn't computational.
     // We can consider in the future to keep two limits, so that pubdata
     // is not charged from computational resource.
-    let native_limit = if cfg!(feature = "unlimited_native") {
+    // Note: if native_per_gas is 0, we treat it as unlimited_native.
+    // This can only happen when gas_price is 0, which means that fees
+    // aren't charged.
+    let native_limit = if cfg!(feature = "unlimited_native") || native_per_gas.is_zero() {
         u64::MAX
     } else {
         gas_limit.saturating_mul(u256_to_u64_saturated(&native_per_gas))

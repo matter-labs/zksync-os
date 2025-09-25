@@ -86,44 +86,25 @@ jobs:
               run: cargo test --features pectra --release -p transactions
 
     evm_state_tests:
-        name: EF EVM state tests
-        runs-on: [matterlabs-ci-runner-high-performance]
-        steps:
-            - uses: actions/checkout@v4
-              with:
-                  path: zksync-os
-            - uses: actions/checkout@v4
-              with:
-                  repository: matter-labs/era-evm-tester
-                  ref: zk-ee-with-blockchain-tests
-                  path: era-evm-tester
-            - name: Use local ZKsync OS version
-              working-directory: ./era-evm-tester/evm_tester
-              run: |
-                  sudo sed -i 's/^zksync_os/##zksync_os/g' Cargo.toml
-                  sudo sed -i 's/^#zksync_os/zksync_os/g' Cargo.toml
-                  sudo sed -i 's/^zk_ee/##zk_ee/g' Cargo.toml
-                  sudo sed -i 's/^#zk_ee/zk_ee/g' Cargo.toml
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              working-directory: ./era-evm-tester
-              run: |
-                  rustup toolchain install
-                  rustup set profile minimal
-                  cargo install cargo-binutils
-            - name: Get submodules
-              working-directory: ./era-evm-tester
-              run: |
-                  git submodule update --init --recursive
-            - name: Download ethereum execution spec tests fixtures
-              working-directory: ./era-evm-tester
-              run: |
-                  ./download_ethereum_fixtures.sh
-            - name: Run EVM state tests
-              working-directory: ./era-evm-tester
-              run: cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print
+      name: EF EVM state tests
+      runs-on: [matterlabs-ci-runner-high-performance]
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions-rust-lang/setup-rust-toolchain@v1
+          with:
+            rustflags: ""
+        - name: Setup
+          run: |
+            rustup toolchain install
+            rustup set profile minimal
+            cargo install cargo-binutils
+        - name: Download ethereum execution spec tests fixtures
+          working-directory: ./tests/evm_tester
+          run: |
+            ./download_ethereum_fixtures.sh
+        - name: Run EVM state tests
+          working-directory: ./tests/evm_tester
+          run: cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print
 
     # We will keep it for a while just in case.
     evm_state_tests_legacy:
