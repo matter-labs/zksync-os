@@ -6,42 +6,11 @@ pub mod index;
 
 use crate::filters::Filters;
 use crate::test::Test;
+use crate::utils::create_index;
+use crate::utils::read_index;
 use crate::Environment;
 use std::path::Path;
 use std::path::PathBuf;
-
-///
-/// Reads the Ethereum test index.
-///
-pub fn read_index(index_path: &Path) -> anyhow::Result<index::FSEntity> {
-    let index_data = std::fs::read_to_string(index_path)?;
-    let index: index::FSEntity = serde_yaml::from_str(index_data.as_str())?;
-    Ok(index)
-}
-
-pub fn create_index(index_path: &Path, directory_path: &Path) -> anyhow::Result<()> {
-    let index = index::FSEntity::index(directory_path)?;
-    let _ = std::fs::write(index_path, serde_yaml::to_string(&index)?.as_bytes());
-
-    Ok(())
-}
-
-pub fn update_index(index_path: &Path, directory_path: &Path) -> anyhow::Result<()> {
-    let old_index = read_index(index_path)?;
-
-    let mut new_index = index::FSEntity::index(directory_path)?;
-
-    let changes = old_index.update(&mut new_index, directory_path, true)?;
-
-    println!("Index updated\n {}", changes);
-
-    let _ = std::fs::write(
-        "updated_index.yaml",
-        serde_yaml::to_string(&new_index)?.as_bytes(),
-    );
-
-    Ok(())
-}
 
 pub fn read_all(
     directory_path: &Path,
@@ -50,11 +19,12 @@ pub fn read_all(
     mutation_path: Option<String>,
     index_path: &Path,
 ) -> anyhow::Result<Vec<Test>> {
-    let index_maybe = read_index(index_path);
+    let mut index_maybe = read_index(index_path);
 
     if index_maybe.is_err() {
         create_index(&index_path, directory_path)?;
-        return Ok(vec![]);
+        index_maybe = read_index(index_path);
+        assert!(index_maybe.is_ok());
     }
 
     //update_index(index_path, directory_path)?;

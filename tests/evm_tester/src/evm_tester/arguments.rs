@@ -52,6 +52,10 @@ pub struct Arguments {
     /// The path to the mutated tests directory
     #[structopt(long = "mutation_path")]
     pub mutation_path: Option<String>,
+
+    /// Update indexes without running tests.
+    #[structopt(long = "update_indexes")]
+    pub update_indexes: bool,
 }
 
 impl Arguments {

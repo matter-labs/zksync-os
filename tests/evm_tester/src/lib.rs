@@ -10,12 +10,13 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
+pub mod constants;
 pub(crate) mod environment;
 pub(crate) mod filters;
 pub(crate) mod summary;
 pub(crate) mod test;
 pub(crate) mod test_suits;
-pub(crate) mod utils;
+pub mod utils;
 pub(crate) mod vm;
 pub(crate) mod workflow;
 
@@ -27,6 +28,7 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use test::Test;
 
+use crate::constants::*;
 pub use crate::environment::Environment;
 pub use crate::filters::Filters;
 pub use crate::summary::Summary;
@@ -46,29 +48,6 @@ pub struct EvmTester {
     /// Optional path to the mutated tests directory
     pub mutation_path: Option<String>,
     pub run_spec_tests: bool,
-}
-
-impl EvmTester {
-    const DEVELOP_STATE_TESTS: &'static str = "ethereum-fixtures/develop/state_tests";
-    pub const DEVELOP_STATE_TESTS_INDEX_PATH: &'static str = "indexes/develop-state-tests.yaml";
-
-    const STABLE_STATE_TESTS: &'static str = "ethereum-fixtures/stable/state_tests";
-    pub const STABLE_STATE_TESTS_INDEX_PATH: &'static str = "indexes/stable-state-tests.yaml";
-
-    const STATIC_STATE_TESTS: &'static str = "ethereum-fixtures/static/state_tests";
-    pub const STATIC_STATE_TESTS_INDEX_PATH: &'static str = "indexes/static-state-tests.yaml";
-
-    const DEVELOP_BLOCKCHAIN_TESTS: &'static str = "ethereum-fixtures/develop/blockchain_tests";
-    pub const DEVELOP_BLOCKCHAIN_TESTS_INDEX_PATH: &'static str =
-        "indexes/develop-blockchain-tests.yaml";
-
-    const STABLE_BLOCKCHAIN_TESTS: &'static str = "ethereum-fixtures/stable/blockchain_tests";
-    pub const STABLE_BLOCKCHAIN_TESTS_INDEX_PATH: &'static str =
-        "indexes/stable-blockchain-tests.yaml";
-
-    const STATIC_BLOCKCHAIN_TESTS: &'static str = "ethereum-fixtures/static/blockchain_tests";
-    pub const STATIC_BLOCKCHAIN_TESTS_INDEX_PATH: &'static str =
-        "indexes/static-blockchain-tests.yaml";
 }
 
 impl EvmTester {
@@ -127,39 +106,27 @@ impl EvmTester {
         let mut tests = Vec::with_capacity(16384);
 
         tests.extend(self.directory(
-            Self::DEVELOP_STATE_TESTS,
+            DEVELOP_STATE_TESTS,
             environment,
-            Self::DEVELOP_STATE_TESTS_INDEX_PATH,
+            DEVELOP_STATE_TESTS_INDEX_PATH,
         )?);
 
         tests.extend(self.directory(
-            Self::STABLE_STATE_TESTS,
+            STABLE_STATE_TESTS,
             environment,
-            Self::STABLE_STATE_TESTS_INDEX_PATH,
+            STABLE_STATE_TESTS_INDEX_PATH,
         )?);
 
         tests.extend(self.directory(
-            Self::STATIC_STATE_TESTS,
+            DEVELOP_BLOCKCHAIN_TESTS,
             environment,
-            Self::STATIC_STATE_TESTS_INDEX_PATH,
+            DEVELOP_BLOCKCHAIN_TESTS_INDEX_PATH,
         )?);
 
         tests.extend(self.directory(
-            Self::DEVELOP_BLOCKCHAIN_TESTS,
+            STABLE_BLOCKCHAIN_TESTS,
             environment,
-            Self::DEVELOP_BLOCKCHAIN_TESTS_INDEX_PATH,
-        )?);
-
-        tests.extend(self.directory(
-            Self::STABLE_BLOCKCHAIN_TESTS,
-            environment,
-            Self::STABLE_BLOCKCHAIN_TESTS_INDEX_PATH,
-        )?);
-
-        tests.extend(self.directory(
-            Self::STATIC_BLOCKCHAIN_TESTS,
-            environment,
-            Self::STATIC_BLOCKCHAIN_TESTS_INDEX_PATH,
+            STABLE_BLOCKCHAIN_TESTS_INDEX_PATH,
         )?);
 
         Ok(tests)

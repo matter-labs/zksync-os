@@ -7,6 +7,7 @@ pub(crate) mod arguments;
 use std::time::Instant;
 
 use colored::Colorize;
+use evm_tester::{constants::*, utils::update_index};
 
 use self::arguments::Arguments;
 
@@ -31,6 +32,17 @@ fn main() {
 /// The entry point wrapper used for proper error handling.
 ///
 fn main_inner(arguments: Arguments) -> anyhow::Result<()> {
+    if arguments.update_indexes {
+        update_index(DEVELOP_STATE_TESTS_INDEX_PATH, DEVELOP_STATE_TESTS)?;
+        update_index(STABLE_STATE_TESTS_INDEX_PATH, STABLE_STATE_TESTS)?;
+        update_index(
+            DEVELOP_BLOCKCHAIN_TESTS_INDEX_PATH,
+            DEVELOP_BLOCKCHAIN_TESTS,
+        )?;
+        update_index(STABLE_BLOCKCHAIN_TESTS_INDEX_PATH, STABLE_BLOCKCHAIN_TESTS)?;
+        return Ok(());
+    }
+
     let mut thread_pool_builder = rayon::ThreadPoolBuilder::new();
     if let Some(threads) = arguments.threads {
         thread_pool_builder = thread_pool_builder.num_threads(threads);
@@ -101,6 +113,7 @@ mod tests {
             workflow: evm_tester::Workflow::BuildAndRun,
             mutation: false,
             mutation_path: None,
+            update_indexes: false,
         };
 
         crate::main_inner(arguments).expect("Manual testing failed");
