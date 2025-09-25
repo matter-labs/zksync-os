@@ -698,3 +698,64 @@ fn run_base_system() {
 fn run_base_712_system() {
     run_base_system_common(true);
 }
+
+/// Test that transactions with balance calculation overflow are properly rejected
+#[test]
+fn test_balance_overflow_protection() {
+    let mut chain = Chain::empty(None);
+
+    let wallet = PrivateKeySigner::from_str(
+        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
+    )
+    .unwrap();
+
+    let from = alloy::primitives::Address::from_slice(&wallet.address().as_slice());
+    let to = address!("0000000000000000000000000000000000010002");
+
+    // Set a reasonable balance that would be sufficient for normal transactions
+    chain.set_balance(
+        B160::from_be_bytes(from.into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    // Test 1: Transaction with max_fee_per_gas * gas_limit overflow
+    let overflow_fee_tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            gas_limit: u64::MAX, // Will cause overflow when multiplied with max_fee_per_gas
+            max_fee_per_gas: u128::MAX,
+            max_priority_fee_per_gas: 0,
+            to: TxKind::Call(to),
+            value: U256::from(100u64), // Small value
+            ..Default::default()
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    // Test 2: Transaction with value + fee_amount overflow
+    let overflow_total_tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 1,
+            gas_limit: 100_000,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 0,
+            to: TxKind::Call(to),
+            value: U256::MAX, // Maximum value will cause overflow when adding fees
+            ..Default::default()
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    let output = chain.run_block(vec![overflow_fee_tx, overflow_total_tx], None, None);
+
+    assert!(
+        output.tx_results.get(0).unwrap().is_err(),
+        "Transaction with fee overflow should fail"
+    );
+    assert!(
+        output.tx_results.get(1).unwrap().is_err(),
+        "Transaction with total balance overflow should fail"
+    );
+}
