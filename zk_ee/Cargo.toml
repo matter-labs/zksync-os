@@ -33,5 +33,6 @@ cycle_marker = ["cycle_marker/log_to_file"]
 error_origins = []
 detailed_errors = []
 prevrandao = []
+evm_refunds = []
 
 [dev-dependencies]
