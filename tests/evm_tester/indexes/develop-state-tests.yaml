@@ -885,7 +885,7 @@ entries:
                     hash: '0xd4af1ca06713eef07e472536d35b98bc'
                     enabled: true
               stEIP4844_blobtransactions:
-                enabled: true
+                enabled: false
                 entries:
                   createBlobhashTx.json:
                     hash: '0x97b8710f410fac123b66615c3f44b38b'
@@ -925,10 +925,12 @@ entries:
                 entries:
                   coinbaseWarmAccountCallGas.json:
                     hash: '0x4ab5e4c401311a027b3b256284fa0c55'
-                    enabled: true
+                    enabled: false
+                    comment: Test runner design dosn't allow to warm coinbase
                   coinbaseWarmAccountCallGasFail.json:
                     hash: '0x2bf12ca5ac87f965c80254a394eb928f'
-                    enabled: true
+                    enabled: false
+                    comment: Test runner design dosn't allow to warm coinbase
               stEIP3855_push0:
                 enabled: true
                 entries:
@@ -1574,15 +1576,24 @@ entries:
               Call1024PreCalls.json:
                 hash: '0x63a7a42d1f6aaeed83c482e83d3a2043'
                 enabled: true
+                comment: Gas limit is too high, overflows ergs representation
+                skipCases:
+                - '0'
               CallLoseGasOOG.json:
                 hash: '0x5b7b484cf086325388ae063f1024e952'
                 enabled: true
               CallRecursiveBombPreCall.json:
                 hash: '0xc9960df6797d7a73de11b848166508cb'
                 enabled: true
+                comment: Gas limit is too high, overflows ergs representation
+                skipCases:
+                - '0'
               Callcode1024BalanceTooLow.json:
                 hash: '0xfd70cf77a7351b8b23c6dcf3f029531a'
                 enabled: true
+                comment: Gas limit is too high, overflows ergs representation
+                skipCases:
+                - '0'
               Callcode1024OOG.json:
                 hash: '0x0b9fdbd78c6a8944a71b6be63bbf2e0e'
                 enabled: true
@@ -2141,12 +2152,21 @@ entries:
               Create2OnDepth1023.json:
                 hash: '0xe49aa254e5249347c5d4ccfaaffd6872'
                 enabled: true
+                comment: Gas limit is too high, overflows ergs representation
+                skipCases:
+                - '0'
               Create2OnDepth1024.json:
                 hash: '0xbff67e0f28d63dfdd64de2bc924b7ea6'
                 enabled: true
+                comment: Gas limit is too high, overflows ergs representation
+                skipCases:
+                - '0'
               Create2Recursive.json:
                 hash: '0x30798ebe0cf9db98c8a948b9064de06a'
                 enabled: true
+                comment: Gas limit is too high, overflows ergs representation
+                skipCases:
+                - '0'
               CreateMessageReverted.json:
                 hash: '0xcdf67b4c06f52829a187941998eb6d05'
                 enabled: true
@@ -2167,7 +2187,8 @@ entries:
                 enabled: true
               RevertInCreateInInitCreate2Paris.json:
                 hash: '0x09950fc5f0fb942872bc68498a1b613f'
-                enabled: true
+                enabled: false
+                comment: We do not check for storage collisions
               RevertOpcodeCreate.json:
                 hash: '0x7457afc74487dd4dc4a498c4dca6ee8f'
                 enabled: true
@@ -2218,7 +2239,8 @@ entries:
                 enabled: true
               create2collisionStorageParis.json:
                 hash: '0x00f30304066ac96a6d6b7c5173a267a9'
-                enabled: true
+                enabled: false
+                comment: We do not check storage for collision
               create2noCash.json:
                 hash: '0x3cdb23a5f62e7c3b35372bb95fb65345'
                 enabled: true
@@ -2362,7 +2384,8 @@ entries:
                 enabled: true
               CreateTransactionHighNonce.json:
                 hash: '0xe5e64c175e13ea8d9f9c9195c8266096'
-                enabled: true
+                enabled: false
+                comment: Tester doesn't support nonces larger than u32
               CreateTransactionRefundEF.json:
                 hash: '0x9f6bb30e0c4533fbe26863fe9a2103ff'
                 enabled: true
@@ -2393,18 +2416,27 @@ entries:
               Call1024PreCalls.json:
                 hash: '0x7223f16ad47d4b41ba61fce976d4844f'
                 enabled: true
+                comment: Gas limit is too high, overflows ergs representation
+                skipCases:
+                - '0'
               CallLoseGasOOG.json:
                 hash: '0x7f27b1402c415112208ebef3a8873461'
                 enabled: true
               CallRecursiveBombPreCall.json:
                 hash: '0xa07354a7b0910b5ca4af5209a62d0d03'
                 enabled: true
+                comment: Gas limit is too high, overflows ergs representation
+                skipCases:
+                - '0'
               CallcodeLoseGasOOG.json:
                 hash: '0x5c56ee307660946fe6c8efac5f64240a'
                 enabled: true
               Delegatecall1024.json:
                 hash: '0x6160a6af50c979353379f5804c52d7b4'
                 enabled: true
+                comment: Gas limit is too high, overflows ergs representation
+                skipCases:
+                - '0'
               Delegatecall1024OOG.json:
                 hash: '0xb9fc30c60a5290c591d5ff78e4b41470'
                 enabled: true
@@ -2518,7 +2550,8 @@ entries:
             entries:
               RawBalanceGas.json:
                 hash: '0x5ca3392caf8c83a1dbdaac7926e9f58e'
-                enabled: true
+                enabled: false
+                comment: 'TODO: current runner design doesn''t allow to warm caller'
               RawCallCodeGas.json:
                 hash: '0x1618a7542f1f3c0dc9773bc896da12b1'
                 enabled: true
@@ -2773,7 +2806,8 @@ entries:
                 enabled: true
               mergeTest.json:
                 hash: '0x5299572ded4f9acd75b3056a5e2d225f'
-                enabled: true
+                enabled: false
+                comment: Checks difficulty opcode (it is hardcoded now)
               rangesExample.json:
                 hash: '0x69d09374c28c42f28e4ae38e0ac9af21'
                 enabled: true
@@ -2797,7 +2831,8 @@ entries:
                 enabled: true
               dynamicAccountOverwriteEmpty_Paris.json:
                 hash: '0x16db24347396af98b9030c92e1e836b1'
-                enabled: true
+                enabled: false
+                comment: Expects revert due to storage collision
               extCodeCopyBounds.json:
                 hash: '0x4eb16cb8f0b6e734c1b82b5a026423e3'
                 enabled: true
@@ -3817,7 +3852,8 @@ entries:
                 enabled: true
               randomStatetest100.json:
                 hash: '0xc67211a2d6e395b5fa048aaeacdb1abc'
-                enabled: true
+                enabled: false
+                comment: DIFFICULTY opcode is mocked
               randomStatetest102.json:
                 hash: '0x7c8e6cff164bdaa9cb0e022d0d0c6d46'
                 enabled: true
@@ -3916,10 +3952,12 @@ entries:
                 enabled: true
               randomStatetest138.json:
                 hash: '0x1b2d0815e55fbf9dd40f8b9323d5b3e7'
-                enabled: true
+                enabled: false
+                comment: Relies on difficulty opcode (it is hardcoded now)
               randomStatetest139.json:
                 hash: '0x8fea316bf9565e02e465bc091a85321f'
-                enabled: true
+                enabled: false
+                comment: Relies on difficulty opcode (it is hardcoded now)
               randomStatetest14.json:
                 hash: '0x06f293da84bd57f96b6c685800f262eb'
                 enabled: true
@@ -3958,7 +3996,8 @@ entries:
                 enabled: true
               randomStatetest153.json:
                 hash: '0x2f46ccb2aa519e31f0a533f5ff0522c6'
-                enabled: true
+                enabled: false
+                comment: Relies on difficulty opcode (it is hardcoded now)
               randomStatetest154.json:
                 hash: '0xb1f80445380e2d253e73c22a194add75'
                 enabled: true
@@ -4207,7 +4246,8 @@ entries:
                 enabled: true
               randomStatetest246.json:
                 hash: '0x14f4b093d9e4350fe8829d9d69a18a42'
-                enabled: true
+                enabled: false
+                comment: Relies on difficulty opcode (it is hardcoded now)
               randomStatetest247.json:
                 hash: '0x0028904990ea1de8ceccf92eb0b8a33a'
                 enabled: true
@@ -4240,7 +4280,8 @@ entries:
                 enabled: true
               randomStatetest26.json:
                 hash: '0xb11b50cd23a089f1fc0d6d96a92ff8fa'
-                enabled: true
+                enabled: false
+                comment: DIFFICULTY opcode is mocked
               randomStatetest260.json:
                 hash: '0x89b12c5ec37506c6a1af305df4367b18'
                 enabled: true
@@ -4372,7 +4413,8 @@ entries:
                 enabled: true
               randomStatetest303.json:
                 hash: '0x92021361ea34bd9d71537dad775f14b7'
-                enabled: true
+                enabled: false
+                comment: DIFFICULTY opcode is mocked
               randomStatetest304.json:
                 hash: '0x38f0bec425bb31c3d223973be333faa9'
                 enabled: true
@@ -4495,7 +4537,8 @@ entries:
                 enabled: true
               randomStatetest350.json:
                 hash: '0x1e2dad85f00d2a295d321bfcfe65d5e4'
-                enabled: true
+                enabled: false
+                comment: Relies on difficulty opcode (it is hardcoded now)
               randomStatetest351.json:
                 hash: '0x611d594edf262dcec17c35990c1a9cbb'
                 enabled: true
@@ -4549,7 +4592,8 @@ entries:
                 enabled: true
               randomStatetest367.json:
                 hash: '0x15c2f23e72415440d991d342ad08cb6a'
-                enabled: true
+                enabled: false
+                comment: Relies on difficulty opcode (it is hardcoded now)
               randomStatetest368.json:
                 hash: '0xc1c1cfbe62bacf082f4ddf80496fd9e9'
                 enabled: true
@@ -4945,7 +4989,8 @@ entries:
                 enabled: true
               randomStatetest466.json:
                 hash: '0x59f50a5124da7c7ad23237f22a0d9944'
-                enabled: true
+                enabled: false
+                comment: Checks difficulty opcode (it is hardcoded now)
               randomStatetest467.json:
                 hash: '0xb4d3989ad3defa323116a133d77ade9d'
                 enabled: true
@@ -5224,7 +5269,8 @@ entries:
                 enabled: true
               randomStatetest577.json:
                 hash: '0x4e5a4632a205323902431cc2a43fcb7f'
-                enabled: true
+                enabled: false
+                comment: Relies on difficulty opcode (it is hardcoded now)
               randomStatetest578.json:
                 hash: '0xac149b5beccf529a2e5ccd89b05979b8'
                 enabled: true
@@ -5236,7 +5282,8 @@ entries:
                 enabled: true
               randomStatetest581.json:
                 hash: '0x799a8b7023a12071a91bb5b1eeb82f39'
-                enabled: true
+                enabled: false
+                comment: Relies on difficulty opcode (it is hardcoded now)
               randomStatetest582.json:
                 hash: '0xaee8c8a98616c15970a50e44dbe15852'
                 enabled: true
@@ -5409,7 +5456,8 @@ entries:
                 hash: '0xa42670801ec7a8ca7301d5b99b4d49eb'
                 enabled: true
           stRefundTest:
-            enabled: true
+            enabled: false
+            comment: We do not support EVM refunds
             entries:
               refund50_1.json:
                 hash: '0x9dc739804a3aaa298bca6a06b60f283d'
@@ -5611,10 +5659,12 @@ entries:
                 enabled: true
               LoopCallsDepthThenRevert2.json:
                 hash: '0xadb67512a1bd85e56c5f946f115f0bfe'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               LoopCallsDepthThenRevert3.json:
                 hash: '0x8ceb10dcdc12810e6d5bdb44daebb5e2'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               LoopCallsThenRevert.json:
                 hash: '0x7533a5d2647edfbdc48b9f9fee087911'
                 enabled: true
@@ -6166,7 +6216,8 @@ entries:
                 enabled: true
               static_Call10.json:
                 hash: '0x10b34d46c0c24c39c8a2c21f6308e680'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               static_Call1024BalanceTooLow.json:
                 hash: '0xe9d6bb3d516a7ff36fffd93e2bee3d63'
                 enabled: true
@@ -6178,13 +6229,16 @@ entries:
                 enabled: true
               static_Call1024PreCalls.json:
                 hash: '0xcbc026d8316303b3b0e7dad432d467b5'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               static_Call1024PreCalls2.json:
                 hash: '0xd73deff9c193f200ba1146eddcfb8d2c'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               static_Call1024PreCalls3.json:
                 hash: '0x9caca75a1d3b9f86a7ae1b9b4d09e4e9'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               static_Call1MB1024Calldepth.json:
                 hash: '0xa52e07a66aad3b1940aa3e97fe8f354c'
                 enabled: true
@@ -6313,7 +6367,8 @@ entries:
                 enabled: true
               static_CallLoseGasOOG.json:
                 hash: '0x3eed634a73f2fa7c6e31fda855adb7b8'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               static_CallRecursiveBomb0.json:
                 hash: '0x0e48a2828962eda9e22ecc420f4e0384'
                 enabled: true
@@ -6337,10 +6392,12 @@ entries:
                 enabled: true
               static_CallRecursiveBombPreCall.json:
                 hash: '0xe72407040382837ff6925bc8c2be8f25'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               static_CallRecursiveBombPreCall2.json:
                 hash: '0x39f0e3e5d2fe54ea44b162f386acf454'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               static_CallRipemd160_1.json:
                 hash: '0x551f96d6699d65d1aab5e4b568721276'
                 enabled: true
@@ -6433,13 +6490,16 @@ entries:
                 enabled: true
               static_LoopCallsDepthThenRevert.json:
                 hash: '0xc7e99ae2c18698c5f658bd918da4abb4'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               static_LoopCallsDepthThenRevert2.json:
                 hash: '0x639da7718e9a45d0434c601aabede85b'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               static_LoopCallsDepthThenRevert3.json:
                 hash: '0xa06bac08c20c9eb6960c5d26b7eddefd'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               static_LoopCallsThenRevert.json:
                 hash: '0xc8d95849b3df2eaf6303d556c83b6340'
                 enabled: true
@@ -7282,10 +7342,12 @@ entries:
                 enabled: true
               HighGasLimit.json:
                 hash: '0x46bdda37d81b556ff5582439180b8ad1'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               HighGasPriceParis.json:
                 hash: '0x7a1afd58de649a810813c9188ebb031f'
-                enabled: true
+                enabled: false
+                comment: 'TODO: Fails to encode tx due to overflow'
               InternalCallHittingGasLimit.json:
                 hash: '0xc60bdee8e34393b6a915a121b9d1536d'
                 enabled: true
@@ -7318,7 +7380,8 @@ entries:
                 enabled: true
               OverflowGasRequire2.json:
                 hash: '0x8f000c37a8088d787e74464e52a2f371'
-                enabled: true
+                enabled: false
+                comment: Overflows u64 used to store ergs
               PointAtInfinityECRecover.json:
                 hash: '0xa64304c5f655eb7cb33e876070950944'
                 enabled: true
