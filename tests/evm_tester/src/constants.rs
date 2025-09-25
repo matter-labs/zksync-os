@@ -1,4 +1,3 @@
-
 pub const DEVELOP_STATE_TESTS: &'static str = "ethereum-fixtures/develop/state_tests";
 pub const DEVELOP_STATE_TESTS_INDEX_PATH: &'static str = "indexes/develop-state-tests.yaml";
 

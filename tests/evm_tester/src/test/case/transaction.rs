@@ -258,7 +258,7 @@ pub fn encode_transaction(
             let to = tx.common.to.0.map(|a| a.0 .0);
             let gas_limit = tx.common.gas_limit.try_into().expect("gas limit overflow");
             let is_eip155 = tx_type == 0 && tx.v >= 35;
-            let (max_fee_per_gas, max_priority_fee_per_gas) = if tx_type == 2 {
+            let (max_fee_per_gas, max_priority_fee_per_gas) = if tx_type == 2 || tx_type == 3 {
                 (
                     tx.common.max_fee_per_gas.unwrap(),
                     tx.common.max_priority_fee_per_gas,
