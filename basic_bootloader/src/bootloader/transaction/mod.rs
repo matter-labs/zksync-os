@@ -1245,16 +1245,17 @@ impl<'a> ZkSyncTransaction<'a> {
     }
 
     /// Returns the balance required to process the transaction.
-    pub fn required_balance(&self) -> Result<U256, InternalError> {
-        let fee_amount = self
-            .max_fee_per_gas
-            .read()
-            .checked_mul(self.gas_limit.read() as u128)
-            .ok_or(internal_error!("mfpg*gl"))?;
-        self.value
-            .read()
-            .checked_add(U256::from(fee_amount))
-            .ok_or(internal_error!("fa+v"))
+    /// If the calculation overflows, returns `None`.
+    pub fn required_balance(&self) -> Option<U256> {
+        if self.is_eip_712() && self.paymaster.read() != B160::ZERO {
+            Some(self.value.read())
+        } else {
+            let fee_amount = self
+                .max_fee_per_gas
+                .read()
+                .checked_mul(self.gas_limit.read() as u128)?;
+            self.value.read().checked_add(U256::from(fee_amount))
+        }
     }
 
     ///
