@@ -287,4 +287,103 @@ mod tests {
             .expect("Must parse second");
         assert!(iter.next().is_none())
     }
+
+    #[test]
+    fn test_parse_u32_validation() {
+        // parse_u32 should validate that only the last 4 bytes contain data
+
+        // Valid u32 (all leading bytes are zero)
+        let mut valid_data = vec![0u8; 32];
+        valid_data[28..32].copy_from_slice(&42u32.to_be_bytes());
+        let result = parse_u32(&valid_data, 0);
+        assert!(result.is_ok(), "Valid u32 should parse successfully");
+        assert_eq!(result.unwrap(), 42, "Should parse correct u32 value");
+
+        // Invalid u32 (non-zero byte in leading 28 bytes)
+        let mut invalid_data = vec![0u8; 32];
+        invalid_data[27] = 1; // Set byte 27 to non-zero
+        invalid_data[28..32].copy_from_slice(&42u32.to_be_bytes());
+        let result = parse_u32(&invalid_data, 0);
+        assert!(
+            result.is_err(),
+            "Invalid u32 with non-zero leading byte should fail"
+        );
+
+        // Another invalid case (non-zero byte at position 0)
+        let mut invalid_data2 = vec![0u8; 32];
+        invalid_data2[0] = 1; // Set first byte to non-zero
+        invalid_data2[28..32].copy_from_slice(&42u32.to_be_bytes());
+        let result = parse_u32(&invalid_data2, 0);
+        assert!(
+            result.is_err(),
+            "Invalid u32 with non-zero first byte should fail"
+        );
+
+        // Edge case: maximum valid u32
+        let mut max_u32_data = vec![0u8; 32];
+        max_u32_data[28..32].copy_from_slice(&u32::MAX.to_be_bytes());
+        let result = parse_u32(&max_u32_data, 0);
+        assert!(
+            result.is_ok(),
+            "Maximum u32 value should parse successfully"
+        );
+        assert_eq!(
+            result.unwrap(),
+            u32::MAX as usize,
+            "Should parse maximum u32 value"
+        );
+    }
+
+    #[test]
+    fn test_check_offset_validation() {
+        // Valid offset (matches expected)
+        let result = check_offset(32, 32);
+        assert!(result.is_ok(), "Matching offset should be valid");
+
+        // Invalid offset (doesn't match expected)
+        let result = check_offset(64, 32);
+        assert!(result.is_err(), "Non-matching offset should be invalid");
+
+        // Zero offset cases
+        let result = check_offset(0, 0);
+        assert!(
+            result.is_ok(),
+            "Zero offset matching expected should be valid"
+        );
+
+        let result = check_offset(0, 32);
+        assert!(
+            result.is_err(),
+            "Zero offset not matching expected should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_parse_u32_boundary_conditions() {
+        // Buffer too short
+        let short_data = vec![0u8; 31]; // Only 31 bytes instead of 32
+        let result = parse_u32(&short_data, 0);
+        assert!(result.is_err(), "Buffer too short should fail");
+
+        // Offset out of bounds
+        let data = vec![0u8; 32];
+        let result = parse_u32(&data, 1); // Would read beyond buffer
+        assert!(
+            result.is_err(),
+            "Offset causing out-of-bounds read should fail"
+        );
+
+        // All bytes in leading section must be zero
+        for i in 0..28 {
+            let mut invalid_data = vec![0u8; 32];
+            invalid_data[i] = 1; // Set one leading byte to non-zero
+            invalid_data[28..32].copy_from_slice(&100u32.to_be_bytes());
+            let result = parse_u32(&invalid_data, 0);
+            assert!(
+                result.is_err(),
+                "Non-zero byte at position {} should cause parsing to fail",
+                i
+            );
+        }
+    }
 }
