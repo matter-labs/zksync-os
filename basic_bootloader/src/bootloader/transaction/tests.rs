@@ -72,6 +72,6 @@ fn test_parsing() {
     // 0000000000000000000000000000000000000000000000000000000000000000
     let mut slice = vec![0u8; TX_OFFSET];
     slice.extend_from_slice(&encoded_tx);
-    let tx = ZkSyncTransaction::try_from_slice(slice.as_mut_slice())
+    let _tx = ZkSyncTransaction::try_from_slice(slice.as_mut_slice(), true)
         .expect("Tx encoding should be valid");
 }

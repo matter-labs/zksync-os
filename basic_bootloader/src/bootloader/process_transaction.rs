@@ -60,9 +60,11 @@ where
         memories: RunnerMemoryBuffers<'a>,
         is_first_tx: bool,
         tracer: &mut impl Tracer<S>,
+        config: Config,
     ) -> Result<TxProcessingResult<'a>, TxError> {
-        let transaction = ZkSyncTransaction::try_from_slice(initial_calldata_buffer)
-            .map_err(|_| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
+        let transaction =
+            ZkSyncTransaction::try_from_slice(initial_calldata_buffer, config.allow_eip_712())
+                .map_err(|_| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
 
         // Safe to unwrap here, as this should have been validated in the
         // previous call.
@@ -80,6 +82,7 @@ where
                         transaction,
                         false,
                         tracer,
+                        config,
                     )
                 }
             }
@@ -90,6 +93,7 @@ where
                 transaction,
                 true,
                 tracer,
+                config,
             ),
             _ => Self::process_l2_transaction::<Config>(
                 system,
@@ -97,6 +101,7 @@ where
                 memories,
                 transaction,
                 tracer,
+                config,
             ),
         }
     }
@@ -108,6 +113,7 @@ where
         transaction: ZkSyncTransaction,
         is_priority_op: bool,
         tracer: &mut impl Tracer<S>,
+        config: Config,
     ) -> Result<TxProcessingResult<'a>, TxError> {
         // The work done by the bootloader (outside of EE or EOA specific
         // computation) is charged as part of the intrinsic gas cost.
@@ -152,6 +158,7 @@ where
             L1_TX_INTRINSIC_L2_GAS,
             L1_TX_INTRINSIC_PUBDATA,
             L1_TX_INTRINSIC_NATIVE_COST,
+            config.handle_zero_native_per_gas(),
         )?;
         // Just used for computing native used
         let initial_resources = resources.clone();
@@ -517,6 +524,7 @@ where
         mut memories: RunnerMemoryBuffers<'a>,
         mut transaction: ZkSyncTransaction,
         tracer: &mut impl Tracer<S>,
+        config: Config,
     ) -> Result<TxProcessingResult<'a>, TxError> {
         let from = transaction.from.read();
         let gas_limit = transaction.gas_limit.read();
@@ -571,6 +579,7 @@ where
             L2_TX_INTRINSIC_GAS,
             L2_TX_INTRINSIC_PUBDATA,
             L2_TX_INTRINSIC_NATIVE_COST,
+            config.handle_zero_native_per_gas(),
         )?;
         // Just used for computing native used
         let initial_resources = resources.clone();

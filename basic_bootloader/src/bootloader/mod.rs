@@ -170,6 +170,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
         oracle: <S::IO as IOSubsystemExt>::IOOracle,
         result_keeper: &mut impl ResultKeeperExt,
         tracer: &mut impl Tracer<S>,
+        config: Config,
     ) -> Result<<S::IO as IOSubsystemExt>::FinalData, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -263,6 +264,7 @@ impl<S: EthereumLikeTypes> BasicBootloader<S> {
                         memories.reborrow(),
                         first_tx,
                         tracer,
+                        config,
                     );
 
                     cycle_marker::end!("process_transaction");

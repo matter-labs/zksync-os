@@ -1,7 +1,7 @@
 use crate::{colors, init_logger};
 use alloy::signers::local::PrivateKeySigner;
-use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
+use basic_bootloader::bootloader::config::{BasicBootloaderCallSimulationConfig, ExecutionVersion};
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use basic_system::system_implementation::flat_storage_model::FlatStorageCommitment;
@@ -220,10 +220,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
         let mut nop_tracer = NopTracer::default();
 
-        run_forward::<BasicBootloaderCallSimulationConfig, _, _, _>(
+        run_forward::<_, _, _, _>(
             oracle.clone(),
             &mut result_keeper,
             &mut nop_tracer,
+            BasicBootloaderCallSimulationConfig(ExecutionVersion::latest()),
         );
 
         let block_output: BlockOutput = result_keeper.into();
@@ -351,10 +352,11 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         // we use proving config here for benchmarking,
         // although sequencer can have extra optimizations
-        run_forward_no_panic::<BasicBootloaderProvingExecutionConfig, _, _, _>(
+        run_forward_no_panic::<_, _, _, _>(
             oracle.clone(),
             &mut result_keeper,
             &mut nop_tracer,
+            BasicBootloaderProvingExecutionConfig,
         )?;
 
         let block_output: BlockOutput = result_keeper.into();

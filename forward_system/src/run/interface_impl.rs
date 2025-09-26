@@ -2,6 +2,7 @@ use crate::run::convert::FromInterface;
 use crate::run::errors::ForwardSubsystemError;
 use crate::run::output::TxResult;
 use crate::run::{run_block, simulate_tx};
+use basic_bootloader::bootloader::config::ExecutionVersion;
 use zk_ee::system::metadata::BlockMetadataFromOracle;
 use zk_ee::system::tracer::NopTracer;
 use zksync_os_interface::traits::{
@@ -17,12 +18,12 @@ pub struct RunBlockForward {
 }
 
 impl RunBlock for RunBlockForward {
-    type Config = ();
+    type Config = ExecutionVersion;
     type Error = ForwardSubsystemError;
 
     fn run_block<T: ReadStorage, PS: PreimageSource, TS: TxSource, TR: TxResultCallback>(
         &self,
-        _config: (),
+        config: ExecutionVersion,
         block_context: BlockContext,
         storage: T,
         preimage_source: PS,
@@ -36,17 +37,18 @@ impl RunBlock for RunBlockForward {
             tx_source,
             tx_result_callback,
             &mut NopTracer::default(),
+            config,
         )
     }
 }
 
 impl SimulateTx for RunBlockForward {
-    type Config = ();
+    type Config = ExecutionVersion;
     type Error = ForwardSubsystemError;
 
     fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
         &self,
-        _config: (),
+        config: ExecutionVersion,
         transaction: Vec<u8>,
         block_context: BlockContext,
         storage: S,
@@ -58,6 +60,7 @@ impl SimulateTx for RunBlockForward {
             storage,
             preimage_source,
             &mut NopTracer::default(),
+            config,
         )
     }
 }

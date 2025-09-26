@@ -128,7 +128,7 @@ impl<'a> ZkSyncTransaction<'a> {
     /// Also validate that all the fields set correctly, in accordance to its type.
     ///
     #[allow(clippy::result_unit_err)]
-    pub fn try_from_slice(slice: &'a mut [u8]) -> Result<Self, ()> {
+    pub fn try_from_slice(slice: &'a mut [u8], allow_eip712: bool) -> Result<Self, ()> {
         if slice.len() <= TX_OFFSET {
             return Err(());
         }
@@ -220,7 +220,7 @@ impl<'a> ZkSyncTransaction<'a> {
             reserved_dynamic,
         };
 
-        new.validate_structure()?;
+        new.validate_structure(allow_eip712)?;
 
         Ok(new)
     }
@@ -229,7 +229,7 @@ impl<'a> ZkSyncTransaction<'a> {
     /// Validate that all the fields set correctly, in accordance to its type
     ///
     #[allow(clippy::result_unit_err)]
-    fn validate_structure(&self) -> Result<(), ()> {
+    fn validate_structure(&self, allow_eip712: bool) -> Result<(), ()> {
         let tx_type = self.tx_type.read();
 
         match tx_type {
@@ -237,8 +237,8 @@ impl<'a> ZkSyncTransaction<'a> {
             | Self::EIP_2930_TX_TYPE
             | Self::EIP_1559_TX_TYPE
             | Self::UPGRADE_TX_TYPE
-            | Self::L1_L2_TX_TYPE
-            | Self::EIP_712_TX_TYPE => {}
+            | Self::L1_L2_TX_TYPE => {}
+            Self::EIP_712_TX_TYPE if allow_eip712 => {}
             #[cfg(feature = "pectra")]
             Self::EIP_7702_TX_TYPE => {}
             _ => return Err(()),

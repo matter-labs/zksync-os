@@ -25,6 +25,7 @@ pub use oracle::ForwardRunningOracle;
 use zk_ee::common_structs::ProofData;
 use zk_ee::system::tracer::Tracer;
 
+pub use basic_bootloader::bootloader::config::ExecutionVersion;
 pub use interface_impl::RunBlockForward;
 pub use tree::LeafProof;
 pub use tree::ReadStorage;
@@ -58,6 +59,7 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     tx_source: TS,
     tx_result_callback: TR,
     tracer: &mut impl Tracer<ForwardRunningSystem<T, PS, TS>>,
+    config: ExecutionVersion,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
     let oracle = ForwardRunningOracle {
         proof_data: None,
@@ -70,10 +72,11 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
 
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
 
-    run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
+    run_forward::<_, _, _, _>(
         oracle,
         &mut result_keeper,
         tracer,
+        BasicBootloaderForwardSimulationConfig(config),
     );
     Ok(result_keeper.into())
 }
@@ -143,10 +146,11 @@ pub fn run_block_with_oracle_dump<
             .expect("should write to file");
     }
 
-    run_forward::<BasicBootloaderForwardSimulationConfig, _, _, _>(
+    run_forward::<_, _, _, _>(
         oracle,
         &mut result_keeper,
         tracer,
+        BasicBootloaderForwardSimulationConfig(ExecutionVersion::latest()),
     );
     Ok(result_keeper.into())
 }
@@ -172,6 +176,7 @@ pub fn run_block_from_oracle_dump<
         oracle,
         &mut result_keeper,
         tracer,
+        BasicBootloaderForwardSimulationConfig(ExecutionVersion::latest()),
     );
     Ok(result_keeper.into())
 }
@@ -191,6 +196,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     storage: S,
     preimage_source: PS,
     tracer: &mut impl Tracer<CallSimulationSystem<S, PS, TxListSource>>,
+    config: ExecutionVersion,
 ) -> Result<TxResult, ForwardSubsystemError> {
     let tx_source = TxListSource {
         transactions: vec![transaction].into(),
@@ -207,10 +213,11 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
-    CallSimulationBootloader::run_prepared::<BasicBootloaderCallSimulationConfig>(
+    CallSimulationBootloader::run_prepared(
         oracle,
         &mut result_keeper,
         tracer,
+        BasicBootloaderCallSimulationConfig(config),
     )
     .map_err(wrap_error!())?;
     let mut block_output: BlockOutput = result_keeper.into();

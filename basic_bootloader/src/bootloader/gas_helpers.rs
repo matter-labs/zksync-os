@@ -27,6 +27,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     intrinsic_gas: u64,
     intrinsic_pubdata: u64,
     intrinsic_native: u64,
+    handle_zero_native_per_gas: bool,
 ) -> Result<ResourcesForTx<S>, TxError> {
     // TODO: operator trusted gas limit?
 
@@ -37,10 +38,12 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     // isn't computational.
     // We can consider in the future to keep two limits, so that pubdata
     // is not charged from computational resource.
-    // Note: if native_per_gas is 0, we treat it as unlimited_native.
+    // Note[handle_zero_native_per_gas=true]: if native_per_gas is 0, we treat it as unlimited_native.
     // This can only happen when gas_price is 0, which means that fees
     // aren't charged.
-    let native_limit = if cfg!(feature = "unlimited_native") || native_per_gas.is_zero() {
+    let native_limit = if cfg!(feature = "unlimited_native")
+        || (handle_zero_native_per_gas && native_per_gas.is_zero())
+    {
         u64::MAX
     } else {
         gas_limit.saturating_mul(u256_to_u64_saturated(&native_per_gas))

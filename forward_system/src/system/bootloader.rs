@@ -19,8 +19,9 @@ pub fn run_forward<
     oracle: ForwardRunningOracle<T, PS, TS>,
     result_keeper: &mut impl ResultKeeperExt,
     tracer: &mut impl Tracer<ForwardRunningSystem<T, PS, TS>>,
+    config: Config,
 ) {
-    if let Err(err) = ForwardBootloader::run_prepared::<Config>(oracle, result_keeper, tracer) {
+    if let Err(err) = ForwardBootloader::run_prepared(oracle, result_keeper, tracer, config) {
         panic!("Forward run failed with: {err}")
     };
 }
@@ -34,6 +35,7 @@ pub fn run_forward_no_panic<
     oracle: ForwardRunningOracle<T, PS, TS>,
     result_keeper: &mut impl ResultKeeperExt,
     tracer: &mut impl Tracer<ForwardRunningSystem<T, PS, TS>>,
+    config: Config,
 ) -> Result<(), BootloaderSubsystemError> {
-    ForwardBootloader::run_prepared::<Config>(oracle, result_keeper, tracer).map(|_| ())
+    ForwardBootloader::run_prepared::<Config>(oracle, result_keeper, tracer, config).map(|_| ())
 }
