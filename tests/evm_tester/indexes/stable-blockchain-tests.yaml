@@ -461,7 +461,8 @@ entries:
         entries:
           test_precompile_absence.json:
             hash: '0x3ffaccb561d7ad96366e414d9eb9a1f3'
-            enabled: true
+            enabled: false
+            comment: 'TODO: we have a mixed set of precompiles currently'
           test_precompiles.json:
             hash: '0xa59b83de33678fecfb917aeff6b31d13'
             enabled: true

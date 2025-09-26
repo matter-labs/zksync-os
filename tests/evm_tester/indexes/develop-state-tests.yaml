@@ -304,7 +304,8 @@ entries:
         entries:
           test_precompile_absence.json:
             hash: '0xcbaf81cb3001737ad521d501b2662b62'
-            enabled: true
+            enabled: false
+            comment: 'TODO: we have a mixed set of precompiles currently'
           test_precompiles.json:
             hash: '0x537526eb075e1bb02d7e6213f89bf5d9'
             enabled: true
@@ -470,6 +471,7 @@ entries:
             enabled: true
       eip7951_p256verify_precompiles:
         enabled: true
+        hardforkOverride: Osaka
         entries:
           test_call_types.json:
             hash: '0xf7c9b446b0c08be3909b42a153cab248'

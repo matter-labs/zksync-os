@@ -55,7 +55,7 @@ zksync_os_system_hooks = { package = "system_hooks", path = "../../system_hooks"
 zksync_os_oracle_provider = {package = "oracle_provider", path = "../../oracle_provider"}
 zksync_os_runner = {package = "zksync_os_runner", path = "../../zksync_os_runner" }
 zksync_os_crypto = { package = "crypto", path="../../crypto" }
-zksync_os_rig = { package = "rig", path="../../tests/rig", features = ["pectra", "prevrandao"]}
+zksync_os_rig = { package = "rig", path="../../tests/rig", features = ["pectra", "prevrandao", "p256_precompile"]}
 
 risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.3.1", features=["delegation", "opcode_stats"]}
 

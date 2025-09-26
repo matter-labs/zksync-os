@@ -303,7 +303,8 @@ entries:
         entries:
           test_precompile_absence.json:
             hash: '0x1cd82665b2f32eb614854805115e0d79'
-            enabled: true
+            enabled: false
+            comment: 'TODO: we have a mixed set of precompiles currently'
           test_precompiles.json:
             hash: '0x83f327c510e435390a3961578f10cce7'
             enabled: true

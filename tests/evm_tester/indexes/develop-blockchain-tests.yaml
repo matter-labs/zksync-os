@@ -461,7 +461,8 @@ entries:
         entries:
           test_precompile_absence.json:
             hash: '0x7a5afb94616baa411295f087daf32e97'
-            enabled: true
+            enabled: false
+            comment: 'TODO: we have a mixed set of precompiles currently'
           test_precompiles.json:
             hash: '0x1f5b3cd623cbdb1c7a61c31f6779c6d6'
             enabled: true
@@ -680,7 +681,9 @@ entries:
             hash: '0x77b250a106bbe0ca98ff9653103a76ca'
             enabled: true
       eip7951_p256verify_precompiles:
-        enabled: true
+        enabled: false
+        comment: 'TODO: it also checks block hashes predeployed contract which is not supported yet (Before Pectra)'
+        hardforkOverride: Osaka
         entries:
           test_call_types.json:
             hash: '0x4e8d48018872e6f5dd51e79719d72fe5'
