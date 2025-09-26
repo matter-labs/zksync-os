@@ -214,10 +214,11 @@ pub fn run_proving_inner<
         basic_system::system_implementation::system::BatchPublicInputBuilder::new();
     for _ in 0..count {
         let (io, block_metadata, current_block_hash, upgrade_tx_hash) =
-            ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
+            ProvingBootloader::<O, L>::run_prepared(
                 oracle,
                 &mut NopResultKeeper,
                 &mut NopTracer::default(),
+                BasicBootloaderProvingExecutionConfig,
             )
             .expect("Tried to prove a failing batch");
         oracle = io.apply_to_batch(

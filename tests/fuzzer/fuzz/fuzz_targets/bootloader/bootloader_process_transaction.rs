@@ -29,7 +29,7 @@ fn fuzz(data: &[u8]) {
         data.resize(TX_OFFSET + 1, 0);
     }
 
-    let Ok(decoded_tx) = ZkSyncTransaction::try_from_slice(&mut data) else {
+    let Ok(decoded_tx) = ZkSyncTransaction::try_from_slice(&mut data, true) else {
         return;
     };
     let amount = U256::from_be_bytes([255 as u8; 32]);

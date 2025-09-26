@@ -261,7 +261,7 @@ pub fn mutate_transaction(data: &mut [u8], size: usize, max_size: usize, seed: u
     let mut rng = StdRng::seed_from_u64(seed as u64);
 
     // Attempt to decode the input transaction
-    let decoded_tx = ZkSyncTransaction::try_from_slice(&mut data[..size]);
+    let decoded_tx = ZkSyncTransaction::try_from_slice(&mut data[..size], true);
     if decoded_tx.is_err() {
         // If decoding fails, return the original size and data
         return size;
@@ -278,7 +278,7 @@ pub fn mutate_transaction(data: &mut [u8], size: usize, max_size: usize, seed: u
 
     // convert tx_data back to ZkSyncTransaction, so we can use its functions
     let mut tx_data_bytes = tx_data.to_zk_bytes();
-    if let Ok(new_tx) = ZkSyncTransaction::try_from_slice(tx_data_bytes.as_mut_slice()) {
+    if let Ok(new_tx) = ZkSyncTransaction::try_from_slice(tx_data_bytes.as_mut_slice(), true) {
         tx = new_tx;
     } else {
         return size;
@@ -311,7 +311,7 @@ pub fn mutate_transaction(data: &mut [u8], size: usize, max_size: usize, seed: u
 
     // try to deserialize the transaction again, to see whether it works
     let mut serialized_tx_copy = serialized_tx.clone();
-    if let Err(_) = ZkSyncTransaction::try_from_slice(serialized_tx_copy.as_mut_slice()) {
+    if let Err(_) = ZkSyncTransaction::try_from_slice(serialized_tx_copy.as_mut_slice(), true) {
         println!("data          = {}", hex::encode(data));
         println!("serialized_tx = {}", hex::encode(serialized_tx.as_slice()));
         panic!("broken serialization");

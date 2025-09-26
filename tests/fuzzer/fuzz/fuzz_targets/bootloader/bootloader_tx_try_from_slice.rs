@@ -5,7 +5,7 @@ use libfuzzer_sys::fuzz_target;
 
 fn fuzz(data: &[u8]) {
     let mut data = data.to_owned();
-    let _ = ZkSyncTransaction::try_from_slice(&mut data);
+    let _ = ZkSyncTransaction::try_from_slice(&mut data, true);
 }
 
 fuzz_target!(|data: &[u8]| {

@@ -16,7 +16,7 @@ fuzz_mutator!(|data: &mut [u8], size: usize, max_size: usize, seed: u32| {
 });
 
 fn parse_full_tx(data: &mut [u8]) -> Result<ZkSyncTransaction, ()> {
-    let tx = ZkSyncTransaction::try_from_slice(data)?;
+    let tx = ZkSyncTransaction::try_from_slice(data, true)?;
     let mut inf_resources = BaseResources::<DecreasingNative>::FORMAL_INFINITE;
     // Just for parsing the access list
     tx.calculate_hash(37, &mut inf_resources).map_err(|_| ())?;

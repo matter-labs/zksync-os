@@ -15,7 +15,7 @@ fuzz_mutator!(|data: &mut [u8], size: usize, max_size: usize, seed: u32| {
 
 fn fuzz(data: &[u8]) {
     let mut data = data.to_owned();
-    let Ok(transaction) = ZkSyncTransaction::try_from_slice(&mut data) else {
+    let Ok(transaction) = ZkSyncTransaction::try_from_slice(&mut data, true) else {
         // Input is not valid
         return;
     };

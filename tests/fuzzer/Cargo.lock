@@ -1770,7 +1770,6 @@ dependencies = [
  "strum_macros 0.27.2",
  "system_hooks",
  "zk_ee",
- "zksync_os_types",
 ]
 
 [[package]]
@@ -1792,7 +1791,6 @@ dependencies = [
  "storage_models",
  "strum_macros 0.27.2",
  "zk_ee",
- "zksync_os_types",
 ]
 
 [[package]]
@@ -5145,7 +5143,7 @@ checksum = "b8ec7ab813848ba4522158d5517a6093db1ded27575b070f4177b8d12b41db5e"
 dependencies = [
  "flate2",
  "memchr",
- "ruzstd",
+ "ruzstd 0.6.0",
 ]
 
 [[package]]
@@ -5154,7 +5152,9 @@ version = "0.36.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62948e14d923ea95ea2c7c86c71013138b66525b86bdc08d2dcc262bdb497b87"
 dependencies = [
+ "flate2",
  "memchr",
+ "ruzstd 0.7.3",
 ]
 
 [[package]]
@@ -6428,7 +6428,7 @@ dependencies = [
  "field",
  "inferno",
  "memmap2",
- "object 0.35.0",
+ "object 0.36.7",
  "poseidon2",
  "rand 0.9.2",
  "ringbuffer",
@@ -6666,6 +6666,15 @@ checksum = "5174a470eeb535a721ae9fdd6e291c2411a906b96592182d05217591d5c5cf7b"
 dependencies = [
  "byteorder",
  "derive_more 0.99.20",
+ "twox-hash",
+]
+
+[[package]]
+name = "ruzstd"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fad02996bfc73da3e301efe90b1837be9ed8f4a462b6ed410aa35d00381de89f"
+dependencies = [
  "twox-hash",
 ]
 
@@ -8453,7 +8462,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8976,7 +8985,6 @@ dependencies = [
  "ruint",
  "serde",
  "strum_macros 0.27.2",
- "zksync_os_types",
 ]
 
 [[package]]
@@ -9019,12 +9027,13 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_interface"
-version = "0.0.1"
-source = "git+https://github.com/matter-labs/zksync-os-interface?rev=03974f6aab1b26dea340133069949860afcbb668#03974f6aab1b26dea340133069949860afcbb668"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce3ecdc1edaf67533b4bb638fbbd401acec73eec6de99e3abefa49e6c1348695"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
- "zksync_os_types",
+ "serde",
 ]
 
 [[package]]
@@ -9035,16 +9044,6 @@ dependencies = [
  "execution_utils",
  "prover_examples",
  "risc_v_simulator",
-]
-
-[[package]]
-name = "zksync_os_types"
-version = "0.0.1"
-source = "git+https://github.com/matter-labs/zksync-os-interface?rev=03974f6aab1b26dea340133069949860afcbb668#03974f6aab1b26dea340133069949860afcbb668"
-dependencies = [
- "alloy-primitives",
- "bytes",
- "serde",
 ]
 
 [[package]]
