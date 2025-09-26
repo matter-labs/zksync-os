@@ -141,4 +141,90 @@ mod tests {
 
         assert_eq!(cache_record.appearance, Appearance::Unset);
     }
+
+    #[test]
+    fn finish_deconstruction_works() {
+        let mut cache_record: CacheRecord<i32, u32> = CacheRecord::new(5, Appearance::Retrieved);
+
+        // First deconstruct the record
+        cache_record.deconstruct();
+        assert_eq!(cache_record.appearance, Appearance::Deconstructed);
+
+        // finish_deconstruction should change appearance from Deconstructed to Updated
+        let result = cache_record.finish_deconstruction();
+        assert!(
+            result.is_ok(),
+            "finish_deconstruction should succeed on deconstructed record"
+        );
+        assert_eq!(
+            cache_record.appearance,
+            Appearance::Updated,
+            "finish_deconstruction should change appearance to Updated"
+        );
+
+        // Value should remain unchanged
+        assert_eq!(
+            cache_record.value, 5,
+            "finish_deconstruction should not modify the value"
+        );
+    }
+
+    #[test]
+    fn finish_deconstruction_fails_on_non_deconstructed() {
+        let mut cache_record: CacheRecord<i32, u32> = CacheRecord::new(5, Appearance::Retrieved);
+
+        // Should fail on non-deconstructed record
+        let result = cache_record.finish_deconstruction();
+        assert!(
+            result.is_err(),
+            "finish_deconstruction should fail on non-deconstructed record"
+        );
+        assert_eq!(
+            cache_record.appearance,
+            Appearance::Retrieved,
+            "appearance should remain unchanged on failure"
+        );
+
+        // Test with other appearances
+        cache_record.unset();
+        let result = cache_record.finish_deconstruction();
+        assert!(
+            result.is_err(),
+            "finish_deconstruction should fail on unset record"
+        );
+
+        // Test after update
+        let mut cache_record: CacheRecord<i32, u32> = CacheRecord::new(5, Appearance::Updated);
+        let result = cache_record.finish_deconstruction();
+        assert!(
+            result.is_err(),
+            "finish_deconstruction should fail on updated record"
+        );
+    }
+
+    #[test]
+    fn deconstructed_account_lifecycle() {
+        let mut cache_record: CacheRecord<i32, u32> = CacheRecord::new(5, Appearance::Retrieved);
+
+        // 1. Account gets deconstructed
+        cache_record.deconstruct();
+        assert_eq!(cache_record.appearance, Appearance::Deconstructed);
+
+        // 2. In finish_tx, we call finish_deconstruction before update
+        cache_record
+            .finish_deconstruction()
+            .expect("Should finish deconstruction");
+        assert_eq!(cache_record.appearance, Appearance::Updated);
+
+        // 3. Now we can update the account normally
+        cache_record
+            .update(|v, _| {
+                *v = 0; // Set to some value
+                Ok(())
+            })
+            .expect("Should update successfully");
+
+        assert_eq!(cache_record.appearance, Appearance::Updated);
+        assert_eq!(cache_record.value, 0);
+    }
 }

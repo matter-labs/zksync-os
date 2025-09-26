@@ -759,3 +759,123 @@ fn test_balance_overflow_protection() {
         "Transaction with total balance overflow should fail"
     );
 }
+
+/// Test that upgrade transactions (L1 -> L2) that revert raise an internal error
+/// instead of a validation error.
+#[test]
+fn test_upgrade_tx_revert_internal_error() {
+    let mut chain = Chain::empty(None);
+
+    // Create a contract that always reverts
+    let revert_contract_address = address!("0000000000000000000000000000000000010003");
+    // Simple contract bytecode that just does REVERT(0, 0)
+    let revert_bytecode = hex::decode("60006000fd").unwrap(); // PUSH1 0, PUSH1 0, REVERT
+    chain.set_evm_bytecode(
+        B160::from_be_bytes(revert_contract_address.into_array()),
+        &revert_bytecode,
+    );
+
+    // Create a proper upgrade transaction that calls the reverting contract
+    let upgrade_tx = encode_upgrade_tx(TransactionRequest {
+        chain_id: Some(37),
+        from: Some(address!("1234000000000000000000000000000000000000")),
+        to: Some(TxKind::Call(revert_contract_address)),
+        gas: Some(100_000u64),
+        max_fee_per_gas: Some(0),
+        max_priority_fee_per_gas: Some(0),
+        value: Some(alloy::primitives::U256::from(0)),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    });
+
+    let transactions = vec![upgrade_tx];
+
+    // Use run_block_no_panic to catch the error instead of panicking
+    let result = chain.run_block_no_panic(transactions, None, None, false);
+
+    // The upgrade transaction should fail with an internal error (not validation error)
+    assert!(result.is_err());
+
+    // The error should be an internal error containing "Upgrade transaction must succeed"
+    let error = result.unwrap_err();
+    let error_debug = format!("{:?}", error);
+    assert!(
+        error_debug.contains("Upgrade transaction must succeed"),
+        "Expected error to contain 'Upgrade transaction must succeed', got: {}",
+        error_debug
+    );
+}
+
+#[test]
+fn test_upgrade_tx_succeeds() {
+    let mut chain = Chain::empty(None);
+
+    // Create a contract that always succeeds
+    let revert_contract_address = address!("0000000000000000000000000000000000010003");
+    // Simple contract bytecode that just does RETURN(0, 0)
+    let revert_bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
+    chain.set_evm_bytecode(
+        B160::from_be_bytes(revert_contract_address.into_array()),
+        &revert_bytecode,
+    );
+
+    // Create a proper upgrade transaction that calls the contract
+    let upgrade_tx = encode_upgrade_tx(TransactionRequest {
+        chain_id: Some(37),
+        from: Some(address!("1234000000000000000000000000000000000000")),
+        to: Some(TxKind::Call(revert_contract_address)),
+        gas: Some(100_000u64),
+        max_fee_per_gas: Some(0),
+        max_priority_fee_per_gas: Some(0),
+        value: Some(alloy::primitives::U256::from(0)),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    });
+
+    let transactions = vec![upgrade_tx];
+
+    // Use run_block_no_panic to catch the error instead of panicking
+    let result = chain.run_block_no_panic(transactions, None, None, false);
+    assert!(result.is_ok());
+
+    assert!(result.unwrap().tx_results[0].as_ref().unwrap().is_success());
+}
+
+#[test]
+fn test_invalid_transaction_type_failure() {
+    let mut chain = Chain::empty(None);
+
+    // Create a simple success contract for the call
+    let contract_address = address!("0000000000000000000000000000000000010003");
+    let success_bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
+    chain.set_evm_bytecode(
+        B160::from_be_bytes(contract_address.into_array()),
+        &success_bytecode,
+    );
+
+    let transaction_types = vec![0x7d, 0x80, 0xFF]; // Some invalid types;
+
+    for tx_type in transaction_types {
+        let invalid_tx = encode_special_tx_type(
+            TransactionRequest {
+                chain_id: Some(37),
+                from: Some(address!("1234000000000000000000000000000000000000")),
+                to: Some(TxKind::Call(contract_address)),
+                gas: Some(100_000u64),
+                max_fee_per_gas: Some(0),
+                max_priority_fee_per_gas: Some(0),
+                value: Some(alloy::primitives::U256::from(0)),
+                nonce: Some(0),
+                ..TransactionRequest::default()
+            },
+            tx_type,
+        );
+
+        let transactions = vec![invalid_tx];
+        let result = chain.run_block(transactions, None, None);
+        assert!(
+            result.tx_results[0].is_err(),
+            "Transaction with invalid type should fail"
+        );
+    }
+}

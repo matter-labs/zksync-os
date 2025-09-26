@@ -143,3 +143,50 @@ impl<'a> Iterator for StorageKeysIter<'a> {
         Some(current)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_previous_item_info_calculation() {
+        let prev_item = PreviousItemInfo {
+            offset: 64,
+            nb_keys: 3,
+        };
+
+        // Expected calculation: offset + 32 * (3 + nb_keys)
+        // = 64 + 32 * (3 + 3) = 64 + 32 * 6 = 64 + 192 = 256
+        let expected_next_offset = prev_item.next_expected_offset();
+        assert_eq!(
+            expected_next_offset, 256,
+            "Should calculate correct next offset based on formula: offset + 32 * (3 + nb_keys)"
+        );
+
+        // Test with different values
+        let prev_item2 = PreviousItemInfo {
+            offset: 128,
+            nb_keys: 5,
+        };
+
+        // Expected: 128 + 32 * (3 + 5) = 128 + 32 * 8 = 128 + 256 = 384
+        let expected_next_offset2 = prev_item2.next_expected_offset();
+        assert_eq!(
+            expected_next_offset2, 384,
+            "Should handle different offset and key counts correctly"
+        );
+
+        // Test with zero keys
+        let prev_item3 = PreviousItemInfo {
+            offset: 96,
+            nb_keys: 0,
+        };
+
+        // Expected: 96 + 32 * (3 + 0) = 96 + 32 * 3 = 96 + 96 = 192
+        let expected_next_offset3 = prev_item3.next_expected_offset();
+        assert_eq!(
+            expected_next_offset3, 192,
+            "Should handle zero keys case correctly"
+        );
+    }
+}
