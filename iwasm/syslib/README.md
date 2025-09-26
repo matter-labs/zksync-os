@@ -1,3 +1,0 @@
-# Rust for (smart) contract
-
-Let's try to take Solidity's ABI and have contracts expressible in Rust, under some assumptions, mainly that our "host" (one that provides sandboxing, etc.) provides a small set of interfaces for program to use. We target WASM as a bytecode distribution mechanism (and this also solves all the questions of interaction with the "host" environment without invoking dynamic linking).
