@@ -7,6 +7,8 @@ STABLE_TAR_URL="https://github.com/ethereum/execution-spec-tests/releases/downlo
 # Target directory
 TARGET_DIR="ethereum-fixtures"
 
+rm -rf "$TARGET_DIR"
+
 # Create the target directory
 mkdir -p "$TARGET_DIR"
 
