@@ -626,7 +626,7 @@ entries:
             enabled: true
             comment: 'TODO: currently alloy can not build and sign invalid 7702 transactions'
             skipNames:
-            - 'tests/prague/eip7702_set_code_tx/test_set_code_txs.py::test_contract_create[fork_Prague-state_test]'
+            - tests/prague/eip7702_set_code_tx/test_set_code_txs.py::test_contract_create[fork_Prague-state_test]
           test_contract_storage_to_pointer_with_storage.json:
             hash: '0x30c59bc9c5fe29d22bc1e6ddd67fc23d'
             enabled: true

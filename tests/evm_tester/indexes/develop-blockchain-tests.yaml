@@ -489,9 +489,9 @@ entries:
           test_chainid.json:
             hash: '0x1a7e817b464f4ba27d3e56ccd57db76e'
             enabled: true
-            comment: 'Type 3 (Blobs) transactions are not supported'
+            comment: Type 3 (Blobs) transactions are not supported
             skipNames:
-            - 'tests/istanbul/eip1344_chainid/test_chainid.py::test_chainid[fork_Cancun-typed_transaction_3-blockchain_test_from_state_test]'
+            - tests/istanbul/eip1344_chainid/test_chainid.py::test_chainid[fork_Cancun-typed_transaction_3-blockchain_test_from_state_test]
       eip152_blake2:
         enabled: false
         comment: Blake precompile not supported
