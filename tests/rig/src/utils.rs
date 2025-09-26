@@ -269,6 +269,20 @@ pub fn sign_and_encode_eip712_tx(
 ///
 pub fn encode_l1_tx(tx: TransactionRequest) -> Vec<u8> {
     let tx_type = 0x7f;
+    encode_special_tx_type(tx, tx_type)
+}
+
+///
+/// Encode given request as an upgrade transaction.
+///
+/// Panics if needed fields are unset/set incorrectly.
+///
+pub fn encode_upgrade_tx(tx: TransactionRequest) -> Vec<u8> {
+    let tx_type = 0x7e;
+    encode_special_tx_type(tx, tx_type)
+}
+
+pub fn encode_special_tx_type(tx: TransactionRequest, tx_type: u8) -> Vec<u8> {
     let from = tx.from.unwrap().into_array();
     let to = Some(tx.to.unwrap().to().unwrap().into_array());
     let gas_limit = tx.gas.unwrap() as u128;
@@ -336,6 +350,16 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
         })
         .collect();
 
+    // If base fee is zero, we can avoid paying priority fee.
+    let max_priority_fee_per_gas = if block_context
+        .as_ref()
+        .is_some_and(|bc| bc.eip1559_basefee.is_zero())
+    {
+        0
+    } else {
+        1000
+    };
+
     let transactions: Vec<_> = wallets
         .iter()
         .zip(dsts.clone())
@@ -344,7 +368,7 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
                 chain_id: 37u64,
                 nonce: 0,
                 max_fee_per_gas: 1000,
-                max_priority_fee_per_gas: 1000,
+                max_priority_fee_per_gas,
                 gas_limit: 60_000,
                 to: TxKind::Call(to),
                 value: Default::default(),

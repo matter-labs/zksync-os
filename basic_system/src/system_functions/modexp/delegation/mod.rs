@@ -24,6 +24,11 @@ pub(super) fn modexp<O: IOOracle, L: Logger, A: Allocator + Clone>(
     let output = if m.digits == 0 {
         Vec::new_in(allocator)
     } else {
+        // another short circuit (as parsing below is infallible - we can even skip parsing the base and exponent)
+        if m.digits == 1 && m.backing[0].is_one() {
+            // it is base ^ exponent mod 1 == 0 in all the cases
+            return Vec::new_in(allocator);
+        }
         let min_capacity = m.capacity();
         let x = BigintRepr::from_big_endian_with_double_capacity_or_min_capacity(
             &base,
@@ -55,6 +60,11 @@ mod test {
         let output = if m.digits == 0 {
             Vec::new_in(allocator)
         } else {
+            // another short circuit (as parsing below is infallible - we can even skip parsing the base and exponent)
+            if m.digits == 1 && m.backing[0].is_one() {
+                // it is base ^ exponent mod 1 == 0 in all the cases
+                return Vec::new_in(allocator);
+            }
             let min_capacity = m.capacity();
             let x = BigintRepr::from_big_endian_with_double_capacity_or_min_capacity(
                 &base,
@@ -186,6 +196,76 @@ mod test {
         let expected =
             hex::decode("08d8fab720b60be2e3af8437e15e467c625cd8704c2382449e7a50437355c6be")
                 .unwrap();
+
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_5() {
+        // 0^1 mod 2
+
+        let base = hex::decode("00").unwrap();
+
+        let exp = hex::decode("01").unwrap();
+
+        let modulus = hex::decode("02").unwrap();
+
+        let output = invoke_precompile_no_prepadding(&modulus, &base, &exp);
+
+        let expected = hex::decode("").unwrap();
+
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_6() {
+        // 0^0 mod 2
+
+        let base = hex::decode("00").unwrap();
+
+        let exp = hex::decode("00").unwrap();
+
+        let modulus = hex::decode("02").unwrap();
+
+        let output = invoke_precompile_no_prepadding(&modulus, &base, &exp);
+
+        let expected =
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000001")
+                .unwrap();
+
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_7() {
+        // 3^2 mod 1
+
+        let base = hex::decode("03").unwrap();
+
+        let exp = hex::decode("02").unwrap();
+
+        let modulus = hex::decode("01").unwrap();
+
+        let output = invoke_precompile_no_prepadding(&modulus, &base, &exp);
+
+        let expected = hex::decode("").unwrap();
+
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_8() {
+        // 0^0 mod 1
+
+        let base = hex::decode("00").unwrap();
+
+        let exp = hex::decode("00").unwrap();
+
+        let modulus = hex::decode("01").unwrap();
+
+        let output = invoke_precompile_no_prepadding(&modulus, &base, &exp);
+
+        let expected = hex::decode("").unwrap();
 
         assert_eq!(output, expected);
     }
