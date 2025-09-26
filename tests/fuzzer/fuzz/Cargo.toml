@@ -14,7 +14,6 @@ features = ["http-rustls-tls", "test", "signing"]
 
 [dependencies]
 evm_interpreter = { path = "../../../evm_interpreter" }
-iwasm_ee = { path = "../../../iwasm_ee" }
 forward_system = { path = "../../../forward_system", features = ["no_print"] }
 basic_system = { path = "../../../basic_system" }
 basic_bootloader = { path = "../../../basic_bootloader" }
