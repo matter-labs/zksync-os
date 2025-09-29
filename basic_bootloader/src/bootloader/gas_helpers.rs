@@ -51,13 +51,12 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     let intrinsic_pubdata_overhead = u256_to_u64_saturated(&native_per_pubdata)
         .checked_mul(intrinsic_pubdata)
         .ok_or(internal_error!("npp*ip"))?;
-    let native_limit =
-        native_limit
-            .checked_sub(intrinsic_pubdata_overhead)
-            .or_else(|| if is_l1_tx {Some(0)} else {None})
-            .ok_or(TxError::Validation(
-                errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
-            ))?;
+    let native_limit = native_limit
+        .checked_sub(intrinsic_pubdata_overhead)
+        .or_else(|| if is_l1_tx { Some(0) } else { None })
+        .ok_or(TxError::Validation(
+            errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
+        ))?;
 
     // EVM tester requires high native limits, so for it we never hold off resources.
     // But for the real world, we bound the available resources.
@@ -85,14 +84,14 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
 
     let intrinsic_computational_native_charged = calldata_native
         .checked_add(intrinsic_native)
-        .or_else(|| if is_l1_tx {Some(0)} else {None})
+        .or_else(|| if is_l1_tx { Some(0) } else { None })
         .ok_or(TxError::Validation(
             errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
         ))?;
 
     let native_limit = native_limit
         .checked_sub(intrinsic_computational_native_charged)
-        .or_else(|| if is_l1_tx {Some(0)} else {None})
+        .or_else(|| if is_l1_tx { Some(0) } else { None })
         .ok_or(TxError::Validation(
             errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
         ))?;
@@ -109,7 +108,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         .checked_add(intrinsic_overhead)
         .ok_or(internal_error!("tuo+io"))?;
 
-    if total_gas_to_charge > gas_limit && !is_l1_tx{
+    if total_gas_to_charge > gas_limit && !is_l1_tx {
         Err(TxError::Validation(
             errors::InvalidTransaction::OutOfGasDuringValidation,
         ))
