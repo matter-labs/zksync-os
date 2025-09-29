@@ -1,9 +1,10 @@
 use crate::run::convert::FromInterface;
 use crate::run::errors::ForwardSubsystemError;
 use crate::run::output::TxResult;
+use crate::run::tracing_impl::TracerWrapped;
 use crate::run::{run_block, simulate_tx};
 use zk_ee::system::metadata::BlockMetadataFromOracle;
-use zk_ee::system::tracer::NopTracer;
+use zksync_os_interface::tracing::EvmTracer;
 use zksync_os_interface::traits::{
     PreimageSource, ReadStorage, RunBlock, SimulateTx, TxResultCallback, TxSource,
 };
@@ -20,14 +21,21 @@ impl RunBlock for RunBlockForward {
     type Config = ();
     type Error = ForwardSubsystemError;
 
-    fn run_block<T: ReadStorage, PS: PreimageSource, TS: TxSource, TR: TxResultCallback>(
+    fn run_block<
+        Storage: ReadStorage,
+        PreimgSrc: PreimageSource,
+        TrSrc: TxSource,
+        TrCallback: TxResultCallback,
+        Tracer: EvmTracer,
+    >(
         &self,
         _config: (),
         block_context: BlockContext,
-        storage: T,
-        preimage_source: PS,
-        tx_source: TS,
-        tx_result_callback: TR,
+        storage: Storage,
+        preimage_source: PreimgSrc,
+        tx_source: TrSrc,
+        tx_result_callback: TrCallback,
+        tracer: &mut Tracer,
     ) -> Result<BlockOutput, Self::Error> {
         run_block(
             BlockMetadataFromOracle::from_interface(block_context),
@@ -35,7 +43,7 @@ impl RunBlock for RunBlockForward {
             preimage_source,
             tx_source,
             tx_result_callback,
-            &mut NopTracer::default(),
+            &mut TracerWrapped(tracer),
         )
     }
 }
@@ -44,20 +52,21 @@ impl SimulateTx for RunBlockForward {
     type Config = ();
     type Error = ForwardSubsystemError;
 
-    fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
+    fn simulate_tx<Storage: ReadStorage, PreimgSrc: PreimageSource, Tracer: EvmTracer>(
         &self,
         _config: (),
         transaction: Vec<u8>,
         block_context: BlockContext,
-        storage: S,
-        preimage_source: PS,
+        storage: Storage,
+        preimage_source: PreimgSrc,
+        tracer: &mut Tracer,
     ) -> Result<TxResult, Self::Error> {
         simulate_tx(
             transaction,
             BlockMetadataFromOracle::from_interface(block_context),
             storage,
             preimage_source,
-            &mut NopTracer::default(),
+            &mut TracerWrapped(tracer),
         )
     }
 }
