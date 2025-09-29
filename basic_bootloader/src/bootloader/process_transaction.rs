@@ -152,6 +152,7 @@ where
             L1_TX_INTRINSIC_L2_GAS,
             L1_TX_INTRINSIC_PUBDATA,
             L1_TX_INTRINSIC_NATIVE_COST,
+            true
         )?;
         // Just used for computing native used
         let initial_resources = resources.clone();
@@ -262,6 +263,7 @@ where
                 }
             }
         } else {
+            // TODO: maybe call with 0 gas/native?
             (
                 ExecutionResult::Revert { output: &[] },
                 None,
@@ -571,6 +573,7 @@ where
             L2_TX_INTRINSIC_GAS,
             L2_TX_INTRINSIC_PUBDATA,
             L2_TX_INTRINSIC_NATIVE_COST,
+            false
         )?;
         // Just used for computing native used
         let initial_resources = resources.clone();
