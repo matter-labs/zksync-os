@@ -112,7 +112,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
             errors::InvalidTransaction::OutOfGasDuringValidation,
         ))
     } else {
-        let gas_limit_for_tx = gas_limit.checked_sub(total_gas_to_charge).unwrap_or(0);
+        let gas_limit_for_tx = gas_limit.saturating_sub(total_gas_to_charge);
         let ergs = gas_limit_for_tx
             .checked_mul(ERGS_PER_GAS)
             .ok_or(internal_error!("glft*EPF"))?;
