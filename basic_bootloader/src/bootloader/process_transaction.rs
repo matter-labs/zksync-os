@@ -263,7 +263,6 @@ where
                 }
             }
         } else {
-            // TODO: maybe call with 0 gas/native?
             (
                 ExecutionResult::Revert { output: &[] },
                 None,

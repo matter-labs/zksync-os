@@ -53,7 +53,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         .ok_or(internal_error!("npp*ip"))?;
     let native_limit = native_limit
         .checked_sub(intrinsic_pubdata_overhead)
-        .or_else(|| if is_l1_tx { Some(0) } else { None })
+        .or(if is_l1_tx { Some(0) } else { None })
         .ok_or(TxError::Validation(
             errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
         ))?;
@@ -84,14 +84,13 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
 
     let intrinsic_computational_native_charged = calldata_native
         .checked_add(intrinsic_native)
-        .or_else(|| if is_l1_tx { Some(0) } else { None })
         .ok_or(TxError::Validation(
             errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
         ))?;
 
     let native_limit = native_limit
         .checked_sub(intrinsic_computational_native_charged)
-        .or_else(|| if is_l1_tx { Some(0) } else { None })
+        .or(if is_l1_tx { Some(0) } else { None })
         .ok_or(TxError::Validation(
             errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
         ))?;
