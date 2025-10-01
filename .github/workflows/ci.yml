@@ -26,7 +26,6 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  rustup target add wasm32-unknown-unknown
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
@@ -38,14 +37,6 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
                   ./dump_bin.sh
-            - name: Build wasm contracts
-              run: |
-                  for dir in ./tests/contracts_wasm/*; do
-                    if [ -d "$dir" ]; then
-                      echo "Building contract in $dir"
-                      (cd "$dir" && ./build.sh)
-                    fi
-                  done
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
@@ -62,7 +53,6 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  rustup target add wasm32-unknown-unknown
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
@@ -74,14 +64,6 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
                   ./dump_bin.sh --type pectra
-            - name: Build wasm contracts
-              run: |
-                  for dir in ./tests/contracts_wasm/*; do
-                    if [ -d "$dir" ]; then
-                      echo "Building contract in $dir"
-                      (cd "$dir" && ./build.sh)
-                    fi
-                  done
             - name: Run pectra tests
               run: cargo test --features pectra --release -p transactions
 
@@ -160,7 +142,6 @@ jobs:
               run: |
                   rustup set profile minimal
                   rustup target add riscv32i-unknown-none-elf
-                  rustup target add wasm32-unknown-unknown
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
@@ -205,7 +186,6 @@ jobs:
               run: |
                   rustup set profile minimal
                   rustup target add riscv32i-unknown-none-elf
-                  rustup target add wasm32-unknown-unknown
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src

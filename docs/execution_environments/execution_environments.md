@@ -47,6 +47,6 @@ For now, the only such method is a helper to calculate resources to be passed fr
 ZKsyncOS will include the following EEs:
 
 - EVM: provides full native EVM-equivalence to ZKsync. Already implemented in [evm_interpreter](../../evm_interpreter/) and documented in the [EVM section](evm.md).
-- WASM: allows ZKsync to support contracts written in any language that compiles to WASM (e.g. Rust). Already implemented in [iwasm_ee](../../iwasm_ee/).
+- WASM: allows ZKsync to support contracts written in any language that compiles to WASM (e.g. Rust).
 - EraVM: provides backwards compatibility for migration of Era chains.
 - Native RISC V: user-mode RISC V code execution unlocks highest proving performance due to not having any interpretation overhead.
