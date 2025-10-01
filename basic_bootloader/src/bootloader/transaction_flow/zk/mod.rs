@@ -1,16 +1,15 @@
-use crate::bootloader::account_models::{AccountModel, ExecutionOutput, ExecutionResult};
-use crate::bootloader::constants::ERC20_APPROVE_SELECTOR;
-use crate::bootloader::constants::PAYMASTER_APPROVAL_BASED_SELECTOR;
-use crate::bootloader::constants::PAYMASTER_GENERAL_SELECTOR;
-use crate::bootloader::constants::TX_OFFSET;
-use crate::bootloader::constants::{DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS, ERC20_ALLOWANCE_SELECTOR};
+use crate::bootloader::constants::DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS;
+use crate::bootloader::errors::BootloaderSubsystemError;
 use crate::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit;
-use crate::bootloader::errors::{AAMethod, BootloaderSubsystemError};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use crate::bootloader::supported_ees::errors::EESubsystemError;
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
 use crate::bootloader::transaction::ZkSyncTransaction;
+use crate::bootloader::transaction_flow::BasicTransactionFlow;
+use crate::bootloader::transaction_flow::DeployedAddress;
+use crate::bootloader::transaction_flow::TxExecutionResult;
+use crate::bootloader::transaction_flow::{ExecutionOutput, ExecutionResult};
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::{BasicBootloader, Bytes32};
 use basic_system::cost_constants::{ECRECOVER_COST_ERGS, ECRECOVER_NATIVE_COST};
@@ -31,28 +30,11 @@ use zk_ee::system::{
     logger::Logger,
     EthereumLikeTypes, System, SystemTypes, *,
 };
-use zk_ee::utils::{b160_to_u256, u256_to_b160_checked};
 use zk_ee::{internal_error, out_of_native_resources, wrap_error};
 
-macro_rules! require_or_revert {
-    ($b:expr, $m:expr, $s:expr, $system:expr) => {
-        if $b {
-            Ok(())
-        } else {
-            let _ = $system
-                .get_logger()
-                .write_fmt(format_args!("Reverted: {}\n", $s));
-            Err(TxError::Validation(InvalidTransaction::Revert {
-                method: $m,
-                output: None,
-            }))
-        }
-    };
-}
+pub struct ZkTransactionFlowOnlyEOA;
 
-pub struct EOA;
-
-impl<S: EthereumLikeTypes> AccountModel<S> for EOA
+impl<S: EthereumLikeTypes> BasicTransactionFlow<S> for ZkTransactionFlowOnlyEOA
 where
     S::IO: IOSubsystemExt,
 {
@@ -240,7 +222,7 @@ where
                 tracer,
             )?,
             None => {
-                let final_state = BasicBootloader::run_single_interaction(
+                let final_state = BasicBootloader::<S, Self>::run_single_interaction(
                     system,
                     system_functions,
                     memories,
@@ -342,7 +324,6 @@ where
     fn pay_for_transaction(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
-        _memories: RunnerMemoryBuffers,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
@@ -398,123 +379,6 @@ where
         Ok(())
     }
 
-    fn pre_paymaster(
-        system: &mut System<S>,
-        system_functions: &mut HooksStorage<S, S::Allocator>,
-        mut memories: RunnerMemoryBuffers,
-        _tx_hash: Bytes32,
-        _suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
-        from: B160,
-        paymaster: B160,
-        _caller_ee_type: ExecutionEnvironmentType,
-        resources: &mut S::Resources,
-        tracer: &mut impl Tracer<S>,
-    ) -> Result<(), TxError> {
-        let paymaster_input = transaction.paymaster_input();
-        require_or_revert!(
-            paymaster_input.len() >= 4,
-            AAMethod::AccountPrePaymaster,
-            "The standard paymaster input must be at least 4 bytes long",
-            system
-        )?;
-        if paymaster_input.starts_with(PAYMASTER_APPROVAL_BASED_SELECTOR) {
-            require_or_revert!(
-                paymaster_input.len() >= 68,
-                AAMethod::AccountPrePaymaster,
-                "The approvalBased paymaster input must be at least 68 bytes long",
-                system
-            )?;
-            let token_end = 4 + U256::BYTES;
-            let token = U256::try_from_be_slice(&paymaster_input[4..token_end]);
-            require_or_revert!(
-                token.is_some(),
-                AAMethod::AccountPrePaymaster,
-                "invalid paymaster input",
-                system
-            )?;
-            // Safe to unrwrap thanks to the previous check.
-            let token = token.unwrap();
-            let token = u256_to_b160_checked(token);
-            let min_allowance_end = token_end + U256::BYTES;
-            let min_allowance =
-                U256::try_from_be_slice(&paymaster_input[token_end..min_allowance_end]);
-            require_or_revert!(
-                min_allowance.is_some(),
-                AAMethod::AccountPrePaymaster,
-                "invalid paymaster input",
-                system
-            )?;
-            // Safe to unrwrap thanks to the previous check.
-            let min_allowance = min_allowance.unwrap();
-
-            let pre_tx_buffer = transaction.pre_tx_buffer();
-            let current_allowance = erc20_allowance(
-                system,
-                system_functions,
-                memories.reborrow(),
-                pre_tx_buffer,
-                from,
-                paymaster,
-                token,
-                resources,
-                tracer,
-            )?;
-            if current_allowance < min_allowance {
-                // Some tokens, e.g. USDT require that the allowance is
-                // firstly set to zero and only then updated to the new value.
-                let success = erc20_approve(
-                    system,
-                    system_functions,
-                    memories.reborrow(),
-                    pre_tx_buffer,
-                    from,
-                    paymaster,
-                    token,
-                    U256::ZERO,
-                    resources,
-                    tracer,
-                )?;
-                require_or_revert!(
-                    success == U256::from(1),
-                    AAMethod::AccountPrePaymaster,
-                    "ERC20 0 approve failed",
-                    system
-                )?;
-                let success = erc20_approve(
-                    system,
-                    system_functions,
-                    memories,
-                    pre_tx_buffer,
-                    from,
-                    paymaster,
-                    token,
-                    min_allowance,
-                    resources,
-                    tracer,
-                )?;
-                require_or_revert!(
-                    success == U256::from(1),
-                    AAMethod::AccountPrePaymaster,
-                    "ERC20 min_allowance approve failed",
-                    system
-                )
-            } else {
-                Ok(())
-            }
-        } else if paymaster_input.starts_with(PAYMASTER_GENERAL_SELECTOR) {
-            // Do nothing. general(bytes) paymaster flow means that the paymaster must interpret these bytes on his own.
-            Ok(())
-        } else {
-            require_or_revert!(
-                false,
-                AAMethod::AccountPrePaymaster,
-                "Unsupported paymaster flow",
-                system
-            )
-        }
-    }
-
     fn charge_additional_intrinsic_gas(
         resources: &mut S::Resources,
         transaction: &ZkSyncTransaction,
@@ -564,20 +428,6 @@ where
 
         Ok(())
     }
-}
-
-// Address deployed, or reason for the lack thereof.
-enum DeployedAddress {
-    CallNoAddress,
-    RevertedNoAddress,
-    Address(B160),
-}
-
-struct TxExecutionResult<'a, S: SystemTypes> {
-    return_values: ReturnValues<'a, S>,
-    resources_returned: S::Resources,
-    reverted: bool,
-    deployed_address: DeployedAddress,
 }
 
 /// Run the deployment part of a contract creation tx
@@ -692,170 +542,4 @@ where
         reverted: !deployment_success,
         deployed_address,
     })
-}
-
-/// Call the ERC20 [allowance] method for [token]
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::type_complexity)]
-fn erc20_allowance<S: EthereumLikeTypes>(
-    system: &mut System<S>,
-    system_functions: &mut HooksStorage<S, S::Allocator>,
-    memories: RunnerMemoryBuffers,
-    pre_tx_buffer: &mut [u8],
-    from: B160,
-    paymaster: B160,
-    token: B160,
-    resources: &mut S::Resources,
-    tracer: &mut impl Tracer<S>,
-) -> Result<U256, TxError>
-where
-    S::IO: IOSubsystemExt,
-{
-    // Calldata:
-    // selector (4)
-    // owner (32)
-    // spender (32)
-    let calldata_length = 4 + U256::BYTES * 2;
-    let calldata_start = TX_OFFSET - calldata_length;
-
-    // Write selector
-    pre_tx_buffer[calldata_start..(calldata_start + 4)].copy_from_slice(ERC20_ALLOWANCE_SELECTOR);
-    // Write owner
-    let owner_start = calldata_start + 4;
-    pre_tx_buffer[owner_start..(owner_start + U256::BYTES)]
-        .copy_from_slice(&b160_to_u256(from).to_be_bytes::<{ U256::BYTES }>());
-    // Write spender
-    let spender_start = owner_start + U256::BYTES;
-    pre_tx_buffer[spender_start..(spender_start + U256::BYTES)]
-        .copy_from_slice(&b160_to_u256(paymaster).to_be_bytes::<{ U256::BYTES }>());
-
-    // we are static relative to everything that happens later
-    let calldata = &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)];
-
-    let _ = system
-        .get_logger()
-        .write_fmt(format_args!("Calling ERC20 allowance\n"));
-
-    let CompletedExecution {
-        resources_returned,
-        result,
-    } = BasicBootloader::run_single_interaction(
-        system,
-        system_functions,
-        memories,
-        calldata,
-        &from,
-        &token,
-        resources.clone(),
-        &U256::ZERO,
-        true,
-        tracer,
-    )
-    .map_err(TxError::oon_as_validation)?;
-
-    let reverted = result.failed();
-    let return_values = result.return_values();
-
-    let returndata_region = return_values.returndata;
-    let returndata_slice = &returndata_region;
-
-    *resources = resources_returned;
-
-    let res: Result<U256, TxError> = if reverted {
-        Err(TxError::Validation(InvalidTransaction::Revert {
-            method: AAMethod::AccountPrePaymaster,
-            output: None, // TODO
-        }))
-    } else if returndata_slice.len() != 32 {
-        Err(TxError::Validation(
-            InvalidTransaction::InvalidReturndataLength,
-        ))
-    } else {
-        Ok(U256::from_be_slice(returndata_slice))
-    };
-
-    res
-}
-
-/// Call the ERC20 [approve] method for [token]
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::type_complexity)]
-fn erc20_approve<S: EthereumLikeTypes>(
-    system: &mut System<S>,
-    system_functions: &mut HooksStorage<S, S::Allocator>,
-    memories: RunnerMemoryBuffers,
-    pre_tx_buffer: &mut [u8],
-    from: B160,
-    paymaster: B160,
-    token: B160,
-    amount: U256,
-    resources: &mut S::Resources,
-    tracer: &mut impl Tracer<S>,
-) -> Result<U256, TxError>
-where
-    S::IO: IOSubsystemExt,
-{
-    // Calldata:
-    // selector (4)
-    // spender (32)
-    // amount (32)
-    let calldata_length = 4 + U256::BYTES * 2;
-    let calldata_start = TX_OFFSET - calldata_length;
-
-    // Write selector
-    pre_tx_buffer[calldata_start..(calldata_start + 4)].copy_from_slice(ERC20_APPROVE_SELECTOR);
-    // Write spender
-    let spender_start = calldata_start + 4;
-    pre_tx_buffer[spender_start..(spender_start + U256::BYTES)]
-        .copy_from_slice(&b160_to_u256(paymaster).to_be_bytes::<{ U256::BYTES }>());
-    // Write
-    let amount_start = spender_start + U256::BYTES;
-    pre_tx_buffer[amount_start..(amount_start + U256::BYTES)]
-        .copy_from_slice(&amount.to_be_bytes::<{ U256::BYTES }>());
-
-    // we are static relative to everything that happens later
-    let calldata = &pre_tx_buffer[calldata_start..(calldata_start + calldata_length)];
-    let _ = system
-        .get_logger()
-        .write_fmt(format_args!("Calling ERC20 approve\n"));
-
-    let CompletedExecution {
-        resources_returned,
-        result,
-    } = BasicBootloader::run_single_interaction(
-        system,
-        system_functions,
-        memories,
-        calldata,
-        &from,
-        &token,
-        resources.clone(),
-        &U256::ZERO,
-        true,
-        tracer,
-    )
-    .map_err(TxError::oon_as_validation)?;
-
-    let reverted = result.failed();
-    let return_values = result.return_values();
-
-    let returndata_region = return_values.returndata;
-    let returndata_slice = &returndata_region;
-
-    *resources = resources_returned;
-
-    let res: Result<U256, TxError> = if reverted {
-        Err(TxError::Validation(InvalidTransaction::Revert {
-            method: AAMethod::AccountPrePaymaster,
-            output: None, // TODO
-        }))
-    } else if returndata_slice.len() != 32 {
-        Err(TxError::Validation(
-            InvalidTransaction::InvalidReturndataLength,
-        ))
-    } else {
-        Ok(U256::from_be_slice(returndata_slice))
-    };
-
-    res
 }

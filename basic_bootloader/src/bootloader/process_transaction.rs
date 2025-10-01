@@ -1,14 +1,13 @@
 use super::gas_helpers::get_resources_for_tx;
 use super::transaction::ZkSyncTransaction;
 use super::*;
-use crate::bootloader::account_models::ExecutionResult;
-use crate::bootloader::account_models::AA;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::RunnerMemoryBuffers;
+use crate::bootloader::transaction_flow::ExecutionResult;
 use crate::{require, require_internal};
 use constants::L1_TX_INTRINSIC_NATIVE_COST;
 use constants::L1_TX_NATIVE_PRICE;
@@ -43,7 +42,7 @@ struct ValidationResult {
     validation_pubdata: u64,
 }
 
-impl<S: EthereumLikeTypes> BasicBootloader<S>
+impl<S: EthereumLikeTypes, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
 where
     S::IO: IOSubsystemExt,
 {
@@ -298,7 +297,7 @@ where
             .ok_or(internal_error!("gu*gp"))?;
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
 
-        BasicBootloader::mint_token(
+        Self::mint_token(
             system,
             &pay_to_operator,
             &BOOTLOADER_FORMAL_ADDRESS,
@@ -343,7 +342,7 @@ where
         }?;
         if to_refund_recipient > U256::ZERO {
             let refund_recipient = u256_to_b160_checked(transaction.reserved[1].read());
-            BasicBootloader::mint_token(
+            Self::mint_token(
                 system,
                 &to_refund_recipient,
                 &refund_recipient,
@@ -423,7 +422,7 @@ where
         if value > U256::ZERO {
             resources
                 .with_infinite_ergs(|inf_resources| {
-                    BasicBootloader::mint_token(system, &value, &from, inf_resources)
+                    Self::mint_token(system, &value, &from, inf_resources)
                 })
                 .map_err(|e| match e.root_cause() {
                     RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
@@ -449,7 +448,7 @@ where
         let CompletedExecution {
             resources_returned,
             result,
-        } = BasicBootloader::run_single_interaction(
+        } = Self::run_single_interaction(
             system,
             system_functions,
             memories,
@@ -600,10 +599,7 @@ where
             )
         };
 
-        let account_model =
-            AA::account_model_for_account(&transaction, caller_is_code, Config::AA_ENABLED);
-
-        account_model.charge_additional_intrinsic_gas(&mut resources, &transaction)?;
+        F::charge_additional_intrinsic_gas(&mut resources, &transaction)?;
 
         system.set_tx_context(from, gas_price);
 
@@ -624,7 +620,6 @@ where
             tx_hash,
             suggested_signed_hash,
             &mut transaction,
-            &account_model,
             from,
             gas_price,
             gas_per_pubdata,
@@ -654,7 +649,6 @@ where
             tx_hash,
             suggested_signed_hash,
             &mut transaction,
-            &account_model,
             native_per_pubdata,
             validation_pubdata,
             caller_nonce,
@@ -762,7 +756,6 @@ where
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
-        account_model: &AA<S>,
         from: B160,
         gas_price: U256,
         gas_per_pubdata: U256,
@@ -791,11 +784,11 @@ where
         ))?;
 
         if !Config::SIMULATION {
-            account_model.check_nonce_is_not_used(caller_nonce, tx_nonce)?;
+            F::check_nonce_is_not_used(caller_nonce, tx_nonce)?;
         }
 
-        // AA validation
-        account_model.validate::<Config>(
+        // validation
+        F::validate::<Config>(
             system,
             system_functions,
             memories.reborrow(),
@@ -811,7 +804,7 @@ where
 
         // Check nonce has been marked
         if !Config::SIMULATION {
-            account_model.check_nonce_is_used_after_validation(
+            F::check_nonce_is_used_after_validation(
                 system,
                 caller_ee_type,
                 resources,
@@ -825,14 +818,12 @@ where
         ));
 
         // Charge fees
-        Self::ensure_payment::<Config>(
+        Self::ensure_payment(
             system,
             system_functions,
-            memories,
             tx_hash,
             suggested_signed_hash,
             transaction,
-            account_model,
             from,
             gas_price,
             caller_ee_type,
@@ -861,7 +852,6 @@ where
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
-        account_model: &AA<S>,
         native_per_pubdata: U256,
         validation_pubdata: u64,
         current_tx_nonce: u64,
@@ -876,7 +866,7 @@ where
         // TODO: factory deps? Probably fine to ignore for now
 
         // AA execution
-        let execution_result = account_model.execute(
+        let execution_result = F::execute(
             system,
             system_functions,
             memories,
@@ -921,22 +911,18 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn ensure_payment<Config: BasicBootloaderExecutionConfig>(
+    fn ensure_payment(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        mut memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
-        account_model: &AA<S>,
         from: B160,
         gas_price: U256,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
         tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
-        let paymaster = transaction.paymaster.read();
-
         // Bootloader balance before fee payment
         let bootloader_balance_before = resources.with_infinite_ergs(|inf_resources| {
             system.io.get_nominal_token_balance(
@@ -950,46 +936,10 @@ where
             .ok_or(internal_error!("gp*gl"))?;
         // First we charge the fees, then we verify the bootloader got
         // the funds.
-        // Paymaster flow is only allowed when AA is enabled.
-        let payer = if Config::AA_ENABLED && paymaster != B160::ZERO {
-            // Paymaster flow
-            // First, the `prepareForPaymaster` method of the user's account is called.
-            account_model.pre_paymaster(
+        let payer = {
+            F::pay_for_transaction(
                 system,
                 system_functions,
-                memories.reborrow(),
-                tx_hash,
-                suggested_signed_hash,
-                transaction,
-                from,
-                paymaster,
-                caller_ee_type,
-                resources,
-                tracer,
-            )?;
-
-            let return_values = Self::validate_and_pay_for_paymaster_transaction(
-                system,
-                system_functions,
-                memories.reborrow(),
-                transaction,
-                tx_hash,
-                suggested_signed_hash,
-                paymaster,
-                caller_ee_type,
-                resources,
-                tracer,
-            )?;
-            let pre_tx_buffer = transaction.pre_tx_buffer();
-            Self::store_paymaster_context_and_check_magic(system, pre_tx_buffer, &return_values)?;
-
-            paymaster
-        } else {
-            // No paymaster
-            account_model.pay_for_transaction(
-                system,
-                system_functions,
-                memories,
                 tx_hash,
                 suggested_signed_hash,
                 transaction,

@@ -6,7 +6,6 @@ use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
@@ -14,11 +13,10 @@ pub mod run_single_interaction;
 pub mod runner;
 pub mod supported_ees;
 
-mod account_models;
 mod gas_helpers;
-mod paymaster_helper;
 mod process_transaction;
 pub mod transaction;
+pub mod transaction_flow;
 
 pub mod block_header;
 pub mod config;
@@ -35,13 +33,15 @@ use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use zk_ee::{internal_error, oracle::*};
 
-use crate::bootloader::account_models::{ExecutionOutput, ExecutionResult, TxProcessingResult};
 use crate::bootloader::block_header::BlockHeader;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::TX_OFFSET;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::result_keeper::*;
 use crate::bootloader::runner::RunnerMemoryBuffers;
+use crate::bootloader::transaction_flow::{
+    BasicTransactionFlow, ExecutionOutput, ExecutionResult, TxProcessingResult,
+};
 use system_hooks::HooksStorage;
 use zk_ee::system::*;
 use zk_ee::utils::*;
@@ -49,8 +49,11 @@ use zk_ee::utils::*;
 pub(crate) const EVM_EE_BYTE: u8 = ExecutionEnvironmentType::EVM_EE_BYTE;
 pub const DEBUG_OUTPUT: bool = false;
 
-pub struct BasicBootloader<S: EthereumLikeTypes> {
-    _marker: core::marker::PhantomData<S>,
+pub struct BasicBootloader<S: EthereumLikeTypes, F: BasicTransactionFlow<S>>
+where
+    S::IO: IOSubsystemExt,
+{
+    _marker: core::marker::PhantomData<(S, F)>,
 }
 
 struct TxDataBuffer<A: Allocator> {
@@ -162,7 +165,10 @@ impl<'a> SafeUsizeWritable for TxDataBufferWriter<'a> {
     }
 }
 
-impl<S: EthereumLikeTypes> BasicBootloader<S> {
+impl<S: EthereumLikeTypes, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
+where
+    S::IO: IOSubsystemExt,
+{
     /// Runs the transactions that it loads from the oracle.
     /// This code runs both in sequencer (then it uses ForwardOracle - that stores data in local variables)
     /// and in prover (where oracle uses CRS registers to communicate).
