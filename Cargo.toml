@@ -37,16 +37,8 @@ members = [
 exclude = [
     "zksync_os",
     "supporting_crates/nostd_compression",
-    "iwasm_ee",
-    "iwasm/iwasm_interpreter",
-    "iwasm/iwasm_specification",
-    "iwasm/syslib",
-    "iwasm/syslib_derive",
     "crypto/src/blake2s/test_program",
     "circuit_test_program",
-    "tests/contracts_wasm/c_erc20",
-    "tests/contracts_wasm/bench",
-    "tests/contracts_wasm/unit",
     "tests/evm_tester",
 ]
 
