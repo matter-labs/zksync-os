@@ -1,5 +1,5 @@
 //!
-//! These tests are focused on different tx types, AA features.
+//! These tests are focused on different tx types.
 //!
 #![cfg(test)]
 use alloy::consensus::{TxEip1559, TxEip2930, TxLegacy};

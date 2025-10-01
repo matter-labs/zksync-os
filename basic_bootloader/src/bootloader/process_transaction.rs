@@ -697,7 +697,7 @@ where
                 native_used,
             },
             pubdata_used,
-        ) = Self::refund_transaction::<Config>(
+        ) = Self::refund_transaction(
             system,
             system_functions,
             tx_hash,
@@ -865,7 +865,7 @@ where
 
         // TODO: factory deps? Probably fine to ignore for now
 
-        // AA execution
+        // execution
         let execution_result = F::execute(
             system,
             system_functions,
@@ -1019,7 +1019,7 @@ where
 
     // Returns (refund_info, total_pubdata_used)
     #[allow(clippy::too_many_arguments)]
-    fn refund_transaction<Config: BasicBootloaderExecutionConfig>(
+    fn refund_transaction(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _tx_hash: Bytes32,
@@ -1035,34 +1035,12 @@ where
         resources: &mut S::Resources,
         pubdata_info: Option<(u64, S::Resources)>,
     ) -> Result<(RefundInfo, u64), BootloaderSubsystemError> {
-        let paymaster = transaction.paymaster.read();
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Start of refund\n"));
         let _success = matches!(execution_result, ExecutionResult::Success { .. });
         let _max_refunded_gas = resources.ergs().0.div_floor(ERGS_PER_GAS);
-        let refund_recipient = if Config::AA_ENABLED && paymaster != B160::ZERO {
-            // TODO: can paymaster post op run out of native?
-            // let _succeeded = Self::paymaster_post_op::<_>(
-            //     system,
-            //     system_functions,
-            //     callstack,
-            //     transaction,
-            //     tx_hash,
-            //     suggested_signed_hash,
-            //     success,
-            //     max_refunded_gas,
-            //     paymaster,
-            //     gas_per_pubdata,
-            //     validation_pubdata,
-            //     resources,
-            // )?;
-            // TODO: what should we do if postOp reverts
-            paymaster
-        } else {
-            // No paymaster
-            from
-        };
+        let refund_recipient = from;
 
         // TODO: consider operator refund
 

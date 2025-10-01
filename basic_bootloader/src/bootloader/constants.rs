@@ -15,7 +15,6 @@ const _: () = const {
     assert!(MAX_TX_LEN_BYTES % core::mem::size_of::<usize>() == 0);
 };
 
-pub const MAX_PAYMASTER_CONTEXT_LEN_BYTES: usize = 1024 + 32;
 // 1024 for EVM equivalence
 // We actually use 1025 one more because we fail when pushing to the stack,
 // while geth checks if the stack depth limit was passed later on in

@@ -91,14 +91,6 @@ pub enum InvalidTransaction {
     NonceUsedAlready,
     /// Nonce not increased after validation
     NonceNotIncreased,
-    /// Return data from paymaster is too short
-    PaymasterReturnDataTooShort,
-    /// Invalid magic in paymaster validation
-    PaymasterInvalidMagic,
-    /// Paymaster returned invalid context
-    PaymasterContextInvalid,
-    /// Paymaster context offset is greater than returndata length
-    PaymasterContextOffsetTooLong,
     /// Transaction makes the block reach the gas limit
     BlockGasLimitReached,
     /// Transaction makes the block reach the native resource limit

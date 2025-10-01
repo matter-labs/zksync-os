@@ -67,10 +67,6 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::OutOfNativeResourcesDuringValidation => { InvalidTransaction::OutOfNativeResourcesDuringValidation }
             basic_bootloader::bootloader::errors::InvalidTransaction::NonceUsedAlready => { InvalidTransaction::NonceUsedAlready }
             basic_bootloader::bootloader::errors::InvalidTransaction::NonceNotIncreased => { InvalidTransaction::NonceNotIncreased }
-            basic_bootloader::bootloader::errors::InvalidTransaction::PaymasterReturnDataTooShort => { InvalidTransaction::PaymasterReturnDataTooShort }
-            basic_bootloader::bootloader::errors::InvalidTransaction::PaymasterInvalidMagic => { InvalidTransaction::PaymasterInvalidMagic }
-            basic_bootloader::bootloader::errors::InvalidTransaction::PaymasterContextInvalid => { InvalidTransaction::PaymasterContextInvalid }
-            basic_bootloader::bootloader::errors::InvalidTransaction::PaymasterContextOffsetTooLong => { InvalidTransaction::PaymasterContextOffsetTooLong }
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockGasLimitReached => { InvalidTransaction::BlockGasLimitReached }
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockNativeLimitReached => { InvalidTransaction::BlockNativeLimitReached }
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockPubdataLimitReached => { InvalidTransaction::BlockPubdataLimitReached }

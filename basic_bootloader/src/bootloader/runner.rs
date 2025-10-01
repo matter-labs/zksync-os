@@ -564,7 +564,7 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
             ))
         } else {
             let resources_returned = resources_passed;
-            // it's an empty account for all the purposes, or default AA
+            // it's an empty account for all the purposes
             let _ = self.system.get_logger().write_fmt(format_args!(
                 "Call to special address was not intercepted\n",
             ));
