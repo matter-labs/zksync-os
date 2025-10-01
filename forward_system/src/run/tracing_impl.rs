@@ -1,6 +1,7 @@
 use alloy::primitives::{Address, U256};
 use std::marker::PhantomData;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::system::evm::errors::EvmError;
 use zk_ee::system::evm::EvmFrameInterface;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
@@ -9,7 +10,6 @@ use zk_ee::system::{
     Resources, SystemTypes,
 };
 use zk_ee::types_config::SystemIOTypesConfig;
-use zksync_os_interface::error::EvmError;
 use zksync_os_interface::tracing::{EvmRequest, EvmResources};
 
 /// Wrapper around interface `EvmTracer` to make it compatible with `zk_ee` tracing API.
@@ -167,12 +167,14 @@ impl<'a, T: zksync_os_interface::tracing::EvmTracer, S: EthereumLikeTypes> EvmTr
     }
 
     fn on_opcode_error(&mut self, error: &EvmError, frame_state: &impl EvmFrameInterface<S>) {
-        self.0
-            .on_opcode_error(&error, EvmFrameInterfaceWrapped::from(frame_state))
+        self.0.on_opcode_error(
+            &convert_error(error),
+            EvmFrameInterfaceWrapped::from(frame_state),
+        )
     }
 
     fn on_call_error(&mut self, error: &EvmError) {
-        self.0.on_call_error(&error)
+        self.0.on_call_error(&convert_error(error))
     }
 
     fn on_selfdestruct(
@@ -252,7 +254,7 @@ impl<'a, S: EthereumLikeTypes, T: EvmFrameInterface<S>>
         let resources = self.inner.resources();
         EvmResources {
             ergs: resources.ergs().0,
-            native: resources.native().as_u64(),
+            native: resouces.native().as_u64(),
         }
     }
 
@@ -294,5 +296,43 @@ impl<'a, S: EthereumLikeTypes, T: EvmFrameInterface<S>>
 
     fn is_constructor(&self) -> bool {
         self.inner.is_constructor()
+    }
+}
+
+fn convert_error(error: &EvmError) -> zksync_os_interface::error::EvmError {
+    match error {
+        EvmError::Revert => zksync_os_interface::error::EvmError::Revert,
+        EvmError::OutOfGas => zksync_os_interface::error::EvmError::OutOfGas,
+        EvmError::InvalidJump => zksync_os_interface::error::EvmError::InvalidJump,
+        EvmError::ReturnDataOutOfBounds => {
+            zksync_os_interface::error::EvmError::ReturnDataOutOfBounds
+        }
+        EvmError::InvalidOpcode(opcode) => {
+            zksync_os_interface::error::EvmError::InvalidOpcode(*opcode)
+        }
+        EvmError::StackUnderflow => zksync_os_interface::error::EvmError::StackUnderflow,
+        EvmError::StackOverflow => zksync_os_interface::error::EvmError::StackOverflow,
+        EvmError::CallNotAllowedInsideStatic => {
+            zksync_os_interface::error::EvmError::CallNotAllowedInsideStatic
+        }
+        EvmError::StateChangeDuringStaticCall => {
+            zksync_os_interface::error::EvmError::StateChangeDuringStaticCall
+        }
+        EvmError::MemoryLimitOOG => zksync_os_interface::error::EvmError::MemoryLimitOOG,
+        EvmError::InvalidOperandOOG => zksync_os_interface::error::EvmError::InvalidOperandOOG,
+        EvmError::CodeStoreOutOfGas => zksync_os_interface::error::EvmError::CodeStoreOutOfGas,
+        EvmError::CallTooDeep => zksync_os_interface::error::EvmError::CallTooDeep,
+        EvmError::InsufficientBalance => zksync_os_interface::error::EvmError::InsufficientBalance,
+        EvmError::CreateCollision => zksync_os_interface::error::EvmError::CreateCollision,
+        EvmError::NonceOverflow => zksync_os_interface::error::EvmError::NonceOverflow,
+        EvmError::CreateContractSizeLimit => {
+            zksync_os_interface::error::EvmError::CreateContractSizeLimit
+        }
+        EvmError::CreateInitcodeSizeLimit => {
+            zksync_os_interface::error::EvmError::CreateInitcodeSizeLimit
+        }
+        EvmError::CreateContractStartingWithEF => {
+            zksync_os_interface::error::EvmError::CreateContractStartingWithEF
+        }
     }
 }

@@ -18,7 +18,6 @@ crypto = { path = "../crypto", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false }
 either = { version = "*", default-features = false }
 cycle_marker = { path = "../cycle_marker" }
-zksync_os_interface = { workspace = true, default-features = false }
 strum_macros = "0.27.1"
 paste = "1.0.15"
 

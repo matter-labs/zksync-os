@@ -6,9 +6,9 @@ use crate::STACK_SIZE;
 use alloc::boxed::Box;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use ruint::aliases::U256;
+use zk_ee::system::evm::errors::EvmError;
 use zk_ee::system::evm::EvmStackInterface;
 use zk_ee::system::logger::Logger;
-use zksync_os_interface::error::EvmError;
 
 pub struct EvmStack<A: Allocator> {
     buffer: Box<[MaybeUninit<U256>; STACK_SIZE], A>,
@@ -369,7 +369,7 @@ impl<A: Allocator> EvmStackInterface for EvmStack<A> {
 mod tests {
     use crate::STACK_SIZE;
     use ruint::aliases::U256;
-    use zksync_os_interface::error::EvmError;
+    use zk_ee::system::evm::errors::EvmError;
 
     use super::EvmStack;
     use std::alloc::Global;
