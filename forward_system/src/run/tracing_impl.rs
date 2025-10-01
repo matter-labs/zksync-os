@@ -254,7 +254,7 @@ impl<'a, S: EthereumLikeTypes, T: EvmFrameInterface<S>>
         let resources = self.inner.resources();
         EvmResources {
             ergs: resources.ergs().0,
-            native: resouces.native().as_u64(),
+            native: resources.native().as_u64(),
         }
     }
 
