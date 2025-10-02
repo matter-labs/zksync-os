@@ -80,23 +80,33 @@ impl<'a, T: zksync_os_interface::tracing::EvmTracer, S: EthereumLikeTypes> Trace
     fn on_storage_read(
         &mut self,
         _ee_type: ExecutionEnvironmentType,
-        _is_transient: bool,
-        _address: <S::IOTypes as SystemIOTypesConfig>::Address,
-        _key: <S::IOTypes as SystemIOTypesConfig>::StorageKey,
-        _value: <S::IOTypes as SystemIOTypesConfig>::StorageValue,
+        is_transient: bool,
+        address: <S::IOTypes as SystemIOTypesConfig>::Address,
+        key: <S::IOTypes as SystemIOTypesConfig>::StorageKey,
+        value: <S::IOTypes as SystemIOTypesConfig>::StorageValue,
     ) {
-        // Currently unused in interface
+        self.0.on_storage_read(
+            is_transient,
+            address.to_be_bytes().into(),
+            key.as_u8_array().into(),
+            value.as_u8_array().into(),
+        )
     }
 
     fn on_storage_write(
         &mut self,
         _ee_type: ExecutionEnvironmentType,
-        _is_transient: bool,
-        _address: <S::IOTypes as SystemIOTypesConfig>::Address,
-        _key: <S::IOTypes as SystemIOTypesConfig>::StorageKey,
-        _value: <S::IOTypes as SystemIOTypesConfig>::StorageValue,
+        is_transient: bool,
+        address: <S::IOTypes as SystemIOTypesConfig>::Address,
+        key: <S::IOTypes as SystemIOTypesConfig>::StorageKey,
+        value: <S::IOTypes as SystemIOTypesConfig>::StorageValue,
     ) {
-        // Currently unused in interface
+        self.0.on_storage_write(
+            is_transient,
+            address.to_be_bytes().into(),
+            key.as_u8_array().into(),
+            value.as_u8_array().into(),
+        )
     }
 
     fn on_bytecode_change(
