@@ -7,6 +7,7 @@ use basic_bootloader::bootloader::config::BasicBootloaderForwardSimulationConfig
 use basic_bootloader::bootloader::constants::TX_OFFSET;
 use basic_bootloader::bootloader::runner::RunnerMemoryBuffers;
 use basic_bootloader::bootloader::transaction::ZkSyncTransaction;
+use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
 use basic_bootloader::bootloader::BasicBootloader;
 use common::{mock_oracle_balance, mutate_transaction};
 use libfuzzer_sys::{fuzz_mutator, fuzz_target};
@@ -58,7 +59,9 @@ fn fuzz(data: &[u8]) {
 
     let data_mut_ref: &'static mut [u8] = unsafe { core::mem::transmute(data.as_mut_slice()) };
 
-    let _ = BasicBootloader::process_transaction::<BasicBootloaderForwardSimulationConfig>(
+    let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::process_transaction::<
+        BasicBootloaderForwardSimulationConfig,
+    >(
         data_mut_ref,
         &mut system,
         &mut system_functions,
