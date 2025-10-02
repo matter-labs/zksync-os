@@ -6,13 +6,16 @@
 use crate::l1_messenger::send_to_l1_inner;
 
 use super::*;
+use arrayvec::ArrayVec;
 use core::fmt::Write;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
+use zk_ee::kv_markers::MAX_EVENT_TOPICS;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::logger::Logger;
+use zk_ee::utils::{b160_to_u256, Bytes32};
 
 pub fn l2_base_token_hook<'a, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
@@ -140,206 +143,313 @@ where
         .map_err(|_| internal_error!("Calldata is larger than u32"))?;
 
     match selector {
-        s if s == WITHDRAW_SELECTOR => {
-            if is_static {
-                return Ok(Err(
-                    "L2 base token failure: withdraw called with static context",
-                ));
-            }
-            // following solidity abi for withdraw(address)
-            if calldata_len < 36 {
-                return Ok(Err(
-                    "L2 base token failure: withdraw called with invalid calldata",
-                ));
-            }
-            // Burn nominal_token_value
-            match system.io.update_account_nominal_token_balance(
-                ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-                    .map_err(SystemError::LeafDefect)?,
-                resources,
-                &L2_BASE_TOKEN_ADDRESS,
-                &nominal_token_value,
-                true,
-            ) {
-                Ok(_) => Ok(()),
-                // TODO this has to be properly propagated
-                Err(SubsystemError::LeafUsage(_)) => Err(SystemError::LeafDefect(internal_error!(
-                    "L2 base token must have withdrawal amount"
-                ))),
-                Err(SubsystemError::LeafRuntime(e)) => Err(e.into()),
-                Err(SubsystemError::LeafDefect(e)) => Err(e.into()),
-                Err(SubsystemError::Cascaded(e)) => match e {},
-            }?;
-
-            // Sending L2->L1 message.
-            // ABI-encoded messages should consist of the following:
-            // 32 bytes offset (must be 32)
-            // 32 bytes length of the message
-            // followed by the message itself, padded to be a multiple of 32 bytes.
-            // In this case, it is known that the message is 56 bytes long:
-            // - IMailbox.finalizeEthWithdrawal.selector (4)
-            // - l1_receiver (20)
-            // - nominal_token_value (32)
-
-            // So the padded message will be 64 bytes long.
-            // Total length of the encoded message will be 32 + 32 + 64 = 128 bytes.
-            let mut l1_messenger_calldata = [0u8; 128];
-            l1_messenger_calldata[31] = 32; // offset
-            l1_messenger_calldata[63] = 56; // length
-            l1_messenger_calldata[64..68].copy_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
-            // check that first 12 bytes in address encoding are zero
-            if calldata[4..4 + 12].iter().any(|byte| *byte != 0) {
-                return Ok(Err(
-                    "L2 base token failure: withdraw called with invalid calldata",
-                ));
-            }
-            l1_messenger_calldata[68..88].copy_from_slice(&calldata[(4 + 12)..36]);
-            l1_messenger_calldata[88..120]
-                .copy_from_slice(&nominal_token_value.to_be_bytes::<32>());
-
-            let result = send_to_l1_inner(
-                &l1_messenger_calldata,
-                resources,
-                system,
-                L2_BASE_TOKEN_ADDRESS,
-                caller_ee,
-            )?;
-
-            Ok(result.map(|_| &[] as &[u8]))
-        }
-        s if s == WITHDRAW_WITH_MESSAGE_SELECTOR => {
-            if is_static {
-                return Ok(Err(
-                    "L2 base token failure: withdrawWithMessage called with static context",
-                ));
-            }
-            // following solidity abi for withdrawWithMessage(address,bytes)
-            if calldata_len < 68 {
-                return Ok(Err(
-                    "L2 base token failure: withdrawWithMessage called with invalid calldata",
-                ));
-            }
-            let message_offset: u32 =
-                match U256::from_be_slice(&calldata[36..68]).try_into() {
-                    Ok(offset) => offset,
-                    Err(_) => return Ok(Err(
-                        "L2 base token failure: withdrawWithMessage called with invalid calldata",
-                    )),
-                };
-            // length located at 4+message_offset..4+message_offset+32
-            // we want to check that 4+message_offset+32 will not overflow u32
-            let length_encoding_end =
-                match message_offset.checked_add(36) {
-                    Some(length_encoding_end) => length_encoding_end,
-                    None => return Ok(Err(
-                        "L2 base token failure: withdrawWithMessage called with invalid calldata",
-                    )),
-                };
-            if calldata_len < length_encoding_end {
-                return Ok(Err(
-                    "L2 base token failure: withdrawWithMessage called with invalid calldata",
-                ));
-            }
-            let length: u32 =
-                match U256::from_be_slice(
-                    &calldata[(length_encoding_end as usize) - 32..length_encoding_end as usize],
-                )
-                .try_into()
-                {
-                    Ok(length) => length,
-                    Err(_) => return Ok(Err(
-                        "L2 base token failure: withdrawWithMessage called with invalid calldata",
-                    )),
-                };
-            // to check that it will not overflow
-            let message_end =
-                match length_encoding_end.checked_add(length) {
-                    Some(message_end) => message_end,
-                    None => return Ok(Err(
-                        "L2 base token failure: withdrawWithMessage called with invalid calldata",
-                    )),
-                };
-            if calldata_len < message_end {
-                return Ok(Err(
-                    "L2 base token failure: withdrawWithMessage called with invalid calldata",
-                ));
-            }
-            let additional_data = &calldata[(length_encoding_end as usize)..message_end as usize];
-
-            // check that first 12 bytes in address encoding are zero
-            if calldata[4..4 + 12].iter().any(|byte| *byte != 0) {
-                return Ok(Err(
-                    "L2 base token failure: withdrawWithMessage called with invalid calldata",
-                ));
-            }
-
-            // Burn nominal_token_value
-            match system.io.update_account_nominal_token_balance(
-                ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-                    .map_err(SystemError::LeafDefect)?,
-                resources,
-                &L2_BASE_TOKEN_ADDRESS,
-                &nominal_token_value,
-                true,
-            ) {
-                Ok(_) => Ok(()),
-                // TODO this has to be properly propagated
-                Err(SubsystemError::LeafUsage(_)) => Err(SystemError::LeafDefect(internal_error!(
-                    "L2 base token must have withdrawal amount"
-                ))),
-                Err(SubsystemError::LeafRuntime(e)) => Err(e.into()),
-                Err(SubsystemError::LeafDefect(e)) => Err(e.into()),
-                Err(SubsystemError::Cascaded(e)) => match e {},
-            }?;
-
-            // Sending L2->L1 message.
-            // ABI-encoded messages should consist of the following:
-            // 32 bytes offset (must be 32)
-            // 32 bytes length of the message
-            // followed by the message itself, padded to be a multiple of 32 bytes.
-            // In this case, the message will consist of the following:
-            // Packed ABI encoding of:
-            // - IMailbox.finalizeEthWithdrawal.selector (4)
-            // - l1_receiver (20)
-            // - nominal_token_value (32)
-            // - sender (20)
-            // - additional_data (length of additional_data)
-            let message_length = 76 + length;
-            let abi_encoded_message_length = 32 + 32 + message_length;
-            let abi_encoded_message_length = if abi_encoded_message_length % 32 != 0 {
-                abi_encoded_message_length + (32 - (abi_encoded_message_length % 32))
-            } else {
-                abi_encoded_message_length
-            };
-            let mut message: alloc::vec::Vec<u8, S::Allocator> = alloc::vec::Vec::with_capacity_in(
-                abi_encoded_message_length as usize,
-                system.get_allocator(),
-            );
-            // Offset and length
-            message.extend_from_slice(&[0u8; 64]);
-            message[31] = 32; // offset
-            message[32..64].copy_from_slice(&U256::from(message_length).to_be_bytes::<32>());
-            message.extend_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
-            message.extend_from_slice(&calldata[16..36]);
-            message.extend_from_slice(&nominal_token_value.to_be_bytes::<32>());
-            message.extend_from_slice(&caller.to_be_bytes::<20>());
-            message.extend_from_slice(additional_data);
-            // Populating the rest of the message with zeros to make it a multiple of 32 bytes
-            message.extend(core::iter::repeat_n(
-                0u8,
-                abi_encoded_message_length as usize - message.len(),
-            ));
-
-            let result = send_to_l1_inner(
-                &message,
-                resources,
-                system,
-                L2_BASE_TOKEN_ADDRESS,
-                caller_ee,
-            )?;
-
-            Ok(result.map(|_| &[] as &[u8]))
-        }
+        s if s == WITHDRAW_SELECTOR => withdraw(
+            calldata,
+            calldata_len,
+            resources,
+            system,
+            caller,
+            caller_ee,
+            nominal_token_value,
+            is_static,
+        ),
+        s if s == WITHDRAW_WITH_MESSAGE_SELECTOR => withdraw_with_message(
+            calldata,
+            calldata_len,
+            resources,
+            system,
+            caller,
+            caller_ee,
+            nominal_token_value,
+            is_static,
+        ),
         _ => Ok(Err("L2 base token: unknown selector")),
+    }
+}
+
+const WITHDRAWAL_TOPIC: [u8; 32] = [
+    0x3a, 0x36, 0xe4, 0x72, 0x91, 0xf4, 0x20, 0x1f, 0xaf, 0x13, 0x7f, 0xab, 0x08, 0x1d, 0x92, 0x29,
+    0x5b, 0xce, 0x2d, 0x53, 0xbe, 0x2c, 0x6c, 0xa6, 0x8b, 0xa8, 0x2c, 0x7f, 0xaa, 0x9c, 0xe2, 0x41,
+]; // TODO update
+
+fn withdraw<S: EthereumLikeTypes>(
+    calldata: &[u8],
+    calldata_len: u32,
+    resources: &mut S::Resources,
+    system: &mut System<S>,
+    caller: B160,
+    caller_ee: u8,
+    nominal_token_value: U256,
+    is_static: bool,
+) -> Result<Result<&'static [u8], &'static str>, SystemError>
+where
+    S::IO: IOSubsystemExt,
+{
+    if is_static {
+        return Ok(Err(
+            "L2 base token failure: withdraw called with static context",
+        ));
+    }
+    // following solidity abi for withdraw(address)
+    if calldata_len < 36 {
+        return Ok(Err(
+            "L2 base token failure: withdraw called with invalid calldata",
+        ));
+    }
+    
+    burn_nominal_token_value(
+        resources,
+        system,
+        caller_ee,
+        &nominal_token_value,
+    )?;
+
+    // Sending L2->L1 message.
+    // ABI-encoded messages should consist of the following:
+    // 32 bytes offset (must be 32)
+    // 32 bytes length of the message
+    // followed by the message itself, padded to be a multiple of 32 bytes.
+    // In this case, it is known that the message is 56 bytes long:
+    // - IMailbox.finalizeEthWithdrawal.selector (4)
+    // - l1_receiver (20)
+    // - nominal_token_value (32)
+
+    // So the padded message will be 64 bytes long.
+    // Total length of the encoded message will be 32 + 32 + 64 = 128 bytes.
+    let mut l1_messenger_calldata = [0u8; 128];
+    l1_messenger_calldata[31] = 32; // offset
+    l1_messenger_calldata[63] = 56; // length
+    l1_messenger_calldata[64..68].copy_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
+    // check that first 12 bytes in address encoding are zero
+    if calldata[4..4 + 12].iter().any(|byte| *byte != 0) {
+        return Ok(Err(
+            "L2 base token failure: withdraw called with invalid calldata",
+        ));
+    }
+    l1_messenger_calldata[68..88].copy_from_slice(&calldata[(4 + 12)..36]);
+    l1_messenger_calldata[88..120].copy_from_slice(&nominal_token_value.to_be_bytes::<32>());
+
+    let result = send_to_l1_inner(
+        &l1_messenger_calldata,
+        resources,
+        system,
+        L2_BASE_TOKEN_ADDRESS,
+        caller_ee,
+    )?;
+
+    // event Withdrawal(address indexed _l2Sender, address indexed _l1Receiver, uint256 _amount);
+
+    let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
+    topics.push(Bytes32::from_array(WITHDRAWAL_TOPIC));
+    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller)));
+    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller))); // TODO l1receiver
+
+    system.io.emit_event(
+        ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
+            .map_err(SystemError::LeafDefect)?,
+        resources,
+        &L2_BASE_TOKEN_ADDRESS,
+        &topics,
+        &nominal_token_value.to_be_bytes::<32>(),
+    )?;
+
+    Ok(result.map(|_| &[] as &[u8]))
+}
+
+const WITHDRAWAL_WITH_MESSAGE_TOPIC: [u8; 32] = [
+    0x3a, 0x36, 0xe4, 0x72, 0x91, 0xf4, 0x20, 0x1f, 0xaf, 0x13, 0x7f, 0xab, 0x08, 0x1d, 0x92, 0x29,
+    0x5b, 0xce, 0x2d, 0x53, 0xbe, 0x2c, 0x6c, 0xa6, 0x8b, 0xa8, 0x2c, 0x7f, 0xaa, 0x9c, 0xe2, 0x41,
+]; // TODO update
+
+fn withdraw_with_message<S: EthereumLikeTypes>(
+    calldata: &[u8],
+    calldata_len: u32,
+    resources: &mut S::Resources,
+    system: &mut System<S>,
+    caller: B160,
+    caller_ee: u8,
+    nominal_token_value: U256,
+    is_static: bool,
+) -> Result<Result<&'static [u8], &'static str>, SystemError>
+where
+    S::IO: IOSubsystemExt,
+{
+    if is_static {
+        return Ok(Err(
+            "L2 base token failure: withdrawWithMessage called with static context",
+        ));
+    }
+    // following solidity abi for withdrawWithMessage(address,bytes)
+    if calldata_len < 68 {
+        return Ok(Err(
+            "L2 base token failure: withdrawWithMessage called with invalid calldata",
+        ));
+    }
+    let message_offset: u32 = match U256::from_be_slice(&calldata[36..68]).try_into() {
+        Ok(offset) => offset,
+        Err(_) => {
+            return Ok(Err(
+                "L2 base token failure: withdrawWithMessage called with invalid calldata",
+            ))
+        }
+    };
+    // length located at 4+message_offset..4+message_offset+32
+    // we want to check that 4+message_offset+32 will not overflow u32
+    let length_encoding_end = match message_offset.checked_add(36) {
+        Some(length_encoding_end) => length_encoding_end,
+        None => {
+            return Ok(Err(
+                "L2 base token failure: withdrawWithMessage called with invalid calldata",
+            ))
+        }
+    };
+    if calldata_len < length_encoding_end {
+        return Ok(Err(
+            "L2 base token failure: withdrawWithMessage called with invalid calldata",
+        ));
+    }
+    let length: u32 = match U256::from_be_slice(
+        &calldata[(length_encoding_end as usize) - 32..length_encoding_end as usize],
+    )
+    .try_into()
+    {
+        Ok(length) => length,
+        Err(_) => {
+            return Ok(Err(
+                "L2 base token failure: withdrawWithMessage called with invalid calldata",
+            ))
+        }
+    };
+    // to check that it will not overflow
+    let message_end = match length_encoding_end.checked_add(length) {
+        Some(message_end) => message_end,
+        None => {
+            return Ok(Err(
+                "L2 base token failure: withdrawWithMessage called with invalid calldata",
+            ))
+        }
+    };
+    if calldata_len < message_end {
+        return Ok(Err(
+            "L2 base token failure: withdrawWithMessage called with invalid calldata",
+        ));
+    }
+    let additional_data = &calldata[(length_encoding_end as usize)..message_end as usize];
+
+    // check that first 12 bytes in address encoding are zero
+    if calldata[4..4 + 12].iter().any(|byte| *byte != 0) {
+        return Ok(Err(
+            "L2 base token failure: withdrawWithMessage called with invalid calldata",
+        ));
+    }
+
+    burn_nominal_token_value(
+        resources,
+        system,
+        caller_ee,
+        &nominal_token_value,
+    )?;
+
+    // Sending L2->L1 message.
+    // ABI-encoded messages should consist of the following:
+    // 32 bytes offset (must be 32)
+    // 32 bytes length of the message
+    // followed by the message itself, padded to be a multiple of 32 bytes.
+    // In this case, the message will consist of the following:
+    // Packed ABI encoding of:
+    // - IMailbox.finalizeEthWithdrawal.selector (4)
+    // - l1_receiver (20)
+    // - nominal_token_value (32)
+    // - sender (20)
+    // - additional_data (length of additional_data)
+    let message_length = 76 + length;
+    let abi_encoded_message_length = 32 + 32 + message_length;
+    let abi_encoded_message_length = if abi_encoded_message_length % 32 != 0 {
+        abi_encoded_message_length + (32 - (abi_encoded_message_length % 32))
+    } else {
+        abi_encoded_message_length
+    };
+    let mut message: alloc::vec::Vec<u8, S::Allocator> = alloc::vec::Vec::with_capacity_in(
+        abi_encoded_message_length as usize + 32,
+        system.get_allocator(),
+    );
+    // Offset and length
+    message.extend_from_slice(&[0u8; 64]);
+    message[31] = 32; // offset
+    message[32..64].copy_from_slice(&U256::from(message_length).to_be_bytes::<32>());
+    message.extend_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
+    message.extend_from_slice(&calldata[16..36]);
+    message.extend_from_slice(&nominal_token_value.to_be_bytes::<32>());
+    message.extend_from_slice(&caller.to_be_bytes::<20>());
+    message.extend_from_slice(additional_data);
+    // Populating the rest of the message with zeros to make it a multiple of 32 bytes
+    message.extend(core::iter::repeat_n(
+        0u8,
+        abi_encoded_message_length as usize - message.len(),
+    ));
+
+    let result = send_to_l1_inner(
+        &message,
+        resources,
+        system,
+        L2_BASE_TOKEN_ADDRESS,
+        caller_ee,
+    )?;
+
+    /*
+        event WithdrawalWithMessage(
+            address indexed _l2Sender,
+            address indexed _l1Receiver,
+            uint256 _amount,
+            bytes _additionalData
+        );
+    */
+
+    let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
+    topics.push(Bytes32::from_array(WITHDRAWAL_WITH_MESSAGE_TOPIC));
+    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller)));
+    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller))); // TODO l1receiver
+
+    // TODO annotate
+    message.extend_from_slice(&nominal_token_value.to_be_bytes::<32>());
+
+    system.io.emit_event(
+        ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
+            .map_err(SystemError::LeafDefect)?,
+        resources,
+        &L2_BASE_TOKEN_ADDRESS,
+        &topics,
+        // We are lucky that the encoding of the event is exactly same as encoding of the bytes in the calldata
+        &message,
+    )?;
+
+    Ok(result.map(|_| &[] as &[u8]))
+}
+
+fn burn_nominal_token_value<S: EthereumLikeTypes>(
+    resources: &mut S::Resources,
+    system: &mut System<S>,
+    caller_ee: u8,
+    nominal_token_value: &U256,
+) -> Result<(), SystemError>
+where
+    S::IO: IOSubsystemExt,
+{
+    match system.io.update_account_nominal_token_balance(
+        ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
+            .map_err(SystemError::LeafDefect)?,
+        resources,
+        &L2_BASE_TOKEN_ADDRESS,
+        &nominal_token_value,
+        true,
+    ) {
+        Ok(_) => Ok(()),
+        // TODO this has to be properly propagated
+        Err(SubsystemError::LeafUsage(_)) => Err(SystemError::LeafDefect(internal_error!(
+            "L2 base token must have withdrawal amount"
+        ))),
+        Err(SubsystemError::LeafRuntime(e)) => Err(e.into()),
+        Err(SubsystemError::LeafDefect(e)) => Err(e.into()),
+        Err(SubsystemError::Cascaded(e)) => match e {},
     }
 }
