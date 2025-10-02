@@ -27,6 +27,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     intrinsic_gas: u64,
     intrinsic_pubdata: u64,
     intrinsic_native: u64,
+    is_l1_tx: bool,
 ) -> Result<ResourcesForTx<S>, TxError> {
     // TODO: operator trusted gas limit?
 
@@ -50,12 +51,12 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     let intrinsic_pubdata_overhead = u256_to_u64_saturated(&native_per_pubdata)
         .checked_mul(intrinsic_pubdata)
         .ok_or(internal_error!("npp*ip"))?;
-    let native_limit =
-        native_limit
-            .checked_sub(intrinsic_pubdata_overhead)
-            .ok_or(TxError::Validation(
-                errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
-            ))?;
+    let native_limit = native_limit
+        .checked_sub(intrinsic_pubdata_overhead)
+        .or(if is_l1_tx { Some(0) } else { None })
+        .ok_or(TxError::Validation(
+            errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
+        ))?;
 
     // EVM tester requires high native limits, so for it we never hold off resources.
     // But for the real world, we bound the available resources.
@@ -89,6 +90,7 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
 
     let native_limit = native_limit
         .checked_sub(intrinsic_computational_native_charged)
+        .or(if is_l1_tx { Some(0) } else { None })
         .ok_or(TxError::Validation(
             errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
         ))?;
@@ -105,12 +107,12 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
         .checked_add(intrinsic_overhead)
         .ok_or(internal_error!("tuo+io"))?;
 
-    if total_gas_to_charge > gas_limit {
+    if total_gas_to_charge > gas_limit && !is_l1_tx {
         Err(TxError::Validation(
             errors::InvalidTransaction::OutOfGasDuringValidation,
         ))
     } else {
-        let gas_limit_for_tx = gas_limit - total_gas_to_charge;
+        let gas_limit_for_tx = gas_limit.saturating_sub(total_gas_to_charge);
         let ergs = gas_limit_for_tx
             .checked_mul(ERGS_PER_GAS)
             .ok_or(internal_error!("glft*EPF"))?;

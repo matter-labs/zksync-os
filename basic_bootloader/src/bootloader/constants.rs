@@ -96,9 +96,9 @@ pub const CALLDATA_ZERO_BYTE_GAS_COST: u64 = 4;
 /// Cost in gas to store one non-zero byte of calldata
 pub const CALLDATA_NON_ZERO_BYTE_GAS_COST: u64 = 16;
 
-/// Default value of gasPerPubdata for non EIP-712 txs.
+/// Default value of gasPerPubdataLimit for non EIP-712 txs.
 /// TODO (EVM-1157): set to a reasonable value.
-pub const DEFAULT_GAS_PER_PUBDATA: U256 = U256::from_limbs([1, 0, 0, 0]);
+pub const DEFAULT_GAS_PER_PUBDATA_LIMIT: U256 = U256::from_limbs([500_000, 0, 0, 0]);
 
 /// EVM tester requires a high native_per_gas, but it hard-codes
 /// low gas prices. We need to bypass the usual way to compute this
