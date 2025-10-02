@@ -13,7 +13,7 @@ use zk_ee::{
     types_config::SystemIOTypesConfig,
     utils::Bytes32,
 };
-use zksync_os_interface::error::EvmError;
+use zksync_os_evm_errors::EvmError;
 
 #[derive(Default, Debug)]
 #[allow(dead_code)]

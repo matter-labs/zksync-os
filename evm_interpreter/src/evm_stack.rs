@@ -8,7 +8,7 @@ use core::{alloc::Allocator, mem::MaybeUninit};
 use ruint::aliases::U256;
 use zk_ee::system::evm::EvmStackInterface;
 use zk_ee::system::logger::Logger;
-use zksync_os_interface::error::EvmError;
+use zksync_os_evm_errors::EvmError;
 
 pub struct EvmStack<A: Allocator> {
     buffer: Box<[MaybeUninit<U256>; STACK_SIZE], A>,

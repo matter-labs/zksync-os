@@ -9,7 +9,7 @@ use zk_ee::system::{
     Resources, SystemTypes,
 };
 use zk_ee::types_config::SystemIOTypesConfig;
-use zksync_os_interface::error::EvmError;
+use zksync_os_evm_errors::EvmError;
 use zksync_os_interface::tracing::{EvmRequest, EvmResources};
 
 /// Wrapper around interface `EvmTracer` to make it compatible with `zk_ee` tracing API.

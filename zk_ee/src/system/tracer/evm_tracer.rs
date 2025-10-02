@@ -2,7 +2,7 @@ use crate::{
     system::{evm::EvmFrameInterface, SystemTypes},
     types_config::SystemIOTypesConfig,
 };
-use zksync_os_interface::error::EvmError;
+use zksync_os_evm_errors::EvmError;
 
 pub trait EvmTracer<S: SystemTypes> {
     /// Called before opcode execution
