@@ -371,7 +371,7 @@ mod tests {
     use crate::STACK_SIZE;
     use ruint::aliases::U256;
     use std::alloc::Global;
-    use zksync_os_interface::error::EvmError;
+    use zksync_os_evm_errors::EvmError;
 
     #[test]
     fn push_then_pop_works() {
