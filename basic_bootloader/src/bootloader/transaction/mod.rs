@@ -390,7 +390,7 @@ impl<'a> ZkSyncTransaction<'a> {
         if self.is_eip_712() {
             U256::from(self.gas_per_pubdata_limit.read())
         } else {
-            crate::bootloader::constants::DEFAULT_GAS_PER_PUBDATA
+            crate::bootloader::constants::DEFAULT_GAS_PER_PUBDATA_LIMIT
         }
     }
 
