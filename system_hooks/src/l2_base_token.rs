@@ -233,7 +233,6 @@ where
     l1_messenger_calldata[63] = 56; // length
     l1_messenger_calldata[64..68].copy_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
     // check that first 12 bytes in address encoding are zero
-    // TODO: should we fail or silently truncate? Solidity would truncate iirc.
     if calldata[4..4 + 12].iter().any(|byte| *byte != 0) {
         return Ok(Err(
             "L2 base token failure: withdraw called with invalid calldata",
@@ -351,7 +350,6 @@ where
     let additional_data = &calldata[(length_encoding_end as usize)..message_end as usize];
 
     // check that first 12 bytes in address encoding are zero
-    // TODO: should we fail or silently truncate? Solidity would truncate iirc.
     if calldata[4..4 + 12].iter().any(|byte| *byte != 0) {
         return Ok(Err(
             "L2 base token failure: withdrawWithMessage called with invalid calldata",
