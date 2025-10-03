@@ -56,8 +56,6 @@ pub mod addresses_constants;
 #[cfg(feature = "mock-unsupported-precompiles")]
 mod mock_precompiles;
 
-// Temporarily disabled, only used for AA.
-// pub mod nonce_holder;
 pub mod contract_deployer;
 pub mod l1_messenger;
 pub mod l2_base_token;

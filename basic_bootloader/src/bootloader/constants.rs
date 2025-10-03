@@ -4,8 +4,7 @@ use ruint::aliases::{B160, U256};
 pub const SPECIAL_ADDRESS_SPACE_BOUND: u64 = 0x010000;
 pub const SPECIAL_ADDRESS_TO_WASM_DEPLOY: B160 = B160::from_limbs([0x9000, 0, 0]);
 
-/// We want to have a buffer before the transaction, it may be useful to encode calls calldata for account absatraction.
-/// The size is calculated for `postOp` operation calldata, the biggest in zkSync Era account abstranction model.
+/// We want to have a buffer before the transaction.
 pub const TX_OFFSET: usize = (6 + 33) * 32 + 4;
 pub const MAX_TX_LEN_BYTES: usize = 1 << 23;
 pub const TX_OFFSET_WORDS: usize = TX_OFFSET / core::mem::size_of::<u32>();
@@ -16,7 +15,6 @@ const _: () = const {
     assert!(MAX_TX_LEN_BYTES % core::mem::size_of::<usize>() == 0);
 };
 
-pub const MAX_PAYMASTER_CONTEXT_LEN_BYTES: usize = 1024 + 32;
 // 1024 for EVM equivalence
 // We actually use 1025 one more because we fail when pushing to the stack,
 // while geth checks if the stack depth limit was passed later on in
@@ -30,37 +28,6 @@ pub const TX_CALLDATA_OFFSET: usize = 0x60;
 
 /// Maximum value of gas that can be represented as ergs in a u64.
 pub const MAX_BLOCK_GAS_LIMIT: u64 = u64::MAX / ERGS_PER_GAS;
-
-// TODO: compute using solidity abi
-// 202bcce7
-pub const VALIDATE_SELECTOR: &[u8] = &[0x20, 0x2b, 0xcc, 0xe7];
-
-// 0xdf9c1589
-pub const EXECUTE_SELECTOR: &[u8] = &[0xdf, 0x9c, 0x15, 0x89];
-
-// 0xa28c1aee
-pub const PREPARE_FOR_PAYMASTER_SELECTOR: &[u8] = &[0xa2, 0x8c, 0x1a, 0xee];
-
-// 0xe2f318e3
-pub const PAY_FOR_TRANSACTION_SELECTOR: &[u8] = &[0xe2, 0xf3, 0x18, 0xe3];
-
-// 0x949431dc
-pub const PAYMASTER_APPROVAL_BASED_SELECTOR: &[u8] = &[0x94, 0x94, 0x31, 0xdc];
-
-// 0x8c5a3445
-pub const PAYMASTER_GENERAL_SELECTOR: &[u8] = &[0x8c, 0x5a, 0x34, 0x45];
-
-// 0x038a24bc
-pub const PAYMASTER_VALIDATE_AND_PAY_SELECTOR: &[u8] = &[0x03, 0x8a, 0x24, 0xbc];
-
-// 0x817b17f0
-pub const PAYMASTER_POST_TRANSACTION_SELECTOR: &[u8] = &[0x81, 0x7b, 0x17, 0xf0];
-
-// 0xdd62ed3e
-pub const ERC20_ALLOWANCE_SELECTOR: &[u8] = &[0xdd, 0x62, 0xed, 0x3e];
-
-// 0x095ea7b3
-pub const ERC20_APPROVE_SELECTOR: &[u8] = &[0x09, 0x5e, 0xa7, 0xb3];
 
 // Just for EVM compatibility.
 pub const L1_TX_INTRINSIC_L2_GAS: u64 = 21_000;

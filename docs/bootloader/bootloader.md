@@ -18,7 +18,6 @@ This component is, as the name suggest, the entrypoint of the system. The functi
 The bootloader can be configured with the following parameters (found in the [`BasicBootloaderExecutionConfig`](../../basic_bootloader/src/bootloader/mod.rs) struct):
 
 - `ONLY_SIMULATE`: skips the [validation](./transaction_processing.md#validation) step when processing a transaction. Used for call simulation in the node.
-- `AA_ENABLED`: whether native account abstraction is enabled.
 
 In addition, the `basic_bootloader` crate has the following compilation flags:
 
@@ -27,13 +26,9 @@ In addition, the `basic_bootloader` crate has the following compilation flags:
 - `charge_priority_fee`: to enable charging for the EIP-1559 tip (priority fee) on top of the base fee.
 - `evm-compatibility`: enables all the previous flags, needed for the EVM test suite.
 
-## Account abstraction
-
-Transaction validation and execution is done through an abstract [account model](./transaction_processing.md). This is because ZKsyncOS supports native account abstraction (AA) and paymasters, if enabled in the previously mentioned configuration. Native AA is designed to be backwards compatible with the one used in [Era](https://docs.zksync.io/zksync-era/unique-features/account-abstraction). More details about the account models can be found in this [Section](./transaction_processing.md).
-
 ## Code execution
 
-For transaction execution (and AA validation), the bootloader has to execute some contract code. This contract code corresponds to one of the supported VMs, as is executed through the [Execution Environment (EE)](../execution_environments/execution_environments.md) module.
+For transaction execution, the bootloader has to execute some contract code. This contract code corresponds to one of the supported VMs, as is executed through the [Execution Environment (EE)](../execution_environments/execution_environments.md) module.
 
 A contract call is executed through an interplay between the bootloader and (potentially different) execution environments. Indeed, a contract executing in a given EE can call to contracts that run on a different EE or to a [System Hook](../system_hooks.md). This interplay is described in [Runner flow](./runner_flow.md).
 

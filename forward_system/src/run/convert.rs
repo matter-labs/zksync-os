@@ -5,7 +5,7 @@ use ruint::aliases::B160;
 use zk_ee::common_structs::GenericEventContent;
 use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::types_config::EthereumIOTypesConfig;
-use zksync_os_interface::error::{AAMethod, InvalidTransaction};
+use zksync_os_interface::error::InvalidTransaction;
 use zksync_os_interface::types::{BlockContext, L2ToL1Log};
 
 pub trait FromInterface<T> {
@@ -60,12 +60,6 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::GasPerPubdataTooHigh => { InvalidTransaction::GasPerPubdataTooHigh }
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockGasLimitTooHigh => { InvalidTransaction::BlockGasLimitTooHigh }
             basic_bootloader::bootloader::errors::InvalidTransaction::UpgradeTxNotFirst => { InvalidTransaction::UpgradeTxNotFirst }
-            basic_bootloader::bootloader::errors::InvalidTransaction::Revert { method, output } => { InvalidTransaction::Revert { method: match method {
-                basic_bootloader::bootloader::errors::AAMethod::AccountValidate => { AAMethod::AccountValidate}
-                basic_bootloader::bootloader::errors::AAMethod::AccountPayForTransaction => { AAMethod::AccountPayForTransaction}
-                basic_bootloader::bootloader::errors::AAMethod::AccountPrePaymaster => {AAMethod::AccountPrePaymaster}
-                basic_bootloader::bootloader::errors::AAMethod::PaymasterValidateAndPay => {AAMethod::PaymasterValidateAndPay}
-            }, output } }
             basic_bootloader::bootloader::errors::InvalidTransaction::ReceivedInsufficientFees { received, required } => { InvalidTransaction::ReceivedInsufficientFees { received, required } }
             basic_bootloader::bootloader::errors::InvalidTransaction::InvalidMagic => { InvalidTransaction::InvalidMagic }
             basic_bootloader::bootloader::errors::InvalidTransaction::InvalidReturndataLength => { InvalidTransaction::InvalidReturndataLength }
@@ -73,10 +67,6 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::OutOfNativeResourcesDuringValidation => { InvalidTransaction::OutOfNativeResourcesDuringValidation }
             basic_bootloader::bootloader::errors::InvalidTransaction::NonceUsedAlready => { InvalidTransaction::NonceUsedAlready }
             basic_bootloader::bootloader::errors::InvalidTransaction::NonceNotIncreased => { InvalidTransaction::NonceNotIncreased }
-            basic_bootloader::bootloader::errors::InvalidTransaction::PaymasterReturnDataTooShort => { InvalidTransaction::PaymasterReturnDataTooShort }
-            basic_bootloader::bootloader::errors::InvalidTransaction::PaymasterInvalidMagic => { InvalidTransaction::PaymasterInvalidMagic }
-            basic_bootloader::bootloader::errors::InvalidTransaction::PaymasterContextInvalid => { InvalidTransaction::PaymasterContextInvalid }
-            basic_bootloader::bootloader::errors::InvalidTransaction::PaymasterContextOffsetTooLong => { InvalidTransaction::PaymasterContextOffsetTooLong }
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockGasLimitReached => { InvalidTransaction::BlockGasLimitReached }
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockNativeLimitReached => { InvalidTransaction::BlockNativeLimitReached }
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockPubdataLimitReached => { InvalidTransaction::BlockPubdataLimitReached }

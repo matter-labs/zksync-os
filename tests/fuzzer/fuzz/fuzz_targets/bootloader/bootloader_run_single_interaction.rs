@@ -5,6 +5,7 @@
 
 use arbitrary::{Arbitrary, Result, Unstructured};
 use basic_bootloader::bootloader::runner::RunnerMemoryBuffers;
+use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
 use basic_bootloader::bootloader::BasicBootloader;
 use common::mock_oracle_balance;
 use common::{abi_push_bytes, abi_push_bytes32_array, enc_addr, enc_u16, enc_u256, enc_u32};
@@ -239,13 +240,18 @@ fn fuzz(input: FuzzInput) {
 
     match selector {
         0 => {
-            let _ = BasicBootloader::mint_token(&mut system, &amount, &from, &mut inf_resources);
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::mint_token(
+                &mut system,
+                &amount,
+                &from,
+                &mut inf_resources,
+            );
         }
         1 => {
             // Fuzz-test run_single_interaction
             let calldata = input.calldata1;
 
-            let _ = BasicBootloader::run_single_interaction(
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::run_single_interaction(
                 &mut system,
                 &mut system_functions,
                 memories,
@@ -266,7 +272,7 @@ fn fuzz(input: FuzzInput) {
 
             let calldata = &input.calldata2.raw;
 
-            let _ = BasicBootloader::run_single_interaction(
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::run_single_interaction(
                 &mut system,
                 &mut system_functions,
                 memories,
@@ -287,7 +293,7 @@ fn fuzz(input: FuzzInput) {
 
             let calldata = &input.calldata2.raw;
 
-            let _ = BasicBootloader::run_single_interaction(
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::run_single_interaction(
                 &mut system,
                 &mut system_functions,
                 memories,
@@ -308,7 +314,7 @@ fn fuzz(input: FuzzInput) {
 
             let calldata = &input.calldata2.raw;
 
-            let _ = BasicBootloader::run_single_interaction(
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::run_single_interaction(
                 &mut system,
                 &mut system_functions,
                 memories,

@@ -17,7 +17,7 @@ pub const POINT_EVAL_HOOK_ADDRESS_LOW: u16 = 0x000a;
 #[cfg(feature = "p256_precompile")]
 pub const P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW: u16 = 0x0100;
 
-// bootloader formal address used to collect fees, as caller for AA and block.coinbase
+// bootloader formal address used to collect fees
 pub const BOOTLOADER_FORMAL_ADDRESS: B160 = B160::from_limbs([0x8001, 0, 0]);
 
 // Contract Deployer system hook (contract) needed for all envs (force deploy)
@@ -32,11 +32,6 @@ pub const L1_MESSENGER_ADDRESS: B160 = B160::from_limbs([L1_MESSENGER_ADDRESS_LO
 // l2 base token system hook (contract) needed for all envs (base token withdrawals)
 pub const L2_BASE_TOKEN_ADDRESS_LOW: u16 = 0x800a;
 pub const L2_BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([L2_BASE_TOKEN_ADDRESS_LOW as u64, 0, 0]);
-
-// nonce holder needed for "EraVM like" AA
-pub const NONCE_HOLDER_HOOK_ADDRESS_LOW: u16 = 0x8003;
-pub const NONCE_HOLDER_HOOK_ADDRESS: B160 =
-    B160::from_limbs([NONCE_HOLDER_HOOK_ADDRESS_LOW as u64, 0, 0]);
 
 // ERA VM system contracts (in fact we need implement only the methods that should be available for user contracts)
 // TODO: may be better to implement as ifs inside EraVM EE

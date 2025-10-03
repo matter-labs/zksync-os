@@ -2,14 +2,11 @@
 //! This module contains account models implementations.
 //!
 
-mod abstract_account;
-mod contract;
-mod eoa;
+pub mod zk;
 
 use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::ZkSyncTransaction;
-pub use abstract_account::AA;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -22,6 +19,20 @@ use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use zk_ee::utils::Bytes32;
 
 use super::errors::BootloaderSubsystemError;
+
+// Address deployed, or reason for the lack thereof.
+enum DeployedAddress {
+    CallNoAddress,
+    RevertedNoAddress,
+    Address(B160),
+}
+
+struct TxExecutionResult<'a, S: SystemTypes> {
+    return_values: ReturnValues<'a, S>,
+    resources_returned: S::Resources,
+    reverted: bool,
+    deployed_address: DeployedAddress,
+}
 
 /// The execution step output
 #[derive(Debug)]
@@ -68,7 +79,7 @@ pub struct TxProcessingResult<'a> {
     pub pubdata_used: u64,
 }
 
-pub trait AccountModel<S: EthereumLikeTypes>
+pub trait BasicTransactionFlow<S: EthereumLikeTypes>
 where
     S::IO: IOSubsystemExt,
 {
@@ -130,28 +141,10 @@ where
     fn pay_for_transaction(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &mut ZkSyncTransaction,
         from: B160,
-        caller_ee_type: ExecutionEnvironmentType,
-        resources: &mut S::Resources,
-        tracer: &mut impl Tracer<S>,
-    ) -> Result<(), TxError>;
-
-    ///
-    /// Prepare for paymaster
-    ///
-    fn pre_paymaster(
-        system: &mut System<S>,
-        system_functions: &mut HooksStorage<S, S::Allocator>,
-        memories: RunnerMemoryBuffers,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
-        from: B160,
-        paymaster: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
         tracer: &mut impl Tracer<S>,

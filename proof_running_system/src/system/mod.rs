@@ -3,6 +3,7 @@ use crate::skip_list_quasi_vec::num_elements_in_backing_node;
 use crate::skip_list_quasi_vec::ListVec;
 use crate::system::bootloader::BootloaderAllocator;
 use alloc::alloc::Allocator;
+use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
 use basic_bootloader::bootloader::BasicBootloader;
 use basic_system::system_functions::NoStdSystemFunctions;
 use basic_system::system_implementation::system::EthereumLikeStorageAccessCostModel;
@@ -62,4 +63,5 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for ProofRunningSystemTypes<O
 
 impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes for ProofRunningSystemTypes<O, L> {}
 
-pub type ProvingBootloader<O, L> = BasicBootloader<ProofRunningSystemTypes<O, L>>;
+pub type ProvingBootloader<O, L> =
+    BasicBootloader<ProofRunningSystemTypes<O, L>, ZkTransactionFlowOnlyEOA>;

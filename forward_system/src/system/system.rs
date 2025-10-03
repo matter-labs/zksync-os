@@ -2,6 +2,7 @@ use std::alloc::Global;
 
 use crate::run::oracle::CallSimulationOracle;
 use crate::run::oracle::ForwardRunningOracle;
+use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
 use basic_bootloader::bootloader::BasicBootloader;
 use basic_system::system_functions::NoStdSystemFunctions;
 use basic_system::system_implementation::system::EthereumLikeStorageAccessCostModel;
@@ -46,6 +47,8 @@ pub type ForwardRunningSystem<T, PS, TS> = ForwardSystemTypes<ForwardRunningOrac
 
 pub type CallSimulationSystem<T, PS, TS> = ForwardSystemTypes<CallSimulationOracle<T, PS, TS>>;
 
-pub type ForwardBootloader<T, PS, TS> = BasicBootloader<ForwardRunningSystem<T, PS, TS>>;
+pub type ForwardBootloader<T, PS, TS> =
+    BasicBootloader<ForwardRunningSystem<T, PS, TS>, ZkTransactionFlowOnlyEOA>;
 
-pub type CallSimulationBootloader<T, PS, TS> = BasicBootloader<CallSimulationSystem<T, PS, TS>>;
+pub type CallSimulationBootloader<T, PS, TS> =
+    BasicBootloader<CallSimulationSystem<T, PS, TS>, ZkTransactionFlowOnlyEOA>;

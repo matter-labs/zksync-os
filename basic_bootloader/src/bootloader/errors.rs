@@ -74,12 +74,6 @@ pub enum InvalidTransaction {
     BlockGasLimitTooHigh,
     /// Protocol upgrade tx should be first in the block.
     UpgradeTxNotFirst,
-
-    /// Call during AA validation reverted
-    Revert {
-        method: AAMethod,
-        output: Option<&'static [u8]>,
-    },
     /// Bootloader received insufficient fees
     ReceivedInsufficientFees {
         received: U256,
@@ -97,14 +91,6 @@ pub enum InvalidTransaction {
     NonceUsedAlready,
     /// Nonce not increased after validation
     NonceNotIncreased,
-    /// Return data from paymaster is too short
-    PaymasterReturnDataTooShort,
-    /// Invalid magic in paymaster validation
-    PaymasterInvalidMagic,
-    /// Paymaster returned invalid context
-    PaymasterContextInvalid,
-    /// Paymaster context offset is greater than returndata length
-    PaymasterContextOffsetTooLong,
     /// Transaction makes the block reach the gas limit
     BlockGasLimitReached,
     /// Transaction makes the block reach the native resource limit
@@ -113,21 +99,6 @@ pub enum InvalidTransaction {
     BlockPubdataLimitReached,
     /// Transaction makes the block reach the l2->l1 logs limit
     BlockL2ToL1LogsLimitReached,
-}
-
-///
-/// Methods called during AA validation
-///
-#[derive(Debug, Clone)]
-pub enum AAMethod {
-    /// The account's validation method itself
-    AccountValidate,
-    /// The account's pay for transaction method
-    AccountPayForTransaction,
-    /// The account's pre paymaster method
-    AccountPrePaymaster,
-    /// Paymaster payment
-    PaymasterValidateAndPay,
 }
 
 ///
