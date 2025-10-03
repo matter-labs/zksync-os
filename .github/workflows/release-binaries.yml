@@ -1,0 +1,69 @@
+name: Release Binaries
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  packages: read
+
+# Log all shell steps
+defaults:
+  run:
+    shell: bash -ex {0}
+
+jobs:
+  build_binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Build binaries using reproducible script
+        run: zksync_os/reproduce/reproduce.sh
+
+      - name: Prepare release artifacts
+        run: |
+          mkdir -p release-artifacts
+          cd zksync_os
+
+          # Copy all generated binaries
+          FILES=(
+            app.bin
+            evm_replay.bin
+            server_app.bin
+            server_app_logging_enabled.bin
+            multiblock_batch.bin
+            multiblock_batch_logging_enabled.bin
+          )
+
+          for FILE in "${FILES[@]}"; do
+            if [ -f "$FILE" ]; then
+              cp "$FILE" ../release-artifacts/
+              echo "✓ Copied $FILE"
+            else
+              echo "⚠️  $FILE not found"
+            fi
+          done
+
+          cd ../release-artifacts
+
+          # Create checksums
+          sha256sum *.bin > checksums.txt
+
+          # List all files
+          echo "Release artifacts:"
+          ls -la
+
+      - name: Upload binaries to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/*.bin
+            release-artifacts/checksums.txt
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
