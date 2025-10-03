@@ -178,7 +178,9 @@ fn test_l2_base_token_withdraw_events() {
         .unwrap()
         .logs
         .iter()
-        .find(|event| Withdrawal::decode_log_data(&event).is_ok());
+        .find(|event| {
+            event.address == l2_base_token_address && Withdrawal::decode_log_data(&event).is_ok()
+        });
     assert!(
         withdrawal_event.is_some(),
         "Withdrawal event should be emitted"
@@ -264,7 +266,10 @@ fn test_l2_base_token_withdraw_with_message_events() {
         .unwrap()
         .logs
         .iter()
-        .find(|event| WithdrawalWithMessage::decode_log_data(&event).is_ok());
+        .find(|event| {
+            event.address == l2_base_token_address
+                && WithdrawalWithMessage::decode_log_data(&event).is_ok()
+        });
     assert!(
         withdrawal_event.is_some(),
         "WithdrawalWithMessage event should be emitted"
@@ -396,4 +401,71 @@ fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
         }),
         "Transaction should fail with incorrect calldata"
     );
+}
+
+#[test]
+fn test_l2_base_token_mint_event() {
+    let mut chain = Chain::empty(None);
+
+    // L2 base token address is 0x800a
+    let l2_base_token_address = address!("000000000000000000000000000000000000800a");
+    let sender = address!("1234567890123456789012345678901234567890");
+    let recipient = address!("2222567890123456789012345678901234567890");
+    let mint_amount = alloy::primitives::U256::from(5000000000000000000u64); // 5 ETH
+
+    // Prepare mint calldata - typically this would be called by the bootloader or bridge
+    // For testing purposes, we'll simulate a mint by sending ETH value to the base token contract
+    // The mint event should be emitted when the contract receives value
+
+    // Create a transaction that sends ETH to the L2 base token contract
+    // This simulates a bridge deposit or native token mint
+    let tx = TransactionRequest {
+        chain_id: Some(37),
+        from: Some(sender),
+        to: Some(TxKind::Call(recipient)),
+        input: hex::decode("").unwrap().into(), // Empty calldata for value transfer
+        value: Some(mint_amount),
+        gas: Some(100_000),
+        max_fee_per_gas: Some(1000),
+        max_priority_fee_per_gas: Some(1000),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    };
+
+    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let transactions = vec![encoded_tx];
+
+    let output = chain.run_block(transactions, None, None);
+
+    // Assert transaction succeeded
+    assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
+        let success = r.clone().is_ok_and(|o| o.is_success());
+        if !success {
+            println!("Transaction {} failed with: {:?}", i, r)
+        }
+        success
+    }));
+
+    sol! {
+        event Mint(address indexed _account, uint256 _amount);
+    }
+
+    // Check if mint event was emitted
+    let mint_events: Vec<_> = output.tx_results[0]
+        .as_ref()
+        .unwrap()
+        .logs
+        .iter()
+        .filter(|event| {
+            event.address == l2_base_token_address && Mint::decode_log_data(&event).is_ok()
+        })
+        .collect();
+
+    assert!(!mint_events.is_empty(), "Mint event should be emitted");
+
+    let event = Mint::decode_log_data(mint_events[0]).unwrap();
+
+    // Verify event fields
+    assert_eq!(event._account.as_slice(), sender.0.as_slice());
+    assert_eq!(event._amount, mint_amount);
 }

@@ -3,6 +3,8 @@
 //! It implements methods for `withdraw` and `withdrawWithMessage`,
 //! which work in the same way as in Era.
 //!
+//! The `mint`` is perform in the bootloader automatically. Corresponding event is emitted in the bootloader as well ("Mint").
+//!
 use crate::l1_messenger::send_to_l1_inner;
 
 use super::*;
@@ -415,7 +417,7 @@ where
     } else {
         abi_encoded_event_length
     };
-    let mut event_data = Vec::<u8, S::Allocator>::with_capacity_in(
+    let mut event_data = alloc::vec::Vec::with_capacity_in(
         abi_encoded_event_length as usize + 32,
         system.get_allocator(),
     );
