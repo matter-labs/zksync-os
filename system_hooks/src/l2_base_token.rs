@@ -181,6 +181,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn withdraw<S: EthereumLikeTypes>(
     calldata: &[u8],
     calldata_len: u32,
@@ -264,6 +265,7 @@ where
     Ok(result.map(|_| &[] as &[u8]))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn withdraw_with_message<S: EthereumLikeTypes>(
     calldata: &[u8],
     calldata_len: u32,
@@ -417,10 +419,8 @@ where
     } else {
         abi_encoded_event_length
     };
-    let mut event_data = alloc::vec::Vec::with_capacity_in(
-        abi_encoded_event_length as usize + 32,
-        system.get_allocator(),
-    );
+    let mut event_data =
+        alloc::vec::Vec::with_capacity_in(abi_encoded_event_length + 32, system.get_allocator());
     event_data.extend_from_slice(&nominal_token_value.to_be_bytes::<32>());
     event_data.extend_from_slice(&[0u8; 64]);
     event_data[63] = 64; // offset
@@ -429,7 +429,7 @@ where
     // Populating the rest of the event data with zeros to make it a multiple of 32 bytes
     event_data.extend(core::iter::repeat_n(
         0u8,
-        abi_encoded_event_length as usize - additional_data.len(),
+        abi_encoded_event_length - additional_data.len(),
     ));
 
     system.io.emit_event(
