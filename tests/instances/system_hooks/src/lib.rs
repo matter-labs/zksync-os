@@ -7,7 +7,7 @@ use alloy::primitives::TxKind;
 use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
-use rig::ruint::aliases::{B160, U256};
+use rig::ruint::aliases::B160;
 use rig::utils::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
