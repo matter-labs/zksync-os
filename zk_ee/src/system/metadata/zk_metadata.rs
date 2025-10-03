@@ -41,16 +41,18 @@ impl BasicTransactionMetadata<EthereumIOTypesConfig> for TxLevelMetadata<Ethereu
     }
 }
 
+pub const BLOCK_HASHES_WINDOW_SIZE: usize = 256;
+
 /// Array of previous block hashes.
-/// Hash for block number N will be at index [256 - (current_block_number - N)]
+/// Hash for block number N will be at index [BLOCK_HASHES_WINDOW_SIZE - (current_block_number - N)]
 /// (most recent will be at the end) if N is one of the most recent
-/// 256 blocks.
+/// BLOCK_HASHES_WINDOW_SIZE blocks.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct BlockHashes(pub [U256; 256]);
+pub struct BlockHashes(pub [U256; BLOCK_HASHES_WINDOW_SIZE]);
 
 impl Default for BlockHashes {
     fn default() -> Self {
-        Self([U256::ZERO; 256])
+        Self([U256::ZERO; BLOCK_HASHES_WINDOW_SIZE])
     }
 }
 
@@ -71,7 +73,7 @@ impl<'de> serde::Deserialize<'de> for BlockHashes {
         D: serde::Deserializer<'de>,
     {
         let vec: Vec<U256> = Vec::deserialize(deserializer)?;
-        let array: [U256; 256] = vec
+        let array: [U256; BLOCK_HASHES_WINDOW_SIZE] = vec
             .try_into()
             .map_err(|_| serde::de::Error::custom("Expected array of length 256"))?;
         Ok(Self(array))
@@ -79,10 +81,10 @@ impl<'de> serde::Deserialize<'de> for BlockHashes {
 }
 
 impl UsizeSerializable for BlockHashes {
-    const USIZE_LEN: usize = <U256 as UsizeSerializable>::USIZE_LEN * 256;
+    const USIZE_LEN: usize = <U256 as UsizeSerializable>::USIZE_LEN * BLOCK_HASHES_WINDOW_SIZE;
 
     fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChainN::<_, _, 256>::new(
+        ExactSizeChainN::<_, _, BLOCK_HASHES_WINDOW_SIZE>::new(
             core::iter::empty::<usize>(),
             core::array::from_fn(|i| Some(self.0[i].iter())),
         )
@@ -90,7 +92,7 @@ impl UsizeSerializable for BlockHashes {
 }
 
 impl UsizeDeserializable for BlockHashes {
-    const USIZE_LEN: usize = <U256 as UsizeDeserializable>::USIZE_LEN * 256;
+    const USIZE_LEN: usize = <U256 as UsizeDeserializable>::USIZE_LEN * BLOCK_HASHES_WINDOW_SIZE;
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         Ok(Self(core::array::from_fn(|_| {
@@ -134,8 +136,8 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
     }
 
     fn block_historical_hash(&self, depth: u64) -> Option<Bytes32> {
-        if depth < 256 {
-            let index = 256 - depth;
+        if depth < BLOCK_HASHES_WINDOW_SIZE as u64 {
+            let index = BLOCK_HASHES_WINDOW_SIZE as u64 - depth;
             Some(Bytes32::from_array(
                 self.block_hashes.0[index as usize].to_be_bytes::<32>(),
             ))
@@ -214,7 +216,8 @@ impl BlockMetadataFromOracle {
 }
 
 impl UsizeSerializable for BlockMetadataFromOracle {
-    const USIZE_LEN: usize = <U256 as UsizeSerializable>::USIZE_LEN * (4 + 256)
+    const USIZE_LEN: usize = <U256 as UsizeSerializable>::USIZE_LEN
+        * (4 + BLOCK_HASHES_WINDOW_SIZE)
         + <u64 as UsizeSerializable>::USIZE_LEN * 5
         + <B160 as UsizeDeserializable>::USIZE_LEN;
 
