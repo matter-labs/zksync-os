@@ -221,10 +221,11 @@ fn fuzz(input: FuzzInput) {
     let amount = U256::from_be_bytes(input.amount);
     let selector = input.selector;
 
-    let mut system = System::<
-        ForwardRunningSystem,
-    >::init_from_oracle(mock_oracle_balance(from, amount))
-    .expect("Failed to initialize the mock system");
+    let (metadata, oracle) = mock_oracle_balance(from, amount);
+
+    let mut system =
+        System::<ForwardRunningSystem>::init_from_metadata_and_oracle(metadata, oracle)
+            .expect("Failed to initialize the mock system");
     let mut system_functions = HooksStorage::new_in(system.get_allocator());
     let mut inf_resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
     pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB

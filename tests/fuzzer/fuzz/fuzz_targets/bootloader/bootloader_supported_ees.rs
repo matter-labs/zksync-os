@@ -13,15 +13,15 @@ use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
+use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::CallModifier;
 use zk_ee::system::ExecutionEnvironmentLaunchParams;
 use zk_ee::system::NopResultKeeper;
 use zk_ee::system::{
-    CallResult, EnvironmentParameters,
-    ExternalCallRequest, Resource, Resources, ReturnValues, System,
+    CallResult, EnvironmentParameters, ExternalCallRequest, Resource, Resources, ReturnValues,
+    System,
 };
 use zk_ee::utils::Bytes32;
-use zk_ee::system::tracer::NopTracer;
 
 extern crate alloc;
 
@@ -59,10 +59,10 @@ struct FuzzInput<'a> {
 fn fuzz(input: FuzzInput) {
     let selector = input.selector;
 
-    let mut system = System::<
-        ForwardRunningSystem,
-    >::init_from_oracle(mock_oracle())
-    .expect("Failed to initialize the mock system");
+    let (metadata, oracle) = mock_oracle();
+    let mut system =
+        System::<ForwardRunningSystem>::init_from_metadata_and_oracle(metadata, oracle)
+            .expect("Failed to initialize the mock system");
 
     pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27;
     let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
@@ -130,8 +130,7 @@ fn fuzz(input: FuzzInput) {
                 (bytecode, calldata)
             };
 
-            let callee_account_properties
-            = CalleeAccountProperties {
+            let callee_account_properties = CalleeAccountProperties {
                 ee_type: 0,
                 nonce: 0,
                 nominal_token_balance: U256::ZERO,
@@ -140,37 +139,42 @@ fn fuzz(input: FuzzInput) {
                 unpadded_code_len: 0,
                 artifacts_len: 0,
             };
-            
-            
-            // Pack everything into ExecutionEnvironmentLaunchParams
-            let ee_launch_params: ExecutionEnvironmentLaunchParams<
-                ForwardRunningSystem,
-            > = ExecutionEnvironmentLaunchParams {
-                environment_parameters: EnvironmentParameters {
-                    scratch_space_len: 0,
-                    callee_account_properties,
-                    callstack_depth: 1 // To not trigger any special cases
-                },
-                external_call: ExternalCallRequest {
-                    available_resources: inf_resources.clone(),
-                    ergs_to_pass: inf_resources.ergs(),
-                    callers_caller,
-                    caller,
-                    callee,
-                    modifier,
-                    input: &actual_calldata,
-                    call_scratch_space: None,
-                    nominal_token_value,
-                },
-            };
 
-            let Ok(mut vm_state) =
-                SupportedEEVMState::create_initial(ExecutionEnvironmentType::parse_ee_version_byte(input.ee_version).expect("Should succeed"), &mut system)
-            else {
+            // Pack everything into ExecutionEnvironmentLaunchParams
+            let ee_launch_params: ExecutionEnvironmentLaunchParams<ForwardRunningSystem> =
+                ExecutionEnvironmentLaunchParams {
+                    environment_parameters: EnvironmentParameters {
+                        scratch_space_len: 0,
+                        callee_account_properties,
+                        callstack_depth: 1, // To not trigger any special cases
+                    },
+                    external_call: ExternalCallRequest {
+                        available_resources: inf_resources.clone(),
+                        ergs_to_pass: inf_resources.ergs(),
+                        callers_caller,
+                        caller,
+                        callee,
+                        modifier,
+                        input: &actual_calldata,
+                        call_scratch_space: None,
+                        nominal_token_value,
+                    },
+                };
+
+            let Ok(mut vm_state) = SupportedEEVMState::create_initial(
+                ExecutionEnvironmentType::parse_ee_version_byte(input.ee_version)
+                    .expect("Should succeed"),
+                &mut system,
+            ) else {
                 return;
             };
 
-            let _ = vm_state.start_executing_frame(&mut system, ee_launch_params, heap, &mut NopTracer::default());
+            let _ = vm_state.start_executing_frame(
+                &mut system,
+                ee_launch_params,
+                heap,
+                &mut NopTracer::default(),
+            );
         }
         1 => {
             // Fuzz-test SupportedEEVMState::continue_after_preemption
@@ -185,9 +189,11 @@ fn fuzz(input: FuzzInput) {
                 _ => CallResult::Successful { return_values },
             };
 
-            let Ok(mut vm_state) =
-                SupportedEEVMState::create_initial(ExecutionEnvironmentType::parse_ee_version_byte(input.ee_version).expect("Should succeed"), &mut system)
-            else {
+            let Ok(mut vm_state) = SupportedEEVMState::create_initial(
+                ExecutionEnvironmentType::parse_ee_version_byte(input.ee_version)
+                    .expect("Should succeed"),
+                &mut system,
+            ) else {
                 return;
             };
 
@@ -198,7 +204,9 @@ fn fuzz(input: FuzzInput) {
                     let SupportedEEVMState::EVM(evm_frame) = &mut vm_state;
                     evm_frame.bytecode = decommitted_bytecode;
                     evm_frame.pending_os_request = if modifier == CallModifier::Constructor {
-                        Some(evm_interpreter::PendingOsRequest::Create(B160::from_be_bytes(input.address3)))
+                        Some(evm_interpreter::PendingOsRequest::Create(
+                            B160::from_be_bytes(input.address3),
+                        ))
                     } else {
                         Some(evm_interpreter::PendingOsRequest::Call)
                     };
@@ -206,8 +214,12 @@ fn fuzz(input: FuzzInput) {
                 _ => (),
             }
 
-            
-            let _ = vm_state.continue_after_preemption(&mut system, inf_resources, call_result, &mut NopTracer::default());
+            let _ = vm_state.continue_after_preemption(
+                &mut system,
+                inf_resources,
+                call_result,
+                &mut NopTracer::default(),
+            );
         }
         _ => (),
     }
