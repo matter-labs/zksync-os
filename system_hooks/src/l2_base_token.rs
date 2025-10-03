@@ -108,6 +108,18 @@ pub const WITHDRAW_WITH_MESSAGE_SELECTOR: &[u8] = &[0x84, 0xbc, 0x3e, 0xb0];
 // finalizeEthWithdrawal(uint256,uint256,uint16,bytes,bytes32[]) - 6c0960f9
 pub const FINALIZE_ETH_WITHDRAWAL_SELECTOR: &[u8] = &[0x6c, 0x09, 0x60, 0xf9];
 
+// keccak256("Withdrawal(address,address,uint256)")
+const WITHDRAWAL_TOPIC: [u8; 32] = [
+    0x27, 0x17, 0xea, 0xd6, 0xb9, 0x20, 0x0d, 0xd2, 0x35, 0xaa, 0xd4, 0x68, 0xc9, 0x80, 0x9e, 0xa4,
+    0x00, 0xfe, 0x33, 0xac, 0x69, 0xb5, 0xbf, 0xaa, 0x6d, 0x3e, 0x90, 0xfc, 0x92, 0x2b, 0x63, 0x98,
+];
+
+// keccak256("WithdrawalWithMessage(address,address,uint256,bytes)")
+const WITHDRAWAL_WITH_MESSAGE_TOPIC: [u8; 32] = [
+    0xc4, 0x05, 0xfe, 0x89, 0x58, 0x41, 0x0b, 0xba, 0xf0, 0xc7, 0x3b, 0x7a, 0x0c, 0x3e, 0x20, 0x85,
+    0x9e, 0x86, 0xca, 0x16, 0x8a, 0x4c, 0x9b, 0x0d, 0xef, 0x9c, 0x54, 0xd2, 0x55, 0x5a, 0x30, 0x6b,
+];
+
 fn l2_base_token_hook_inner<S: EthereumLikeTypes>(
     calldata: &[u8],
     resources: &mut S::Resources,
@@ -167,11 +179,6 @@ where
     }
 }
 
-const WITHDRAWAL_TOPIC: [u8; 32] = [
-    0x3a, 0x36, 0xe4, 0x72, 0x91, 0xf4, 0x20, 0x1f, 0xaf, 0x13, 0x7f, 0xab, 0x08, 0x1d, 0x92, 0x29,
-    0x5b, 0xce, 0x2d, 0x53, 0xbe, 0x2c, 0x6c, 0xa6, 0x8b, 0xa8, 0x2c, 0x7f, 0xaa, 0x9c, 0xe2, 0x41,
-]; // TODO update
-
 fn withdraw<S: EthereumLikeTypes>(
     calldata: &[u8],
     calldata_len: u32,
@@ -196,13 +203,8 @@ where
             "L2 base token failure: withdraw called with invalid calldata",
         ));
     }
-    
-    burn_nominal_token_value(
-        resources,
-        system,
-        caller_ee,
-        &nominal_token_value,
-    )?;
+
+    burn_nominal_token_value(resources, system, caller_ee, &nominal_token_value)?;
 
     // Sending L2->L1 message.
     // ABI-encoded messages should consist of the following:
@@ -221,12 +223,16 @@ where
     l1_messenger_calldata[63] = 56; // length
     l1_messenger_calldata[64..68].copy_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
     // check that first 12 bytes in address encoding are zero
+    // TODO: should we fail or silently truncate? Solidity would truncate iirc.
     if calldata[4..4 + 12].iter().any(|byte| *byte != 0) {
         return Ok(Err(
             "L2 base token failure: withdraw called with invalid calldata",
         ));
     }
-    l1_messenger_calldata[68..88].copy_from_slice(&calldata[(4 + 12)..36]);
+
+    let l1_receiver = &calldata[(4 + 12)..36];
+
+    l1_messenger_calldata[68..88].copy_from_slice(&l1_receiver);
     l1_messenger_calldata[88..120].copy_from_slice(&nominal_token_value.to_be_bytes::<32>());
 
     let result = send_to_l1_inner(
@@ -241,8 +247,8 @@ where
 
     let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
     topics.push(Bytes32::from_array(WITHDRAWAL_TOPIC));
-    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller)));
-    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller))); // TODO l1receiver
+    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller))); // _l2Sender
+    topics.push(Bytes32::from_u256_be(&U256::from_be_slice(&l1_receiver))); // _l1Receiver
 
     system.io.emit_event(
         ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
@@ -250,16 +256,11 @@ where
         resources,
         &L2_BASE_TOKEN_ADDRESS,
         &topics,
-        &nominal_token_value.to_be_bytes::<32>(),
+        &nominal_token_value.to_be_bytes::<32>(), // _amount
     )?;
 
     Ok(result.map(|_| &[] as &[u8]))
 }
-
-const WITHDRAWAL_WITH_MESSAGE_TOPIC: [u8; 32] = [
-    0x3a, 0x36, 0xe4, 0x72, 0x91, 0xf4, 0x20, 0x1f, 0xaf, 0x13, 0x7f, 0xab, 0x08, 0x1d, 0x92, 0x29,
-    0x5b, 0xce, 0x2d, 0x53, 0xbe, 0x2c, 0x6c, 0xa6, 0x8b, 0xa8, 0x2c, 0x7f, 0xaa, 0x9c, 0xe2, 0x41,
-]; // TODO update
 
 fn withdraw_with_message<S: EthereumLikeTypes>(
     calldata: &[u8],
@@ -337,18 +338,14 @@ where
     let additional_data = &calldata[(length_encoding_end as usize)..message_end as usize];
 
     // check that first 12 bytes in address encoding are zero
+    // TODO: should we fail or silently truncate? Solidity would truncate iirc.
     if calldata[4..4 + 12].iter().any(|byte| *byte != 0) {
         return Ok(Err(
             "L2 base token failure: withdrawWithMessage called with invalid calldata",
         ));
     }
 
-    burn_nominal_token_value(
-        resources,
-        system,
-        caller_ee,
-        &nominal_token_value,
-    )?;
+    burn_nominal_token_value(resources, system, caller_ee, &nominal_token_value)?;
 
     // Sending L2->L1 message.
     // ABI-encoded messages should consist of the following:
@@ -378,7 +375,8 @@ where
     message[31] = 32; // offset
     message[32..64].copy_from_slice(&U256::from(message_length).to_be_bytes::<32>());
     message.extend_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
-    message.extend_from_slice(&calldata[16..36]);
+    let l1_receiver = &calldata[16..36];
+    message.extend_from_slice(&l1_receiver);
     message.extend_from_slice(&nominal_token_value.to_be_bytes::<32>());
     message.extend_from_slice(&caller.to_be_bytes::<20>());
     message.extend_from_slice(additional_data);
@@ -407,11 +405,30 @@ where
 
     let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
     topics.push(Bytes32::from_array(WITHDRAWAL_WITH_MESSAGE_TOPIC));
-    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller)));
-    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller))); // TODO l1receiver
+    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller))); // _l2Sender
+    topics.push(Bytes32::from_u256_be(&U256::from_be_slice(&l1_receiver))); // _l1Receiver
 
-    // TODO annotate
-    message.extend_from_slice(&nominal_token_value.to_be_bytes::<32>());
+    // ABI encodig on _amount and _additionalData
+    let abi_encoded_event_length = 32 + 32 + 32 + additional_data.len();
+    let abi_encoded_event_length = if abi_encoded_event_length % 32 != 0 {
+        abi_encoded_event_length + (32 - (abi_encoded_event_length % 32))
+    } else {
+        abi_encoded_event_length
+    };
+    let mut event_data = Vec::<u8, S::Allocator>::with_capacity_in(
+        abi_encoded_event_length as usize + 32,
+        system.get_allocator(),
+    );
+    event_data.extend_from_slice(&nominal_token_value.to_be_bytes::<32>());
+    event_data.extend_from_slice(&[0u8; 64]);
+    event_data[63] = 64; // offset
+    event_data[64..96].copy_from_slice(&U256::from(additional_data.len()).to_be_bytes::<32>());
+    event_data.extend_from_slice(additional_data);
+    // Populating the rest of the event data with zeros to make it a multiple of 32 bytes
+    event_data.extend(core::iter::repeat_n(
+        0u8,
+        abi_encoded_event_length as usize - additional_data.len(),
+    ));
 
     system.io.emit_event(
         ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
@@ -419,8 +436,7 @@ where
         resources,
         &L2_BASE_TOKEN_ADDRESS,
         &topics,
-        // We are lucky that the encoding of the event is exactly same as encoding of the bytes in the calldata
-        &message,
+        &event_data,
     )?;
 
     Ok(result.map(|_| &[] as &[u8]))
