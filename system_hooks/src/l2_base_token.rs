@@ -1,10 +1,15 @@
 //!
 //! L2 base token system hook implementation.
-//! It implements methods for `withdraw` and `withdrawWithMessage`,
-//! which work in the same way as in Era.
 //!
-//! The `mint`` is perform in the bootloader automatically. Corresponding event is emitted in the bootloader as well ("Mint").
+//! This module provides the withdrawal functionality for the L2 base token (ETH equivalent).
+//! It implements methods for `withdraw` and `withdrawWithMessage`, which work in the same way as in Era.
 //!
+//! ## Supported Operations
+//! - `withdraw(address)` - Burns L2 tokens and initiates withdrawal to L1 receiver
+//! - `withdrawWithMessage(address,bytes)` - Burns L2 tokens with additional data for L1 processing
+//!
+//! ## Notes
+//! - Minting is performed in the bootloader automatically with corresponding "Mint" events if L1->L2 or upgrade tx has some value attached
 use crate::l1_messenger::send_to_l1_inner;
 
 use super::*;
@@ -181,6 +186,8 @@ where
     }
 }
 
+/// Handles withdraw(address) calls - burns tokens and sends L1 message
+/// Emits Withdrawal event on success
 #[allow(clippy::too_many_arguments)]
 fn withdraw<S: EthereumLikeTypes>(
     calldata: &[u8],
@@ -249,7 +256,7 @@ where
     // event Withdrawal(address indexed _l2Sender, address indexed _l1Receiver, uint256 _amount);
 
     let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
-    topics.push(Bytes32::from_array(WITHDRAWAL_TOPIC));
+    topics.push(Bytes32::from_array(WITHDRAWAL_TOPIC)); // event signature
     topics.push(Bytes32::from_u256_be(&b160_to_u256(caller))); // _l2Sender
     topics.push(Bytes32::from_u256_be(&U256::from_be_slice(&l1_receiver))); // _l1Receiver
 
@@ -265,6 +272,8 @@ where
     Ok(result.map(|_| &[] as &[u8]))
 }
 
+/// Handles withdrawWithMessage(address,bytes) calls - burns tokens and sends L1 message with additional data
+/// Emits WithdrawalWithMessage event on success
 #[allow(clippy::too_many_arguments)]
 fn withdraw_with_message<S: EthereumLikeTypes>(
     calldata: &[u8],
@@ -408,11 +417,11 @@ where
     */
 
     let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
-    topics.push(Bytes32::from_array(WITHDRAWAL_WITH_MESSAGE_TOPIC));
+    topics.push(Bytes32::from_array(WITHDRAWAL_WITH_MESSAGE_TOPIC)); // event signature
     topics.push(Bytes32::from_u256_be(&b160_to_u256(caller))); // _l2Sender
     topics.push(Bytes32::from_u256_be(&U256::from_be_slice(&l1_receiver))); // _l1Receiver
 
-    // ABI encodig on _amount and _additionalData
+    // ABI encode event data: _amount (32 bytes) + _additionalData offset (32) + length (32) + data
     let abi_encoded_event_length = 32 + 32 + 32 + additional_data.len();
     let abi_encoded_event_length = if abi_encoded_event_length % 32 != 0 {
         abi_encoded_event_length + (32 - (abi_encoded_event_length % 32))
@@ -444,6 +453,7 @@ where
     Ok(result.map(|_| &[] as &[u8]))
 }
 
+/// Burns the specified amount of nominal tokens from the L2 base token contract
 fn burn_nominal_token_value<S: EthereumLikeTypes>(
     resources: &mut S::Resources,
     system: &mut System<S>,
