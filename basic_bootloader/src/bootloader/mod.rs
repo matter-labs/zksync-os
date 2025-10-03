@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
 use errors::{BootloaderSubsystemError, InvalidTransaction};
+use metadata::BlockMetadataFromOracle;
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
@@ -8,6 +9,7 @@ use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
+use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::usize_rw::{SafeUsizeWritable, UsizeWriteable};
 
 pub mod run_single_interaction;
@@ -166,7 +168,11 @@ impl<'a> SafeUsizeWritable for TxDataBufferWriter<'a> {
     }
 }
 
-impl<S: EthereumLikeTypes, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
+// TODO: type of Metadata is hardcoded for now, will be cleaned in future PRs
+impl<
+        S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::Metadata<EthereumIOTypesConfig>>,
+        F: BasicTransactionFlow<S>,
+    > BasicBootloader<S, F>
 where
     S::IO: IOSubsystemExt,
 {
@@ -174,7 +180,7 @@ where
     /// This code runs both in sequencer (then it uses ForwardOracle - that stores data in local variables)
     /// and in prover (where oracle uses CRS registers to communicate).
     pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
-        oracle: <S::IO as IOSubsystemExt>::IOOracle,
+        mut oracle: <S::IO as IOSubsystemExt>::IOOracle,
         result_keeper: &mut impl ResultKeeperExt,
         tracer: &mut impl Tracer<S>,
     ) -> Result<<S::IO as IOSubsystemExt>::FinalData, BootloaderSubsystemError>
@@ -182,9 +188,30 @@ where
         S::IO: IOSubsystemExt,
     {
         cycle_marker::start!("run_prepared");
+
+        // TODO: this will be moved to metadata_op in a future PR
+        let metadata: S::Metadata = {
+            use zk_ee::metadata_markers::basic_metadata::BasicBlockMetadata;
+            use zk_ee::oracle::query_ids::BLOCK_METADATA_QUERY_ID;
+            use zk_ee::oracle::IOOracle;
+            use zk_ee::system::metadata::Metadata;
+            let block_level_metadata: BlockMetadataFromOracle =
+                oracle.query_with_empty_input(BLOCK_METADATA_QUERY_ID)?;
+
+            let metadata = Metadata {
+                tx_origin: Default::default(),
+                tx_gas_price: Default::default(),
+                block_level_metadata,
+            };
+
+            if metadata.block_gas_limit() > MAX_BLOCK_GAS_LIMIT {
+                return Err(internal_error!("block gas limit is too high").into());
+            }
+            metadata
+        };
+
         // we will model initial calldata buffer as just another "heap"
-        let mut system: System<S> =
-            System::init_from_oracle(oracle).expect("system must be able to initialize itself");
+        let mut system: System<S> = System::init_from_metadata_and_oracle(metadata, oracle)?;
 
         let mut initial_calldata_buffer = TxDataBuffer::new(system.get_allocator());
 
@@ -413,21 +440,21 @@ where
         let block_number = system.get_block_number();
 
         let previous_block_hash = if block_number == 0 {
-            ruint::aliases::U256::ZERO
+            Bytes32::ZERO
         } else {
             system.get_blockhash(block_number - 1)
         };
         let beneficiary = system.get_coinbase();
         let gas_limit = system.get_gas_limit();
         let timestamp = system.get_timestamp();
-        let consensus_random = Bytes32::from_u256_be(&system.get_mix_hash());
+        let consensus_random = system.get_mix_hash();
         let base_fee_per_gas = system.get_eip1559_basefee();
         // TODO: add pubdata price and native price
         let base_fee_per_gas = base_fee_per_gas
             .try_into()
             .map_err(|_| internal_error!("base_fee_per_gas exceeds max u64"))?;
         let block_header = BlockHeader::new(
-            Bytes32::from(previous_block_hash.to_be_bytes::<32>()),
+            previous_block_hash,
             beneficiary,
             tx_rolling_hash.into(),
             block_number,

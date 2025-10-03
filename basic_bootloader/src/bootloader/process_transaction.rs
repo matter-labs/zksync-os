@@ -26,6 +26,8 @@ use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use zk_ee::interface_error;
 use zk_ee::internal_error;
+use zk_ee::metadata_markers::basic_metadata::BasicMetadata;
+use zk_ee::metadata_markers::basic_metadata::ZkSpecificPricingMetadata;
 use zk_ee::system::errors::cascade::CascadedError;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::internal::InternalError;
@@ -45,6 +47,8 @@ struct ValidationResult {
 impl<S: EthereumLikeTypes, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
 where
     S::IO: IOSubsystemExt,
+    S::Metadata: ZkSpecificPricingMetadata,
+    <S::Metadata as BasicMetadata<S::IOTypes>>::TransactionMetadata: From<(B160, U256)>,
 {
     ///
     /// Process transaction.
@@ -414,7 +418,7 @@ where
             .write_fmt(format_args!("Executing L1 transaction\n"));
 
         let gas_price = U256::from(transaction.max_fee_per_gas.read());
-        system.set_tx_context(from, gas_price);
+        system.set_tx_context((from, gas_price).into());
 
         // Start a frame, to revert minting of value if execution fails
         let rollback_handle = system.start_global_frame()?;
@@ -602,7 +606,7 @@ where
 
         F::charge_additional_intrinsic_gas(&mut resources, &transaction)?;
 
-        system.set_tx_context(from, gas_price);
+        system.set_tx_context((from, gas_price).into());
 
         let chain_id = system.get_chain_id();
 

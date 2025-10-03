@@ -38,7 +38,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::BASE, DIFFICULTY_NATIVE_COST)?;
         // Mix hash is the source of randomness, currently holding
         // the value of prevRandao.
-        self.stack.push(&system.get_mix_hash())?;
+        let value = U256::from_be_bytes(system.get_mix_hash().as_u8_array());
+        self.stack.push(&value)?;
         Ok(())
     }
 
@@ -85,7 +86,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             .spend_gas_and_native(gas_constants::BLOCKHASH, BLOCKHASH_NATIVE_COST)?;
         let block_number = self.stack.pop_1()?;
         let block_number = u256_to_u64_saturated(block_number);
-        self.stack.push(&system.get_blockhash(block_number))?;
+        let block_hash = U256::from_be_bytes(system.get_blockhash(block_number).as_u8_array());
+        self.stack.push(&block_hash)?;
         Ok(())
     }
 
