@@ -48,7 +48,8 @@ impl<S: EthereumLikeTypes, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata,
-    <S::Metadata as BasicMetadata<S::IOTypes>>::TransactionMetadata: From<(B160, U256)>,
+    <S::Metadata as BasicMetadata<S::IOTypes>>::TransactionMetadata:
+        From<TxLevelMetadata<S::IOTypes>>,
 {
     ///
     /// Process transaction.
@@ -418,7 +419,13 @@ where
             .write_fmt(format_args!("Executing L1 transaction\n"));
 
         let gas_price = U256::from(transaction.max_fee_per_gas.read());
-        system.set_tx_context((from, gas_price).into());
+        system.set_tx_context(
+            TxLevelMetadata {
+                tx_gas_price: gas_price,
+                tx_origin: from,
+            }
+            .into(),
+        );
 
         // Start a frame, to revert minting of value if execution fails
         let rollback_handle = system.start_global_frame()?;
@@ -606,7 +613,13 @@ where
 
         F::charge_additional_intrinsic_gas(&mut resources, &transaction)?;
 
-        system.set_tx_context((from, gas_price).into());
+        system.set_tx_context(
+            TxLevelMetadata {
+                tx_origin: from,
+                tx_gas_price: gas_price,
+            }
+            .into(),
+        );
 
         let chain_id = system.get_chain_id();
 

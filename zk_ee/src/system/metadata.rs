@@ -12,9 +12,14 @@ use ruint::aliases::{B160, U256};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Metadata<IOTypes: SystemIOTypesConfig> {
+    pub tx_level_metadata: TxLevelMetadata<IOTypes>,
+    pub block_level_metadata: BlockMetadataFromOracle,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TxLevelMetadata<IOTypes: SystemIOTypesConfig> {
     pub tx_origin: IOTypes::Address,
     pub tx_gas_price: U256,
-    pub block_level_metadata: BlockMetadataFromOracle,
 }
 
 impl BasicBlockMetadata<EthereumIOTypesConfig> for Metadata<EthereumIOTypesConfig> {
@@ -80,10 +85,10 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for Metadata<EthereumIOTypesConfi
 
 impl BasicTransactionMetadata<EthereumIOTypesConfig> for Metadata<EthereumIOTypesConfig> {
     fn tx_origin(&self) -> B160 {
-        self.tx_origin
+        self.tx_level_metadata.tx_origin
     }
     fn tx_gas_price(&self) -> U256 {
-        self.tx_gas_price
+        self.tx_level_metadata.tx_gas_price
     }
     fn num_blobs(&self) -> usize {
         0
@@ -94,11 +99,9 @@ impl BasicTransactionMetadata<EthereumIOTypesConfig> for Metadata<EthereumIOType
 }
 
 impl BasicMetadata<EthereumIOTypesConfig> for Metadata<EthereumIOTypesConfig> {
-    type TransactionMetadata = (B160, U256);
+    type TransactionMetadata = TxLevelMetadata<EthereumIOTypesConfig>;
     fn set_transaction_metadata(&mut self, tx_level_metadata: Self::TransactionMetadata) {
-        let (tx_origin, tx_gas_price) = tx_level_metadata;
-        self.tx_origin = tx_origin;
-        self.tx_gas_price = tx_gas_price;
+        self.tx_level_metadata = tx_level_metadata;
     }
 }
 

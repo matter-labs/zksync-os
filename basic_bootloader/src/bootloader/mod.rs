@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
 use errors::{BootloaderSubsystemError, InvalidTransaction};
-use metadata::BlockMetadataFromOracle;
+use metadata::{BlockMetadataFromOracle, TxLevelMetadata};
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
@@ -199,8 +199,7 @@ where
                 oracle.query_with_empty_input(BLOCK_METADATA_QUERY_ID)?;
 
             let metadata = Metadata {
-                tx_origin: Default::default(),
-                tx_gas_price: Default::default(),
+                tx_level_metadata: TxLevelMetadata::default(),
                 block_level_metadata,
             };
 
