@@ -56,6 +56,8 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for Metadata<EthereumIOTypesConfi
     }
 
     fn individual_tx_gas_limit(&self) -> u64 {
+        // Currently we don't have a separate individual tx gas limit,
+        // so we return the block gas limit here.
         self.block_level_metadata.gas_limit
     }
 
