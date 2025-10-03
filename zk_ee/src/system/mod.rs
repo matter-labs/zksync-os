@@ -29,6 +29,9 @@ const ERGS_PER_GAS: u64 = 256;
 
 /// Maximum value of EVM gas that can be represented as ergs in a u64.
 pub const MAX_BLOCK_GAS_LIMIT: u64 = u64::MAX / ERGS_PER_GAS;
+// Currently we don't have a separate individual tx gas limit,
+// so the maximum tx gas limit is the same as the block gas limit.
+pub const MAX_TX_GAS_LIMIT: u64 = MAX_BLOCK_GAS_LIMIT;
 
 use core::alloc::Allocator;
 use core::fmt::Write;

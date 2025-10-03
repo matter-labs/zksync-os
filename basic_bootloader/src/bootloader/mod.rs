@@ -203,8 +203,10 @@ where
                 block_level_metadata,
             };
 
-            if metadata.block_gas_limit() > MAX_BLOCK_GAS_LIMIT {
-                return Err(internal_error!("block gas limit is too high").into());
+            if metadata.block_gas_limit() > MAX_BLOCK_GAS_LIMIT
+                || metadata.individual_tx_gas_limit() > MAX_TX_GAS_LIMIT
+            {
+                return Err(internal_error!("block or tx gas limit is too high").into());
             }
             metadata
         };
