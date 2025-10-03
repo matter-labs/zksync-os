@@ -438,7 +438,7 @@ where
     // Populating the rest of the event data with zeros to make it a multiple of 32 bytes
     event_data.extend(core::iter::repeat_n(
         0u8,
-        abi_encoded_event_length - additional_data.len(),
+        abi_encoded_event_length - event_data.len(),
     ));
 
     system.io.emit_event(
