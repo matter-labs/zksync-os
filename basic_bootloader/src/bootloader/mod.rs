@@ -443,12 +443,12 @@ where
         let previous_block_hash = if block_number == 0 {
             Bytes32::ZERO
         } else {
-            system.get_blockhash(block_number - 1)
+            system.get_blockhash(block_number - 1)?
         };
         let beneficiary = system.get_coinbase();
         let gas_limit = system.get_gas_limit();
         let timestamp = system.get_timestamp();
-        let consensus_random = system.get_mix_hash();
+        let consensus_random = system.get_mix_hash()?;
         let base_fee_per_gas = system.get_eip1559_basefee();
         // TODO: add pubdata price and native price
         let base_fee_per_gas = base_fee_per_gas

@@ -100,32 +100,36 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_number()
     }
 
-    pub fn get_mix_hash(&self) -> Bytes32 {
+    pub fn get_mix_hash(&self) -> Result<Bytes32, InternalError> {
         #[cfg(feature = "prevrandao")]
         {
             self.metadata
                 .block_randomness()
-                .expect("block randomness should be provided")
+                .ok_or(internal_error!("block randomness should be provided"))
         }
 
         #[cfg(not(feature = "prevrandao"))]
         {
-            Bytes32::from_array(ruint::aliases::U256::ONE.to_be_bytes::<32>())
+            Ok(Bytes32::from_array(
+                ruint::aliases::U256::ONE.to_be_bytes::<32>(),
+            ))
         }
     }
 
-    pub fn get_blockhash(&self, block_number: u64) -> Bytes32 {
+    pub fn get_blockhash(&self, block_number: u64) -> Result<Bytes32, InternalError> {
         let current_block_number = self.metadata.block_number();
         if block_number >= current_block_number
             || block_number < current_block_number.saturating_sub(256)
         {
             // Out of range
-            Bytes32::ZERO
+            Ok(Bytes32::ZERO)
         } else {
             let depth = current_block_number - block_number;
             self.metadata
                 .block_historical_hash(depth)
-                .expect("historical hash of limited depth must be provided")
+                .ok_or(internal_error!(
+                    "historical hash of limited depth must be provided"
+                ))
         }
     }
 
