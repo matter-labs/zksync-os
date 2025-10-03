@@ -1929,6 +1929,7 @@ dependencies = [
 name = "callable_oracles"
 version = "0.1.0"
 dependencies = [
+ "basic_system",
  "crypto",
  "num-bigint",
  "num-traits",
@@ -3238,6 +3239,7 @@ dependencies = [
  "ruint",
  "strum_macros 0.27.2",
  "zk_ee",
+ "zksync_os_evm_errors",
 ]
 
 [[package]]
@@ -3434,6 +3436,7 @@ dependencies = [
  "serde",
  "strum_macros 0.27.2",
  "zk_ee",
+ "zksync_os_evm_errors",
  "zksync_os_interface",
  "zksync_os_runner",
 ]
@@ -8727,6 +8730,7 @@ dependencies = [
  "ruint",
  "serde",
  "strum_macros 0.27.2",
+ "zksync_os_evm_errors",
 ]
 
 [[package]]
@@ -8768,14 +8772,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "zksync_os_interface"
-version = "0.0.5"
+name = "zksync_os_evm_errors"
+version = "0.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce3ecdc1edaf67533b4bb638fbbd401acec73eec6de99e3abefa49e6c1348695"
+checksum = "4c8927d36dbdd25c8ffa58eb6f88d7bd6815f833272ba46da4d7382d0ce5ffd1"
+
+[[package]]
+name = "zksync_os_interface"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e888c943b8e03574372a0dc0bd1df425e884ae44273e52b197e0469c09def7e0"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
  "serde",
+ "zksync_os_evm_errors",
 ]
 
 [[package]]

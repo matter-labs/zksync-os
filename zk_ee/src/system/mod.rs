@@ -1,5 +1,3 @@
-use errors::subsystem::Subsystem;
-
 use super::*;
 pub mod base_system_functions;
 pub mod call_modifiers;
@@ -38,9 +36,12 @@ use core::fmt::Write;
 use self::{
     errors::{internal::InternalError, system::SystemError},
     logger::Logger,
-    metadata::{BlockMetadataFromOracle, Metadata},
+    metadata::Metadata,
 };
-use crate::oracle::query_ids::BLOCK_METADATA_QUERY_ID;
+use crate::metadata_markers::basic_metadata::BasicBlockMetadata;
+use crate::metadata_markers::basic_metadata::BasicMetadata;
+use crate::metadata_markers::basic_metadata::BasicTransactionMetadata;
+use crate::metadata_markers::basic_metadata::ZkSpecificPricingMetadata;
 use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
 use crate::utils::Bytes32;
 use crate::{
@@ -64,12 +65,13 @@ pub trait SystemTypes {
     type IOTypes: SystemIOTypesConfig;
     type Resources: Resources + Default;
     type Allocator: Allocator + Clone + Default;
+    type Metadata: BasicMetadata<Self::IOTypes>;
 }
 pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {}
 
 pub struct System<S: SystemTypes> {
     pub io: S::IO,
-    metadata: Metadata<S::IOTypes>,
+    pub metadata: S::Metadata,
     allocator: S::Allocator,
 }
 
@@ -88,96 +90,92 @@ impl<S: SystemTypes> System<S> {
     }
 
     pub fn get_tx_origin(&self) -> <S::IOTypes as SystemIOTypesConfig>::Address {
-        self.metadata.tx_origin
+        self.metadata.tx_origin()
     }
 
     pub fn get_block_number(&self) -> u64 {
-        self.metadata.block_level_metadata.block_number
+        self.metadata.block_number()
     }
 
-    pub fn get_mix_hash(&self) -> ruint::aliases::U256 {
+    pub fn get_mix_hash(&self) -> Bytes32 {
         #[cfg(feature = "prevrandao")]
         {
-            self.metadata.block_level_metadata.mix_hash
+            self.metadata
+                .block_randomness()
+                .expect("block randomness should be provided")
         }
 
         #[cfg(not(feature = "prevrandao"))]
         {
-            ruint::aliases::U256::ONE
+            Bytes32::from_array(ruint::aliases::U256::ONE.to_be_bytes::<32>())
         }
     }
 
-    pub fn get_blockhash(&self, block_number: u64) -> ruint::aliases::U256 {
-        let current_block_number = self.metadata.block_level_metadata.block_number;
+    pub fn get_blockhash(&self, block_number: u64) -> Bytes32 {
+        let current_block_number = self.metadata.block_number();
         if block_number >= current_block_number
             || block_number < current_block_number.saturating_sub(256)
         {
             // Out of range
-            ruint::aliases::U256::ZERO
+            Bytes32::ZERO
         } else {
-            let index = 256 - (current_block_number - block_number);
-            self.metadata.block_level_metadata.block_hashes.0[index as usize]
+            let depth = current_block_number - block_number;
+            self.metadata
+                .block_historical_hash(depth)
+                .expect("historical hash of limited depth must be provided")
         }
     }
 
     pub fn get_chain_id(&self) -> u64 {
-        self.metadata.chain_id
+        self.metadata.chain_id()
     }
 
-    pub fn get_coinbase(&self) -> ruint::aliases::B160 {
-        self.metadata.block_level_metadata.coinbase
+    pub fn get_coinbase(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
+        self.metadata.coinbase()
     }
 
     pub fn get_eip1559_basefee(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.eip1559_basefee
-    }
-
-    pub fn get_native_price(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.native_price
+        self.metadata.eip1559_basefee()
     }
 
     pub fn get_gas_limit(&self) -> u64 {
-        self.metadata.block_level_metadata.gas_limit
-    }
-
-    pub fn get_pubdata_limit(&self) -> u64 {
-        self.metadata.block_level_metadata.pubdata_limit
-    }
-
-    pub fn get_pubdata_price(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.pubdata_price
+        self.metadata.block_gas_limit()
     }
 
     pub fn get_gas_price(&self) -> ruint::aliases::U256 {
-        self.metadata.tx_gas_price
+        self.metadata.tx_gas_price()
     }
 
     pub fn get_timestamp(&self) -> u64 {
-        self.metadata.block_level_metadata.timestamp
-    }
-
-    pub fn storage_code_version_for_execution_environment<
-        'a,
-        Es: Subsystem,
-        EE: ExecutionEnvironment<'a, S, Es>,
-    >(
-        &self,
-    ) -> Result<u8, InternalError> {
-        // TODO
-        Ok(1)
+        self.metadata.block_timestamp()
     }
 
     pub fn set_tx_context(
         &mut self,
-        tx_origin: <S::IOTypes as SystemIOTypesConfig>::Address,
-        tx_gas_price: ruint::aliases::U256,
+        tx_level_metadata: <S::Metadata as BasicMetadata<S::IOTypes>>::TransactionMetadata,
     ) {
-        self.metadata.tx_origin = tx_origin;
-        self.metadata.tx_gas_price = tx_gas_price;
+        self.metadata.set_transaction_metadata(tx_level_metadata);
     }
 
     pub fn net_pubdata_used(&self) -> Result<u64, InternalError> {
         self.io.net_pubdata_used()
+    }
+}
+
+impl<S: SystemTypes> System<S>
+where
+    S::Metadata: ZkSpecificPricingMetadata,
+{
+    pub fn get_native_price(&self) -> ruint::aliases::U256 {
+        self.metadata.native_price()
+    }
+
+    pub fn get_pubdata_limit(&self) -> u64 {
+        self.metadata.get_pubdata_limit()
+    }
+
+    pub fn get_pubdata_price(&self) -> ruint::aliases::U256 {
+        self.metadata.get_pubdata_price()
     }
 }
 
@@ -220,27 +218,12 @@ where
         self.io.finish_tx()
     }
 
-    pub fn init_from_oracle(
-        mut oracle: <S::IO as IOSubsystemExt>::IOOracle,
+    pub fn init_from_metadata_and_oracle(
+        metadata: S::Metadata,
+        oracle: <S::IO as IOSubsystemExt>::IOOracle,
     ) -> Result<Self, InternalError> {
-        // get metadata for block
-        let block_level_metadata: BlockMetadataFromOracle =
-            oracle.query_with_empty_input(BLOCK_METADATA_QUERY_ID)?;
-
-        if block_level_metadata.gas_limit > MAX_BLOCK_GAS_LIMIT {
-            return Err(internal_error!("block gas limit is too high"));
-        }
-
         let io = S::IO::init_from_oracle(oracle)?;
 
-        let metadata = Metadata {
-            // For now, we're getting the chain id from the block level metadata.
-            // in the future, we might want to do a separate call to oracle for that.
-            chain_id: block_level_metadata.chain_id,
-            tx_origin: Default::default(),
-            tx_gas_price: Default::default(),
-            block_level_metadata,
-        };
         let system = Self {
             io,
             metadata,
@@ -351,7 +334,14 @@ where
             observable_bytecode_len,
         )
     }
+}
 
+// Note: this will be modified soon with other V2 changes
+// For now, we hard-code metadata and io type config types
+impl<S: SystemTypes<Metadata = Metadata<EthereumIOTypesConfig>>> System<S>
+where
+    S::IO: IOSubsystemExt,
+{
     /// Finish system execution.
     pub fn finish(
         self,
