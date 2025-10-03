@@ -42,7 +42,6 @@ pub mod common_structs;
 pub mod common_traits;
 pub mod execution_environment_type;
 pub mod memory;
-pub mod metadata_markers;
 pub mod oracle;
 pub mod reference_implementations;
 pub mod storage_types;

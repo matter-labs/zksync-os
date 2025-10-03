@@ -1,8 +1,12 @@
-use super::{errors::internal::InternalError, types_config::SystemIOTypesConfig};
-use crate::metadata_markers::basic_metadata::{
-    BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
+//! TODO: this actually belongs to the bootloader, just for the ZK STF.
+//! We will move it in future PRs.
+
+use super::basic_metadata::{
+    BasicBlockMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
 };
-use crate::types_config::EthereumIOTypesConfig;
+use super::system_metadata::SystemMetadata;
+use crate::system::errors::internal::InternalError;
+use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
 use crate::utils::Bytes32;
 use crate::{
     oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
@@ -10,11 +14,11 @@ use crate::{
 };
 use ruint::aliases::{B160, U256};
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Metadata<IOTypes: SystemIOTypesConfig> {
-    pub tx_level_metadata: TxLevelMetadata<IOTypes>,
-    pub block_level_metadata: BlockMetadataFromOracle,
-}
+pub type ZkMetadata = SystemMetadata<
+    EthereumIOTypesConfig,
+    BlockMetadataFromOracle,
+    TxLevelMetadata<EthereumIOTypesConfig>,
+>;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TxLevelMetadata<IOTypes: SystemIOTypesConfig> {
@@ -22,98 +26,18 @@ pub struct TxLevelMetadata<IOTypes: SystemIOTypesConfig> {
     pub tx_gas_price: U256,
 }
 
-impl BasicBlockMetadata<EthereumIOTypesConfig> for Metadata<EthereumIOTypesConfig> {
-    fn chain_id(&self) -> u64 {
-        self.block_level_metadata.chain_id
-    }
-
-    fn block_number(&self) -> u64 {
-        self.block_level_metadata.block_number
-    }
-
-    fn block_historical_hash(&self, depth: u64) -> Option<Bytes32> {
-        if depth < 256 {
-            let index = 256 - depth;
-            Some(Bytes32::from_array(
-                self.block_level_metadata.block_hashes.0[index as usize].to_be_bytes::<32>(),
-            ))
-        } else {
-            None
-        }
-    }
-
-    fn block_timestamp(&self) -> u64 {
-        self.block_level_metadata.timestamp
-    }
-
-    fn block_randomness(&self) -> Option<Bytes32> {
-        Some(Bytes32::from_array(
-            self.block_level_metadata.mix_hash.to_be_bytes::<32>(),
-        ))
-    }
-
-    fn coinbase(&self) -> B160 {
-        self.block_level_metadata.coinbase
-    }
-
-    fn block_gas_limit(&self) -> u64 {
-        self.block_level_metadata.gas_limit
-    }
-
-    fn individual_tx_gas_limit(&self) -> u64 {
-        // Currently we don't have a separate individual tx gas limit,
-        // so we return the block gas limit here.
-        self.block_level_metadata.gas_limit
-    }
-
-    fn eip1559_basefee(&self) -> U256 {
-        self.block_level_metadata.eip1559_basefee
-    }
-
-    fn max_blobs(&self) -> usize {
-        0
-    }
-
-    fn blobs_gas_limit(&self) -> u64 {
-        0
-    }
-
-    fn blob_base_fee_per_gas(&self) -> U256 {
-        U256::MAX
-    }
-}
-
-impl BasicTransactionMetadata<EthereumIOTypesConfig> for Metadata<EthereumIOTypesConfig> {
+impl BasicTransactionMetadata<EthereumIOTypesConfig> for TxLevelMetadata<EthereumIOTypesConfig> {
     fn tx_origin(&self) -> B160 {
-        self.tx_level_metadata.tx_origin
+        self.tx_origin
     }
     fn tx_gas_price(&self) -> U256 {
-        self.tx_level_metadata.tx_gas_price
+        self.tx_gas_price
     }
     fn num_blobs(&self) -> usize {
         0
     }
     fn get_blob_hash(&self, _idx: usize) -> Option<Bytes32> {
         None
-    }
-}
-
-impl BasicMetadata<EthereumIOTypesConfig> for Metadata<EthereumIOTypesConfig> {
-    type TransactionMetadata = TxLevelMetadata<EthereumIOTypesConfig>;
-    fn set_transaction_metadata(&mut self, tx_level_metadata: Self::TransactionMetadata) {
-        self.tx_level_metadata = tx_level_metadata;
-    }
-}
-
-impl ZkSpecificPricingMetadata for Metadata<EthereumIOTypesConfig> {
-    fn gas_per_pubdata(&self) -> U256 {
-        self.block_level_metadata.gas_per_pubdata
-    }
-    fn native_price(&self) -> U256 {
-        self.block_level_metadata.native_price
-    }
-    fn get_pubdata_limit(&self) -> u64 {
-        self.block_level_metadata.pubdata_limit
     }
 }
 
@@ -198,6 +122,77 @@ pub struct BlockMetadataFromOracle {
     /// Source of randomness, currently holds the value
     /// of prevRandao.
     pub mix_hash: U256,
+}
+
+impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
+    fn chain_id(&self) -> u64 {
+        self.chain_id
+    }
+
+    fn block_number(&self) -> u64 {
+        self.block_number
+    }
+
+    fn block_historical_hash(&self, depth: u64) -> Option<Bytes32> {
+        if depth < 256 {
+            let index = 256 - depth;
+            Some(Bytes32::from_array(
+                self.block_hashes.0[index as usize].to_be_bytes::<32>(),
+            ))
+        } else {
+            None
+        }
+    }
+
+    fn block_timestamp(&self) -> u64 {
+        self.timestamp
+    }
+
+    fn block_randomness(&self) -> Option<Bytes32> {
+        Some(Bytes32::from_array(self.mix_hash.to_be_bytes::<32>()))
+    }
+
+    fn coinbase(&self) -> B160 {
+        self.coinbase
+    }
+
+    fn block_gas_limit(&self) -> u64 {
+        self.gas_limit
+    }
+
+    fn individual_tx_gas_limit(&self) -> u64 {
+        // Currently we don't have a separate individual tx gas limit,
+        // so we return the block gas limit here.
+        self.gas_limit
+    }
+
+    fn eip1559_basefee(&self) -> U256 {
+        self.eip1559_basefee
+    }
+
+    fn max_blobs(&self) -> usize {
+        0
+    }
+
+    fn blobs_gas_limit(&self) -> u64 {
+        0
+    }
+
+    fn blob_base_fee_per_gas(&self) -> U256 {
+        U256::MAX
+    }
+}
+
+impl ZkSpecificPricingMetadata for BlockMetadataFromOracle {
+    fn gas_per_pubdata(&self) -> U256 {
+        self.gas_per_pubdata
+    }
+    fn native_price(&self) -> U256 {
+        self.native_price
+    }
+    fn get_pubdata_limit(&self) -> u64 {
+        self.pubdata_limit
+    }
 }
 
 impl BlockMetadataFromOracle {

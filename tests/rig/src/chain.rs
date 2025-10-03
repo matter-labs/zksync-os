@@ -25,7 +25,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
-use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle};
+use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::utils::Bytes32;
 use zksync_os_interface::types::BlockOutput;

@@ -23,7 +23,7 @@ use zk_ee::interface_error;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::out_of_ergs_error;
-use zk_ee::system::metadata::BlockMetadataFromOracle;
+use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use zk_ee::{
     common_structs::{EventsStorage, LogsStorage},
     memory::ArrayBuilder,

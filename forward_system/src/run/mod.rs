@@ -58,7 +58,7 @@ use crate::run::output::TxResult;
 use crate::run::test_impl::{NoopTxCallback, TxListSource};
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;
 use basic_system::system_implementation::flat_storage_model::*;
-pub use zk_ee::system::metadata::BlockMetadataFromOracle as BlockContext;
+pub use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle as BlockContext;
 
 pub type StorageCommitment = FlatStorageCommitment<{ TREE_HEIGHT }>;
 

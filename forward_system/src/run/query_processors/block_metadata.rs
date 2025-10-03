@@ -1,7 +1,7 @@
 use super::*;
 use oracle_provider::OracleQueryProcessor;
 use zk_ee::oracle::query_ids::BLOCK_METADATA_QUERY_ID;
-use zk_ee::system::metadata::BlockMetadataFromOracle;
+use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct BlockMetadataResponder {

@@ -1,5 +1,4 @@
 use super::basic_metadata::*;
-use super::{DynamicMetadataResponder, MetadataRequest};
 use crate::types_config::SystemIOTypesConfig;
 use crate::utils::Bytes32;
 use ruint::aliases::U256;
@@ -9,16 +8,12 @@ pub struct SystemMetadata<
     IOTypes: SystemIOTypesConfig,
     B: BasicBlockMetadata<IOTypes>,
     TX: BasicTransactionMetadata<IOTypes>,
-    T: DynamicMetadataResponder = (),
 > {
     /// Provider of block-scoped metadata.
     pub block_level: B,
 
     /// Provider of metadata for the current transaction.
     pub tx_level: TX,
-
-    /// Optional dynamic responder for ad-hoc metadata queries.
-    pub dynamic_part: T,
 
     pub _marker: core::marker::PhantomData<IOTypes>,
 }
@@ -28,8 +23,7 @@ impl<
         IOTypes: SystemIOTypesConfig,
         B: BasicBlockMetadata<IOTypes>,
         TX: BasicTransactionMetadata<IOTypes>,
-        T: DynamicMetadataResponder,
-    > BasicBlockMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX, T>
+    > BasicBlockMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX>
 {
     fn chain_id(&self) -> u64 {
         self.block_level.chain_id()
@@ -74,8 +68,7 @@ impl<
         IOTypes: SystemIOTypesConfig,
         B: BasicBlockMetadata<IOTypes>,
         TX: BasicTransactionMetadata<IOTypes>,
-        T: DynamicMetadataResponder,
-    > BasicTransactionMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX, T>
+    > BasicTransactionMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX>
 {
     fn tx_origin(&self) -> IOTypes::Address {
         self.tx_level.tx_origin()
@@ -91,17 +84,21 @@ impl<
     }
 }
 
+/// Assumes that ZK specific pricing metadata is implemented at the block level.
 impl<
         IOTypes: SystemIOTypesConfig,
-        B: BasicBlockMetadata<IOTypes>,
+        B: BasicBlockMetadata<IOTypes> + ZkSpecificPricingMetadata,
         TX: BasicTransactionMetadata<IOTypes>,
-        T: DynamicMetadataResponder,
-    > BasicMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX, T>
+    > ZkSpecificPricingMetadata for SystemMetadata<IOTypes, B, TX>
 {
-    type TransactionMetadata = TX;
-
-    fn set_transaction_metadata(&mut self, tx_level_metadata: Self::TransactionMetadata) {
-        self.tx_level = tx_level_metadata;
+    fn gas_per_pubdata(&self) -> U256 {
+        self.block_level.gas_per_pubdata()
+    }
+    fn native_price(&self) -> U256 {
+        self.block_level.native_price()
+    }
+    fn get_pubdata_limit(&self) -> u64 {
+        self.block_level.get_pubdata_limit()
     }
 }
 
@@ -109,16 +106,11 @@ impl<
         IOTypes: SystemIOTypesConfig,
         B: BasicBlockMetadata<IOTypes>,
         TX: BasicTransactionMetadata<IOTypes>,
-        T: DynamicMetadataResponder,
-    > DynamicMetadataResponder for SystemMetadata<IOTypes, B, TX, T>
+    > BasicMetadata<IOTypes> for SystemMetadata<IOTypes, B, TX>
 {
-    #[inline(always)]
-    fn can_respond<M: MetadataRequest>() -> bool {
-        T::can_respond::<M>()
-    }
+    type TransactionMetadata = TX;
 
-    /// Delegates the dynamic request and bookkeeping to `dynamic_part`.
-    fn get_metadata_with_bookkeeping<M: MetadataRequest>(&mut self, input: M::Input) -> M::Output {
-        self.dynamic_part.get_metadata_with_bookkeeping::<M>(input)
+    fn set_transaction_metadata(&mut self, tx_level_metadata: Self::TransactionMetadata) {
+        self.tx_level = tx_level_metadata;
     }
 }

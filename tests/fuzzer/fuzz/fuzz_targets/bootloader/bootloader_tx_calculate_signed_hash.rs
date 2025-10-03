@@ -6,7 +6,7 @@ use basic_bootloader::bootloader::transaction::ZkSyncTransaction;
 use rig::forward_system::system::system::ForwardRunningSystem;
 use zk_ee::reference_implementations::BaseResources;
 use zk_ee::reference_implementations::DecreasingNative;
-use zk_ee::system::metadata::BlockMetadataFromOracle;
+use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use zk_ee::system::Resource;
 use zk_ee::system::System;
 

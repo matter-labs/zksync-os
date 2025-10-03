@@ -39,7 +39,7 @@ impl<O: IOOracle> SystemTypes for ForwardSystemTypes<O> {
     type SystemFunctionsExt = NoStdSystemFunctions;
     type Allocator = Global;
     type Logger = Logger;
-    type Metadata = zk_ee::system::metadata::Metadata<Self::IOTypes>;
+    type Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata;
 }
 
 impl<O: IOOracle> EthereumLikeTypes for ForwardSystemTypes<O> {}

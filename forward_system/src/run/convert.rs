@@ -3,7 +3,7 @@ use alloy::primitives::Log;
 use basic_bootloader::bootloader::block_header::BlockHeader;
 use ruint::aliases::B160;
 use zk_ee::common_structs::GenericEventContent;
-use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle};
+use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zksync_os_interface::error::InvalidTransaction;
 use zksync_os_interface::types::{BlockContext, L2ToL1Log};

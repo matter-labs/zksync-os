@@ -13,7 +13,7 @@ use crate::define_subsystem;
 use crate::execution_environment_type::ExecutionEnvironmentType;
 use crate::oracle::IOOracle;
 use crate::storage_types::MAX_EVENT_TOPICS;
-use crate::system::metadata::BlockMetadataFromOracle;
+use crate::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
 use crate::utils::Bytes32;
 use arrayvec::ArrayVec;

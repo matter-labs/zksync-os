@@ -20,7 +20,8 @@ use zk_ee::common_structs::derive_flat_storage_key;
 use zk_ee::common_structs::ProofData;
 use zk_ee::reference_implementations::BaseResources;
 use zk_ee::reference_implementations::DecreasingNative;
-use zk_ee::system::metadata::BlockMetadataFromOracle;
+use zk_ee::system::metadata::system_metadata::SystemMetadata;
+use zk_ee::system::metadata::zk_metadata::{BlockMetadataFromOracle, TxLevelMetadata};
 use zk_ee::system::Resource;
 use zk_ee::utils::Bytes32;
 
@@ -175,7 +176,7 @@ pub fn address_into_special_storage_key(address: &B160) -> Bytes32 {
 
 #[allow(unused)]
 pub fn mock_oracle() -> (
-    zk_ee::system::metadata::Metadata<zk_ee::types_config::EthereumIOTypesConfig>,
+    zk_ee::system::metadata::zk_metadata::ZkMetadata,
     ZkEENonDeterminismSource<DummyMemorySource>,
 ) {
     let tree = InMemoryTree::<false> {
@@ -190,15 +191,19 @@ pub fn mock_oracle() -> (
         last_block_timestamp: 0,
     });
 
-    let block_level_metadata = BlockMetadataFromOracle::new_for_test();
+    let block_level = BlockMetadataFromOracle::new_for_test();
+    let tx_level = TxLevelMetadata::default();
 
-    let mut system_metadata = zk_ee::system::metadata::Metadata::default();
-    system_metadata.block_level_metadata = block_level_metadata.clone();
+    let system_metadata = SystemMetadata {
+        block_level: block_level.clone(),
+        tx_level: tx_level,
+        _marker: std::marker::PhantomData,
+    };
 
     (
         system_metadata,
         forward_system::run::make_oracle_for_proofs_and_dumps_for_init_data(
-            block_level_metadata,
+            block_level,
             tree,
             InMemoryPreimageSource {
                 inner: HashMap::new(),
@@ -217,7 +222,7 @@ pub fn mock_oracle_balance(
     address: B160,
     balance: U256,
 ) -> (
-    zk_ee::system::metadata::Metadata<zk_ee::types_config::EthereumIOTypesConfig>,
+    zk_ee::system::metadata::zk_metadata::ZkMetadata,
     ZkEENonDeterminismSource<DummyMemorySource>,
 ) {
     let mut tree = InMemoryTree::<false> {
@@ -250,14 +255,17 @@ pub fn mock_oracle_balance(
         last_block_timestamp: 0,
     });
 
-    let block_level_metadata = BlockMetadataFromOracle::new_for_test();
-    let mut system_metadata = zk_ee::system::metadata::Metadata::default();
-    system_metadata.block_level_metadata = block_level_metadata.clone();
-
+    let block_level = BlockMetadataFromOracle::new_for_test();
+    let tx_level = TxLevelMetadata::default();
+    let system_metadata = SystemMetadata {
+        block_level: block_level.clone(),
+        tx_level: tx_level,
+        _marker: std::marker::PhantomData,
+    };
     (
         system_metadata,
         forward_system::run::make_oracle_for_proofs_and_dumps_for_init_data(
-            block_level_metadata,
+            block_level,
             tree,
             preimage_source,
             TxListSource {

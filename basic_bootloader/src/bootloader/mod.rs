@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
 use errors::{BootloaderSubsystemError, InvalidTransaction};
-use metadata::{BlockMetadataFromOracle, TxLevelMetadata};
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
@@ -9,7 +8,6 @@ use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
-use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::usize_rw::{SafeUsizeWritable, UsizeWriteable};
 
 pub mod run_single_interaction;
@@ -170,7 +168,7 @@ impl<'a> SafeUsizeWritable for TxDataBufferWriter<'a> {
 
 // TODO: type of Metadata is hardcoded for now, will be cleaned in future PRs
 impl<
-        S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::Metadata<EthereumIOTypesConfig>>,
+        S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
         F: BasicTransactionFlow<S>,
     > BasicBootloader<S, F>
 where
@@ -191,16 +189,19 @@ where
 
         // TODO: this will be moved to metadata_op in a future PR
         let metadata: S::Metadata = {
-            use zk_ee::metadata_markers::basic_metadata::BasicBlockMetadata;
             use zk_ee::oracle::query_ids::BLOCK_METADATA_QUERY_ID;
             use zk_ee::oracle::IOOracle;
-            use zk_ee::system::metadata::Metadata;
-            let block_level_metadata: BlockMetadataFromOracle =
+            use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
+            use zk_ee::system::metadata::zk_metadata::{
+                BlockMetadataFromOracle, TxLevelMetadata, ZkMetadata,
+            };
+            let block_level: BlockMetadataFromOracle =
                 oracle.query_with_empty_input(BLOCK_METADATA_QUERY_ID)?;
 
-            let metadata = Metadata {
-                tx_level_metadata: TxLevelMetadata::default(),
-                block_level_metadata,
+            let metadata = ZkMetadata {
+                tx_level: TxLevelMetadata::default(),
+                block_level,
+                _marker: core::marker::PhantomData,
             };
 
             if metadata.block_gas_limit() > MAX_BLOCK_GAS_LIMIT

@@ -59,7 +59,7 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for ProofRunningSystemTypes<O
     type SystemFunctionsExt = NoStdSystemFunctions;
     type Allocator = BootloaderAllocator;
     type Logger = L;
-    type Metadata = zk_ee::system::metadata::Metadata<Self::IOTypes>;
+    type Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata;
 }
 
 impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes for ProofRunningSystemTypes<O, L> {}

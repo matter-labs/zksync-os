@@ -39,12 +39,12 @@ use core::fmt::Write;
 use self::{
     errors::{internal::InternalError, system::SystemError},
     logger::Logger,
-    metadata::Metadata,
+    metadata::basic_metadata::{
+        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
+    },
+    metadata::zk_metadata::ZkMetadata,
 };
-use crate::metadata_markers::basic_metadata::BasicBlockMetadata;
-use crate::metadata_markers::basic_metadata::BasicMetadata;
-use crate::metadata_markers::basic_metadata::BasicTransactionMetadata;
-use crate::metadata_markers::basic_metadata::ZkSpecificPricingMetadata;
+
 use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
 use crate::utils::Bytes32;
 use crate::{
@@ -345,7 +345,7 @@ where
 
 // Note: this will be modified soon with other V2 changes
 // For now, we hard-code metadata and io type config types
-impl<S: SystemTypes<Metadata = Metadata<EthereumIOTypesConfig>>> System<S>
+impl<S: SystemTypes<Metadata = ZkMetadata>> System<S>
 where
     S::IO: IOSubsystemExt,
 {
@@ -359,7 +359,7 @@ where
     ) -> <S::IO as IOSubsystemExt>::FinalData {
         let logger = self.get_logger();
         self.io.finish(
-            self.metadata.block_level_metadata,
+            self.metadata.block_level,
             block_hash,
             l1_to_l2_txs_hash,
             upgrade_tx_hash,
