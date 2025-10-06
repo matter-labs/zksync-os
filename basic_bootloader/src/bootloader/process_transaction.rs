@@ -538,7 +538,7 @@ where
             system
         )?;
 
-        let gas_per_pubdata = system.get_gas_per_pubdata();
+        let pubdata_price = system.get_pubdata_price();
         let native_price = system.get_native_price();
         let gas_price = Self::get_gas_price(
             system,
@@ -555,9 +555,8 @@ where
         } else {
             U256::from(gas_price).div_ceil(native_price)
         };
-        let native_per_pubdata = U256::from(gas_per_pubdata)
-            .checked_mul(native_per_gas)
-            .ok_or(internal_error!("gpp*npg"))?;
+        // We checked native_price != 0 above
+        let native_per_pubdata = pubdata_price.wrapping_div(native_price);
 
         let ResourcesForTx {
             main_resources: mut resources,
@@ -624,7 +623,6 @@ where
             &mut transaction,
             from,
             gas_price,
-            gas_per_pubdata,
             native_per_pubdata,
             caller_ee_type,
             caller_is_code,
@@ -760,7 +758,6 @@ where
         transaction: &mut ZkSyncTransaction,
         from: B160,
         gas_price: U256,
-        gas_per_pubdata: U256,
         native_per_pubdata: U256,
         caller_ee_type: ExecutionEnvironmentType,
         caller_is_code: bool,
@@ -771,14 +768,6 @@ where
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Start of validation\n"));
-
-        let user_gas_per_pubdata_limit = transaction.get_user_gas_per_pubdata_limit();
-        // Validate the user provided gas per pubdata
-        require!(
-            user_gas_per_pubdata_limit >= gas_per_pubdata,
-            InvalidTransaction::GasPerPubdataTooHigh,
-            system
-        )?;
 
         // Nonce validation
         let tx_nonce = u256_try_to_u64(&transaction.nonce.read()).ok_or(TxError::from(

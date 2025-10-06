@@ -82,7 +82,7 @@ impl ZKsyncOS {
             eip1559_basefee: ruint::Uint::from_str(&system_context.base_fee.to_string())
                 .expect("Invalid basefee"),
             native_price: ruint::aliases::U256::from(1),
-            gas_per_pubdata: Default::default(),
+            pubdata_price: Default::default(),
             timestamp: system_context.block_timestamp as u64,
             gas_limit,
             pubdata_limit: u64::MAX,

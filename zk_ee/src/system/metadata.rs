@@ -86,7 +86,7 @@ pub struct BlockMetadataFromOracle {
     pub block_hashes: BlockHashes,
     pub timestamp: u64,
     pub eip1559_basefee: U256,
-    pub gas_per_pubdata: U256,
+    pub pubdata_price: U256,
     pub native_price: U256,
     pub coinbase: B160,
     pub gas_limit: u64,
@@ -100,7 +100,7 @@ impl BlockMetadataFromOracle {
     pub fn new_for_test() -> Self {
         BlockMetadataFromOracle {
             eip1559_basefee: U256::from(1000u64),
-            gas_per_pubdata: U256::from(0u64),
+            pubdata_price: U256::from(0u64),
             native_price: U256::from(10),
             block_number: 1,
             timestamp: 42,
@@ -131,7 +131,7 @@ impl UsizeSerializable for BlockMetadataFromOracle {
                                         ExactSizeChain::new(
                                             ExactSizeChain::new(
                                                 UsizeSerializable::iter(&self.eip1559_basefee),
-                                                UsizeSerializable::iter(&self.gas_per_pubdata),
+                                                UsizeSerializable::iter(&self.pubdata_price),
                                             ),
                                             UsizeSerializable::iter(&self.native_price),
                                         ),
@@ -159,7 +159,7 @@ impl UsizeDeserializable for BlockMetadataFromOracle {
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         let eip1559_basefee = UsizeDeserializable::from_iter(src)?;
-        let gas_per_pubdata = UsizeDeserializable::from_iter(src)?;
+        let pubdata_price = UsizeDeserializable::from_iter(src)?;
         let native_price = UsizeDeserializable::from_iter(src)?;
         let block_number = UsizeDeserializable::from_iter(src)?;
         let timestamp = UsizeDeserializable::from_iter(src)?;
@@ -172,7 +172,7 @@ impl UsizeDeserializable for BlockMetadataFromOracle {
 
         let new = Self {
             eip1559_basefee,
-            gas_per_pubdata,
+            pubdata_price,
             native_price,
             block_number,
             timestamp,

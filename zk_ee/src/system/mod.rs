@@ -137,8 +137,8 @@ impl<S: SystemTypes> System<S> {
         self.metadata.block_level_metadata.pubdata_limit
     }
 
-    pub fn get_gas_per_pubdata(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.gas_per_pubdata
+    pub fn get_pubdata_price(&self) -> ruint::aliases::U256 {
+        self.metadata.block_level_metadata.pubdata_price
     }
 
     pub fn get_gas_price(&self) -> ruint::aliases::U256 {

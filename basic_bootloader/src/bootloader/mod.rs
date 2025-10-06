@@ -421,7 +421,7 @@ where
         let timestamp = system.get_timestamp();
         let consensus_random = Bytes32::from_u256_be(&system.get_mix_hash());
         let base_fee_per_gas = system.get_eip1559_basefee();
-        // TODO: add gas_per_pubdata and native price
+        // TODO: add pubdata price and native price
         let base_fee_per_gas = base_fee_per_gas
             .try_into()
             .map_err(|_| internal_error!("base_fee_per_gas exceeds max u64"))?;

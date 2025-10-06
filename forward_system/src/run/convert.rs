@@ -24,7 +24,7 @@ impl FromInterface<BlockContext> for BlockMetadataFromOracle {
             block_hashes: BlockHashes(value.block_hashes.0),
             timestamp: value.timestamp,
             eip1559_basefee: value.eip1559_basefee,
-            gas_per_pubdata: value.gas_per_pubdata,
+            pubdata_price: value.pubdata_price,
             native_price: value.native_price,
             coinbase: B160::from_be_bytes(value.coinbase.0 .0),
             gas_limit: value.gas_limit,

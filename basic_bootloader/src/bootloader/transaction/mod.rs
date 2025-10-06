@@ -244,6 +244,16 @@ impl<'a> ZkSyncTransaction<'a> {
             _ => return Err(()),
         }
 
+        // gas_per_pubdata_limit should be zero for non L1 transactions
+        match tx_type {
+            Self::UPGRADE_TX_TYPE | Self::L1_L2_TX_TYPE => {}
+            _ => {
+                if self.gas_per_pubdata_limit.read() != 0 {
+                    return Err(());
+                }
+            }
+        }
+
         match tx_type {
             Self::LEGACY_TX_TYPE | Self::EIP_2930_TX_TYPE => {
                 if self.max_fee_per_gas.read() != self.max_priority_fee_per_gas.read() {
@@ -381,17 +391,6 @@ impl<'a> ZkSyncTransaction<'a> {
         field: ParsedValue<T>,
     ) -> &[u8] {
         unsafe { self.underlying_buffer.get_unchecked(field.range) }
-    }
-
-    ///
-    /// Uses the default constant for non EIP-712 transactions.
-    ///
-    pub fn get_user_gas_per_pubdata_limit(&self) -> U256 {
-        if self.is_eip_712() {
-            U256::from(self.gas_per_pubdata_limit.read())
-        } else {
-            crate::bootloader::constants::DEFAULT_GAS_PER_PUBDATA_LIMIT
-        }
     }
 
     pub fn tx_body_length(&self) -> usize {

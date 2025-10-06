@@ -18,7 +18,7 @@ impl Block {
         rig::BlockContext {
             timestamp: self.result.header.timestamp,
             eip1559_basefee: base_fee,
-            gas_per_pubdata: U256::ZERO,
+            pubdata_price: U256::ZERO,
             native_price: base_fee / U256::from(100),
             coinbase: B160::from_be_bytes(self.result.header.beneficiary.0 .0),
             gas_limit: self.result.header.gas_limit,

@@ -33,7 +33,6 @@ fn fuzz(data: &[u8]) {
     let chain_id = 0;
     let _ = transaction.calculate_signed_hash(chain_id, &mut inf_resources);
     let _ = transaction.calculate_hash(chain_id, &mut inf_resources);
-    let _ = transaction.get_user_gas_per_pubdata_limit();
 
     let mut transaction = transaction;
     let _ = transaction.underlying_buffer();
