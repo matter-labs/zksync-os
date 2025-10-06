@@ -448,6 +448,7 @@ dependencies = [
  "ruint",
  "strum_macros",
  "zk_ee",
+ "zksync_os_evm_errors",
 ]
 
 [[package]]
@@ -1083,6 +1084,7 @@ dependencies = [
  "paste",
  "ruint",
  "strum_macros",
+ "zksync_os_evm_errors",
 ]
 
 [[package]]
@@ -1096,3 +1098,8 @@ dependencies = [
  "riscv",
  "riscv_common",
 ]
+
+[[package]]
+name = "zksync_os_evm_errors"
+version = "0.0.5"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=di%2Ftracing#d02ee33dab17624fed2b9ef0e56d92187d88c9ae"

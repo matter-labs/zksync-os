@@ -6,13 +6,14 @@ use evm_interpreter::{opcodes::OpCode, ERGS_PER_GAS};
 use ruint::aliases::U256;
 use zk_ee::{
     system::{
-        evm::{errors::EvmError, EvmFrameInterface, EvmStackInterface},
+        evm::{EvmFrameInterface, EvmStackInterface},
         tracer::{evm_tracer::EvmTracer, Tracer},
         CallResult, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources, SystemTypes,
     },
     types_config::SystemIOTypesConfig,
     utils::Bytes32,
 };
+use zksync_os_evm_errors::EvmError;
 
 #[derive(Default, Debug)]
 #[allow(dead_code)]

@@ -53,7 +53,8 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [workspace.dependencies]
-zksync_os_interface = { version = "=0.0.5" }
+zksync_os_evm_errors = { version = "=0.0.6", default-features = false }
+zksync_os_interface = { version = "=0.0.6" }
 
 risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
 blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
@@ -71,6 +72,10 @@ opt-level = 3
 lto = true
 codegen-units = 1
 debug = true
+
+[patch.crates-io]
+#zksync_os_evm_errors = { path = "../zksync-os-interface/crates/evm-errors" }
+#zksync_os_interface = { path = "../zksync-os-interface/crates/interface" }
 
 [patch."https://github.com/matter-labs/zksync-airbender"]
 # blake2s_u32 = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }

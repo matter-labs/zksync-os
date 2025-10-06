@@ -31,13 +31,13 @@ use zk_ee::memory::slice_vec::SliceVec;
 use zk_ee::system::errors::root_cause::{GetRootCause, RootCause};
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::{internal::InternalError, system::SystemError};
-use zk_ee::system::evm::errors::EvmError;
 use zk_ee::system::evm::{EvmFrameInterface, EvmStackInterface};
 use zk_ee::system::{EthereumLikeTypes, Resource, Resources, System, SystemTypes};
 
 use alloc::vec::Vec;
 use zk_ee::utils::*;
 use zk_ee::{internal_error, types_config::*};
+use zksync_os_evm_errors::EvmError;
 
 mod ee_trait_impl;
 pub mod errors;

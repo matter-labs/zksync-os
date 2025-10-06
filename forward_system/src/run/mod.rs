@@ -10,6 +10,7 @@ pub mod convert;
 mod interface_impl;
 pub mod result_keeper;
 pub mod test_impl;
+mod tracing_impl;
 
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;

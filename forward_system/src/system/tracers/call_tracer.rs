@@ -3,13 +3,14 @@
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
 use zk_ee::system::{
-    evm::{errors::EvmError, EvmFrameInterface},
+    evm::EvmFrameInterface,
     tracer::{evm_tracer::EvmTracer, Tracer},
     CallModifier, CallResult, EthereumLikeTypes, ExecutionEnvironmentLaunchParams, Resources,
     SystemTypes,
 };
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::Bytes32;
+use zksync_os_evm_errors::EvmError;
 
 #[derive(Default, Debug)]
 pub enum CallType {
