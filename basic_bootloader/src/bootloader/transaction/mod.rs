@@ -20,6 +20,7 @@ mod abi_utils;
 pub mod access_list_parser;
 #[cfg(feature = "pectra")]
 pub mod authorization_list;
+pub mod ethereum_tx_format;
 pub mod reserved_dynamic_parser;
 use self::access_list_parser::*;
 

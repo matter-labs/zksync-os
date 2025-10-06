@@ -11,6 +11,7 @@
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(ptr_metadata)]
 #![feature(alloc_layout_extra)]
+#![feature(slice_from_ptr_range)]
 #![feature(int_roundings)]
 #![feature(maybe_uninit_write_slice)]
 #![allow(clippy::type_complexity)]
