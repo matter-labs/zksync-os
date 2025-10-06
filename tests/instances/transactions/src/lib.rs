@@ -162,6 +162,7 @@ fn run_base_system_common(use_712: bool) {
             .max_fee_per_gas(1000)
             .max_priority_fee_per_gas(1000)
             .data(hex::decode(ERC_20_MINT_CALLDATA).unwrap())
+            .custom_data(meta.clone())
             .nonce(3);
         rig::utils::sign_and_encode_eip712_tx(mint_tx, &wallet_ethers)
     } else {
