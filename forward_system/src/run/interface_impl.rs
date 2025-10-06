@@ -4,7 +4,7 @@ use crate::run::output::TxResult;
 use crate::run::tracing_impl::TracerWrapped;
 use crate::run::{run_block, simulate_tx};
 use zk_ee::system::metadata::BlockMetadataFromOracle;
-use zksync_os_interface::tracing::EvmTracer;
+use zksync_os_interface::tracing::{AnyTracer, EvmTracer};
 use zksync_os_interface::traits::{
     PreimageSource, ReadStorage, RunBlock, SimulateTx, TxResultCallback, TxSource,
 };
@@ -26,7 +26,7 @@ impl RunBlock for RunBlockForward {
         PreimgSrc: PreimageSource,
         TrSrc: TxSource,
         TrCallback: TxResultCallback,
-        Tracer: EvmTracer,
+        Tracer: AnyTracer,
     >(
         &self,
         _config: (),
@@ -37,13 +37,14 @@ impl RunBlock for RunBlockForward {
         tx_result_callback: TrCallback,
         tracer: &mut Tracer,
     ) -> Result<BlockOutput, Self::Error> {
+        let evm_tracer = tracer.as_evm().expect("only EVM tracers are supported");
         run_block(
             BlockMetadataFromOracle::from_interface(block_context),
             storage,
             preimage_source,
             tx_source,
             tx_result_callback,
-            &mut TracerWrapped(tracer),
+            &mut TracerWrapped(evm_tracer),
         )
     }
 }

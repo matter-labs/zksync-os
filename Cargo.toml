@@ -74,6 +74,7 @@ codegen-units = 1
 debug = true
 
 [patch.crates-io]
+#zksync_os_evm_errors = { path = "../zksync-os-interface/crates/evm-errors" }
 #zksync_os_interface = { path = "../zksync-os-interface/crates/interface" }
 
 [patch."https://github.com/matter-labs/zksync-airbender"]
