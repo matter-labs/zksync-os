@@ -38,7 +38,7 @@ fn run_base_system_common(use_712: bool) {
 
     let from = wallet_ethers.address();
     let to = address!("0000000000000000000000000000000000010002");
-    let meta = Eip712Meta::new().gas_per_pubdata(1);
+    let meta = Eip712Meta::new().gas_per_pubdata(0);
 
     let encoded_mint_tx = if use_712 {
         let mint_tx = rig::zksync_web3_rs::eip712::Eip712TransactionRequest::new()
