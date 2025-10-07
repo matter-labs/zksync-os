@@ -118,6 +118,8 @@ where
     // Snapshot of resources before the hook, to adjust gas usage later
     let resources_before = resources.clone();
 
+    charge_native_and_proportional_gas::<S::Resources>(resources, HOOK_BASE_NATIVE_COST)?;
+
     if calldata.len() < 4 {
         return Ok(Err(
             "Contract deployer hook failure: calldata shorter than selector length",
