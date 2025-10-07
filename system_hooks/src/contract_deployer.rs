@@ -115,9 +115,8 @@ fn contract_deployer_hook_inner<S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
-    // TODO: charge native
-    let step_cost: S::Resources = S::Resources::from_ergs(Ergs(10));
-    resources.charge(&step_cost)?;
+    // Snapshot of resources before the hook, to adjust gas usage later
+    let resources_before = resources.clone();
 
     if calldata.len() < 4 {
         return Ok(Err(
@@ -193,6 +192,9 @@ where
                 observable_bytecode_hash,
                 bytecode_length,
             )?;
+
+            // Adjust gas usage to be proportional to native used
+            post_charge_proportional_gas::<S::Resources>(resources, resources_before)?;
 
             Ok(Ok(&[]))
         }

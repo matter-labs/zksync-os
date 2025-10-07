@@ -183,7 +183,7 @@ impl<
 
     fn emit_l1_message(
         &mut self,
-        _ee_type: ExecutionEnvironmentType,
+        ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         data: &[u8],
@@ -206,12 +206,19 @@ impl<
                 + keccak256_native_cost::<Self::Resources>(data.len()).as_u64();
 
         // We also charge some native resource for storing the log
-        let native = R::Native::from_computational(
-            hashing_native_cost
-                + EVENT_STORAGE_BASE_NATIVE_COST
-                + EVENT_DATA_PER_BYTE_COST * (data.len() as u64),
-        );
-        resources.charge(&R::from_native(native))?;
+        let native = hashing_native_cost
+            + EVENT_STORAGE_BASE_NATIVE_COST
+            + EVENT_DATA_PER_BYTE_COST * (data.len() as u64);
+
+        // On EVM EE, we also charge a proportional amount of gas
+        match ee_type {
+            ExecutionEnvironmentType::NoEE => {
+                resources.charge(&R::from_native(R::Native::from_computational(native)))?
+            }
+            ExecutionEnvironmentType::EVM => {
+                system_hooks::charge_native_and_proportional_gas::<R>(resources, native)?;
+            }
+        };
 
         // TODO(EVM-1078): for Era backward compatibility we may need to add events for l2 to l1 log and l1 message
 

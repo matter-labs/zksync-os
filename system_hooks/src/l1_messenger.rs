@@ -124,9 +124,7 @@ fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
 ) -> Result<Result<Bytes32, &'static str>, SystemError>
 where
 {
-    // TODO: charge native
-    let step_cost: S::Resources = S::Resources::from_ergs(Ergs(10));
-    resources.charge(&step_cost)?;
+    charge_native_and_proportional_gas::<S::Resources>(resources, HOOK_BASE_NATIVE_COST)?;
 
     if calldata.len() < 4 {
         return Ok(Err(
@@ -164,7 +162,7 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     resources: &mut S::Resources,
     system: &mut System<S>,
     caller: B160,
-    caller_ee: u8,
+    _caller_ee: u8,
 ) -> Result<Result<Bytes32, &'static str>, SystemError> {
     // Note that we do not enforce fully strict ABI encoding here
 
@@ -251,8 +249,8 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
 
     let message = &abi_encoded_message[(length_encoding_end as usize)..message_end as usize];
     let message_hash = system.io.emit_l1_message(
-        ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-            .map_err(SystemError::LeafDefect)?,
+        // Use EVM to charge gas for this operation
+        ExecutionEnvironmentType::EVM,
         resources,
         &caller,
         message,
@@ -264,8 +262,8 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     topics.push(message_hash);
 
     system.io.emit_event(
-        ExecutionEnvironmentType::parse_ee_version_byte(caller_ee)
-            .map_err(SystemError::LeafDefect)?,
+        // Use EVM to charge gas for this operation
+        ExecutionEnvironmentType::EVM,
         resources,
         &L1_MESSENGER_ADDRESS,
         &topics,

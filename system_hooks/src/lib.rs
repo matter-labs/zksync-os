@@ -35,6 +35,7 @@ use crate::l2_base_token::l2_base_token_hook;
 use alloc::collections::BTreeMap;
 use core::marker::PhantomData;
 use core::{alloc::Allocator, mem::MaybeUninit};
+use evm_interpreter::ERGS_PER_GAS;
 use precompiles::{pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::system::errors::subsystem::SubsystemError;
@@ -324,5 +325,60 @@ fn make_return_state_from_returndata_region<S: SystemTypes>(
     CompletedExecution {
         resources_returned: remaining_resources,
         result: CallResult::Successful { return_values },
+    }
+}
+
+///
+/// Average value for the ratio between native and gas.
+/// We do not rely on it for anything critical,
+/// If a call to a given hook consumes N native, we also charge
+/// N / AVERAGE_NATIVE_PER_GAS_FOR_HOOKS gas. That way,
+/// we ensure that the caller can bound the computation cost of the call.
+///
+const AVERAGE_NATIVE_PER_GAS_FOR_HOOKS: u64 = 60;
+
+/// Base cost for calling into a system hook
+const HOOK_BASE_NATIVE_COST: u64 = 1000;
+
+///
+/// Charge native and a proportional amount of ergs.
+/// The ergs are computed as:
+/// native / AVERAGE_NATIVE_PER_GAS_FOR_HOOKS * ERGS_PER_GAS
+///
+pub fn charge_native_and_proportional_gas<R: Resources>(
+    resources: &mut R,
+    native_to_charge: u64,
+) -> Result<(), SystemError> {
+    let ergs = Ergs(
+        native_to_charge
+            .div_ceil(AVERAGE_NATIVE_PER_GAS_FOR_HOOKS)
+            .saturating_mul(ERGS_PER_GAS),
+    );
+    let to_charge = R::from_ergs_and_native(ergs, R::Native::from_computational(native_to_charge));
+    resources.charge(&to_charge)
+}
+
+///
+/// Helper to charge gas after the execution of a system hook.
+/// To be used when charging gas on the fly is too complex, as in
+/// the contract deployer.
+///
+pub fn post_charge_proportional_gas<R: Resources>(
+    resources: &mut R,
+    resources_before_hook: R,
+) -> Result<(), SystemError> {
+    let native_used = resources
+        .native()
+        .diff(resources_before_hook.native())
+        .as_u64();
+    let proportional_ergs_from_native = native_used
+        .div_ceil(AVERAGE_NATIVE_PER_GAS_FOR_HOOKS)
+        .saturating_mul(ERGS_PER_GAS);
+    let ergs_used = resources.ergs().diff(resources_before_hook.ergs()).0;
+    let ergs_to_charge = proportional_ergs_from_native.saturating_sub(ergs_used);
+    if ergs_to_charge > 0 {
+        resources.charge(&R::from_ergs(Ergs(ergs_to_charge)))
+    } else {
+        Ok(())
     }
 }
