@@ -1,10 +1,13 @@
 use crate::bootloader::transaction::ethereum_tx_format::{
     apply_list_concatenation_encoding_to_hash,
-    minimal_rlp_parser::{Parser, RLPParsable},
+    minimal_rlp_parser::{Rlp, RlpListDecode},
 };
 use crypto::MiniDigest;
 
-pub(crate) struct EIP2718PayloadParser<'a, P: RLPParsable<'a>> {
+/// Parser for typed EIP-2718 transactions where the payload (P) and signature
+/// are encoded as two consecutive list items inside a single outer list:
+/// outer = [ payload_list(P), signature_list(yParity, r, s) ]
+pub(crate) struct EIP2718PayloadParser<'a, P: RlpListDecode<'a>> {
     _marker: core::marker::PhantomData<&'a P>,
 }
 
@@ -15,19 +18,21 @@ pub(crate) struct EIP2718SignatureData<'a> {
     pub(crate) s: &'a [u8],
 }
 
-impl<'a> RLPParsable<'a> for EIP2718SignatureData<'a> {
-    fn try_parse(parser: &mut Parser<'a>) -> Result<Self, ()> {
-        let y_parity = RLPParsable::try_parse(parser)?;
-        let r = RLPParsable::try_parse(parser)?;
-        let s = RLPParsable::try_parse(parser)?;
-
-        let new = Self { y_parity, r, s };
-
+impl<'a> RlpListDecode<'a> for EIP2718SignatureData<'a> {
+    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, ()> {
+        let y_parity = r.bool()?;
+        let r_bytes = r.bytes()?;
+        let s = r.bytes()?;
+        let new = Self {
+            y_parity,
+            r: r_bytes,
+            s,
+        };
         Ok(new)
     }
 }
 
-impl<'a, P: RLPParsable<'a>> EIP2718PayloadParser<'a, P> {
+impl<'a, P: RlpListDecode<'a>> EIP2718PayloadParser<'a, P> {
     /// We expect that transaction type was already placed into hasher. Will try to parse
     /// P, and the try to parse signature manually
     /// NOTE: double hashing is inevitable, as signature is verified upon keccak256(0x01 || rlp([chainId, nonce, gasPrice, gasLimit, to, value, data, accessList])),
@@ -36,27 +41,31 @@ impl<'a, P: RLPParsable<'a>> EIP2718PayloadParser<'a, P> {
         src: &'a [u8],
         hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
     ) -> Result<(P, EIP2718SignatureData<'a>), ()> {
-        let mut outer_parser = Parser::new(src);
-        // quick and dirty strip of the list encoding
-        let mut parser = outer_parser.try_make_list_subparser()?;
-        if outer_parser.is_empty() == false {
+        let mut outer = Rlp::new(src);
+        // Strip the list encoding
+        let mut inner = outer.list()?;
+        // Outer list must be fully consumed
+        if !outer.is_empty() {
             return Err(());
         }
-        // recreate parser to parse internals
-        let start = unsafe { parser.pos() };
-        let payload: P = RLPParsable::try_parse(&mut parser)?;
-        // we consumed P, and are ready to compute the hash for signing
-        let inner_slice = unsafe { parser.consumed_slice(start) };
+        // Take mark to include payload for hashing
+        let mark = inner.mark();
+        // Parse payload part (transaction fields without signature)
+        let payload = P::decode_list_body(&mut inner)?;
+        let inner_slice = inner.consumed_since(mark);
 
-        // now we can use the same parser and parse fixed "tail" of parity/r/s
-        let sig_data: EIP2718SignatureData<'a> = RLPParsable::try_parse(&mut parser)?;
-        if parser.is_empty() == false {
+        // Parse signature suffix [yParity, r, s] from same parser
+        let sig = EIP2718SignatureData::decode_list_body(&mut inner)?;
+
+        if !inner.is_empty() {
             return Err(());
         }
 
+        // Hash payload list header + payload bytes.
+        // Caller already hashed the type byte.
         apply_list_concatenation_encoding_to_hash(inner_slice.len() as u32, hasher);
         hasher.update(inner_slice);
 
-        Ok((payload, sig_data))
+        Ok((payload, sig))
     }
 }

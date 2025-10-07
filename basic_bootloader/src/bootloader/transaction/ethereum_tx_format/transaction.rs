@@ -4,7 +4,6 @@ use crate::bootloader::transaction::ethereum_tx_format::eip_2930_tx::{
 use crate::bootloader::transaction::ethereum_tx_format::eip_7702_tx::{
     AuthorizationEntry, AuthorizationList,
 };
-use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::ListEncapsulated;
 use core::alloc::Allocator;
 
 use super::*;
@@ -51,7 +50,7 @@ impl<A: Allocator> EthereumTransactionWithBuffer<A> {
 
         let ((inner, sig_hash), _tx_hash): ((EthereumTxInner<'static>, Bytes32), Bytes32) =
             EthereumTxInner::parse_and_compute_hashes(
-                unsafe { core::mem::transmute(buffer.as_slice()) },
+                unsafe { core::mem::transmute::<&[u8], &[u8]>(buffer.as_slice()) },
                 expected_chain_id,
             )?;
         Ok(Self {
@@ -127,12 +126,11 @@ impl<A: Allocator> EthereumTransactionWithBuffer<A> {
     pub fn access_list_iter<'a>(
         &'a self,
     ) -> Option<impl Iterator<Item = AccessListForAddress<'a>> + Clone> {
-        let map_fn = |el: ListEncapsulated<'a, AccessListForAddress<'a>>| el.into_inner();
         match &self.inner {
             EthereumTxInner::Legacy(_, _) | EthereumTxInner::LegacyWithEIP155(_, _) => None,
-            EthereumTxInner::EIP2930(tx, _) => Some(tx.access_list.iter().map(map_fn)),
-            EthereumTxInner::EIP1559(tx, _) => Some(tx.access_list.iter().map(map_fn)),
-            EthereumTxInner::EIP7702(tx, _) => Some(tx.access_list.iter().map(map_fn)),
+            EthereumTxInner::EIP2930(tx, _) => Some(tx.access_list.iter()),
+            EthereumTxInner::EIP1559(tx, _) => Some(tx.access_list.iter()),
+            EthereumTxInner::EIP7702(tx, _) => Some(tx.access_list.iter()),
         }
     }
 
@@ -146,9 +144,8 @@ impl<A: Allocator> EthereumTransactionWithBuffer<A> {
     pub fn authorization_list_iter<'a>(
         &'a self,
     ) -> Option<impl Iterator<Item = AuthorizationEntry<'a>> + Clone> {
-        let map_fn = |el: ListEncapsulated<'a, AuthorizationEntry<'a>>| el.into_inner();
         match &self.inner {
-            EthereumTxInner::EIP7702(tx, _) => Some(tx.authorization_list.iter().map(map_fn)),
+            EthereumTxInner::EIP7702(tx, _) => Some(tx.authorization_list.iter()),
             _ => None,
         }
     }
@@ -312,12 +309,11 @@ impl<'a> EthereumTransaction<'a> {
     pub fn access_list_iter(
         &self,
     ) -> Option<impl Iterator<Item = AccessListForAddress<'a>> + Clone> {
-        let map_fn = |el: ListEncapsulated<'a, AccessListForAddress<'a>>| el.into_inner();
         match &self.inner {
             EthereumTxInner::Legacy(_, _) | EthereumTxInner::LegacyWithEIP155(_, _) => None,
-            EthereumTxInner::EIP2930(tx, _) => Some(tx.access_list.iter().map(map_fn)),
-            EthereumTxInner::EIP1559(tx, _) => Some(tx.access_list.iter().map(map_fn)),
-            EthereumTxInner::EIP7702(tx, _) => Some(tx.access_list.iter().map(map_fn)),
+            EthereumTxInner::EIP2930(tx, _) => Some(tx.access_list.iter()),
+            EthereumTxInner::EIP1559(tx, _) => Some(tx.access_list.iter()),
+            EthereumTxInner::EIP7702(tx, _) => Some(tx.access_list.iter()),
         }
     }
 
@@ -331,9 +327,8 @@ impl<'a> EthereumTransaction<'a> {
     pub fn authorization_list_iter(
         &self,
     ) -> Option<impl Iterator<Item = AuthorizationEntry<'a>> + Clone> {
-        let map_fn = |el: ListEncapsulated<'a, AuthorizationEntry<'a>>| el.into_inner();
         match &self.inner {
-            EthereumTxInner::EIP7702(tx, _) => Some(tx.authorization_list.iter().map(map_fn)),
+            EthereumTxInner::EIP7702(tx, _) => Some(tx.authorization_list.iter()),
             _ => None,
         }
     }
