@@ -236,19 +236,19 @@ pub struct EthereumTransaction<'a> {
     inner: EthereumTxInner<'a>,
     chain_id: u64,
     sig_hash: Bytes32,
-    // tx_hash: Bytes32,
+    tx_hash: Bytes32,
     signer: B160,
 }
 
 impl<'a> EthereumTransaction<'a> {
     pub fn parse(input: &'a [u8], expected_chain_id: u32) -> Result<Self, ()> {
-        let ((inner, sig_hash), _tx_hash) =
+        let ((inner, sig_hash), tx_hash) =
             EthereumTxInner::parse_and_compute_hashes(input, expected_chain_id)?;
         let new = Self {
             inner,
             chain_id: expected_chain_id as u64,
             sig_hash,
-            // tx_hash,
+            tx_hash,
             signer: B160::ZERO,
         };
 
@@ -284,9 +284,9 @@ impl<'a> EthereumTransaction<'a> {
         &self.sig_hash
     }
 
-    // pub fn transaction_hash(&self) -> &Bytes32 {
-    //     &self.tx_hash
-    // }
+    pub fn transaction_hash(&self) -> &Bytes32 {
+        &self.tx_hash
+    }
 
     pub fn calldata(&self) -> &'a [u8] {
         match &self.inner {

@@ -97,11 +97,10 @@ impl<'a> EthereumTxInner<'a> {
                         return Err(());
                     }
                     let sig_hash: Bytes32 = hasher.finalize_reset().into();
+                    hasher.update(input);
+                    let tx_hash = hasher.finalize().into();
 
-                    // hasher.update(input);
-                    // let tx_hash = hasher.finalize().into();
-
-                    Ok(((Self::EIP2930(tx, sig_data), sig_hash), Bytes32::ZERO))
+                    Ok(((Self::EIP2930(tx, sig_data), sig_hash), tx_hash))
                 }
                 2 => {
                     let mut hasher = crypto::sha3::Keccak256::new();
@@ -117,10 +116,10 @@ impl<'a> EthereumTxInner<'a> {
                         return Err(());
                     }
                     let sig_hash: Bytes32 = hasher.finalize_reset().into();
-                    // hasher.update(input);
-                    // let tx_hash = hasher.finalize().into();
+                    hasher.update(input);
+                    let tx_hash = hasher.finalize().into();
 
-                    Ok(((Self::EIP1559(tx, sig_data), sig_hash), Bytes32::ZERO))
+                    Ok(((Self::EIP1559(tx, sig_data), sig_hash), tx_hash))
                 }
                 4 => {
                     let mut hasher = crypto::sha3::Keccak256::new();
@@ -136,10 +135,10 @@ impl<'a> EthereumTxInner<'a> {
                         return Err(());
                     }
                     let sig_hash: Bytes32 = hasher.finalize_reset().into();
-                    // hasher.update(input);
-                    // let tx_hash = hasher.finalize().into();
+                    hasher.update(input);
+                    let tx_hash = hasher.finalize().into();
 
-                    Ok(((Self::EIP7702(tx, sig_data), sig_hash), Bytes32::ZERO))
+                    Ok(((Self::EIP7702(tx, sig_data), sig_hash), tx_hash))
                 }
                 _ => Err(()),
             }
@@ -168,12 +167,12 @@ impl<'a> EthereumTxInner<'a> {
                 apply_list_concatenation_encoding_to_hash(inner_slice.len() as u32, &mut hasher);
                 hasher.update(inner_slice);
                 let sig_hash: Bytes32 = hasher.finalize_reset().into();
-                // hasher.update(input);
-                // let tx_hash = hasher.finalize().into();
+                hasher.update(input);
+                let tx_hash = hasher.finalize().into();
 
                 Ok((
                     (Self::Legacy(legacy_inner, legacy_signature), sig_hash),
-                    Bytes32::ZERO,
+                    tx_hash,
                 ))
             } else {
                 // EIP-155 protected legacy: v must match 35 + 2*chainId (+ {0,1})
@@ -199,15 +198,15 @@ impl<'a> EthereumTxInner<'a> {
                 apply_u64_encoding_to_hash(chain_id, &mut hasher);
                 hasher.update(&[0x80, 0x80]);
                 let sig_hash: Bytes32 = hasher.finalize_reset().into();
-                // hasher.update(input);
-                // let tx_hash = hasher.finalize().into();
+                hasher.update(input);
+                let tx_hash = hasher.finalize().into();
 
                 Ok((
                     (
                         Self::LegacyWithEIP155(legacy_inner, legacy_signature),
                         sig_hash,
                     ),
-                    Bytes32::ZERO,
+                    tx_hash,
                 ))
             }
         }
