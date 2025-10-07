@@ -124,7 +124,10 @@ fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
 ) -> Result<Result<Bytes32, &'static str>, SystemError>
 where
 {
-    charge_native_and_proportional_gas::<S::Resources>(resources, HOOK_BASE_NATIVE_COST)?;
+    evm_interpreter::charge_native_and_proportional_gas::<S::Resources>(
+        resources,
+        HOOK_BASE_NATIVE_COST,
+    )?;
 
     if calldata.len() < 4 {
         return Ok(Err(

@@ -216,7 +216,7 @@ impl<
                 resources.charge(&R::from_native(R::Native::from_computational(native)))?
             }
             ExecutionEnvironmentType::EVM => {
-                system_hooks::charge_native_and_proportional_gas::<R>(resources, native)?;
+                evm_interpreter::charge_native_and_proportional_gas::<R>(resources, native)?;
             }
         };
 

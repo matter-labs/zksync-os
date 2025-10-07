@@ -173,3 +173,12 @@ pub const STEP_NATIVE_COST: u64 = 20;
 
 // Cost of bytecode preprocessing per byte
 pub const BYTECODE_PREPROCESSING_BYTE_NATIVE_COST: u64 = 6;
+
+///
+/// Average value for the ratio between native and gas.
+/// We do not rely on it for anything critical, mostly used for system hooks,
+/// If a call to a given hook consumes N native, we also charge
+/// N / AVERAGE_NATIVE_PER_GAS gas. That way,
+/// we ensure that the caller can bound the computation cost of the call.
+///
+pub const AVERAGE_NATIVE_PER_GAS: u64 = 60;

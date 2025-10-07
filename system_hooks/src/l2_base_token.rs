@@ -145,7 +145,10 @@ fn l2_base_token_hook_inner<S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
-    charge_native_and_proportional_gas::<S::Resources>(resources, HOOK_BASE_NATIVE_COST)?;
+    evm_interpreter::charge_native_and_proportional_gas::<S::Resources>(
+        resources,
+        HOOK_BASE_NATIVE_COST,
+    )?;
 
     if calldata.len() < 4 {
         return Ok(Err(
