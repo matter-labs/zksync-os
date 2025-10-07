@@ -1,269 +1,434 @@
+// rlp.rs
+
+use core::marker::PhantomData;
 use ruint::aliases::{B160, U256};
 
+/// Minimal, zero-copy RLP cursor.
 #[derive(Clone, Copy, Debug)]
-pub struct Parser<'a> {
-    pub(crate) slice: &'a [u8],
+pub struct Rlp<'a> {
+    bytes: &'a [u8],
+    pos: usize,
 }
 
-// We only need to define 2 types - slice and list.
-
-pub struct EncodedSlice<'a> {
-    pub(crate) data: &'a [u8],
-}
-
-fn try_consume_bytes<'a>(src: &mut &'a [u8], len: usize) -> Result<&'a [u8], ()> {
-    if src.len() < len {
-        return Err(());
-    }
-    let (data, rest) = src.split_at(len);
-    *src = rest;
-
-    Ok(data)
-}
-
-fn u32_from_slice_unchecked(src: &[u8]) -> u32 {
-    unsafe {
-        core::hint::assert_unchecked(src.len() > 0);
-        core::hint::assert_unchecked(src.len() <= 4);
-    }
-    let mut buffer = [0u8; 4];
-    buffer[(4 - src.len())..].copy_from_slice(src);
-
-    u32::from_be_bytes(buffer)
-}
-
-pub(crate) struct EncodedList<'a> {
-    pub(crate) concatenation_data: &'a [u8],
-}
-
-impl<'a> Parser<'a> {
-    pub unsafe fn pos(&self) -> *const u8 {
-        self.slice.as_ptr()
+impl<'a> Rlp<'a> {
+    /// Construct a cursor over bytes.
+    pub fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, pos: 0 }
     }
 
-    pub unsafe fn consumed_slice(&self, start: *const u8) -> &'a [u8] {
-        unsafe { core::slice::from_ptr_range(start..self.slice.as_ptr()) }
+    /// True iff the cursor consumed the entire buffer.
+    pub fn is_empty(&self) -> bool {
+        self.pos == self.bytes.len()
     }
 
-    pub(crate) fn new(slice: &'a [u8]) -> Self {
-        Self { slice }
+    /// Save the current offset for later byte-slice recovery.
+    pub fn mark(&self) -> usize {
+        self.pos
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
-        self.slice.is_empty()
+    /// Return the exact bytes consumed since `mark()`.
+    pub fn consumed_since(&self, mark: usize) -> &'a [u8] {
+        &self.bytes[mark..self.pos]
     }
 
-    pub(crate) fn try_parse_slice(&mut self) -> Result<EncodedSlice<'a>, ()> {
-        let marker = try_consume_bytes(&mut self.slice, 1)?;
-        let m = marker[0];
-        if m < 0x80 {
-            Ok(EncodedSlice { data: marker })
-        } else if m <= 0x80 + 55 {
-            let len = m - 0x80;
-            let data = try_consume_bytes(&mut self.slice, len as usize)?;
-            Ok(EncodedSlice { data })
-        } else if m < 0xc0 {
-            // we make some reasonable bound here - max u32 length
-            let len_encoding_len = m - 0xb7;
-            if len_encoding_len > 4 {
-                return Err(());
-            }
-            let len_bytes = try_consume_bytes(&mut self.slice, len_encoding_len as usize)?;
-            let len = u32_from_slice_unchecked(len_bytes);
-            let data = try_consume_bytes(&mut self.slice, len as usize)?;
-            Ok(EncodedSlice { data })
-        } else {
-            Err(())
-        }
+    /// Return the remaining unconsumed bytes.
+    pub fn remaining(&self) -> &'a [u8] {
+        &self.bytes[self.pos..]
     }
 
-    pub(crate) fn try_parse_list(&mut self) -> Result<EncodedList<'a>, ()> {
-        let marker = try_consume_bytes(&mut self.slice, 1)?;
-        let m = marker[0];
-        if m < 0xc0 {
-            // not a slice
-            Err(())
-        } else if m <= 0xc0 + 55 {
-            let len = m - 0xc0;
-            let data = try_consume_bytes(&mut self.slice, len as usize)?;
-            Ok(EncodedList {
-                concatenation_data: data,
-            })
-        } else {
-            // we make some reasonable bound here - max u32 length
-            let len_encoding_len = m - 0xf7;
-            if len_encoding_len > 4 {
-                return Err(());
-            }
-            let len_bytes = try_consume_bytes(&mut self.slice, len_encoding_len as usize)?;
-            let len = u32_from_slice_unchecked(len_bytes);
-            let data = try_consume_bytes(&mut self.slice, len as usize)?;
-            Ok(EncodedList {
-                concatenation_data: data,
-            })
-        }
-    }
-
-    pub(crate) fn try_make_list_subparser(&mut self) -> Result<Self, ()> {
-        let list = self.try_parse_list()?;
-        Ok(Self::new(list.concatenation_data))
-    }
-}
-
-pub trait RLPParsableScalar<'a>: Sized {
-    fn try_parse(src: EncodedSlice<'a>) -> Result<Self, ()>;
-}
-
-pub trait FixedLenScalar<'a>: RLPParsableScalar<'a> {
-    const ENCODING_LEN: usize;
-}
-
-// we will only do small list of types
-
-impl<'a> RLPParsableScalar<'a> for bool {
-    fn try_parse(src: EncodedSlice<'a>) -> Result<Self, ()> {
-        let repr: u8 = RLPParsableScalar::try_parse(src)?;
-        if repr == 0 {
-            Ok(false)
-        } else if repr == 1 {
-            Ok(true)
-        } else {
-            Err(())
-        }
-    }
-}
-
-impl<'a> RLPParsableScalar<'a> for u8 {
-    fn try_parse(src: EncodedSlice<'a>) -> Result<Self, ()> {
-        if src.data.len() == 0 {
-            Ok(0)
-        } else if src.data.len() == 1 {
-            Ok(src.data[0])
-        } else {
-            Err(())
-        }
-    }
-}
-
-impl<'a> RLPParsableScalar<'a> for u64 {
-    fn try_parse(src: EncodedSlice<'a>) -> Result<Self, ()> {
-        if src.data.len() > 8 {
-            Err(())
-        } else {
-            let mut buffer = [0u8; 8];
-            buffer[(8 - src.data.len())..].copy_from_slice(src.data);
-
-            Ok(u64::from_be_bytes(buffer))
-        }
-    }
-}
-
-impl<'a> RLPParsableScalar<'a> for &'a [u8] {
-    fn try_parse(src: EncodedSlice<'a>) -> Result<Self, ()> {
-        Ok(src.data)
-    }
-}
-
-impl<'a> RLPParsableScalar<'a> for U256 {
-    fn try_parse(src: EncodedSlice<'a>) -> Result<Self, ()> {
-        U256::try_from_be_slice(src.data).ok_or(())
-    }
-}
-
-impl<'a> RLPParsableScalar<'a> for B160 {
-    fn try_parse(src: EncodedSlice<'a>) -> Result<Self, ()> {
-        let inner: [u8; 20] = RLPParsableScalar::try_parse(src)?;
-        Ok(B160::from_be_bytes(inner))
-    }
-}
-
-impl<'a> FixedLenScalar<'a> for B160 {
-    const ENCODING_LEN: usize = 1 + 20;
-}
-
-impl<'a, const N: usize> RLPParsableScalar<'a> for [u8; N] {
-    fn try_parse(src: EncodedSlice<'a>) -> Result<Self, ()> {
-        Self::try_from(src.data).map_err(|_| ())
-    }
-}
-
-impl<'a, const N: usize> FixedLenScalar<'a> for [u8; N] {
-    const ENCODING_LEN: usize = N + 1;
-}
-
-impl<'a, const N: usize> RLPParsableScalar<'a> for &'a [u8; N] {
-    fn try_parse(src: EncodedSlice<'a>) -> Result<Self, ()> {
-        Self::try_from(src.data).map_err(|_| ())
-    }
-}
-
-impl<'a, const N: usize> FixedLenScalar<'a> for &'a [u8; N] {
-    const ENCODING_LEN: usize = N + 1;
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct RLPZeroInteger;
-
-impl<'a> RLPParsableScalar<'a> for RLPZeroInteger {
-    fn try_parse(src: EncodedSlice<'a>) -> Result<Self, ()> {
-        if src.data.len() != 1 || src.data[0] != 0 {
-            Err(())
-        } else {
-            Ok(RLPZeroInteger)
-        }
-    }
-}
-
-impl<'a> FixedLenScalar<'a> for RLPZeroInteger {
-    const ENCODING_LEN: usize = 1;
-}
-
-pub trait RLPParsable<'a>: Sized {
-    fn try_parse_slice_in_full(input: &'a [u8]) -> Result<Self, ()> {
-        let mut parser = Parser::new(input);
-        let new = Self::try_parse(&mut parser)?;
-        if parser.is_empty() {
-            Ok(new)
-        } else {
-            Err(())
-        }
-    }
-
-    fn try_parse(parser: &mut Parser<'a>) -> Result<Self, ()>;
-}
-
-impl<'a, T: RLPParsableScalar<'a>> RLPParsable<'a> for T {
-    fn try_parse(parser: &mut Parser<'a>) -> Result<Self, ()> {
-        let slice = parser.try_parse_slice()?;
-        RLPParsableScalar::try_parse(slice)
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ListEncapsulated<'a, T: RLPParsable<'a>> {
-    pub(crate) inner: T,
-    _marker: core::marker::PhantomData<&'a ()>,
-}
-
-impl<'a, T: RLPParsable<'a>> ListEncapsulated<'a, T> {
-    pub fn into_inner(self) -> T {
-        self.inner
-    }
-}
-
-impl<'a, T: RLPParsable<'a>> RLPParsable<'a> for ListEncapsulated<'a, T> {
-    fn try_parse(parser: &mut Parser<'a>) -> Result<Self, ()> {
-        let mut list_parser = parser.try_make_list_subparser()?;
-        let inner: T = RLPParsable::try_parse(&mut list_parser)?;
-        if list_parser.is_empty() == false {
+    fn take_exact(&mut self, n: usize) -> Result<&'a [u8], ()> {
+        let end = self.pos.checked_add(n).ok_or(())?;
+        if end > self.bytes.len() {
             return Err(());
         }
+        let out = &self.bytes[self.pos..end];
+        self.pos = end;
+        Ok(out)
+    }
 
-        let new = Self {
-            inner,
-            _marker: core::marker::PhantomData,
+    fn take1(&mut self) -> Result<u8, ()> {
+        if self.pos >= self.bytes.len() {
+            return Err(());
+        }
+        let b = self.bytes[self.pos];
+        self.pos += 1;
+        Ok(b)
+    }
+
+    fn be_u32(s: &[u8]) -> Result<usize, ()> {
+        if s.len() > 4 {
+            return Err(());
+        }
+        let mut v: u32 = 0;
+        for &b in s {
+            v = (v << 8) | b as u32;
+        }
+        Ok(v as usize)
+    }
+
+    /// Return the next RLP item as a full encoded slice (prefix + payload), advancing the cursor.
+    pub fn item(&mut self) -> Result<&'a [u8], ()> {
+        let start = self.pos;
+        let m = self.take1()?;
+        let total = if m < 0x80 {
+            1
+        } else if m <= 0xb7 {
+            1 + (m as usize - 0x80)
+        } else if m < 0xc0 {
+            let ll = m as usize - 0xb7;
+            // we make some reasonable bound here - max u32 length
+            if ll > 4 {
+                return Err(());
+            }
+            let len = Self::be_u32(self.take_exact(ll)?)?;
+            1 + ll + len
+        } else if m <= 0xf7 {
+            1 + (m as usize - 0xc0)
+        } else {
+            let ll = m as usize - 0xf7;
+            // we make some reasonable bound here - max u32 length
+            if ll > 4 {
+                return Err(());
+            }
+            let len = Self::be_u32(self.take_exact(ll)?)?;
+            1 + ll + len
+        };
+        let end = start + total;
+        if end > self.bytes.len() {
+            return Err(());
+        }
+        self.pos = end;
+        Ok(&self.bytes[start..end])
+    }
+
+    /// Decode an RLP string and return its payload bytes (no header).
+    pub fn bytes(&mut self) -> Result<&'a [u8], ()> {
+        let m = self.take1()?;
+        if m < 0x80 {
+            Ok(&self.bytes[self.pos - 1..self.pos])
+        } else if m <= 0xb7 {
+            let len = (m - 0x80) as usize;
+            self.take_exact(len)
+        } else if m < 0xc0 {
+            let ll = (m - 0xb7) as usize;
+            // we make some reasonable bound here - max u32 length
+            if ll > 4 {
+                return Err(());
+            }
+            let len = Self::be_u32(self.take_exact(ll)?)?;
+            self.take_exact(len)
+        } else {
+            Err(())
+        }
+    }
+
+    /// Enter a list and return a sub-cursor limited to the list payload bytes.
+    pub fn list(&mut self) -> Result<Rlp<'a>, ()> {
+        let m = self.take1()?;
+        if m < 0xc0 {
+            return Err(());
+        }
+        let len = if m <= 0xf7 {
+            (m - 0xc0) as usize
+        } else {
+            let ll = (m - 0xf7) as usize;
+            // we make some reasonable bound here - max u32 length
+            if ll > 4 {
+                return Err(());
+            }
+            let len = Self::be_u32(self.take_exact(ll)?)?;
+            len
+        };
+        let content = self.take_exact(len)?;
+        Ok(Rlp::new(content))
+    }
+
+    /// Decode u8: empty string -> 0, one byte -> that value, otherwise error.
+    pub fn u8(&mut self) -> Result<u8, ()> {
+        let s = self.bytes()?;
+        match s.len() {
+            0 => Ok(0),
+            1 => Ok(s[0]),
+            _ => Err(()),
+        }
+    }
+
+    /// Decode bool: 0 -> false, 1 -> true, otherwise error.
+    pub fn bool(&mut self) -> Result<bool, ()> {
+        let v = self.u8()?;
+        match v {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(()),
+        }
+    }
+
+    /// Decode u64 in big-endian, allowing 0..=8 bytes.
+    pub fn u64(&mut self) -> Result<u64, ()> {
+        let s = self.bytes()?;
+        if s.len() > 8 {
+            return Err(());
+        }
+        let mut buf = [0u8; 8];
+        buf[8 - s.len()..].copy_from_slice(s);
+        Ok(u64::from_be_bytes(buf))
+    }
+
+    /// Decode U256 from a big-endian byte string.
+    pub fn u256(&mut self) -> Result<U256, ()> {
+        U256::try_from_be_slice(self.bytes()?).ok_or(())
+    }
+}
+
+/// Trait for list-encoded structures that want both entry points:
+///   - decode_list_from: parse and continue
+///   - decode_list_full: parse and require full consumption
+///
+/// The implementation must assume the cursor is positioned at the list header
+/// and decode the list body fields inside.
+pub trait RlpListDecode<'a>: Sized {
+    /// Decode just the body from a sub-cursor already restricted to the list payload.
+    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, ()>;
+
+    /// Strip the list header, decode the body, and return the value.
+    fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, ()> {
+        let mut inner = r.list()?;
+        let v = Self::decode_list_body(&mut inner)?;
+        if !inner.is_empty() {
+            return Err(());
+        }
+        Ok(v)
+    }
+
+    /// Parse from a standalone buffer and require full consumption.
+    fn decode_list_full(bytes: &'a [u8]) -> Result<Self, ()> {
+        let mut r = Rlp::new(bytes);
+        let v = Self::decode_list_from(&mut r)?;
+        if !r.is_empty() {
+            return Err(());
+        }
+        Ok(v)
+    }
+}
+
+// Traits for items that can be decoded from RLP, either as individual items or inside lists.
+
+pub trait RlpItemDecode<'a>: Sized {
+    // Decode one item starting at the current cursor position
+    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, ()>;
+}
+
+// Trivially, any RlpListDecode can also be decoded as an item (a list item)
+impl<'a, T: RlpListDecode<'a>> RlpItemDecode<'a> for T {
+    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, ()> {
+        T::decode_list_from(r)
+    }
+}
+
+pub trait RlpFixedItem<'a>: RlpItemDecode<'a> {
+    // Total encoded length of the item (header + payload)
+    const ENCODING_LEN: usize;
+    // Decode from an already sliced encoded item of exactly ENCODING_LEN bytes
+    fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, ()>;
+}
+
+// Implementations for common fixed items
+
+impl<'a> RlpItemDecode<'a> for &'a [u8; 32] {
+    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, ()> {
+        let s = r.bytes()?;
+        if s.len() == 32 {
+            Ok(s.try_into().unwrap())
+        } else {
+            Err(())
+        }
+    }
+}
+impl<'a> RlpFixedItem<'a> for &'a [u8; 32] {
+    const ENCODING_LEN: usize = 1 + 32; // 0xa0 + 32
+    fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, ()> {
+        if encoded.len() != 33 || encoded[0] != 0xa0 {
+            return Err(());
+        }
+        Ok(encoded[1..].try_into().unwrap())
+    }
+}
+
+impl<'a> RlpItemDecode<'a> for B160 {
+    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, ()> {
+        let s = r.bytes()?;
+        if s.len() != 20 {
+            return Err(());
+        }
+        Ok(B160::from_be_bytes::<{ B160::BYTES }>(
+            s.try_into().unwrap(),
+        ))
+    }
+}
+impl<'a> RlpFixedItem<'a> for B160 {
+    const ENCODING_LEN: usize = 1 + 20; // 0x94 + 20
+    fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, ()> {
+        if encoded.len() != 21 || encoded[0] != 0x94 {
+            return Err(());
+        }
+        Ok(B160::from_be_bytes::<{ B160::BYTES }>(
+            encoded[1..].try_into().unwrap(),
+        ))
+    }
+}
+
+// Lists of fixed-length items
+// To be used by 4844 txs.
+#[derive(Clone, Copy, Debug)]
+pub struct FixedList<'a, T: RlpFixedItem<'a>> {
+    payload: &'a [u8], // concatenation of encoded items
+    pub count: usize,
+    _marker: PhantomData<T>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct FixedListIter<'a, T: RlpFixedItem<'a>> {
+    payload: &'a [u8],
+    idx: usize,
+    count: usize,
+    _marker: PhantomData<T>,
+}
+
+impl<'a, T: RlpFixedItem<'a>> FixedList<'a, T> {
+    // Parse a list header and return a fixed-length view
+    pub fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, ()> {
+        let mut inner = r.list()?;
+        let all = inner.remaining();
+        if all.len() % T::ENCODING_LEN != 0 {
+            return Err(());
+        }
+        let count = all.len() / T::ENCODING_LEN;
+        inner.take_exact(all.len())?; // consume to satisfy caller's emptiness check
+        Ok(Self {
+            payload: all,
+            count,
+            _marker: PhantomData,
+        })
+    }
+
+    pub fn decode_list_full(bytes: &'a [u8]) -> Result<Self, ()> {
+        let mut r = Rlp::new(bytes);
+        let v = Self::decode_list_from(&mut r)?;
+        if !r.is_empty() {
+            return Err(());
+        }
+        Ok(v)
+    }
+
+    pub fn iter(&self) -> FixedListIter<'a, T> {
+        FixedListIter {
+            payload: self.payload,
+            idx: 0,
+            count: self.count,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, T: RlpFixedItem<'a>> Iterator for FixedListIter<'a, T> {
+    type Item = Result<T, ()>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx >= self.count {
+            return None;
+        }
+        let start = self.idx * T::ENCODING_LEN;
+        let end = start + T::ENCODING_LEN;
+        self.idx += 1;
+        Some(T::decode_from_fixed(&self.payload[start..end]))
+    }
+}
+impl<'a, T: RlpFixedItem<'a>> ExactSizeIterator for FixedListIter<'a, T> {
+    fn len(&self) -> usize {
+        self.count - self.idx
+    }
+}
+
+// Lists of homogeneous items (optionally validated)
+// Designed to be iterated over instead of parsing fully up-front and storing all items.
+#[derive(Clone, Copy, Debug)]
+pub struct HomList<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> {
+    payload: &'a [u8],
+    pub count: Option<usize>, // set when VALIDATE = true
+    _marker: PhantomData<T>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct HomListIter<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> {
+    r: Rlp<'a>,
+    remaining_ok: bool, // for the non-validated variant to stop after error
+    _marker: PhantomData<T>,
+}
+
+impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
+    pub fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, ()> {
+        let mut inner = r.list()?;
+        let all = inner.remaining();
+
+        let count = if VALIDATE {
+            let mut chk = Rlp::new(all);
+            let mut c = 0;
+            while !chk.is_empty() {
+                T::decode_from_item(&mut chk)?;
+                c += 1;
+            }
+            Some(c)
+        } else {
+            None
         };
 
-        Ok(new)
+        inner.take_exact(all.len())?;
+        Ok(Self {
+            payload: all,
+            count,
+            _marker: PhantomData,
+        })
+    }
+
+    pub fn decode_list_full(bytes: &'a [u8]) -> Result<Self, ()> {
+        let mut r = Rlp::new(bytes);
+        let v = Self::decode_list_from(&mut r)?;
+        if !r.is_empty() {
+            return Err(());
+        }
+        Ok(v)
+    }
+
+    pub fn iter(&self) -> HomListIter<'a, T, VALIDATE> {
+        HomListIter {
+            r: Rlp::new(self.payload),
+            remaining_ok: true,
+            _marker: PhantomData,
+        }
+    }
+}
+
+// validated iterator yields T directly; non-validated yields Result<T, ()>
+impl<'a, T: RlpItemDecode<'a>> Iterator for HomListIter<'a, T, true> {
+    type Item = T;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.r.is_empty() {
+            return None;
+        }
+        Some(T::decode_from_item(&mut self.r).expect("pre-validated"))
+    }
+}
+impl<'a, T: RlpItemDecode<'a>> Iterator for HomListIter<'a, T, false> {
+    type Item = Result<T, ()>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.remaining_ok || self.r.is_empty() {
+            return None;
+        }
+        match T::decode_from_item(&mut self.r) {
+            Ok(v) => Some(Ok(v)),
+            Err(_) => {
+                self.remaining_ok = false;
+                Some(Err(()))
+            }
+        }
     }
 }
