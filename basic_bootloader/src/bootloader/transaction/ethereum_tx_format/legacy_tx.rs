@@ -1,3 +1,5 @@
+use crate::bootloader::errors::InvalidTransaction;
+
 use super::minimal_rlp_parser::{Rlp, RlpListDecode};
 use ruint::aliases::U256;
 
@@ -17,7 +19,7 @@ pub struct LegacyTXInner<'a> {
 impl<'a> RlpListDecode<'a> for LegacyTXInner<'a> {
     /// Decode the 6-field legacy tx list body:
     /// [nonce, gasPrice, gasLimit, to, value, data]
-    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let nonce = r.u64()?;
         let gas_price = r.u256()?;
         let gas_limit = r.u64()?;
@@ -27,7 +29,7 @@ impl<'a> RlpListDecode<'a> for LegacyTXInner<'a> {
             if s.is_empty() || s.len() == 20 {
                 s
             } else {
-                return Err(());
+                return Err(InvalidTransaction::InvalidStructure);
             }
         };
 
@@ -53,10 +55,13 @@ pub(crate) struct LegacySignatureData<'a> {
 }
 
 impl<'a> RlpListDecode<'a> for LegacySignatureData<'a> {
-    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let v = r.u64()?;
         let r_bytes = r.bytes()?;
         let s = r.bytes()?;
+        if r_bytes.len() + s.len() > 64 {
+            return Err(InvalidTransaction::InvalidStructure);
+        }
         let new = Self { v, r: r_bytes, s };
         Ok(new)
     }

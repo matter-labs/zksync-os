@@ -1,3 +1,4 @@
+use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::FixedList;
 use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::RlpItemDecode;
 use ruint::aliases::B160;
@@ -22,7 +23,7 @@ pub(crate) struct EIP2930Tx<'a> {
 impl<'a> RlpListDecode<'a> for EIP2930Tx<'a> {
     /// Decode the 8-field EIP-2930 list body:
     /// [chainId, nonce, gasPrice, gasLimit, to, value, data, accessList]
-    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let chain_id = r.u64()?;
         let nonce = r.u64()?;
         let gas_price = r.u256()?;
@@ -32,7 +33,7 @@ impl<'a> RlpListDecode<'a> for EIP2930Tx<'a> {
             if s.is_empty() || s.len() == 20 {
                 s
             } else {
-                return Err(());
+                return Err(InvalidTransaction::InvalidStructure);
             }
         };
         let value = r.u256()?;
@@ -60,12 +61,12 @@ pub struct AccessListForAddress<'a> {
 }
 
 impl<'a> RlpItemDecode<'a> for AccessListForAddress<'a> {
-    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let mut it = r.list()?; // [address, storageKeys]
         let addr = B160::decode_from_item(&mut it)?; // address as string
         let slots = StorageSlotsList::decode_list_from(&mut it)?; // list of 32-byte strings
         if !it.is_empty() {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(Self {
             address: addr,

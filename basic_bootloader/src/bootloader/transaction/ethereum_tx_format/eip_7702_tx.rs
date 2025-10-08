@@ -1,5 +1,7 @@
 use super::minimal_rlp_parser::{HomList, Rlp, RlpListDecode};
-use crate::bootloader::transaction::ethereum_tx_format::eip_2930_tx::AccessList;
+use crate::bootloader::{
+    errors::InvalidTransaction, transaction::ethereum_tx_format::eip_2930_tx::AccessList,
+};
 use ruint::aliases::U256;
 
 /// Authorization entry (EIP-7702 style) encoded as a list:
@@ -15,13 +17,15 @@ pub struct AuthorizationEntry<'a> {
 }
 
 impl<'a> RlpListDecode<'a> for AuthorizationEntry<'a> {
-    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let chain_id = r.u256()?;
         let addr_bytes = r.bytes()?;
         if addr_bytes.len() != 20 {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
-        let address: &'a [u8; 20] = addr_bytes.try_into().map_err(|_| ())?;
+        let address: &'a [u8; 20] = addr_bytes
+            .try_into()
+            .map_err(|_| InvalidTransaction::InvalidStructure)?;
         let nonce = r.u64()?;
         let y_parity = r.u8()?;
         let r_bytes = r.bytes()?;
@@ -61,7 +65,7 @@ pub(crate) struct EIP7702Tx<'a> {
 // pub type AuthorizationList<'a> = HomList<'a, AuthorizationEntry<'a>, true>;
 
 impl<'a> RlpListDecode<'a> for EIP7702Tx<'a> {
-    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let chain_id = r.u64()?;
         let nonce = r.u64()?;
         let max_priority_fee_per_gas = r.u256()?;
@@ -70,9 +74,11 @@ impl<'a> RlpListDecode<'a> for EIP7702Tx<'a> {
         // to must be exactly 20 bytes
         let to_slice = r.bytes()?;
         if to_slice.len() != 20 {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
-        let to: &'a [u8; 20] = to_slice.try_into().map_err(|_| ())?;
+        let to: &'a [u8; 20] = to_slice
+            .try_into()
+            .map_err(|_| InvalidTransaction::InvalidStructure)?;
         let value = r.u256()?;
         let data = r.bytes()?;
         let access_list = AccessList::decode_list_from(r)?;

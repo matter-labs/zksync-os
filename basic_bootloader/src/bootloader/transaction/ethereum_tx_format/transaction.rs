@@ -1,3 +1,5 @@
+use crate::bootloader::errors::TxError;
+use crate::bootloader::transaction::charge_keccak;
 use crate::bootloader::transaction::ethereum_tx_format::eip_2930_tx::{
     AccessList, AccessListForAddress,
 };
@@ -8,6 +10,7 @@ use core::alloc::Allocator;
 
 use super::*;
 use ruint::aliases::{B160, U256};
+use zk_ee::system::Resources;
 use zk_ee::utils::UsizeAlignedByteBox;
 
 // NOTE: this is self-reference, but relatively easy one. Do NOT derive clone one it,
@@ -41,10 +44,11 @@ impl<A: Allocator> EthereumTransactionWithBuffer<A> {
         self.buffer.as_slice()
     }
 
-    pub fn parse_from_buffer(
+    pub fn parse_from_buffer<R: Resources>(
         buffer: UsizeAlignedByteBox<A>,
         expected_chain_id: u32,
-    ) -> Result<Self, ()> {
+        resources: &mut R,
+    ) -> Result<Self, TxError> {
         // ideally we want partial initialization to be available here, but let's do without. Note that
         // we are free to move this structure as UsizeAlignedByteBox has a box inside and guarantees stable
         // address of the slice that we will use to parse a transaction, so we will not make a long code with
@@ -54,6 +58,7 @@ impl<A: Allocator> EthereumTransactionWithBuffer<A> {
             EthereumTxInner::parse_and_compute_signed_hash(
                 unsafe { core::mem::transmute::<&[u8], &[u8]>(buffer.as_slice()) },
                 expected_chain_id,
+                resources,
             )?;
         Ok(Self {
             buffer,
@@ -94,8 +99,12 @@ impl<A: Allocator> EthereumTransactionWithBuffer<A> {
         &self.sig_hash
     }
 
-    pub fn transaction_hash(&mut self) -> &Bytes32 {
+    pub fn transaction_hash<R: Resources>(
+        &mut self,
+        resources: &mut R,
+    ) -> Result<&Bytes32, TxError> {
         if self.tx_hash.is_none() {
+            charge_keccak(self.buffer.len(), resources)?;
             let mut hasher = crypto::sha3::Keccak256::new();
             hasher.update(self.buffer.as_slice());
             let tx_hash = Bytes32::from_array(hasher.finalize());
@@ -103,7 +112,7 @@ impl<A: Allocator> EthereumTransactionWithBuffer<A> {
         }
 
         // Safe to unwrap now
-        self.tx_hash.as_ref().unwrap()
+        Ok(self.tx_hash.as_ref().unwrap())
     }
 
     pub fn tx_type(&self) -> u8 {
@@ -251,11 +260,16 @@ pub struct EthereumTransaction<'a> {
 }
 
 impl<'a> EthereumTransaction<'a> {
-    pub fn parse(input: &'a [u8], expected_chain_id: u32) -> Result<Self, ()> {
+    pub fn parse<R: Resources>(
+        input: &'a [u8],
+        expected_chain_id: u32,
+        resources: &mut R,
+    ) -> Result<Self, TxError> {
         let (inner, sig_hash) =
-            EthereumTxInner::parse_and_compute_signed_hash(input, expected_chain_id)?;
+            EthereumTxInner::parse_and_compute_signed_hash(input, expected_chain_id, resources)?;
 
         let tx_hash = {
+            charge_keccak(input.len(), resources)?;
             let mut hasher = crypto::sha3::Keccak256::new();
             hasher.update(input);
             Bytes32::from_array(hasher.finalize())

@@ -1,3 +1,4 @@
+use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::transaction::ethereum_tx_format::eip_2930_tx::AccessList;
 use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::{Rlp, RlpListDecode};
 use ruint::aliases::U256;
@@ -23,7 +24,7 @@ pub(crate) struct EIP1559Tx<'a> {
 impl<'a> RlpListDecode<'a> for EIP1559Tx<'a> {
     /// Decode the 9-field EIP-1559 list body:
     /// [chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gas, to, value, data, accessList]
-    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let chain_id = r.u64()?;
         let nonce = r.u64()?;
         let max_priority_fee_per_gas = r.u256()?;
@@ -35,7 +36,7 @@ impl<'a> RlpListDecode<'a> for EIP1559Tx<'a> {
             if s.is_empty() || s.len() == 20 {
                 s
             } else {
-                return Err(());
+                return Err(InvalidTransaction::InvalidStructure);
             }
         };
 

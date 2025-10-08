@@ -3,6 +3,8 @@
 use core::marker::PhantomData;
 use ruint::aliases::{B160, U256};
 
+use crate::bootloader::errors::InvalidTransaction;
+
 /// Minimal, zero-copy RLP cursor.
 #[derive(Clone, Copy, Debug)]
 pub struct Rlp<'a> {
@@ -36,28 +38,31 @@ impl<'a> Rlp<'a> {
         &self.bytes[self.pos..]
     }
 
-    fn take_exact(&mut self, n: usize) -> Result<&'a [u8], ()> {
-        let end = self.pos.checked_add(n).ok_or(())?;
+    fn take_exact(&mut self, n: usize) -> Result<&'a [u8], InvalidTransaction> {
+        let end = self
+            .pos
+            .checked_add(n)
+            .ok_or(InvalidTransaction::InvalidStructure)?;
         if end > self.bytes.len() {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         let out = &self.bytes[self.pos..end];
         self.pos = end;
         Ok(out)
     }
 
-    fn take1(&mut self) -> Result<u8, ()> {
+    fn take1(&mut self) -> Result<u8, InvalidTransaction> {
         if self.pos >= self.bytes.len() {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         let b = self.bytes[self.pos];
         self.pos += 1;
         Ok(b)
     }
 
-    fn be_u32(s: &[u8]) -> Result<usize, ()> {
+    fn be_u32(s: &[u8]) -> Result<usize, InvalidTransaction> {
         if s.len() > 4 {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         let mut v: u32 = 0;
         for &b in s {
@@ -67,7 +72,7 @@ impl<'a> Rlp<'a> {
     }
 
     /// Return the next RLP item as a full encoded slice (prefix + payload), advancing the cursor.
-    pub fn item(&mut self) -> Result<&'a [u8], ()> {
+    pub fn item(&mut self) -> Result<&'a [u8], InvalidTransaction> {
         let start = self.pos;
         let m = self.take1()?;
         let total = if m < 0x80 {
@@ -78,7 +83,7 @@ impl<'a> Rlp<'a> {
             let ll = m as usize - 0xb7;
             // we make some reasonable bound here - max u32 length
             if ll > 4 {
-                return Err(());
+                return Err(InvalidTransaction::InvalidStructure);
             }
             let len = Self::be_u32(self.take_exact(ll)?)?;
             1 + ll + len
@@ -88,21 +93,21 @@ impl<'a> Rlp<'a> {
             let ll = m as usize - 0xf7;
             // we make some reasonable bound here - max u32 length
             if ll > 4 {
-                return Err(());
+                return Err(InvalidTransaction::InvalidStructure);
             }
             let len = Self::be_u32(self.take_exact(ll)?)?;
             1 + ll + len
         };
         let end = start + total;
         if end > self.bytes.len() {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         self.pos = end;
         Ok(&self.bytes[start..end])
     }
 
     /// Decode an RLP string and return its payload bytes (no header).
-    pub fn bytes(&mut self) -> Result<&'a [u8], ()> {
+    pub fn bytes(&mut self) -> Result<&'a [u8], InvalidTransaction> {
         let m = self.take1()?;
         if m < 0x80 {
             Ok(&self.bytes[self.pos - 1..self.pos])
@@ -113,20 +118,20 @@ impl<'a> Rlp<'a> {
             let ll = (m - 0xb7) as usize;
             // we make some reasonable bound here - max u32 length
             if ll > 4 {
-                return Err(());
+                return Err(InvalidTransaction::InvalidStructure);
             }
             let len = Self::be_u32(self.take_exact(ll)?)?;
             self.take_exact(len)
         } else {
-            Err(())
+            Err(InvalidTransaction::InvalidStructure)
         }
     }
 
     /// Enter a list and return a sub-cursor limited to the list payload bytes.
-    pub fn list(&mut self) -> Result<Rlp<'a>, ()> {
+    pub fn list(&mut self) -> Result<Rlp<'a>, InvalidTransaction> {
         let m = self.take1()?;
         if m < 0xc0 {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         let len = if m <= 0xf7 {
             (m - 0xc0) as usize
@@ -134,7 +139,7 @@ impl<'a> Rlp<'a> {
             let ll = (m - 0xf7) as usize;
             // we make some reasonable bound here - max u32 length
             if ll > 4 {
-                return Err(());
+                return Err(InvalidTransaction::InvalidStructure);
             }
             let len = Self::be_u32(self.take_exact(ll)?)?;
             len
@@ -144,30 +149,30 @@ impl<'a> Rlp<'a> {
     }
 
     /// Decode u8: empty string -> 0, one byte -> that value, otherwise error.
-    pub fn u8(&mut self) -> Result<u8, ()> {
+    pub fn u8(&mut self) -> Result<u8, InvalidTransaction> {
         let s = self.bytes()?;
         match s.len() {
             0 => Ok(0),
             1 => Ok(s[0]),
-            _ => Err(()),
+            _ => Err(InvalidTransaction::InvalidStructure),
         }
     }
 
     /// Decode bool: 0 -> false, 1 -> true, otherwise error.
-    pub fn bool(&mut self) -> Result<bool, ()> {
+    pub fn bool(&mut self) -> Result<bool, InvalidTransaction> {
         let v = self.u8()?;
         match v {
             0 => Ok(false),
             1 => Ok(true),
-            _ => Err(()),
+            _ => Err(InvalidTransaction::InvalidStructure),
         }
     }
 
     /// Decode u64 in big-endian, allowing 0..=8 bytes.
-    pub fn u64(&mut self) -> Result<u64, ()> {
+    pub fn u64(&mut self) -> Result<u64, InvalidTransaction> {
         let s = self.bytes()?;
         if s.len() > 8 {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         let mut buf = [0u8; 8];
         buf[8 - s.len()..].copy_from_slice(s);
@@ -175,8 +180,8 @@ impl<'a> Rlp<'a> {
     }
 
     /// Decode U256 from a big-endian byte string.
-    pub fn u256(&mut self) -> Result<U256, ()> {
-        U256::try_from_be_slice(self.bytes()?).ok_or(())
+    pub fn u256(&mut self) -> Result<U256, InvalidTransaction> {
+        U256::try_from_be_slice(self.bytes()?).ok_or(InvalidTransaction::InvalidStructure)
     }
 }
 
@@ -188,24 +193,24 @@ impl<'a> Rlp<'a> {
 /// and decode the list body fields inside.
 pub trait RlpListDecode<'a>: Sized {
     /// Decode just the body from a sub-cursor already restricted to the list payload.
-    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, ()>;
+    fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction>;
 
     /// Strip the list header, decode the body, and return the value.
-    fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let mut inner = r.list()?;
         let v = Self::decode_list_body(&mut inner)?;
         if !inner.is_empty() {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(v)
     }
 
     /// Parse from a standalone buffer and require full consumption.
-    fn decode_list_full(bytes: &'a [u8]) -> Result<Self, ()> {
+    fn decode_list_full(bytes: &'a [u8]) -> Result<Self, InvalidTransaction> {
         let mut r = Rlp::new(bytes);
         let v = Self::decode_list_from(&mut r)?;
         if !r.is_empty() {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(v)
     }
@@ -215,12 +220,12 @@ pub trait RlpListDecode<'a>: Sized {
 
 pub trait RlpItemDecode<'a>: Sized {
     // Decode one item starting at the current cursor position
-    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, ()>;
+    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction>;
 }
 
 // Trivially, any RlpListDecode can also be decoded as an item (a list item)
 impl<'a, T: RlpListDecode<'a>> RlpItemDecode<'a> for T {
-    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         T::decode_list_from(r)
     }
 }
@@ -229,36 +234,36 @@ pub trait RlpFixedItem<'a>: RlpItemDecode<'a> {
     // Total encoded length of the item (header + payload)
     const ENCODING_LEN: usize;
     // Decode from an already sliced encoded item of exactly ENCODING_LEN bytes
-    fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, ()>;
+    fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, InvalidTransaction>;
 }
 
 // Implementations for common fixed items
 
 impl<'a> RlpItemDecode<'a> for &'a [u8; 32] {
-    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let s = r.bytes()?;
         if s.len() == 32 {
             Ok(s.try_into().unwrap())
         } else {
-            Err(())
+            Err(InvalidTransaction::InvalidStructure)
         }
     }
 }
 impl<'a> RlpFixedItem<'a> for &'a [u8; 32] {
     const ENCODING_LEN: usize = 1 + 32; // 0xa0 + 32
-    fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, ()> {
+    fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, InvalidTransaction> {
         if encoded.len() != 33 || encoded[0] != 0xa0 {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(encoded[1..].try_into().unwrap())
     }
 }
 
 impl<'a> RlpItemDecode<'a> for B160 {
-    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let s = r.bytes()?;
         if s.len() != 20 {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(B160::from_be_bytes::<{ B160::BYTES }>(
             s.try_into().unwrap(),
@@ -267,9 +272,9 @@ impl<'a> RlpItemDecode<'a> for B160 {
 }
 impl<'a> RlpFixedItem<'a> for B160 {
     const ENCODING_LEN: usize = 1 + 20; // 0x94 + 20
-    fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, ()> {
+    fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, InvalidTransaction> {
         if encoded.len() != 21 || encoded[0] != 0x94 {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(B160::from_be_bytes::<{ B160::BYTES }>(
             encoded[1..].try_into().unwrap(),
@@ -296,11 +301,11 @@ pub struct FixedListIter<'a, T: RlpFixedItem<'a>> {
 
 impl<'a, T: RlpFixedItem<'a>> FixedList<'a, T> {
     // Parse a list header and return a fixed-length view
-    pub fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    pub fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let mut inner = r.list()?;
         let all = inner.remaining();
         if all.len() % T::ENCODING_LEN != 0 {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         let count = all.len() / T::ENCODING_LEN;
         inner.take_exact(all.len())?; // consume to satisfy caller's emptiness check
@@ -311,11 +316,11 @@ impl<'a, T: RlpFixedItem<'a>> FixedList<'a, T> {
         })
     }
 
-    pub fn decode_list_full(bytes: &'a [u8]) -> Result<Self, ()> {
+    pub fn decode_list_full(bytes: &'a [u8]) -> Result<Self, InvalidTransaction> {
         let mut r = Rlp::new(bytes);
         let v = Self::decode_list_from(&mut r)?;
         if !r.is_empty() {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(v)
     }
@@ -331,7 +336,7 @@ impl<'a, T: RlpFixedItem<'a>> FixedList<'a, T> {
 }
 
 impl<'a, T: RlpFixedItem<'a>> Iterator for FixedListIter<'a, T> {
-    type Item = Result<T, ()>;
+    type Item = Result<T, InvalidTransaction>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx >= self.count {
             return None;
@@ -365,7 +370,7 @@ pub struct HomListIter<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> {
 }
 
 impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
-    pub fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, ()> {
+    pub fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
         let mut inner = r.list()?;
         let all = inner.remaining();
 
@@ -389,11 +394,11 @@ impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
         })
     }
 
-    pub fn decode_list_full(bytes: &'a [u8]) -> Result<Self, ()> {
+    pub fn decode_list_full(bytes: &'a [u8]) -> Result<Self, InvalidTransaction> {
         let mut r = Rlp::new(bytes);
         let v = Self::decode_list_from(&mut r)?;
         if !r.is_empty() {
-            return Err(());
+            return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(v)
     }
@@ -407,7 +412,7 @@ impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
     }
 }
 
-// validated iterator yields T directly; non-validated yields Result<T, ()>
+// validated iterator yields T directly; non-validated yields Result<T, InvalidTransaction>
 impl<'a, T: RlpItemDecode<'a>> Iterator for HomListIter<'a, T, true> {
     type Item = T;
     fn next(&mut self) -> Option<Self::Item> {
@@ -418,7 +423,7 @@ impl<'a, T: RlpItemDecode<'a>> Iterator for HomListIter<'a, T, true> {
     }
 }
 impl<'a, T: RlpItemDecode<'a>> Iterator for HomListIter<'a, T, false> {
-    type Item = Result<T, ()>;
+    type Item = Result<T, InvalidTransaction>;
     fn next(&mut self) -> Option<Self::Item> {
         if !self.remaining_ok || self.r.is_empty() {
             return None;
@@ -427,7 +432,7 @@ impl<'a, T: RlpItemDecode<'a>> Iterator for HomListIter<'a, T, false> {
             Ok(v) => Some(Ok(v)),
             Err(_) => {
                 self.remaining_ok = false;
-                Some(Err(()))
+                Some(Err(InvalidTransaction::InvalidStructure))
             }
         }
     }
