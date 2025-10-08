@@ -17,7 +17,9 @@ pub struct EthereumTransactionWithBuffer<A: Allocator> {
     inner: EthereumTxInner<'static>,
     chain_id: u64,
     sig_hash: Bytes32,
-    // tx_hash: Bytes32,
+    // Lazy field, computed only when calling transaction_hash() for the first
+    // time.
+    tx_hash: Option<Bytes32>,
     signer: B160,
 }
 
@@ -28,7 +30,7 @@ impl<A: Allocator> core::fmt::Debug for EthereumTransactionWithBuffer<A> {
             .field("inner", &self.inner)
             .field("chain_id", &self.chain_id)
             .field("sig_hash", &self.sig_hash)
-            // .field("tx_hash", &self.tx_hash)
+            .field("tx_hash", &self.tx_hash)
             .field("signer", &self.signer)
             .finish()
     }
@@ -48,8 +50,8 @@ impl<A: Allocator> EthereumTransactionWithBuffer<A> {
         // address of the slice that we will use to parse a transaction, so we will not make a long code with
         // partial init and drop guards, but instead will parse via 'static transmute
 
-        let ((inner, sig_hash), _tx_hash): ((EthereumTxInner<'static>, Bytes32), Bytes32) =
-            EthereumTxInner::parse_and_compute_hashes(
+        let (inner, sig_hash): (EthereumTxInner<'static>, Bytes32) =
+            EthereumTxInner::parse_and_compute_signed_hash(
                 unsafe { core::mem::transmute::<&[u8], &[u8]>(buffer.as_slice()) },
                 expected_chain_id,
             )?;
@@ -58,7 +60,7 @@ impl<A: Allocator> EthereumTransactionWithBuffer<A> {
             inner,
             chain_id: expected_chain_id as u64,
             sig_hash,
-            // tx_hash,
+            tx_hash: None,
             signer: B160::ZERO,
         })
     }
@@ -92,9 +94,17 @@ impl<A: Allocator> EthereumTransactionWithBuffer<A> {
         &self.sig_hash
     }
 
-    // pub fn transaction_hash(&self) -> &Bytes32 {
-    //     &self.tx_hash
-    // }
+    pub fn transaction_hash(&mut self) -> &Bytes32 {
+        if self.tx_hash.is_none() {
+            let mut hasher = crypto::sha3::Keccak256::new();
+            hasher.update(self.buffer.as_slice());
+            let tx_hash = Bytes32::from_array(hasher.finalize());
+            self.tx_hash = Some(tx_hash);
+        }
+
+        // Safe to unwrap now
+        self.tx_hash.as_ref().unwrap()
+    }
 
     pub fn tx_type(&self) -> u8 {
         match &self.inner {
@@ -242,8 +252,15 @@ pub struct EthereumTransaction<'a> {
 
 impl<'a> EthereumTransaction<'a> {
     pub fn parse(input: &'a [u8], expected_chain_id: u32) -> Result<Self, ()> {
-        let ((inner, sig_hash), tx_hash) =
-            EthereumTxInner::parse_and_compute_hashes(input, expected_chain_id)?;
+        let (inner, sig_hash) =
+            EthereumTxInner::parse_and_compute_signed_hash(input, expected_chain_id)?;
+
+        let tx_hash = {
+            let mut hasher = crypto::sha3::Keccak256::new();
+            hasher.update(input);
+            Bytes32::from_array(hasher.finalize())
+        };
+
         let new = Self {
             inner,
             chain_id: expected_chain_id as u64,

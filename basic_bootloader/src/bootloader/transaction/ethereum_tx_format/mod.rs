@@ -70,10 +70,10 @@ pub(crate) enum EthereumTxInner<'a> {
 
 impl<'a> EthereumTxInner<'a> {
     // NOTE: u32 chain ID allows to avoid handling some overflows below
-    pub(crate) fn parse_and_compute_hashes(
+    pub(crate) fn parse_and_compute_signed_hash(
         input: &'a [u8],
         expected_chain_id: u32,
-    ) -> Result<((Self, Bytes32), Bytes32), ()> {
+    ) -> Result<(Self, Bytes32), ()> {
         use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::{
             Rlp, RlpListDecode,
         };
@@ -97,10 +97,7 @@ impl<'a> EthereumTxInner<'a> {
                         return Err(());
                     }
                     let sig_hash: Bytes32 = hasher.finalize_reset().into();
-                    hasher.update(input);
-                    let tx_hash = hasher.finalize().into();
-
-                    Ok(((Self::EIP2930(tx, sig_data), sig_hash), tx_hash))
+                    Ok((Self::EIP2930(tx, sig_data), sig_hash))
                 }
                 2 => {
                     let mut hasher = crypto::sha3::Keccak256::new();
@@ -116,10 +113,7 @@ impl<'a> EthereumTxInner<'a> {
                         return Err(());
                     }
                     let sig_hash: Bytes32 = hasher.finalize_reset().into();
-                    hasher.update(input);
-                    let tx_hash = hasher.finalize().into();
-
-                    Ok(((Self::EIP1559(tx, sig_data), sig_hash), tx_hash))
+                    Ok((Self::EIP1559(tx, sig_data), sig_hash))
                 }
                 4 => {
                     let mut hasher = crypto::sha3::Keccak256::new();
@@ -135,10 +129,7 @@ impl<'a> EthereumTxInner<'a> {
                         return Err(());
                     }
                     let sig_hash: Bytes32 = hasher.finalize_reset().into();
-                    hasher.update(input);
-                    let tx_hash = hasher.finalize().into();
-
-                    Ok(((Self::EIP7702(tx, sig_data), sig_hash), tx_hash))
+                    Ok((Self::EIP7702(tx, sig_data), sig_hash))
                 }
                 _ => Err(()),
             }
@@ -167,13 +158,8 @@ impl<'a> EthereumTxInner<'a> {
                 apply_list_concatenation_encoding_to_hash(inner_slice.len() as u32, &mut hasher);
                 hasher.update(inner_slice);
                 let sig_hash: Bytes32 = hasher.finalize_reset().into();
-                hasher.update(input);
-                let tx_hash = hasher.finalize().into();
 
-                Ok((
-                    (Self::Legacy(legacy_inner, legacy_signature), sig_hash),
-                    tx_hash,
-                ))
+                Ok((Self::Legacy(legacy_inner, legacy_signature), sig_hash))
             } else {
                 // EIP-155 protected legacy: v must match 35 + 2*chainId (+ {0,1})
                 let legacy_signature = LegacySignatureData::decode_list_body(&mut outer)?;
@@ -198,15 +184,10 @@ impl<'a> EthereumTxInner<'a> {
                 apply_u64_encoding_to_hash(chain_id, &mut hasher);
                 hasher.update(&[0x80, 0x80]);
                 let sig_hash: Bytes32 = hasher.finalize_reset().into();
-                hasher.update(input);
-                let tx_hash = hasher.finalize().into();
 
                 Ok((
-                    (
-                        Self::LegacyWithEIP155(legacy_inner, legacy_signature),
-                        sig_hash,
-                    ),
-                    tx_hash,
+                    Self::LegacyWithEIP155(legacy_inner, legacy_signature),
+                    sig_hash,
                 ))
             }
         }
