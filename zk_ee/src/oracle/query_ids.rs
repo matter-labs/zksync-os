@@ -46,7 +46,7 @@ pub const BLOCK_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_07_00_00; // 0x4
 /// Special case: UART output query ID (for debugging purposes)
 pub const UART_QUERY_ID: u32 = 0xff_ff_ff_ff;
 
-// ========== Syatem Subspace Queries ==========
+// ========== System Subspace Queries ==========
 
 /// Signal to disconnect from external oracle and switch to autonomous execution mode
 #[allow(clippy::identity_op)]
