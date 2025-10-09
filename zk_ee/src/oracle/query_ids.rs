@@ -27,6 +27,7 @@ pub const BASIC_SUBSPACE_MASK: u32 = 0x40_00_00_00;
 // - Second byte organizes different query subcategories
 
 /// System-level queries (e.g. disconnect oracle)
+#[allow(clippy::identity_op)]
 pub const SYSTEM_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_00_00_00; // 0x40000000
 /// Generic queries
 pub const GENERIC_SUBSPACE_MASK: u32 = BASIC_SUBSPACE_MASK | 0x00_01_00_00; // 0x40010000
