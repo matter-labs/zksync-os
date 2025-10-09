@@ -3,7 +3,7 @@
 Oracles are an abstraction boundary on how the system gets data from the outer world.
 The oracle is just providing the system with some data, the caller is responsible of verifying it.
 
-The oracle interface can be found in the [`IOOracle`](../../../zk_ee/src/system_io_oracle/mod.rs) trait of the system interface.
+The oracle interface can be found in the [`IOOracle`](../../../zk_ee/src/oracle/mod.rs) trait of the system interface.
 
 The system uses oracles for:
 
@@ -18,7 +18,7 @@ The system uses oracles for:
 
 The main reason why we have this trait as abstraction is because we want to have different implementations for forward running (in sequencer), and proving running.
 
-For forward running it can be implemented pretty straight forward, the easiest way is just to define a structure that has access to all the needed data, probably connected to a DB. For example we have the following [forward running implementation](../../../forward_system/src/run/oracle.rs).
+For forward running it can be implemented pretty straight forward, the easiest way is just to define a structure that has access to all the needed data, probably connected to a DB. For example we have the following set of [oracle query processors](../../../forward_system/src/run/query_processors).
 
 For proving it’s a bit harder, as we are running it as a separate program on the RISC-V machine, so somehow we need to get data into the RISC-V machine.
 
