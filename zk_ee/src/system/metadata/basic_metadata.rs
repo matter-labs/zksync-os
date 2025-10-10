@@ -74,9 +74,6 @@ pub trait BasicTransactionMetadata<IOTypes: SystemIOTypesConfig> {
 
 /// ZKsync-specific pricing knobs that are *not* standardized by Ethereum.
 pub trait ZkSpecificPricingMetadata {
-    /// Price of one byte of pubdata expressed in gas.
-    fn gas_per_pubdata(&self) -> U256;
-
     /// Price of an unit of native resources.
     fn native_price(&self) -> U256;
 

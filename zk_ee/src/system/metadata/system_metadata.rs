@@ -91,14 +91,14 @@ impl<
         TX: BasicTransactionMetadata<IOTypes>,
     > ZkSpecificPricingMetadata for SystemMetadata<IOTypes, B, TX>
 {
-    fn gas_per_pubdata(&self) -> U256 {
-        self.block_level.gas_per_pubdata()
-    }
     fn native_price(&self) -> U256 {
         self.block_level.native_price()
     }
     fn get_pubdata_limit(&self) -> u64 {
         self.block_level.get_pubdata_limit()
+    }
+    fn get_pubdata_price(&self) -> U256 {
+        self.block_level.get_pubdata_price()
     }
 }
 

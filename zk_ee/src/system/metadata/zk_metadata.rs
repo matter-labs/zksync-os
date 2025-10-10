@@ -186,8 +186,8 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
 }
 
 impl ZkSpecificPricingMetadata for BlockMetadataFromOracle {
-    fn gas_per_pubdata(&self) -> U256 {
-        self.gas_per_pubdata
+    fn get_pubdata_price(&self) -> U256 {
+        self.pubdata_price
     }
     fn native_price(&self) -> U256 {
         self.native_price
