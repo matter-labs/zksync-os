@@ -8933,14 +8933,12 @@ dependencies = [
 [[package]]
 name = "zksync_os_evm_errors"
 version = "0.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c8927d36dbdd25c8ffa58eb6f88d7bd6815f833272ba46da4d7382d0ce5ffd1"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#ec88ab44a83c834090a03e79a33fc917d489b0c4"
 
 [[package]]
 name = "zksync_os_interface"
 version = "0.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e888c943b8e03574372a0dc0bd1df425e884ae44273e52b197e0469c09def7e0"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#ec88ab44a83c834090a03e79a33fc917d489b0c4"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
