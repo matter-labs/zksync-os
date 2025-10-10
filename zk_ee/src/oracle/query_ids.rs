@@ -80,6 +80,12 @@ pub const NEXT_TX_SIZE_QUERY_ID: u32 = TRANSACTION_SUBSPACE_MASK | 0; // 0x40060
 /// Query to get transaction data words for the current transaction being processed
 pub const TX_DATA_WORDS_QUERY_ID: u32 = TRANSACTION_SUBSPACE_MASK | 1; // 0x40060001
 
+/// Query to get transaction encoding format.
+pub const TX_ENCODING_FORMAT_QUERY_ID: u32 = GENERIC_SUBSPACE_MASK | 2; // 0x40060002
+
+/// Query to get sender address of the transaction.
+pub const TX_FROM_QUERY_ID: u32 = GENERIC_SUBSPACE_MASK | 3; // 0x40060003
+
 // ========== Block or batch Subspace Queries ==========
 
 /// Query to retrieve block metadata (timestamp, number, etc.) from the oracle

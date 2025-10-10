@@ -4,6 +4,7 @@ use crate::bootloader::DEBUG_OUTPUT;
 use alloc::boxed::Box;
 use core::fmt::Write;
 use core::mem::MaybeUninit;
+use errors::internal::InternalError;
 use ruint::aliases::B160;
 use system_hooks::*;
 use zk_ee::common_structs::CalleeAccountProperties;
@@ -704,6 +705,23 @@ where
     })
 }
 
+///
+/// Parse a delegation of the format: 0xef0100 || address
+/// TODO: in future should be moved to EE
+///
+pub fn parse_delegation(delegation: &[u8]) -> Result<B160, InternalError> {
+    if delegation.len() != EIP7702_DELEGATION_MARKER.len() + B160::BYTES {
+        return Err(internal_error!("7702 delegation of incorrect length"));
+    }
+    if delegation[0..3] != EIP7702_DELEGATION_MARKER {
+        return Err(internal_error!("7702 delegation has invalid prefix"));
+    }
+    let Some(address) = B160::try_from_be_slice(&delegation[3..]) else {
+        return Err(internal_error!("7702 delegation has invalid address"));
+    };
+    Ok(address)
+}
+
 /// Charge for reading account properties and perform actual read
 fn read_callee_account_properties<'a, S: EthereumLikeTypes>(
     system: &mut System<S>,
@@ -739,8 +757,6 @@ where
                 && account_properties.is_delegated.0
                 && call_request.modifier != CallModifier::Constructor
             {
-                // TODO: in future should be moved to EE
-                use crate::bootloader::transaction::parse_delegation;
                 // Resolve delegation following EIP-7702 (only one level
                 // of delegation is allowed).
                 let delegation = &account_properties.bytecode.0

@@ -1,5 +1,3 @@
-use alloc::vec::Vec;
-use constants::{MAX_TX_LEN_WORDS, TX_OFFSET_WORDS};
 use errors::{BootloaderSubsystemError, InvalidTransaction};
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
@@ -8,7 +6,6 @@ use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
-use zk_ee::utils::usize_rw::{SafeUsizeWritable, UsizeWriteable};
 
 pub mod run_single_interaction;
 pub mod runner;
@@ -27,16 +24,12 @@ pub mod result_keeper;
 mod rlp;
 
 use alloc::boxed::Box;
-use core::alloc::Allocator;
 use core::fmt::Write;
-use core::mem::MaybeUninit;
-use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use zk_ee::internal_error;
 
 use crate::bootloader::block_header::BlockHeader;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
-use crate::bootloader::constants::TX_OFFSET;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::result_keeper::*;
 use crate::bootloader::runner::RunnerMemoryBuffers;
@@ -57,115 +50,6 @@ where
     _marker: core::marker::PhantomData<(S, F)>,
 }
 
-struct TxDataBuffer<A: Allocator> {
-    buffer: Vec<u32, A>,
-}
-
-impl<A: Allocator> TxDataBuffer<A> {
-    fn new(allocator: A) -> Self {
-        let mut buffer: Vec<u32, A> =
-            Vec::with_capacity_in(TX_OFFSET_WORDS + MAX_TX_LEN_WORDS, allocator);
-        buffer.resize(TX_OFFSET_WORDS, 0u32);
-
-        Self { buffer }
-    }
-
-    #[allow(clippy::wrong_self_convention)]
-    fn into_writable<'a>(&'a mut self) -> TxDataBufferWriter<'a> {
-        self.buffer.resize(TX_OFFSET_WORDS, 0u32);
-        let capacity = self.buffer.spare_capacity_mut();
-
-        TxDataBufferWriter {
-            capacity,
-            offset: 0,
-        }
-    }
-
-    fn as_tx_buffer<'a>(&'a mut self, next_tx_data_len_bytes: usize) -> &'a mut [u8] {
-        let word_len = TX_OFFSET_WORDS
-            + next_tx_data_len_bytes.next_multiple_of(core::mem::size_of::<u32>())
-                / core::mem::size_of::<u32>();
-        assert!(self.buffer.capacity() >= word_len);
-        unsafe {
-            self.buffer.set_len(word_len);
-            core::slice::from_raw_parts_mut(
-                self.buffer.as_mut_ptr().cast(),
-                TX_OFFSET + next_tx_data_len_bytes,
-            )
-        }
-    }
-}
-
-struct TxDataBufferWriter<'a> {
-    capacity: &'a mut [MaybeUninit<u32>],
-    offset: usize,
-}
-
-impl<'a> UsizeWriteable for TxDataBufferWriter<'a> {
-    unsafe fn write_usize(&mut self, value: usize) {
-        #[cfg(target_pointer_width = "32")]
-        {
-            if self.offset >= self.capacity.len() {
-                panic!();
-            }
-            self.capacity[self.offset].write(value as u32);
-            self.offset += 1;
-        }
-
-        #[cfg(target_pointer_width = "64")]
-        {
-            if self.offset + 1 >= self.capacity.len() {
-                panic!();
-            }
-            self.capacity[self.offset].write(value as u32);
-            self.capacity[self.offset + 1].write((value >> 32) as u32);
-            self.offset += 2;
-        }
-
-        #[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
-        {
-            compile_error!("unsupported arch")
-        }
-    }
-}
-
-impl<'a> SafeUsizeWritable for TxDataBufferWriter<'a> {
-    fn try_write(&mut self, value: usize) -> Result<(), ()> {
-        #[cfg(target_pointer_width = "32")]
-        {
-            if self.offset >= self.capacity.len() {
-                return Err(());
-            }
-            self.capacity[self.offset].write(value as u32);
-            self.offset += 1;
-
-            Ok(())
-        }
-
-        #[cfg(target_pointer_width = "64")]
-        {
-            if self.offset + 1 >= self.capacity.len() {
-                return Err(());
-            }
-            self.capacity[self.offset].write(value as u32);
-            self.capacity[self.offset + 1].write((value >> 32) as u32);
-            self.offset += 2;
-
-            Ok(())
-        }
-    }
-
-    fn len(&self) -> usize {
-        if core::mem::size_of::<usize>() == core::mem::size_of::<u32>() {
-            self.capacity.len()
-        } else if core::mem::size_of::<usize>() == core::mem::size_of::<u64>() {
-            self.capacity.len() / 2
-        } else {
-            unreachable!()
-        }
-    }
-}
-
 // TODO: type of Metadata is hardcoded for now, will be cleaned in future PRs
 impl<
         S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
@@ -174,6 +58,19 @@ impl<
 where
     S::IO: IOSubsystemExt,
 {
+    fn try_begin_next_tx(
+        system: &mut System<S>,
+    ) -> Option<Result<UsizeAlignedByteBox<S::Allocator>, NextTxSubsystemError>> {
+        let allocator = system.get_allocator();
+        let r = system.try_begin_next_tx(move |tx_length_in_bytes| {
+            UsizeAlignedByteBox::preallocated_in(tx_length_in_bytes, allocator)
+        })?;
+        Some(r.map(|(tx_length_in_bytes, mut buffer)| {
+            buffer.truncated_to_byte_length(tx_length_in_bytes);
+            buffer
+        }))
+    }
+
     /// Runs the transactions that it loads from the oracle.
     /// This code runs both in sequencer (then it uses ForwardOracle - that stores data in local variables)
     /// and in prover (where oracle uses CRS registers to communicate).
@@ -215,8 +112,6 @@ where
         // we will model initial calldata buffer as just another "heap"
         let mut system: System<S> = System::init_from_metadata_and_oracle(metadata, oracle)?;
 
-        let mut initial_calldata_buffer = TxDataBuffer::new(system.get_allocator());
-
         pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
         pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 28; // 256 MB
 
@@ -250,10 +145,7 @@ where
         let mut block_pubdata_used = 0;
 
         // now we can run every transaction
-        while let Some(r) = {
-            let mut writable = initial_calldata_buffer.into_writable();
-            system.try_begin_next_tx(&mut writable)
-        } {
+        while let Some(r) = Self::try_begin_next_tx(&mut system) {
             match r {
                 Err(err) => {
                     let _ = system.get_logger().write_fmt(format_args!(
@@ -261,7 +153,7 @@ where
                     ));
                     result_keeper.tx_processed(Err(InvalidTransaction::InvalidEncoding));
                 }
-                Ok(next_tx_data_len_bytes) => {
+                Ok(initial_calldata_buffer) => {
                     let mut inf_resources = S::Resources::FORMAL_INFINITE;
                     system
                         .io
@@ -278,10 +170,7 @@ where
                         logger.write_fmt(format_args!("====================================\n"));
                     let _ = logger.write_fmt(format_args!("TX execution begins\n"));
 
-                    let initial_calldata_buffer =
-                        initial_calldata_buffer.as_tx_buffer(next_tx_data_len_bytes);
-
-                    tracer.begin_tx(initial_calldata_buffer);
+                    tracer.begin_tx(initial_calldata_buffer.as_slice());
 
                     // Take a snapshot in case we need to invalidate the
                     // transaction to seal the block.
@@ -384,7 +273,7 @@ where
                                     pubdata_used: tx_processing_result.pubdata_used,
                                 }));
 
-                                let mut keccak = Keccak256::new();
+                                let mut keccak = crypto::sha3::Keccak256::new();
                                 keccak.update(tx_rolling_hash);
                                 keccak.update(tx_processing_result.tx_hash.as_u8_ref());
                                 tx_rolling_hash = keccak.finalize();

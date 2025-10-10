@@ -1,3 +1,5 @@
+use utils::usize_rw::AsUsizeWritable;
+
 use super::*;
 pub mod base_system_functions;
 pub mod call_modifiers;
@@ -245,10 +247,11 @@ where
     /// Returns None when there are no more transactions to process.
     /// Returns Some(Err(_)) if there's an encoding or oracle error.
     ///
-    pub fn try_begin_next_tx(
+    pub fn try_begin_next_tx<B: AsUsizeWritable>(
         &mut self,
-        tx_write_iter: &mut impl crate::utils::usize_rw::SafeUsizeWritable,
-    ) -> Option<Result<usize, NextTxSubsystemError>> {
+        buffer_constructor: impl FnOnce(usize) -> B,
+    ) -> Option<Result<(usize, B), NextTxSubsystemError>> {
+        use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWriteable};
         let next_tx_len_bytes = match self.io.oracle().try_begin_next_tx() {
             Ok(maybe_next_len) => match maybe_next_len {
                 None => return None,
@@ -256,6 +259,7 @@ where
             },
             Err(e) => return Some(Err(e.into())),
         };
+
         // Check to avoid usize overflow in 32-bit target.
         // The maximum allowed length is u32::MAX - 3, as it is
         // the last multiple of 4 (u32 byte size). Any value larger than that
@@ -265,10 +269,14 @@ where
                 crate::system::NextTxInterfaceError::TxLengthTooLarge
             )));
         }
+
+        // create buffer
+        let mut buffer = (buffer_constructor)(next_tx_len_bytes);
+        let mut as_writable = buffer.as_writable();
         let next_tx_len_usize_words = next_tx_len_bytes.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
-        if tx_write_iter.len() < next_tx_len_usize_words {
+        if as_writable.len() < next_tx_len_usize_words {
             return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
+                crate::system::NextTxInterfaceError::DestinationBufferInsufficient
             )));
         }
         let tx_iterator = match self
@@ -276,24 +284,24 @@ where
             .oracle()
             .raw_query_with_empty_input(TX_DATA_WORDS_QUERY_ID)
         {
-            Ok(res) => res,
+            Ok(it) => it,
             Err(e) => return Some(Err(e.into())),
         };
-
-        if tx_iterator.len() != next_tx_len_usize_words {
+        if tx_iterator.len() > as_writable.len() {
             return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::TxIteratorLengthMismatch
+                crate::system::NextTxInterfaceError::TxWriteIteratorTooBig
             )));
         }
         for word in tx_iterator {
             unsafe {
-                tx_write_iter.write_usize(word);
+                as_writable.write_usize(word);
             }
         }
+        drop(as_writable);
 
         self.io.begin_next_tx();
 
-        Some(Ok(next_tx_len_bytes))
+        Some(Ok((next_tx_len_bytes, buffer)))
     }
 
     pub fn deploy_bytecode(
@@ -372,7 +380,7 @@ where
 define_subsystem!(NextTx,
   interface NextTxInterfaceError {
     TxLengthTooLarge,
-    TxWriteIteratorTooSmall,
-    TxIteratorLengthMismatch,
+    DestinationBufferInsufficient,
+    TxWriteIteratorTooBig,
   }
 );

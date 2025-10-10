@@ -1,4 +1,8 @@
-use super::{copy_bytes_iter_to_usize_slice, USIZE_SIZE};
+use super::{
+    copy_bytes_iter_to_usize_slice,
+    usize_rw::{AsUsizeWritable, SafeUsizeWritable, UsizeWriteable},
+    USIZE_SIZE,
+};
 use core::alloc::Allocator;
 
 pub const fn num_usize_words_for_u8_capacity(u8_capacity: usize) -> usize {
@@ -29,7 +33,7 @@ pub struct UsizeAlignedByteBox<A: Allocator> {
 }
 
 impl<A: Allocator> UsizeAlignedByteBox<A> {
-    fn preallocated_in(byte_capacity: usize, allocator: A) -> Self {
+    pub fn preallocated_in(byte_capacity: usize, allocator: A) -> Self {
         let num_usize_words = num_usize_words_for_u8_capacity(byte_capacity);
         let inner: alloc::boxed::Box<[usize], A> = unsafe {
             alloc::boxed::Box::new_uninit_slice_in(num_usize_words, allocator).assume_init()
@@ -124,6 +128,54 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
             inner: alloc::boxed::Box::into_pin(inner),
             byte_capacity,
         }
+    }
+}
+
+impl<A: Allocator> AsUsizeWritable for UsizeAlignedByteBox<A> {
+    type Writable<'a>
+        = UsizeSliceWriter<'a>
+    where
+        Self: 'a;
+    fn as_writable<'a>(&'a mut self) -> Self::Writable<'a>
+    where
+        Self: 'a,
+    {
+        let range = self.inner.as_mut_ptr_range();
+
+        UsizeSliceWriter {
+            dst: range.start,
+            end: range.end,
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
+pub struct UsizeSliceWriter<'a> {
+    dst: *mut usize,
+    end: *mut usize,
+    _marker: core::marker::PhantomData<&'a ()>,
+}
+
+impl<'a> UsizeWriteable for UsizeSliceWriter<'a> {
+    unsafe fn write_usize(&mut self, value: usize) {
+        self.dst.write(value);
+        self.dst = self.dst.add(1);
+    }
+}
+
+impl<'a> SafeUsizeWritable for UsizeSliceWriter<'a> {
+    fn try_write(&mut self, value: usize) -> Result<(), ()> {
+        if self.dst >= self.end {
+            Err(())
+        } else {
+            unsafe { self.write_usize(value) };
+
+            Ok(())
+        }
+    }
+
+    fn len(&self) -> usize {
+        unsafe { self.end.offset_from_unsigned(self.dst) }
     }
 }
 

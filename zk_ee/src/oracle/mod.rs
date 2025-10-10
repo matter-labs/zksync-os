@@ -20,12 +20,11 @@ pub mod query_ids;
 pub mod simple_oracle_query;
 pub mod usize_serialization;
 
-use core::num::NonZeroU32;
-
 use crate::internal_error;
 use crate::oracle::query_ids::NEXT_TX_SIZE_QUERY_ID;
 use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::internal::InternalError;
+use core::num::NonZeroU32;
 
 /// Core trait for querying external, non-deterministic data during ZKsync OS execution. This is
 /// an abstraction boundary on how ZKsync OS (system) gets IO information and eventually
@@ -112,6 +111,50 @@ pub trait IOOracle: 'static + Sized {
         let size = self.query_with_empty_input::<u32>(NEXT_TX_SIZE_QUERY_ID)?;
 
         Ok(NonZeroU32::new(size))
+    }
+}
+
+// TODO: move somewhere?
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[repr(u8)]
+pub enum TxEncodingFormat {
+    Zk = 0,
+    Eth = 1,
+}
+
+impl UsizeDeserializable for TxEncodingFormat {
+    const USIZE_LEN: usize = 1;
+
+    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let byte = <u8 as UsizeDeserializable>::from_iter(src)?;
+        if byte == TxEncodingFormat::Zk as u8 {
+            Ok(TxEncodingFormat::Zk)
+        } else if byte == TxEncodingFormat::Eth as u8 {
+            Ok(TxEncodingFormat::Eth)
+        } else {
+            Err(internal_error!("Unsupported tx encoding format"))
+        }
+    }
+}
+
+impl UsizeSerializable for TxEncodingFormat {
+    const USIZE_LEN: usize = <Self as UsizeDeserializable>::USIZE_LEN;
+
+    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
+        cfg_if::cfg_if!(
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                let low = *self as usize;
+                let high = 0;
+                return [low, high].into_iter();
+            } else if #[cfg(target_pointer_width = "64")] {
+                return core::iter::once(*self as usize)
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        );
     }
 }
 

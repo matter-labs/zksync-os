@@ -1,15 +1,11 @@
 use crate::bootloader::{
     errors::{InvalidTransaction, TxError},
-    transaction::{
-        charge_keccak,
-        ethereum_tx_format::{
-            apply_list_concatenation_encoding_to_hash,
-            minimal_rlp_parser::{Rlp, RlpListDecode},
-        },
+    transaction::ethereum_tx_format::{
+        apply_list_concatenation_encoding_to_hash,
+        minimal_rlp_parser::{Rlp, RlpListDecode},
     },
 };
 use crypto::MiniDigest;
-use zk_ee::system::Resources;
 use zk_ee::utils::Bytes32;
 
 /// Parser for typed EIP-2718 transactions where the payload (P) and signature
@@ -47,10 +43,9 @@ impl<'a, P: RlpListDecode<'a>> EIP2718PayloadParser<'a, P> {
     /// Will try to parse P, and the try to parse signature manually
     /// NOTE: double hashing is inevitable, as signature is verified upon keccak256(0x01 || rlp([chainId, nonce, gasPrice, gasLimit, to, value, data, accessList])),
     /// while for indexing purposes divergence starts at the very start as RLP pre-encodes total length
-    pub(crate) fn try_parse_and_hash_for_signature_verification<R: Resources>(
+    pub(crate) fn try_parse_and_hash_for_signature_verification(
         src: &'a [u8],
         tx_type: u8,
-        resources: &mut R,
     ) -> Result<(P, EIP2718SignatureData<'a>, Bytes32), TxError> {
         let mut outer = Rlp::new(src);
         // Strip the list encoding
@@ -71,11 +66,6 @@ impl<'a, P: RlpListDecode<'a>> EIP2718PayloadParser<'a, P> {
         if !inner.is_empty() {
             return Err(InvalidTransaction::InvalidStructure.into());
         }
-
-        let encoding_len_for_charging = 1 + // tx type
-          5 + // header, at most 5 as we check that the length is a u32
-          inner_slice.len();
-        charge_keccak(encoding_len_for_charging, resources)?;
 
         let mut hasher = crypto::sha3::Keccak256::new();
         hasher.update(&[tx_type]);

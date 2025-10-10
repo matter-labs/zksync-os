@@ -4,14 +4,10 @@ use ruint::aliases::{B160, U256};
 pub const SPECIAL_ADDRESS_SPACE_BOUND: u64 = 0x010000;
 pub const SPECIAL_ADDRESS_TO_WASM_DEPLOY: B160 = B160::from_limbs([0x9000, 0, 0]);
 
-/// We want to have a buffer before the transaction.
-pub const TX_OFFSET: usize = (6 + 33) * 32 + 4;
 pub const MAX_TX_LEN_BYTES: usize = 1 << 23;
-pub const TX_OFFSET_WORDS: usize = TX_OFFSET / core::mem::size_of::<u32>();
 pub const MAX_TX_LEN_WORDS: usize = MAX_TX_LEN_BYTES / core::mem::size_of::<u32>();
 
 const _: () = const {
-    assert!(TX_OFFSET % core::mem::size_of::<u32>() == 0);
     assert!(MAX_TX_LEN_BYTES % core::mem::size_of::<usize>() == 0);
 };
 

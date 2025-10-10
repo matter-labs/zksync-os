@@ -412,6 +412,13 @@ impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
     }
 }
 
+impl<'a, T: RlpItemDecode<'a>> HomList<'a, T, true> {
+    pub fn len(&self) -> usize {
+        // Safe to unwrap, always set for VALIDATE = true
+        self.count.unwrap()
+    }
+}
+
 // validated iterator yields T directly; non-validated yields Result<T, InvalidTransaction>
 impl<'a, T: RlpItemDecode<'a>> Iterator for HomListIter<'a, T, true> {
     type Item = T;

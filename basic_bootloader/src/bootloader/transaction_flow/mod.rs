@@ -6,7 +6,7 @@ pub mod zk;
 
 use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
-use crate::bootloader::transaction::ZkSyncTransaction;
+use crate::bootloader::transaction::Transaction;
 use ruint::aliases::B160;
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -90,7 +90,7 @@ where
         memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
+        transaction: &Transaction<S::Allocator>,
         caller_ee_type: ExecutionEnvironmentType,
         caller_is_code: bool,
         caller_nonce: u64,
@@ -105,7 +105,7 @@ where
         memories: RunnerMemoryBuffers<'a>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
+        transaction: &Transaction<S::Allocator>,
         current_tx_nonce: u64,
         resources: &mut S::Resources,
         tracer: &mut impl Tracer<S>,
@@ -116,7 +116,7 @@ where
     ///
     fn charge_additional_intrinsic_gas(
         resources: &mut S::Resources,
-        transaction: &ZkSyncTransaction,
+        transaction: &Transaction<S::Allocator>,
     ) -> Result<(), TxError>;
 
     ///
@@ -143,7 +143,7 @@ where
         system_functions: &mut HooksStorage<S, S::Allocator>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
+        transaction: &Transaction<S::Allocator>,
         from: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,

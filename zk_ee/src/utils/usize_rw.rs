@@ -140,6 +140,21 @@ pub trait SafeUsizeWritable: UsizeWriteable {
     }
 }
 
+/// Adapter to expose a type as a `SafeUsizeWritable`.
+///
+/// Produces a lifetime-tied writable view over `self` without exposing the backing storage.
+pub trait AsUsizeWritable: Sized {
+    /// Borrowed writable view tied to the lifetime of `&mut self`.
+    type Writable<'a>: SafeUsizeWritable
+    where
+        Self: 'a;
+
+    /// Returns a writable view over `self`.
+    fn as_writable<'a>(&'a mut self) -> Self::Writable<'a>
+    where
+        Self: 'a;
+}
+
 /// Adapter that wraps mutable iterators to implement `UsizeWriteable`.
 ///
 /// This wrapper allows any iterator over mutable references to copyable types to be used

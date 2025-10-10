@@ -5,7 +5,7 @@ use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use crate::bootloader::supported_ees::errors::EESubsystemError;
 use crate::bootloader::supported_ees::SystemBoundEVMInterpreter;
-use crate::bootloader::transaction::ZkSyncTransaction;
+use crate::bootloader::transaction::Transaction;
 use crate::bootloader::transaction_flow::BasicTransactionFlow;
 use crate::bootloader::transaction_flow::DeployedAddress;
 use crate::bootloader::transaction_flow::TxExecutionResult;
@@ -44,7 +44,7 @@ where
         _memories: RunnerMemoryBuffers,
         _tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
+        transaction: &Transaction<S::Allocator>,
         caller_ee_type: ExecutionEnvironmentType,
         caller_is_code: bool,
         caller_nonce: u64,
@@ -52,7 +52,7 @@ where
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         // safe to panic, validated by the structure
-        let from = transaction.from.read();
+        let from = transaction.from();
 
         // EIP-3607: Reject transactions from senders with deployed code
         if caller_is_code {
@@ -102,19 +102,16 @@ where
                 ),
             ))?;
         } else {
-            let signature = transaction.signature();
-            let r = &signature[..32];
-            let s = &signature[32..64];
-            let v = &signature[64];
+            let (parity, r, s) = transaction.sig_parity_r_s();
             if U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
                 return Err(InvalidTransaction::MalleableSignature.into());
             }
 
             let mut ecrecover_input = [0u8; 128];
             ecrecover_input[0..32].copy_from_slice(suggested_signed_hash.as_u8_array_ref());
-            ecrecover_input[63] = *v;
-            ecrecover_input[64..96].copy_from_slice(r);
-            ecrecover_input[96..128].copy_from_slice(s);
+            ecrecover_input[63] = (parity as u8) + 27;
+            ecrecover_input[64..96][(32 - r.len())..].copy_from_slice(r);
+            ecrecover_input[96..128][(32 - s.len())..].copy_from_slice(s);
 
             let mut ecrecover_output = ArrayBuilder::default();
             S::SystemFunctions::secp256k1_ec_recover(
@@ -128,7 +125,7 @@ where
             if ecrecover_output.is_empty() {
                 return Err(InvalidTransaction::IncorrectFrom {
                     recovered: B160::ZERO,
-                    tx: from,
+                    tx: *from,
                 }
                 .into());
             }
@@ -136,10 +133,10 @@ where
             let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
                 .ok_or(internal_error!("Invalid ecrecover return value"))?;
 
-            if recovered_from != from {
+            if &recovered_from != from {
                 return Err(InvalidTransaction::IncorrectFrom {
                     recovered: recovered_from,
-                    tx: from,
+                    tx: *from,
                 }
                 .into());
             }
@@ -181,27 +178,23 @@ where
         memories: RunnerMemoryBuffers<'a>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
+        transaction: &Transaction<S::Allocator>,
         // This data is read before bumping nonce
         current_tx_nonce: u64,
         resources: &mut S::Resources,
         tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
         // panic is not reachable, validated by the structure
-        let from = transaction.from.read();
+        let from = transaction.from();
 
         let main_calldata = transaction.calldata();
 
         // panic is not reachable, to is validated
-        let to = transaction.to.read();
+        let to = transaction.to().unwrap_or_default();
 
-        let nominal_token_value = transaction.value.read();
+        let nominal_token_value = transaction.value();
 
-        let to_ee_type = if !transaction.reserved[1].read().is_zero() {
-            Some(ExecutionEnvironmentType::EVM)
-        } else {
-            None
-        };
+        let to_ee_type = transaction.is_deployment();
 
         let TxExecutionResult {
             return_values,
@@ -326,16 +319,15 @@ where
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
+        transaction: &Transaction<S::Allocator>,
         from: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         let amount = transaction
-            .max_fee_per_gas
-            .read()
-            .checked_mul(transaction.gas_limit.read() as u128)
+            .max_fee_per_gas()
+            .checked_mul(U256::from(transaction.gas_limit()))
             .ok_or(internal_error!("mfpg*gl"))?;
         let amount = U256::from(amount);
         system
@@ -381,9 +373,9 @@ where
 
     fn charge_additional_intrinsic_gas(
         resources: &mut S::Resources,
-        transaction: &ZkSyncTransaction,
+        transaction: &Transaction<S::Allocator>,
     ) -> Result<(), TxError> {
-        let is_deployment = !transaction.reserved[1].read().is_zero();
+        let is_deployment = transaction.is_deployment().is_some();
         if is_deployment {
             let calldata_len = transaction.calldata().len() as u64;
             if calldata_len > MAX_INITCODE_SIZE as u64 {
@@ -406,9 +398,13 @@ where
                 Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
             };
         }
+
         #[cfg(feature = "pectra")]
         {
-            let authorization_list_length = transaction.parse_authorization_list_length()?;
+            let authorization_list_length = transaction
+                .authorization_list()
+                .map(|al| al.len() as u64)
+                .unwrap_or_default();
             let authorization_list_gas_cost = authorization_list_length
                 .saturating_mul(evm_interpreter::gas_constants::NEWACCOUNT);
             let ergs_to_spend = Ergs(authorization_list_gas_cost.saturating_mul(ERGS_PER_GAS));
@@ -439,8 +435,8 @@ fn process_deployment<'a, S: EthereumLikeTypes>(
     resources: &mut S::Resources,
     to_ee_type: ExecutionEnvironmentType,
     main_calldata: &[u8],
-    from: B160,
-    nominal_token_value: U256,
+    from: &B160,
+    nominal_token_value: &U256,
     existing_nonce: u64,
     tracer: &mut impl Tracer<S>,
 ) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
@@ -480,12 +476,12 @@ where
     let deployment_request = ExternalCallRequest {
         available_resources: resources.clone(),
         ergs_to_pass: resources.ergs(),
-        caller: from,
+        caller: *from,
         callee: deployed_address,
         callers_caller: Default::default(), // Fine to use placeholder, should not be used
         modifier: CallModifier::Constructor,
         input: main_calldata,
-        nominal_token_value,
+        nominal_token_value: *nominal_token_value,
         call_scratch_space: None,
     };
 
