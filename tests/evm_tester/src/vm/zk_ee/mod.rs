@@ -9,6 +9,7 @@ use zksync_os_basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use zksync_os_basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use zksync_os_rig::zksync_os_api::helpers;
 use zksync_os_rig::zksync_os_interface::error::InvalidTransaction;
+use zksync_os_rig::zksync_os_interface::traits::EncodedTx;
 use zksync_os_rig::zksync_os_interface::types::{BlockOutput, TxOutput};
 use zksync_os_rig::BlockContext;
 use zksync_os_rig::Chain;
@@ -61,7 +62,7 @@ impl ZKsyncOS {
         transactions: Vec<Transaction>,
         system_context: ZKsyncOSEVMContext,
     ) -> anyhow::Result<Vec<ZKsyncOSTxExecutionResult>, String> {
-        let encoded_txs: Vec<Vec<u8>> = transactions
+        let encoded_txs: Vec<EncodedTx> = transactions
             .iter()
             .map(|transaction| encode_transaction(transaction, &system_context))
             .collect();

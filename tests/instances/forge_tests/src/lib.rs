@@ -3,6 +3,7 @@ use alloy::consensus::{TxEip1559, TxEip2930};
 use alloy::primitives::{address, TxKind, U256};
 use alloy::signers::local::PrivateKeySigner;
 use rig::ruint::aliases::B160;
+use rig::zksync_os_interface::traits::EncodedTx;
 use rig::zksync_os_interface::types::BlockOutput;
 use rig::{alloy, ruint};
 use std::collections::HashSet;
@@ -15,7 +16,7 @@ use zk_ee::utils::Bytes32;
 ///
 fn run_transactions_as_eoa(
     eoa_address: alloy::primitives::Address,
-    encoded_txs: Vec<Vec<u8>>,
+    encoded_txs: Vec<EncodedTx>,
 ) -> BlockOutput {
     let mut chain = rig::Chain::empty(None);
     chain.set_balance(

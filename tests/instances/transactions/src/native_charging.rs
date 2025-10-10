@@ -5,6 +5,7 @@ use alloy::signers::local::PrivateKeySigner;
 use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
 use rig::ruint::aliases::{B160, U256};
+use rig::zksync_os_interface::traits::EncodedTx;
 use rig::{alloy, zksync_web3_rs, BlockContext, Chain};
 use std::str::FromStr;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
@@ -16,7 +17,7 @@ const AVG_RATIO: u64 = 150;
 const LOW_RATIO: u64 = 1;
 const HIGH_RATIO: u64 = 1_000_000;
 
-fn run_tx(tx: Vec<u8>, basefee: u64, native_price: u64, should_succeed: bool, simulation: bool) {
+fn run_tx(tx: EncodedTx, basefee: u64, native_price: u64, should_succeed: bool, simulation: bool) {
     let mut chain = Chain::empty(None);
 
     let transactions = vec![tx];
@@ -55,7 +56,7 @@ fn run_tx(tx: Vec<u8>, basefee: u64, native_price: u64, should_succeed: bool, si
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
         let success = r.clone().is_ok_and(|o| o.is_success());
         if !success {
-            println!("Transaction {} failed with: {:?}", i, r)
+            println!("Transaction {i} failed with: {r:?}")
         }
         should_succeed == success
     }))

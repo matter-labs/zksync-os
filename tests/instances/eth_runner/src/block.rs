@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use crate::calltrace::CallTrace;
 use alloy::eips::Typed2718;
-use rig::log::warn;
 use rig::utils::encode_alloy_rpc_tx;
+use rig::{log::warn, zksync_os_interface::traits::EncodedTx};
 use ruint::aliases::{B160, U256};
 use serde::{Deserialize, Serialize};
 
@@ -27,7 +27,7 @@ impl Block {
         }
     }
 
-    pub fn get_transactions(self, calltrace: &CallTrace) -> (Vec<Vec<u8>>, HashSet<usize>) {
+    pub fn get_transactions(self, calltrace: &CallTrace) -> (Vec<EncodedTx>, HashSet<usize>) {
         let mut skipped: HashSet<usize> = HashSet::new();
         (
             self.result

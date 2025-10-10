@@ -46,6 +46,7 @@ pub use zk_ee::types_config::EthereumIOTypesConfig;
 
 pub use preimage_source::PreimageSource;
 use zk_ee::wrap_error;
+use zksync_os_interface::traits::EncodedTx;
 
 use std::fs::File;
 use std::path::PathBuf;
@@ -55,10 +56,11 @@ pub use tx_source::TxSource;
 
 use self::output::BlockOutput;
 use crate::run::output::TxResult;
-use crate::run::test_impl::{NoopTxCallback, TxListSource};
+use crate::run::test_impl::NoopTxCallback;
 pub use basic_bootloader::bootloader::errors::InvalidTransaction;
 use basic_system::system_implementation::flat_storage_model::*;
 pub use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle as BlockContext;
+use zksync_os_interface::traits::TxListSource;
 
 pub type StorageCommitment = FlatStorageCommitment<{ TREE_HEIGHT }>;
 
@@ -76,6 +78,8 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
+        next_tx_format: None,
+        next_tx_from: None,
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let tree_responder = ReadTreeResponder { tree };
@@ -107,6 +111,8 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
+        next_tx_format: None,
+        next_tx_from: None,
     };
     let zk_proof_data_responder = ZKProofDataResponder {
         data: Some(proof_data),
@@ -173,6 +179,8 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
+        next_tx_format: None,
+        next_tx_from: None,
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let tree_responder = ReadTreeResponder { tree };
@@ -240,6 +248,8 @@ pub fn run_block_with_oracle_dump_ext<
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
+        next_tx_format: None,
+        next_tx_from: None,
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let tree_responder = ReadTreeResponder { tree };
@@ -315,7 +325,7 @@ pub fn run_block_from_oracle_dump<
 ///
 /// Needed for `eth_call` and `eth_estimateGas`.
 pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
-    transaction: Vec<u8>,
+    transaction: EncodedTx,
     block_context: BlockContext,
     storage: S,
     preimage_source: PS,
@@ -331,6 +341,8 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     let tx_data_responder = TxDataResponder {
         tx_source,
         next_tx: None,
+        next_tx_format: None,
+        next_tx_from: None,
     };
     let preimage_responder = GenericPreimageResponder { preimage_source };
     let storage_responder = ReadStorageResponder { storage };

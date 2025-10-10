@@ -11,9 +11,7 @@ use basic_system::system_implementation::flat_storage_model::{
 };
 use ethers::signers::LocalWallet;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
-use forward_system::run::test_impl::{
-    InMemoryPreimageSource, InMemoryTree, NoopTxCallback, TxListSource,
-};
+use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
 use log::{debug, info, trace};
 use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
@@ -28,6 +26,8 @@ use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
 use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::utils::Bytes32;
+use zksync_os_interface::traits::EncodedTx;
+use zksync_os_interface::traits::TxListSource;
 use zksync_os_interface::types::BlockOutput;
 
 ///
@@ -173,7 +173,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ///
     pub fn simulate_block(
         &mut self,
-        transactions: Vec<Vec<u8>>,
+        transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
     ) -> BlockOutput {
         let block_context = block_context.unwrap_or_default();
@@ -230,7 +230,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ///
     pub fn run_block(
         &mut self,
-        transactions: Vec<Vec<u8>>,
+        transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
     ) -> BlockOutput {
@@ -242,7 +242,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     #[allow(clippy::result_large_err)]
     pub fn run_block_no_panic(
         &mut self,
-        transactions: Vec<Vec<u8>>,
+        transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
         only_forward: bool,
@@ -261,7 +261,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     #[allow(clippy::result_large_err)]
     pub fn run_block_with_extra_stats(
         &mut self,
-        transactions: Vec<Vec<u8>>,
+        transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
         witness_output_file: Option<PathBuf>,
@@ -280,7 +280,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     #[allow(clippy::result_large_err)]
     fn run_inner(
         &mut self,
-        transactions: Vec<Vec<u8>>,
+        transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
         witness_output_file: Option<PathBuf>,

@@ -1,23 +1,43 @@
 use super::*;
 use crate::run::NextTxResponse;
 use crate::run::TxSource;
-use zk_ee::oracle::query_ids::NEXT_TX_SIZE_QUERY_ID;
-use zk_ee::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
+use ruint::aliases::B160;
+use zk_ee::oracle::query_ids::TX_FROM_QUERY_ID;
+use zk_ee::oracle::query_ids::{
+    NEXT_TX_SIZE_QUERY_ID, TX_DATA_WORDS_QUERY_ID, TX_ENCODING_FORMAT_QUERY_ID,
+};
 use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
+use zk_ee::oracle::TxEncodingFormat;
 use zk_ee::utils::usize_rw::ReadIterWrapper;
 
-/// This processor handles two types of queries:
+/// This processor handles four types of queries:
 /// 1. NEXT_TX_SIZE_QUERY_ID - Returns the size of the next transaction
 /// 2. TX_DATA_WORDS_QUERY_ID - Returns the actual transaction data
+/// 3. TX_ENCODING_FORMAT_QUERY_ID - Returns the encoding format of the
+///    current transaction.
+/// 4. TX_FROM_QUERY_ID - Returns the originator address of the current
+///    transaction. Only to be called for RLP encoded transactions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TxDataResponder<TS: TxSource> {
     pub tx_source: TS,
     /// Cached next transaction data, populated after size query
     pub next_tx: Option<Vec<u8>>,
+    /// Cached next transaction format, populated after size query
+    /// Note: we use different fields for next_tx and next_tx_format
+    /// so that they don't have to be consumed at the same time.
+    pub next_tx_format: Option<TxEncodingFormat>,
+    /// Cached next transaction format, populated after size query
+    /// (if present)
+    pub next_tx_from: Option<B160>,
 }
 
 impl<TS: TxSource> TxDataResponder<TS> {
-    const SUPPORTED_QUERY_IDS: &[u32] = &[NEXT_TX_SIZE_QUERY_ID, TX_DATA_WORDS_QUERY_ID];
+    const SUPPORTED_QUERY_IDS: &[u32] = &[
+        NEXT_TX_SIZE_QUERY_ID,
+        TX_DATA_WORDS_QUERY_ID,
+        TX_ENCODING_FORMAT_QUERY_ID,
+        TX_FROM_QUERY_ID,
+    ];
 }
 
 impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<TS> {
@@ -44,11 +64,21 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
                     None => {
                         match self.tx_source.get_next_tx() {
                             NextTxResponse::SealBlock => 0,
-                            NextTxResponse::Tx(next_tx) => {
+                            NextTxResponse::ZkTx(next_tx) => {
                                 let next_tx_len = next_tx.len();
                                 // `0` interpreted as seal batch
                                 assert_ne!(next_tx_len, 0);
                                 self.next_tx = Some(next_tx);
+                                self.next_tx_format = Some(TxEncodingFormat::Zk);
+                                next_tx_len
+                            }
+                            NextTxResponse::EthTx(next_tx, from) => {
+                                let next_tx_len = next_tx.len();
+                                // `0` interpreted as seal batch
+                                assert_ne!(next_tx_len, 0);
+                                self.next_tx = Some(next_tx);
+                                self.next_tx_format = Some(TxEncodingFormat::Eth);
+                                self.next_tx_from = Some(B160::from_be_bytes(from.0 .0));
                                 next_tx_len
                             }
                         }
@@ -67,6 +97,23 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
                 DynUsizeIterator::from_constructor(tx, |inner_ref| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
                 })
+            }
+            TX_ENCODING_FORMAT_QUERY_ID => {
+                let Some(format) = self.next_tx_format.take() else {
+                    panic!(
+                        "trying to read next tx format before size query or after seal response"
+                    );
+                };
+
+                DynUsizeIterator::from_constructor(format, UsizeSerializable::iter)
+            }
+            TX_FROM_QUERY_ID => {
+                let Some(from) = self.next_tx_from.take() else {
+                    panic!(
+                        "trying to read next tx from before size query, after seal response or for a zk transaction"
+                    );
+                };
+                DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
             }
             _ => unreachable!(),
         }

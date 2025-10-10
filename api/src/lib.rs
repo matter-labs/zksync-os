@@ -3,10 +3,11 @@
 use std::{path::PathBuf, str::FromStr};
 
 use forward_system::run::{
-    test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource},
+    test_impl::{InMemoryPreimageSource, InMemoryTree},
     BlockContext, StorageCommitment,
 };
 use oracle_provider::ReadWitnessSource;
+use zksync_os_interface::traits::TxListSource;
 pub mod helpers;
 
 /// Runs the batch, and returns the output (that contains gas usage, transaction status etc.).
