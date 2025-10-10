@@ -11,7 +11,7 @@ use zk_ee::{
         IOResultKeeper, Resources,
     },
     types_config::EthereumIOTypesConfig,
-    utils::{Bytes32, UsizeAlignedByteBox, USIZE_SIZE},
+    utils::{num_usize_words_for_u8_capacity, Bytes32, UsizeAlignedByteBox},
 };
 
 use super::cost_constants::PREIMAGE_CACHE_GET_NATIVE_COST;
@@ -102,11 +102,8 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                 .raw_query(FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID, hash)
                 .expect("must make an iterator for preimage");
             // IMPORTANT: oracle should be somewhat "sane", it also limits the number of cycles spent below.
-            // We also allow some slack here to account for 64/32 bit archs
-            if it.len()
-                > (expected_preimage_len_in_bytes.next_multiple_of(USIZE_SIZE) / USIZE_SIZE)
-                    .next_multiple_of(2)
-            {
+
+            if it.len() > num_usize_words_for_u8_capacity(expected_preimage_len_in_bytes) {
                 return Err(
                     internal_error!("Iterator length exceeds expected preimage length").into(),
                 );

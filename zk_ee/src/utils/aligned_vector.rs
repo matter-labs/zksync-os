@@ -6,7 +6,9 @@ use super::{
 use core::alloc::Allocator;
 
 pub const fn num_usize_words_for_u8_capacity(u8_capacity: usize) -> usize {
-    u8_capacity.next_multiple_of(USIZE_SIZE) / USIZE_SIZE
+    let num_words = u8_capacity.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
+    // give it some slack to account for 64/32 bit architectures mismatch
+    num_words.next_multiple_of(2)
 }
 
 pub fn allocate_vec_usize_aligned<A: Allocator>(

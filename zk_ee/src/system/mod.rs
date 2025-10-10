@@ -1,3 +1,4 @@
+use utils::num_usize_words_for_u8_capacity;
 use utils::usize_rw::AsUsizeWritable;
 
 use super::*;
@@ -53,7 +54,6 @@ use crate::{
     execution_environment_type::ExecutionEnvironmentType,
     oracle::IOOracle,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
-    utils::USIZE_SIZE,
 };
 
 pub trait SystemTypes {
@@ -273,7 +273,7 @@ where
         // create buffer
         let mut buffer = (buffer_constructor)(next_tx_len_bytes);
         let mut as_writable = buffer.as_writable();
-        let next_tx_len_usize_words = next_tx_len_bytes.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
+        let next_tx_len_usize_words = num_usize_words_for_u8_capacity(next_tx_len_bytes);
         if as_writable.len() < next_tx_len_usize_words {
             return Some(Err(interface_error!(
                 crate::system::NextTxInterfaceError::DestinationBufferInsufficient
