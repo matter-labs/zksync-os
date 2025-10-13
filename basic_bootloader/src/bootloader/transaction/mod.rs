@@ -1,3 +1,12 @@
+//! Transaction facade for the bootloader.
+//!
+//! This module provides a single `Transaction<A>` enum that wraps either an
+//! Ethereum-style RLP encoded transactions or an ABI-encoded ZKsync transaction.
+//! It exposes a uniform API for parsing, introspection, hashing,
+//! and pre-execution warming, so the rest of the bootloader does not need to care about
+//! the concrete format.
+//!
+
 use super::errors::TxError;
 use crate::bootloader::BootloaderSubsystemError;
 use crate::bootloader::InvalidTransaction;
@@ -28,12 +37,16 @@ use self::zk_transaction::ZkSyncTransaction;
 #[cfg(feature = "pectra")]
 pub mod authorization_list;
 
+/// Unified transaction wrapper over Ethereum and ZKsync formats.
 pub enum Transaction<A: Allocator> {
+    /// RLP-encoded Ethereum transactions.
     Ethereum(EthereumTransaction<A>),
+    /// ABI-encoded ZKsync transaction.
     Zk(ZkSyncTransaction<A>),
 }
 
 impl<A: Allocator> Transaction<A> {
+    /// Parse a transaction from a raw buffer using the system IO oracle.
     pub fn try_from_buffer<
         S: EthereumLikeTypes<
             Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata,
@@ -49,6 +62,7 @@ impl<A: Allocator> Transaction<A> {
         use zk_ee::oracle::IOOracle;
         let expected_chain_id = system.get_chain_id();
 
+        // query the transaction encoding format from the oracle
         let format: TxEncodingFormat = match system
             .io
             .oracle()
@@ -62,6 +76,7 @@ impl<A: Allocator> Transaction<A> {
 
         match format {
             TxEncodingFormat::Eth => {
+                // RLP-encoded transactions don't include the `from` field, so we need to query it from the oracle.
                 let from: B160 = match system.io.oracle().query_with_empty_input(TX_FROM_QUERY_ID) {
                     Ok(format) => format,
                     Err(e) => {
@@ -79,6 +94,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns true if this transaction is an upgrade transaction.
     pub fn is_upgrade(&self) -> bool {
         match self {
             Self::Ethereum(_) => false,
@@ -86,6 +102,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns true if this transaction is an L1->L2 transaction.
     pub fn is_l1_l2(&self) -> bool {
         match self {
             Self::Ethereum(_) => false,
@@ -93,6 +110,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the transaction nonce as U256.
     pub fn nonce(&self) -> U256 {
         match self {
             Self::Ethereum(tx) => U256::from(tx.nonce()),
@@ -100,6 +118,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the gas limit.
     pub fn gas_limit(&self) -> u64 {
         match self {
             Self::Ethereum(tx) => tx.gas_limit(),
@@ -107,6 +126,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the max fee per gas reference.
     pub fn max_fee_per_gas(&self) -> &U256 {
         match self {
             Self::Ethereum(tx) => tx.max_fee_per_gas(),
@@ -114,6 +134,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the optional max priority fee per gas reference.
     pub fn max_priority_fee_per_gas(&self) -> Option<&U256> {
         match self {
             Self::Ethereum(tx) => tx.max_priority_fee_per_gas(),
@@ -121,6 +142,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the gas per pubdata limit.
     pub fn gas_per_pubdata_limit(&self) -> U256 {
         match self {
             Self::Ethereum(_) => U256::ZERO,
@@ -128,6 +150,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns calldata bytes.
     pub fn calldata(&self) -> &[u8] {
         match self {
             Self::Ethereum(tx) => tx.calldata(),
@@ -135,6 +158,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the value field reference.
     pub fn value(&self) -> &U256 {
         match self {
             Self::Ethereum(tx) => tx.value(),
@@ -142,6 +166,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the sender address reference.
     pub fn from(&self) -> &B160 {
         match self {
             Self::Ethereum(tx) => tx.from(),
@@ -149,6 +174,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Computes the transaction hash used for indexing or inclusion.
     pub fn transaction_hash<R: Resources>(
         &mut self,
         chain_id: u64,
@@ -162,6 +188,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the signing hash for signature verification.
     pub fn signed_hash<R: Resources>(&mut self, chain_id: u64) -> Result<Bytes32, TxError> {
         // Caller should charge native for this hash
         let mut inf_resources = R::FORMAL_INFINITE;
@@ -173,6 +200,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the minimum balance required to accept the transaction.
     pub fn required_balance(&self) -> Option<U256> {
         match self {
             Self::Ethereum(tx) => tx.required_balance(),
@@ -180,6 +208,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the signature as `(y_parity, r, s)` borrowed from the underlying tx.
     pub fn sig_parity_r_s<'a>(&'a self) -> (bool, &'a [u8], &'a [u8]) {
         match self {
             Self::Ethereum(tx) => tx.sig_parity_r_s(),
@@ -187,6 +216,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the destination address if present, or None for contract creation.
     pub fn to(&self) -> Option<B160> {
         match self {
             Self::Ethereum(tx) => tx.destination(),
@@ -194,9 +224,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
-    ///
-    /// Returns Some(to_ee_type) if the transaction is a deployment
-    ///
+    /// Returns Some(EVM) if this is a deployment, otherwise None.
     pub fn is_deployment(&self) -> Option<ExecutionEnvironmentType> {
         match self {
             Self::Ethereum(tx) => {
@@ -217,11 +245,12 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Parse and warm up accounts and storage slots from the access list.
     ///
-    /// Validate access list while warming up accounts and
-    /// storage slots.
-    /// TODO: move somewhere else, as in V2
+    /// Touches all accounts and storage keys in the access list so they are hot
+    /// before execution.
     ///
+    /// Returns Ok on success, or `TxError` if an IO operation fails.
     pub fn parse_and_warm_up_access_list<
         S: EthereumLikeTypes<
             Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata,
@@ -267,6 +296,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the authorization list if present.
     #[cfg(feature = "pectra")]
     pub fn authorization_list(&self) -> Option<AuthorizationList<'_>> {
         match self {
@@ -275,6 +305,7 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
+    /// Returns the encoded byte length of the transaction.
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         match self {
@@ -284,6 +315,7 @@ impl<A: Allocator> Transaction<A> {
     }
 }
 
+/// Charge native resources for a Keccak-256 over `len` bytes.
 pub fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), TxError> {
     let native_cost = basic_system::system_functions::keccak256::keccak256_native_cost::<R>(len);
     resources
