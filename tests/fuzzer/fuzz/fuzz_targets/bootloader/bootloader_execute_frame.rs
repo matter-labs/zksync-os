@@ -6,7 +6,7 @@
 use arbitrary::Arbitrary;
 use basic_bootloader::bootloader::supported_ees::SupportedEEVMState;
 use libfuzzer_sys::fuzz_target;
-use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource};
+use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::system::system::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
 use zk_ee::common_structs::CalleeAccountProperties;

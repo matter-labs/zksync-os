@@ -10,7 +10,7 @@ use basic_bootloader::bootloader::BasicBootloader;
 use common::mock_oracle_balance;
 use common::{abi_push_bytes, abi_push_bytes32_array, enc_addr, enc_u16, enc_u256, enc_u32};
 use libfuzzer_sys::fuzz_target;
-use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource};
+use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::system::system::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{
