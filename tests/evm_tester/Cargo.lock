@@ -4095,7 +4095,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.0",
+ "socket2 0.6.1",
  "tokio",
  "tower-service",
  "tracing",
@@ -6893,12 +6893,12 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "233504af464074f9d066d7b5416c5f9b894a5862a6506e306f7b816cdd6f1807"
+checksum = "17129e116933cf371d018bb80ae557e889637989d8638274fb25622827b03881"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7361,7 +7361,7 @@ dependencies = [
  "pin-project-lite",
  "signal-hook-registry",
  "slab",
- "socket2 0.6.0",
+ "socket2 0.6.1",
  "tokio-macros",
  "windows-sys 0.59.0",
 ]
@@ -8829,12 +8829,12 @@ dependencies = [
 [[package]]
 name = "zksync_os_evm_errors"
 version = "0.0.7"
-source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#30877103230bb00b18008736618d34ff752fde44"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#04c603c59f0e046a03f60f7583b2a368bc335fcd"
 
 [[package]]
 name = "zksync_os_interface"
 version = "0.0.7"
-source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#30877103230bb00b18008736618d34ff752fde44"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#04c603c59f0e046a03f60f7583b2a368bc335fcd"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",

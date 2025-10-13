@@ -102,7 +102,7 @@ pub enum InvalidTransaction {
     /// 7702 transaction has empty authorization list
     AuthListIsEmpty,
     /// 7702 has a null destination address
-    AuthListHasNullDestination,
+    EIP7702HasNullDestination,
 }
 
 ///

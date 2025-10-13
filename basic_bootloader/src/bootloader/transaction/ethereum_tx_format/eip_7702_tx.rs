@@ -82,13 +82,17 @@ impl<'a> RlpListDecode<'a> for EIP7702Tx<'a> {
 
         if to.iter().all(|&b| b == 0) {
             // Deployment transactions are not allowed in EIP-7702
-            return Err(InvalidTransaction::AuthListHasNullDestination);
+            return Err(InvalidTransaction::EIP7702HasNullDestination);
         }
 
         let value = r.u256()?;
         let data = r.bytes()?;
         let access_list = AccessList::decode_list_from(r)?;
         let authorization_list = AuthorizationList::decode_list_from(r)?;
+
+        if authorization_list.count == Some(0) {
+            return Err(InvalidTransaction::AuthListIsEmpty);
+        }
         Ok(Self {
             chain_id,
             nonce,
@@ -269,45 +273,6 @@ mod test {
         let bytes = rlp_list(&[entry]);
         let res: Result<AuthorizationList, _> = AuthorizationList::decode_list_full(&bytes);
         assert!(res.is_err());
-    }
-
-    #[test]
-    fn parses_eip7702_transfer_with_empty_lists() {
-        let to = address!("0x9999999999999999999999999999999999999999");
-
-        // Alloy access list: empty
-        let access_list = AccessList::default();
-        // Alloy authorization list: empty
-        let auth_list: Vec<SignedAuthorization> = vec![];
-
-        let bytes = encode_eip7702_payload(
-            1,             // chain_id
-            7,             // nonce
-            1_500_000_000, // maxPriorityFeePerGas
-            2_000_000_000, // maxFeePerGas
-            21_000,        // gasLimit
-            to,            // to
-            12_345,        // value
-            &[],           // data
-            access_list,
-            auth_list,
-        );
-
-        let tx: EIP7702Tx = RlpListDecode::decode_list_full(&bytes).expect("parse should succeed");
-
-        assert_eq!(tx.chain_id, 1);
-        assert_eq!(tx.nonce, 7);
-        assert_eq!(tx.gas_limit, 21_000);
-        assert_eq!(
-            tx.max_priority_fee_per_gas,
-            RuintU256::from(1_500_000_000u128)
-        );
-        assert_eq!(tx.max_fee_per_gas, RuintU256::from(2_000_000_000u128));
-        assert_eq!(tx.to, to.as_slice());
-        assert_eq!(tx.value, RuintU256::from(12_345u128));
-        assert!(tx.data.is_empty());
-        assert_eq!(tx.access_list.count, Some(0));
-        assert_eq!(tx.authorization_list.count, Some(0));
     }
 
     #[test]

@@ -1101,5 +1101,5 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_evm_errors"
-version = "0.0.5"
-source = "git+https://github.com/matter-labs/zksync-os-interface?branch=di%2Ftracing#d02ee33dab17624fed2b9ef0e56d92187d88c9ae"
+version = "0.0.7"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#30877103230bb00b18008736618d34ff752fde44"
