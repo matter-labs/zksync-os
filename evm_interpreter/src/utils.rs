@@ -20,6 +20,7 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
     use crypto::sha3::{Digest, Keccak256};
     let hash = Keccak256::digest(bytecode);
     let mut result = [0u8; 32];
+    #[allow(deprecated)]
     result.copy_from_slice(hash.as_slice());
 
     result

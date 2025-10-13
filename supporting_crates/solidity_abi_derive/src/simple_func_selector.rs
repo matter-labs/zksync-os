@@ -34,6 +34,7 @@ pub(crate) fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
     let hash = hasher.finalize();
 
     let mut result = [0u8; 4];
+    #[allow(deprecated)]
     result.copy_from_slice(&hash.as_slice()[..4]);
     let result = u32::from_be_bytes(result);
 

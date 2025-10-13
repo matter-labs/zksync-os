@@ -482,6 +482,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     *dst = src;
                 }
                 let new_address = Keccak256::digest(&buffer[..encoding_len]);
+                #[allow(deprecated)]
                 let new_address = B160::try_from_be_slice(&new_address.as_slice()[12..])
                     .expect("must create address");
                 new_address
@@ -517,6 +518,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     .copy_from_slice(initcode_hash.as_u8_array_ref());
 
                 let new_address = Keccak256::digest(&create2_buffer);
+                #[allow(deprecated)]
                 let new_address = B160::try_from_be_slice(&new_address.as_slice()[12..])
                     .expect("must create address");
                 new_address
