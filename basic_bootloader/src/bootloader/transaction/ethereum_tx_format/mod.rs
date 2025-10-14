@@ -49,8 +49,7 @@ impl<'a> EthereumTxInner<'a> {
                 EIP2930Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP2930Tx<'a>>::try_parse_and_hash_for_signature_verification(
-                            r.remaining(),
-                            tx_type,
+                            r.remaining()
                         )?;
 
                     if tx.chain_id != expected_chain_id {
@@ -61,8 +60,7 @@ impl<'a> EthereumTxInner<'a> {
                 EIP1559Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP1559Tx<'a>>::try_parse_and_hash_for_signature_verification(
-                            r.remaining(),
-                            tx_type,
+                            r.remaining()
                         )?;
                     if tx.chain_id != expected_chain_id {
                         return Err(InvalidTransaction::InvalidChainId.into());
@@ -72,8 +70,7 @@ impl<'a> EthereumTxInner<'a> {
                 EIP7702Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP7702Tx<'a>>::try_parse_and_hash_for_signature_verification(
-                            r.remaining(),
-                            tx_type,
+                            r.remaining()
                         )?;
 
                     if tx.chain_id != expected_chain_id {
