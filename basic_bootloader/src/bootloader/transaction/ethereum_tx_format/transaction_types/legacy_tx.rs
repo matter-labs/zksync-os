@@ -116,7 +116,7 @@ pub(crate) struct LegacySignatureData<'a> {
 
 impl<'a> LegacySignatureData<'a> {
     pub fn is_eip155(&self) -> bool {
-        self.v == 27 || self.v == 28
+        self.v != 27 && self.v != 28
     }
 }
 

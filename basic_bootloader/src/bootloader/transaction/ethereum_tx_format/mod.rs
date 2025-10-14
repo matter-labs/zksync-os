@@ -84,7 +84,7 @@ impl<'a> EthereumTxInner<'a> {
             // Legacy path
             let (tx, sig_data, sig_hash) =
                 LegacyPayloadParser::try_parse_and_hash_for_signature_verification(
-                    r.remaining(),
+                    input,
                     expected_chain_id,
                 )?;
 
