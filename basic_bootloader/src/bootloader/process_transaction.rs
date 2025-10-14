@@ -1,5 +1,5 @@
 use super::gas_helpers::get_resources_for_tx;
-use super::transaction::{zk_transaction::ZkSyncTransaction, Transaction};
+use super::transaction::{zksync_transaction::ZKsyncTransaction, Transaction};
 use super::*;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
@@ -70,7 +70,7 @@ where
         let transaction = Transaction::try_from_buffer(initial_calldata_buffer, system)?;
 
         match &transaction {
-            Transaction::Zk(zk_tx) => {
+            Transaction::ZKsync(zk_tx) => {
                 if transaction.is_upgrade() {
                     if !is_first_tx {
                         Err(Validation(InvalidTransaction::UpgradeTxNotFirst))
@@ -117,7 +117,7 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
-        transaction: &ZkSyncTransaction<S::Allocator>,
+        transaction: &ZKsyncTransaction<S::Allocator>,
         is_priority_op: bool,
         tracer: &mut impl Tracer<S>,
     ) -> Result<TxProcessingResult<'a>, TxError> {
@@ -412,7 +412,7 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
-        transaction: &ZkSyncTransaction<S::Allocator>,
+        transaction: &ZKsyncTransaction<S::Allocator>,
         from: B160,
         to: B160,
         value: U256,

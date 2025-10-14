@@ -119,7 +119,7 @@ pub trait IOOracle: 'static + Sized {
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum TxEncodingFormat {
-    Zk = 0,
+    ZKsync = 0,
     Eth = 1,
 }
 
@@ -128,8 +128,8 @@ impl UsizeDeserializable for TxEncodingFormat {
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         let byte = <u8 as UsizeDeserializable>::from_iter(src)?;
-        if byte == TxEncodingFormat::Zk as u8 {
-            Ok(TxEncodingFormat::Zk)
+        if byte == TxEncodingFormat::ZKsync as u8 {
+            Ok(TxEncodingFormat::ZKsync)
         } else if byte == TxEncodingFormat::Eth as u8 {
             Ok(TxEncodingFormat::Eth)
         } else {
