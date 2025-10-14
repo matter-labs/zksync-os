@@ -1,4 +1,5 @@
 use crate::bootloader::errors::{InvalidTransaction, TxError};
+use crate::bootloader::transaction::ethereum_tx_format::transaction_types::EthereumTxType;
 
 use crypto::MiniDigest;
 
@@ -22,6 +23,10 @@ pub struct LegacyTXInner<'a> {
     pub to: &'a [u8],
     pub value: U256,
     pub data: &'a [u8],
+}
+
+impl<'a> EthereumTxType for LegacyTXInner<'a> {
+    const TX_TYPE: u8 = 0;
 }
 
 impl<'a> RlpListDecode<'a> for LegacyTXInner<'a> {
