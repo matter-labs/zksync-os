@@ -1,8 +1,11 @@
 use crate::bootloader::{
     errors::{InvalidTransaction, TxError},
-    transaction::ethereum_tx_format::rlp::{
-        apply_list_concatenation_encoding_to_hash,
-        minimal_rlp_parser::{Rlp, RlpListDecode},
+    transaction::ethereum_tx_format::{
+        rlp::{
+            apply_list_concatenation_encoding_to_hash,
+            minimal_rlp_parser::{Rlp, RlpListDecode},
+        },
+        transaction_types::EthereumTxType,
     },
 };
 use crypto::MiniDigest;
@@ -11,7 +14,7 @@ use zk_ee::utils::Bytes32;
 /// Parser for typed EIP-2718 transactions where the payload (P) and signature
 /// are encoded as two consecutive list items inside a single outer list:
 /// outer = [ payload_list(P), signature_list(yParity, r, s) ]
-pub(crate) struct EIP2718PayloadParser<'a, P: RlpListDecode<'a>> {
+pub(crate) struct EIP2718PayloadParser<'a, P: RlpListDecode<'a> + EthereumTxType> {
     _marker: core::marker::PhantomData<&'a P>,
 }
 
@@ -39,13 +42,12 @@ impl<'a> RlpListDecode<'a> for EIP2718SignatureData<'a> {
     }
 }
 
-impl<'a, P: RlpListDecode<'a>> EIP2718PayloadParser<'a, P> {
+impl<'a, P: RlpListDecode<'a> + EthereumTxType> EIP2718PayloadParser<'a, P> {
     /// Will try to parse P, and the try to parse signature manually
     /// NOTE: double hashing is inevitable, as signature is verified upon keccak256(0x01 || rlp([chainId, nonce, gasPrice, gasLimit, to, value, data, accessList])),
     /// while for indexing purposes divergence starts at the very start as RLP pre-encodes total length
     pub(crate) fn try_parse_and_hash_for_signature_verification(
         src: &'a [u8],
-        tx_type: u8,
     ) -> Result<(P, EIP2718SignatureData<'a>, Bytes32), TxError> {
         let mut outer = Rlp::new(src);
         // Strip the list encoding
@@ -68,7 +70,7 @@ impl<'a, P: RlpListDecode<'a>> EIP2718PayloadParser<'a, P> {
         }
 
         let mut hasher = crypto::sha3::Keccak256::new();
-        hasher.update(&[tx_type]);
+        hasher.update(&[P::TX_TYPE]);
 
         // Hash payload list header + payload bytes.
         // Caller already hashed the type byte.
