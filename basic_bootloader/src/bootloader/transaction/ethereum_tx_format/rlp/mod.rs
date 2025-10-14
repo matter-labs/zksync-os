@@ -4,6 +4,8 @@ pub mod minimal_rlp_parser;
 
 #[cfg(test)]
 pub mod test_helpers;
+#[cfg(test)]
+mod tests;
 
 pub(crate) fn u64_encoding_len(value: u64) -> usize {
     if value < 0x80 {
