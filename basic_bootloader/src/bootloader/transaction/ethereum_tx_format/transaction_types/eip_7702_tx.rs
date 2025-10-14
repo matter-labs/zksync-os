@@ -1,6 +1,10 @@
-use super::minimal_rlp_parser::{HomList, Rlp, RlpListDecode};
+use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::{
+    HomList, Rlp, RlpListDecode,
+};
+use crate::bootloader::transaction::ethereum_tx_format::transaction_types::EthereumTxType;
 use crate::bootloader::{
-    errors::InvalidTransaction, transaction::ethereum_tx_format::eip_2930_tx::AccessList,
+    errors::InvalidTransaction,
+    transaction::ethereum_tx_format::transaction_types::eip_2930_tx::AccessList,
 };
 use ruint::aliases::U256;
 
@@ -61,6 +65,10 @@ pub(crate) struct EIP7702Tx<'a> {
     pub(crate) authorization_list: AuthorizationList<'a>,
 }
 
+impl<'a> EthereumTxType for EIP7702Tx<'a> {
+    const TX_TYPE: u8 = 4;
+}
+
 // If you don't already have it:
 // pub type AuthorizationList<'a> = HomList<'a, AuthorizationEntry<'a>, true>;
 
@@ -114,8 +122,8 @@ impl<'a> RlpListDecode<'a> for EIP7702Tx<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::RlpListDecode;
-    use crate::bootloader::transaction::ethereum_tx_format::test_helpers::*;
+    use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::RlpListDecode;
+    use crate::bootloader::transaction::ethereum_tx_format::rlp::test_helpers::*;
 
     // Alloy imports
     use alloy::consensus::TxEip7702;

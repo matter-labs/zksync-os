@@ -1,12 +1,10 @@
 use crate::bootloader::errors::InvalidTransaction;
-use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::FixedList;
-use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::RlpItemDecode;
+use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::{
+    FixedList, HomList, Rlp, RlpItemDecode, RlpListDecode,
+};
+use crate::bootloader::transaction::ethereum_tx_format::transaction_types::EthereumTxType;
 use ruint::aliases::B160;
 use ruint::aliases::U256;
-
-use super::minimal_rlp_parser::HomList;
-use super::minimal_rlp_parser::Rlp;
-use super::minimal_rlp_parser::RlpListDecode;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct EIP2930Tx<'a> {
@@ -18,6 +16,10 @@ pub(crate) struct EIP2930Tx<'a> {
     pub(crate) value: U256,
     pub(crate) data: &'a [u8],
     pub(crate) access_list: AccessList<'a>,
+}
+
+impl<'a> EthereumTxType for EIP2930Tx<'a> {
+    const TX_TYPE: u8 = 1;
 }
 
 impl<'a> RlpListDecode<'a> for EIP2930Tx<'a> {
@@ -79,8 +81,8 @@ pub type AccessList<'a> = HomList<'a, AccessListForAddress<'a>, true>;
 #[cfg(test)]
 mod tests_eip2930 {
     use super::*;
-    use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::RlpListDecode;
-    use crate::bootloader::transaction::ethereum_tx_format::test_helpers::*;
+    use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::RlpListDecode;
+    use crate::bootloader::transaction::ethereum_tx_format::rlp::test_helpers::*;
 
     // Alloy imports
     use alloy::consensus::TxEip2930;

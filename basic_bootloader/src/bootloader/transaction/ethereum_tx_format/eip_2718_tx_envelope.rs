@@ -1,6 +1,6 @@
 use crate::bootloader::{
     errors::{InvalidTransaction, TxError},
-    transaction::ethereum_tx_format::{
+    transaction::ethereum_tx_format::rlp::{
         apply_list_concatenation_encoding_to_hash,
         minimal_rlp_parser::{Rlp, RlpListDecode},
     },

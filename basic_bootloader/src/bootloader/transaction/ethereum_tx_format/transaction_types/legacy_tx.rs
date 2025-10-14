@@ -1,7 +1,15 @@
-use crate::bootloader::errors::InvalidTransaction;
+use crate::bootloader::errors::{InvalidTransaction, TxError};
 
-use super::minimal_rlp_parser::{Rlp, RlpListDecode};
+use crypto::MiniDigest;
+
+use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::{
+    Rlp, RlpListDecode,
+};
+use crate::bootloader::transaction::ethereum_tx_format::rlp::{
+    apply_list_concatenation_encoding_to_hash, apply_u64_encoding_to_hash, u64_encoding_len,
+};
 use ruint::aliases::U256;
+use zk_ee::utils::Bytes32;
 
 /// Legacy (type 0x00) inner payload used for signing:
 /// [nonce, gasPrice, gasLimit, to, value, data]
@@ -47,11 +55,69 @@ impl<'a> RlpListDecode<'a> for LegacyTXInner<'a> {
     }
 }
 
+pub(crate) struct LegacyPayloadParser {}
+
+impl LegacyPayloadParser {
+    pub(crate) fn try_parse_and_hash_for_signature_verification<'a>(
+        src: &'a [u8],
+        expected_chain_id: u64,
+    ) -> Result<(LegacyTXInner<'a>, LegacySignatureData<'a>, Bytes32), TxError> {
+        // Legacy path: input must be a single list with 9 elements total.
+        let mut outer = Rlp::new(src).list()?;
+
+        // Capture the concatenation bytes of the first 6 fields for hashing.
+        let mark = outer.mark();
+        let legacy_inner: LegacyTXInner<'a> = LegacyTXInner::decode_list_body(&mut outer)?;
+        let inner_slice = outer.consumed_since(mark);
+
+        let legacy_signature = LegacySignatureData::decode_list_body(&mut outer)?;
+        if !outer.is_empty() {
+            return Err(InvalidTransaction::InvalidStructure.into());
+        }
+
+        let sig_hash: Bytes32 = if legacy_signature.is_eip155() == false {
+            // Unprotected legacy
+            let mut hasher = crypto::sha3::Keccak256::new();
+            apply_list_concatenation_encoding_to_hash(inner_slice.len() as u32, &mut hasher);
+            hasher.update(inner_slice);
+            hasher.finalize_reset().into()
+        } else {
+            // EIP-155 protected legacy: v must match 35 + 2*chainId (+ {0,1})
+            let min_v = 35u64 + (expected_chain_id * 2);
+            if !(legacy_signature.v == min_v || legacy_signature.v == min_v + 1) {
+                return Err(InvalidTransaction::InvalidEncoding.into());
+            }
+
+            // Compute signing hash over the 6-field payload plus chainId and two empty strings.
+            let chain_id = expected_chain_id;
+            let chain_id_encoding_len = u64_encoding_len(chain_id);
+
+            let mut hasher = crypto::sha3::Keccak256::new();
+            apply_list_concatenation_encoding_to_hash(
+                (inner_slice.len() + chain_id_encoding_len + 2) as u32, // 0x80, 0x80 for r/s
+                &mut hasher,
+            );
+            hasher.update(inner_slice);
+            apply_u64_encoding_to_hash(chain_id, &mut hasher);
+            hasher.update(&[0x80, 0x80]);
+            hasher.finalize_reset().into()
+        };
+
+        Ok((legacy_inner, legacy_signature, sig_hash))
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LegacySignatureData<'a> {
     pub(crate) v: u64,
     pub(crate) r: &'a [u8],
     pub(crate) s: &'a [u8],
+}
+
+impl<'a> LegacySignatureData<'a> {
+    pub fn is_eip155(&self) -> bool {
+        self.v == 27 || self.v == 28
+    }
 }
 
 impl<'a> RlpListDecode<'a> for LegacySignatureData<'a> {
@@ -70,7 +136,7 @@ impl<'a> RlpListDecode<'a> for LegacySignatureData<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::RlpListDecode;
+    use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::RlpListDecode;
 
     // Alloy imports
     use alloy::consensus::TxLegacy;

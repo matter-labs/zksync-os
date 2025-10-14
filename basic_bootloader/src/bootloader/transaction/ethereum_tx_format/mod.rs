@@ -1,67 +1,30 @@
 use crypto::MiniDigest;
 
 use crate::bootloader::errors::InvalidTransaction;
-use crate::bootloader::transaction::ethereum_tx_format::legacy_tx::*;
+use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::Rlp;
+use crate::bootloader::transaction::ethereum_tx_format::transaction_types::legacy_tx::{
+    LegacyPayloadParser, LegacySignatureData, LegacyTXInner,
+};
+use crate::bootloader::transaction::ethereum_tx_format::transaction_types::EthereumTxType;
 use crate::bootloader::transaction::ethereum_tx_format::{
-    eip_1559_tx::EIP1559Tx,
-    eip_2718_tx::{EIP2718PayloadParser, EIP2718SignatureData},
-    eip_2930_tx::EIP2930Tx,
-    eip_7702_tx::EIP7702Tx,
+    eip_2718_tx_envelope::{EIP2718PayloadParser, EIP2718SignatureData},
+    transaction_types::eip_1559_tx::EIP1559Tx,
+    transaction_types::eip_2930_tx::EIP2930Tx,
+    transaction_types::eip_7702_tx::EIP7702Tx,
 };
 use zk_ee::utils::Bytes32;
 
-mod eip_1559_tx;
-mod eip_2718_tx;
-mod eip_2930_tx;
-mod eip_7702_tx;
-mod legacy_tx;
-mod minimal_rlp_parser;
-#[cfg(test)]
-mod test_helpers;
+mod eip_2718_tx_envelope;
+mod rlp;
 mod transaction;
+mod transaction_types;
 
 pub use self::transaction::EthereumTransaction;
-pub use eip_2930_tx::AccessListForAddress;
+pub use transaction_types::eip_2930_tx::AccessListForAddress;
 #[cfg(feature = "pectra")]
-pub use eip_7702_tx::{AuthorizationEntry, AuthorizationList};
+pub use transaction_types::eip_7702_tx::{AuthorizationEntry, AuthorizationList};
 
 use super::TxError;
-
-pub(crate) fn u64_encoding_len(value: u64) -> usize {
-    if value < 0x80 {
-        1
-    } else {
-        let bits = 64 - value.leading_zeros();
-        let encoding_bytes = (bits.next_multiple_of(8) / 8) as usize;
-        1 + encoding_bytes
-    }
-}
-
-fn apply_u64_encoding_to_hash(value: u64, hasher: &mut impl MiniDigest) {
-    if value == 0 {
-        hasher.update(&[0x80]);
-    } else if value < 0x80 {
-        hasher.update(&[value as u8]);
-    } else {
-        let bits = 64 - value.leading_zeros();
-        let encoding_bytes = (bits.next_multiple_of(8) / 8) as usize;
-        let length_bytes = value.to_be_bytes();
-        hasher.update(&[0x80 + encoding_bytes as u8]);
-        hasher.update(&length_bytes[(8 - encoding_bytes)..]);
-    }
-}
-
-fn apply_list_concatenation_encoding_to_hash(length: u32, hasher: &mut impl MiniDigest) {
-    if length < 56 {
-        hasher.update(&[0xc0 + length as u8]);
-    } else {
-        let bits = 32 - length.leading_zeros();
-        let encoding_bytes = (bits.next_multiple_of(8) / 8) as usize;
-        let length_bytes = length.to_be_bytes();
-        hasher.update(&[0xc0 + 55 + encoding_bytes as u8]);
-        hasher.update(&length_bytes[(4 - encoding_bytes)..]);
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum EthereumTxInner<'a> {
@@ -73,21 +36,17 @@ pub(crate) enum EthereumTxInner<'a> {
 }
 
 impl<'a> EthereumTxInner<'a> {
-    // NOTE: u32 chain ID allows to avoid handling some overflows below
+    // NOTE: u64 chain ID allows to avoid handling some overflows below
     pub(crate) fn parse_and_compute_signed_hash(
         input: &'a [u8],
         expected_chain_id: u64,
     ) -> Result<(Self, Bytes32), TxError> {
-        use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::{
-            Rlp, RlpListDecode,
-        };
-
         // Try to read a leading single-byte item as the typed marker.
         // For typed txs, this is a bare byte (1/2/4) followed by an RLP list.
         let mut r = Rlp::new(input);
         if let Ok(tx_type) = r.u8() {
             match tx_type {
-                1 => {
+                EIP2930Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP2930Tx<'a>>::try_parse_and_hash_for_signature_verification(
                             r.remaining(),
@@ -99,7 +58,7 @@ impl<'a> EthereumTxInner<'a> {
                     }
                     Ok((Self::EIP2930(tx, sig_data), sig_hash))
                 }
-                2 => {
+                EIP1559Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP1559Tx<'a>>::try_parse_and_hash_for_signature_verification(
                             r.remaining(),
@@ -110,10 +69,7 @@ impl<'a> EthereumTxInner<'a> {
                     }
                     Ok((Self::EIP1559(tx, sig_data), sig_hash))
                 }
-                4 => {
-                    let mut hasher = crypto::sha3::Keccak256::new();
-                    hasher.update(&[tx_type]);
-
+                EIP7702Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP7702Tx<'a>>::try_parse_and_hash_for_signature_verification(
                             r.remaining(),
@@ -128,62 +84,20 @@ impl<'a> EthereumTxInner<'a> {
                 _ => Err(InvalidTransaction::InvalidEncoding.into()),
             }
         } else {
-            // Legacy path: input must be a single list with 9 elements total.
-            let mut outer = Rlp::new(input).list()?;
+            // Legacy path
+            let (tx, sig_data, sig_hash) =
+                LegacyPayloadParser::try_parse_and_hash_for_signature_verification(
+                    r.remaining(),
+                    expected_chain_id,
+                )?;
 
-            // Capture the concatenation bytes of the first 6 fields for hashing.
-            let mark = outer.mark();
-            let legacy_inner: LegacyTXInner<'a> = LegacyTXInner::decode_list_body(&mut outer)?;
-            let inner_slice = outer.consumed_since(mark);
-
-            // Peek v without advancing the main cursor to decide which branch we take.
-            let mut peek = outer;
-            let v_peek = peek.u64()?;
-
-            if v_peek == 27 || v_peek == 28 {
-                // Unprotected legacy
-                let legacy_signature = LegacySignatureData::decode_list_body(&mut outer)?;
-                if !outer.is_empty() {
-                    return Err(InvalidTransaction::InvalidStructure.into());
-                }
-
-                let mut hasher = crypto::sha3::Keccak256::new();
-                apply_list_concatenation_encoding_to_hash(inner_slice.len() as u32, &mut hasher);
-                hasher.update(inner_slice);
-                let sig_hash: Bytes32 = hasher.finalize_reset().into();
-
-                Ok((Self::Legacy(legacy_inner, legacy_signature), sig_hash))
+            let tx = if sig_data.is_eip155() {
+                Self::LegacyWithEIP155(tx, sig_data)
             } else {
-                // EIP-155 protected legacy: v must match 35 + 2*chainId (+ {0,1})
-                let legacy_signature = LegacySignatureData::decode_list_body(&mut outer)?;
-                if !outer.is_empty() {
-                    return Err(InvalidTransaction::InvalidStructure.into());
-                }
+                Self::Legacy(tx, sig_data)
+            };
 
-                let min_v = 35u64 + (expected_chain_id * 2);
-                if !(legacy_signature.v == min_v || legacy_signature.v == min_v + 1) {
-                    return Err(InvalidTransaction::InvalidEncoding.into());
-                }
-
-                // Compute signing hash over the 6-field payload plus chainId and two empty strings.
-                let chain_id = expected_chain_id;
-                let chain_id_encoding_len = u64_encoding_len(chain_id);
-
-                let mut hasher = crypto::sha3::Keccak256::new();
-                apply_list_concatenation_encoding_to_hash(
-                    (inner_slice.len() + chain_id_encoding_len + 2) as u32, // 0x80, 0x80 for r/s
-                    &mut hasher,
-                );
-                hasher.update(inner_slice);
-                apply_u64_encoding_to_hash(chain_id, &mut hasher);
-                hasher.update(&[0x80, 0x80]);
-                let sig_hash: Bytes32 = hasher.finalize_reset().into();
-
-                Ok((
-                    Self::LegacyWithEIP155(legacy_inner, legacy_signature),
-                    sig_hash,
-                ))
-            }
+            Ok((tx, sig_hash))
         }
     }
 }
