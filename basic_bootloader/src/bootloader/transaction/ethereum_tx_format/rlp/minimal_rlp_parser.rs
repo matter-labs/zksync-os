@@ -230,6 +230,13 @@ impl<'a, T: RlpListDecode<'a>> RlpItemDecode<'a> for T {
     }
 }
 
+// Implement RlpItemDecode for u8 for testing purposes
+impl<'a> RlpItemDecode<'a> for u8 {
+    fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
+        r.u8()
+    }
+}
+
 pub trait RlpFixedItem<'a>: RlpItemDecode<'a> {
     // Total encoded length of the item (header + payload)
     const ENCODING_LEN: usize;
@@ -442,5 +449,361 @@ impl<'a, T: RlpItemDecode<'a>> Iterator for HomListIter<'a, T, false> {
                 Some(Err(InvalidTransaction::InvalidStructure))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_rlp::Encodable;
+
+    #[test]
+    fn test_rlp_basic_test() {
+        let data = [0x83, 0x64, 0x6f, 0x67]; // "dog" encoded
+        let mut rlp = Rlp::new(&data);
+
+        assert_eq!(rlp.pos, 0);
+        assert_eq!(rlp.bytes.len(), 4);
+        assert!(!rlp.is_empty());
+
+        let mark1 = rlp.mark();
+        assert_eq!(mark1, 0);
+
+        let consumed_data = rlp.bytes().unwrap(); // Consume "dog"
+        let consumed = rlp.consumed_since(mark1);
+        assert_eq!(consumed_data, b"dog");
+        assert_eq!(consumed, &data);
+        assert!(rlp.is_empty());
+
+        let empty_rlp = Rlp::new(&[]);
+        assert!(empty_rlp.is_empty());
+
+        let data = [0x83, 0x64, 0x6f, 0x67, 0x82, 0x63, 0x61, 0x74]; // "dog" + "cat"
+        let mut rlp = Rlp::new(&data);
+
+        let _ = rlp.bytes().unwrap(); // Consume "dog"
+        let remaining = rlp.remaining();
+        assert_eq!(remaining, &[0x82, 0x63, 0x61, 0x74]); // "cat" encoded
+    }
+
+    #[test]
+    fn test_rlp_bytes_single_byte() {
+        // Single byte < 0x80 represents itself
+        let mut rlp = Rlp::new(&[0x41]); // 'A'
+        let result = rlp.bytes().unwrap();
+        assert_eq!(result, &[0x41]);
+        assert!(rlp.is_empty());
+    }
+
+    #[test]
+    fn test_rlp_error_cases() {
+        // Truncated data
+        let mut rlp = Rlp::new(&[0x83, 0x64, 0x6f]); // Claims 3 bytes but only has 2
+        assert!(rlp.bytes().is_err());
+
+        // Invalid length encoding
+        let mut rlp = Rlp::new(&[0xbf]); // 0xb7 + 8, but max length encoding is 4 bytes
+        assert!(rlp.bytes().is_err());
+
+        // Empty buffer
+        let mut rlp = Rlp::new(&[]);
+        assert!(rlp.bytes().is_err());
+    }
+
+    #[test]
+    fn test_rlp_fixed_list_wrong_size() {
+        // Test FixedList with payload that doesn't divide evenly
+        let mut payload = vec![0x94]; // B160 header
+        payload.extend_from_slice(&[0x11; 20]);
+        payload.push(0x12); // Extra byte that breaks the pattern
+
+        let mut encoded = vec![0xc0 + payload.len() as u8];
+        encoded.extend_from_slice(&payload);
+
+        assert!(FixedList::<B160>::decode_list_full(&encoded).is_err());
+    }
+
+    #[test]
+    fn test_rlp_hom_list_validated() {
+        // Test HomList with validation enabled
+        let mut data1 = [0x94; 21]; // Valid B160
+        data1[0] = 0x94;
+        let mut data2 = [0x94; 21]; // Valid B160
+        data2[0] = 0x94;
+
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&data1);
+        payload.extend_from_slice(&data2);
+
+        let mut encoded = vec![0xc0 + payload.len() as u8];
+        encoded.extend_from_slice(&payload);
+
+        let list: HomList<B160, true> = HomList::decode_list_full(&encoded).unwrap();
+        assert_eq!(list.len(), 2);
+
+        let items: Vec<_> = list.iter().collect();
+        assert_eq!(items.len(), 2);
+
+        // Test HomList validation with invalid data
+        let mut payload = vec![0x95]; // Wrong header for B160 (should be 0x94)
+        payload.extend_from_slice(&[0x11; 20]);
+
+        let mut encoded = vec![0xc0 + payload.len() as u8];
+        encoded.extend_from_slice(&payload);
+
+        // Validation should fail
+        assert!(HomList::<B160, true>::decode_list_full(&encoded).is_err());
+    }
+
+    #[test]
+    fn test_rlp_hom_list_unvalidated() {
+        // Test HomList with validation disabled
+        let payload = vec![0x01, 0x02, 0x03]; // Just some bytes
+
+        let mut encoded = vec![0xc0 + payload.len() as u8];
+        encoded.extend_from_slice(&payload);
+
+        let list: HomList<u8, false> = HomList::decode_list_full(&encoded).unwrap();
+        assert!(list.count.is_none()); // No count for unvalidated
+
+        // Iterator should handle errors gracefully
+        let items: Vec<_> = list.iter().collect();
+        assert_eq!(items.len(), 3);
+        assert!(items[0].is_ok());
+        assert!(items[1].is_ok());
+        assert!(items[2].is_ok());
+    }
+
+    #[test]
+    fn test_alloy_compatibility_u64() {
+        // Test u64 encoding compatibility
+        let values = [0u64, 1, 127, 128, 255, 256, 65535, 65536, u64::MAX];
+
+        for &value in &values {
+            let mut alloy_encoded = Vec::new();
+            value.encode(&mut alloy_encoded);
+
+            let mut rlp_decoder = Rlp::new(&alloy_encoded);
+            let decoded = rlp_decoder.u64().unwrap();
+
+            assert_eq!(decoded, value, "u64 value {} mismatch", value);
+            assert!(
+                rlp_decoder.is_empty(),
+                "Should consume all bytes for u64 {}",
+                value
+            );
+        }
+    }
+
+    #[test]
+    fn test_alloy_compatibility_strings() {
+        let test_strings = [
+            "",
+            "a",
+            "dog",
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit", // > 55 chars
+            &"x".repeat(56),  // Exactly 56 chars (triggers long string encoding)
+            &"y".repeat(100), // Long string
+        ];
+
+        for test_str in &test_strings {
+            let mut alloy_encoded = Vec::new();
+            test_str.as_bytes().encode(&mut alloy_encoded);
+
+            let mut rlp_decoder = Rlp::new(&alloy_encoded);
+            let decoded = rlp_decoder.bytes().unwrap();
+
+            assert_eq!(
+                decoded,
+                test_str.as_bytes(),
+                "String '{}' mismatch",
+                test_str
+            );
+            assert!(
+                rlp_decoder.is_empty(),
+                "Should consume all bytes for string '{}'",
+                test_str
+            );
+        }
+    }
+
+    #[test]
+    fn test_alloy_compatibility_u256() {
+        let test_values = [
+            ruint::aliases::U256::ZERO,
+            ruint::aliases::U256::from(1),
+            ruint::aliases::U256::from(255),
+            ruint::aliases::U256::from(256),
+            ruint::aliases::U256::from(65535),
+            ruint::aliases::U256::from(65536),
+            ruint::aliases::U256::from(u64::MAX),
+            ruint::aliases::U256::MAX,
+        ];
+
+        for &value in &test_values {
+            let mut alloy_encoded = Vec::new();
+            value.encode(&mut alloy_encoded);
+
+            let mut rlp_decoder = Rlp::new(&alloy_encoded);
+            let decoded = rlp_decoder.u256().unwrap();
+
+            assert_eq!(decoded, value, "U256 value {} mismatch", value);
+            assert!(
+                rlp_decoder.is_empty(),
+                "Should consume all bytes for U256 {}",
+                value
+            );
+        }
+    }
+
+    #[test]
+    fn test_alloy_compatibility_lists() {
+        // Test simple list: ["cat", "dog"]
+        let items = vec![b"cat".as_slice(), b"dog".as_slice()];
+        let mut alloy_encoded = Vec::new();
+        items.encode(&mut alloy_encoded);
+
+        let mut rlp_decoder = Rlp::new(&alloy_encoded);
+        let mut list = rlp_decoder.list().unwrap();
+
+        let first = list.bytes().unwrap();
+        assert_eq!(first, b"cat");
+
+        let second = list.bytes().unwrap();
+        assert_eq!(second, b"dog");
+
+        assert!(list.is_empty());
+        assert!(rlp_decoder.is_empty());
+    }
+
+    #[test]
+    fn test_alloy_compatibility_empty_values() {
+        // Test empty string
+        let mut alloy_encoded = Vec::new();
+        b"".encode(&mut alloy_encoded);
+        assert_eq!(alloy_encoded, &[0x80]); // Empty string should be 0x80
+
+        let mut rlp_decoder = Rlp::new(&alloy_encoded);
+        let decoded = rlp_decoder.bytes().unwrap();
+        assert_eq!(decoded, b"");
+        assert!(rlp_decoder.is_empty());
+
+        // Test empty list
+        let mut alloy_encoded = Vec::new();
+        let empty_list: Vec<u8> = vec![];
+        empty_list.encode(&mut alloy_encoded);
+        assert_eq!(alloy_encoded, &[0xc0]); // Empty list should be 0xc0
+
+        let mut rlp_decoder = Rlp::new(&alloy_encoded);
+        let list = rlp_decoder.list().unwrap();
+        assert!(list.is_empty());
+        assert!(rlp_decoder.is_empty());
+    }
+
+    #[test]
+    fn test_alloy_compatibility_long_list() {
+        // Create a list with many elements to test long list encoding
+        let items: Vec<u64> = (0..100).collect();
+        let mut alloy_encoded = Vec::new();
+        items.encode(&mut alloy_encoded);
+
+        let mut rlp_decoder = Rlp::new(&alloy_encoded);
+        let mut list = rlp_decoder.list().unwrap();
+
+        // Verify all items can be decoded
+        for expected in 0..100 {
+            let actual = list.u64().unwrap();
+            assert_eq!(actual, expected);
+        }
+
+        assert!(list.is_empty());
+        assert!(rlp_decoder.is_empty());
+    }
+
+    #[test]
+    fn test_alloy_compatibility_addresses() {
+        // Test Ethereum address encoding/decoding
+        let test_addresses = [
+            [0x00; 20],
+            [0xFF; 20],
+            [
+                0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+                0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC,
+            ],
+        ];
+
+        for &addr_bytes in &test_addresses {
+            let mut alloy_encoded = Vec::new();
+            addr_bytes.encode(&mut alloy_encoded);
+
+            // Should be 0x94 (0x80 + 20) followed by 20 bytes
+            assert_eq!(alloy_encoded[0], 0x94);
+            assert_eq!(alloy_encoded.len(), 21);
+
+            // Test with our B160 decoder
+            let addr = B160::decode_from_fixed(&alloy_encoded).unwrap();
+            assert_eq!(addr.to_be_bytes(), addr_bytes);
+
+            // Test with generic bytes decoder
+            let mut rlp_decoder = Rlp::new(&alloy_encoded);
+            let decoded = rlp_decoder.bytes().unwrap();
+            assert_eq!(decoded, &addr_bytes);
+            assert!(rlp_decoder.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_alloy_compatibility_boundary_cases() {
+        // Test boundary cases for string encoding
+
+        // 55-byte string (last short string)
+        let str_55 = "x".repeat(55);
+        let mut alloy_encoded = Vec::new();
+        str_55.as_bytes().encode(&mut alloy_encoded);
+
+        let mut rlp_decoder = Rlp::new(&alloy_encoded);
+        let decoded = rlp_decoder.bytes().unwrap();
+        assert_eq!(decoded, str_55.as_bytes());
+
+        // 56-byte string (first long string)
+        let str_56 = "y".repeat(56);
+        let mut alloy_encoded = Vec::new();
+        str_56.as_bytes().encode(&mut alloy_encoded);
+        assert_eq!(alloy_encoded[0], 0xb8); // Should be 0xb7 + 1 (long encoding)
+        assert_eq!(alloy_encoded[1], 56); // Length byte
+
+        let mut rlp_decoder = Rlp::new(&alloy_encoded);
+        let decoded = rlp_decoder.bytes().unwrap();
+        assert_eq!(decoded, str_56.as_bytes());
+
+        // Similar tests for lists
+        // 55-byte list payload (last short list)
+        let items_55: Vec<u8> = (0..55).collect();
+        let mut alloy_encoded = Vec::new();
+        items_55.encode(&mut alloy_encoded);
+        assert_eq!(alloy_encoded[0], 0xc0 + 55); // Should be short list encoding
+
+        let mut rlp_decoder = Rlp::new(&alloy_encoded);
+        let mut list = rlp_decoder.list().unwrap();
+        for expected in 0..55 {
+            let actual = list.u8().unwrap();
+            assert_eq!(actual, expected);
+        }
+        assert!(list.is_empty());
+
+        // 56-byte list payload (first long list)
+        let items_56: Vec<u8> = (0..56).collect();
+        let mut alloy_encoded = Vec::new();
+        items_56.encode(&mut alloy_encoded);
+        assert_eq!(alloy_encoded[0], 0xf8); // Should be 0xf7 + 1 (long list encoding)
+        assert_eq!(alloy_encoded[1], 56); // Length byte
+
+        let mut rlp_decoder = Rlp::new(&alloy_encoded);
+        let mut list = rlp_decoder.list().unwrap();
+        for expected in 0..56 {
+            let actual = list.u8().unwrap();
+            assert_eq!(actual, expected);
+        }
+        assert!(list.is_empty());
     }
 }
