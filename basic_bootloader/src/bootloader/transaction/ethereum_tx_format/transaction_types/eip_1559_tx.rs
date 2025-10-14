@@ -1,6 +1,9 @@
 use crate::bootloader::errors::InvalidTransaction;
-use crate::bootloader::transaction::ethereum_tx_format::eip_2930_tx::AccessList;
-use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::{Rlp, RlpListDecode};
+use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::{
+    Rlp, RlpListDecode,
+};
+use crate::bootloader::transaction::ethereum_tx_format::transaction_types::eip_2930_tx::AccessList;
+use crate::bootloader::transaction::ethereum_tx_format::transaction_types::EthereumTxType;
 use ruint::aliases::U256;
 
 /// EIP-1559 (type 0x02) transaction payload (unsigned part).
@@ -19,6 +22,10 @@ pub(crate) struct EIP1559Tx<'a> {
     pub(crate) value: U256,
     pub(crate) data: &'a [u8],
     pub(crate) access_list: AccessList<'a>,
+}
+
+impl<'a> EthereumTxType for EIP1559Tx<'a> {
+    const TX_TYPE: u8 = 2;
 }
 
 impl<'a> RlpListDecode<'a> for EIP1559Tx<'a> {
@@ -60,7 +67,7 @@ impl<'a> RlpListDecode<'a> for EIP1559Tx<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootloader::transaction::ethereum_tx_format::minimal_rlp_parser::RlpListDecode;
+    use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::RlpListDecode;
 
     // Alloy imports
     use alloy::consensus::TxEip1559;

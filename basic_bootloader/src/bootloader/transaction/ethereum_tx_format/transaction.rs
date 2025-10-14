@@ -1,9 +1,9 @@
 use crate::bootloader::errors::TxError;
 use crate::bootloader::transaction::charge_keccak;
-use crate::bootloader::transaction::ethereum_tx_format::eip_2930_tx::{
+use crate::bootloader::transaction::ethereum_tx_format::transaction_types::eip_2930_tx::{
     AccessList, AccessListForAddress,
 };
-use crate::bootloader::transaction::ethereum_tx_format::eip_7702_tx::{
+use crate::bootloader::transaction::ethereum_tx_format::transaction_types::eip_7702_tx::{
     AuthorizationEntry, AuthorizationList,
 };
 use core::alloc::Allocator;
