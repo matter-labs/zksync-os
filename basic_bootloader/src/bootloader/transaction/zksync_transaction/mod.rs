@@ -1,7 +1,17 @@
+//! # ZKsync Transaction Format
 //!
-//! This module contains ZK custom transaction structure definition including
-//! a bunch of methods needed for the validation.
+//! This module contains ZKsync's custom transaction structure definition including
+//! validation methods and hash calculation functions.
 //!
+//! ## Why ZKsyncTransaction is needed
+//!
+//! ZKsyncTransaction exists alongside Ethereum RLP transactions to support ZKsync's
+//! unique Layer 2 features that cannot be expressed in standard
+//! Ethereum transaction formats. This includes:
+//!
+//! - **`EIP_712_TX_TYPE` (0x71)**: User-submitted transactions with EIP-712 signing
+//! - **`L1_L2_TX_TYPE` (0x7f)**: Transactions initiated from L1 (deposits, forced transactions)
+//! - **`UPGRADE_TX_TYPE` (0x7e)**: System upgrade transactions (protocol changes)
 
 use crate::bootloader::errors::TxError;
 
@@ -23,14 +33,13 @@ mod abi_utils;
 mod tests;
 pub mod u256be_ptr;
 
-///
 /// The generic transaction format. The structure fields are slices/references in fact.
 ///
 /// NOTE: this is self-reference, but relatively easy one. Do NOT derive clone one it,
-// as it's unsound
-pub struct ZkSyncTransaction<A: Allocator> {
+/// as it's unsound
+pub struct ZKsyncTransaction<A: Allocator> {
     underlying_buffer: UsizeAlignedByteBox<A>,
-    // field below are parsed
+    // fields below are parsed
     /// The type of the transaction.
     pub tx_type: ParsedValue<u8>,
     /// The caller.
@@ -88,7 +97,7 @@ pub struct ZkSyncTransaction<A: Allocator> {
 }
 
 #[allow(dead_code)]
-impl<A: Allocator> ZkSyncTransaction<A> {
+impl<A: Allocator> ZKsyncTransaction<A> {
     /// The type id of EIP712 transactions.
     pub const EIP_712_TX_TYPE: u8 = 0x71;
     /// The type id of protocol upgrade transactions.

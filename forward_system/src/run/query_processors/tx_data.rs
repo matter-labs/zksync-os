@@ -69,7 +69,7 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
                                 // `0` interpreted as seal batch
                                 assert_ne!(next_tx_len, 0);
                                 self.next_tx = Some(next_tx);
-                                self.next_tx_format = Some(TxEncodingFormat::Zk);
+                                self.next_tx_format = Some(TxEncodingFormat::ZKsync);
                                 next_tx_len
                             }
                             NextTxResponse::EthTx(next_tx, from) => {

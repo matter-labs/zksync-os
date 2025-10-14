@@ -31,8 +31,8 @@ use zk_ee::utils::Bytes32;
 use zk_ee::utils::UsizeAlignedByteBox;
 
 mod ethereum_tx_format;
-pub mod zk_transaction;
-use self::zk_transaction::ZkSyncTransaction;
+pub mod zksync_transaction;
+use self::zksync_transaction::ZKsyncTransaction;
 
 #[cfg(feature = "pectra")]
 pub mod authorization_list;
@@ -42,7 +42,7 @@ pub enum Transaction<A: Allocator> {
     /// RLP-encoded Ethereum transactions.
     Ethereum(EthereumTransaction<A>),
     /// ABI-encoded ZKsync transaction.
-    Zk(ZkSyncTransaction<A>),
+    ZKsync(ZKsyncTransaction<A>),
 }
 
 impl<A: Allocator> Transaction<A> {
@@ -86,10 +86,10 @@ impl<A: Allocator> Transaction<A> {
                 let tx = EthereumTransaction::parse_from_buffer(buffer, expected_chain_id, from)?;
                 Ok(Self::Ethereum(tx))
             }
-            TxEncodingFormat::Zk => {
-                let tx = ZkSyncTransaction::try_from_buffer(buffer)
+            TxEncodingFormat::ZKsync => {
+                let tx = ZKsyncTransaction::try_from_buffer(buffer)
                     .map_err(|_| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
-                Ok(Self::Zk(tx))
+                Ok(Self::ZKsync(tx))
             }
         }
     }
@@ -98,7 +98,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn is_upgrade(&self) -> bool {
         match self {
             Self::Ethereum(_) => false,
-            Self::Zk(tx) => tx.tx_type.read() == ZkSyncTransaction::<A>::UPGRADE_TX_TYPE,
+            Self::ZKsync(tx) => tx.tx_type.read() == ZKsyncTransaction::<A>::UPGRADE_TX_TYPE,
         }
     }
 
@@ -106,7 +106,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn is_l1_l2(&self) -> bool {
         match self {
             Self::Ethereum(_) => false,
-            Self::Zk(tx) => tx.tx_type.read() == ZkSyncTransaction::<A>::L1_L2_TX_TYPE,
+            Self::ZKsync(tx) => tx.tx_type.read() == ZKsyncTransaction::<A>::L1_L2_TX_TYPE,
         }
     }
 
@@ -114,7 +114,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn nonce(&self) -> U256 {
         match self {
             Self::Ethereum(tx) => U256::from(tx.nonce()),
-            Self::Zk(tx) => tx.nonce.read(),
+            Self::ZKsync(tx) => tx.nonce.read(),
         }
     }
 
@@ -122,7 +122,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn gas_limit(&self) -> u64 {
         match self {
             Self::Ethereum(tx) => tx.gas_limit(),
-            Self::Zk(tx) => tx.gas_limit.read(),
+            Self::ZKsync(tx) => tx.gas_limit.read(),
         }
     }
 
@@ -130,7 +130,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn max_fee_per_gas(&self) -> &U256 {
         match self {
             Self::Ethereum(tx) => tx.max_fee_per_gas(),
-            Self::Zk(tx) => &tx.max_fee_per_gas.read_ref(),
+            Self::ZKsync(tx) => &tx.max_fee_per_gas.read_ref(),
         }
     }
 
@@ -138,7 +138,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn max_priority_fee_per_gas(&self) -> Option<&U256> {
         match self {
             Self::Ethereum(tx) => tx.max_priority_fee_per_gas(),
-            Self::Zk(tx) => Some(&tx.max_priority_fee_per_gas.read_ref()),
+            Self::ZKsync(tx) => Some(&tx.max_priority_fee_per_gas.read_ref()),
         }
     }
 
@@ -146,7 +146,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn gas_per_pubdata_limit(&self) -> U256 {
         match self {
             Self::Ethereum(_) => U256::ZERO,
-            Self::Zk(tx) => U256::from(tx.gas_per_pubdata_limit.read()),
+            Self::ZKsync(tx) => U256::from(tx.gas_per_pubdata_limit.read()),
         }
     }
 
@@ -154,7 +154,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn calldata(&self) -> &[u8] {
         match self {
             Self::Ethereum(tx) => tx.calldata(),
-            Self::Zk(tx) => tx.calldata(),
+            Self::ZKsync(tx) => tx.calldata(),
         }
     }
 
@@ -162,7 +162,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn value(&self) -> &U256 {
         match self {
             Self::Ethereum(tx) => tx.value(),
-            Self::Zk(tx) => &tx.value.read_ref(),
+            Self::ZKsync(tx) => &tx.value.read_ref(),
         }
     }
 
@@ -170,7 +170,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn from(&self) -> &B160 {
         match self {
             Self::Ethereum(tx) => tx.from(),
-            Self::Zk(tx) => &tx.from.read_ref(),
+            Self::ZKsync(tx) => &tx.from.read_ref(),
         }
     }
 
@@ -182,7 +182,7 @@ impl<A: Allocator> Transaction<A> {
     ) -> Result<Bytes32, TxError> {
         match self {
             Self::Ethereum(tx) => tx.transaction_hash(resources),
-            Self::Zk(tx) => tx
+            Self::ZKsync(tx) => tx
                 .calculate_hash(chain_id, resources)
                 .map(Bytes32::from_array),
         }
@@ -194,7 +194,7 @@ impl<A: Allocator> Transaction<A> {
         let mut inf_resources = R::FORMAL_INFINITE;
         match self {
             Self::Ethereum(tx) => Ok(*tx.hash_for_signature_verification()),
-            Self::Zk(tx) => tx
+            Self::ZKsync(tx) => tx
                 .calculate_signed_hash(chain_id, &mut inf_resources)
                 .map(Bytes32::from_array),
         }
@@ -204,7 +204,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn required_balance(&self) -> Option<U256> {
         match self {
             Self::Ethereum(tx) => tx.required_balance(),
-            Self::Zk(tx) => tx.required_balance(),
+            Self::ZKsync(tx) => tx.required_balance(),
         }
     }
 
@@ -212,7 +212,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn sig_parity_r_s<'a>(&'a self) -> (bool, &'a [u8], &'a [u8]) {
         match self {
             Self::Ethereum(tx) => tx.sig_parity_r_s(),
-            Self::Zk(tx) => tx.sig_parity_r_s(),
+            Self::ZKsync(tx) => tx.sig_parity_r_s(),
         }
     }
 
@@ -220,7 +220,7 @@ impl<A: Allocator> Transaction<A> {
     pub fn to(&self) -> Option<B160> {
         match self {
             Self::Ethereum(tx) => tx.destination(),
-            Self::Zk(tx) => Some(tx.to.read()),
+            Self::ZKsync(tx) => Some(tx.to.read()),
         }
     }
 
@@ -234,7 +234,7 @@ impl<A: Allocator> Transaction<A> {
                     None
                 }
             }
-            Self::Zk(tx) => {
+            Self::ZKsync(tx) => {
                 // Checked in the structure validation that `to` is null
                 if !tx.reserved[1].read().is_zero() {
                     Some(ExecutionEnvironmentType::EVM)
@@ -265,7 +265,7 @@ impl<A: Allocator> Transaction<A> {
         S::IO: IOSubsystemExt,
     {
         match self {
-            Self::Zk(_) => Ok(()),
+            Self::ZKsync(_) => Ok(()),
             Self::Ethereum(tx) => {
                 if let Some(iter) = tx.access_list_iter() {
                     for AccessListForAddress {
@@ -309,7 +309,7 @@ impl<A: Allocator> Transaction<A> {
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         match self {
-            Self::Zk(tx) => tx.len(),
+            Self::ZKsync(tx) => tx.len(),
             Self::Ethereum(tx) => tx.len(),
         }
     }
