@@ -335,55 +335,6 @@ fn test_alloy_edge_case_large_length_claims() {
     }
 }
 
-// TODO: decide on this one
-// #[test]
-// fn test_alloy_edge_case_nested_structures() {
-//     // Test deeply nested list structures
-//     let mut nested_data = vec![0x01]; // Start with simple element
-
-//     // Create progressively deeper nesting
-//     for depth in 1..=10 {
-//         // Wrap current data in a list
-//         let payload_len = nested_data.len();
-//         let mut new_data = if payload_len <= 55 {
-//             vec![0xc0 + payload_len as u8]
-//         } else {
-//             let mut header = vec![0xf7 + 1]; // list with 1-byte length
-//             header.push(payload_len as u8);
-//             header
-//         };
-//         new_data.extend_from_slice(&nested_data);
-//         nested_data = new_data;
-
-//         // Test parsing at each depth
-//         let mut rlp_parser = Rlp::new(&nested_data);
-//         let our_result = rlp_parser.list();
-
-//         let alloy_result: Result<Vec<u8>, alloy_rlp::Error> =
-//             alloy_rlp::Decodable::decode(&mut &nested_data[..]);
-
-//         match (our_result, alloy_result) {
-//             (Ok(our_list), Ok(alloy_list)) => {
-//                 assert_eq!(
-//                     alloy_list,
-//                     our_list.remaining(),
-//                     "{}: Byte decoding mismatch",
-//                     depth
-//                 );
-//             }
-//             (Err(_), Err(_)) => {
-//                 // Both failed - acceptable
-//             }
-//             (our_res, alloc_res) => {
-//                 panic!(
-//                     "Test '{}': Divergence - our={:?}, alloy={:?}",
-//                     depth, our_res, alloc_res
-//                 );
-//             }
-//         }
-//     }
-// }
-
 #[test]
 fn test_alloy_edge_case_empty_and_zero_values_bytes() {
     // Test various representations of empty/zero values
