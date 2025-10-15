@@ -71,41 +71,6 @@ impl<'a> Rlp<'a> {
         Ok(v as usize)
     }
 
-    /// Return the next RLP item as a full encoded slice (prefix + payload), advancing the cursor.
-    pub fn item(&mut self) -> Result<&'a [u8], InvalidTransaction> {
-        let start = self.pos;
-        let m = self.take1()?;
-        let total = if m < 0x80 {
-            1
-        } else if m <= 0xb7 {
-            1 + (m as usize - 0x80)
-        } else if m < 0xc0 {
-            let ll = m as usize - 0xb7;
-            // we make some reasonable bound here - max u32 length
-            if ll > 4 {
-                return Err(InvalidTransaction::InvalidStructure);
-            }
-            let len = Self::be_u32(self.take_exact(ll)?)?;
-            1 + ll + len
-        } else if m <= 0xf7 {
-            1 + (m as usize - 0xc0)
-        } else {
-            let ll = m as usize - 0xf7;
-            // we make some reasonable bound here - max u32 length
-            if ll > 4 {
-                return Err(InvalidTransaction::InvalidStructure);
-            }
-            let len = Self::be_u32(self.take_exact(ll)?)?;
-            1 + ll + len
-        };
-        let end = start + total;
-        if end > self.bytes.len() {
-            return Err(InvalidTransaction::InvalidStructure);
-        }
-        self.pos = end;
-        Ok(&self.bytes[start..end])
-    }
-
     /// Decode an RLP string and return its payload bytes (no header).
     pub fn bytes(&mut self) -> Result<&'a [u8], InvalidTransaction> {
         let m = self.take1()?;
@@ -113,6 +78,10 @@ impl<'a> Rlp<'a> {
             Ok(&self.bytes[self.pos - 1..self.pos])
         } else if m <= 0xb7 {
             let len = (m - 0x80) as usize;
+            if len == 1 && self.bytes[self.pos] < 0x80 {
+                // non-canonical single byte
+                return Err(InvalidTransaction::InvalidStructure);
+            }
             self.take_exact(len)
         } else if m < 0xc0 {
             let ll = (m - 0xb7) as usize;
@@ -121,6 +90,10 @@ impl<'a> Rlp<'a> {
                 return Err(InvalidTransaction::InvalidStructure);
             }
             let len = Self::be_u32(self.take_exact(ll)?)?;
+            if len < 56 {
+                // non-canonical long length
+                return Err(InvalidTransaction::InvalidStructure);
+            }
             self.take_exact(len)
         } else {
             Err(InvalidTransaction::InvalidStructure)
@@ -142,6 +115,10 @@ impl<'a> Rlp<'a> {
                 return Err(InvalidTransaction::InvalidStructure);
             }
             let len = Self::be_u32(self.take_exact(ll)?)?;
+            if len < 56 {
+                // non-canonical long length
+                return Err(InvalidTransaction::InvalidStructure);
+            }
             len
         };
         let content = self.take_exact(len)?;

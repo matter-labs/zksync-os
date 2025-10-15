@@ -3325,6 +3325,7 @@ dependencies = [
  "ruint",
  "strum_macros 0.27.2",
  "zk_ee",
+ "zksync_os_evm_errors",
 ]
 
 [[package]]
@@ -3511,6 +3512,7 @@ dependencies = [
  "serde",
  "strum_macros 0.27.2",
  "zk_ee",
+ "zksync_os_evm_errors",
  "zksync_os_interface",
  "zksync_os_runner",
 ]
@@ -8947,6 +8949,7 @@ dependencies = [
  "ruint",
  "serde",
  "strum_macros 0.27.2",
+ "zksync_os_evm_errors",
 ]
 
 [[package]]
@@ -8984,18 +8987,24 @@ dependencies = [
  "risc_v_simulator",
  "ruint",
  "zk_ee",
+ "zksync_os_interface",
  "zksync_os_runner",
 ]
 
 [[package]]
+name = "zksync_os_evm_errors"
+version = "0.0.7"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#04c603c59f0e046a03f60f7583b2a368bc335fcd"
+
+[[package]]
 name = "zksync_os_interface"
-version = "0.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce3ecdc1edaf67533b4bb638fbbd401acec73eec6de99e3abefa49e6c1348695"
+version = "0.0.7"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#04c603c59f0e046a03f60f7583b2a368bc335fcd"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
  "serde",
+ "zksync_os_evm_errors",
 ]
 
 [[package]]
