@@ -186,4 +186,96 @@ mod tests {
 
         assert_eq!(tx.data, &*initcode);
     }
+
+    /// Attack vector example
+    #[test]
+    fn handles_invalid_data_encoding() {
+        use alloy_rlp::{BufMut, Encodable};
+
+        fn build_tx_manually(data: Vec<u8>) -> Vec<u8> {
+            // Manually construct an EIP1559 transaction with invalid data encoding
+            let mut buf = Vec::new();
+
+            // EIP1559 transaction list with 9 fields:
+            // [chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList]
+
+            // Start RLP list with 9 items
+            let list_header = 0xc0 + 9; // Short list with 9 items
+            buf.put_u8(list_header);
+
+            // chainId: 1
+            1u64.encode(&mut buf);
+
+            // nonce: 0
+            0u64.encode(&mut buf);
+
+            // maxPriorityFeePerGas: 1000000000
+            1_000_000_000u128.encode(&mut buf);
+
+            // maxFeePerGas: 2000000000
+            2_000_000_000u128.encode(&mut buf);
+
+            // gasLimit: 21000
+            21_000u64.encode(&mut buf);
+
+            // to: empty (contract creation)
+            buf.put_u8(0x80); // empty string
+
+            // value: 0
+            0u128.encode(&mut buf);
+
+            buf.extend_from_slice(&data);
+
+            // accessList: empty
+            let empty_access_list: Vec<u8> = Vec::new();
+            empty_access_list.encode(&mut buf);
+
+            // Now recalculate the correct list header length
+            let payload_len = buf.len() - 1; // subtract the temporary header
+            buf[0] = if payload_len < 56 {
+                0xc0 + payload_len as u8
+            } else {
+                // For longer lists, we'd need more complex encoding
+                panic!("Payload too long for this test");
+            };
+
+            buf
+        }
+
+        let test_cases = [
+            // Single byte encoded as short string (non-minimal)
+            vec![0x81, 0x00], // Should be just [0x00]
+            vec![0x81, 0x01], // Should be just [0x01]
+            vec![0x81, 0x7f], // Should be just [0x7f]
+            // Short string that could be single byte
+            vec![0x81, 0x80], // This is actually correct encoding for byte 0x80
+            // Zero-length long string (should use short form 0x80)
+            vec![0xb8, 0x00], // Should be just [0x80]
+            // One-byte string with long encoding (should use short form)
+            vec![0xb8, 0x01, 0x41], // Should be [0x81, 0x41]
+            vec![0x80],             // empty string,
+        ];
+
+        for case in test_cases {
+            // data: INVALID encoding - non-minimal encodings
+            let buf = build_tx_manually(case);
+
+            // Test our parser
+            let our_result = EIP1559Tx::decode_list_full(&buf);
+
+            // Test Alloy's parser
+            let alloy_result: Result<alloy::consensus::TxEip1559, alloy_rlp::Error> =
+                alloy_rlp::Decodable::decode(&mut &buf[..]);
+
+            // Both parsers should handle the invalid data encoding consistently
+
+            match (our_result, alloy_result) {
+                (Ok(_), Ok(_)) => {}
+                (Err(_), Err(_)) => {}
+                (our, alloy) => {
+                    panic!("Divergence. Alloy: {:?}, Our: {:?}", alloy, our);
+                }
+            }
+        }
+    }
 }
