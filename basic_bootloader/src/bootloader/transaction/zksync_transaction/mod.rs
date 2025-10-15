@@ -27,8 +27,6 @@ use zk_ee::utils::UsizeAlignedByteBox;
 
 use super::charge_keccak;
 
-mod abi_utils;
-
 #[cfg(test)]
 mod tests;
 pub mod u256be_ptr;
