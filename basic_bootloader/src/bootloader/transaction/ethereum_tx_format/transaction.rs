@@ -246,6 +246,7 @@ impl<A: Allocator> EthereumTransaction<A> {
         }
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.buffer.len()
     }

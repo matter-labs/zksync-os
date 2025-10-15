@@ -625,7 +625,7 @@ where
         let chain_id = system.get_chain_id();
 
         // Process access list
-        transaction.parse_and_warm_up_access_list(system, &mut resources)?;
+        parse_and_warm_up_access_list(system, &mut resources, &transaction)?;
 
         let tx_hash: Bytes32 = transaction.transaction_hash(chain_id, &mut resources)?;
 
@@ -1197,4 +1197,46 @@ struct RefundInfo {
     evm_refund: u64,
     // Total native resource used by the transaction (includes pubdata)
     native_used: u64,
+}
+
+/// Parse and warm up accounts and storage slots from the access list.
+///
+/// Touches all accounts and storage keys in the access list so they are hot
+/// before execution.
+///
+/// Returns Ok on success, or `TxError` if an IO operation fails.
+fn parse_and_warm_up_access_list<
+    S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
+>(
+    system: &mut System<S>,
+    resources: &mut S::Resources,
+    transaction: &Transaction<S::Allocator>,
+) -> Result<(), TxError>
+where
+    S::IO: IOSubsystemExt,
+{
+    use crate::bootloader::transaction::ethereum_tx_format::AccessListForAddress;
+    if let Some(iter) = transaction.access_list_iter() {
+        for AccessListForAddress {
+            address,
+            slots_list,
+        } in iter
+        {
+            system
+                .io
+                .touch_account(ExecutionEnvironmentType::NoEE, resources, &address, true)?;
+            for key in slots_list.iter() {
+                let key = key?;
+                system.io.storage_touch(
+                    ExecutionEnvironmentType::NoEE,
+                    resources,
+                    &address,
+                    &Bytes32::from_array(*key),
+                    true,
+                )?;
+            }
+        }
+    }
+
+    Ok(())
 }

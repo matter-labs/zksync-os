@@ -30,7 +30,7 @@ use zk_ee::system::System;
 use zk_ee::utils::Bytes32;
 use zk_ee::utils::UsizeAlignedByteBox;
 
-mod ethereum_tx_format;
+pub mod ethereum_tx_format;
 pub mod zksync_transaction;
 use self::zksync_transaction::ZKsyncTransaction;
 
@@ -245,54 +245,12 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
-    /// Parse and warm up accounts and storage slots from the access list.
-    ///
-    /// Touches all accounts and storage keys in the access list so they are hot
-    /// before execution.
-    ///
-    /// Returns Ok on success, or `TxError` if an IO operation fails.
-    pub fn parse_and_warm_up_access_list<
-        S: EthereumLikeTypes<
-            Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata,
-            Allocator = A,
-        >,
-    >(
-        &self,
-        system: &mut System<S>,
-        resources: &mut S::Resources,
-    ) -> Result<(), TxError>
-    where
-        S::IO: IOSubsystemExt,
-    {
+    pub fn access_list_iter<'a>(
+        &'a self,
+    ) -> Option<impl Iterator<Item = AccessListForAddress<'a>> + Clone> {
         match self {
-            Self::ZKsync(_) => Ok(()),
-            Self::Ethereum(tx) => {
-                if let Some(iter) = tx.access_list_iter() {
-                    for AccessListForAddress {
-                        address,
-                        slots_list,
-                    } in iter
-                    {
-                        system.io.touch_account(
-                            ExecutionEnvironmentType::NoEE,
-                            resources,
-                            &address,
-                            true,
-                        )?;
-                        for key in slots_list.iter() {
-                            let key = key?;
-                            system.io.storage_touch(
-                                ExecutionEnvironmentType::NoEE,
-                                resources,
-                                &address,
-                                &Bytes32::from_array(*key),
-                                true,
-                            )?;
-                        }
-                    }
-                }
-                Ok(())
-            }
+            Self::Ethereum(tx) => tx.access_list_iter(),
+            Self::ZKsync(_) => None,
         }
     }
 
