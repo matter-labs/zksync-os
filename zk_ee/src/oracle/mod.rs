@@ -114,50 +114,6 @@ pub trait IOOracle: 'static + Sized {
     }
 }
 
-// TODO: move somewhere?
-#[derive(Copy, Clone, Debug)]
-#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
-#[repr(u8)]
-pub enum TxEncodingFormat {
-    ZKsync = 0,
-    Eth = 1,
-}
-
-impl UsizeDeserializable for TxEncodingFormat {
-    const USIZE_LEN: usize = 1;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let byte = <u8 as UsizeDeserializable>::from_iter(src)?;
-        if byte == TxEncodingFormat::ZKsync as u8 {
-            Ok(TxEncodingFormat::ZKsync)
-        } else if byte == TxEncodingFormat::Eth as u8 {
-            Ok(TxEncodingFormat::Eth)
-        } else {
-            Err(internal_error!("Unsupported tx encoding format"))
-        }
-    }
-}
-
-impl UsizeSerializable for TxEncodingFormat {
-    const USIZE_LEN: usize = <Self as UsizeDeserializable>::USIZE_LEN;
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        cfg_if::cfg_if!(
-            if #[cfg(target_endian = "big")] {
-                compile_error!("unsupported architecture: big endian arch is not supported")
-            } else if #[cfg(target_pointer_width = "32")] {
-                let low = *self as usize;
-                let high = 0;
-                return [low, high].into_iter();
-            } else if #[cfg(target_pointer_width = "64")] {
-                return core::iter::once(*self as usize)
-            } else {
-                compile_error!("unsupported architecture")
-            }
-        );
-    }
-}
-
 /// Extended interface to allow to define supported query types. Only to be used on the other
 /// end of the wire, but placed here for consistency
 pub trait IOResponder {

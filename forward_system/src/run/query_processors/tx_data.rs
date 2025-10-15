@@ -1,13 +1,13 @@
 use super::*;
 use crate::run::NextTxResponse;
 use crate::run::TxSource;
+use basic_bootloader::bootloader::transaction::TxEncodingFormat;
 use ruint::aliases::B160;
 use zk_ee::oracle::query_ids::TX_FROM_QUERY_ID;
 use zk_ee::oracle::query_ids::{
     NEXT_TX_SIZE_QUERY_ID, TX_DATA_WORDS_QUERY_ID, TX_ENCODING_FORMAT_QUERY_ID,
 };
 use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
-use zk_ee::oracle::TxEncodingFormat;
 use zk_ee::utils::usize_rw::ReadIterWrapper;
 
 /// This processor handles four types of queries:
