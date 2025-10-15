@@ -222,7 +222,7 @@ impl<
                     &storage.0.resources_policy,
                 )?;
 
-                let (acc_data, initial_apparance) = match empty_account {
+                let (acc_data, initial_appearance) = match empty_account {
                     true => (
                         AccountProperties::default(),
                         AccountInitialAppearance::Unset,
@@ -256,7 +256,8 @@ impl<
                 } else {
                     AccountCurrentAppearance::Touched
                 };
-                let appearance = AccountCacheAppearance::new(initial_apparance, current_appearance);
+                let appearance =
+                    AccountCacheAppearance::new(initial_appearance, current_appearance);
 
                 // Note: we initialize it as cold, should be warmed up separately
                 // Since in case of revert it should become cold again and initial record can't be rolled back
