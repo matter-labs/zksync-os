@@ -1,5 +1,5 @@
 use super::gas_helpers::get_resources_for_tx;
-use super::transaction::{zksync_transaction::ZKsyncTransaction, Transaction};
+use super::transaction::{abi_encoded::AbiEncodedTransaction, Transaction};
 use super::*;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
@@ -70,7 +70,7 @@ where
         let transaction = Transaction::try_from_buffer(initial_calldata_buffer, system)?;
 
         match &transaction {
-            Transaction::ZKsync(zk_tx) => {
+            Transaction::ABI(zk_tx) => {
                 if transaction.is_upgrade() {
                     if !is_first_tx {
                         Err(Validation(InvalidTransaction::UpgradeTxNotFirst))
@@ -103,7 +103,7 @@ where
                     )
                 }
             }
-            Transaction::Ethereum(_) => Self::process_l2_transaction::<Config>(
+            Transaction::RLP(_) => Self::process_l2_transaction::<Config>(
                 system,
                 system_functions,
                 memories,
@@ -117,7 +117,7 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
-        transaction: &ZKsyncTransaction<S::Allocator>,
+        transaction: &AbiEncodedTransaction<S::Allocator>,
         is_priority_op: bool,
         tracer: &mut impl Tracer<S>,
     ) -> Result<TxProcessingResult<'a>, TxError> {
@@ -412,7 +412,7 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
-        transaction: &ZKsyncTransaction<S::Allocator>,
+        transaction: &AbiEncodedTransaction<S::Allocator>,
         from: B160,
         to: B160,
         value: U256,
@@ -1215,7 +1215,7 @@ fn parse_and_warm_up_access_list<
 where
     S::IO: IOSubsystemExt,
 {
-    use crate::bootloader::transaction::ethereum_tx_format::AccessListForAddress;
+    use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
     if let Some(iter) = transaction.access_list_iter() {
         for AccessListForAddress {
             address,

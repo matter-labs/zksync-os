@@ -1,12 +1,10 @@
 use crate::bootloader::errors::{InvalidTransaction, TxError};
-use crate::bootloader::transaction::ethereum_tx_format::transaction_types::EthereumTxType;
+use crate::bootloader::transaction::rlp_encoded::transaction_types::EthereumTxType;
 
 use crypto::MiniDigest;
 
-use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::{
-    Rlp, RlpListDecode,
-};
-use crate::bootloader::transaction::ethereum_tx_format::rlp::{
+use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::{Rlp, RlpListDecode};
+use crate::bootloader::transaction::rlp_encoded::rlp::{
     apply_list_concatenation_encoding_to_hash, apply_u64_encoding_to_hash, u64_encoding_len,
 };
 use ruint::aliases::U256;
@@ -141,7 +139,7 @@ impl<'a> RlpListDecode<'a> for LegacySignatureData<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::RlpListDecode;
+    use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::RlpListDecode;
 
     // Alloy imports
     use alloy::consensus::TxLegacy;

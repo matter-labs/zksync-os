@@ -1,9 +1,9 @@
 use crate::bootloader::errors::TxError;
 use crate::bootloader::transaction::charge_keccak;
-use crate::bootloader::transaction::ethereum_tx_format::transaction_types::eip_2930_tx::{
+use crate::bootloader::transaction::rlp_encoded::transaction_types::eip_2930_tx::{
     AccessList, AccessListForAddress,
 };
-use crate::bootloader::transaction::ethereum_tx_format::transaction_types::eip_7702_tx::{
+use crate::bootloader::transaction::rlp_encoded::transaction_types::eip_7702_tx::{
     AuthorizationEntry, AuthorizationList,
 };
 use core::alloc::Allocator;
@@ -15,9 +15,9 @@ use zk_ee::utils::UsizeAlignedByteBox;
 
 // NOTE: this is self-reference, but relatively easy one. Do NOT derive clone one it,
 // as it's unsound
-pub struct EthereumTransaction<A: Allocator> {
+pub struct RlpEncodedTransaction<A: Allocator> {
     buffer: UsizeAlignedByteBox<A>,
-    inner: EthereumTxInner<'static>,
+    inner: RlpEncodedTxInner<'static>,
     chain_id: u64,
     sig_hash: Bytes32,
     // Lazy field, computed only when calling transaction_hash() for the first
@@ -28,9 +28,9 @@ pub struct EthereumTransaction<A: Allocator> {
     from: B160,
 }
 
-impl<A: Allocator> core::fmt::Debug for EthereumTransaction<A> {
+impl<A: Allocator> core::fmt::Debug for RlpEncodedTransaction<A> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("EthereumTransaction")
+        f.debug_struct("RlpEncodedTransaction")
             .field("buffer", &self.buffer.as_slice())
             .field("inner", &self.inner)
             .field("chain_id", &self.chain_id)
@@ -41,7 +41,7 @@ impl<A: Allocator> core::fmt::Debug for EthereumTransaction<A> {
     }
 }
 
-impl<A: Allocator> EthereumTransaction<A> {
+impl<A: Allocator> RlpEncodedTransaction<A> {
     pub fn tx_encoding(&self) -> &[u8] {
         self.buffer.as_slice()
     }
@@ -56,8 +56,8 @@ impl<A: Allocator> EthereumTransaction<A> {
         // address of the slice that we will use to parse a transaction, so we will not make a long code with
         // partial init and drop guards, but instead will parse via 'static transmute
 
-        let (inner, sig_hash): (EthereumTxInner<'static>, Bytes32) =
-            EthereumTxInner::parse_and_compute_signed_hash(
+        let (inner, sig_hash): (RlpEncodedTxInner<'static>, Bytes32) =
+            RlpEncodedTxInner::parse_and_compute_signed_hash(
                 unsafe { core::mem::transmute::<&[u8], &[u8]>(buffer.as_slice()) },
                 expected_chain_id,
             )?;
@@ -73,26 +73,30 @@ impl<A: Allocator> EthereumTransaction<A> {
 
     pub fn chain_id(&self) -> Option<u64> {
         match &self.inner {
-            EthereumTxInner::Legacy(_, _) => None,
+            RlpEncodedTxInner::Legacy(_, _) => None,
             _ => Some(self.chain_id),
         }
     }
 
     pub fn nonce(&self) -> u64 {
         match &self.inner {
-            EthereumTxInner::Legacy(tx, _) | EthereumTxInner::LegacyWithEIP155(tx, _) => tx.nonce,
-            EthereumTxInner::EIP2930(tx, _) => tx.nonce,
-            EthereumTxInner::EIP1559(tx, _) => tx.nonce,
-            EthereumTxInner::EIP7702(tx, _) => tx.nonce,
+            RlpEncodedTxInner::Legacy(tx, _) | RlpEncodedTxInner::LegacyWithEIP155(tx, _) => {
+                tx.nonce
+            }
+            RlpEncodedTxInner::EIP2930(tx, _) => tx.nonce,
+            RlpEncodedTxInner::EIP1559(tx, _) => tx.nonce,
+            RlpEncodedTxInner::EIP7702(tx, _) => tx.nonce,
         }
     }
 
     pub fn value(&self) -> &U256 {
         match &self.inner {
-            EthereumTxInner::Legacy(tx, _) | EthereumTxInner::LegacyWithEIP155(tx, _) => &tx.value,
-            EthereumTxInner::EIP2930(tx, _) => &tx.value,
-            EthereumTxInner::EIP1559(tx, _) => &tx.value,
-            EthereumTxInner::EIP7702(tx, _) => &tx.value,
+            RlpEncodedTxInner::Legacy(tx, _) | RlpEncodedTxInner::LegacyWithEIP155(tx, _) => {
+                &tx.value
+            }
+            RlpEncodedTxInner::EIP2930(tx, _) => &tx.value,
+            RlpEncodedTxInner::EIP1559(tx, _) => &tx.value,
+            RlpEncodedTxInner::EIP7702(tx, _) => &tx.value,
         }
     }
 
@@ -118,28 +122,30 @@ impl<A: Allocator> EthereumTransaction<A> {
 
     pub fn tx_type(&self) -> u8 {
         match &self.inner {
-            EthereumTxInner::Legacy(_, _) | EthereumTxInner::LegacyWithEIP155(_, _) => 0,
-            EthereumTxInner::EIP2930(_, _) => 1,
-            EthereumTxInner::EIP1559(_, _) => 2,
-            EthereumTxInner::EIP7702(_, _) => 4,
+            RlpEncodedTxInner::Legacy(_, _) | RlpEncodedTxInner::LegacyWithEIP155(_, _) => 0,
+            RlpEncodedTxInner::EIP2930(_, _) => 1,
+            RlpEncodedTxInner::EIP1559(_, _) => 2,
+            RlpEncodedTxInner::EIP7702(_, _) => 4,
         }
     }
 
     pub fn calldata<'a>(&'a self) -> &'a [u8] {
         match &self.inner {
-            EthereumTxInner::Legacy(tx, _) | EthereumTxInner::LegacyWithEIP155(tx, _) => tx.data,
-            EthereumTxInner::EIP2930(tx, _) => tx.data,
-            EthereumTxInner::EIP1559(tx, _) => tx.data,
-            EthereumTxInner::EIP7702(tx, _) => tx.data,
+            RlpEncodedTxInner::Legacy(tx, _) | RlpEncodedTxInner::LegacyWithEIP155(tx, _) => {
+                tx.data
+            }
+            RlpEncodedTxInner::EIP2930(tx, _) => tx.data,
+            RlpEncodedTxInner::EIP1559(tx, _) => tx.data,
+            RlpEncodedTxInner::EIP7702(tx, _) => tx.data,
         }
     }
 
     pub fn access_list<'a>(&'a self) -> Option<AccessList<'a>> {
         match &self.inner {
-            EthereumTxInner::Legacy(_, _) | EthereumTxInner::LegacyWithEIP155(_, _) => None,
-            EthereumTxInner::EIP2930(tx, _) => Some(tx.access_list),
-            EthereumTxInner::EIP1559(tx, _) => Some(tx.access_list),
-            EthereumTxInner::EIP7702(tx, _) => Some(tx.access_list),
+            RlpEncodedTxInner::Legacy(_, _) | RlpEncodedTxInner::LegacyWithEIP155(_, _) => None,
+            RlpEncodedTxInner::EIP2930(tx, _) => Some(tx.access_list),
+            RlpEncodedTxInner::EIP1559(tx, _) => Some(tx.access_list),
+            RlpEncodedTxInner::EIP7702(tx, _) => Some(tx.access_list),
         }
     }
 
@@ -147,16 +153,16 @@ impl<A: Allocator> EthereumTransaction<A> {
         &'a self,
     ) -> Option<impl Iterator<Item = AccessListForAddress<'a>> + Clone> {
         match &self.inner {
-            EthereumTxInner::Legacy(_, _) | EthereumTxInner::LegacyWithEIP155(_, _) => None,
-            EthereumTxInner::EIP2930(tx, _) => Some(tx.access_list.iter()),
-            EthereumTxInner::EIP1559(tx, _) => Some(tx.access_list.iter()),
-            EthereumTxInner::EIP7702(tx, _) => Some(tx.access_list.iter()),
+            RlpEncodedTxInner::Legacy(_, _) | RlpEncodedTxInner::LegacyWithEIP155(_, _) => None,
+            RlpEncodedTxInner::EIP2930(tx, _) => Some(tx.access_list.iter()),
+            RlpEncodedTxInner::EIP1559(tx, _) => Some(tx.access_list.iter()),
+            RlpEncodedTxInner::EIP7702(tx, _) => Some(tx.access_list.iter()),
         }
     }
 
     pub fn authorization_list<'a>(&'a self) -> Option<AuthorizationList<'a>> {
         match &self.inner {
-            EthereumTxInner::EIP7702(tx, _) => Some(tx.authorization_list),
+            RlpEncodedTxInner::EIP7702(tx, _) => Some(tx.authorization_list),
             _ => None,
         }
     }
@@ -165,7 +171,7 @@ impl<A: Allocator> EthereumTransaction<A> {
         &'a self,
     ) -> Option<impl Iterator<Item = AuthorizationEntry<'a>> + Clone> {
         match &self.inner {
-            EthereumTxInner::EIP7702(tx, _) => Some(tx.authorization_list.iter()),
+            RlpEncodedTxInner::EIP7702(tx, _) => Some(tx.authorization_list.iter()),
             _ => None,
         }
     }
@@ -176,17 +182,17 @@ impl<A: Allocator> EthereumTransaction<A> {
 
     pub fn sig_parity_r_s<'a>(&'a self) -> (bool, &'a [u8], &'a [u8]) {
         match &self.inner {
-            EthereumTxInner::Legacy(_, sig) => {
+            RlpEncodedTxInner::Legacy(_, sig) => {
                 ((sig.v - 27) == 1, sig.r, sig.s) // prechecked
             }
-            EthereumTxInner::LegacyWithEIP155(_, sig) => {
+            RlpEncodedTxInner::LegacyWithEIP155(_, sig) => {
                 let chain_id = self.chain_id;
                 let parity = sig.v - 35 - (chain_id * 2); // no underflows
                 (parity == 1, sig.r, sig.s)
             }
-            EthereumTxInner::EIP2930(_, sig) => (sig.y_parity, sig.r, sig.s),
-            EthereumTxInner::EIP1559(_, sig) => (sig.y_parity, sig.r, sig.s),
-            EthereumTxInner::EIP7702(_, sig) => (sig.y_parity, sig.r, sig.s),
+            RlpEncodedTxInner::EIP2930(_, sig) => (sig.y_parity, sig.r, sig.s),
+            RlpEncodedTxInner::EIP1559(_, sig) => (sig.y_parity, sig.r, sig.s),
+            RlpEncodedTxInner::EIP7702(_, sig) => (sig.y_parity, sig.r, sig.s),
         }
     }
 
@@ -199,12 +205,12 @@ impl<A: Allocator> EthereumTransaction<A> {
 
     pub fn gas_limit(&self) -> u64 {
         match &self.inner {
-            EthereumTxInner::Legacy(tx, _) | EthereumTxInner::LegacyWithEIP155(tx, _) => {
+            RlpEncodedTxInner::Legacy(tx, _) | RlpEncodedTxInner::LegacyWithEIP155(tx, _) => {
                 tx.gas_limit
             }
-            EthereumTxInner::EIP2930(tx, _) => tx.gas_limit,
-            EthereumTxInner::EIP1559(tx, _) => tx.gas_limit,
-            EthereumTxInner::EIP7702(tx, _) => tx.gas_limit,
+            RlpEncodedTxInner::EIP2930(tx, _) => tx.gas_limit,
+            RlpEncodedTxInner::EIP1559(tx, _) => tx.gas_limit,
+            RlpEncodedTxInner::EIP7702(tx, _) => tx.gas_limit,
         }
     }
 
@@ -217,32 +223,32 @@ impl<A: Allocator> EthereumTransaction<A> {
             }
         };
         match &self.inner {
-            EthereumTxInner::Legacy(tx, _) | EthereumTxInner::LegacyWithEIP155(tx, _) => {
+            RlpEncodedTxInner::Legacy(tx, _) | RlpEncodedTxInner::LegacyWithEIP155(tx, _) => {
                 map_fn(tx.to)
             }
-            EthereumTxInner::EIP2930(tx, _) => map_fn(tx.to),
-            EthereumTxInner::EIP1559(tx, _) => map_fn(tx.to),
-            EthereumTxInner::EIP7702(tx, _) => Some(B160::from_be_bytes(*tx.to)),
+            RlpEncodedTxInner::EIP2930(tx, _) => map_fn(tx.to),
+            RlpEncodedTxInner::EIP1559(tx, _) => map_fn(tx.to),
+            RlpEncodedTxInner::EIP7702(tx, _) => Some(B160::from_be_bytes(*tx.to)),
         }
     }
 
     pub fn max_fee_per_gas(&self) -> &U256 {
         match &self.inner {
-            EthereumTxInner::Legacy(tx, _) | EthereumTxInner::LegacyWithEIP155(tx, _) => {
+            RlpEncodedTxInner::Legacy(tx, _) | RlpEncodedTxInner::LegacyWithEIP155(tx, _) => {
                 &tx.gas_price
             }
-            EthereumTxInner::EIP2930(tx, _) => &tx.gas_price,
-            EthereumTxInner::EIP1559(tx, _) => &tx.max_fee_per_gas,
-            EthereumTxInner::EIP7702(tx, _) => &tx.max_fee_per_gas,
+            RlpEncodedTxInner::EIP2930(tx, _) => &tx.gas_price,
+            RlpEncodedTxInner::EIP1559(tx, _) => &tx.max_fee_per_gas,
+            RlpEncodedTxInner::EIP7702(tx, _) => &tx.max_fee_per_gas,
         }
     }
 
     pub fn max_priority_fee_per_gas(&self) -> Option<&U256> {
         match &self.inner {
-            EthereumTxInner::Legacy(_, _) | EthereumTxInner::LegacyWithEIP155(_, _) => None,
-            EthereumTxInner::EIP2930(_, _) => None,
-            EthereumTxInner::EIP1559(tx, _) => Some(&tx.max_priority_fee_per_gas),
-            EthereumTxInner::EIP7702(tx, _) => Some(&tx.max_priority_fee_per_gas),
+            RlpEncodedTxInner::Legacy(_, _) | RlpEncodedTxInner::LegacyWithEIP155(_, _) => None,
+            RlpEncodedTxInner::EIP2930(_, _) => None,
+            RlpEncodedTxInner::EIP1559(tx, _) => Some(&tx.max_priority_fee_per_gas),
+            RlpEncodedTxInner::EIP7702(tx, _) => Some(&tx.max_priority_fee_per_gas),
         }
     }
 

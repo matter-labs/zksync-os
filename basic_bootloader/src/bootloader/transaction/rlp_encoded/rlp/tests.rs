@@ -1,6 +1,4 @@
-use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::{
-    Rlp, RlpFixedItem,
-};
+use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::{Rlp, RlpFixedItem};
 
 use alloy_primitives::Bytes;
 use alloy_rlp::Encodable;

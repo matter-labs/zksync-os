@@ -1,6 +1,6 @@
 use std::alloc::Global;
 
-use crate::bootloader::transaction::ZKsyncTransaction;
+use crate::bootloader::transaction::AbiEncodedTransaction;
 use zk_ee::utils::UsizeAlignedByteBox;
 
 #[test]
@@ -74,5 +74,5 @@ fn test_parsing() {
     let mut slice = vec![];
     slice.extend_from_slice(&encoded_tx);
     let buffer = UsizeAlignedByteBox::from_slice_in(&slice, Global);
-    let _tx = ZKsyncTransaction::try_from_buffer(buffer).expect("Tx encoding should be valid");
+    let _tx = AbiEncodedTransaction::try_from_buffer(buffer).expect("Tx encoding should be valid");
 }

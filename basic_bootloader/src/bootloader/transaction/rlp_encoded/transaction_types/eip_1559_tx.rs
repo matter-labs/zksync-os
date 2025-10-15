@@ -1,9 +1,7 @@
 use crate::bootloader::errors::InvalidTransaction;
-use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::{
-    Rlp, RlpListDecode,
-};
-use crate::bootloader::transaction::ethereum_tx_format::transaction_types::eip_2930_tx::AccessList;
-use crate::bootloader::transaction::ethereum_tx_format::transaction_types::EthereumTxType;
+use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::{Rlp, RlpListDecode};
+use crate::bootloader::transaction::rlp_encoded::transaction_types::eip_2930_tx::AccessList;
+use crate::bootloader::transaction::rlp_encoded::transaction_types::EthereumTxType;
 use ruint::aliases::U256;
 
 /// EIP-1559 (type 0x02) transaction payload (unsigned part).
@@ -67,7 +65,7 @@ impl<'a> RlpListDecode<'a> for EIP1559Tx<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootloader::transaction::ethereum_tx_format::rlp::minimal_rlp_parser::RlpListDecode;
+    use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::RlpListDecode;
 
     // Alloy imports
     use alloy::consensus::TxEip1559;

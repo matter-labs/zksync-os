@@ -2028,9 +2028,9 @@ dependencies = [
 
 [[package]]
 name = "cfg-if"
-version = "1.0.3"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fd1289c04a9ea8cb22300a459a72a385d7c73d3259e2ed7dcb2af674838cfa9"
+checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "chrono"
@@ -6227,9 +6227,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-native-certs"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fcff2dd52b58a8d98a70243663a0d234c4e2b79235637849d15913394a247d3"
+checksum = "9980d917ebb0c0536119ba501e90834767bffc3d60641457fd84a1f3fd337923"
 dependencies = [
  "openssl-probe",
  "rustls-pki-types",
@@ -8778,12 +8778,12 @@ dependencies = [
 [[package]]
 name = "zksync_os_evm_errors"
 version = "0.0.7"
-source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#04c603c59f0e046a03f60f7583b2a368bc335fcd"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#a1cfc1438d6f8ff4b3d58a81cab70da2044703b1"
 
 [[package]]
 name = "zksync_os_interface"
 version = "0.0.7"
-source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#04c603c59f0e046a03f60f7583b2a368bc335fcd"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#a1cfc1438d6f8ff4b3d58a81cab70da2044703b1"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",

@@ -176,7 +176,7 @@ pub fn encode_tx(
         DynSolValue::Bytes(reserved_dynamic.unwrap_or_default()),
     ])
     .abi_encode_params();
-    EncodedTx::Zk(bytes)
+    EncodedTx::ABI(bytes)
 }
 
 ///
@@ -193,7 +193,7 @@ where
     let signed: Signed<T> = tx.into_signed(sig);
     let env: TxEnvelope = signed.into();
     let bytes = encode_envelope_2718(&env);
-    EncodedTx::Eth(bytes, wallet.address())
+    EncodedTx::RLP(bytes, wallet.address())
 }
 
 pub fn encode_envelope_2718(env: &TxEnvelope) -> Vec<u8> {

@@ -86,7 +86,7 @@ pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> EncodedTx {
     let from = tx.as_recovered().signer().into_array();
     let env: TxEnvelope = tx.into();
     let bytes = encode_envelope_2718(&env);
-    EncodedTx::Eth(bytes, Address::from_slice(&from))
+    EncodedTx::RLP(bytes, Address::from_slice(&from))
 }
 
 ///
@@ -107,7 +107,7 @@ pub fn sign_and_encode_ethers_legacy_tx(
         let a = wallet.address();
         Address::from_slice(a.as_bytes())
     };
-    EncodedTx::Eth(raw.to_vec(), from)
+    EncodedTx::RLP(raw.to_vec(), from)
 }
 
 ///

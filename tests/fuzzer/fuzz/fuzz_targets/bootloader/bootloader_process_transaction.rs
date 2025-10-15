@@ -6,7 +6,7 @@
 use basic_bootloader::bootloader::config::BasicBootloaderForwardSimulationConfig;
 use basic_bootloader::bootloader::constants::TX_OFFSET;
 use basic_bootloader::bootloader::runner::RunnerMemoryBuffers;
-use basic_bootloader::bootloader::transaction::ZKsyncTransaction;
+use basic_bootloader::bootloader::transaction::AbiEncodedTransaction;
 use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
 use basic_bootloader::bootloader::BasicBootloader;
 use common::{mock_oracle_balance, mutate_transaction};
@@ -30,7 +30,7 @@ fn fuzz(data: &[u8]) {
         data.resize(TX_OFFSET + 1, 0);
     }
 
-    let Ok(decoded_tx) = ZKsyncTransaction::try_from_slice(&mut data) else {
+    let Ok(decoded_tx) = AbiEncodedTransaction::try_from_slice(&mut data) else {
         return;
     };
     let amount = U256::from_be_bytes([255 as u8; 32]);

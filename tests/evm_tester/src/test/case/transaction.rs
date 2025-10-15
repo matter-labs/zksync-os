@@ -259,7 +259,7 @@ pub fn encode_transaction(
             let env = to_alloy_envelope(tx, system_context.chain_id);
             let bytes = encode_envelope_2718(&env);
             let from = tx.common.sender.expect("Tx must have sender");
-            EncodedTx::Eth(bytes, from)
+            EncodedTx::RLP(bytes, from)
         }
     }
 }

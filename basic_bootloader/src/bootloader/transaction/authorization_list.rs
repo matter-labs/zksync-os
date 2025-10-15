@@ -17,7 +17,7 @@ use zk_ee::system::NonceError;
 use zk_ee::system::{AccountDataRequest, EthereumLikeTypes, IOSubsystemExt, Resources, System};
 use zk_ee::{internal_error, wrap_error};
 
-use super::ethereum_tx_format::AuthorizationList;
+use super::rlp_encoded::AuthorizationList;
 use super::TxError;
 
 pub fn parse_authorization_list_and_apply_delegations<S: EthereumLikeTypes>(
@@ -28,7 +28,7 @@ pub fn parse_authorization_list_and_apply_delegations<S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
-    use crate::bootloader::transaction::ethereum_tx_format::AuthorizationEntry;
+    use crate::bootloader::transaction::rlp_encoded::AuthorizationEntry;
     let mut hasher = crypto::sha3::Keccak256::new();
 
     for entry in auth_list.iter() {

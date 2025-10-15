@@ -1,11 +1,11 @@
-//! # ZKsync Transaction Format
+//! # ABI Encoded Transaction Format
 //!
 //! This module contains ZKsync's custom transaction structure definition including
 //! validation methods and hash calculation functions.
 //!
-//! ## Why ZKsyncTransaction is needed
+//! ## Why AbiEncodedTransaction is needed
 //!
-//! ZKsyncTransaction exists alongside Ethereum RLP transactions to support ZKsync's
+//! AbiEncodedTransaction exists alongside Ethereum RLP transactions to support ZKsync's
 //! unique Layer 2 features that cannot be expressed in standard
 //! Ethereum transaction formats. This includes:
 //!
@@ -35,7 +35,7 @@ pub mod u256be_ptr;
 ///
 /// NOTE: this is self-reference, but relatively easy one. Do NOT derive clone one it,
 /// as it's unsound
-pub struct ZKsyncTransaction<A: Allocator> {
+pub struct AbiEncodedTransaction<A: Allocator> {
     underlying_buffer: UsizeAlignedByteBox<A>,
     // fields below are parsed
     /// The type of the transaction.
@@ -95,7 +95,7 @@ pub struct ZKsyncTransaction<A: Allocator> {
 }
 
 #[allow(dead_code)]
-impl<A: Allocator> ZKsyncTransaction<A> {
+impl<A: Allocator> AbiEncodedTransaction<A> {
     /// The type id of EIP712 transactions.
     pub const EIP_712_TX_TYPE: u8 = 0x71;
     /// The type id of protocol upgrade transactions.

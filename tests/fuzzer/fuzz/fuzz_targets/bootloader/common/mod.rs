@@ -135,9 +135,9 @@ const CHAIN_ID: u64 = 37;
 //     }
 // }
 
-// /// Convert a &ZKsyncTransaction to TransactionData
-// impl From<&ZKsyncTransaction<'_>> for TransactionData {
-//     fn from(tx: &ZKsyncTransaction<'_>) -> Self {
+// /// Convert a &AbiEncodedTransaction to TransactionData
+// impl From<&AbiEncodedTransaction<'_>> for TransactionData {
+//     fn from(tx: &AbiEncodedTransaction<'_>) -> Self {
 //         TransactionData {
 //             tx_type: tx.tx_type.read(),
 //             from: Address::from_slice(&tx.encoding(tx.from.clone())[12..32]),
@@ -283,7 +283,7 @@ pub fn mock_oracle_balance(
 // }
 
 // #[allow(dead_code)]
-// pub(crate) fn serialize_zksync_transaction<'a>(tx: &ZKsyncTransaction<'a>) -> Vec<u8> {
+// pub(crate) fn serialize_zksync_transaction<'a>(tx: &AbiEncodedTransaction<'a>) -> Vec<u8> {
 //     let tx_data = TransactionData::from(tx);
 //     let mut output = vec![0u8; TX_OFFSET];
 //     output.extend(tx_data.clone().abi_encode());
@@ -295,7 +295,7 @@ pub fn mock_oracle_balance(
 //     let mut rng = StdRng::seed_from_u64(seed as u64);
 
 //     // Attempt to decode the input transaction
-//     let decoded_tx = ZKsyncTransaction::try_from_slice(&mut data[..size]);
+//     let decoded_tx = AbiEncodedTransaction::try_from_slice(&mut data[..size]);
 //     if decoded_tx.is_err() {
 //         // If decoding fails, return the original size and data
 //         return size;
@@ -310,9 +310,9 @@ pub fn mock_oracle_balance(
 //     // change the from field to match the private key
 //     tx_data.from = Address::from_slice(&ACCOUNT[12..32]);
 
-//     // convert tx_data back to ZKsyncTransaction, so we can use its functions
+//     // convert tx_data back to AbiEncodedTransaction, so we can use its functions
 //     let mut tx_data_bytes = tx_data.to_zk_bytes();
-//     if let Ok(new_tx) = ZKsyncTransaction::try_from_slice(tx_data_bytes.as_mut_slice()) {
+//     if let Ok(new_tx) = AbiEncodedTransaction::try_from_slice(tx_data_bytes.as_mut_slice()) {
 //         tx = new_tx;
 //     } else {
 //         return size;
@@ -345,7 +345,7 @@ pub fn mock_oracle_balance(
 
 //     // try to deserialize the transaction again, to see whether it works
 //     let mut serialized_tx_copy = serialized_tx.clone();
-//     if let Err(_) = ZKsyncTransaction::try_from_slice(serialized_tx_copy.as_mut_slice()) {
+//     if let Err(_) = AbiEncodedTransaction::try_from_slice(serialized_tx_copy.as_mut_slice()) {
 //         println!("data          = {}", hex::encode(data));
 //         println!("serialized_tx = {}", hex::encode(serialized_tx.as_slice()));
 //         panic!("broken serialization");
