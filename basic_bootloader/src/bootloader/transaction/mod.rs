@@ -300,7 +300,7 @@ impl<A: Allocator> Transaction<A> {
     #[cfg(feature = "pectra")]
     pub fn authorization_list(&self) -> Option<AuthorizationList<'_>> {
         match self {
-            Self::Zk(_) => None,
+            Self::ZKsync(_) => None,
             Self::Ethereum(tx) => tx.authorization_list(),
         }
     }
