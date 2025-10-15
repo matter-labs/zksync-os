@@ -70,6 +70,7 @@ impl<A: Allocator> Transaction<A> {
         match format {
             TxEncodingFormat::Eth => {
                 // RLP-encoded transactions don't include the `from` field, so we need to query it from the oracle.
+                // This is so that sequencer can skip ecrecover (for simulation, for example).
                 let from = TxFromQuery::get(system.io.oracle(), &())?;
                 let tx = EthereumTransaction::parse_from_buffer(buffer, expected_chain_id, from)?;
                 Ok(Self::Ethereum(tx))
