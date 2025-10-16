@@ -135,16 +135,18 @@ impl<
                 match ee_type {
                     ExecutionEnvironmentType::NoEE => {}
                     ExecutionEnvironmentType::EVM => {
-                        let mut cost: R = if evm_interpreter::utils::is_precompile(&address) {
+                        let cost: R = if evm_interpreter::utils::is_precompile(&address) {
                             R::empty() // We've charged the access already.
                         } else {
-                            R::from_ergs(COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS)
+                            let mut cost = R::from_ergs(COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS);
+                            if is_selfdestruct {
+                                // Selfdestruct doesn't charge for warm, but it
+                                // includes the warm cost for cold access
+                                cost.add_ergs(WARM_PROPERTIES_ACCESS_COST_ERGS)
+                            }
+                            cost
                         };
-                        if is_selfdestruct {
-                            // Selfdestruct doesn't charge for warm, but it
-                            // includes the warm cost for cold access
-                            cost.add_ergs(WARM_PROPERTIES_ACCESS_COST_ERGS)
-                        };
+
                         resources.charge(&cost)?;
                     }
                 }
@@ -201,17 +203,19 @@ impl<
                         match ee_type {
                             ExecutionEnvironmentType::NoEE => {}
                             ExecutionEnvironmentType::EVM => {
-                                let mut cost: R = if evm_interpreter::utils::is_precompile(&address)
-                                {
+                                let cost: R = if evm_interpreter::utils::is_precompile(&address) {
                                     R::empty() // We've charged the access already.
                                 } else {
-                                    R::from_ergs(COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS)
+                                    let mut cost =
+                                        R::from_ergs(COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS);
+                                    if is_selfdestruct {
+                                        // Selfdestruct doesn't charge for warm, but it
+                                        // includes the warm cost for cold access
+                                        cost.add_ergs(WARM_PROPERTIES_ACCESS_COST_ERGS)
+                                    };
+                                    cost
                                 };
-                                if is_selfdestruct {
-                                    // Selfdestruct doesn't charge for warm, but it
-                                    // includes the warm cost for cold access
-                                    cost.add_ergs(WARM_PROPERTIES_ACCESS_COST_ERGS)
-                                };
+
                                 resources.charge(&cost)?;
                             }
                         }
