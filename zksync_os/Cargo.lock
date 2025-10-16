@@ -180,6 +180,7 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "basic_system",
+ "cfg-if",
  "crypto",
  "cycle_marker",
  "evm_interpreter",
@@ -1102,4 +1103,4 @@ dependencies = [
 [[package]]
 name = "zksync_os_evm_errors"
 version = "0.0.7"
-source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#30877103230bb00b18008736618d34ff752fde44"
+source = "git+https://github.com/matter-labs/zksync-os-interface?tag=v0.0.8#6d5957dfdfde1701f5adf3f732aef40a60634582"
