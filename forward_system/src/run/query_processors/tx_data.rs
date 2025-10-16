@@ -64,20 +64,20 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
                     None => {
                         match self.tx_source.get_next_tx() {
                             NextTxResponse::SealBlock => 0,
-                            NextTxResponse::ABITx(next_tx) => {
+                            NextTxResponse::Tx(EncodedTx::Abi(next_tx)) => {
                                 let next_tx_len = next_tx.len();
                                 // `0` interpreted as seal batch
                                 assert_ne!(next_tx_len, 0);
                                 self.next_tx = Some(next_tx);
-                                self.next_tx_format = Some(TxEncodingFormat::ABI);
+                                self.next_tx_format = Some(TxEncodingFormat::Abi);
                                 next_tx_len
                             }
-                            NextTxResponse::RLPTx(next_tx, from) => {
+                            NextTxResponse::Tx(EncodedTx::Rlp(next_tx, from)) => {
                                 let next_tx_len = next_tx.len();
                                 // `0` interpreted as seal batch
                                 assert_ne!(next_tx_len, 0);
                                 self.next_tx = Some(next_tx);
-                                self.next_tx_format = Some(TxEncodingFormat::RLP);
+                                self.next_tx_format = Some(TxEncodingFormat::Rlp);
                                 self.next_tx_from = Some(B160::from_be_bytes(from.0 .0));
                                 next_tx_len
                             }

@@ -45,9 +45,9 @@ pub mod authorization_list;
 /// while ABI transactions are used for ZKsync-specific transactions.
 pub enum Transaction<A: Allocator> {
     /// RLP-encoded transactions.
-    RLP(RlpEncodedTransaction<A>),
+    Rlp(RlpEncodedTransaction<A>),
     /// ABI-encoded ZKsync transaction.
-    ABI(AbiEncodedTransaction<A>),
+    Abi(AbiEncodedTransaction<A>),
 }
 
 impl<A: Allocator> Transaction<A> {
@@ -70,17 +70,17 @@ impl<A: Allocator> Transaction<A> {
         let format: TxEncodingFormat = TxEncodingFormatQuery::get(system.io.oracle(), &())?;
 
         match format {
-            TxEncodingFormat::RLP => {
+            TxEncodingFormat::Rlp => {
                 // RLP-encoded transactions don't include the `from` field, so we need to query it from the oracle.
                 // This is so that sequencer can skip ecrecover (for simulation, for example).
                 let from = TxFromQuery::get(system.io.oracle(), &())?;
                 let tx = RlpEncodedTransaction::parse_from_buffer(buffer, expected_chain_id, from)?;
-                Ok(Self::RLP(tx))
+                Ok(Self::Rlp(tx))
             }
-            TxEncodingFormat::ABI => {
+            TxEncodingFormat::Abi => {
                 let tx = AbiEncodedTransaction::try_from_buffer(buffer)
                     .map_err(|_| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
-                Ok(Self::ABI(tx))
+                Ok(Self::Abi(tx))
             }
         }
     }
@@ -88,80 +88,80 @@ impl<A: Allocator> Transaction<A> {
     /// Returns true if this transaction is an upgrade transaction.
     pub fn is_upgrade(&self) -> bool {
         match self {
-            Self::RLP(_) => false,
-            Self::ABI(tx) => tx.tx_type.read() == AbiEncodedTransaction::<A>::UPGRADE_TX_TYPE,
+            Self::Rlp(_) => false,
+            Self::Abi(tx) => tx.tx_type.read() == AbiEncodedTransaction::<A>::UPGRADE_TX_TYPE,
         }
     }
 
     /// Returns true if this transaction is an L1->L2 transaction.
     pub fn is_l1_l2(&self) -> bool {
         match self {
-            Self::RLP(_) => false,
-            Self::ABI(tx) => tx.tx_type.read() == AbiEncodedTransaction::<A>::L1_L2_TX_TYPE,
+            Self::Rlp(_) => false,
+            Self::Abi(tx) => tx.tx_type.read() == AbiEncodedTransaction::<A>::L1_L2_TX_TYPE,
         }
     }
 
     /// Returns the transaction nonce as U256.
     pub fn nonce(&self) -> U256 {
         match self {
-            Self::RLP(tx) => U256::from(tx.nonce()),
-            Self::ABI(tx) => tx.nonce.read(),
+            Self::Rlp(tx) => U256::from(tx.nonce()),
+            Self::Abi(tx) => tx.nonce.read(),
         }
     }
 
     /// Returns the gas limit.
     pub fn gas_limit(&self) -> u64 {
         match self {
-            Self::RLP(tx) => tx.gas_limit(),
-            Self::ABI(tx) => tx.gas_limit.read(),
+            Self::Rlp(tx) => tx.gas_limit(),
+            Self::Abi(tx) => tx.gas_limit.read(),
         }
     }
 
     /// Returns the max fee per gas reference.
     pub fn max_fee_per_gas(&self) -> &U256 {
         match self {
-            Self::RLP(tx) => tx.max_fee_per_gas(),
-            Self::ABI(tx) => &tx.max_fee_per_gas.read_ref(),
+            Self::Rlp(tx) => tx.max_fee_per_gas(),
+            Self::Abi(tx) => &tx.max_fee_per_gas.read_ref(),
         }
     }
 
     /// Returns the optional max priority fee per gas reference.
     pub fn max_priority_fee_per_gas(&self) -> Option<&U256> {
         match self {
-            Self::RLP(tx) => tx.max_priority_fee_per_gas(),
-            Self::ABI(tx) => Some(&tx.max_priority_fee_per_gas.read_ref()),
+            Self::Rlp(tx) => tx.max_priority_fee_per_gas(),
+            Self::Abi(tx) => Some(&tx.max_priority_fee_per_gas.read_ref()),
         }
     }
 
     /// Returns the gas per pubdata limit.
     pub fn gas_per_pubdata_limit(&self) -> U256 {
         match self {
-            Self::RLP(_) => U256::ZERO,
-            Self::ABI(tx) => U256::from(tx.gas_per_pubdata_limit.read()),
+            Self::Rlp(_) => U256::ZERO,
+            Self::Abi(tx) => U256::from(tx.gas_per_pubdata_limit.read()),
         }
     }
 
     /// Returns calldata bytes.
     pub fn calldata(&self) -> &[u8] {
         match self {
-            Self::RLP(tx) => tx.calldata(),
-            Self::ABI(tx) => tx.calldata(),
+            Self::Rlp(tx) => tx.calldata(),
+            Self::Abi(tx) => tx.calldata(),
         }
     }
 
     /// Returns the value field reference.
     pub fn value(&self) -> &U256 {
         match self {
-            Self::RLP(tx) => tx.value(),
-            Self::ABI(tx) => &tx.value.read_ref(),
+            Self::Rlp(tx) => tx.value(),
+            Self::Abi(tx) => &tx.value.read_ref(),
         }
     }
 
     /// Returns the sender address reference.
     pub fn from(&self) -> &B160 {
         match self {
-            Self::RLP(tx) => tx.from(),
-            Self::ABI(tx) => &tx.from.read_ref(),
+            Self::Rlp(tx) => tx.from(),
+            Self::Abi(tx) => &tx.from.read_ref(),
         }
     }
 
@@ -172,8 +172,8 @@ impl<A: Allocator> Transaction<A> {
         resources: &mut R,
     ) -> Result<Bytes32, TxError> {
         match self {
-            Self::RLP(tx) => tx.transaction_hash(resources),
-            Self::ABI(tx) => tx
+            Self::Rlp(tx) => tx.transaction_hash(resources),
+            Self::Abi(tx) => tx
                 .calculate_hash(chain_id, resources)
                 .map(Bytes32::from_array),
         }
@@ -184,8 +184,8 @@ impl<A: Allocator> Transaction<A> {
         // Caller should charge native for this hash
         let mut inf_resources = R::FORMAL_INFINITE;
         match self {
-            Self::RLP(tx) => Ok(*tx.hash_for_signature_verification()),
-            Self::ABI(tx) => tx
+            Self::Rlp(tx) => Ok(*tx.hash_for_signature_verification()),
+            Self::Abi(tx) => tx
                 .calculate_signed_hash(chain_id, &mut inf_resources)
                 .map(Bytes32::from_array),
         }
@@ -194,38 +194,38 @@ impl<A: Allocator> Transaction<A> {
     /// Returns the minimum balance required to accept the transaction.
     pub fn required_balance(&self) -> Option<U256> {
         match self {
-            Self::RLP(tx) => tx.required_balance(),
-            Self::ABI(tx) => tx.required_balance(),
+            Self::Rlp(tx) => tx.required_balance(),
+            Self::Abi(tx) => tx.required_balance(),
         }
     }
 
     /// Returns the signature as `(y_parity, r, s)` borrowed from the underlying tx.
     pub fn sig_parity_r_s<'a>(&'a self) -> (bool, &'a [u8], &'a [u8]) {
         match self {
-            Self::RLP(tx) => tx.sig_parity_r_s(),
-            Self::ABI(tx) => tx.sig_parity_r_s(),
+            Self::Rlp(tx) => tx.sig_parity_r_s(),
+            Self::Abi(tx) => tx.sig_parity_r_s(),
         }
     }
 
     /// Returns the destination address if present, or None for contract creation.
     pub fn to(&self) -> Option<B160> {
         match self {
-            Self::RLP(tx) => tx.destination(),
-            Self::ABI(tx) => Some(tx.to.read()),
+            Self::Rlp(tx) => tx.destination(),
+            Self::Abi(tx) => Some(tx.to.read()),
         }
     }
 
     /// Returns Some(EVM) if this is a deployment, otherwise None.
     pub fn is_deployment(&self) -> Option<ExecutionEnvironmentType> {
         match self {
-            Self::RLP(tx) => {
+            Self::Rlp(tx) => {
                 if tx.destination().is_none() {
                     Some(ExecutionEnvironmentType::EVM)
                 } else {
                     None
                 }
             }
-            Self::ABI(tx) => {
+            Self::Abi(tx) => {
                 // Checked in the structure validation that `to` is null
                 if !tx.reserved[1].read().is_zero() {
                     Some(ExecutionEnvironmentType::EVM)
@@ -240,8 +240,8 @@ impl<A: Allocator> Transaction<A> {
         &'a self,
     ) -> Option<impl Iterator<Item = AccessListForAddress<'a>> + Clone> {
         match self {
-            Self::RLP(tx) => tx.access_list_iter(),
-            Self::ABI(_) => None,
+            Self::Rlp(tx) => tx.access_list_iter(),
+            Self::Abi(_) => None,
         }
     }
 
@@ -249,8 +249,8 @@ impl<A: Allocator> Transaction<A> {
     #[cfg(feature = "pectra")]
     pub fn authorization_list(&self) -> Option<AuthorizationList<'_>> {
         match self {
-            Self::ABI(_) => None,
-            Self::RLP(tx) => tx.authorization_list(),
+            Self::Abi(_) => None,
+            Self::Rlp(tx) => tx.authorization_list(),
         }
     }
 
@@ -258,8 +258,8 @@ impl<A: Allocator> Transaction<A> {
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         match self {
-            Self::ABI(tx) => tx.len(),
-            Self::RLP(tx) => tx.len(),
+            Self::Abi(tx) => tx.len(),
+            Self::Rlp(tx) => tx.len(),
         }
     }
 }
@@ -285,8 +285,8 @@ pub fn charge_keccak<R: Resources>(len: usize, resources: &mut R) -> Result<(), 
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum TxEncodingFormat {
-    ABI = 0,
-    RLP = 1,
+    Abi = 0,
+    Rlp = 1,
 }
 
 impl UsizeDeserializable for TxEncodingFormat {
@@ -294,10 +294,10 @@ impl UsizeDeserializable for TxEncodingFormat {
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         let byte = <u8 as UsizeDeserializable>::from_iter(src)?;
-        if byte == TxEncodingFormat::ABI as u8 {
-            Ok(TxEncodingFormat::ABI)
-        } else if byte == TxEncodingFormat::RLP as u8 {
-            Ok(TxEncodingFormat::RLP)
+        if byte == TxEncodingFormat::Abi as u8 {
+            Ok(TxEncodingFormat::Abi)
+        } else if byte == TxEncodingFormat::Rlp as u8 {
+            Ok(TxEncodingFormat::Rlp)
         } else {
             Err(internal_error!("Unsupported tx encoding format"))
         }

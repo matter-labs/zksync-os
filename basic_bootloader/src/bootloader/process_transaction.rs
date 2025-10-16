@@ -70,7 +70,7 @@ where
         let transaction = Transaction::try_from_buffer(initial_calldata_buffer, system)?;
 
         match &transaction {
-            Transaction::ABI(zk_tx) => {
+            Transaction::Abi(zk_tx) => {
                 if transaction.is_upgrade() {
                     if !is_first_tx {
                         Err(Validation(InvalidTransaction::UpgradeTxNotFirst))
@@ -103,7 +103,7 @@ where
                     )
                 }
             }
-            Transaction::RLP(_) => Self::process_l2_transaction::<Config>(
+            Transaction::Rlp(_) => Self::process_l2_transaction::<Config>(
                 system,
                 system_functions,
                 memories,
