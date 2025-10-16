@@ -1,5 +1,7 @@
 use zk_ee::{
-    kv_markers::UsizeSerializable, system::errors::internal::InternalError, system_io_oracle::*,
+    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
+    oracle::IOOracle,
+    system::errors::internal::InternalError,
 };
 
 pub trait NonDeterminismCSRSourceImplementation: 'static + Clone + Copy + core::fmt::Debug {
@@ -52,30 +54,34 @@ impl<I: NonDeterminismCSRSourceImplementation> CsrBasedIOOracle<I> {
     }
 }
 
-impl<I: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<I> {
-    type MarkerTiedIterator<'a> = CsrBasedIOOracleIterator<I>;
+impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<NDS> {
+    type RawIterator<'a> = CsrBasedIOOracleIterator<NDS>;
 
-    fn create_oracle_access_iterator<'a, M: OracleIteratorTypeMarker>(
+    fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
         &'a mut self,
-        init_value: M::Params,
-    ) -> Result<Self::MarkerTiedIterator<'a>, InternalError> {
-        I::csr_write_impl(M::ID as usize);
-        let iter_to_write = UsizeSerializable::iter(&init_value);
+        query_type: u32,
+        input: &I,
+    ) -> Result<Self::RawIterator<'a>, InternalError> {
+        const {
+            assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
+        }
+        NDS::csr_write_impl(query_type as usize);
+        let iter_to_write = UsizeSerializable::iter(input);
         // write length
         let iterator_len = iter_to_write.len();
-        assert!(iterator_len == <M::Params as UsizeSerializable>::USIZE_LEN);
-        I::csr_write_impl(iterator_len);
+        assert!(iterator_len == <I as UsizeSerializable>::USIZE_LEN);
+        NDS::csr_write_impl(iterator_len);
         // write content
         let mut remaining_len = iterator_len;
         for value in iter_to_write {
             assert!(iterator_len != 0);
-            I::csr_write_impl(value);
+            NDS::csr_write_impl(value);
             remaining_len -= 1;
         }
         assert!(remaining_len == 0);
         // we can expect that length of the result is returned via read
-        let remaining_len = I::csr_read_impl();
-        let it = CsrBasedIOOracleIterator::<I> {
+        let remaining_len = NDS::csr_read_impl();
+        let it = CsrBasedIOOracleIterator::<NDS> {
             remaining: remaining_len,
             _marker: core::marker::PhantomData,
         };

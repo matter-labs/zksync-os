@@ -1,3 +1,6 @@
+use crate::oracle::usize_serialization::UsizeDeserializable;
+use crate::system::errors::internal::InternalError;
+use crate::{internal_error, oracle::usize_serialization::UsizeSerializable};
 use core::mem::MaybeUninit;
 use ruint::aliases::{B160, U256};
 
@@ -83,18 +86,28 @@ impl Bytes32 {
         unsafe { core::mem::transmute_copy(&array) }
     }
 
-    // #[inline(always)]
-    // pub fn from_array(array: [u8; 32]) -> Self {
-    //     unsafe {
-    //         let mut result = Self::uninit();
-    //         core::ptr::copy_nonoverlapping(
-    //             array.as_ptr(),
-    //             addr_of_mut!((*result.as_mut_ptr()).inner).cast(),
-    //             32,
-    //         );
-    //         result.assume_init()
-    //     }
-    // }
+    #[inline]
+    pub const fn num_trailing_nonzero_bytes(&self) -> usize {
+        #[cfg(target_endian = "big")]
+        compile_error!("unsupported architecture: big endian arch is not supported");
+
+        let mut result = 32;
+        let mut i = 0;
+        while i < BYTES32_USIZE_SIZE {
+            let word = self.inner[i];
+            if word == 0 {
+                result -= core::mem::size_of::<usize>() as u32;
+            } else {
+                // NOTE - we should BE it, so it's TRAILING
+                result -= word.trailing_zeros() / 8;
+                break;
+            }
+
+            i += 1;
+        }
+
+        result as usize
+    }
 
     #[allow(clippy::needless_as_bytes)]
     pub const fn from_hex(input: &str) -> Self {
@@ -132,42 +145,18 @@ impl Bytes32 {
         self.inner.iter().all(|el| *el == 0)
     }
 
-    #[allow(clippy::should_implement_trait)]
-    pub fn as_ref(&self) -> &[usize] {
-        &self.inner
-    }
-
-    #[allow(clippy::should_implement_trait)]
-    pub fn as_mut(&mut self) -> &mut [usize] {
+    fn as_usize_array_mut(&mut self) -> &mut [usize; BYTES32_USIZE_SIZE] {
         &mut self.inner
     }
 
-    pub fn as_array_ref(&self) -> &[usize; BYTES32_USIZE_SIZE] {
-        &self.inner
-    }
-
-    pub fn as_array_mut(&mut self) -> &mut [usize; BYTES32_USIZE_SIZE] {
-        &mut self.inner
-    }
-
-    pub const fn as_u32_array(self) -> [u32; 8] {
-        unsafe { core::mem::transmute(self) }
-    }
-
-    pub fn as_u32_array_ref(&self) -> &[u32; 8] {
+    #[cfg(target_pointer_width = "32")]
+    fn as_u32_array_ref(&self) -> &[u32; 8] {
         unsafe { &*(&self.inner as *const usize).cast::<[u32; 8]>() }
     }
 
-    pub fn as_u32_array_mut(&mut self) -> &mut [u32; 8] {
-        unsafe { &mut *(&mut self.inner as *mut usize).cast::<[u32; 8]>() }
-    }
-
+    #[cfg(target_pointer_width = "64")]
     pub fn as_u64_array_ref(&self) -> &[u64; 4] {
         unsafe { &*(&self.inner as *const usize).cast::<[u64; 4]>() }
-    }
-
-    pub fn as_u64_array_mut(&mut self) -> &mut [u64; 4] {
-        unsafe { &mut *(&mut self.inner as *mut usize).cast::<[u64; 4]>() }
     }
 
     pub fn as_u8_ref(&self) -> &[u8] {
@@ -207,7 +196,8 @@ impl Bytes32 {
                 self.inner.swap(0, 3);
                 self.inner.swap(1, 2);
                 for el in self.inner.iter_mut() {
-                    *el = el.to_be();
+                    // NOTE: we are on LE
+                    *el = el.swap_bytes();
                 }
                 return;
             } else {
@@ -247,11 +237,7 @@ impl Bytes32 {
     }
 
     pub fn from_u256_be(value: &U256) -> Self {
-        let mut new = Self::uninit();
-        unsafe {
-            *new.assume_init_mut().as_u8_array_mut() = value.to_be_bytes();
-            new.assume_init()
-        }
+        Self::from_array(value.to_be_bytes())
     }
 }
 
@@ -277,8 +263,68 @@ impl From<B160> for Bytes32 {
 
 impl From<[u8; 32]> for Bytes32 {
     fn from(value: [u8; 32]) -> Self {
-        let mut new = Bytes32::zero();
-        new.as_u8_array_mut().copy_from_slice(&value[..]);
-        new
+        Self::from_array(value)
+    }
+}
+
+impl UsizeSerializable for Bytes32 {
+    const USIZE_LEN: usize = const {
+        cfg_if::cfg_if!(
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                let size = 8;
+            } else if #[cfg(target_pointer_width = "64")] {
+                let size = 4;
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        );
+        #[allow(clippy::let_and_return)]
+        size
+    };
+
+    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
+        cfg_if::cfg_if!(
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                return self.as_u32_array_ref().into_iter().map(|el| *el as usize);
+            } else if #[cfg(target_pointer_width = "64")] {
+                return self.as_u64_array_ref().map(|el| el as usize).into_iter();
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        );
+    }
+}
+
+impl UsizeDeserializable for Bytes32 {
+    const USIZE_LEN: usize = <Bytes32 as UsizeSerializable>::USIZE_LEN;
+
+    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
+            return Err(internal_error!("Bytes32 deserialization failed: too short"));
+        }
+        let mut new = Bytes32::ZERO;
+        for dst in new.as_usize_array_mut().iter_mut() {
+            *dst = unsafe { src.next().unwrap_unchecked() };
+        }
+
+        Ok(new)
+    }
+
+    unsafe fn init_from_iter(
+        this: &mut MaybeUninit<Self>,
+        src: &mut impl ExactSizeIterator<Item = usize>,
+    ) -> Result<(), InternalError> {
+        if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
+            return Err(internal_error!("b160 deserialization failed: too short"));
+        }
+        for dst in this.assume_init_mut().as_usize_array_mut().iter_mut() {
+            *dst = src.next().unwrap_unchecked()
+        }
+
+        Ok(())
     }
 }

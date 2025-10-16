@@ -41,6 +41,9 @@ pub const SECP256K1N_HALF: [u8; 32] = [
     0x5D, 0x57, 0x6E, 0x73, 0x57, 0xA4, 0x50, 0x1D, 0xDF, 0xE9, 0x2F, 0x46, 0x68, 0x1B, 0x20, 0xA0,
 ];
 
+pub const SECP256K1N_HALF_U256: ruint::aliases::U256 =
+    ruint::aliases::U256::from_be_bytes(SECP256K1N_HALF);
+
 impl Display for Secp256k1Err {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {

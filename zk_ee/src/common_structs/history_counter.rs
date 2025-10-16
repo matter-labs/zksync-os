@@ -1,4 +1,4 @@
-use crate::memory::stack_trait::{StackCtor, StackCtorConst};
+use crate::memory::stack_trait::StackFactory;
 use alloc::alloc::Global;
 use core::alloc::Allocator;
 
@@ -14,23 +14,12 @@ impl HistoryCounterSnapshotId {
     }
 }
 
-pub struct HistoryCounter<
-    V,
-    SC: StackCtor<SCC>,
-    SCC: const StackCtorConst,
-    A: Allocator + Clone = Global,
-> where
-    [(); SCC::extra_const_param::<(V, ()), A>()]:,
-{
-    history: HistoryList<V, (), SC, SCC, A>,
+pub struct HistoryCounter<V, SF: StackFactory<M>, const M: usize, A: Allocator + Clone = Global> {
+    history: HistoryList<V, (), SF, M, A>,
     last_snapshot_id: HistoryCounterSnapshotId,
 }
 
-impl<V, SC: StackCtor<SCC>, SCC: const StackCtorConst, A: Allocator + Clone>
-    HistoryCounter<V, SC, SCC, A>
-where
-    [(); SCC::extra_const_param::<(V, ()), A>()]:,
-{
+impl<V, SF: StackFactory<M>, const M: usize, A: Allocator + Clone> HistoryCounter<V, SF, M, A> {
     pub fn new(alloc: A) -> Self {
         Self {
             history: HistoryList::new(alloc),

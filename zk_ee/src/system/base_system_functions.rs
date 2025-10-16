@@ -1,6 +1,7 @@
-use crate::{define_subsystem, internal_error, system::logger::Logger, system_io_oracle::IOOracle};
+use crate::{define_subsystem, internal_error, oracle::IOOracle, system::logger::Logger};
 
 use super::{
+    common_traits::TryExtend,
     errors::subsystem::{Subsystem, SubsystemError},
     Resources,
 };
@@ -13,12 +14,7 @@ define_subsystem!(Secp256k1AddProjective);
 define_subsystem!(Secp256k1MulProjective);
 define_subsystem!(Secp256r1AddProjective);
 define_subsystem!(Secp256r1MulProjective);
-define_subsystem!(P256Verify,
-                  interface P256VerifyInterfaceError
-                  {
-                      InvalidInputLength
-                  }
-);
+define_subsystem!(P256Verify);
 
 define_subsystem!(Bn254Add,
                   interface Bn254AddInterfaceError
@@ -61,7 +57,7 @@ pub trait SystemFunction<R: Resources, E: Subsystem> {
     /// Writes result to the `output` and returns actual output slice length that was used.
     /// Should return error on invalid inputs and if resources do not even cover basic parsing cost.
     /// In practice only pairing can have invalid input(size) on charging stage.
-    fn execute<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -77,7 +73,12 @@ pub trait SystemFunctionExt<R: Resources, E: Subsystem> {
     /// Should return error on invalid inputs and if resources do not even cover basic parsing cost.
     /// in practice only pairing can have invalid input(size) on charging stage.
     /// Callee is provided with access to oracle for it's work, and to logger if needed.
-    fn execute<O: IOOracle, L: Logger, D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -90,7 +91,7 @@ pub trait SystemFunctionExt<R: Resources, E: Subsystem> {
 pub struct MissingSystemFunction;
 
 impl<R: Resources> SystemFunction<R, MissingSystemFunctionErrors> for MissingSystemFunction {
-    fn execute<D: ?Sized + Extend<u8>, A: core::alloc::Allocator + Clone>(
+    fn execute<D: ?Sized + TryExtend<u8>, A: core::alloc::Allocator + Clone>(
         _: &[u8],
         _: &mut D,
         _: &mut R,
@@ -102,7 +103,7 @@ impl<R: Resources> SystemFunction<R, MissingSystemFunctionErrors> for MissingSys
 
 // Additional implementations for missing projective curve operations
 impl<R: Resources> SystemFunction<R, Secp256k1AddProjectiveErrors> for MissingSystemFunction {
-    fn execute<D: ?Sized + Extend<u8>, A: core::alloc::Allocator + Clone>(
+    fn execute<D: ?Sized + TryExtend<u8>, A: core::alloc::Allocator + Clone>(
         _: &[u8],
         _: &mut D,
         _: &mut R,
@@ -113,7 +114,7 @@ impl<R: Resources> SystemFunction<R, Secp256k1AddProjectiveErrors> for MissingSy
 }
 
 impl<R: Resources> SystemFunction<R, Secp256k1MulProjectiveErrors> for MissingSystemFunction {
-    fn execute<D: ?Sized + Extend<u8>, A: core::alloc::Allocator + Clone>(
+    fn execute<D: ?Sized + TryExtend<u8>, A: core::alloc::Allocator + Clone>(
         _: &[u8],
         _: &mut D,
         _: &mut R,
@@ -124,7 +125,7 @@ impl<R: Resources> SystemFunction<R, Secp256k1MulProjectiveErrors> for MissingSy
 }
 
 impl<R: Resources> SystemFunction<R, Secp256r1AddProjectiveErrors> for MissingSystemFunction {
-    fn execute<D: ?Sized + Extend<u8>, A: core::alloc::Allocator + Clone>(
+    fn execute<D: ?Sized + TryExtend<u8>, A: core::alloc::Allocator + Clone>(
         _: &[u8],
         _: &mut D,
         _: &mut R,
@@ -135,7 +136,7 @@ impl<R: Resources> SystemFunction<R, Secp256r1AddProjectiveErrors> for MissingSy
 }
 
 impl<R: Resources> SystemFunction<R, Secp256r1MulProjectiveErrors> for MissingSystemFunction {
-    fn execute<D: ?Sized + Extend<u8>, A: core::alloc::Allocator + Clone>(
+    fn execute<D: ?Sized + TryExtend<u8>, A: core::alloc::Allocator + Clone>(
         _: &[u8],
         _: &mut D,
         _: &mut R,
@@ -159,7 +160,7 @@ pub trait SystemFunctions<R: Resources> {
     type Bn254PairingCheck: SystemFunction<R, Bn254PairingCheckErrors>;
     type RipeMd160: SystemFunction<R, RipeMd160Errors>;
 
-    fn keccak256<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn keccak256<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -168,7 +169,7 @@ pub trait SystemFunctions<R: Resources> {
         Self::Keccak256::execute(input, output, resources, allocator)
     }
 
-    fn sha256<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn sha256<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -177,7 +178,7 @@ pub trait SystemFunctions<R: Resources> {
         Self::Sha256::execute(input, output, resources, allocator)
     }
 
-    fn secp256k1_ec_recover<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn secp256k1_ec_recover<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -186,7 +187,7 @@ pub trait SystemFunctions<R: Resources> {
         Self::Secp256k1ECRecover::execute(input, output, resources, allocator)
     }
 
-    fn secp256k1_add_projective<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn secp256k1_add_projective<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -195,7 +196,7 @@ pub trait SystemFunctions<R: Resources> {
         Self::Secp256k1AddProjective::execute(input, output, resources, allocator)
     }
 
-    fn secp256k1_mul_projective<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn secp256k1_mul_projective<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -204,7 +205,7 @@ pub trait SystemFunctions<R: Resources> {
         Self::Secp256k1MulProjective::execute(input, output, resources, allocator)
     }
 
-    fn secp256r1_add_projective<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn secp256r1_add_projective<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -213,7 +214,7 @@ pub trait SystemFunctions<R: Resources> {
         Self::Secp256r1AddProjective::execute(input, output, resources, allocator)
     }
 
-    fn secp256r1_mul_projective<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn secp256r1_mul_projective<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -222,7 +223,7 @@ pub trait SystemFunctions<R: Resources> {
         Self::Secp256r1MulProjective::execute(input, output, resources, allocator)
     }
 
-    fn p256_verify<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn p256_verify<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -231,7 +232,7 @@ pub trait SystemFunctions<R: Resources> {
         Self::P256Verify::execute(input, output, resources, allocator)
     }
 
-    fn bn254_add<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn bn254_add<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -240,7 +241,7 @@ pub trait SystemFunctions<R: Resources> {
         Self::Bn254Add::execute(input, output, resources, allocator)
     }
 
-    fn bn254_mul<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn bn254_mul<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -249,7 +250,7 @@ pub trait SystemFunctions<R: Resources> {
         Self::Bn254Mul::execute(input, output, resources, allocator)
     }
 
-    fn bn254_pairing_check<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn bn254_pairing_check<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -258,7 +259,7 @@ pub trait SystemFunctions<R: Resources> {
         Self::Bn254PairingCheck::execute(input, output, resources, allocator)
     }
 
-    fn ripemd160<D: Extend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn ripemd160<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
@@ -274,7 +275,7 @@ pub trait SystemFunctionsExt<R: Resources> {
     fn mod_exp<
         O: IOOracle,
         L: Logger,
-        D: Extend<u8> + ?Sized,
+        D: TryExtend<u8> + ?Sized,
         A: core::alloc::Allocator + Clone,
     >(
         input: &[u8],

@@ -1,12 +1,11 @@
 use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
 use alloy::hex;
-use rig::forward_system::run::BlockOutput;
 use rig::log::{error, info};
+use rig::zksync_os_interface::types::BlockOutput;
 use ruint::aliases::{B160, B256, U256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use zk_ee::utils::u256_to_usize_saturated;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -266,19 +265,19 @@ fn zksync_os_output_into_account_state(
         output
             .published_preimages
             .into_iter()
-            .map(|(key, value, _)| (key.as_u8_array(), value)),
+            .map(|(key, value)| (key.0, value)),
     );
     for w in output.storage_writes {
-        if rig::chain::is_account_properties_address(&w.account) {
+        if rig::chain::is_account_properties_address(&B160::from_be_bytes(w.account.into_array())) {
             // populate account
-            let address: [u8; 20] = w.account_key.as_u8_array()[12..].try_into().unwrap();
+            let address: [u8; 20] = w.account_key.as_slice()[12..].try_into().unwrap();
             let address = B160::from_be_bytes(address);
             if address != system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS {
                 let props = if w.value.is_zero() {
                     // TODO: Account deleted, we need to check this somehow
                     AccountProperties::default()
                 } else {
-                    let encoded = match preimages.get(&w.value.as_u8_array()) {
+                    let encoded = match preimages.get(w.value.as_slice()) {
                         Some(x) => x.clone(),
                         None => {
                             error!("Must contain preimage for account {address:#?}");
@@ -299,9 +298,11 @@ fn zksync_os_output_into_account_state(
         } else {
             // populate slot
             let address = w.account;
-            let key = U256::from_be_bytes(w.account_key.as_u8_array());
-            let entry = updates.entry(address).or_default();
-            let value = B256::from_be_bytes(w.value.as_u8_array());
+            let key = U256::from_be_bytes(w.account_key.0);
+            let entry = updates
+                .entry(B160::from_be_bytes(address.into_array()))
+                .or_default();
+            let value = B256::from_be_bytes(w.value.0);
             entry.storage.get_or_insert_default().insert(key, value);
         }
     }
@@ -339,6 +340,10 @@ pub fn post_check(
     prestate_cache: Cache,
     miner: B160,
 ) -> Result<(), PostCheckError> {
+    fn u256_to_usize(src: &U256) -> usize {
+        zk_ee::utils::u256_to_u64_saturated(src) as usize
+    }
+
     for (res, receipt) in output.tx_results.iter().zip(receipts.iter()) {
         let res = match res {
             Ok(res) => res,
@@ -359,7 +364,7 @@ pub fn post_check(
                     receipt.transaction_index
                 );
                 return Err(PostCheckError::InvalidTx {
-                    id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                    id: TxId::Index(u256_to_usize(&receipt.transaction_index)),
                 });
             };
         } else if receipt.status == Some(alloy::primitives::U256::ZERO) && res.is_success() {
@@ -368,7 +373,7 @@ pub fn post_check(
                 receipt.transaction_index
             );
             return Err(PostCheckError::TxShouldHaveFailed {
-                id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                id: TxId::Index(u256_to_usize(&receipt.transaction_index)),
             });
         }
         let gas_difference =
@@ -381,7 +386,7 @@ pub fn post_check(
                     gas_difference,
                 );
             return Err(PostCheckError::GasMismatch {
-                id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                id: TxId::Index(u256_to_usize(&receipt.transaction_index)),
             });
         }
         // Logs check
@@ -391,7 +396,7 @@ pub fn post_check(
                 receipt.transaction_index
             );
             return Err(PostCheckError::IncorrectLogs {
-                id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                id: TxId::Index(u256_to_usize(&receipt.transaction_index)),
             });
         }
         for (l, r) in res.logs.iter().zip(receipt.logs.iter()) {
@@ -399,17 +404,17 @@ pub fn post_check(
             if !eq {
                 error!("Not equal logs:\n {l:#?} \nand\n {r:?}");
                 return Err(PostCheckError::IncorrectLogs {
-                    id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                    id: TxId::Index(u256_to_usize(&receipt.transaction_index)),
                 });
             }
-            if r.data.to_vec() != l.data {
+            if r.data.to_vec() != l.data.data {
                 error!(
                     "Data is not equal: we got {}, expected {}",
-                    hex::encode(l.data.clone()),
+                    hex::encode(l.data.data.clone()),
                     hex::encode(r.data.clone())
                 );
                 return Err(PostCheckError::IncorrectLogs {
-                    id: TxId::Index(u256_to_usize_saturated(&receipt.transaction_index)),
+                    id: TxId::Index(u256_to_usize(&receipt.transaction_index)),
                 });
             }
         }

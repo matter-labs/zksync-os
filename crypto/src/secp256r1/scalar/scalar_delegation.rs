@@ -68,7 +68,17 @@ impl Scalar {
 
     pub(crate) fn from_be_bytes(bytes: &[u8; 32]) -> Result<Self, Secp256r1Err> {
         let val = Self::from_be_bytes_unchecked(bytes);
-        Ok(val.to_repressentation())
+        if val.overflow() {
+            Err(Secp256r1Err::InvalidSignature)
+        } else {
+            Ok(val.to_repressentation())
+        }
+    }
+
+    fn overflow(&self) -> bool {
+        let mut temp = *self;
+        let borrow = u256::sub_and_negate_assign(&mut temp.0, unsafe { MODULUS.assume_init_ref() });
+        borrow
     }
 
     pub(crate) fn from_words(words: [u64; 4]) -> Self {

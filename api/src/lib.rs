@@ -3,10 +3,11 @@
 use std::{path::PathBuf, str::FromStr};
 
 use forward_system::run::{
-    test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource},
-    BlockContext, EthereumIOTypesConfig, ForwardRunningOracle, StorageCommitment,
+    test_impl::{InMemoryPreimageSource, InMemoryTree},
+    BlockContext, StorageCommitment,
 };
-use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
+use oracle_provider::ReadWitnessSource;
+use zksync_os_interface::traits::TxListSource;
 pub mod helpers;
 
 /// Runs the batch, and returns the output (that contains gas usage, transaction status etc.).
@@ -23,25 +24,19 @@ pub fn run_block_generate_witness(
     proof_data: ProofData<StorageCommitment>,
     zksync_os_bin_path: &str,
 ) -> Vec<u32> {
-    let oracle: ForwardRunningOracle<InMemoryTree, InMemoryPreimageSource, TxListSource> =
-        ForwardRunningOracle {
-            proof_data: Some(proof_data),
-            block_metadata: block_context,
-            tree,
-            preimage_source,
-            tx_source,
-            next_tx: None,
-        };
+    use forward_system::run::*;
 
-    let oracle_wrapper = BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle.clone());
-    let mut non_determinism_source = ZkEENonDeterminismSource::default();
-    non_determinism_source.add_external_processor(oracle_wrapper);
-    non_determinism_source.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery {
-        marker: std::marker::PhantomData,
-    });
+    let oracle = make_oracle_for_proofs_and_dumps_for_init_data(
+        block_context,
+        tree,
+        preimage_source,
+        tx_source,
+        Some(proof_data),
+        false,
+    );
 
     // We'll wrap the source, to collect all the reads.
-    let copy_source = ReadWitnessSource::new(non_determinism_source);
+    let copy_source = ReadWitnessSource::new(oracle);
 
     let items = copy_source.get_read_items();
     // By default - enable diagnostics is false (which makes the test run faster).

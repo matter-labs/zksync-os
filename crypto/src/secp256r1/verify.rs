@@ -27,7 +27,10 @@ pub fn verify(
     let u1 = z * &s_inv;
     let u2 = r * &s_inv;
 
-    let x = ecmult(pk, u2, u1, &TABLE_G).to_affine().x;
+    let x = ecmult(pk, u2, u1, &TABLE_G)
+        .to_affine()
+        .reject_identity()?
+        .x;
 
     let recovered = Scalar::reduce_be_bytes(&x.to_be_bytes());
 

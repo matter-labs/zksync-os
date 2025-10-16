@@ -1,5 +1,5 @@
 use crate::{
-    memory::stack_trait::{StackCtor, StackCtorConst},
+    memory::stack_trait::StackFactory,
     system::errors::system::SystemError,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::{Bytes32, UsizeAlignedByteBox},
@@ -49,26 +49,18 @@ pub struct GenericEventContentWithTxRef<'a, const N: usize, IOTypes: SystemIOTyp
 pub type EventContent<const N: usize, A: Allocator = Global> =
     GenericEventContent<N, EthereumIOTypesConfig, A>;
 
-pub type EventStorageStackCheck<SCC: const StackCtorConst, A: Allocator, const N: usize> = [[();
-    SCC::extra_const_param::<(EventContent<N, A>, ()), A>()];
-    SCC::extra_const_param::<usize, A>()];
-
 pub struct EventsStorage<
     const N: usize,
-    SC: StackCtor<SCC>,
-    SCC: const StackCtorConst,
+    SF: StackFactory<M>,
+    const M: usize,
     A: Allocator + Clone = Global,
-> where
-    EventStorageStackCheck<SCC, A, N>:,
-{
-    list: HistoryList<EventContent<N, A>, (), SC, SCC, A>,
+> {
+    list: HistoryList<EventContent<N, A>, (), SF, M, A>,
     _marker: core::marker::PhantomData<A>,
 }
 
-impl<const N: usize, SC: StackCtor<SCC>, SCC: const StackCtorConst, A: Allocator + Clone>
-    EventsStorage<N, SC, SCC, A>
-where
-    EventStorageStackCheck<SCC, A, N>:,
+impl<const N: usize, SF: StackFactory<M>, const M: usize, A: Allocator + Clone>
+    EventsStorage<N, SF, M, A>
 {
     pub fn new_from_parts(allocator: A) -> Self {
         Self {

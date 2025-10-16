@@ -1,5 +1,5 @@
 [files]
-extend-exclude = ["**/target/**", "**/serde-yaml/tests/**"]
+extend-exclude = ["**/target/**", "**/serde-yaml/tests/**", "tests/evm_tester/indexes"]
 ignore-files = true
 
 
@@ -9,4 +9,5 @@ Storeable = "Storeable"
 lits = "lits"
 wich = "wich"
 tre = "tre"
+Hom = "Hom"
 

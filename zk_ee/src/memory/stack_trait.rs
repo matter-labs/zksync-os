@@ -1,46 +1,56 @@
-use alloc::vec::Vec;
 use core::alloc::Allocator;
 
+/// A factory trait for creating stack data structures with compile-time configuration.
 ///
-/// A stack constructor. Abstracts over the creation of `Stack<T, A>` trait instance.
+/// This trait allows the system to abstract over different stack implementations
+/// (Vec, skip lists, etc.) while providing compile-time parameters for optimization.
+/// The const parameter N configures implementation-specific behavior like node sizes
+/// or capacity constraints.
 ///
-#[const_trait]
-pub trait StackCtor<C: const StackCtorConst> {
-    /// Adds an extra constant parameter, used for the skip list implementation
-    type Stack<T: Sized, const N: usize, A: Allocator + Clone>: Stack<T, A>;
+/// # Why This Exists
+/// Different execution environments need different stack implementations:
+/// - Forward execution: Uses Vec for dynamic allocation
+/// - Proof generation: Uses skip lists for deterministic memory access patterns
+pub trait StackFactory<const N: usize> {
+    type Stack<T: Sized, const M: usize, A: Allocator + Clone>: Stack<T, A>;
 
-    fn new_in<T, A: Allocator + Clone>(
-        alloc: A,
-    ) -> Self::Stack<T, { C::extra_const_param::<T, A>() }, A>
-    where
-        [(); C::extra_const_param::<T, A>()]:;
+    fn new_in<T, A: Allocator + Clone>(alloc: A) -> Self::Stack<T, N, A>;
 }
 
-///
-/// A constant trait counterpart for the `StackCtor`.
-///
-#[const_trait]
-pub trait StackCtorConst {
-    fn extra_const_param<T, A: Allocator>() -> usize;
-}
-
-///
-/// Stack trait
-///
+/// This trait defines the common interface for stack data structures.
+/// Implementations can range from simple Vec-based stacks to
+/// more complex structures like skip lists for proof environments.
 pub trait Stack<T: Sized, A: Allocator> {
+    /// Creates a new empty stack using the provided allocator.
     fn new_in(alloc: A) -> Self;
+
+    /// Returns the number of elements in the stack.
     fn len(&self) -> usize;
+
+    /// Returns true if the stack contains no elements.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    fn push(&mut self, value: T) {
-        self.try_push(value).expect("must be able to push");
-    }
+
+    /// Pushes an element onto the top of the stack.
+    fn push(&mut self, value: T);
+
+    /// Removes and returns the top element from the stack, or None if empty.
     fn pop(&mut self) -> Option<T>;
+
+    /// Returns a reference to the top element without removing it.
     fn top(&self) -> Option<&T>;
+
+    /// Returns a mutable reference to the top element without removing it.
     fn top_mut(&mut self) -> Option<&mut T>;
-    fn try_push(&mut self, value: T) -> Result<(), ()>;
+
+    /// Removes all elements from the stack.
     fn clear(&mut self);
+
+    /// Shortens the stack, keeping only the first `new_len` elements.
+    ///
+    /// This provides efficient rollback functionality by removing elements
+    /// from the top of the stack until the desired length is reached.
     fn truncate(&mut self, new_len: usize) {
         if new_len < self.len() {
             let num_iterations = self.len() - new_len;
@@ -49,65 +59,20 @@ pub trait Stack<T: Sized, A: Allocator> {
             }
         }
     }
-    fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = &'a T>
+
+    /// Returns an iterator over the stack elements from bottom to top.
+    fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = &'a T> + Clone
     where
         T: 'a;
-}
 
-impl<T: Sized, A: Allocator> Stack<T, A> for Vec<T, A> {
-    fn new_in(alloc: A) -> Self {
-        Vec::new_in(alloc)
-    }
-    fn len(&self) -> usize {
-        Vec::len(self)
-    }
-    fn push(&mut self, value: T) {
-        // We allow resize here
-        Vec::push(self, value);
-    }
-    fn pop(&mut self) -> Option<T> {
-        Vec::pop(self)
-    }
-    fn top(&self) -> Option<&T> {
-        self.last()
-    }
-    fn top_mut(&mut self) -> Option<&mut T> {
-        self.last_mut()
-    }
-    fn try_push(&mut self, value: T) -> Result<(), ()> {
-        Vec::push_within_capacity(self, value).map_err(|_| ())
-    }
-    fn clear(&mut self) {
-        Vec::clear(self)
-    }
-    fn truncate(&mut self, new_len: usize) {
-        Vec::truncate(self, new_len);
-    }
-    fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = &'a T>
+    /// Returns an iterator that skips the first n elements.
+    ///
+    /// Useful for iterating over a subset of the stack without creating
+    /// intermediate collections.
+    fn iter_skip_n<'a>(&'a self, n: usize) -> impl ExactSizeIterator<Item = &'a T> + Clone
     where
         T: 'a,
     {
-        self[..].iter()
-    }
-}
-
-pub struct VecStackCtor {}
-
-impl StackCtor<VecStackCtor> for VecStackCtor {
-    type Stack<T: Sized, const N: usize, A: Allocator + Clone> = Vec<T, A>;
-
-    fn new_in<T, A: Allocator + Clone>(
-        alloc: A,
-    ) -> Self::Stack<T, { <VecStackCtor>::extra_const_param::<T, A>() }, A>
-    where
-        [(); <VecStackCtor>::extra_const_param::<T, A>()]:,
-    {
-        Self::Stack::<T, { <VecStackCtor>::extra_const_param::<T, A>() }, A>::new_in(alloc)
-    }
-}
-
-impl const StackCtorConst for VecStackCtor {
-    fn extra_const_param<T, A: Allocator>() -> usize {
-        0
+        self.iter().skip(n)
     }
 }

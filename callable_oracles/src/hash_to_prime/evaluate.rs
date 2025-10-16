@@ -5,7 +5,7 @@ use crate::MemoryRegionDescriptionParams;
 use evaluate::compute::compute_from_entropy;
 use oracle_provider::OracleQueryProcessor;
 use risc_v_simulator::abstractions::memory::MemorySource;
-use zk_ee::kv_markers::UsizeDeserializable;
+use zk_ee::oracle::usize_serialization::UsizeDeserializable;
 
 pub struct HashToPrimeSource<M: MemorySource> {
     marker: std::marker::PhantomData<M>,
@@ -21,7 +21,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for HashToPrimeSource<M> {
         query_id: u32,
         query: Vec<usize>,
         memory: &M,
-    ) -> Option<Box<dyn ExactSizeIterator<Item = usize> + 'static>> {
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
         debug_assert!(self.supports_query_id(query_id));
         let mut it = query.into_iter();
         let memory_region_for_request: MemoryRegionDescriptionParams =
@@ -36,7 +36,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for HashToPrimeSource<M> {
         use crypto::MiniDigest;
         assert!(MAX_ENTROPY_BYTES <= 64);
         let mut entropy = [0u8; 64];
-        for (idx, dst) in entropy.array_chunks_mut::<32>().enumerate() {
+        for (idx, dst) in entropy.as_chunks_mut::<32>().0.iter_mut().enumerate() {
             let mut hasher = Blake2s256::new();
             hasher.update(&(idx as u32).to_le_bytes());
             hasher.update(&entropy_source);
@@ -46,7 +46,6 @@ impl<M: MemorySource> OracleQueryProcessor<M> for HashToPrimeSource<M> {
         let _certificate = compute_from_entropy(&entropy);
 
         // TODO: serialize
-
-        None
+        todo!();
     }
 }

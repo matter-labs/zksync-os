@@ -101,6 +101,20 @@ impl DelegatedU256 {
             eq != 0
         }
     }
+
+    pub(crate) fn is_one(&self) -> bool {
+        #[allow(static_mut_refs)]
+        unsafe {
+            // equality is non-destructive, so we can cast
+            let eq = bigint_op_delegation_raw(
+                (self as *const Self).cast_mut().cast(),
+                ONE.as_ptr().cast(),
+                BigIntOps::Eq,
+            );
+
+            eq != 0
+        }
+    }
 }
 
 impl Clone for DelegatedU256 {

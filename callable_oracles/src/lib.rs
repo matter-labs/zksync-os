@@ -21,8 +21,9 @@ pub mod arithmetic;
 pub mod utils;
 
 use zk_ee::{
-    kv_markers::{ExactSizeChain, UsizeDeserializable, UsizeSerializable},
+    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
     system::errors::internal::InternalError,
+    utils::exact_size_chain::ExactSizeChain,
 };
 
 pub mod hash_to_prime;

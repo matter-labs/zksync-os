@@ -2,8 +2,7 @@ use core::ops::DerefMut;
 
 use crate::*;
 use ruint::aliases::B160;
-use zk_ee::kv_markers::ExactSizeChain;
-use zk_ee::system::EthereumLikeTypes;
+use zk_ee::{system::EthereumLikeTypes, utils::exact_size_chain::ExactSizeChain};
 
 pub fn bytereverse_u256(value: &mut U256) {
     // assuming LE
@@ -21,6 +20,7 @@ pub fn evm_bytecode_hash(bytecode: &[u8]) -> [u8; 32] {
     use crypto::sha3::{Digest, Keccak256};
     let hash = Keccak256::digest(bytecode);
     let mut result = [0u8; 32];
+    #[allow(deprecated)]
     result.copy_from_slice(hash.as_slice());
 
     result

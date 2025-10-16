@@ -127,6 +127,7 @@ macro_rules! wrap_with_resources {
     ($label:expr, $resources:expr, $code:block) => {{
         #[cfg(not(target_arch = "riscv32"))]
         {
+            use alloc::format;
             let resources_before = $resources.clone();
             $crate::start!($label);
             let __result = (|| $code)();

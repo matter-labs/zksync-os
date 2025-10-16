@@ -21,9 +21,17 @@ hex = {version = "*", optional = true}
 arrayvec = { version = "0.7.4", default-features = false }
 strum_macros = "0.27.1"
 paste = "1.0.15"
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
+cfg-if = "*"
+
+[dev-dependencies]
+alloy = { version = "1", features = ["rlp", "full"] }
+alloy-rlp = { version = "*" }
+alloy-primitives = { version = "1", features = ["arbitrary"] }
 
 [features]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "hex"]
+serde = ["dep:serde", "ruint/serde"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "hex", "serde"]
 default = ["testing"]
 code_in_kernel_space = []
 transfers_to_kernel_space = []

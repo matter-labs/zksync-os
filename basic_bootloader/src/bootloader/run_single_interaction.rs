@@ -10,7 +10,10 @@ use zk_ee::{interface_error, internal_error, wrap_error};
 
 use super::*;
 
-impl<S: EthereumLikeTypes> BasicBootloader<S> {
+impl<S: EthereumLikeTypes, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
+where
+    S::IO: IOSubsystemExt,
+{
     ///
     /// Mints [value] to address [to].
     ///

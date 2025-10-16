@@ -18,7 +18,7 @@ The `run_block` function will do two things. First, it will call the `run_forwar
 
 - [`proof_running_system`](../proof_running_system/) defines the concrete instantiation needed for proving, including a wrapper called `run_proving` to run the bootloader's `run_prepared`.
 - [`zksync_os`](../zksync_os/src/main.rs) defines the main function in the RISC-V binary that will be proven as a call to `run_proving`.
-- [`zksync_os_runner`](../zksync_os_runner/src/lib.rs) defines a `run` function that takes the RISC-V binary and the initial oracle (non-determinism source) and simulates the execution of that binary. This is done using our [`risc_v_simulator`](https://github.com/matter-labs/zksync-airbender/tree/mb_doc/risc_v_simulator).  This is the method called by the testing rig for the proof run.
+- [`zksync_os_runner`](../zksync_os_runner/src/lib.rs) defines a `run` function that takes the RISC-V binary and the initial oracle (non-determinism source) and simulates the execution of that binary. This is done using our [`risc_v_simulator`](https://github.com/matter-labs/zksync-airbender/tree/main/risc_v_simulator).  This is the method called by the testing rig for the proof run.
 
 Note that this flow isn't running the actual prover, just simulating the execution that will be proved.
 To actually compute the proof after both runs, the `e2e_proving` feature needs to be enabled.

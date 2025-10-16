@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use crate::calltrace::CallTrace;
 use alloy::eips::Typed2718;
-use rig::log::warn;
 use rig::utils::encode_alloy_rpc_tx;
+use rig::{log::warn, zksync_os_interface::traits::EncodedTx};
 use ruint::aliases::{B160, U256};
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +18,7 @@ impl Block {
         rig::BlockContext {
             timestamp: self.result.header.timestamp,
             eip1559_basefee: base_fee,
-            gas_per_pubdata: U256::ZERO,
+            pubdata_price: U256::ZERO,
             native_price: base_fee / U256::from(100),
             coinbase: B160::from_be_bytes(self.result.header.beneficiary.0 .0),
             gas_limit: self.result.header.gas_limit,
@@ -27,7 +27,7 @@ impl Block {
         }
     }
 
-    pub fn get_transactions(self, calltrace: &CallTrace) -> (Vec<Vec<u8>>, HashSet<usize>) {
+    pub fn get_transactions(self, calltrace: &CallTrace) -> (Vec<EncodedTx>, HashSet<usize>) {
         let mut skipped: HashSet<usize> = HashSet::new();
         (
             self.result

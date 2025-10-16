@@ -1,5 +1,7 @@
 # Proving Ethereum blocks
 
+Note: this doc is outdated
+
 Proving ethereum blocks consists of 3 steps:
 * getting necessary information about the block (transactions, traces etc)
 * putting this information into a format that prover understands (witness generation)

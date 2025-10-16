@@ -180,6 +180,7 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "basic_system",
+ "cfg-if",
  "crypto",
  "cycle_marker",
  "evm_interpreter",
@@ -227,7 +228,7 @@ dependencies = [
 [[package]]
 name = "blake2s_u32"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=v0.3.1#44a1721e4597af363c1da7dfc9d01c2f6b9b61c1"
+source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=v0.4.3#c23fd0085ee87872e25ff83f780d2d0ee102a166"
 dependencies = [
  "unroll",
 ]
@@ -307,6 +308,7 @@ dependencies = [
  "num-traits",
  "p256",
  "ripemd",
+ "ruint",
  "sha2",
  "sha3",
  "zeroize",
@@ -447,6 +449,7 @@ dependencies = [
  "ruint",
  "strum_macros",
  "zk_ee",
+ "zksync_os_evm_errors",
 ]
 
 [[package]]
@@ -815,7 +818,7 @@ dependencies = [
 [[package]]
 name = "riscv_common"
 version = "0.1.0"
-source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=v0.3.1#44a1721e4597af363c1da7dfc9d01c2f6b9b61c1"
+source = "git+https://github.com/matter-labs/zksync-airbender.git?tag=v0.4.3#c23fd0085ee87872e25ff83f780d2d0ee102a166"
 
 [[package]]
 name = "ruint"
@@ -1082,6 +1085,7 @@ dependencies = [
  "paste",
  "ruint",
  "strum_macros",
+ "zksync_os_evm_errors",
 ]
 
 [[package]]
@@ -1095,3 +1099,8 @@ dependencies = [
  "riscv",
  "riscv_common",
 ]
+
+[[package]]
+name = "zksync_os_evm_errors"
+version = "0.0.7"
+source = "git+https://github.com/matter-labs/zksync-os-interface?tag=v0.0.8#6d5957dfdfde1701f5adf3f732aef40a60634582"

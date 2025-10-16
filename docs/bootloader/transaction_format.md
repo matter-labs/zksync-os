@@ -11,14 +11,14 @@ ZKsyncOS expects transactions with the following fields:
 | `gas_per_pubdata_limit`   | `u32`        | Maximum gas the user is willing to pay for a byte of [pubdata](https://docs.zksync.io/zksync-protocol/contracts/handling-pubdata).                                                                                               |
 | `max_fee_per_gas`         | `u128`       | Maximum fee per gas the user is willing to pay. Akin to EIP-1559's `maxFeePerGas`.                                                                                                                                               |
 | `max_priority_fee_per_gas`| `u128`       | Maximum priority fee per gas the user is willing to pay. Akin to EIP-1559's `maxPriorityFeePerGas`.                                                                                                                             |
-| `paymaster`               | `B160`       | Transaction's paymaster. If none, it is equal to 0.                                                                                                                                                                             |
+| `paymaster`               | `B160`       | Transaction's paymaster. Legacy field, unused currently.                                                                                                                                                                             |
 | `nonce`                   | `U256`       | Nonce of the transaction.                                                                                                                                                                                                       |
 | `value`                   | `U256`       | Value to pass with the transaction.                                                                                                                                                                                             |
 | `reserved`                | `[U256; 4]`  | Extra data for future use. See the table below for details on reserved fields.                                                                                                                                                   |
 | `data`                    | `bytes`      | The calldata.                                                                                                                                                                                                                   |
 | `signature`               | `bytes`      | Signature of the transaction.                                                                                                                                                                                                   |
 | `factory_deps`            | `bytes`      | Only for EraVM. Properly formatted hashes of bytecodes to be published on L1 with this transaction. Previously published bytecodes won't incur additional fees.                                                                  |
-| `paymaster_input`         | `bytes`      | Input for the paymaster.                                                                                                                                                                                                        |
+| `paymaster_input`         | `bytes`      | Input for the paymaster. Legacy field, unused currently.                                                                                                                                                                                                        |
 | `reserved_dynamic`        | `bytes`      | Field used for extra functionality.  Currently, it's used for access and authorization lists. The field is encoded as a list, to be able to extend it in the future. The field is encoded a the ABI encoding of a bytestring containing the ABI encoding of the list itself. Currently the list contains 2 elements. First, the access list: encoded as `tuple(address, bytes32[])[]`, i.e. a list of (address, keys) pairs. Second, the authorization list: encoded as `tuple(chain_id, address, nonce, y_parity, r, s)[]`.                                                  |
 
 ### Transaction Types
@@ -30,7 +30,8 @@ ZKsyncOS expects transactions with the following fields:
 | `0x2`   | EIP-1559 transaction.                                                                            |
 | `0x4`   | EIP-7702 transaction.                                                                            |
 | `0x71`  | EIP-712 transaction following the [Era format](https://docs.zksync.io/zksync-protocol/rollup/transaction-lifecycle#eip-712-0x71). |
-| `0xFF`  | L1 -> L2 transaction.                                                                            |
+| `0x7E`  | Upgrade transaction.                                                                             |
+| `0x7F`  | L1 -> L2 transaction.                                                                            |
 
 ### Reserved Fields
 

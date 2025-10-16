@@ -134,8 +134,11 @@ impl Affine {
     }
 
     pub(crate) fn decompress(x_bytes: &FieldBytes, y_is_odd: bool) -> Option<Self> {
-        debug_assert!(x_bytes.as_slice().len() == 32);
+        #[allow(deprecated)]
+        let len = x_bytes.as_slice().len();
+        debug_assert!(len == 32);
 
+        #[allow(deprecated)]
         x_bytes.as_slice().try_into().ok().and_then(|x| {
             let x = FieldElement::from_bytes(x)?;
             let mut ret = Affine::DEFAULT;

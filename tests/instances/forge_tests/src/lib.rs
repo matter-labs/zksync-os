@@ -2,8 +2,9 @@
 use alloy::consensus::{TxEip1559, TxEip2930};
 use alloy::primitives::{address, TxKind, U256};
 use alloy::signers::local::PrivateKeySigner;
-use rig::forward_system::run::BlockOutput;
 use rig::ruint::aliases::B160;
+use rig::zksync_os_interface::traits::EncodedTx;
+use rig::zksync_os_interface::types::BlockOutput;
 use rig::{alloy, ruint};
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -15,7 +16,7 @@ use zk_ee::utils::Bytes32;
 ///
 fn run_transactions_as_eoa(
     eoa_address: alloy::primitives::Address,
-    encoded_txs: Vec<Vec<u8>>,
+    encoded_txs: Vec<EncodedTx>,
 ) -> BlockOutput {
     let mut chain = rig::Chain::empty(None);
     chain.set_balance(
@@ -78,7 +79,11 @@ fn run_forge_test_create_many_contracts() {
         vec![encoded_deployment_tx, encoded_run_tx],
     );
 
-    let sset: HashSet<Bytes32> = output.storage_writes.iter().map(|x| x.key).collect();
+    let sset: HashSet<Bytes32> = output
+        .storage_writes
+        .iter()
+        .map(|x| x.key.0.into())
+        .collect();
 
     // These are addresses taken from tests/forge/broadcast file.
     let addresses = [
@@ -141,7 +146,11 @@ fn run_forge_test_create_in_constructor() {
         vec![encoded_deployment_tx, encoded_run_tx],
     );
 
-    let sset: HashSet<Bytes32> = output.storage_writes.iter().map(|x| x.key).collect();
+    let sset: HashSet<Bytes32> = output
+        .storage_writes
+        .iter()
+        .map(|x| x.key.0.into())
+        .collect();
 
     // These are addresses taken from tests/forge/broadcast file.
     let addresses = [

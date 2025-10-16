@@ -1,3 +1,5 @@
+use crate::utils::usize_rw::UsizeWriteable;
+
 use super::*;
 
 pub struct AlignedBuffer<'a, const N: usize>
@@ -131,10 +133,7 @@ impl<'a> ExactSizeIterator for AlignedBufferIterator<'a> {
     }
 }
 
-pub fn copy_bytes_to_usize_buffer(
-    src: &[u8],
-    dst: &mut impl crate::oracle::UsizeWriteable,
-) -> usize {
+pub fn copy_bytes_to_usize_buffer(src: &[u8], dst: &mut impl UsizeWriteable) -> usize {
     let mut it = src.array_chunks::<USIZE_SIZE>();
     let mut written = it.len();
     for src in &mut it {
@@ -157,7 +156,7 @@ pub fn copy_bytes_to_usize_buffer(
 
 pub fn copy_bytes_iter_to_usize_buffer(
     src: impl ExactSizeIterator<Item = u8>,
-    dst: &mut impl crate::oracle::UsizeWriteable,
+    dst: &mut impl UsizeWriteable,
 ) -> usize {
     let mut it = src.array_chunks::<USIZE_SIZE>();
     let mut written = it.len();

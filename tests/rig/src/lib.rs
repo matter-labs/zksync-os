@@ -22,6 +22,7 @@ pub use risc_v_simulator::sim::ProfilerConfig;
 pub use ruint;
 pub use zk_ee;
 pub use zksync_os_api;
+pub use zksync_os_interface;
 pub use zksync_web3_rs;
 
 static INIT_LOGGER_ONCE: Once = Once::new();

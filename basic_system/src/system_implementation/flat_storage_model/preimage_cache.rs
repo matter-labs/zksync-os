@@ -5,18 +5,22 @@ use zk_ee::{
     common_structs::{history_map::CacheSnapshotId, NewPreimagesPublicationStorage, PreimageType},
     execution_environment_type::ExecutionEnvironmentType,
     internal_error,
+    oracle::query_ids::PREIMAGE_SUBSPACE_MASK,
     system::{
         errors::{internal::InternalError, system::SystemError},
         IOResultKeeper, Resources,
     },
-    system_io_oracle::{IOOracle, PreimageContentWordsIterator},
     types_config::EthereumIOTypesConfig,
-    utils::{Bytes32, UsizeAlignedByteBox},
+    utils::{num_usize_words_for_u8_capacity, Bytes32, UsizeAlignedByteBox},
 };
 
+use super::cost_constants::PREIMAGE_CACHE_GET_NATIVE_COST;
+use super::*;
 use crate::system_implementation::flat_storage_model::cost_constants::blake2s_native_cost;
 
-use super::cost_constants::PREIMAGE_CACHE_GET_NATIVE_COST;
+/// Query ID for requesting preimage data from the flat storage system
+pub const FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID: u32 =
+    PREIMAGE_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
@@ -92,11 +96,18 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
             }
         } else {
             // We do not charge for gas in this concrete implementation and
-            // expect higher-level model todo so.
+            // expect higher-level model to do so.
             // We charge for native.
             let it = oracle
-                .create_oracle_access_iterator::<PreimageContentWordsIterator>(*hash)
+                .raw_query(FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID, hash)
                 .expect("must make an iterator for preimage");
+            // IMPORTANT: oracle should be somewhat "sane", it also limits the number of cycles spent below.
+
+            if it.len() > num_usize_words_for_u8_capacity(expected_preimage_len_in_bytes) {
+                return Err(
+                    internal_error!("Iterator length exceeds expected preimage length").into(),
+                );
+            }
             let mut buffered =
                 UsizeAlignedByteBox::from_usize_iterator_in(it, self.allocator.clone());
             // truncate

@@ -14,6 +14,7 @@ zk_ee = { path = "../zk_ee", default-features = false }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 crypto = { path = "../crypto", default-features = false }
 oracle_provider = { path = "../oracle_provider" }
+basic_system = { path = "../basic_system", default-features = false }
 
 risc_v_simulator = { workspace = true, optional = true }
 num-bigint = { version = "*", optional = true }
