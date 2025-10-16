@@ -13,4 +13,4 @@ categories.workspace = true
 zk_ee = { path = "../zk_ee", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
 
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+risc_v_simulator = { workspace = true }

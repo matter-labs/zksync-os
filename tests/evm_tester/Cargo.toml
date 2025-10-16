@@ -56,7 +56,7 @@ zksync_os_runner = {package = "zksync_os_runner", path = "../../zksync_os_runner
 zksync_os_crypto = { package = "crypto", path="../../crypto" }
 zksync_os_rig = { package = "rig", path="../../tests/rig", features = ["pectra"]}
 
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+risc_v_simulator = { workspace = true }
 
 [dependencies.web3]
 version = "=0.19.0"

@@ -81,11 +81,15 @@ categories = ["cryptography"]
 
 [workspace.dependencies]
 blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", default-features = false }
-common_constants = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+common_constants = { git = "https://github.com/matter-labs/zksync-airbender", branch = "mb_dev" } # MOVE BACK TO dev !!
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", branch = "mb_dev" } # MOVE BACK TO dev !!
+prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+trace_and_split = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+prover = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
 ruint = { version = "1.16", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
 serde = { version = "1", default-features = false }
-prover = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
 
 # [profile.dev]
 # opt-level = 0
@@ -99,8 +103,21 @@ lto = true
 codegen-units = 1
 debug = true
 
+# Special profile faster testing
+[profile.test-release]
+inherits = "release"  # Start with the release profile as a base
+opt-level = 2         # Moderate optimization (80% of opt-level 3, much faster compilation)
+codegen-units = 256   # High parallelism for faster compilation (default is 16 in release)
+lto = false           # Disable link-time optimization (LTO) to speed up linking
+incremental = true    # Enable incremental compilation for faster rebuilds
+debug = true         # Disable debug info to reduce compile time (optional, set to true if you need debugging)
+# strip = "symbols"     # Strip symbols to reduce binary size and linking time
+# panic = "unwind"      # Default panic strategy, no change needed (abort can be faster but less safe for tests)
+rpath = false         # Disable rpath (rarely needed, speeds up linking slightly)
+
 [patch."https://github.com/matter-labs/zksync-airbender"]
 # blake2s_u32 = {git = "ssh://git@github.com/matter-labs/zksync-airbender.git", branch = "av_bigint_precompile", features = ["opcode_stats"] }
 
 # blake2s_u32 = { path = "../zksync-airbender/blake2s_u32" }
+
 

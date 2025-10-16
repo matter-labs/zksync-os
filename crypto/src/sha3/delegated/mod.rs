@@ -402,7 +402,7 @@ pub mod tests {
         let mut my_sha3 = Sha3_256::new();
         let mut msg = [0; u8::MAX as usize];
 
-        for _try in 0..1 << 10 {
+        for _try in 0..10 { // reduced 2^10 -> 10, bc it took 2^33 cycles to complete!
             let num_chunks = rng.r#gen::<u8>();
             for _chunk in 0..num_chunks {
                 let len = rng.r#gen::<u8>() as usize;

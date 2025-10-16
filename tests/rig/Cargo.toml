@@ -23,10 +23,10 @@ crypto = { path = "../../crypto" }
 cycle_marker = { path = "../../cycle_marker", optional = true }
 zksync_os_api = { path = "../../api" }
 
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", features = ["delegation"] }
-prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", optional = true }
-trace_and_split = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", optional = true }
-execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", optional = true }
+risc_v_simulator = { workspace = true, features = ["delegation"] }
+prover_examples = { workspace = true, optional = true }
+trace_and_split = { workspace = true, optional = true }
+execution_utils = { workspace = true, optional = true }
 
 alloy = { version = "=1.0.32", features = ["rlp", "full"] }
 alloy-primitives = { version = "1", features = ["arbitrary"] }

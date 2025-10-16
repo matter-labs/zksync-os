@@ -115,7 +115,7 @@ pub fn run_and_get_effective_cycles(
     // TODO: move to new simulator
     #[allow(deprecated)]
     (
-        run_result.state.registers[10..18].try_into().unwrap(),
+        final_state.registers[10..18].try_into().unwrap(),
         block_effective,
     )
 }

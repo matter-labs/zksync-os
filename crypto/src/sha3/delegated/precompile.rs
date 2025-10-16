@@ -6,26 +6,25 @@ use seq_macro::seq;
 
 // TODO: eventually Rust assembly will interpolate CSR indexes
 
-use common_constants::delegation_types::keccak_special5::{CONTROL_INIT, ROUND_CONSTANT_FINAL};
 use common_constants::{keccak_special5_invoke, keccak_special5_load_initial_control};
 
 pub(crate) fn keccak_f1600(state: &mut AlignedState) {
     unsafe {
-        // start by setting initial control
-
         let state_ptr = state.0.as_mut_ptr();
-
+        
+        // start by setting initial control
         keccak_special5_load_initial_control!();
 
         // then run 24 rounds
         seq!(round in 0..24 {
-            // iota-theta-rho-chi-nopi 5 + 1 + 5 + 5 * 2
+            // iota-theta-rho-chi-nopi: 5 iota_columnxor + 2 columnmix + 5 theta + 5 rho + 5*2 chi
             // control flow is guarded by circuit itself
-            seq!(i in 0..21 {
+            seq!(i in 0..27 {
                 keccak_special5_invoke!(state_ptr);
             });
         });
-    }
 
-    state.0[0] ^= ROUND_CONSTANT_FINAL;
+        // then add +1 for the final iota
+        keccak_special5_invoke!(state_ptr);
+    }
 }

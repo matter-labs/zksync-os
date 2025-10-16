@@ -49,7 +49,7 @@ num-traits = { version = "0.2", default-features = false }
 
 [dev-dependencies]
 zksync_os_runner = { path = "../zksync_os_runner"}
-risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", features = ["delegation"] }
+risc_v_simulator = { workspace = true, features = ["delegation"] }
 ruint = { version = "1.16", default-features = false }
 ark-std = { version = "0.5" }
 zeroize = { version = "1", default-features = false }
