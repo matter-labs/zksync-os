@@ -659,7 +659,7 @@ impl<
                     &mut logger,
                 )
                 .expect("Failed to finish storage");
-            Default::default(); // Unused
+            Default::default() // Unused
         };
 
         self.logs_storage
