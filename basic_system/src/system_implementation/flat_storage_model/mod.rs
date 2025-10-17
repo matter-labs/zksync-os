@@ -118,11 +118,32 @@ impl<
             + self.storage_cache.calculate_pubdata_used_by_tx()
     }
 
+    /// Standard finish method that completes storage model processing.
+    fn finish(
+        self,
+        oracle: &mut impl IOOracle,
+        state_commitment: Option<&mut Self::StorageCommitment>,
+        pubdata_hasher: &mut impl MiniDigest,
+        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
+        logger: &mut impl Logger,
+    ) -> Result<(), InternalError> {
+        // Complete the finalization but discard the returned storage cache
+        let _ = self.finish_internal(
+            oracle,
+            state_commitment,
+            pubdata_hasher,
+            result_keeper,
+            logger,
+        )?;
+
+        Ok(())
+    }
+
     /// This method extracts the final state changes after finishing the storage model
     /// and computes a deterministic hash over all storage key-value pairs that were modified.
     /// Can be used to validate that forward execution and RISC-V
     /// proof execution produce identical state changes.
-    fn finish_state_diffs_hash(
+    fn finish_and_calculate_state_diffs_hash(
         self,
         oracle: &mut impl IOOracle,
         state_commitment: Option<&mut Self::StorageCommitment>,
@@ -170,27 +191,6 @@ impl<
             .map_err(|_| internal_error!("Failed to compute state diffs hash"))?;
 
         Ok(state_diffs_hasher.finalize().into())
-    }
-
-    /// Standard finish method that completes storage model processing.
-    fn finish(
-        self,
-        oracle: &mut impl IOOracle,
-        state_commitment: Option<&mut Self::StorageCommitment>,
-        pubdata_hasher: &mut impl MiniDigest,
-        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
-        logger: &mut impl Logger,
-    ) -> Result<(), InternalError> {
-        // Complete the finalization but discard the returned storage cache
-        let _ = self.finish_internal(
-            oracle,
-            state_commitment,
-            pubdata_hasher,
-            result_keeper,
-            logger,
-        )?;
-
-        Ok(())
     }
 
     fn storage_read(
