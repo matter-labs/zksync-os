@@ -741,6 +741,35 @@ impl<
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
+        self.finish_internal(
+            block_metadata,
+            current_block_hash,
+            _l1_to_l2_txs_hash,
+            upgrade_tx_hash,
+            result_keeper,
+            logger
+        )
+    }
+}
+
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32> + Default,
+        SF: StackFactory<M>,
+        const M: usize,
+        O: IOOracle,
+    > FullIO<A, R, P, SF, M, O, true>
+{
+    fn finish_internal(
+        mut self,
+        block_metadata: BlockMetadataFromOracle,
+        current_block_hash: Bytes32,
+        _l1_to_l2_txs_hash: Bytes32,
+        upgrade_tx_hash: Bytes32,
+        result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
+        mut logger: impl Logger,
+    ) -> (O, Bytes32) {
         let (mut state_commitment, last_block_timestamp) = {
             let proof_data: ProofData<FlatStorageCommitment<TREE_HEIGHT>> =
                 ZKProofDataQuery::get(&mut self.oracle, &())
