@@ -792,7 +792,7 @@ fn test_upgrade_tx_revert_internal_error() {
     let transactions = vec![upgrade_tx];
 
     // Use run_block_no_panic to catch the error instead of panicking
-    let result = chain.run_block_no_panic(transactions, None, None, false);
+    let result = chain.run_block_no_panic(transactions, None, None);
 
     // The upgrade transaction should fail with an internal error (not validation error)
     assert!(result.is_err());
@@ -836,7 +836,7 @@ fn test_upgrade_tx_succeeds() {
     let transactions = vec![upgrade_tx];
 
     // Use run_block_no_panic to catch the error instead of panicking
-    let result = chain.run_block_no_panic(transactions, None, None, false);
+    let result = chain.run_block_no_panic(transactions, None, None);
     assert!(result.is_ok());
 
     assert!(result.unwrap().tx_results[0].as_ref().unwrap().is_success());

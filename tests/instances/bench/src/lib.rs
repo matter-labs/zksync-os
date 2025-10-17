@@ -119,5 +119,9 @@ fn fibish_sol() {
         env!("CARGO_MANIFEST_DIR")
     )));
     pc.frequency_recip = 1;
-    chain.run_block(vec![tx], None, Some(pc));
+    let run_config = rig::chain::RunConfig {
+        profiler_config: Some(pc),
+        ..Default::default()
+    };
+    chain.run_block(vec![tx], None, Some(run_config));
 }
