@@ -38,15 +38,15 @@ fn run<const RANDOMIZED: bool>(
         suffix.push_str("_witness");
         std::path::Path::new(&dir).join(suffix)
     });
-
+    let run_config = rig::chain::RunConfig {
+        witness_output_file: output_path,
+        only_forward: false,
+        app: Some("evm_replay".to_string()),
+        check_storage_diff_hashes: true,
+        ..Default::default()
+    };
     let (output, stats, _) = chain
-        .run_block_with_extra_stats(
-            transactions,
-            Some(block_context),
-            None,
-            output_path,
-            Some("evm_replay".to_string()),
-        )
+        .run_block_with_extra_stats(transactions, Some(block_context), Some(run_config))
         .unwrap();
 
     let _ratio = compute_ratio(stats);
