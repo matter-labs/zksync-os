@@ -35,6 +35,9 @@ use zk_ee::{
     utils::UsizeAlignedByteBox,
 };
 
+const EMPTY_OBSERVABLE_BYTE_CODE_HASH: Bytes32 =
+    Bytes32::from_hex("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
+
 pub struct FullIO<
     A: Allocator + Clone + Default,
     R: Resources,
@@ -284,7 +287,10 @@ where
             &mut self.oracle,
         )?;
         Ok(
-            if observable_bytecode_hash.0.is_zero() && ee_type == ExecutionEnvironmentType::EVM {
+            if (observable_bytecode_hash.0.is_zero()
+                || observable_bytecode_hash.0 == EMPTY_OBSERVABLE_BYTE_CODE_HASH)
+                && ee_type == ExecutionEnvironmentType::EVM
+            {
                 // It is extremely unlikely that a hash is zero, so we can assume
                 // that it is an EOA or an empty account
 
@@ -296,12 +302,7 @@ where
                     Bytes32::ZERO
                 } else {
                     // EOA case:
-                    Bytes32::from_u256_be(&U256::from_limbs([
-                        0x7bfad8045d85a470,
-                        0xe500b653ca82273b,
-                        0x927e7db2dcc703c0,
-                        0xc5d2460186f7233c,
-                    ]))
+                    EMPTY_OBSERVABLE_BYTE_CODE_HASH
                 }
             } else {
                 observable_bytecode_hash.0
