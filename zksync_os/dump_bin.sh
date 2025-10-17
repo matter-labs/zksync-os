@@ -13,7 +13,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|debug-in-simulator|pectra|multiblock-batch|multiblock-batch-logging-enabled]"
+      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|debug-in-simulator|pectra|multiblock-batch|multiblock-batch-logging-enabled|evm-tester]"
       exit 1
       ;;
   esac
@@ -80,6 +80,12 @@ case "$TYPE" in
     BIN_NAME="multiblock_batch_logging_enabled.bin"
     ELF_NAME="multiblock_batch_logging_enabled.elf"
     TEXT_NAME="multiblock_batch_logging_enabled.text"
+    ;;
+  evm-tester)
+    FEATURES="$FEATURES,proof_running_system/state-diffs-pi,proof_running_system/resources_for_tester,proof_running_system/prevrandao,proof_running_system/pectra",
+    BIN_NAME="evm_tester.bin"
+    ELF_NAME="evm_tester.elf"
+    TEXT_NAME="evm_tester.text"
     ;;
   default)
     # leave defaults

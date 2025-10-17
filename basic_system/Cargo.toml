@@ -39,6 +39,7 @@ evm_refunds = ["storage_models/evm_refunds"]
 # The finish method will just return inputs, so outputs can be procesed outside bootloader
 # Used for proving multi block batch within 1 run
 multiblock-batch = []
+state-diffs-pi = []
 
 [dev-dependencies]
 hex = {version = "0.4.3"}

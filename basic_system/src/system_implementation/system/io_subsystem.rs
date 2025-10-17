@@ -477,7 +477,11 @@ impl<
 
 // In practice we will not use single block batches
 // This functionality is here only for the tests
-#[cfg(all(not(feature = "wrap-in-batch"), not(feature = "multiblock-batch")))]
+#[cfg(all(
+    not(feature = "wrap-in-batch"),
+    not(feature = "multiblock-batch"),
+    not(feature = "state-diffs-pi")
+))]
 impl<
         A: Allocator + Clone + Default,
         R: Resources,
@@ -577,6 +581,152 @@ impl<
         };
 
         (self.oracle, public_input.hash().into())
+    }
+}
+
+///
+/// Used for testing, to compare state diffs from forward run and proof run.
+///
+#[cfg(feature = "state-diffs-pi")]
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32> + Default,
+        SC: StackCtor<SCC>,
+        SCC: const StackCtorConst,
+        O: IOOracle,
+    > FinishIO for FullIO<A, R, P, SC, SCC, O, true>
+where
+    ExtraCheck<SCC, A>:,
+{
+    type FinalData = (O, Bytes32);
+    fn finish(
+        mut self,
+        block_metadata: BlockMetadataFromOracle,
+        current_block_hash: Bytes32,
+        _l1_to_l2_txs_hash: Bytes32,
+        upgrade_tx_hash: Bytes32,
+        result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
+        mut logger: impl Logger,
+    ) -> Self::FinalData {
+        let (mut state_commitment, last_block_timestamp) = {
+            let mut initialization_iterator = self
+                .oracle
+                .create_oracle_access_iterator::<ProofDataIterator>(())
+                .unwrap();
+            let proof_data =
+                <ProofData<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(
+                    &mut initialization_iterator,
+                )
+                .unwrap();
+            assert_eq!(initialization_iterator.len(), 0);
+            (proof_data.state_root_view, proof_data.last_block_timestamp)
+        };
+
+        let mut blocks_hasher = Blake2s256::new();
+        for block_hash in block_metadata.block_hashes.0.iter() {
+            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+        }
+
+        // chain state before
+        let chain_state_commitment_before = ChainStateCommitment {
+            state_root: state_commitment.root,
+            next_free_slot: state_commitment.next_free_slot,
+            block_number: block_metadata.block_number - 1,
+            last_256_block_hashes_blake: blocks_hasher.finalize().into(),
+            last_block_timestamp,
+        };
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: state commitment before {:?}\n",
+            chain_state_commitment_before
+        ));
+
+        // finishing IO, applying changes
+        let mut pubdata_hasher = crypto::sha3::Keccak256::new();
+        pubdata_hasher.update(current_block_hash.as_u8_ref());
+
+        let state_diffs_hash = self
+            .storage
+            .finish_state_diffs_hash(
+                &mut self.oracle,
+                Some(&mut state_commitment),
+                &mut pubdata_hasher,
+                result_keeper,
+                &mut logger,
+            )
+            .expect("Failed to finish storage");
+
+        self.logs_storage
+            .apply_pubdata(&mut pubdata_hasher, result_keeper);
+        result_keeper.logs(self.logs_storage.messages_ref_iter());
+        result_keeper.events(self.events_storage.events_ref_iter());
+        let mut full_root_hasher = crypto::sha3::Keccak256::new();
+        full_root_hasher.update(self.logs_storage.tree_root().as_u8_ref());
+        full_root_hasher.update([0u8; 32]); // aggregated root 0 for now
+        let full_l2_to_l1_logs_root = full_root_hasher.finalize();
+        let l1_txs_commitment = self.logs_storage.l1_txs_commitment();
+        let pubdata_hash = pubdata_hasher.finalize();
+
+        blocks_hasher = Blake2s256::new();
+        for block_hash in block_metadata.block_hashes.0.iter().skip(1) {
+            blocks_hasher.update(&block_hash.to_be_bytes::<32>());
+        }
+        blocks_hasher.update(current_block_hash.as_u8_ref());
+
+        // validate that timestamp didn't decrease
+        assert!(block_metadata.timestamp >= last_block_timestamp);
+
+        // chain state after
+        let chain_state_commitment_after = ChainStateCommitment {
+            state_root: state_commitment.root,
+            next_free_slot: state_commitment.next_free_slot,
+            block_number: block_metadata.block_number,
+            last_256_block_hashes_blake: blocks_hasher.finalize().into(),
+            last_block_timestamp: block_metadata.timestamp,
+        };
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: state commitment after {:?}\n",
+            chain_state_commitment_after
+        ));
+        let mut da_commitment_hasher = crypto::sha3::Keccak256::new();
+        da_commitment_hasher.update([0u8; 32]); // we don't have to validate state diffs hash
+        da_commitment_hasher.update(pubdata_hash); // full pubdata keccak
+        da_commitment_hasher.update([1u8]); // with calldata we should provide 1 blob
+        da_commitment_hasher.update([0u8; 32]); // its hash will be ignored on the settlement layer
+        let da_commitment = da_commitment_hasher.finalize();
+        let batch_output = public_input::BatchOutput {
+            chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
+            first_block_timestamp: block_metadata.timestamp,
+            last_block_timestamp: block_metadata.timestamp,
+            used_l2_da_validator_address: ruint::aliases::B160::ZERO,
+            pubdata_commitment: da_commitment.into(),
+            number_of_layer_1_txs: U256::try_from(l1_txs_commitment.0).unwrap(),
+            priority_operations_hash: l1_txs_commitment.1,
+            l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
+            upgrade_tx_hash,
+            interop_root_rolling_hash: Bytes32::from([0u8; 32]), // for now no interop roots
+        };
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: batch output {:?}\n",
+            batch_output,
+        ));
+
+        let public_input = public_input::BatchPublicInput {
+            state_before: chain_state_commitment_before.hash().into(),
+            state_after: chain_state_commitment_after.hash().into(),
+            batch_output: batch_output.hash().into(),
+        };
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: final batch public input {:?}\n",
+            public_input,
+        ));
+        let public_input_hash: Bytes32 = public_input.hash().into();
+        let _ = logger.write_fmt(format_args!(
+            "PI calculation: final batch public input hash {:?}\n",
+            public_input_hash,
+        ));
+
+        (self.oracle, state_diffs_hash)
     }
 }
 
