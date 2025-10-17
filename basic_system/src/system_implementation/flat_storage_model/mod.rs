@@ -118,6 +118,10 @@ impl<
             + self.storage_cache.calculate_pubdata_used_by_tx()
     }
 
+    /// This method extracts the final state changes after finishing the storage model
+    /// and computes a deterministic hash over all storage key-value pairs that were modified.
+    /// Can be used to validate that forward execution and RISC-V
+    /// proof execution produce identical state changes.
     fn finish_state_diffs_hash(
         self,
         oracle: &mut impl IOOracle,
@@ -126,6 +130,7 @@ impl<
         result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
         logger: &mut impl Logger,
     ) -> Result<Bytes32, InternalError> {
+        // First complete the normal storage finalization process
         let storage_cache = self.finish_internal(
             oracle,
             state_commitment,
@@ -136,16 +141,19 @@ impl<
 
         let mut hasher = crypto::blake2s::Blake2s256::new();
         let mut state_diffs_hasher = crypto::blake2s::Blake2s256::new();
+
+        // Iterate through all modified storage entries and hash them deterministically
         storage_cache
             .0
             .cache
             .apply_to_all_updated_elements::<_, ()>(|l, r, k| {
-                // Skip on empty diff
+                // Skip entries where the value didn't actually change
                 if l.value() == r.value() {
                     return Ok(());
                 }
                 let derived_key =
                     derive_flat_storage_key_with_hasher(&k.address, &k.key, &mut hasher);
+
                 logger
                     .write_fmt(format_args!(
                         "State diffs hash - key: {:?}, new value: {:?}\n",
@@ -153,6 +161,8 @@ impl<
                         r.value()
                     ))
                     .ok();
+
+                // Hash the derived key and new value together to create deterministic state diff hash
                 state_diffs_hasher.update(derived_key.as_u8_ref());
                 state_diffs_hasher.update(r.value().as_u8_ref());
                 Ok(())
@@ -162,6 +172,7 @@ impl<
         Ok(state_diffs_hasher.finalize().into())
     }
 
+    /// Standard finish method that completes storage model processing.
     fn finish(
         self,
         oracle: &mut impl IOOracle,
@@ -170,6 +181,7 @@ impl<
         result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
         logger: &mut impl Logger,
     ) -> Result<(), InternalError> {
+        // Complete the finalization but discard the returned storage cache
         let _ = self.finish_internal(
             oracle,
             state_commitment,
@@ -506,6 +518,15 @@ impl<
         const PROOF_ENV: bool,
     > FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, M, PROOF_ENV>
 {
+    /// Internal implementation shared by both `finish` and `finish_state_diffs_hash`.
+    ///
+    /// This method performs the complete storage finalization process:
+    /// 1. Persists account changes to storage cache
+    /// 2. Returns uncompressed state diffs to the result keeper
+    /// 3. Computes and commits compressed pubdata
+    /// 4. Verifies and applies all storage reads/writes to the state commitment
+    ///
+    /// Returns the final storage cache for further processing by the caller.
     fn finish_internal(
         self,
         oracle: &mut impl IOOracle,
