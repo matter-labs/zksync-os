@@ -36,6 +36,7 @@ env_logger = "0.11.6"
 log = "0.4.22" # tokio with `rt-multi-thread` feature needed to build ethers 2.0.0
 alloy = { version = "1", features = ["full", "eip712", "consensus"]}
 alloy-rlp = { version = "0.3.12" }
+alloy-sol-types = "1"
 zksync-web3-rs = { git = "https://github.com/lambdaclass/zksync-web3-rs.git" }
 bincode = "1.3"
 
