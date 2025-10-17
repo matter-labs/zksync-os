@@ -9,6 +9,7 @@ use rig::log::info;
 use rig::*;
 use std::fs::{self, File};
 use std::io::BufReader;
+use zksync_os_interface::traits::EncodedTx;
 
 #[allow(clippy::too_many_arguments)]
 fn run<const RANDOMIZED: bool>(
@@ -17,7 +18,7 @@ fn run<const RANDOMIZED: bool>(
     block_number: u64,
     miner: alloy::primitives::Address,
     ps_trace: PrestateTrace,
-    transactions: Vec<Vec<u8>>,
+    transactions: Vec<EncodedTx>,
     receipts: Vec<TransactionReceipt>,
     diff_trace: DiffTrace,
     calltrace: CallTrace,

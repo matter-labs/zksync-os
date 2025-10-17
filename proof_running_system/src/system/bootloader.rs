@@ -5,9 +5,10 @@ use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use zk_ee::memory::ZSTAllocator;
+use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
+use zk_ee::oracle::IOOracle;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
-use zk_ee::system_io_oracle::{DisconnectOracleFormalIterator, IOOracle};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ProxyAllocator;
@@ -183,14 +184,14 @@ pub fn run_proving_inner<
     >(oracle, &mut NopResultKeeper, &mut NopTracer::default())
     .expect("Tried to prove a failing batch");
 
-    // disconnect oracle before returning
+    // disconnect oracle before returning, if some other post-logic is needed that doesn't use Oracle trait
     // TODO: check this is the intended behaviour (ignoring the result)
     #[allow(unused_must_use)]
     oracle
-        .create_oracle_access_iterator::<DisconnectOracleFormalIterator>(())
+        .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
         .expect("must disconnect an oracle before performing arbitrary CSR access");
 
-    public_input.as_u32_array()
+    unsafe { core::mem::transmute(public_input) }
 }
 
 #[cfg(feature = "multiblock-batch")]
@@ -227,10 +228,13 @@ pub fn run_proving_inner<
         // but during proving this request shouldn't have the effect with "u32 array based" oracle
         #[allow(unused_must_use)]
         oracle
-            .create_oracle_access_iterator::<DisconnectOracleFormalIterator>(())
+            .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
             .expect("must disconnect an oracle before performing arbitrary CSR access");
     }
 
-    zk_ee::utils::Bytes32::from_array(batch_pi_builder.into_public_input(L::default()).hash())
-        .as_u32_array()
+    unsafe {
+        core::mem::transmute(zk_ee::utils::Bytes32::from_array(
+            batch_pi_builder.into_public_input(L::default()).hash(),
+        ))
+    }
 }

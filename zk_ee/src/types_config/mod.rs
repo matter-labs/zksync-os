@@ -1,5 +1,7 @@
-use crate::kv_markers::*;
-use crate::utils::Bytes32;
+use crate::{
+    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
+    utils::Bytes32,
+};
 
 pub trait SystemIOTypesConfig: Sized + 'static + Send + Sync {
     // We want to define some associated types for addresses, storage keys, etc.

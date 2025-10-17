@@ -100,7 +100,7 @@ jobs:
         - uses: actions/checkout@v4
           with:
             repository: matter-labs/era-evm-tester 
-            ref: zk-ee
+            ref: zk-ee-dev
             path: era-evm-tester
         - name: Use local ZKsync OS version
           working-directory: ./era-evm-tester/evm_tester

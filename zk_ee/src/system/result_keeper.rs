@@ -9,7 +9,7 @@
 use crate::common_structs::{
     GenericEventContentWithTxRef, GenericLogContentWithTxRef, PreimageType,
 };
-use crate::kv_markers::MAX_EVENT_TOPICS;
+use crate::storage_types::MAX_EVENT_TOPICS;
 use crate::types_config::SystemIOTypesConfig;
 
 pub trait IOResultKeeper<IOTypes: SystemIOTypesConfig> {

@@ -1,7 +1,10 @@
 use strum_macros::IntoStaticStr;
 
-use super::location::{ErrorLocation, Localizable};
-use super::metadata::Metadata;
+use super::{
+    context::{contextualized::Contextualized, ErrorContext},
+    location::{ErrorLocation, Localizable},
+    metadata::Metadata,
+};
 
 /// Errors that lead to a transaction-level revert.
 #[cfg_attr(target_arch = "riscv32", derive(Copy))]
@@ -46,6 +49,29 @@ impl Localizable for RuntimeError {
             RuntimeError::FatalRuntimeError(FatalRuntimeError::OutOfReturnMemory(metadata))
             | RuntimeError::FatalRuntimeError(FatalRuntimeError::OutOfNativeResources(metadata))
             | RuntimeError::OutOfErgs(metadata) => metadata.location,
+        }
+    }
+}
+
+impl Contextualized<RuntimeError> for RuntimeError {
+    fn with_context_inner<F>(self, f: F) -> RuntimeError
+    where
+        F: FnOnce() -> ErrorContext,
+    {
+        match self {
+            RuntimeError::FatalRuntimeError(fatal_error) => match fatal_error {
+                FatalRuntimeError::OutOfNativeResources(metadata) => {
+                    RuntimeError::FatalRuntimeError(FatalRuntimeError::OutOfNativeResources(
+                        metadata.replace_context(f()),
+                    ))
+                }
+                FatalRuntimeError::OutOfReturnMemory(metadata) => RuntimeError::FatalRuntimeError(
+                    FatalRuntimeError::OutOfReturnMemory(metadata.replace_context(f())),
+                ),
+            },
+            RuntimeError::OutOfErgs(metadata) => {
+                RuntimeError::OutOfErgs(metadata.replace_context(f()))
+            }
         }
     }
 }

@@ -1,7 +1,59 @@
-use crate::{internal_error, system::errors::internal::InternalError, utils::*};
-use ruint::aliases::B160;
+//! Type-safe serialization framework for oracle data exchange.
+//! It serves as the core serialization layer for the oracle system, enabling
+//! data exchange between ZKsync OS and external data providers.
+//!
+//! The serialization is based on `usize` sequences for cross-architecture compatibility.
+//!
+//! # Security Considerations
+//!
+//! This module handles endianness and pointer width differences between 32-bit
+//! and 64-bit systems. The serialization format is designed to be deterministic across
+//! architectures, but relies on consistent memory layout assumptions.
 
-use super::*;
+use core::mem::MaybeUninit;
+
+use ruint::aliases::{B160, U256};
+
+use crate::{
+    internal_error,
+    system::errors::internal::InternalError,
+    utils::exact_size_chain::{ExactSizeChain, ExactSizeChainN},
+};
+
+pub mod dyn_usize_iterator;
+#[cfg(test)]
+mod tests;
+
+/// Trait for types that can be serialized into a sequence of `usize` values with a known (fixed) length.
+pub trait UsizeSerializable {
+    const USIZE_LEN: usize;
+
+    fn iter(&self) -> impl ExactSizeIterator<Item = usize>;
+}
+
+/// Trait for types that can be deserialized from a sequence of `usize` values with a known (fixed) length.
+pub trait UsizeDeserializable: Sized {
+    const USIZE_LEN: usize;
+
+    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError>;
+
+    ///
+    /// # Safety
+    ///
+    /// The correct layout of the serialization is enforced by the `from_iter`
+    /// implementation, as long as the data in the external storage is correctly populated. It is a
+    /// UB to read from any location that wasn't populated by this type before.
+    ///
+    unsafe fn init_from_iter(
+        this: &mut MaybeUninit<Self>,
+        src: &mut impl ExactSizeIterator<Item = usize>,
+    ) -> Result<(), InternalError> {
+        let new = UsizeDeserializable::from_iter(src)?;
+        this.write(new);
+
+        Ok(())
+    }
+}
 
 impl UsizeSerializable for () {
     const USIZE_LEN: usize = 0;
@@ -185,7 +237,7 @@ impl UsizeSerializable for U256 {
                     return core::mem::transmute::<Self, [u32; 8]>(*self).into_iter().map(|el| el as usize);
                 }
             } else if #[cfg(target_pointer_width = "64")] {
-                return self.as_limbs().iter().map(|el| *el as usize);
+                return self.as_limbs().map(|el| el as usize).into_iter();
             } else {
                 compile_error!("unsupported architecture")
             }
@@ -257,7 +309,7 @@ impl UsizeSerializable for B160 {
                     return core::mem::transmute::<Self, [u32; 6]>(*self).into_iter().map(|el| el as usize);
                 }
             } else if #[cfg(target_pointer_width = "64")] {
-                return self.as_limbs().iter().map(|el| *el as usize);
+                return self.as_limbs().map(|el| el as usize).into_iter();
             } else {
                 compile_error!("unsupported architecture")
             }
@@ -297,68 +349,6 @@ impl UsizeDeserializable for B160 {
     }
 }
 
-impl UsizeSerializable for Bytes32 {
-    const USIZE_LEN: usize = const {
-        cfg_if::cfg_if!(
-            if #[cfg(target_endian = "big")] {
-                compile_error!("unsupported architecture: big endian arch is not supported")
-            } else if #[cfg(target_pointer_width = "32")] {
-                let size = 8;
-            } else if #[cfg(target_pointer_width = "64")] {
-                let size = 4;
-            } else {
-                compile_error!("unsupported architecture")
-            }
-        );
-        #[allow(clippy::let_and_return)]
-        size
-    };
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        cfg_if::cfg_if!(
-            if #[cfg(target_endian = "big")] {
-                compile_error!("unsupported architecture: big endian arch is not supported")
-            } else if #[cfg(target_pointer_width = "32")] {
-                return self.as_u32_array_ref().into_iter().map(|el| *el as usize);
-            } else if #[cfg(target_pointer_width = "64")] {
-                return self.as_u64_array_ref().iter().map(|el| *el as usize);
-            } else {
-                compile_error!("unsupported architecture")
-            }
-        );
-    }
-}
-
-impl UsizeDeserializable for Bytes32 {
-    const USIZE_LEN: usize = <Bytes32 as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
-            return Err(internal_error!("Bytes32 deserialization failed: too short"));
-        }
-        let mut new = Bytes32::ZERO;
-        for dst in new.as_array_mut().iter_mut() {
-            *dst = unsafe { src.next().unwrap_unchecked() };
-        }
-
-        Ok(new)
-    }
-
-    unsafe fn init_from_iter(
-        this: &mut MaybeUninit<Self>,
-        src: &mut impl ExactSizeIterator<Item = usize>,
-    ) -> Result<(), InternalError> {
-        if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
-            return Err(internal_error!("b160 deserialization failed: too short"));
-        }
-        for dst in this.assume_init_mut().as_array_mut().iter_mut() {
-            *dst = src.next().unwrap_unchecked()
-        }
-
-        Ok(())
-    }
-}
-
 // for convenience - provide a simple case of tuple
 
 impl<T: UsizeSerializable, U: UsizeSerializable> UsizeSerializable for (T, U) {
@@ -379,5 +369,16 @@ impl<T: UsizeDeserializable, U: UsizeDeserializable> UsizeDeserializable for (T,
         let t = <T as UsizeDeserializable>::from_iter(src)?;
         let u = <U as UsizeDeserializable>::from_iter(src)?;
         Ok((t, u))
+    }
+}
+
+// Only UsizeSerializable has a default impl
+impl<T: UsizeSerializable, const N: usize> UsizeSerializable for [T; N] {
+    const USIZE_LEN: usize = <T as UsizeSerializable>::USIZE_LEN * N;
+    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
+        ExactSizeChainN::<_, _, N>::new(
+            core::iter::empty::<usize>(),
+            core::array::from_fn(|i| Some(UsizeSerializable::iter(&self[i]))),
+        )
     }
 }

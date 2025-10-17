@@ -1,29 +1,25 @@
 use alloc::alloc::{Allocator, Global};
 use core::marker::PhantomData;
 
-use crate::memory::stack_trait::{Stack, StackCtor, StackCtorConst};
+use crate::memory::stack_trait::{Stack, StackFactory};
 
 pub struct HistoryList<
     V,
     M: Clone,
-    SC: StackCtor<SCC>,
-    SCC: const StackCtorConst,
+    SF: StackFactory<N>,
+    const N: usize,
     A: Allocator + Clone = Global,
-> where
-    [(); SCC::extra_const_param::<(V, M), A>()]:,
-{
-    list: SC::Stack<(V, M), { SCC::extra_const_param::<(V, M), A>() }, A>,
+> {
+    list: SF::Stack<(V, M), N, A>,
     _phantom: PhantomData<A>,
 }
 
-impl<V, M: Clone, SC: StackCtor<SCC>, SCC: const StackCtorConst, A: Allocator + Clone>
-    HistoryList<V, M, SC, SCC, A>
-where
-    [(); SCC::extra_const_param::<(V, M), A>()]:,
+impl<V, M: Clone, SF: StackFactory<N>, const N: usize, A: Allocator + Clone>
+    HistoryList<V, M, SF, N, A>
 {
     pub fn new(alloc: A) -> Self {
         Self {
-            list: SC::Stack::new_in(alloc),
+            list: SF::Stack::new_in(alloc),
             _phantom: PhantomData,
         }
     }

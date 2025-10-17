@@ -1,4 +1,5 @@
-use errors::subsystem::Subsystem;
+use utils::num_usize_words_for_u8_capacity;
+use utils::usize_rw::AsUsizeWritable;
 
 use super::*;
 pub mod base_system_functions;
@@ -26,6 +27,14 @@ pub use self::result_keeper::*;
 pub const MAX_GLOBAL_CALLS_STACK_DEPTH: usize = 1024; // even though we do not have to formally limit it,
                                                       // for all practical purposes (63/64) ^ 1024 is 10^-7, and it's unlikely that one can create any new frame
                                                       // with such remaining resources
+/// TODO: this constant belongs to EVM EE
+const ERGS_PER_GAS: u64 = 256;
+
+/// Maximum value of EVM gas that can be represented as ergs in a u64.
+pub const MAX_BLOCK_GAS_LIMIT: u64 = u64::MAX / ERGS_PER_GAS;
+// Currently we don't have a separate individual tx gas limit,
+// so the maximum tx gas limit is the same as the block gas limit.
+pub const MAX_TX_GAS_LIMIT: u64 = MAX_BLOCK_GAS_LIMIT;
 
 use core::alloc::Allocator;
 use core::fmt::Write;
@@ -33,14 +42,18 @@ use core::fmt::Write;
 use self::{
     errors::{internal::InternalError, system::SystemError},
     logger::Logger,
-    metadata::{BlockMetadataFromOracle, Metadata},
+    metadata::basic_metadata::{
+        BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
+    },
+    metadata::zk_metadata::ZkMetadata,
 };
+
+use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
 use crate::utils::Bytes32;
 use crate::{
     execution_environment_type::ExecutionEnvironmentType,
-    system_io_oracle::{IOOracle, NewTxContentIterator},
+    oracle::IOOracle,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
-    utils::USIZE_SIZE,
 };
 
 pub trait SystemTypes {
@@ -57,12 +70,13 @@ pub trait SystemTypes {
     type IOTypes: SystemIOTypesConfig;
     type Resources: Resources + Default;
     type Allocator: Allocator + Clone + Default;
+    type Metadata: BasicMetadata<Self::IOTypes>;
 }
 pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {}
 
 pub struct System<S: SystemTypes> {
     pub io: S::IO,
-    metadata: Metadata<S::IOTypes>,
+    pub metadata: S::Metadata,
     allocator: S::Allocator,
 }
 
@@ -81,96 +95,96 @@ impl<S: SystemTypes> System<S> {
     }
 
     pub fn get_tx_origin(&self) -> <S::IOTypes as SystemIOTypesConfig>::Address {
-        self.metadata.tx_origin
+        self.metadata.tx_origin()
     }
 
     pub fn get_block_number(&self) -> u64 {
-        self.metadata.block_level_metadata.block_number
+        self.metadata.block_number()
     }
 
-    pub fn get_mix_hash(&self) -> ruint::aliases::U256 {
+    pub fn get_mix_hash(&self) -> Result<Bytes32, InternalError> {
         #[cfg(feature = "prevrandao")]
         {
-            self.metadata.block_level_metadata.mix_hash
+            self.metadata
+                .block_randomness()
+                .ok_or(internal_error!("block randomness should be provided"))
         }
 
         #[cfg(not(feature = "prevrandao"))]
         {
-            ruint::aliases::U256::ONE
+            Ok(Bytes32::from_array(
+                ruint::aliases::U256::ONE.to_be_bytes::<32>(),
+            ))
         }
     }
 
-    pub fn get_blockhash(&self, block_number: u64) -> ruint::aliases::U256 {
-        let current_block_number = self.metadata.block_level_metadata.block_number;
+    pub fn get_blockhash(&self, block_number: u64) -> Result<Bytes32, InternalError> {
+        let current_block_number = self.metadata.block_number();
         if block_number >= current_block_number
             || block_number < current_block_number.saturating_sub(256)
         {
             // Out of range
-            ruint::aliases::U256::ZERO
+            Ok(Bytes32::ZERO)
         } else {
-            let index = 256 - (current_block_number - block_number);
-            self.metadata.block_level_metadata.block_hashes.0[index as usize]
+            let depth = current_block_number - block_number;
+            self.metadata
+                .block_historical_hash(depth)
+                .ok_or(internal_error!(
+                    "historical hash of limited depth must be provided"
+                ))
         }
     }
 
     pub fn get_chain_id(&self) -> u64 {
-        self.metadata.chain_id
+        self.metadata.chain_id()
     }
 
-    pub fn get_coinbase(&self) -> ruint::aliases::B160 {
-        self.metadata.block_level_metadata.coinbase
+    pub fn get_coinbase(&self) -> <<S as SystemTypes>::IOTypes as SystemIOTypesConfig>::Address {
+        self.metadata.coinbase()
     }
 
     pub fn get_eip1559_basefee(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.eip1559_basefee
-    }
-
-    pub fn get_native_price(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.native_price
+        self.metadata.eip1559_basefee()
     }
 
     pub fn get_gas_limit(&self) -> u64 {
-        self.metadata.block_level_metadata.gas_limit
-    }
-
-    pub fn get_pubdata_limit(&self) -> u64 {
-        self.metadata.block_level_metadata.pubdata_limit
-    }
-
-    pub fn get_pubdata_price(&self) -> ruint::aliases::U256 {
-        self.metadata.block_level_metadata.pubdata_price
+        self.metadata.block_gas_limit()
     }
 
     pub fn get_gas_price(&self) -> ruint::aliases::U256 {
-        self.metadata.tx_gas_price
+        self.metadata.tx_gas_price()
     }
 
     pub fn get_timestamp(&self) -> u64 {
-        self.metadata.block_level_metadata.timestamp
-    }
-
-    pub fn storage_code_version_for_execution_environment<
-        'a,
-        Es: Subsystem,
-        EE: ExecutionEnvironment<'a, S, Es>,
-    >(
-        &self,
-    ) -> Result<u8, InternalError> {
-        // TODO
-        Ok(1)
+        self.metadata.block_timestamp()
     }
 
     pub fn set_tx_context(
         &mut self,
-        tx_origin: <S::IOTypes as SystemIOTypesConfig>::Address,
-        tx_gas_price: ruint::aliases::U256,
+        tx_level_metadata: <S::Metadata as BasicMetadata<S::IOTypes>>::TransactionMetadata,
     ) {
-        self.metadata.tx_origin = tx_origin;
-        self.metadata.tx_gas_price = tx_gas_price;
+        self.metadata.set_transaction_metadata(tx_level_metadata);
     }
 
     pub fn net_pubdata_used(&self) -> Result<u64, InternalError> {
         self.io.net_pubdata_used()
+    }
+}
+
+impl<S: SystemTypes> System<S>
+where
+    S::Metadata: ZkSpecificPricingMetadata,
+{
+    pub fn get_native_price(&self) -> ruint::aliases::U256 {
+        self.metadata.native_price()
+    }
+
+    pub fn get_pubdata_limit(&self) -> u64 {
+        self.metadata.get_pubdata_limit()
+    }
+
+    pub fn get_pubdata_price(&self) -> ruint::aliases::U256 {
+        self.metadata.get_pubdata_price()
     }
 }
 
@@ -213,21 +227,12 @@ where
         self.io.finish_tx()
     }
 
-    pub fn init_from_oracle(
-        mut oracle: <S::IO as IOSubsystemExt>::IOOracle,
+    pub fn init_from_metadata_and_oracle(
+        metadata: S::Metadata,
+        oracle: <S::IO as IOSubsystemExt>::IOOracle,
     ) -> Result<Self, InternalError> {
-        // get metadata for block
-        let block_level_metadata: BlockMetadataFromOracle = oracle.get_block_level_metadata();
         let io = S::IO::init_from_oracle(oracle)?;
 
-        let metadata = Metadata {
-            // For now, we're getting the chain id from the block level metadata.
-            // in the future, we might want to do a separate call to oracle for that.
-            chain_id: block_level_metadata.chain_id,
-            tx_origin: Default::default(),
-            tx_gas_price: Default::default(),
-            block_level_metadata,
-        };
         let system = Self {
             io,
             metadata,
@@ -238,18 +243,23 @@ where
     }
 
     ///
-    /// Get the length of the next transaction from the oracle.
+    /// Get the next transaction data from the oracle and write it into the provided iterator.
     /// Returns None when there are no more transactions to process.
-    /// Returns Some(Err(_)) if there's an encoding error.
+    /// Returns Some(Err(_)) if there's an encoding or oracle error.
     ///
-    pub fn try_begin_next_tx(
+    pub fn try_begin_next_tx<B: AsUsizeWritable>(
         &mut self,
-        tx_write_iter: &mut impl crate::oracle::SafeUsizeWritable,
-    ) -> Option<Result<usize, NextTxSubsystemError>> {
+        buffer_constructor: impl FnOnce(usize) -> B,
+    ) -> Option<Result<(usize, B), NextTxSubsystemError>> {
+        use crate::utils::usize_rw::{SafeUsizeWritable, UsizeWriteable};
         let next_tx_len_bytes = match self.io.oracle().try_begin_next_tx() {
-            None => return None,
-            Some(size) => size.get() as usize,
+            Ok(maybe_next_len) => match maybe_next_len {
+                None => return None,
+                Some(size) => size.get() as usize,
+            },
+            Err(e) => return Some(Err(e.into())),
         };
+
         // Check to avoid usize overflow in 32-bit target.
         // The maximum allowed length is u32::MAX - 3, as it is
         // the last multiple of 4 (u32 byte size). Any value larger than that
@@ -259,31 +269,39 @@ where
                 crate::system::NextTxInterfaceError::TxLengthTooLarge
             )));
         }
-        let next_tx_len_usize_words = next_tx_len_bytes.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
-        if tx_write_iter.len() < next_tx_len_usize_words {
+
+        // create buffer
+        let mut buffer = (buffer_constructor)(next_tx_len_bytes);
+        let mut as_writable = buffer.as_writable();
+        let next_tx_len_usize_words = num_usize_words_for_u8_capacity(next_tx_len_bytes);
+        if as_writable.len() < next_tx_len_usize_words {
             return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
+                crate::system::NextTxInterfaceError::DestinationBufferInsufficient
             )));
         }
-        let tx_iterator = self
+        let tx_iterator = match self
             .io
             .oracle()
-            .create_oracle_access_iterator::<NewTxContentIterator>(())
-            .expect("must create iterator for the content");
-        if tx_iterator.len() != next_tx_len_usize_words {
+            .raw_query_with_empty_input(TX_DATA_WORDS_QUERY_ID)
+        {
+            Ok(it) => it,
+            Err(e) => return Some(Err(e.into())),
+        };
+        if tx_iterator.len() > as_writable.len() {
             return Some(Err(interface_error!(
-                crate::system::NextTxInterfaceError::TxIteratorLengthMismatch
+                crate::system::NextTxInterfaceError::TxWriteIteratorTooBig
             )));
         }
         for word in tx_iterator {
             unsafe {
-                tx_write_iter.write_usize(word);
+                as_writable.write_usize(word);
             }
         }
+        drop(as_writable);
 
         self.io.begin_next_tx();
 
-        Some(Ok(next_tx_len_bytes))
+        Some(Ok((next_tx_len_bytes, buffer)))
     }
 
     pub fn deploy_bytecode(
@@ -331,7 +349,14 @@ where
             observable_bytecode_len,
         )
     }
+}
 
+// Note: this will be modified soon with other V2 changes
+// For now, we hard-code metadata and io type config types
+impl<S: SystemTypes<Metadata = ZkMetadata>> System<S>
+where
+    S::IO: IOSubsystemExt,
+{
     /// Finish system execution.
     pub fn finish(
         self,
@@ -342,7 +367,7 @@ where
     ) -> <S::IO as IOSubsystemExt>::FinalData {
         let logger = self.get_logger();
         self.io.finish(
-            self.metadata.block_level_metadata,
+            self.metadata.block_level,
             block_hash,
             l1_to_l2_txs_hash,
             upgrade_tx_hash,
@@ -355,7 +380,7 @@ where
 define_subsystem!(NextTx,
   interface NextTxInterfaceError {
     TxLengthTooLarge,
-    TxWriteIteratorTooSmall,
-    TxIteratorLengthMismatch,
+    DestinationBufferInsufficient,
+    TxWriteIteratorTooBig,
   }
 );

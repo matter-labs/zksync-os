@@ -4,7 +4,7 @@ use core::hint::unreachable_unchecked;
 use gas_constants::{CALL_STIPEND, INITCODE_WORD_COST, SHA3WORD};
 
 use native_resource_constants::*;
-use zk_ee::kv_markers::MAX_EVENT_TOPICS;
+use zk_ee::storage_types::MAX_EVENT_TOPICS;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::{system::*, wrap_error};

@@ -115,7 +115,7 @@ Also, we are sending information about each priority(l1) tx result, which includ
 In the end, both these types converted to an `L2Log` structure.
 Please note, that we are adding user messages separately to the pubdata, as `L2Log` contains only its hash.
 
-For more details, see [the logs_storage implementation](zk_ee/src/common_structs/logs_storage.rs)
+For more details, see [the logs_storage implementation](../zk_ee/src/common_structs/logs_storage.rs)
 
 As mentioned above, during block aggregation we are building an l2 logs Merkle tree, so users can verify logs inclusion on the settlement layer.
 This is going to be a fixed-size (16384) Merkle tree.

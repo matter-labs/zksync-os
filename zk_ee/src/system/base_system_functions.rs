@@ -1,4 +1,4 @@
-use crate::{define_subsystem, internal_error, system::logger::Logger, system_io_oracle::IOOracle};
+use crate::{define_subsystem, internal_error, oracle::IOOracle, system::logger::Logger};
 
 use super::{
     common_traits::TryExtend,

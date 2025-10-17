@@ -10,7 +10,7 @@ use basic_bootloader::bootloader::BasicBootloader;
 use common::mock_oracle_balance;
 use common::{abi_push_bytes, abi_push_bytes32_array, enc_addr, enc_u16, enc_u256, enc_u32};
 use libfuzzer_sys::fuzz_target;
-use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource};
+use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::system::system::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{
@@ -221,10 +221,11 @@ fn fuzz(input: FuzzInput) {
     let amount = U256::from_be_bytes(input.amount);
     let selector = input.selector;
 
-    let mut system = System::<
-        ForwardRunningSystem<InMemoryTree, InMemoryPreimageSource, TxListSource>,
-    >::init_from_oracle(mock_oracle_balance(from, amount))
-    .expect("Failed to initialize the mock system");
+    let (metadata, oracle) = mock_oracle_balance(from, amount);
+
+    let mut system =
+        System::<ForwardRunningSystem>::init_from_metadata_and_oracle(metadata, oracle)
+            .expect("Failed to initialize the mock system");
     let mut system_functions = HooksStorage::new_in(system.get_allocator());
     let mut inf_resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
     pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB

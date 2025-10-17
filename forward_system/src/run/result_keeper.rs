@@ -7,7 +7,7 @@ use zk_ee::common_structs::{
     GenericEventContent, GenericEventContentWithTxRef, GenericLogContent,
     GenericLogContentWithTxRef, PreimageType,
 };
-use zk_ee::kv_markers::MAX_EVENT_TOPICS;
+use zk_ee::storage_types::MAX_EVENT_TOPICS;
 use zk_ee::system::IOResultKeeper;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::{Bytes32, UsizeAlignedByteBox};

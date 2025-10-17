@@ -8,6 +8,7 @@ pub mod logs_storage;
 pub mod new_preimages_publication_storage;
 pub mod proof_data;
 pub mod pubdata_compression;
+pub mod skip_list_quasi_vec;
 pub mod state_root_view;
 pub mod warm_storage_key;
 pub mod warm_storage_value;

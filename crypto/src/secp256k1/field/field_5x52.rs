@@ -12,6 +12,7 @@ impl core::fmt::Debug for FieldElement5x52 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("0x")?;
         let bytes = self.to_bytes();
+        #[allow(deprecated)]
         for b in bytes.as_slice().iter() {
             f.write_fmt(format_args!("{b:02x}"))?;
         }

@@ -17,14 +17,14 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let Self(err, meta) = self;
-        write!(f, "cascaded {meta}\n{err}")
+        write!(f, "{err}\ncascaded {meta}\n{err}")
     }
 }
 
 impl Display for InternalError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let Self(msg, meta) = self;
-        write!(f, "{msg}\n{meta}")
+        write!(f, "Internal error: {msg}\n {meta}")
     }
 }
 impl Display for RuntimeError {

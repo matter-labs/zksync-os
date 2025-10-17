@@ -6,7 +6,7 @@ mod u256;
 
 use self::bigint::{BigintRepr, OracleAdvisor};
 
-use zk_ee::{system::logger::Logger, system_io_oracle::IOOracle};
+use zk_ee::{oracle::IOOracle, system::logger::Logger};
 
 pub(super) fn modexp<O: IOOracle, L: Logger, A: Allocator + Clone>(
     base: &[u8],

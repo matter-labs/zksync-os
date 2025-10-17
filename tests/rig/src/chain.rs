@@ -11,14 +11,11 @@ use basic_system::system_implementation::flat_storage_model::{
 };
 use ethers::signers::LocalWallet;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
-use forward_system::run::test_impl::{
-    InMemoryPreimageSource, InMemoryTree, NoopTxCallback, TxListSource,
-};
-use forward_system::run::ForwardRunningOracle;
-use forward_system::system::bootloader::run_forward;
+use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
 use log::{debug, info, trace};
-use oracle_provider::{BasicZkEEOracleWrapper, ReadWitnessSource, ZkEENonDeterminismSource};
+use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
+use risc_v_simulator::abstractions::memory::VectorMemoryImpl;
 use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
 use ruint::aliases::{B160, B256, U256};
 use std::collections::HashMap;
@@ -26,10 +23,11 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
-use zk_ee::system::metadata::{BlockHashes, BlockMetadataFromOracle};
+use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
-use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
+use zksync_os_interface::traits::EncodedTx;
+use zksync_os_interface::traits::TxListSource;
 use zksync_os_interface::types::BlockOutput;
 
 ///
@@ -138,32 +136,30 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     /// TODO: duplicated from API, unify.
     /// Runs a block in riscV - using zksync_os binary - and returns the
     /// witness that can be passed to the prover subsystem.
-    pub fn run_block_generate_witness(
-        oracle: ForwardRunningOracle<
-            InMemoryTree<RANDOMIZED_TREE>,
-            InMemoryPreimageSource,
-            TxListSource,
-        >,
+    pub fn run_block_generate_witness<const FLAMEGRAPH: bool>(
+        oracle: ZkEENonDeterminismSource<VectorMemoryImpl>,
         app: &Option<String>,
     ) -> Vec<u32> {
-        let oracle_wrapper =
-            BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle.clone());
-
-        let mut non_determinism_source = ZkEENonDeterminismSource::default();
-
-        non_determinism_source.add_external_processor(oracle_wrapper);
-        non_determinism_source.add_external_processor(
-            callable_oracles::arithmetic::ArithmeticQuery {
-                marker: std::marker::PhantomData,
-            },
-        );
-
         // We'll wrap the source, to collect all the reads.
-        let copy_source = ReadWitnessSource::new(non_determinism_source);
+        let copy_source = ReadWitnessSource::new(oracle);
         let items = copy_source.get_read_items();
         // By default - enable diagnostics is false (which makes the test run faster).
         let path = get_zksync_os_img_path(app);
-        let output = zksync_os_runner::run(path, None, 1 << 36, copy_source);
+
+        let diagnostics_config = if FLAMEGRAPH {
+            let mut profiler_config = ProfilerConfig::new("flamegraph.svg".into());
+            profiler_config.frequency_recip = 10;
+
+            Some(profiler_config).map(|cfg| {
+                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(app));
+                diagnostics_cfg.profiler_config = Some(cfg);
+                diagnostics_cfg
+            })
+        } else {
+            None
+        };
+
+        let output = zksync_os_runner::run(path, diagnostics_config, 1 << 36, copy_source);
 
         // We return 0s in case of failure.
         assert_ne!(output, [0u32; 8]);
@@ -177,7 +173,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ///
     pub fn simulate_block(
         &mut self,
-        transactions: Vec<Vec<u8>>,
+        transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
     ) -> BlockOutput {
         let block_context = block_context.unwrap_or_default();
@@ -198,35 +194,25 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             transactions: transactions.into(),
         };
 
-        let oracle = ForwardRunningOracle {
-            proof_data: None,
-            preimage_source: self.preimage_source.clone(),
-            tree: self.state_tree.clone(),
-            block_metadata,
-            next_tx: None,
-            tx_source: tx_source.clone(),
-        };
-
-        // dump oracle if env variable set
-        if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
-            let serialized_oracle = bincode::serialize(&oracle).expect("should serialize");
-            let mut file = File::create(&path).expect("should create file");
-            file.write_all(&serialized_oracle)
-                .expect("should write to file");
-            info!("Successfully wrote oracle dump to: {path}");
-        }
-
-        // forward run
-        let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
         let mut nop_tracer = NopTracer::default();
 
-        run_forward::<BasicBootloaderCallSimulationConfig, _, _, _>(
-            oracle.clone(),
-            &mut result_keeper,
+        let block_output: BlockOutput = forward_system::run::run_block_with_oracle_dump_ext::<
+            _,
+            _,
+            _,
+            _,
+            BasicBootloaderCallSimulationConfig,
+        >(
+            block_metadata,
+            self.state_tree.clone(),
+            self.preimage_source.clone(),
+            tx_source.clone(),
+            NoopTxCallback,
+            None,
             &mut nop_tracer,
-        );
+        )
+        .unwrap();
 
-        let block_output: BlockOutput = result_keeper.into();
         trace!(
             "{}Block output:{} \n{:#?}",
             colors::MAGENTA,
@@ -244,7 +230,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ///
     pub fn run_block(
         &mut self,
-        transactions: Vec<Vec<u8>>,
+        transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
     ) -> BlockOutput {
@@ -256,7 +242,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     #[allow(clippy::result_large_err)]
     pub fn run_block_no_panic(
         &mut self,
-        transactions: Vec<Vec<u8>>,
+        transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
         only_forward: bool,
@@ -275,7 +261,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     #[allow(clippy::result_large_err)]
     pub fn run_block_with_extra_stats(
         &mut self,
-        transactions: Vec<Vec<u8>>,
+        transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
         witness_output_file: Option<PathBuf>,
@@ -294,7 +280,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     #[allow(clippy::result_large_err)]
     fn run_inner(
         &mut self,
-        transactions: Vec<Vec<u8>>,
+        transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         profiler_config: Option<ProfilerConfig>,
         witness_output_file: Option<PathBuf>,
@@ -327,37 +313,50 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             transactions: transactions.into(),
         };
 
-        let oracle = ForwardRunningOracle {
-            proof_data: Some(proof_data),
-            preimage_source: self.preimage_source.clone(),
-            tree: self.state_tree.clone(),
+        let oracle = forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
-            next_tx: None,
-            tx_source: tx_source.clone(),
+            self.state_tree.clone(),
+            self.preimage_source.clone(),
+            tx_source.clone(),
+            Some(proof_data),
+            true,
+        );
+
+        let forward_oracle = forward_system::run::make_oracle_for_proofs_and_dumps(
+            block_metadata,
+            self.state_tree.clone(),
+            self.preimage_source.clone(),
+            tx_source.clone(),
+            Some(proof_data),
+            true,
+        );
+
+        #[cfg(feature = "simulate_witness_gen")]
+        let source_for_witness_bench = {
+            forward_system::run::make_oracle_for_proofs_and_dumps(
+                block_metadata,
+                self.state_tree.clone(),
+                self.preimage_source.clone(),
+                tx_source.clone(),
+                Some(proof_data),
+                false,
+            )
         };
 
-        // dump oracle if env variable set
-        if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
-            let serialized_oracle = bincode::serialize(&oracle).expect("should serialize");
-            let mut file = File::create(&path).expect("should create file");
-            file.write_all(&serialized_oracle)
-                .expect("should write to file");
-            info!("Successfully wrote oracle dumo to: {path}");
-        }
-
         // forward run
-        let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
         let mut nop_tracer = NopTracer::default();
+        let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
         // we use proving config here for benchmarking,
         // although sequencer can have extra optimizations
-        run_forward_no_panic::<BasicBootloaderProvingExecutionConfig, _, _, _>(
-            oracle.clone(),
+        run_forward_no_panic::<BasicBootloaderProvingExecutionConfig>(
+            forward_oracle,
             &mut result_keeper,
             &mut nop_tracer,
         )?;
 
         let block_output: BlockOutput = result_keeper.into();
+
         trace!(
             "{}Block output:{} \n{:#?}",
             colors::MAGENTA,
@@ -408,7 +407,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let proof_input = if !only_forward {
             if let Some(path) = witness_output_file {
-                let result = Self::run_block_generate_witness(oracle.clone(), &app);
+                let result = Self::run_block_generate_witness::<false>(oracle, &app);
                 let mut file = File::create(&path).expect("should create file");
                 let witness: Vec<u8> = result.iter().flat_map(|x| x.to_be_bytes()).collect();
                 let hex = hex::encode(witness);
@@ -416,32 +415,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                     .expect("should write to file");
                 result
             } else {
-                // proof run
-                let oracle_wrapper =
-                    BasicZkEEOracleWrapper::<EthereumIOTypesConfig, _>::new(oracle);
-
-                #[cfg(feature = "simulate_witness_gen")]
-                let source_for_witness_bench = {
-                    let mut non_determinism_source = ZkEENonDeterminismSource::default();
-                    non_determinism_source.add_external_processor(oracle_wrapper.clone());
-                    non_determinism_source.add_external_processor(
-                        callable_oracles::arithmetic::ArithmeticQuery {
-                            marker: std::marker::PhantomData,
-                        },
-                    );
-
-                    non_determinism_source
-                };
-
-                let mut non_determinism_source = ZkEENonDeterminismSource::default();
-                non_determinism_source.add_external_processor(oracle_wrapper);
-                non_determinism_source.add_external_processor(
-                    callable_oracles::arithmetic::ArithmeticQuery {
-                        marker: std::marker::PhantomData,
-                    },
-                );
                 // We'll wrap the source, to collect all the reads.
-                let copy_source = ReadWitnessSource::new(non_determinism_source);
+                let copy_source = ReadWitnessSource::new(oracle);
                 let items = copy_source.get_read_items();
 
                 let diagnostics_config = profiler_config.map(|cfg| {

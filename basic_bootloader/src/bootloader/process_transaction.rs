@@ -1,5 +1,5 @@
 use super::gas_helpers::get_resources_for_tx;
-use super::transaction::ZkSyncTransaction;
+use super::transaction::{abi_encoded::AbiEncodedTransaction, Transaction};
 use super::*;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
@@ -22,8 +22,10 @@ use evm_interpreter::ERGS_PER_GAS;
 use gas_helpers::check_enough_resources_for_pubdata;
 use gas_helpers::get_resources_to_charge_for_pubdata;
 use gas_helpers::ResourcesForTx;
+use metadata::zk_metadata::TxLevelMetadata;
 use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
+use transaction::charge_keccak;
 use zk_ee::interface_error;
 use zk_ee::internal_error;
 use zk_ee::system::errors::cascade::CascadedError;
@@ -33,6 +35,7 @@ use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
 use zk_ee::system::{EthereumLikeTypes, Resources};
 use zk_ee::wrap_error;
 
@@ -42,9 +45,13 @@ struct ValidationResult {
     validation_pubdata: u64,
 }
 
-impl<S: EthereumLikeTypes, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
+impl<
+        S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
+        F: BasicTransactionFlow<S>,
+    > BasicBootloader<S, F>
 where
     S::IO: IOSubsystemExt,
+    S::Metadata: ZkSpecificPricingMetadata,
 {
     ///
     /// Process transaction.
@@ -53,44 +60,50 @@ where
     /// It's expected to be empty.
     ///
     pub fn process_transaction<'a, Config: BasicBootloaderExecutionConfig>(
-        initial_calldata_buffer: &mut [u8],
+        initial_calldata_buffer: UsizeAlignedByteBox<S::Allocator>,
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
         is_first_tx: bool,
         tracer: &mut impl Tracer<S>,
     ) -> Result<TxProcessingResult<'a>, TxError> {
-        let transaction = ZkSyncTransaction::try_from_slice(initial_calldata_buffer)
-            .map_err(|_| TxError::Validation(InvalidTransaction::InvalidEncoding))?;
+        let transaction = Transaction::try_from_buffer(initial_calldata_buffer, system)?;
 
-        // Safe to unwrap here, as this should have been validated in the
-        // previous call.
-        let tx_type = transaction.tx_type.read();
-
-        match tx_type {
-            ZkSyncTransaction::UPGRADE_TX_TYPE => {
-                if !is_first_tx {
-                    Err(Validation(InvalidTransaction::UpgradeTxNotFirst))
-                } else {
+        match &transaction {
+            Transaction::Abi(zk_tx) => {
+                if transaction.is_upgrade() {
+                    if !is_first_tx {
+                        Err(Validation(InvalidTransaction::UpgradeTxNotFirst))
+                    } else {
+                        Self::process_l1_transaction::<Config>(
+                            system,
+                            system_functions,
+                            memories,
+                            zk_tx,
+                            false,
+                            tracer,
+                        )
+                    }
+                } else if transaction.is_l1_l2() {
                     Self::process_l1_transaction::<Config>(
                         system,
                         system_functions,
                         memories,
+                        zk_tx,
+                        true,
+                        tracer,
+                    )
+                } else {
+                    Self::process_l2_transaction::<Config>(
+                        system,
+                        system_functions,
+                        memories,
                         transaction,
-                        false,
                         tracer,
                     )
                 }
             }
-            ZkSyncTransaction::L1_L2_TX_TYPE => Self::process_l1_transaction::<Config>(
-                system,
-                system_functions,
-                memories,
-                transaction,
-                true,
-                tracer,
-            ),
-            _ => Self::process_l2_transaction::<Config>(
+            Transaction::Rlp(_) => Self::process_l2_transaction::<Config>(
                 system,
                 system_functions,
                 memories,
@@ -104,7 +117,7 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
-        transaction: ZkSyncTransaction,
+        transaction: &AbiEncodedTransaction<S::Allocator>,
         is_priority_op: bool,
         tracer: &mut impl Tracer<S>,
     ) -> Result<TxProcessingResult<'a>, TxError> {
@@ -130,7 +143,7 @@ where
             if Config::SIMULATION {
                 SIMULATION_NATIVE_PER_GAS
             } else {
-                U256::from(gas_price).div_ceil(native_price)
+                gas_price.div_ceil(native_price)
             }
         } else {
             UPGRADE_TX_NATIVE_PER_GAS
@@ -157,7 +170,7 @@ where
         let initial_resources = resources.clone();
 
         let tx_internal_cost = gas_price
-            .checked_mul(gas_limit as u128)
+            .checked_mul(U256::from(gas_limit))
             .ok_or(internal_error!("gp*gl"))?;
         let value = transaction.value.read();
         let total_deposited = transaction.reserved[0].read();
@@ -399,7 +412,7 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
-        transaction: &ZkSyncTransaction,
+        transaction: &AbiEncodedTransaction<S::Allocator>,
         from: B160,
         to: B160,
         value: U256,
@@ -414,7 +427,10 @@ where
             .write_fmt(format_args!("Executing L1 transaction\n"));
 
         let gas_price = U256::from(transaction.max_fee_per_gas.read());
-        system.set_tx_context(from, gas_price);
+        system.set_tx_context(TxLevelMetadata {
+            tx_gas_price: gas_price,
+            tx_origin: from,
+        });
 
         // Start a frame, to revert minting of value if execution fails
         let rollback_handle = system.start_global_frame()?;
@@ -515,11 +531,11 @@ where
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         mut memories: RunnerMemoryBuffers<'a>,
-        mut transaction: ZkSyncTransaction,
+        mut transaction: Transaction<S::Allocator>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<TxProcessingResult<'a>, TxError> {
-        let from = transaction.from.read();
-        let gas_limit = transaction.gas_limit.read();
+        let from = *transaction.from();
+        let gas_limit = transaction.gas_limit();
         let calldata = transaction.calldata();
 
         // Validate that the transaction's gas limit is not larger than
@@ -531,9 +547,8 @@ where
             InvalidTransaction::BlockGasLimitTooHigh,
             system
         )?;
-        let tx_gas_limit = transaction.gas_limit.read();
         require!(
-            tx_gas_limit <= block_gas_limit,
+            gas_limit <= block_gas_limit,
             InvalidTransaction::CallerGasLimitMoreThanBlock,
             system
         )?;
@@ -542,8 +557,8 @@ where
         let native_price = system.get_native_price();
         let gas_price = Self::get_gas_price(
             system,
-            transaction.max_fee_per_gas.read(),
-            transaction.max_priority_fee_per_gas.read(),
+            transaction.max_fee_per_gas(),
+            transaction.max_priority_fee_per_gas(),
         )?;
         if native_price.is_zero() {
             return Err(internal_error!("Native price cannot be 0").into());
@@ -602,17 +617,23 @@ where
 
         F::charge_additional_intrinsic_gas(&mut resources, &transaction)?;
 
-        system.set_tx_context(from, gas_price);
+        system.set_tx_context(TxLevelMetadata {
+            tx_origin: from,
+            tx_gas_price: gas_price,
+        });
 
         let chain_id = system.get_chain_id();
 
         // Process access list
-        transaction.parse_and_warm_up_access_list(system, &mut resources)?;
+        parse_and_warm_up_access_list(system, &mut resources, &transaction)?;
 
-        let tx_hash: Bytes32 = transaction.calculate_hash(chain_id, &mut resources)?.into();
-        let suggested_signed_hash: Bytes32 = transaction
-            .calculate_signed_hash(chain_id, &mut resources)?
-            .into();
+        let tx_hash: Bytes32 = transaction.transaction_hash(chain_id, &mut resources)?;
+
+        // We have to charge native for this hash, as it's computed during parsing
+        // for RLP-encoded transactions.
+        // We over-estimate using the total tx length
+        charge_keccak(transaction.len(), &mut resources)?;
+        let suggested_signed_hash: Bytes32 = transaction.signed_hash::<S::Resources>(chain_id)?;
 
         let ValidationResult { validation_pubdata } = Self::transaction_validation::<Config>(
             system,
@@ -620,8 +641,7 @@ where
             memories.reborrow(),
             tx_hash,
             suggested_signed_hash,
-            &mut transaction,
-            from,
+            &transaction,
             gas_price,
             native_per_pubdata,
             caller_ee_type,
@@ -633,7 +653,15 @@ where
 
         // Parse, validate and apply authorization list, following EIP-7702
         #[cfg(feature = "pectra")]
-        transaction.parse_authorization_list_and_apply_delegations(system, &mut resources)?;
+        {
+            if let Some(authorization_list) = transaction.authorization_list() {
+                crate::bootloader::transaction::authorization_list:: parse_authorization_list_and_apply_delegations(
+                    system,
+                    &mut resources,
+                    authorization_list,
+                )?;
+            }
+        }
 
         // Take a snapshot in case we need to revert due to out of native.
         let rollback_handle = system.start_global_frame()?;
@@ -648,7 +676,7 @@ where
             memories,
             tx_hash,
             suggested_signed_hash,
-            &mut transaction,
+            &transaction,
             native_per_pubdata,
             validation_pubdata,
             caller_nonce,
@@ -755,8 +783,7 @@ where
         mut memories: RunnerMemoryBuffers,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
-        from: B160,
+        transaction: &Transaction<S::Allocator>,
         gas_price: U256,
         native_per_pubdata: U256,
         caller_ee_type: ExecutionEnvironmentType,
@@ -770,7 +797,7 @@ where
             .write_fmt(format_args!("Start of validation\n"));
 
         // Nonce validation
-        let tx_nonce = u256_try_to_u64(&transaction.nonce.read()).ok_or(TxError::from(
+        let tx_nonce = u256_try_to_u64(&transaction.nonce()).ok_or(TxError::from(
             InvalidTransaction::NonceOverflowInTransaction,
         ))?;
 
@@ -800,7 +827,7 @@ where
                 caller_ee_type,
                 resources,
                 tx_nonce,
-                from,
+                *transaction.from(),
             )?;
         }
 
@@ -815,7 +842,6 @@ where
             tx_hash,
             suggested_signed_hash,
             transaction,
-            from,
             gas_price,
             caller_ee_type,
             resources,
@@ -842,7 +868,7 @@ where
         memories: RunnerMemoryBuffers<'a>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
+        transaction: &Transaction<S::Allocator>,
         native_per_pubdata: U256,
         validation_pubdata: u64,
         current_tx_nonce: u64,
@@ -907,8 +933,7 @@ where
         system_functions: &mut HooksStorage<S, S::Allocator>,
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
-        from: B160,
+        transaction: &Transaction<S::Allocator>,
         gas_price: U256,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,
@@ -923,8 +948,9 @@ where
             )
         })?;
         let required_funds = gas_price
-            .checked_mul(U256::from(transaction.gas_limit.read()))
+            .checked_mul(U256::from(transaction.gas_limit()))
             .ok_or(internal_error!("gp*gl"))?;
+        let from = *transaction.from();
         // First we charge the fees, then we verify the bootloader got
         // the funds.
         let payer = {
@@ -984,24 +1010,23 @@ where
 
     fn get_gas_price(
         system: &mut System<S>,
-        max_fee_per_gas: u128,
-        max_priority_fee_per_gas: u128,
+        max_fee_per_gas: &U256,
+        max_priority_fee_per_gas: Option<&U256>,
     ) -> Result<U256, TxError> {
-        let max_fee_per_gas = U256::from(max_fee_per_gas);
-        let max_priority_fee_per_gas = U256::from(max_priority_fee_per_gas);
         let base_fee = system.get_eip1559_basefee();
+        let max_priority_fee_per_gas = max_priority_fee_per_gas.unwrap_or(max_fee_per_gas);
         require!(
             max_priority_fee_per_gas <= max_fee_per_gas,
             TxError::Validation(InvalidTransaction::PriorityFeeGreaterThanMaxFee,),
             system
         )?;
         require!(
-            base_fee <= max_fee_per_gas,
+            &base_fee <= max_fee_per_gas,
             TxError::Validation(InvalidTransaction::BaseFeeGreaterThanMaxFee,),
             system
         )?;
         let priority_fee_per_gas = if cfg!(feature = "charge_priority_fee") {
-            core::cmp::min(max_priority_fee_per_gas, max_fee_per_gas - base_fee)
+            (*max_priority_fee_per_gas).min(max_fee_per_gas - base_fee)
         } else {
             U256::ZERO
         };
@@ -1015,7 +1040,7 @@ where
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _tx_hash: Bytes32,
         _suggested_signed_hash: Bytes32,
-        transaction: &mut ZkSyncTransaction,
+        transaction: &mut Transaction<S::Allocator>,
         from: B160,
         execution_result: &ExecutionResult,
         gas_price: U256,
@@ -1057,7 +1082,7 @@ where
         let refund_info = Self::compute_gas_refund(
             system,
             to_charge_for_pubdata,
-            transaction.gas_limit.read(),
+            transaction.gas_limit(),
             native_per_gas,
             resources,
         )?;
@@ -1172,4 +1197,46 @@ struct RefundInfo {
     evm_refund: u64,
     // Total native resource used by the transaction (includes pubdata)
     native_used: u64,
+}
+
+/// Parse and warm up accounts and storage slots from the access list.
+///
+/// Touches all accounts and storage keys in the access list so they are hot
+/// before execution.
+///
+/// Returns Ok on success, or `TxError` if an IO operation fails.
+fn parse_and_warm_up_access_list<
+    S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
+>(
+    system: &mut System<S>,
+    resources: &mut S::Resources,
+    transaction: &Transaction<S::Allocator>,
+) -> Result<(), TxError>
+where
+    S::IO: IOSubsystemExt,
+{
+    use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
+    if let Some(iter) = transaction.access_list_iter() {
+        for AccessListForAddress {
+            address,
+            slots_list,
+        } in iter
+        {
+            system
+                .io
+                .touch_account(ExecutionEnvironmentType::NoEE, resources, &address, true)?;
+            for key in slots_list.iter() {
+                let key = key?;
+                system.io.storage_touch(
+                    ExecutionEnvironmentType::NoEE,
+                    resources,
+                    &address,
+                    &Bytes32::from_array(*key),
+                    true,
+                )?;
+            }
+        }
+    }
+
+    Ok(())
 }

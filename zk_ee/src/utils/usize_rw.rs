@@ -1,21 +1,39 @@
+//! Low-level utilities for reading and writing `usize` values from/to byte streams.
+//!
+//! This module provides unsafe but efficient traits and adapters for converting between
+//! different data representations and `usize` values. It's primarily used by the oracle
+//! serialization system to handle cross-architecture data exchange.
+
 use crate::utils::USIZE_SIZE;
 
+/// Trait for types that can read `usize` values from underlying data.
+///
+/// This is an unsafe trait that provides direct access to raw data without bounds checking.
+/// Implementers must ensure the underlying data source has sufficient bytes available.
 pub trait UsizeReadable {
-    ///
-    /// TODO: add doc
+    /// Reads a single `usize` value from the underlying data source.
     ///
     /// # Safety
     ///
+    /// Caller must ensure that the underlying data source has at least `USIZE_SIZE` bytes
+    /// available to read. Behavior is undefined if insufficient data is available.
     unsafe fn read_usize(&mut self) -> usize;
 }
 
+/// Safe wrapper around `UsizeReadable`
 pub trait SafeUsizeReadable: UsizeReadable {
+    /// Returns the number of `usize` values available to read.
     fn len(&self) -> usize;
+
     fn try_read(&mut self) -> Result<usize, ()> {
-        unsafe { Ok(UsizeReadable::read_usize(self)) }
+        unsafe { Ok(UsizeReadable::read_usize(self)) } // TODO actual checking?
     }
 }
 
+/// Adapter that wraps iterators to implement `UsizeReadable`.
+///
+/// This wrapper allows any iterator over copyable types to be used as a `usize` data source.
+/// It handles the conversion from the iterator's item type to `usize` values.
 pub struct ReadIterWrapper<T: 'static + Clone + Copy, I: Iterator<Item = T>> {
     inner: I,
 }
@@ -62,6 +80,10 @@ impl<I: ExactSizeIterator<Item = u8>> ExactSizeIterator for ReadIterWrapper<u8, 
     }
 }
 
+/// Wrapper for exact-size iterators over `usize` values with safe reading support.
+///
+/// This wrapper provides both unsafe and safe reading methods for iterators that
+/// already produce `usize` values and can report their exact length.
 #[derive(Clone)]
 pub struct ExactSizeIterReadWrapper<I: ExactSizeIterator<Item = usize>> {
     inner: I,
@@ -88,25 +110,56 @@ impl<I: ExactSizeIterator<Item = usize>> SafeUsizeReadable for ExactSizeIterRead
     }
 }
 
+/// Trait for types that can write `usize` values to underlying data.
+///
+/// This is an unsafe trait that provides direct access to raw data without bounds checking.
+/// Implementers must ensure the underlying data destination has sufficient space available.
 pub trait UsizeWriteable {
-    ///
-    /// TODO: add doc
+    /// Writes a single `usize` value to the underlying data destination.
     ///
     /// # Safety
     ///
+    /// Caller must ensure that the underlying data destination has at least `USIZE_SIZE` bytes
+    /// available to write. Behavior is undefined if insufficient space is available.
     unsafe fn write_usize(&mut self, value: usize);
 }
 
+/// Safe wrapper around `UsizeWriteable` that provides bounds checking.
+///
+/// This trait extends `UsizeWriteable` with length information and safe writing methods
+/// that return errors instead of causing undefined behavior on insufficient space.
 pub trait SafeUsizeWritable: UsizeWriteable {
+    /// Returns the number of `usize` values that can be written.
     fn len(&self) -> usize;
+
     fn try_write(&mut self, value: usize) -> Result<(), ()> {
         unsafe {
-            UsizeWriteable::write_usize(self, value);
+            UsizeWriteable::write_usize(self, value); // TODO actual checking?
         }
         Ok(())
     }
 }
 
+/// Adapter to expose a type as a `SafeUsizeWritable`.
+///
+/// Produces a lifetime-tied writable view over `self` without exposing the backing storage.
+pub trait AsUsizeWritable: Sized {
+    /// Borrowed writable view tied to the lifetime of `&mut self`.
+    type Writable<'a>: SafeUsizeWritable
+    where
+        Self: 'a;
+
+    /// Returns a writable view over `self`.
+    fn as_writable<'a>(&'a mut self) -> Self::Writable<'a>
+    where
+        Self: 'a;
+}
+
+/// Adapter that wraps mutable iterators to implement `UsizeWriteable`.
+///
+/// This wrapper allows any iterator over mutable references to copyable types to be used
+/// as a `usize` data destination. It handles the conversion from `usize` values to the
+/// iterator's target type.
 pub struct WriteIterWrapper<'a, T: 'static + Clone + Copy, I: Iterator<Item = &'a mut T>> {
     inner: I,
 }

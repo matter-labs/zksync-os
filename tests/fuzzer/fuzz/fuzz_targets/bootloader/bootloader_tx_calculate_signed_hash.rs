@@ -2,10 +2,11 @@
 #![feature(allocator_api)]
 #![feature(generic_const_exprs)]
 
-use basic_bootloader::bootloader::transaction::ZkSyncTransaction;
+use basic_bootloader::bootloader::transaction::AbiEncodedTransaction;
 use rig::forward_system::system::system::ForwardRunningSystem;
 use zk_ee::reference_implementations::BaseResources;
 use zk_ee::reference_implementations::DecreasingNative;
+use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use zk_ee::system::Resource;
 use zk_ee::system::System;
 
@@ -20,15 +21,13 @@ fuzz_mutator!(|data: &mut [u8], size: usize, max_size: usize, seed: u32| {
 
 fn fuzz(data: &[u8]) {
     let mut data = data.to_owned();
-    let Ok(tx) = ZkSyncTransaction::try_from_slice(&mut data) else {
+    let Ok(tx) = AbiEncodedTransaction::try_from_slice(&mut data) else {
         // Input is not valid
         return;
     };
     let mut inf_resources = BaseResources::<DecreasingNative>::FORMAL_INFINITE;
-
-    let system = System::<ForwardRunningSystem<_, _, _>>::init_from_oracle(mock_oracle())
-        .expect("Failed to initialize the mock system");
-    let chain_id = system.get_chain_id();
+    let (metadata, oracle) = mock_oracle();
+    let chain_id = BlockMetadataFromOracle::new_for_test().chain_id;
     let _ = tx.calculate_signed_hash(chain_id, &mut inf_resources);
 }
 

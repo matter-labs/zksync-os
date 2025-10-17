@@ -3,10 +3,10 @@ use crate::run::errors::ForwardSubsystemError;
 use crate::run::output::TxResult;
 use crate::run::tracing_impl::TracerWrapped;
 use crate::run::{run_block, simulate_tx};
-use zk_ee::system::metadata::BlockMetadataFromOracle;
+use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use zksync_os_interface::tracing::AnyTracer;
 use zksync_os_interface::traits::{
-    PreimageSource, ReadStorage, RunBlock, SimulateTx, TxResultCallback, TxSource,
+    EncodedTx, PreimageSource, ReadStorage, RunBlock, SimulateTx, TxResultCallback, TxSource,
 };
 use zksync_os_interface::types::BlockContext;
 use zksync_os_interface::types::BlockOutput;
@@ -56,7 +56,7 @@ impl SimulateTx for RunBlockForward {
     fn simulate_tx<Storage: ReadStorage, PreimgSrc: PreimageSource, Tracer: AnyTracer>(
         &self,
         _config: (),
-        transaction: Vec<u8>,
+        transaction: EncodedTx,
         block_context: BlockContext,
         storage: Storage,
         preimage_source: PreimgSrc,

@@ -1,6 +1,7 @@
-use crate::kv_markers::*;
+use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::internal::InternalError;
 use crate::types_config::EthereumIOTypesConfig;
+use crate::utils::exact_size_chain::ExactSizeChain;
 
 use super::state_root_view::StateRootView;
 

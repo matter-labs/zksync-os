@@ -8,9 +8,8 @@ use core::fmt::Write;
 use ruint::aliases::{B160, U256};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
-    internal_error,
-    kv_markers::MAX_EVENT_TOPICS,
-    out_of_return_memory,
+    internal_error, out_of_return_memory,
+    storage_types::MAX_EVENT_TOPICS,
     system::{
         errors::{runtime::RuntimeError, system::SystemError},
         logger::Logger,

@@ -8,9 +8,9 @@ use storage_models::common_structs::PreimageCacheModel;
 use zk_ee::common_structs::{PreimageType, ValueDiffCompressionStrategy};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
+use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, system::SystemError};
 use zk_ee::system::{IOResultKeeper, Resources};
-use zk_ee::system_io_oracle::IOOracle;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
 
@@ -462,11 +462,12 @@ mod tests {
     use storage_models::common_structs::PreimageCacheModel;
     use zk_ee::common_structs::PreimageType;
     use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use zk_ee::oracle::IOOracle;
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
     use zk_ee::system::errors::internal::InternalError;
     use zk_ee::system::IOResultKeeper;
     use zk_ee::system::Resource;
-    use zk_ee::system_io_oracle::{IOOracle, OracleIteratorTypeMarker};
     use zk_ee::types_config::EthereumIOTypesConfig;
     use zk_ee::utils::*;
 
@@ -477,12 +478,13 @@ mod tests {
     struct TestOracle;
 
     impl IOOracle for TestOracle {
-        type MarkerTiedIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 
-        fn create_oracle_access_iterator<'a, M: OracleIteratorTypeMarker>(
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
             &'a mut self,
-            _init_value: M::Params,
-        ) -> Result<Self::MarkerTiedIterator<'a>, InternalError> {
+            _query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
             unimplemented!()
         }
     }

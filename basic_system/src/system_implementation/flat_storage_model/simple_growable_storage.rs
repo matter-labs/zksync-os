@@ -16,6 +16,7 @@
 // For a case if we need to prove reading a "fresh" key, but do not need to write, we just need to read 2 array elements, but are not
 // mandated to write anything.
 
+use super::FLAT_STORAGE_SUBSPACE_MASK;
 use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -27,11 +28,14 @@ use zk_ee::common_structs::derive_flat_storage_key_with_hasher;
 use zk_ee::common_structs::state_root_view::StateRootView;
 use zk_ee::common_structs::{WarmStorageKey, WarmStorageValue};
 use zk_ee::internal_error;
+use zk_ee::oracle::query_ids::STATE_AND_MERKLE_PATHS_SUBSPACE_MASK;
+use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
+use zk_ee::utils::exact_size_chain::{ExactSizeChain, ExactSizeChainN};
 use zk_ee::{
-    kv_markers::{ExactSizeChain, ExactSizeChainN, UsizeDeserializable, UsizeSerializable},
     memory::stack_trait::Stack,
+    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
+    oracle::IOOracle,
     system::{errors::internal::InternalError, logger::Logger},
-    system_io_oracle::*,
     types_config::EthereumIOTypesConfig,
     utils::Bytes32,
 };
@@ -246,8 +250,6 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                 // );
                 num_nonexisting_reads += 1;
 
-                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
-                #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "checking empty read for address = {:?}, key = {:?}\n",
                     &key.address, &key.key,
@@ -309,8 +311,6 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                 }
                 // now we will need to check merkle paths for that indexes
             } else {
-                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
-                #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "checking existing read for address = {:?}, key = {:?}, value = {:?}\n",
                     &key.address, &key.key, value.current_value,
@@ -354,8 +354,6 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
             // writes
             let expect_new = value.is_new_storage_slot;
             if expect_new {
-                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
-                #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "applying initial write for address = {:?}, key = {:?}, value {:?} -> {:?}\n",
                     &key.address, &key.key, &value.initial_value, &value.current_value
@@ -433,8 +431,6 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                     },
                 ));
             } else {
-                // TODO(EVM-1075): debug implementation for B160 uses global alloc, which panics in ZKsync OS
-                #[cfg(not(target_arch = "riscv32"))]
                 let _ = logger.write_fmt(format_args!(
                     "applying repeated write for address = {:?}, key = {:?}, value {:?} -> {:?}\n",
                     &key.address, &key.key, &value.initial_value, &value.current_value
@@ -785,20 +781,48 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
     }
 }
 
+/// Query for finding the previous index in the sorted flat storage for a given key
+pub struct PreviousIndexQuery;
+
+impl SimpleOracleQuery for PreviousIndexQuery {
+    const QUERY_ID: u32 = STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK;
+    type Input = Bytes32;
+    type Output = u64;
+}
+
+/// Query for finding the exact index of a key in the flat storage
+pub struct ExactIndexQuery;
+
+impl SimpleOracleQuery for ExactIndexQuery {
+    const QUERY_ID: u32 = STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK | 0x01;
+    type Input = Bytes32;
+    type Output = u64;
+}
+
 fn get_prev_index<O: IOOracle>(oracle: &mut O, flat_key: &Bytes32) -> u64 {
-    let mut it = oracle
-        .create_oracle_access_iterator::<PrevIndexIterator>(*flat_key)
-        .expect("must get iterator for prev index");
-    UsizeDeserializable::from_iter(&mut it).expect("must deserialize prev index")
+    PreviousIndexQuery::get(oracle, flat_key).expect("must deserialize prev index")
 }
 
 fn get_index<O: IOOracle>(oracle: &mut O, flat_key: &Bytes32) -> u64 {
-    let mut it = oracle
-        .create_oracle_access_iterator::<ExactIndexIterator>(*flat_key)
-        .expect("must get iterator for neighbours");
-    let index: u64 = UsizeDeserializable::from_iter(&mut it).expect("must deserialize neighbours");
+    ExactIndexQuery::get(oracle, flat_key).expect("must deserialize index for key")
+}
 
-    index
+/// Query ID for requesting Merkle proof at a specific index in flat storage
+pub const PROOF_FOR_INDEX_QUERY_ID: u32 =
+    STATE_AND_MERKLE_PATHS_SUBSPACE_MASK | FLAT_STORAGE_SUBSPACE_MASK | 0x02;
+
+/// Query for obtaining a Merkle proof for a value at a specific index in flat storage
+pub struct ProofForIndexQuery<const N: usize, H: FlatStorageHasher, A: Allocator + Clone + Default>
+{
+    _marker: core::marker::PhantomData<(H, A)>,
+}
+
+impl<const N: usize, H: FlatStorageHasher, A: 'static + Allocator + Clone + Default>
+    SimpleOracleQuery for ProofForIndexQuery<N, H, A>
+{
+    const QUERY_ID: u32 = PROOF_FOR_INDEX_QUERY_ID;
+    type Input = u64;
+    type Output = ValueAtIndexProof<N, H, A>;
 }
 
 fn get_proof_for_index<
@@ -810,11 +834,10 @@ fn get_proof_for_index<
     oracle: &mut O,
     index: u64,
 ) -> ValueAtIndexProof<N, H, A> {
-    let mut it = oracle
-        .create_oracle_access_iterator::<ProofForIndexIterator>(index)
-        .expect("must get iterator for neighbours");
-    let proof: ValueAtIndexProof<N, H, A> =
-        UsizeDeserializable::from_iter(&mut it).expect("must deserialize neighbours");
+    // we can not use query here, but almost
+    let proof: ValueAtIndexProof<N, H, A> = oracle
+        .query_serializable(PROOF_FOR_INDEX_QUERY_ID, &index)
+        .expect("must deserialize proof for index");
     assert_eq!(proof.proof.existing.index, index);
 
     proof
@@ -1278,7 +1301,9 @@ pub fn recompute_root_from_proof<const N: usize, H: FlatStorageHasher, A: Alloca
 
     let mut current = leaf_hash;
     let mut index = proof.index;
-    for path in proof.path.iter() {
+    let path_ref: &[Bytes32] = &*proof.path;
+    for path in path_ref.iter() {
+        let path: &Bytes32 = path;
         let (left, right) = if index & 1 == 0 {
             // current is left
             (&current, path)
@@ -1683,9 +1708,11 @@ mod test {
     use super::*;
     use proptest::{prelude::*, sample::Index};
     use ruint::aliases::{B160, U256};
-    use std::{any, collections::HashMap, ops};
+    use std::{collections::HashMap, ops};
     use zk_ee::common_structs::derive_flat_storage_key;
-    use zk_ee::{system::NullLogger, system_io_oracle::dyn_usize_iterator::DynUsizeIterator};
+    use zk_ee::{
+        oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator, system::NullLogger,
+    };
 
     fn hex_bytes(s: &str) -> Bytes32 {
         let s = s.strip_prefix("0x").unwrap_or(s);
@@ -1890,46 +1917,49 @@ mod test {
     }
 
     impl<const R: bool> IOOracle for TestingTree<R> {
-        type MarkerTiedIterator<'a> = Box<dyn ExactSizeIterator<Item = usize>>;
+        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize>>;
 
-        fn create_oracle_access_iterator<'a, M: OracleIteratorTypeMarker>(
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
             &'a mut self,
-            init_value: M::Params,
-        ) -> Result<Self::MarkerTiedIterator<'a>, InternalError> {
-            match any::TypeId::of::<M>() {
-                a if a == any::TypeId::of::<ExactIndexIterator>() => {
-                    let flat_key = unsafe {
-                        *(&init_value as *const M::Params)
-                            .cast::<<ExactIndexIterator as OracleIteratorTypeMarker>::Params>()
-                    };
-                    let existing = self.get_index_for_existing(&flat_key);
-                    let iterator = DynUsizeIterator::from_owned(existing);
-                    Ok(Box::new(iterator))
+            query_type: u32,
+            input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            unsafe {
+                match query_type {
+                    ExactIndexQuery::QUERY_ID => {
+                        let flat_key = ExactIndexQuery::transmute_input_ref_unchecked(input);
+                        let existing = self.get_index_for_existing(&flat_key);
+                        Ok(DynUsizeIterator::from_constructor(existing, |item_ref| {
+                            UsizeSerializable::iter(item_ref)
+                        }))
+                    }
+                    PreviousIndexQuery::QUERY_ID => {
+                        let flat_key = PreviousIndexQuery::transmute_input_ref_unchecked(input);
+                        let existing = self.get_prev_index(&flat_key);
+                        Ok(DynUsizeIterator::from_constructor(existing, |item_ref| {
+                            UsizeSerializable::iter(item_ref)
+                        }))
+                    }
+                    PROOF_FOR_INDEX_QUERY_ID => {
+                        let position = ProofForIndexQuery::<
+                            TESTING_TREE_HEIGHT,
+                            Blake2sStorageHasher,
+                            Global,
+                        >::transmute_input_ref_unchecked(
+                            input
+                        );
+                        let existing = self.get_proof_for_position(*position);
+                        let proof = ValueAtIndexProof {
+                            proof: ExistingReadProof { existing },
+                        };
+                        Ok(DynUsizeIterator::from_constructor(proof, |item_ref| {
+                            UsizeSerializable::iter(item_ref)
+                        }))
+                    }
+                    _ => {
+                        panic!("unsupported query type 0x{:08x}", query_type);
+                    }
                 }
-                a if a == any::TypeId::of::<ProofForIndexIterator>() => {
-                    let index = unsafe {
-                        *(&init_value as *const M::Params)
-                            .cast::<<ProofForIndexIterator as OracleIteratorTypeMarker>::Params>()
-                    };
-                    let existing = self.get_proof_for_position(index);
-                    let proof = ValueAtIndexProof {
-                        proof: ExistingReadProof { existing },
-                    };
-
-                    let iterator = DynUsizeIterator::from_owned(proof);
-
-                    Ok(Box::new(iterator))
-                }
-                a if a == any::TypeId::of::<PrevIndexIterator>() => {
-                    let flat_key = unsafe {
-                        *(&init_value as *const M::Params)
-                            .cast::<<PrevIndexIterator as OracleIteratorTypeMarker>::Params>()
-                    };
-                    let prev_index = self.get_prev_index(&flat_key);
-                    let iterator = DynUsizeIterator::from_owned(prev_index);
-                    Ok(Box::new(iterator))
-                }
-                _ => panic!("unexpected request: {}", any::type_name::<M>()),
             }
         }
     }

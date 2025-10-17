@@ -1,5 +1,7 @@
 use super::{
+    context::{contextualized::Contextualized, ErrorContext},
     location::{ErrorLocation, Localizable},
+    metadata::Metadata,
     root_cause::GetRootCause,
 };
 
@@ -9,12 +11,12 @@ pub trait ICascadedInner:
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct CascadedError<T: ICascadedInner>(pub T, pub ErrorLocation);
+pub struct CascadedError<T: ICascadedInner>(pub T, pub Metadata);
 
 impl<T: ICascadedInner> Localizable for CascadedError<T> {
     fn get_location(&self) -> ErrorLocation {
         let CascadedError(_, meta) = self;
-        *meta
+        meta.location
     }
 }
 
@@ -26,4 +28,17 @@ macro_rules! wrap_error {
     () => {
         |e| e.wrap($crate::location!())
     };
+}
+
+impl<T> Contextualized<CascadedError<T>> for CascadedError<T>
+where
+    T: ICascadedInner,
+{
+    fn with_context_inner<F>(self, f: F) -> CascadedError<T>
+    where
+        F: FnOnce() -> ErrorContext,
+    {
+        let Self(e, metadata) = self;
+        Self(e, metadata.replace_context(f()))
+    }
 }

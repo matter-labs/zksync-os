@@ -180,6 +180,7 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "basic_system",
+ "cfg-if",
  "crypto",
  "cycle_marker",
  "evm_interpreter",
@@ -1101,5 +1102,5 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_evm_errors"
-version = "0.0.5"
-source = "git+https://github.com/matter-labs/zksync-os-interface?branch=di%2Ftracing#d02ee33dab17624fed2b9ef0e56d92187d88c9ae"
+version = "0.0.7"
+source = "git+https://github.com/matter-labs/zksync-os-interface?tag=v0.0.8#6d5957dfdfde1701f5adf3f732aef40a60634582"

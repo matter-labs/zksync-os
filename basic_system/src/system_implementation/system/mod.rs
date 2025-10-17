@@ -13,17 +13,15 @@ use evm_interpreter::gas_constants::WARM_STORAGE_READ_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
-use zk_ee::common_structs::EventContent;
-use zk_ee::common_structs::LogContent;
 use zk_ee::common_structs::WarmStorageKey;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::utils::Bytes32;
 use zk_ee::utils::NopHasher;
 use zk_ee::{
-    kv_markers::MAX_EVENT_TOPICS,
-    memory::stack_trait::{StackCtor, StackCtorConst},
+    memory::stack_trait::StackFactory,
+    oracle::IOOracle,
+    storage_types::MAX_EVENT_TOPICS,
     system::{errors::internal::InternalError, logger::Logger, Resources, *},
-    system_io_oracle::IOOracle,
 };
 
 mod io_subsystem;
@@ -131,11 +129,3 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }
 }
-
-pub type ExtraCheck<SCC: const StackCtorConst, A: Allocator> =
-    [[[[[[[[(); SCC::extra_const_param::<(u32, ()), A>()];
-        SCC::extra_const_param::<(EventContent<MAX_EVENT_TOPICS, A>, ()), A>()];
-        SCC::extra_const_param::<(LogContent<A>, u32), A>()];
-        SCC::extra_const_param::<usize, A>()]; SCC::extra_const_param::<(usize, i32), A>()];
-        SCC::extra_const_param::<StorageSnapshotId, A>()];
-        SCC::extra_const_param::<Bytes32, A>()]; SCC::extra_const_param::<BitsOrd160, A>()];

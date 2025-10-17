@@ -1,6 +1,7 @@
-use crate::bootloader::constants::TX_OFFSET;
-use crate::bootloader::transaction::ZkSyncTransaction;
-use ruint::aliases::U256;
+use std::alloc::Global;
+
+use crate::bootloader::transaction::AbiEncodedTransaction;
+use zk_ee::utils::UsizeAlignedByteBox;
 
 #[test]
 fn test_parsing() {
@@ -70,8 +71,8 @@ fn test_parsing() {
     // 0100014b71adee1c18588b50320637a120674a4b52d784f61898605b9703b70e
     // 0000000000000000000000000000000000000000000000000000000000000000
     // 0000000000000000000000000000000000000000000000000000000000000000
-    let mut slice = vec![0u8; TX_OFFSET];
+    let mut slice = vec![];
     slice.extend_from_slice(&encoded_tx);
-    let tx = ZkSyncTransaction::try_from_slice(slice.as_mut_slice())
-        .expect("Tx encoding should be valid");
+    let buffer = UsizeAlignedByteBox::from_slice_in(&slice, Global);
+    let _tx = AbiEncodedTransaction::try_from_buffer(buffer).expect("Tx encoding should be valid");
 }

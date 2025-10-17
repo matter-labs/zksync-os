@@ -1,7 +1,10 @@
+use alloy::consensus::{TxEip1559, TxEip2930, TxEip7702, TxEnvelope, TxLegacy};
+use alloy::eips::eip2930::{AccessList as AlloyAccessList, AccessListItem as AlloyALItem};
+use alloy::eips::eip7702::{Authorization as AlloyAuthorization, SignedAuthorization};
 use alloy::primitives::*;
-use itertools::Itertools;
 use serde::{Deserialize, Deserializer};
-use zksync_os_rig::zksync_os_api::helpers;
+use zksync_os_rig::utils::encode_envelope_2718;
+use zksync_os_rig::{zksync_os_api::helpers, zksync_os_interface::traits::EncodedTx};
 
 use crate::{
     test::test_structure::transaction_section::TransactionSection, vm::zk_ee::ZKsyncOSEVMContext,
@@ -147,7 +150,7 @@ pub fn transaction_from_tx_section(
 pub fn encode_transaction(
     transaction: &Transaction,
     system_context: &ZKsyncOSEVMContext,
-) -> Vec<u8> {
+) -> EncodedTx {
     match transaction {
         Transaction::Request(tx) => {
             #[allow(deprecated)]
@@ -253,104 +256,175 @@ pub fn encode_transaction(
             helpers::sign_and_encode_transaction_request(request, &wallet)
         }
         Transaction::Signed(tx) => {
-            let tx_type = tx.ty;
-            let from = tx.common.sender.expect("Signed tx must have send").0 .0;
-            let to = tx.common.to.0.map(|a| a.0 .0);
-            let gas_limit = tx.common.gas_limit.try_into().expect("gas limit overflow");
-            let is_eip155 = tx_type == 0 && tx.v >= 35;
-            let (max_fee_per_gas, max_priority_fee_per_gas) = if tx_type == 2 || tx_type == 3 {
-                (
-                    tx.common.max_fee_per_gas.unwrap(),
-                    tx.common.max_priority_fee_per_gas,
-                )
-            } else {
-                (tx.common.gas_price.unwrap(), tx.common.gas_price)
-            };
-            let nonce = tx.common.nonce.try_into().expect("nonce overflow");
-            let value = tx.common.value.to_be_bytes();
-            let data = tx.common.data.0.to_vec();
-            let mut signature: Vec<u8> = vec![0; 65];
-            signature[..32].copy_from_slice(&tx.r.to_be_bytes::<32>());
-            signature[32..64].copy_from_slice(&tx.s.to_be_bytes::<32>());
-            let parity = match tx.v {
-                27 | 28 => tx.v,
-                n if n >= 35 => ((n - 35) % 2) + 27,
-                n => (n & 1) + 27,
-            };
-            signature[64] = parity;
-
-            let access_list: Option<Vec<([u8; 20], Vec<[u8; 32]>)>> = tx
-                .common
-                .access_list
-                .clone()
-                .map(|access_list: Vec<AccessListItem>| {
-                    access_list
-                        .into_iter()
-                        .map(|item| {
-                            let address = item.address.into_array();
-                            let keys: Vec<[u8; 32]> = item
-                                .storage_keys
-                                .into_iter()
-                                .map(|k| k.to_be_bytes())
-                                .collect();
-                            (address, keys)
-                        })
-                        .collect()
-                });
-
-            let authorization_list: Vec<(U256, [u8; 20], u64, u8, U256, U256)> = tx
-                .common
-                .authorization_list
-                .clone()
-                .map(|authorization_list| {
-                    authorization_list
-                        .iter()
-                        .map(|authorization| {
-                            let y_parity = authorization.y_parity;
-                            let r = authorization.r;
-                            let s = authorization.s;
-                            let mut r_buf = [0u8; 32];
-                            r.to_big_endian(&mut r_buf);
-                            let mut s_buf = [0u8; 32];
-                            s.to_big_endian(&mut s_buf);
-                            let mut chain_id_buf = [0u8; 32];
-                            authorization.chain_id.to_big_endian(&mut chain_id_buf);
-                            (
-                                ruint::aliases::U256::from_be_bytes(chain_id_buf),
-                                authorization.address.into_array(),
-                                authorization.nonce.as_u64(),
-                                y_parity.as_u32() as u8,
-                                ruint::aliases::U256::from_be_bytes(r_buf),
-                                ruint::aliases::U256::from_be_bytes(s_buf),
-                            )
-                        })
-                        .collect_vec()
-                })
-                .unwrap_or_default();
-
-            let reserved_dynamic = access_list.map(|access_list| {
-                zksync_os_rig::utils::encode_reserved_dynamic(access_list, authorization_list)
-            });
-            zksync_os_rig::zksync_os_api::helpers::encode_tx(
-                tx_type,
-                from,
-                to,
-                gas_limit,
-                None,
-                max_fee_per_gas
-                    .try_into()
-                    .expect("max_fee_per_gas overflow"),
-                max_priority_fee_per_gas
-                    .map(|v| v.try_into().expect("max_priority_fee_per_gas overflow")),
-                None,
-                nonce,
-                value,
-                data,
-                signature,
-                None,
-                reserved_dynamic,
-                is_eip155,
-            )
+            let env = to_alloy_envelope(tx, system_context.chain_id);
+            let bytes = encode_envelope_2718(&env);
+            let from = tx.common.sender.expect("Tx must have sender");
+            EncodedTx::Rlp(bytes, from)
         }
     }
+}
+
+pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
+    let nonce = stx.common.nonce.try_into().unwrap();
+    let gas_limit = stx.common.gas_limit.try_into().unwrap();
+    let value = stx.common.value;
+    let input = Bytes::copy_from_slice(stx.common.data.as_ref());
+    let to_kind = to_kind(&stx.common.to);
+
+    let r = FixedBytes::from(stx.r);
+    let s = FixedBytes::from(stx.s);
+
+    match stx.ty {
+        0 => {
+            let (chain_id_opt, parity) = match stx.v {
+                27 | 28 => (None, stx.v == 28),
+                v if v >= 35 => {
+                    let cid = ((v as u64) - 35) / 2;
+                    let p = ((v as u64 - 35) % 2) == 1;
+                    (Some(cid), p)
+                }
+                _ => panic!("Invalid value for v in legacy"),
+            };
+            let gas_price = stx.common.gas_price.unwrap_or_default().try_into().unwrap();
+            let tx = TxLegacy {
+                chain_id: chain_id_opt,
+                nonce,
+                gas_price,
+                gas_limit,
+                to: to_kind,
+                value,
+                input,
+            };
+            let sig = Signature::from_scalars_and_parity(r, s, parity);
+            let signed = alloy::consensus::Signed::new_unhashed(tx, sig);
+            TxEnvelope::from(signed)
+        }
+        1 => {
+            let gas_price = stx.common.gas_price.unwrap_or_default().try_into().unwrap();
+            let access_list = to_access_list(&stx.common.access_list);
+            let tx = TxEip2930 {
+                chain_id,
+                nonce,
+                gas_price,
+                gas_limit,
+                to: to_kind,
+                value,
+                access_list,
+                input,
+            };
+            let parity = stx.v & 1 == 1;
+            let sig = Signature::from_scalars_and_parity(r, s, parity);
+            let signed = alloy::consensus::Signed::new_unhashed(tx, sig);
+            TxEnvelope::from(signed)
+        }
+        2 => {
+            let max_fee = stx.common.max_fee_per_gas.unwrap().try_into().unwrap();
+            let max_prio = stx
+                .common
+                .max_priority_fee_per_gas
+                .unwrap()
+                .try_into()
+                .unwrap();
+            let access_list = to_access_list(&stx.common.access_list);
+            let tx = TxEip1559 {
+                chain_id,
+                nonce,
+                max_fee_per_gas: max_fee,
+                max_priority_fee_per_gas: max_prio,
+                gas_limit,
+                to: to_kind,
+                value,
+                access_list,
+                input,
+            };
+            let parity = stx.v & 1 == 1;
+            let sig = Signature::from_scalars_and_parity(r, s, parity);
+            let signed = alloy::consensus::Signed::new_unhashed(tx, sig);
+            TxEnvelope::from(signed)
+        }
+        4 => {
+            let access_list = to_access_list(&stx.common.access_list);
+            let auth_list = to_auth_list(&stx.common.authorization_list);
+            let to_addr = match &stx.common.to.0 {
+                None => panic!("7702 requires destination"),
+                Some(a) => *a,
+            };
+            let tx = TxEip7702 {
+                chain_id,
+                nonce,
+                max_priority_fee_per_gas: stx
+                    .common
+                    .max_priority_fee_per_gas
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
+                max_fee_per_gas: stx.common.max_fee_per_gas.unwrap().try_into().unwrap(),
+                gas_limit,
+                to: to_addr,
+                value,
+                input,
+                access_list,
+                authorization_list: auth_list,
+            };
+            let parity = stx.v & 1 == 1;
+            let sig = Signature::from_scalars_and_parity(r, s, parity);
+            let signed = alloy::consensus::Signed::new_unhashed(tx, sig);
+            TxEnvelope::from(signed)
+        }
+        _ => panic!("Unsupported tx type"),
+    }
+}
+
+fn to_kind(to: &FieldTo) -> alloy::primitives::TxKind {
+    match to.0 {
+        None => alloy::primitives::TxKind::Create,
+        Some(addr) => alloy::primitives::TxKind::Call((*addr).into()),
+    }
+}
+
+fn to_access_list(src: &Option<Vec<AccessListItem>>) -> AlloyAccessList {
+    let items = src
+        .as_ref()
+        .map(|v| {
+            v.iter()
+                .map(|it| AlloyALItem {
+                    address: it.address,
+                    storage_keys: it
+                        .storage_keys
+                        .clone()
+                        .into_iter()
+                        .map(FixedBytes::from)
+                        .collect(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    AlloyAccessList(items)
+}
+
+fn to_auth_list(src: &Option<Vec<AuthorizationListItem>>) -> Vec<SignedAuthorization> {
+    let mut out = Vec::new();
+    if let Some(list) = src {
+        for a in list {
+            let auth = AlloyAuthorization {
+                chain_id: w3_u256_to_alloy_u256(&a.chain_id),
+                address: a.address,
+                nonce: a.nonce.as_u64(),
+            };
+            let y = (a.y_parity.as_u64() & 1) == 1;
+            let sig = Signature::from_scalars_and_parity(
+                FixedBytes::from(w3_u256_to_alloy_u256(&a.r)),
+                FixedBytes::from(w3_u256_to_alloy_u256(&a.s)),
+                y,
+            );
+            out.push(auth.into_signed(sig));
+        }
+    }
+    out
+}
+
+fn w3_u256_to_alloy_u256(x: &web3::types::U256) -> alloy::primitives::U256 {
+    let mut buf = [0u8; 32];
+    x.to_big_endian(&mut buf);
+    alloy::primitives::U256::from_be_bytes(buf)
 }

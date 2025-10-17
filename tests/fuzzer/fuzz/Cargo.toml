@@ -14,6 +14,7 @@ features = ["http-rustls-tls", "test", "signing"]
 
 [dependencies]
 evm_interpreter = { path = "../../../evm_interpreter" }
+oracle_provider = { path = "../../../oracle_provider" }
 forward_system = { path = "../../../forward_system", features = ["no_print"] }
 basic_system = { path = "../../../basic_system" }
 basic_bootloader = { path = "../../../basic_bootloader" }
@@ -133,26 +134,26 @@ test = false
 doc = false
 bench = false
 
-[[bin]]
-name = "bootloader_process_transaction"
-path = "fuzz_targets/bootloader/bootloader_process_transaction.rs"
-test = false
-doc = false
-bench = false
+# [[bin]]
+# name = "bootloader_process_transaction"
+# path = "fuzz_targets/bootloader/bootloader_process_transaction.rs"
+# test = false
+# doc = false
+# bench = false
 
-[[bin]]
-name = "bootloader_tx_try_from_slice"
-path = "fuzz_targets/bootloader/bootloader_tx_try_from_slice.rs"
-test = false
-doc = false
-bench = false
+# [[bin]]
+# name = "bootloader_tx_try_from_slice"
+# path = "fuzz_targets/bootloader/bootloader_tx_try_from_slice.rs"
+# test = false
+# doc = false
+# bench = false
 
-[[bin]]
-name = "bootloader_tx_parser"
-path = "fuzz_targets/bootloader/bootloader_tx_parser.rs"
-test = false
-doc = false
-bench = false
+# [[bin]]
+# name = "bootloader_tx_parser"
+# path = "fuzz_targets/bootloader/bootloader_tx_parser.rs"
+# test = false
+# doc = false
+# bench = false
 
 [[bin]]
 name = "bootloader_run_single_interaction"
@@ -175,19 +176,19 @@ test = false
 doc = false
 bench = false
 
-[[bin]]
-name = "bootloader_tx_validate"
-path = "fuzz_targets/bootloader/bootloader_tx_validate.rs"
-test = false
-doc = false
-bench = false
+# [[bin]]
+# name = "bootloader_tx_validate"
+# path = "fuzz_targets/bootloader/bootloader_tx_validate.rs"
+# test = false
+# doc = false
+# bench = false
 
-[[bin]]
-name = "bootloader_tx_calculate_signed_hash"
-path = "fuzz_targets/bootloader/bootloader_tx_calculate_signed_hash.rs"
-test = false
-doc = false
-bench = false
+# [[bin]]
+# name = "bootloader_tx_calculate_signed_hash"
+# path = "fuzz_targets/bootloader/bootloader_tx_calculate_signed_hash.rs"
+# test = false
+# doc = false
+# bench = false
 
 [[bin]]
 name = "precompiles_ecrecover"

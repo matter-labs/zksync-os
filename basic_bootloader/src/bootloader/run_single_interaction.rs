@@ -47,9 +47,7 @@ where
                         let _ = system
                             .get_logger()
                             .write_fmt(format_args!("Error while minting: {balance_error:?}"));
-                        SubsystemError::LeafUsage(interface_error!(
-                            BootloaderInterfaceError::MintingBalanceOverflow
-                        ))
+                        interface_error!(BootloaderInterfaceError::MintingBalanceOverflow)
                     }
                     _ => wrap_error!(e),
                 }

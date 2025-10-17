@@ -6,9 +6,8 @@ use basic_system::system_functions::modexp::ModExpImpl;
 use libfuzzer_sys::fuzz_target;
 use std::convert::TryInto;
 use zk_ee::reference_implementations::BaseResources;
-use zk_ee::system::SystemFunction;
-use zk_ee::system::Resource;
 use zk_ee::reference_implementations::DecreasingNative;
+use zk_ee::system::Resource;
 use zk_ee::system::SystemFunctionExt;
 
 #[derive(Debug)]
@@ -111,13 +110,14 @@ fn fuzz(data: &[u8]) {
 
 struct DummyOracle {}
 
-impl zk_ee::system_io_oracle::IOOracle for DummyOracle {
-    type MarkerTiedIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+impl zk_ee::oracle::IOOracle for DummyOracle {
+    type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
 
-    fn create_oracle_access_iterator<'a, M: zk_ee::system_io_oracle::OracleIteratorTypeMarker>(
+    fn raw_query<'a, I: zk_ee::oracle::usize_serialization::UsizeSerializable + zk_ee::oracle::usize_serialization::UsizeDeserializable>(
         &'a mut self,
-        _init_value: M::Params,
-    ) -> Result<Self::MarkerTiedIterator<'a>, zk_ee::system::errors::internal::InternalError> {
+        _query_type: u32,
+        _input: &I,
+    ) -> Result<Self::RawIterator<'a>, zk_ee::system::errors::internal::InternalError> {
         unreachable!("oracle should not be consulted on native targets");
     }
 }

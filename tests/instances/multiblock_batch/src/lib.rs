@@ -3,24 +3,17 @@
 //!
 #![cfg(test)]
 
-use alloy::consensus::{TxEip1559, TxEip2930, TxLegacy};
+use alloy::consensus::{TxEip1559, TxLegacy};
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
-use hex::FromHex;
-use rig::alloy::consensus::TxEip7702;
-use rig::alloy::primitives::{address, FixedBytes};
-use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
-use rig::ethers::types::Address;
+use rig::alloy::primitives::address;
 use rig::log::debug;
 use rig::ruint::aliases::{B160, U256};
 use rig::utils::{ERC_20_BYTECODE, ERC_20_MINT_CALLDATA, ERC_20_TRANSFER_CALLDATA};
-use rig::zk_ee::memory::stack_trait::Stack;
-use rig::{alloy, ethers, zksync_web3_rs, Chain};
+use rig::{alloy, zksync_web3_rs, Chain};
 use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
 use std::path::PathBuf;
 use std::str::FromStr;
-use zksync_web3_rs::eip712::Eip712Meta;
-use zksync_web3_rs::eip712::PaymasterParams;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 
 #[test]

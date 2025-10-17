@@ -2,7 +2,7 @@
 #![feature(allocator_api)]
 #![feature(generic_const_exprs)]
 
-use basic_bootloader::bootloader::transaction::ZkSyncTransaction;
+use basic_bootloader::bootloader::transaction::AbiEncodedTransaction;
 use common::mutate_transaction;
 use libfuzzer_sys::{fuzz_mutator, fuzz_target};
 use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
@@ -15,7 +15,7 @@ fuzz_mutator!(|data: &mut [u8], size: usize, max_size: usize, seed: u32| {
 
 fn fuzz(data: &[u8]) {
     let mut data = data.to_owned();
-    let Ok(transaction) = ZkSyncTransaction::try_from_slice(&mut data) else {
+    let Ok(transaction) = AbiEncodedTransaction::try_from_slice(&mut data) else {
         // Input is not valid
         return;
     };

@@ -1,5 +1,5 @@
 use crate::internal_error;
-use crate::kv_markers::{UsizeDeserializable, UsizeSerializable};
+use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::internal::InternalError;
 
 #[repr(u8)]

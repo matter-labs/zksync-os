@@ -27,7 +27,7 @@ zksync_os_evm_errors = { workspace = true, default-features = false }
 # serde derivation has to be disabled for risc-v target until we update ruint version
 serde = ["dep:serde", "ruint/serde"]
 testing = ["serde"]
-default = ["serde", "error_origins"]
+default = ["serde", "error_origins", "detailed_errors"]
 cycle_marker = ["cycle_marker/log_to_file"]
 # Adds location (file, line number) where an error is raised
 error_origins = []

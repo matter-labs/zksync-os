@@ -43,19 +43,16 @@ impl<R: Resources> SystemFunction<R, Bn254PairingCheckErrors> for Bn254PairingCh
             ))?;
 
             if src.len() % 192 != 0 {
-                return Err(SubsystemError::LeafUsage(interface_error!(
+                return Err(interface_error!(
                     Bn254PairingCheckInterfaceError::InvalidPairingSize
-                )));
+                ));
             }
 
             let success = if src.is_empty() {
                 true
             } else {
-                bn254_pairing_check_inner::<A>(num_pairs, src, allocator).map_err(|_| {
-                    SubsystemError::LeafUsage(interface_error!(
-                        Bn254PairingCheckInterfaceError::InvalidPoint
-                    ))
-                })?
+                bn254_pairing_check_inner::<A>(num_pairs, src, allocator)
+                    .map_err(|_| interface_error!(Bn254PairingCheckInterfaceError::InvalidPoint))?
             };
 
             dst.try_extend(core::iter::repeat_n(0, 31).chain(core::iter::once(success as u8)))
