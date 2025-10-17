@@ -2,23 +2,10 @@
 
 use libfuzzer_sys::fuzz_target;
 use revm::precompile::bn128;
-use rig::ethers::signers::Signer;
-use ruint::aliases::{B160, U256};
 mod common;
 
 fuzz_target!(|data: &[u8]| {
-    let mut chain = rig::Chain::empty(None);
-    let wallet = chain.random_wallet();
-    let tx = rig::utils::sign_and_encode_ethers_legacy_tx(
-        common::get_tx("0000000000000000000000000000000000000007", data),
-        &wallet,
-    );
-    chain.set_balance(
-        B160::from_be_bytes(wallet.address().0),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-
-    let block_output = chain.run_block(vec![tx], None, None);
+    let block_output = common::run_precompile("0000000000000000000000000000000000000007", data);
 
     #[allow(unused_variables)]
     let output = block_output

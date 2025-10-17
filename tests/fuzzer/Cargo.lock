@@ -6271,6 +6271,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "alloy-rlp",
+ "alloy-sol-types",
  "basic_bootloader",
  "basic_system",
  "bincode",
@@ -9011,13 +9012,15 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_evm_errors"
-version = "0.0.7"
-source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#a1cfc1438d6f8ff4b3d58a81cab70da2044703b1"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95ddc4ac82441385017e569ee1b060502a2af4d78c4fb7b24bcee70b0b96e6a3"
 
 [[package]]
 name = "zksync_os_interface"
-version = "0.0.7"
-source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-rlp-encoded-txs#a1cfc1438d6f8ff4b3d58a81cab70da2044703b1"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "419c83b063e48b1aee60a5022cc51acaac10adc0e54a1e777a3442c3ff22b122"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
