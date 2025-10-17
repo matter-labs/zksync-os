@@ -2,43 +2,63 @@
 #![feature(assert_matches)]
 
 use bytes::Bytes;
+use rig::alloy::consensus::TxLegacy;
+use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
 use rig::zksync_os_interface::types::BlockOutput;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
 use rig::BlockContext;
-use rig::ProfilerConfig;
 use rig::{
-    ethers::{abi::Address, signers::Signer, types::TransactionRequest},
+    alloy::primitives::{address, Address},
     ruint::aliases::{B160, U256},
 };
 use std::assert_matches::assert_matches;
-use std::path::PathBuf;
 
-fn run_precompile(
-    precompile_id: &str,
-    gas: Option<impl Into<rig::ethers::prelude::U256>>,
-    input: &[u8],
-) -> BlockOutput {
-    let gas = match gas {
-        Some(x) => x.into(),
-        None => rig::ethers::prelude::U256::from(1 << 27),
-    };
+/// Performs two calls:
+/// 1. Calls the precompile with given input and gas limit.
+/// 2. Calls the forwarder contract to call the precompile with the same input and gas limit.
+///
+/// The second call is just there to check consistency between forward and proof runs.
+fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockOutput {
+    let gas = gas.unwrap_or(1 << 27);
 
     let mut chain = rig::Chain::empty(None);
-    let wallet = chain.random_wallet();
-    let addr = Address::from_slice(hex::decode(precompile_id).unwrap().as_slice());
+    let wallet = chain.random_signer();
+    let target = Address::from_slice(hex::decode(precompile_id).unwrap().as_slice());
+    let forwarder = address!("0x1000000000000000000000000000000000000000");
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().0),
+        B160::from_be_bytes(wallet.address().into_array()),
         U256::from(1_000_000_000_000_000_u64),
     );
+    chain.set_evm_bytecode(
+        B160::from_be_bytes(forwarder.into_array()),
+        &hex::decode(FORWARDER_BYTECODE).unwrap(),
+    );
 
-    let tx = rig::utils::sign_and_encode_ethers_legacy_tx(
-        TransactionRequest::new()
-            .to(addr)
-            .gas(gas)
-            .gas_price(25_000)
-            .data(input.to_vec())
-            .nonce(0),
+    let direct_tx = rig::utils::sign_and_encode_alloy_tx(
+        TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 25_000,
+            gas_limit: gas,
+            to: rig::alloy::primitives::TxKind::Call(target),
+            value: Default::default(),
+            input: input.to_vec().into(),
+        },
+        &wallet,
+    );
+
+    let calldata = calldata_for_forwarder(target, input);
+    let forwarded_tx = rig::utils::sign_and_encode_alloy_tx(
+        TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 1,
+            gas_price: 25_000,
+            gas_limit: gas,
+            to: rig::alloy::primitives::TxKind::Call(forwarder),
+            value: Default::default(),
+            input: calldata.into(),
+        },
         &wallet,
     );
 
@@ -49,7 +69,17 @@ fn run_precompile(
         ..Default::default()
     };
 
-    chain.run_block(vec![tx], Some(block_context), None)
+    let run_config = rig::chain::RunConfig {
+        app: Some("for_tests".to_string()),
+        only_forward: false,
+        check_storage_diff_hashes: true,
+        ..Default::default()
+    };
+    chain.run_block(
+        vec![direct_tx, forwarded_tx],
+        Some(block_context),
+        Some(run_config),
+    )
 }
 
 struct Test {
@@ -6024,6 +6054,8 @@ fn test_modexp_out_of_gas_ref() {
 
 #[test]
 fn test_precompile_parses_input_correctly() {
+    use rig::ethers::signers::Signer;
+    use rig::ethers::types::{Address, TransactionRequest};
     let target_precompiles: [&str; 4] = [
         "0000000000000000000000000000000000000001", // ecrecover
         "0000000000000000000000000000000000000006", // ecadd

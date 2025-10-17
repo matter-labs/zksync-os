@@ -5940,6 +5940,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "alloy-rlp",
+ "alloy-sol-types",
  "basic_bootloader",
  "basic_system",
  "bincode",
