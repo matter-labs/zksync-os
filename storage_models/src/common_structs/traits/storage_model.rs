@@ -218,7 +218,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
     fn pubdata_used_by_tx(&self) -> u32;
 
     /// Used for testing to compare state diffs between forwards and proving runs.
-    fn finish_state_diffs_hash(
+    fn finish_and_calculate_state_diffs_hash(
         self,
         oracle: &mut impl IOOracle,
         state_commitment: Option<&mut Self::StorageCommitment>,
