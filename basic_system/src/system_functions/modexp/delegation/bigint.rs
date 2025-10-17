@@ -247,6 +247,9 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                         advisor,
                     );
                     if bit {
+                        if current.digits == 0 {
+                            break 'outer;
+                        }
                         (current, (scratch_0, scratch_1, scratch_2, scratch_3)) = Self::mul_step(
                             current,
                             &base,
