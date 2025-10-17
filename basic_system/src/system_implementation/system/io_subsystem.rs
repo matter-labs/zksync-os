@@ -592,12 +592,10 @@ impl<
         A: Allocator + Clone + Default,
         R: Resources,
         P: StorageAccessPolicy<R, Bytes32> + Default,
-        SC: StackCtor<SCC>,
-        SCC: const StackCtorConst,
+        SF: StackFactory<M>,
+        const M: usize,
         O: IOOracle,
-    > FinishIO for FullIO<A, R, P, SC, SCC, O, true>
-where
-    ExtraCheck<SCC, A>:,
+    > FinishIO for FullIO<A, R, P, SF, M, O, true>
 {
     type FinalData = (O, Bytes32);
     fn finish(
@@ -610,16 +608,9 @@ where
         mut logger: impl Logger,
     ) -> Self::FinalData {
         let (mut state_commitment, last_block_timestamp) = {
-            let mut initialization_iterator = self
-                .oracle
-                .create_oracle_access_iterator::<ProofDataIterator>(())
-                .unwrap();
-            let proof_data =
-                <ProofData<FlatStorageCommitment<TREE_HEIGHT>> as UsizeDeserializable>::from_iter(
-                    &mut initialization_iterator,
-                )
-                .unwrap();
-            assert_eq!(initialization_iterator.len(), 0);
+            let proof_data: ProofData<FlatStorageCommitment<TREE_HEIGHT>> =
+                ZKProofDataQuery::get(&mut self.oracle, &())
+                    .expect("must get proof data from oracle");
             (proof_data.state_root_view, proof_data.last_block_timestamp)
         };
 

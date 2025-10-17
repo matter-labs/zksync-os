@@ -52,13 +52,13 @@ case "$TYPE" in
     TEXT_NAME="app_debug.text"
     ;;
   evm-replay)
-    FEATURES="$FEATURES,proof_running_system/disable_system_contracts,proof_running_system/prevrandao,proof_running_system/evm_refunds"
+    FEATURES="$FEATURES,proof_running_system/disable_system_contracts,proof_running_system/prevrandao,proof_running_system/evm_refunds,proof_running_system/state-diffs-pi"
     BIN_NAME="evm_replay.bin"
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
     ;;
   evm-replay-benchmarking)
-    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/cycle_marker,proof_running_system/prevrandao,proof_running_system/evm_refunds"
+    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/cycle_marker,proof_running_system/prevrandao,proof_running_system/evm_refunds,proof_running_system/state-diffs-pi"
     BIN_NAME="evm_replay.bin"
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
@@ -82,7 +82,7 @@ case "$TYPE" in
     TEXT_NAME="multiblock_batch_logging_enabled.text"
     ;;
   evm-tester)
-    FEATURES="$FEATURES,proof_running_system/state-diffs-pi,proof_running_system/resources_for_tester,proof_running_system/prevrandao,proof_running_system/pectra",
+    FEATURES="$FEATURES,proof_running_system/state-diffs-pi,proof_running_system/resources_for_tester,proof_running_system/prevrandao,proof_running_system/pectra,proof_running_system/p256_precompile",
     BIN_NAME="evm_tester.bin"
     ELF_NAME="evm_tester.elf"
     TEXT_NAME="evm_tester.text"
