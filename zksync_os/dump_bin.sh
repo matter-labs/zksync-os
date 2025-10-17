@@ -13,7 +13,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: $0 [--type default|for-tests|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|debug-in-simulator|pectra|multiblock-batch|multiblock-batch-logging-enabled|evm-tester]"
+      echo "Usage: $0 [--type default|for-tests|server|server-logging-enabled|evm-replay|evm-replay-benchmarking|debug-in-simulator|pectra|multiblock-batch|multiblock-batch-logging-enabled|evm-tester]"
       exit 1
       ;;
   esac
@@ -38,12 +38,6 @@ case "$TYPE" in
     BIN_NAME="server_app_logging_enabled.bin"
     ELF_NAME="server_app_logging_enabled.elf"
     TEXT_NAME="server_app_logging_enabled.text"
-    ;;
-  benchmarking)
-    FEATURES="$FEATURES,proof_running_system/cycle_marker,proof_running_system/unlimited_native,proof_running_system/p256_precompile,proof_running_system/state-diffs-pi"
-    BIN_NAME="app.bin"
-    ELF_NAME="app.elf"
-    TEXT_NAME="app.text"
     ;;
   debug-in-simulator)
     FEATURES="$FEATURES,print_debug_info,proof_running_system/cycle_marker,proof_running_system/p256_precompile,proof_running_system/state-diffs-pi"
@@ -88,7 +82,7 @@ case "$TYPE" in
     TEXT_NAME="evm_tester.text"
     ;;
   for-tests)
-    FEATURES="$FEATURES,proof_running_system/state-diffs-pi,proof_running_system/p256_precompile",
+    FEATURES="$FEATURES,proof_running_system/state-diffs-pi,proof_running_system/p256_precompile,proof_running_system/cycle_marker",
     BIN_NAME="for_tests.bin"
     ELF_NAME="for_tests.elf"
     TEXT_NAME="for_tests.text"
@@ -98,7 +92,7 @@ case "$TYPE" in
     ;;
   *)
     echo "Invalid --type: $TYPE"
-    echo "Valid types are: default, server, server-logging-enabled, evm-replay, benchmarking, evm-replay-benchmarking, debug-in-simulator, multiblock-batch"
+    echo "Valid types are: default, server, server-logging-enabled, evm-replay, for-tests, evm-replay-benchmarking, debug-in-simulator, multiblock-batch"
     exit 1
     ;;
 esac
