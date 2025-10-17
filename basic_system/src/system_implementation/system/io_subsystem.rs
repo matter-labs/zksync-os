@@ -607,7 +607,7 @@ impl<
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
-        #[cfg(and(feature = "wrap-in-batch", feature = "state-diffs-pi"))]
+        #[cfg(all(feature = "wrap-in-batch", feature = "state-diffs-pi"))]
         panic!("Invalid features combination"); // Can't have both features enabled at the same time
 
         let (mut state_commitment, last_block_timestamp) = {
