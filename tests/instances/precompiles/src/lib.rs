@@ -69,7 +69,17 @@ fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockO
         ..Default::default()
     };
 
-    chain.run_block(vec![direct_tx, forwarded_tx], Some(block_context), None)
+    let run_config = rig::chain::RunConfig {
+        app: Some("for_tests".to_string()),
+        only_forward: false,
+        check_storage_diff_hashes: true,
+        ..Default::default()
+    };
+    chain.run_block(
+        vec![direct_tx, forwarded_tx],
+        Some(block_context),
+        Some(run_config),
+    )
 }
 
 struct Test {

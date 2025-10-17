@@ -37,6 +37,7 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
                   ./dump_bin.sh
+                  ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile
               run: cargo test --release --no-run
@@ -65,6 +66,7 @@ jobs:
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
                   ./dump_bin.sh --type pectra
+                  ./dump_bin.sh --type for-tests
             - name: Run pectra tests
               run: cargo test --features pectra --release -p transactions
 
@@ -170,7 +172,7 @@ jobs:
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
-                  ./dump_bin.sh
+                  ./dump_bin.sh --type for-tests
             - name: Run proving test
               # Runs with e2e_proving feature
               run: cargo test --release -p transactions --features e2e_proving run_base_system -- --nocapture
@@ -249,7 +251,7 @@ jobs:
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
-                  ./dump_bin.sh
+                  ./dump_bin.sh --type for-tests
             - name: Run regression tests
               working-directory: ./tests/fuzzer
               run: |

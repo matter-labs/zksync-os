@@ -13,7 +13,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: $0 [--type default|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|debug-in-simulator|pectra|multiblock-batch|multiblock-batch-logging-enabled|evm-tester]"
+      echo "Usage: $0 [--type default|for-tests|server|server-logging-enabled|evm-replay|benchmarking|evm-replay-benchmarking|debug-in-simulator|pectra|multiblock-batch|multiblock-batch-logging-enabled|evm-tester]"
       exit 1
       ;;
   esac
@@ -40,13 +40,13 @@ case "$TYPE" in
     TEXT_NAME="server_app_logging_enabled.text"
     ;;
   benchmarking)
-    FEATURES="$FEATURES,proof_running_system/cycle_marker,proof_running_system/unlimited_native,proof_running_system/p256_precompile"
+    FEATURES="$FEATURES,proof_running_system/cycle_marker,proof_running_system/unlimited_native,proof_running_system/p256_precompile,proof_running_system/state-diffs-pi"
     BIN_NAME="app.bin"
     ELF_NAME="app.elf"
     TEXT_NAME="app.text"
     ;;
   debug-in-simulator)
-    FEATURES="$FEATURES,print_debug_info,proof_running_system/cycle_marker,proof_running_system/p256_precompile"
+    FEATURES="$FEATURES,print_debug_info,proof_running_system/cycle_marker,proof_running_system/p256_precompile,proof_running_system/state-diffs-pi"
     BIN_NAME="app_debug.bin"
     ELF_NAME="app_debug.elf"
     TEXT_NAME="app_debug.text"
@@ -64,10 +64,10 @@ case "$TYPE" in
     TEXT_NAME="evm_replay.text"
     ;;
   pectra)
-    FEATURES="$FEATURES,proof_running_system/pectra"
-    BIN_NAME="app.bin"
-    ELF_NAME="app.elf"
-    TEXT_NAME="app.text"
+    FEATURES="$FEATURES,proof_running_system/pectra,proof_running_system/state-diffs-pi"
+    BIN_NAME="pectra.bin"
+    ELF_NAME="pectra.elf"
+    TEXT_NAME="pectra.text"
     ;;
   multiblock-batch)
     FEATURES="$FEATURES,proof_running_system/multiblock-batch"
@@ -86,6 +86,12 @@ case "$TYPE" in
     BIN_NAME="evm_tester.bin"
     ELF_NAME="evm_tester.elf"
     TEXT_NAME="evm_tester.text"
+    ;;
+  for-tests)
+    FEATURES="$FEATURES,proof_running_system/state-diffs-pi,proof_running_system/p256_precompile",
+    BIN_NAME="for_tests.bin"
+    ELF_NAME="for_tests.elf"
+    TEXT_NAME="for_tests.text"
     ;;
   default)
     # leave defaults
