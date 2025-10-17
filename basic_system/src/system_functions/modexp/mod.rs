@@ -35,8 +35,12 @@ pub struct ModExpAdviceParams {
     pub modulus_len: u32, // Length of modulus in words
 }
 
-#[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
-mod delegation;
+#[cfg(any(
+    all(target_arch = "riscv32", feature = "proving"),
+    test,
+    feature = "testing"
+))]
+pub mod delegation;
 
 ///
 /// modexp system function implementation.

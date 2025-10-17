@@ -19,6 +19,8 @@ either = { version = "*", default-features = false }
 storage_models = { path = "../storage_models", default-features = false }
 modexp = { path = "../supporting_crates/modexp" }
 cycle_marker = { path = "../cycle_marker" }
+num-bigint = { version =  "*", optional = true}
+num-traits = { version =  "*", optional = true}
 
 cfg-if = "1.0.0"
 const_for = "0.1.5"
@@ -30,7 +32,7 @@ strum_macros = "0.27.1"
 paste = "1.0.15"
 
 [features]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "rand", "crypto/testing"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "rand", "crypto/testing", "num-bigint", "num-traits"]
 evm-compatibility = []
 default = ["testing"]
 cycle_marker = ["cycle_marker/log_to_file"]

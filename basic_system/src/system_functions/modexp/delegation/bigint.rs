@@ -706,7 +706,7 @@ pub(crate) trait ModexpAdvisor {
     );
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub(crate) mod naive_advisor {
     use std::alloc::Global;
 
