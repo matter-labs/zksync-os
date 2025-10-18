@@ -36,6 +36,7 @@ env_logger = "0.11.6"
 log = "0.4.22" # tokio with `rt-multi-thread` feature needed to build ethers 2.0.0
 alloy = { version = "1", features = ["full", "eip712", "consensus"]}
 alloy-rlp = { version = "0.3.12" }
+alloy-sol-types = "1"
 zksync-web3-rs = { git = "https://github.com/lambdaclass/zksync-web3-rs.git" }
 bincode = "1.3"
 
@@ -48,9 +49,10 @@ no_print = ["forward_system/no_print"]
 cycle_marker = ["dep:cycle_marker", "zksync_os_runner/cycle_marker", "zk_ee/cycle_marker", "evm_interpreter/cycle_marker", "basic_system/cycle_marker", "basic_bootloader/cycle_marker"]
 simulate_witness_gen = []
 unlimited_native = ["forward_system/unlimited_native"]
-resources_for_tester = ["basic_bootloader/resources_for_tester"]
+resources_for_tester = ["forward_system/resources_for_tester"]
 p256_precompile = ["system_hooks/p256_precompile"]
 disable_system_contracts = ["forward_system/disable_system_contracts"]
 prevrandao = ["zk_ee/prevrandao"]
 evm_refunds = ["forward_system/evm_refunds"]
 pectra = ["forward_system/pectra"]
+

@@ -3,8 +3,6 @@
 use arbitrary::{Arbitrary, Unstructured};
 use libfuzzer_sys::fuzz_target;
 use revm::precompile::modexp;
-use rig::ethers::signers::Signer;
-use ruint::aliases::{B160, U256};
 
 mod common;
 
@@ -75,21 +73,10 @@ impl<'a> Arbitrary<'a> for Input {
 }
 
 fuzz_target!(|input: Input| {
-    let mut chain = rig::Chain::empty(None);
-    let wallet = chain.random_wallet();
-    let tx = rig::utils::sign_and_encode_ethers_legacy_tx(
-        common::get_tx(
-            "0000000000000000000000000000000000000005",
-            input.to_bytes().as_ref(),
-        ),
-        &wallet,
+    let block_output = common::run_precompile(
+        "0000000000000000000000000000000000000005",
+        input.to_bytes().as_ref(),
     );
-    chain.set_balance(
-        B160::from_be_bytes(wallet.address().0),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-
-    let block_output = chain.run_block(vec![tx], None, None);
 
     #[allow(unused_variables)]
     let output = block_output

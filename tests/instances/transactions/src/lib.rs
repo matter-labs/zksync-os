@@ -17,6 +17,14 @@ use zksync_web3_rs::eip712::Eip712Meta;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 mod native_charging;
 
+fn run_config() -> Option<rig::chain::RunConfig> {
+    Some(rig::chain::RunConfig {
+        app: Some("for_tests".to_string()),
+        only_forward: false,
+        check_storage_diff_hashes: true,
+        ..Default::default()
+    })
+}
 fn run_base_system_common(use_712: bool) {
     let mut chain = Chain::empty(None);
     // FIXME: this address looks very similar to bridgehub/shared bridge on gateway.
@@ -235,7 +243,7 @@ fn run_base_system_common(use_712: bool) {
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let output = chain.run_block(transactions, None, None);
+    let output = chain.run_block(transactions, None, run_config());
 
     // Assert all txs succeeded
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
@@ -328,7 +336,7 @@ fn test_withdrawal() {
         U256::from(1_000_000_000_000_000_u64),
     );
 
-    let output = chain.run_block(transactions, None, None);
+    let output = chain.run_block(transactions, None, run_config());
 
     // Assert all txs succeeded
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
@@ -403,7 +411,7 @@ fn test_tx_with_access_list() {
         U256::from(1_000_000_000_000_000_u64),
     );
 
-    let output = chain.run_block(transactions, None, None);
+    let output = chain.run_block(transactions, None, run_config());
 
     // Assert all txs succeeded
     let result0 = output.tx_results.first().unwrap().clone();
@@ -468,7 +476,13 @@ fn test_tx_with_authorization_list() {
         U256::from(1_000_000_000_000_000_u64),
     );
 
-    let output = chain.run_block(transactions, None, None);
+    let run_config = rig::chain::RunConfig {
+        app: Some("pectra".to_string()),
+        only_forward: false,
+        check_storage_diff_hashes: true,
+        ..Default::default()
+    };
+    let output = chain.run_block(transactions, None, Some(run_config));
 
     // Assert all txs succeeded
     let result0 = output.tx_results.first().unwrap().clone();
@@ -531,7 +545,7 @@ fn test_deployment_tx_with_authorization_list_fails() {
         U256::from(1_000_000_000_000_000_u64),
     );
 
-    let output = chain.run_block(transactions, None, None);
+    let output = chain.run_block(transactions, None, run_config());
 
     // Assert all txs failed
     let result0 = output.tx_results.first().unwrap().clone();
@@ -607,7 +621,7 @@ fn test_cold_in_new_tx() {
         U256::from(1_000_000_000_000_000_u64),
     );
 
-    let output = chain.run_block(transactions, None, None);
+    let output = chain.run_block(transactions, None, run_config());
 
     // Assert all txs succeeded
     let result0 = output.tx_results.first().unwrap().clone();
@@ -683,7 +697,7 @@ fn test_regression_returndata_empty_3541() {
         U256::from(1_000_000_000_000_000_u64),
     );
 
-    let output = chain.run_block(transactions, None, None);
+    let output = chain.run_block(transactions, None, run_config());
 
     // Assert all txs succeeded
     let result0 = output.tx_results.first().unwrap().clone();
@@ -749,7 +763,7 @@ fn test_balance_overflow_protection() {
         rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
     };
 
-    let output = chain.run_block(vec![overflow_fee_tx, overflow_total_tx], None, None);
+    let output = chain.run_block(vec![overflow_fee_tx, overflow_total_tx], None, run_config());
 
     assert!(
         output.tx_results.get(0).unwrap().is_err(),
@@ -792,7 +806,7 @@ fn test_upgrade_tx_revert_internal_error() {
     let transactions = vec![upgrade_tx];
 
     // Use run_block_no_panic to catch the error instead of panicking
-    let result = chain.run_block_no_panic(transactions, None, None, false);
+    let result = chain.run_block_no_panic(transactions, None, None);
 
     // The upgrade transaction should fail with an internal error (not validation error)
     assert!(result.is_err());
@@ -836,7 +850,7 @@ fn test_upgrade_tx_succeeds() {
     let transactions = vec![upgrade_tx];
 
     // Use run_block_no_panic to catch the error instead of panicking
-    let result = chain.run_block_no_panic(transactions, None, None, false);
+    let result = chain.run_block_no_panic(transactions, None, None);
     assert!(result.is_ok());
 
     assert!(result.unwrap().tx_results[0].as_ref().unwrap().is_success());
@@ -873,7 +887,7 @@ fn test_invalid_transaction_type_failure() {
         );
 
         let transactions = vec![invalid_tx];
-        let result = chain.run_block(transactions, None, None);
+        let result = chain.run_block(transactions, None, run_config());
         assert!(
             result.tx_results[0].is_err(),
             "Transaction with invalid type should fail"

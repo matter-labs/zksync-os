@@ -50,7 +50,7 @@ fn run_many_blocks_proof_run() {
     };
 
     let proof_input_1 = chain
-        .run_block_with_extra_stats(vec![encoded_mint_tx], None, None, None, None)
+        .run_block_with_extra_stats(vec![encoded_mint_tx], None, None)
         .unwrap()
         .2;
     let encoded_transfer_tx = {
@@ -69,7 +69,7 @@ fn run_many_blocks_proof_run() {
     };
 
     let proof_input_2 = chain
-        .run_block_with_extra_stats(vec![encoded_transfer_tx], None, None, None, None)
+        .run_block_with_extra_stats(vec![encoded_transfer_tx], None, None)
         .unwrap()
         .2;
 

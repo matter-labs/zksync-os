@@ -62,7 +62,7 @@ jobs:
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
-          ./dump_bin.sh --type benchmarking
+          ./dump_bin.sh --type for-tests
           ./dump_bin.sh --type evm-replay-benchmarking
 
 
@@ -86,7 +86,7 @@ jobs:
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
-          ./dump_bin.sh --type benchmarking
+          ./dump_bin.sh --type for-tests
           ./dump_bin.sh --type evm-replay-benchmarking
 
       - name: run benchmarks on PR

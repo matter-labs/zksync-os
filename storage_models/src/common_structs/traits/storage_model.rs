@@ -1,4 +1,5 @@
 use super::snapshottable_io::SnapshottableIo;
+use crypto::MiniDigest;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::{BalanceSubsystemError, DeconstructionSubsystemError, NonceSubsystemError};
@@ -215,6 +216,16 @@ pub trait StorageModel: Sized + SnapshottableIo {
 
     /// Get amount of pubdata needed to encode current tx diff in bytes.
     fn pubdata_used_by_tx(&self) -> u32;
+
+    /// Used for testing to compare state diffs between forwards and proving runs.
+    fn finish_and_calculate_state_diffs_hash(
+        self,
+        oracle: &mut impl IOOracle,
+        state_commitment: Option<&mut Self::StorageCommitment>,
+        pubdata_hasher: &mut impl MiniDigest,
+        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
+        logger: &mut impl Logger,
+    ) -> Result<Bytes32, InternalError>;
 
     ///
     /// Finish work, there are 3 outputs:

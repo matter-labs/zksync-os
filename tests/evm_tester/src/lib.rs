@@ -48,6 +48,7 @@ pub struct EvmTester {
     /// Optional path to the mutated tests directory
     pub mutation_path: Option<String>,
     pub run_spec_tests: bool,
+    pub proof_run: bool,
 }
 
 impl EvmTester {
@@ -59,6 +60,7 @@ impl EvmTester {
         filters: Filters,
         workflow: Workflow,
         mutation_path: Option<String>,
+        proof_run: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             summary,
@@ -66,6 +68,7 @@ impl EvmTester {
             workflow,
             mutation_path,
             run_spec_tests: true,
+            proof_run,
         })
     }
 
@@ -80,17 +83,11 @@ impl EvmTester {
                 let mutants = test.mutants;
                 test.mutants = vec![];
 
-                test.run_zksync_os(
-                    self.summary.clone(),
-                    matches!(self.workflow, Workflow::Bench),
-                );
+                test.run_zksync_os(self.summary.clone(), self.proof_run);
 
                 if run_mutation_tests {
                     for mutant in mutants {
-                        mutant.run_zksync_os(
-                            self.summary.clone(),
-                            matches!(self.workflow, Workflow::Bench),
-                        );
+                        mutant.run_zksync_os(self.summary.clone(), self.proof_run);
                     }
                 }
             })

@@ -1102,5 +1102,6 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_evm_errors"
-version = "0.0.7"
-source = "git+https://github.com/matter-labs/zksync-os-interface?tag=v0.0.8#6d5957dfdfde1701f5adf3f732aef40a60634582"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95ddc4ac82441385017e569ee1b060502a2af4d78c4fb7b24bcee70b0b96e6a3"

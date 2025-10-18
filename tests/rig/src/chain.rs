@@ -29,6 +29,7 @@ use zk_ee::utils::Bytes32;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::traits::TxListSource;
 use zksync_os_interface::types::BlockOutput;
+use zksync_os_interface::types::StorageWrite;
 
 ///
 /// In memory chain state, mainly to be used in tests.
@@ -67,6 +68,22 @@ impl Default for BlockContext {
             mix_hash: U256::ONE,
         }
     }
+}
+
+#[derive(Default)]
+pub struct RunConfig {
+    // Config for the profiler
+    pub profiler_config: Option<ProfilerConfig>,
+    // If set, the witness will be dumped to the given file path
+    pub witness_output_file: Option<PathBuf>,
+    // Name of risc-v binary to use
+    pub app: Option<String>,
+    // Only run in forward mode, skip proving run
+    pub only_forward: bool,
+    // Whether to check that storage diff hashes from forward and proof runs match
+    // Only to be used when state-diffs-pi feature is enabled in the binary and
+    // only_forward is false
+    pub check_storage_diff_hashes: bool,
 }
 
 impl Chain<false> {
@@ -226,15 +243,15 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     /// Run block with given transactions and block context.
     /// If block context is `None` default testing values will be used.
     ///
-    /// You can also pass profiler config, if you want to enable it.
+    /// You can also pass a run config.
     ///
     pub fn run_block(
         &mut self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
-        profiler_config: Option<ProfilerConfig>,
+        run_config: Option<RunConfig>,
     ) -> BlockOutput {
-        self.run_block_with_extra_stats(transactions, block_context, profiler_config, None, None)
+        self.run_block_with_extra_stats(transactions, block_context, run_config)
             .unwrap()
             .0
     }
@@ -244,18 +261,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         &mut self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
-        profiler_config: Option<ProfilerConfig>,
-        only_forward: bool,
+        run_config: Option<RunConfig>,
     ) -> Result<BlockOutput, BootloaderSubsystemError> {
-        self.run_inner(
-            transactions,
-            block_context,
-            profiler_config,
-            None,
-            None,
-            only_forward,
-        )
-        .map(|r| r.0)
+        self.run_inner(transactions, block_context, run_config.unwrap_or_default())
+            .map(|r| r.0)
     }
 
     #[allow(clippy::result_large_err)]
@@ -263,18 +272,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         &mut self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
-        profiler_config: Option<ProfilerConfig>,
-        witness_output_file: Option<PathBuf>,
-        app: Option<String>,
+        run_config: Option<RunConfig>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
-        self.run_inner(
-            transactions,
-            block_context,
-            profiler_config,
-            witness_output_file,
-            app,
-            false,
-        )
+        self.run_inner(transactions, block_context, run_config.unwrap_or_default())
     }
 
     #[allow(clippy::result_large_err)]
@@ -282,11 +282,15 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         &mut self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
-        profiler_config: Option<ProfilerConfig>,
-        witness_output_file: Option<PathBuf>,
-        app: Option<String>,
-        only_forward: bool,
+        run_config: RunConfig,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
+        let RunConfig {
+            profiler_config,
+            witness_output_file,
+            app,
+            only_forward,
+            check_storage_diff_hashes,
+        } = run_config;
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
             chain_id: self.chain_id,
@@ -426,13 +430,15 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 });
 
                 let now = std::time::Instant::now();
-                let (proof_output, block_effective) =
+                let (proof_output, block_effective) = {
                     zksync_os_runner::run_and_get_effective_cycles(
                         get_zksync_os_img_path(&app),
                         diagnostics_config,
                         1 << 36,
                         copy_source,
-                    );
+                    )
+                };
+
                 info!(
                     "Simulator without witness tracing executed over {:?}",
                     now.elapsed()
@@ -476,9 +482,26 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
                 // Ensure that proof running didn't fail: check that output is not zero
                 assert!(proof_output.into_iter().any(|word| word != 0));
+                let proof_output_u8: [u8; 32] = unsafe { core::mem::transmute(proof_output) };
 
-                #[cfg(feature = "e2e_proving")]
-                run_prover(items.borrow().as_slice());
+                if check_storage_diff_hashes {
+                    // Also ensure that storage diff hash matches
+                    use crypto::MiniDigest;
+                    let mut hasher = crypto::blake2s::Blake2s256::new();
+                    for StorageWrite { key, value, .. } in block_output.storage_writes.iter() {
+                        hasher.update(key.0.as_ref());
+                        hasher.update(value.0.as_ref());
+                    }
+                    let forward_storage_diff_hash = hasher.finalize();
+                    info!(
+                        "Forward storage diff hash: 0x{}",
+                        hex::encode(forward_storage_diff_hash.as_ref())
+                    );
+                    assert_eq!(proof_output_u8, forward_storage_diff_hash);
+
+                    #[cfg(feature = "e2e_proving")]
+                    run_prover(items.borrow().as_slice());
+                }
 
                 proof_input
             }
@@ -666,7 +689,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
 // bunch of internal utility methods
 fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
-    let app = app_name.as_deref().unwrap_or("app");
+    let app = app_name.as_deref().unwrap_or("for_tests");
     // let app = app_name.as_deref().unwrap_or("app_debug");
     let filename = format!("{app}.{extension}");
     let zksync_os_path = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")

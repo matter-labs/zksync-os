@@ -56,6 +56,10 @@ pub struct Arguments {
     /// Update indexes without running tests.
     #[structopt(long = "update_indexes")]
     pub update_indexes: bool,
+
+    /// Also run on RISC-V simulator and check consistency against forward run.
+    #[structopt(long = "proof_run")]
+    pub proof_run: bool,
 }
 
 impl Arguments {

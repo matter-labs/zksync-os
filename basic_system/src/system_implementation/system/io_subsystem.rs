@@ -477,7 +477,11 @@ impl<
 
 // In practice we will not use single block batches
 // This functionality is here only for the tests
-#[cfg(all(not(feature = "wrap-in-batch"), not(feature = "multiblock-batch")))]
+#[cfg(all(
+    not(feature = "wrap-in-batch"),
+    not(feature = "multiblock-batch"),
+    not(feature = "state-diffs-pi")
+))]
 impl<
         A: Allocator + Clone + Default,
         R: Resources,
@@ -580,7 +584,10 @@ impl<
     }
 }
 
-#[cfg(feature = "wrap-in-batch")]
+///
+/// With `state-diffs-pi` feature is used for testing, to compare state diffs from forward run and proof run.
+///
+#[cfg(any(feature = "wrap-in-batch", feature = "state-diffs-pi"))]
 impl<
         A: Allocator + Clone + Default,
         R: Resources,
@@ -600,6 +607,9 @@ impl<
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
+        #[cfg(all(feature = "wrap-in-batch", feature = "state-diffs-pi"))]
+        panic!("Invalid features combination"); // Can't have both features enabled at the same time
+
         let (mut state_commitment, last_block_timestamp) = {
             let proof_data: ProofData<FlatStorageCommitment<TREE_HEIGHT>> =
                 ZKProofDataQuery::get(&mut self.oracle, &())
@@ -629,15 +639,28 @@ impl<
         let mut pubdata_hasher = crypto::sha3::Keccak256::new();
         pubdata_hasher.update(current_block_hash.as_u8_ref());
 
-        self.storage
-            .finish(
-                &mut self.oracle,
-                Some(&mut state_commitment),
-                &mut pubdata_hasher,
-                result_keeper,
-                &mut logger,
-            )
-            .expect("Failed to finish storage");
+        let state_diffs_hash = if cfg!(feature = "state-diffs-pi") {
+            self.storage
+                .finish_and_calculate_state_diffs_hash(
+                    &mut self.oracle,
+                    Some(&mut state_commitment),
+                    &mut pubdata_hasher,
+                    result_keeper,
+                    &mut logger,
+                )
+                .expect("Failed to finish storage")
+        } else {
+            self.storage
+                .finish(
+                    &mut self.oracle,
+                    Some(&mut state_commitment),
+                    &mut pubdata_hasher,
+                    result_keeper,
+                    &mut logger,
+                )
+                .expect("Failed to finish storage");
+            Default::default() // Unused
+        };
 
         self.logs_storage
             .apply_pubdata(&mut pubdata_hasher, result_keeper);
@@ -703,13 +726,17 @@ impl<
             "PI calculation: final batch public input {:?}\n",
             public_input,
         ));
-        let public_input_hash = public_input.hash().into();
+        let public_input_hash: Bytes32 = public_input.hash().into();
         let _ = logger.write_fmt(format_args!(
             "PI calculation: final batch public input hash {:?}\n",
             public_input_hash,
         ));
 
-        (self.oracle, public_input_hash)
+        if cfg!(feature = "state-diffs-pi") {
+            (self.oracle, state_diffs_hash)
+        } else {
+            (self.oracle, public_input_hash)
+        }
     }
 }
 

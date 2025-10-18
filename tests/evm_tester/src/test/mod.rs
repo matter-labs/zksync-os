@@ -262,7 +262,7 @@ impl Test {
     ///
     /// Runs the test on ZKsync OS.
     ///
-    pub fn run_zksync_os(self, summary: Arc<Mutex<Summary>>, bench: bool) {
+    pub fn run_zksync_os(self, summary: Arc<Mutex<Summary>>, proof_run: bool) {
         for case in self.cases {
             if let Some(filter_calldata) = self.skipped_calldatas.as_ref() {
                 if filter_calldata.contains(
@@ -289,7 +289,7 @@ impl Test {
             }
 
             let vm = ZKsyncOS::new();
-            case.run_zksync_os(summary.clone(), vm, self.name.clone(), bench);
+            case.run_zksync_os(summary.clone(), vm, self.name.clone(), proof_run);
         }
     }
 }

@@ -492,11 +492,11 @@ impl Case {
         summary: Arc<Mutex<Summary>>,
         vm: ZKsyncOS,
         test_name: String,
-        bench: bool,
+        proof_run: bool,
     ) {
         let name = self.label.clone();
         let result = std::panic::catch_unwind(|| {
-            self.run_zksync_os_inner(summary.clone(), vm, test_name.clone(), bench)
+            self.run_zksync_os_inner(summary.clone(), vm, test_name.clone(), proof_run)
         });
         if let Err(e) = result {
             Summary::panicked(summary, format!("{test_name}: {name}"), format!("{:?}", e))
@@ -508,7 +508,7 @@ impl Case {
         summary: Arc<Mutex<Summary>>,
         mut vm: ZKsyncOS,
         test_name: String,
-        bench: bool,
+        proof_run: bool,
     ) {
         let name = self.label;
 
@@ -548,7 +548,7 @@ impl Case {
             .map(|pb| pb.expect_exception)
             .collect_vec();
 
-        let run_result = Self::run_zksync_os_blocks(self.pre_blocks, &mut vm);
+        let run_result = Self::run_zksync_os_blocks(self.pre_blocks, &mut vm, proof_run);
 
         let mut check_successful = true;
         let mut expected: Option<String> = None;
@@ -686,16 +686,18 @@ impl Case {
     fn run_zksync_os_blocks(
         pre_blocks: Vec<PreBlock>,
         vm: &mut ZKsyncOS,
+        proof_run: bool,
     ) -> Vec<Result<Vec<ZKsyncOSTxExecutionResult>, String>> {
         pre_blocks
             .into_iter()
-            .map(|pre_block| Self::run_zksync_os_block(vm, pre_block))
+            .map(|pre_block| Self::run_zksync_os_block(vm, pre_block, proof_run))
             .collect_vec()
     }
 
     fn run_zksync_os_block(
         vm: &mut ZKsyncOS,
         pre_block: PreBlock,
+        proof_run: bool,
     ) -> Result<Vec<ZKsyncOSTxExecutionResult>, String> {
         let mut system_context = ZKsyncOSEVMContext::default();
 
@@ -716,7 +718,7 @@ impl Case {
         if let Some(random) = pre_block.env.current_random {
             system_context.mix_hash = random;
         }
-        vm.execute_transactions(pre_block.transactions, system_context)
+        vm.execute_transactions(pre_block.transactions, system_context, proof_run)
     }
 }
 
