@@ -1,3 +1,5 @@
+mod initial_slot_regression;
+
 // WASM disabled for now
 // #[cfg(test)]
 // mod tests {
