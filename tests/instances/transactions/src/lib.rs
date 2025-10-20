@@ -894,3 +894,88 @@ fn test_invalid_transaction_type_failure() {
         );
     }
 }
+
+#[test]
+fn test_modexp_intermediate_zero_block() {
+    let mut chain = Chain::empty(None);
+    let wallet = PrivateKeySigner::from_str(
+        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
+    )
+    .unwrap();
+
+    // Modexp precompile address
+    let modexp_address = address!("0000000000000000000000000000000000000005");
+
+    let input_data = hex::decode(concat!(
+        // Base length (96 bytes)
+        "0000000000000000000000000000000000000000000000000000000000000060",
+        // Exponent length (1 byte)
+        "0000000000000000000000000000000000000000000000000000000000000001",
+        // Modulus length (96 bytes)
+        "0000000000000000000000000000000000000000000000000000000000000060",
+        // Base (96 bytes):
+        "1000000000000000000000000000000000000000000000000000000000000001",
+        "0000000000000000000000000000000000000000000000000000000000000000", // zeroed 32-bytes block
+        "1000000000000000000000000000000000000000000000000000000000000001",
+        // Exponent (1 byte)
+        "01",
+        // Modulus (96 bytes): nop mask
+        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+    ))
+    .unwrap();
+
+    // Unchanged base
+    let expected_output = hex::decode(concat!(
+        "1000000000000000000000000000000000000000000000000000000000000001",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "1000000000000000000000000000000000000000000000000000000000000001",
+    ))
+    .unwrap();
+
+    let encoded_tx = {
+        let mint_tx = TxEip2930 {
+            chain_id: 37u64,
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 1_000_000,
+            to: TxKind::Call(modexp_address),
+            value: Default::default(),
+            input: input_data.into(),
+            ..Default::default()
+        };
+        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+    };
+
+    let transactions = vec![encoded_tx];
+
+    chain.set_balance(
+        B160::from_be_bytes(wallet.address().into_array()),
+        U256::from(10u64.pow(18)),
+    );
+
+    let result = chain.run_block(transactions, None, None);
+
+    // The transaction should succeed
+    assert!(
+        result.tx_results[0].is_ok(),
+        "Modexp transaction should succeed"
+    );
+
+    // Extract the result and check it
+    let tx_result = result.tx_results[0].as_ref().unwrap();
+    assert!(tx_result.is_success(), "Transaction should be successful");
+
+    match &tx_result.execution_result {
+        rig::zksync_os_interface::types::ExecutionResult::Success(execution_output) => {
+            match execution_output {
+                rig::zksync_os_interface::types::ExecutionOutput::Call(result) => {
+                    assert_eq!(*result, expected_output)
+                }
+                rig::zksync_os_interface::types::ExecutionOutput::Create(_, _) => panic!(),
+            }
+        }
+        rig::zksync_os_interface::types::ExecutionResult::Revert(_) => unreachable!(),
+    }
+}

@@ -678,12 +678,17 @@ impl<A: Allocator + Clone> BigintRepr<A> {
 
     pub fn to_big_endian<B: Allocator>(&self, allocator: B) -> Vec<u8, B> {
         let mut result = Vec::with_capacity_in(self.digits * 32, allocator);
+        let mut found_non_zero = false;
         for digit in self.digits_ref().iter().rev() {
-            if digit.is_zero() {
-                continue;
+            if digit.is_zero() == false {
+                found_non_zero = true;
             }
-            let be_bytes = digit.to_be_bytes();
-            result.extend(be_bytes);
+
+            // Skip zeroed suffix if any
+            if found_non_zero {
+                let be_bytes = digit.to_be_bytes();
+                result.extend(be_bytes);
+            }
         }
 
         result

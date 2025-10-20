@@ -14,6 +14,7 @@ use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
 use log::{debug, info, trace};
+use oracle_provider::MemorySource;
 use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
 use risc_v_simulator::abstractions::memory::VectorMemoryImpl;
 use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
@@ -30,6 +31,45 @@ use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::traits::TxListSource;
 use zksync_os_interface::types::BlockOutput;
 use zksync_os_interface::types::StorageWrite;
+
+/// Trait for creating oracles with custom configuration
+pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
+    fn create_oracle<M: MemorySource + 'static>(
+        &self,
+        block_metadata: BlockMetadataFromOracle,
+        state_tree: InMemoryTree<RANDOMIZED_TREE>,
+        preimage_source: InMemoryPreimageSource,
+        tx_source: TxListSource,
+        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        add_uart: bool,
+    ) -> ZkEENonDeterminismSource<M>;
+}
+
+/// Default oracle factory that uses the existing make_oracle_for_proofs_and_dumps function
+pub struct DefaultOracleFactory<const RANDOMIZED_TREE: bool>;
+
+impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
+    for DefaultOracleFactory<RANDOMIZED_TREE>
+{
+    fn create_oracle<M: MemorySource + 'static>(
+        &self,
+        block_metadata: BlockMetadataFromOracle,
+        state_tree: InMemoryTree<RANDOMIZED_TREE>,
+        preimage_source: InMemoryPreimageSource,
+        tx_source: TxListSource,
+        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        add_uart: bool,
+    ) -> ZkEENonDeterminismSource<M> {
+        forward_system::run::make_oracle_for_proofs_and_dumps(
+            block_metadata,
+            state_tree,
+            preimage_source,
+            tx_source,
+            proof_data,
+            add_uart,
+        )
+    }
+}
 
 ///
 /// In memory chain state, mainly to be used in tests.
@@ -256,6 +296,29 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             .0
     }
 
+    ///
+    /// Run block with given transactions, block context, and custom oracle factory.
+    /// If block context is `None` default testing values will be used.
+    ///
+    /// You can also pass a run config.
+    ///
+    pub fn run_block_with_oracle_factory<OF: TestingOracleFactory<RANDOMIZED_TREE>>(
+        &mut self,
+        transactions: Vec<EncodedTx>,
+        block_context: Option<BlockContext>,
+        run_config: Option<RunConfig>,
+        oracle_factory: &OF,
+    ) -> BlockOutput {
+        self.run_block_with_extra_stats_with_oracle_factory(
+            transactions,
+            block_context,
+            run_config,
+            oracle_factory,
+        )
+        .unwrap()
+        .0
+    }
+
     #[allow(clippy::result_large_err)]
     pub fn run_block_no_panic(
         &mut self,
@@ -263,8 +326,31 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
         run_config: Option<RunConfig>,
     ) -> Result<BlockOutput, BootloaderSubsystemError> {
-        self.run_inner(transactions, block_context, run_config.unwrap_or_default())
-            .map(|r| r.0)
+        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
+        self.run_inner(
+            transactions,
+            block_context,
+            run_config.unwrap_or_default(),
+            &factory,
+        )
+        .map(|r| r.0)
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub fn run_block_no_panic_with_oracle_factory<OF: TestingOracleFactory<RANDOMIZED_TREE>>(
+        &mut self,
+        transactions: Vec<EncodedTx>,
+        block_context: Option<BlockContext>,
+        run_config: Option<RunConfig>,
+        oracle_factory: &OF,
+    ) -> Result<BlockOutput, BootloaderSubsystemError> {
+        self.run_inner(
+            transactions,
+            block_context,
+            run_config.unwrap_or_default(),
+            oracle_factory,
+        )
+        .map(|r| r.0)
     }
 
     #[allow(clippy::result_large_err)]
@@ -274,15 +360,40 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
         run_config: Option<RunConfig>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
-        self.run_inner(transactions, block_context, run_config.unwrap_or_default())
+        let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
+        self.run_inner(
+            transactions,
+            block_context,
+            run_config.unwrap_or_default(),
+            &factory,
+        )
     }
 
     #[allow(clippy::result_large_err)]
-    fn run_inner(
+    pub fn run_block_with_extra_stats_with_oracle_factory<
+        OF: TestingOracleFactory<RANDOMIZED_TREE>,
+    >(
+        &mut self,
+        transactions: Vec<EncodedTx>,
+        block_context: Option<BlockContext>,
+        run_config: Option<RunConfig>,
+        oracle_factory: &OF,
+    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
+        self.run_inner(
+            transactions,
+            block_context,
+            run_config.unwrap_or_default(),
+            oracle_factory,
+        )
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn run_inner<OF: TestingOracleFactory<RANDOMIZED_TREE>>(
         &mut self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         run_config: RunConfig,
+        oracle_factory: &OF,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
         let RunConfig {
             profiler_config,
@@ -317,7 +428,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             transactions: transactions.into(),
         };
 
-        let oracle = forward_system::run::make_oracle_for_proofs_and_dumps(
+        let oracle = oracle_factory.create_oracle(
             block_metadata,
             self.state_tree.clone(),
             self.preimage_source.clone(),
@@ -326,7 +437,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             true,
         );
 
-        let forward_oracle = forward_system::run::make_oracle_for_proofs_and_dumps(
+        let forward_oracle = oracle_factory.create_oracle(
             block_metadata,
             self.state_tree.clone(),
             self.preimage_source.clone(),
@@ -337,7 +448,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         #[cfg(feature = "simulate_witness_gen")]
         let source_for_witness_bench = {
-            forward_system::run::make_oracle_for_proofs_and_dumps(
+            oracle_factory.create_oracle(
                 block_metadata,
                 self.state_tree.clone(),
                 self.preimage_source.clone(),

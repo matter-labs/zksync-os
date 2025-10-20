@@ -7,7 +7,7 @@ mod tx_source;
 
 pub mod convert;
 mod interface_impl;
-pub(crate) mod query_processors;
+pub mod query_processors;
 pub mod result_keeper;
 pub mod test_impl;
 mod tracing_impl;

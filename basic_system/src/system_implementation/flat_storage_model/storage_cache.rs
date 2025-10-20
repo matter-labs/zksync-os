@@ -212,6 +212,15 @@ impl<
                     false => Appearance::Retrieved,
                 };
 
+                // We need to check that the initial value is default
+                if data_from_oracle.is_new_storage_slot {
+                    assert_eq!(
+                        V::default(),
+                        data_from_oracle.initial_value.into(),
+                        "Initial value of empty slot must be trivial"
+                    );
+                }
+
                 // Note: we initialize it as cold, should be warmed up separately
                 // Since in case of revert it should become cold again and initial record can't be rolled back
                 Ok(CacheRecord::new(

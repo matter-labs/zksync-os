@@ -243,11 +243,11 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
             let expect_new = value.is_new_storage_slot;
             assert!(value.initial_value_used);
             if expect_new {
-                // assert_eq!(
-                //     value.initial_value,
-                //     WarmStorageValue::TRIVIAL_VALUE,
-                //     "initial value of empty slot must be trivial"
-                // );
+                assert_eq!(
+                    value.initial_value,
+                    Bytes32::ZERO,
+                    "initial value of empty slot must be trivial"
+                );
                 num_nonexisting_reads += 1;
 
                 let _ = logger.write_fmt(format_args!(
