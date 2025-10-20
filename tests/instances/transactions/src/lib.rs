@@ -1051,3 +1051,47 @@ fn test_point_eval_call() {
         rig::zksync_os_interface::types::ExecutionResult::Revert(_) => unreachable!(),
     }
 }
+
+#[test]
+fn test_selfdestruct_to_precompile_gas() {
+    // Test that a selfdestruct with a precompile as target doesn't charge for
+    // extra warm gas (regression)
+
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+
+    let contract_address = address!("1000000000000000000000000000000000000001");
+
+    // PUSH20 0x01
+    // SELFDESTRUCT
+    let bytecode = hex::decode("730000000000000000000000000000000000000001ff").unwrap();
+
+    chain.set_balance(
+        B160::from_be_bytes(wallet.address().into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+    chain.set_evm_bytecode(
+        B160::from_be_bytes(contract_address.into_array()),
+        &bytecode,
+    );
+
+    let encoded_tx = {
+        let tx = TxEip2930 {
+            chain_id: 37u64,
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 75_000,
+            to: TxKind::Call(contract_address),
+            value: Default::default(),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    let result = chain.run_block(vec![encoded_tx], None, None);
+    let res0 = result.tx_results.first().expect("Must have a tx result");
+    assert!(res0.as_ref().is_ok(), "Tx should succeed");
+    let gas_used = res0.clone().unwrap().gas_used;
+    assert_eq!(gas_used, 26003);
+}
