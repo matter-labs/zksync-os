@@ -174,7 +174,12 @@ fn run_block(
         ..Default::default()
     };
     let (output, stats, _) = chain
-        .run_block_with_extra_stats(transactions, Some(block_context), Some(run_config), &mut NopTracer::default(),)
+        .run_block_with_extra_stats(
+            transactions,
+            Some(block_context),
+            Some(run_config),
+            &mut NopTracer::default(),
+        )
         .unwrap();
 
     info!("Actual gas used: {}", output.header.gas_used);

@@ -20,7 +20,6 @@ use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
 use risc_v_simulator::abstractions::memory::VectorMemoryImpl;
 use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
 use ruint::aliases::{B160, B256, U256};
-use zk_ee::system::tracer::Tracer;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -28,6 +27,7 @@ use std::path::PathBuf;
 use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
 use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
+use zk_ee::system::tracer::Tracer;
 use zk_ee::utils::Bytes32;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::traits::TxListSource;
@@ -293,9 +293,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
         run_config: Option<RunConfig>,
     ) -> BlockOutput {
-        self.run_block_with_extra_stats(transactions, block_context, run_config, &mut NopTracer::default())
-            .unwrap()
-            .0
+        self.run_block_with_extra_stats(
+            transactions,
+            block_context,
+            run_config,
+            &mut NopTracer::default(),
+        )
+        .unwrap()
+        .0
     }
 
     ///
@@ -335,7 +340,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             block_context,
             run_config.unwrap_or_default(),
             &factory,
-            &mut NopTracer::default()
+            &mut NopTracer::default(),
         )
         .map(|r| r.0)
     }
@@ -346,7 +351,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         run_config: Option<RunConfig>,
-        tracer: &mut impl Tracer<ForwardRunningSystem>
+        tracer: &mut impl Tracer<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
         let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
         self.run_inner(
@@ -354,7 +359,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             block_context,
             run_config.unwrap_or_default(),
             &factory,
-            tracer
+            tracer,
         )
     }
 
@@ -374,7 +379,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             block_context,
             run_config.unwrap_or_default(),
             oracle_factory,
-            tracer
+            tracer,
         )
     }
 
@@ -385,7 +390,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
         run_config: RunConfig,
         oracle_factory: &OF,
-        tracer: &mut impl Tracer<ForwardRunningSystem>
+        tracer: &mut impl Tracer<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
         let RunConfig {
             profiler_config,

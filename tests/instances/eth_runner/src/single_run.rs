@@ -7,9 +7,9 @@ use crate::prestate::{populate_prestate, DiffTrace, PrestateTrace};
 use crate::receipts::{BlockReceipts, TransactionReceipt};
 use rig::log::info;
 use rig::*;
-use zk_ee::system::tracer::NopTracer;
 use std::fs::{self, File};
 use std::io::BufReader;
+use zk_ee::system::tracer::NopTracer;
 use zksync_os_interface::traits::EncodedTx;
 
 #[allow(clippy::too_many_arguments)]
@@ -47,7 +47,12 @@ fn run<const RANDOMIZED: bool>(
         ..Default::default()
     };
     let (output, stats, _) = chain
-        .run_block_with_extra_stats(transactions, Some(block_context), Some(run_config), &mut NopTracer::default())
+        .run_block_with_extra_stats(
+            transactions,
+            Some(block_context),
+            Some(run_config),
+            &mut NopTracer::default(),
+        )
         .unwrap();
 
     let _ratio = compute_ratio(stats);
