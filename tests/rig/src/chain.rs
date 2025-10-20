@@ -13,12 +13,14 @@ use ethers::signers::LocalWallet;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
+use forward_system::system::system::ForwardRunningSystem;
 use log::{debug, info, trace};
 use oracle_provider::MemorySource;
 use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
 use risc_v_simulator::abstractions::memory::VectorMemoryImpl;
 use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
 use ruint::aliases::{B160, B256, U256};
+use zk_ee::system::tracer::Tracer;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -291,7 +293,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
         run_config: Option<RunConfig>,
     ) -> BlockOutput {
-        self.run_block_with_extra_stats(transactions, block_context, run_config)
+        self.run_block_with_extra_stats(transactions, block_context, run_config, &mut NopTracer::default())
             .unwrap()
             .0
     }
@@ -313,6 +315,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             transactions,
             block_context,
             run_config,
+            &mut NopTracer::default(),
             oracle_factory,
         )
         .unwrap()
@@ -332,23 +335,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             block_context,
             run_config.unwrap_or_default(),
             &factory,
-        )
-        .map(|r| r.0)
-    }
-
-    #[allow(clippy::result_large_err)]
-    pub fn run_block_no_panic_with_oracle_factory<OF: TestingOracleFactory<RANDOMIZED_TREE>>(
-        &mut self,
-        transactions: Vec<EncodedTx>,
-        block_context: Option<BlockContext>,
-        run_config: Option<RunConfig>,
-        oracle_factory: &OF,
-    ) -> Result<BlockOutput, BootloaderSubsystemError> {
-        self.run_inner(
-            transactions,
-            block_context,
-            run_config.unwrap_or_default(),
-            oracle_factory,
+            &mut NopTracer::default()
         )
         .map(|r| r.0)
     }
@@ -359,6 +346,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         run_config: Option<RunConfig>,
+        tracer: &mut impl Tracer<ForwardRunningSystem>
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
         let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
         self.run_inner(
@@ -366,6 +354,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             block_context,
             run_config.unwrap_or_default(),
             &factory,
+            tracer
         )
     }
 
@@ -377,6 +366,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         run_config: Option<RunConfig>,
+        tracer: &mut impl Tracer<ForwardRunningSystem>,
         oracle_factory: &OF,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
         self.run_inner(
@@ -384,6 +374,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             block_context,
             run_config.unwrap_or_default(),
             oracle_factory,
+            tracer
         )
     }
 
@@ -394,6 +385,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
         run_config: RunConfig,
         oracle_factory: &OF,
+        tracer: &mut impl Tracer<ForwardRunningSystem>
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
         let RunConfig {
             profiler_config,
@@ -459,7 +451,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         };
 
         // forward run
-        let mut nop_tracer = NopTracer::default();
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
         // we use proving config here for benchmarking,
@@ -467,7 +458,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         run_forward_no_panic::<BasicBootloaderProvingExecutionConfig>(
             forward_oracle,
             &mut result_keeper,
-            &mut nop_tracer,
+            tracer,
         )?;
 
         let block_output: BlockOutput = result_keeper.into();
