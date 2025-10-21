@@ -569,6 +569,79 @@ fn test_cold_in_new_tx() {
     assert!(result2.is_ok_and(|o| !o.is_success()));
 }
 
+#[test]
+// Test that if we send 2 simple transfers from and to different addresses,
+// the length of the pubdata from both is the same.
+fn test_independent_txs_have_same_pubdata() {
+    let mut chain = Chain::empty(None);
+
+    let wallet1 = PrivateKeySigner::from_str(
+        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
+    )
+    .unwrap();
+
+    let wallet2 = PrivateKeySigner::from_str(
+        "abcdebdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
+    )
+    .unwrap();
+    let to1 = address!("0000000000000000000000000000000000010002");
+    let to2 = address!("0000000000000000000000000000000000010003");
+
+    let encoded_tx_1 = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 21_000,
+            to: TxKind::Call(to1),
+            value: U256::from(10),
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet1)
+    };
+
+    let encoded_tx_2 = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 21_000,
+            to: TxKind::Call(to2),
+            value: U256::from(10),
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet2)
+    };
+
+    let transactions = vec![encoded_tx_1, encoded_tx_2];
+
+    chain
+        .set_balance(
+            B160::from_be_bytes(wallet1.address().0 .0),
+            U256::from(1_000_000_000_000_000_u64),
+        )
+        .set_balance(
+            B160::from_be_bytes(wallet2.address().0 .0),
+            U256::from(1_000_000_000_000_000_u64),
+        );
+
+    let output = chain.run_block(transactions, None, run_config());
+
+    // Assert all txs succeeded and compare pubdata len
+    assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
+        let success = r.clone().is_ok_and(|o| o.is_success());
+        if !success {
+            println!("Transaction {i} failed with: {r:?}",)
+        }
+        success
+    }));
+    let result1 = output.tx_results.first().unwrap().clone();
+    let result2 = output.tx_results.get(1).unwrap().clone();
+    let pubdata_used_1 = result1.unwrap().pubdata_used;
+    let pubdata_used_2 = result2.unwrap().pubdata_used;
+    assert_eq!(pubdata_used_1, pubdata_used_2, "Pubdata used not equal")
+}
+
 // TODO: find better place for regression tests
 #[test]
 fn test_regression_returndata_empty_3541() {
