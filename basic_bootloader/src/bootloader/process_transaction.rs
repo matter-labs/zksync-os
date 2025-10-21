@@ -23,7 +23,6 @@ use gas_helpers::check_enough_resources_for_pubdata;
 use gas_helpers::get_resources_to_charge_for_pubdata;
 use gas_helpers::ResourcesForTx;
 use metadata::zk_metadata::TxLevelMetadata;
-use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use system_hooks::HooksStorage;
 use transaction::charge_keccak;
 use zk_ee::interface_error;
@@ -311,20 +310,17 @@ where
             .ok_or(internal_error!("gu*gp"))?;
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
 
-        Self::mint_token(
-            system,
-            &pay_to_operator,
-            &BOOTLOADER_FORMAL_ADDRESS,
-            &mut inf_resources,
-        )
-        .map_err(|e| match e.root_cause() {
-            RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
-                internal_error!("Out of ergs on infinite ergs").into()
+        let coinbase = system.get_coinbase();
+        Self::mint_token(system, &pay_to_operator, &coinbase, &mut inf_resources).map_err(|e| {
+            match e.root_cause() {
+                RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
+                    internal_error!("Out of ergs on infinite ergs").into()
+                }
+                RootCause::Runtime(RuntimeError::FatalRuntimeError(_)) => {
+                    internal_error!("Out of native on infinite").into()
+                }
+                _ => e,
             }
-            RootCause::Runtime(RuntimeError::FatalRuntimeError(_)) => {
-                internal_error!("Out of native on infinite").into()
-            }
-            _ => e,
         })?;
 
         // Refund
@@ -819,7 +815,7 @@ where
             resources,
             tracer,
         )?;
-
+        let from = transaction.from();
         // Check nonce has been marked
         if !Config::SIMULATION {
             F::check_nonce_is_used_after_validation(
@@ -827,7 +823,7 @@ where
                 caller_ee_type,
                 resources,
                 tx_nonce,
-                *transaction.from(),
+                *from,
             )?;
         }
 
@@ -836,13 +832,14 @@ where
         ));
 
         // Charge fees
-        Self::ensure_payment(
+        F::pay_for_transaction(
             system,
             system_functions,
             tx_hash,
             suggested_signed_hash,
             transaction,
             gas_price,
+            *from,
             caller_ee_type,
             resources,
             tracer,
@@ -925,87 +922,6 @@ where
         } else {
             Ok((execution_result, pubdata_used, to_charge_for_pubdata))
         }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn ensure_payment(
-        system: &mut System<S>,
-        system_functions: &mut HooksStorage<S, S::Allocator>,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
-        transaction: &Transaction<S::Allocator>,
-        gas_price: U256,
-        caller_ee_type: ExecutionEnvironmentType,
-        resources: &mut S::Resources,
-        tracer: &mut impl Tracer<S>,
-    ) -> Result<(), TxError> {
-        // Bootloader balance before fee payment
-        let bootloader_balance_before = resources.with_infinite_ergs(|inf_resources| {
-            system.io.get_nominal_token_balance(
-                ExecutionEnvironmentType::NoEE,
-                inf_resources,
-                &BOOTLOADER_FORMAL_ADDRESS,
-            )
-        })?;
-        let required_funds = gas_price
-            .checked_mul(U256::from(transaction.gas_limit()))
-            .ok_or(internal_error!("gp*gl"))?;
-        let from = *transaction.from();
-        // First we charge the fees, then we verify the bootloader got
-        // the funds.
-        let payer = {
-            F::pay_for_transaction(
-                system,
-                system_functions,
-                tx_hash,
-                suggested_signed_hash,
-                transaction,
-                from,
-                caller_ee_type,
-                resources,
-                tracer,
-            )?;
-
-            from
-        };
-        // Check bootloader got the funds and maybe return excessive funds
-        let bootloader_balance_after = resources.with_infinite_ergs(|inf_resources| {
-            system.io.get_nominal_token_balance(
-                ExecutionEnvironmentType::NoEE,
-                inf_resources,
-                &BOOTLOADER_FORMAL_ADDRESS,
-            )
-        })?;
-        let bootloader_received_funds = bootloader_balance_after
-            .checked_sub(bootloader_balance_before)
-            .ok_or(internal_error!("bba-bbb"))?;
-        // If the amount of funds provided to the bootloader is less than the minimum required one
-        // then this transaction should be rejected.
-        require!(
-            bootloader_received_funds >= required_funds,
-            InvalidTransaction::ReceivedInsufficientFees {
-                received: bootloader_received_funds,
-                required: required_funds
-            },
-            system
-        )?;
-        let excessive_funds = bootloader_received_funds
-            .checked_sub(required_funds)
-            .ok_or(internal_error!("brf-rf"))?;
-        if excessive_funds > U256::ZERO {
-            resources
-                .with_infinite_ergs(|inf_resources| {
-                    system.io.transfer_nominal_token_value(
-                        caller_ee_type,
-                        inf_resources,
-                        &BOOTLOADER_FORMAL_ADDRESS,
-                        &payer,
-                        &excessive_funds,
-                    )
-                })
-                .map_err(|e| TxError::Internal(wrap_error!(e)))?;
-        }
-        Ok(())
     }
 
     fn get_gas_price(
@@ -1091,12 +1007,13 @@ where
             .checked_mul(gas_price)
             .ok_or(internal_error!("tgf*gp"))?;
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
+        let coinbase = system.get_coinbase();
         system
             .io
             .transfer_nominal_token_value(
                 caller_ee_type,
                 &mut inf_resources,
-                &BOOTLOADER_FORMAL_ADDRESS,
+                &coinbase,
                 &refund_recipient,
                 &token_to_refund,
             )

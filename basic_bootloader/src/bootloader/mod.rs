@@ -1,7 +1,6 @@
 use errors::{BootloaderSubsystemError, InvalidTransaction};
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
-use system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS;
 use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::tracer::Tracer;
@@ -288,34 +287,6 @@ where
                                 }
                             }
                         }
-                    }
-
-                    // The fee is transferred to the coinbase address before
-                    // finishing the transaction.
-                    let coinbase = system.get_coinbase();
-                    let mut inf_resources = S::Resources::FORMAL_INFINITE;
-                    let bootloader_balance = system
-                        .io
-                        .read_account_properties(
-                            ExecutionEnvironmentType::NoEE,
-                            &mut inf_resources,
-                            &BOOTLOADER_FORMAL_ADDRESS,
-                            AccountDataRequest::empty().with_nominal_token_balance(),
-                        )
-                        .expect("must read bootloader balance")
-                        .nominal_token_balance
-                        .0;
-                    if !bootloader_balance.is_zero() {
-                        system
-                            .io
-                            .transfer_nominal_token_value(
-                                ExecutionEnvironmentType::NoEE,
-                                &mut inf_resources,
-                                &BOOTLOADER_FORMAL_ADDRESS,
-                                &coinbase,
-                                &bootloader_balance,
-                            )
-                            .expect("must be able to move funds to coinbase");
                     }
 
                     system.flush_tx()?;

@@ -272,28 +272,25 @@ fn zksync_os_output_into_account_state(
             // populate account
             let address: [u8; 20] = w.account_key.as_slice()[12..].try_into().unwrap();
             let address = B160::from_be_bytes(address);
-            if address != system_hooks::addresses_constants::BOOTLOADER_FORMAL_ADDRESS {
-                let props = if w.value.is_zero() {
-                    // TODO: Account deleted, we need to check this somehow
-                    AccountProperties::default()
-                } else {
-                    let encoded = match preimages.get(w.value.as_slice()) {
-                        Some(x) => x.clone(),
-                        None => {
-                            error!("Must contain preimage for account {address:#?}");
-                            return Err(PostCheckError::Internal);
-                        }
-                    };
-                    AccountProperties::decode(&encoded.try_into().unwrap())
+            let props = if w.value.is_zero() {
+                // TODO: Account deleted, we need to check this somehow
+                AccountProperties::default()
+            } else {
+                let encoded = match preimages.get(w.value.as_slice()) {
+                    Some(x) => x.clone(),
+                    None => {
+                        error!("Must contain preimage for account {address:#?}");
+                        return Err(PostCheckError::Internal);
+                    }
                 };
-                let entry = updates.entry(address).or_default();
-                entry.balance = Some(props.balance);
-                entry.nonce = Some(props.nonce);
-                if let Some(bytecode) = preimages.get(&props.bytecode_hash.as_u8_array()) {
-                    let owned: Vec<u8> =
-                        bytecode[..props.observable_bytecode_len as usize].to_owned();
-                    entry.code = Some(owned.into());
-                }
+                AccountProperties::decode(&encoded.try_into().unwrap())
+            };
+            let entry = updates.entry(address).or_default();
+            entry.balance = Some(props.balance);
+            entry.nonce = Some(props.nonce);
+            if let Some(bytecode) = preimages.get(&props.bytecode_hash.as_u8_array()) {
+                let owned: Vec<u8> = bytecode[..props.observable_bytecode_len as usize].to_owned();
+                entry.code = Some(owned.into());
             }
         } else {
             // populate slot

@@ -7,7 +7,7 @@ pub mod zk;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::Transaction;
-use ruint::aliases::B160;
+use ruint::aliases::{B160, U256};
 use system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::tracer::Tracer;
@@ -144,6 +144,7 @@ where
         tx_hash: Bytes32,
         suggested_signed_hash: Bytes32,
         transaction: &Transaction<S::Allocator>,
+        gas_price: U256,
         from: B160,
         caller_ee_type: ExecutionEnvironmentType,
         resources: &mut S::Resources,

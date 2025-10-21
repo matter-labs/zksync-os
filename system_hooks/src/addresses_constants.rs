@@ -19,9 +19,6 @@ pub const POINT_EVAL_HOOK_ADDRESS_LOW: u16 = 0x000a;
 #[cfg(feature = "p256_precompile")]
 pub const P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW: u16 = 0x0100;
 
-// bootloader formal address used to collect fees
-pub const BOOTLOADER_FORMAL_ADDRESS: B160 = B160::from_limbs([0x8001, 0, 0]);
-
 // Contract Deployer system hook (contract) needed for all envs (force deploy)
 pub const CONTRACT_DEPLOYER_ADDRESS_LOW: u16 = 0x8006;
 pub const CONTRACT_DEPLOYER_ADDRESS: B160 =
@@ -52,9 +49,3 @@ pub const COMPRESSOR_ADDRESS: B160 = B160::from_limbs([0x800e, 0, 0]);
 pub const COMPLEX_UPGRADER_ADDRESS: B160 = B160::from_limbs([0x800f, 0, 0]);
 pub const KECCAK_SYSTEM_CONTRACT_ADDRESS: B160 = B160::from_limbs([0x8010, 0, 0]);
 pub const PUBDATA_CHUNK_PUBLISHER_ADDRESS: B160 = B160::from_limbs([0x8011, 0, 0]);
-
-/// Helper to check if an address the bootloader
-#[inline(always)]
-pub fn is_bootloader(address: &B160) -> bool {
-    address == &BOOTLOADER_FORMAL_ADDRESS
-}
