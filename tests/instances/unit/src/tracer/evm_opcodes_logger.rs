@@ -359,3 +359,79 @@ fn test_evm_opcodes_logger_simple_gas_cost() {
         );
     }
 }
+
+#[test]
+fn test_evm_opcodes_logger_gas_cost_call_corner_case() {
+    let to_address = address!("1000000000000000000000000000000000000001");
+
+    // minimalistic call as a last opcode
+    let test_contract_bytecode =
+        hex::decode("6000600060006000600073100000000000000000000000000000000000000260005af1")
+            .unwrap();
+
+    let contract2_address = address!("1000000000000000000000000000000000000002");
+    // Simple contract that manipulates memory and stack
+    let contract2_bytecode = hex::decode("604260005260206000f3").unwrap();
+
+    let mut tracer = EvmOpcodesLogger::default();
+    run_chain_with_tracer(
+        to_address,
+        vec![
+            (to_address, test_contract_bytecode),
+            (contract2_address, contract2_bytecode),
+        ],
+        &mut tracer,
+    );
+
+    // Verify transaction log was created
+    assert_eq!(
+        tracer.transaction_logs.len(),
+        1,
+        "Should have one transaction log"
+    );
+
+    let tx_log = &tracer.transaction_logs[0];
+    assert!(
+        tx_log.finished,
+        "Transaction log should be marked as finished"
+    );
+
+    for step in tx_log.steps.iter() {
+        let opcode = step.opcode.as_ref().unwrap();
+        let expected_gas = match opcode.as_str() {
+            "PUSH0" => 2,
+            "PUSH1" => LOW,
+            "PUSH20" => LOW,
+            "AND" => LOW,
+            "SWAP1" => LOW,
+            "SWAP2" => LOW,
+            "SWAP3" => LOW,
+            "JUMP" => 8,
+            "JUMPDEST" => 1,
+            "DUP2" => LOW,
+            "DUP3" => LOW,
+            "DUP4" => LOW,
+            "DUP5" => LOW,
+            "POP" => 2,
+            "ADD" => LOW,
+            "SUB" => LOW,
+            "GAS" => 2,
+            "CALL" => 2600, // cold access expected
+            "RETURN" => 0,
+            "RETURNDATASIZE" => 2,
+            "RETURNDATACOPY" => 9, // expected in this case
+            "EQ" => LOW,
+            "STOP" => 0,
+            _ => {
+                continue; // skip
+            }
+        };
+        assert_eq!(
+            step.gas_used,
+            Some(expected_gas),
+            "Invalid gas for {:?}: {:?}",
+            step.opcode,
+            step.gas_used
+        );
+    }
+}
