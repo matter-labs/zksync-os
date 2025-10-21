@@ -311,30 +311,10 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
             // Something terrible happened (fatal error)
         }
 
-        // Hacking our way to track gas used by call-like opcodes
-        if let Some((opcode_log_index, last_known_gas)) =
-            self.pending_call_opcodes.remove(&self.current_call_depth)
-        {
+        if let Some((_, _)) = self.pending_call_opcodes.remove(&self.current_call_depth) {
             // Looks like call frame finished immediately after call-like opcode
-
-            let tx_log = self.transaction_logs.last_mut().expect("Should exist");
-            let opcode_log = tx_log
-                .steps
-                .get_mut(opcode_log_index)
-                .expect("Should exist");
-            match result {
-                Some((resources_to_return, _)) => {
-                    // TODO: we blindly expect that `gas_used_by_last_call` calculation is correct
-                    let gas_used = last_known_gas
-                        - resources_to_return.ergs().0 / ERGS_PER_GAS
-                        - self.gas_used_by_last_call;
-                    opcode_log.gas_used = Some(gas_used);
-                }
-                None => {
-                    // Something terrible happened. Unfortunately we can't derive gas used for the parent's call opcode
-                    opcode_log.gas_used = None
-                }
-            }
+            // TODO: Should not happen, check Revm
+            unreachable!();
         }
 
         self.current_call_depth -= 1;

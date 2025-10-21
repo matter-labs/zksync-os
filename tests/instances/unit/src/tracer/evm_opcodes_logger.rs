@@ -361,25 +361,17 @@ fn test_evm_opcodes_logger_simple_gas_cost() {
 }
 
 #[test]
-fn test_evm_opcodes_logger_gas_cost_call_corner_case() {
+fn test_evm_opcodes_logger_gas_cost_call_corner_case_2() {
     let to_address = address!("1000000000000000000000000000000000000001");
 
     // minimalistic call as a last opcode
     let test_contract_bytecode =
-        hex::decode("6000600060006000600073100000000000000000000000000000000000000260005af1")
-            .unwrap();
-
-    let contract2_address = address!("1000000000000000000000000000000000000002");
-    // Simple contract that manipulates memory and stack
-    let contract2_bytecode = hex::decode("604260005260206000f3").unwrap();
+        hex::decode("600060006000600060007310000000000000000000000000000000000000025af1").unwrap();
 
     let mut tracer = EvmOpcodesLogger::default();
     run_chain_with_tracer(
         to_address,
-        vec![
-            (to_address, test_contract_bytecode),
-            (contract2_address, contract2_bytecode),
-        ],
+        vec![(to_address, test_contract_bytecode)],
         &mut tracer,
     );
 
