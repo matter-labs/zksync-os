@@ -22,7 +22,7 @@ system_hooks = { path = "../../../system_hooks" }
 zk_ee = { path = "../../../zk_ee" }
 alloy = { version = "1", features = ["full", "eip712"]}
 fuzzer = { path = "../../fuzzer"}
-rig = { path = "../../rig", features = ["p256_precompile"] }
+rig = { path = "../../rig", features = ["p256_precompile", "point_eval_precompile"] }
 crypto = { path = "../../../crypto"}
 libfuzzer-sys = "0.4"
 hex = "*"
