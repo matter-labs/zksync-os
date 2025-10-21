@@ -220,12 +220,15 @@ impl<A: Allocator + Clone> BigintRepr<A> {
 
         let mut scratch_3 = Self::with_capacity_in(modulus.digits * 2, allocator.clone());
 
+        debug_assert!(base.digits <= modulus.digits);
+
         // we will go BE case to quickly strip leading zeroes
         let mut first_found = false;
         // Exp is BE, so do not need to reverse iterator
         'outer: for &byte in exp.iter() {
             // But here we should go from MSB
             for i in (0..8).rev() {
+                debug_assert!(base.digits <= modulus.digits);
                 let bit = byte & (1 << i) > 0;
                 if first_found {
                     if current.digits == 0 {
@@ -272,6 +275,8 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                 }
             }
         }
+
+        debug_assert!(base.digits <= modulus.digits);
 
         if first_found {
             // at the very end we assert full reduction
@@ -351,7 +356,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         advisor: &mut impl ModexpAdvisor,
     ) -> (Self, (Self, Self, Self, Self)) {
         assert!(current.digits > 0); // case if it is 0 is handled by outer loop
-        debug_assert_eq!(other.digits, modulus.digits); // we multiply accumulator by base, and base if fully reduced
+        debug_assert!(other.digits <= modulus.digits); // we multiply accumulator by base, and base if fully reduced
         assert!(scratch_0.capacity() >= modulus.digits + 1);
         assert!(scratch_1.capacity() >= modulus.digits);
         assert!(scratch_2.capacity() >= modulus.digits * 2);
@@ -372,7 +377,13 @@ impl<A: Allocator + Clone> BigintRepr<A> {
             );
             advisor.get_reduction_op_advice(&scratch_2, modulus, &mut scratch_0, &mut scratch_1);
             // now we should enforce everything backwards
-            assert!(scratch_0.digits <= scratch_2.digits + 1 - modulus.digits);
+            let max_q = scratch_2
+                .digits
+                .saturating_add(1)
+                .saturating_sub(modulus.digits);
+            assert!(scratch_0.digits <= max_q);
+
+            // assert!(scratch_0.digits <= scratch_2.digits + 1 - modulus.digits);
             assert!(scratch_1.digits <= modulus.digits);
 
             Self::fma(
@@ -433,7 +444,12 @@ impl<A: Allocator + Clone> BigintRepr<A> {
             );
             advisor.get_reduction_op_advice(&scratch_2, modulus, &mut scratch_0, &mut scratch_1);
             // now we should enforce everything backwards
-            assert!(scratch_0.digits <= scratch_2.digits + 1 - modulus.digits);
+            // assert!(scratch_0.digits <= scratch_2.digits + 1 - modulus.digits);
+            let max_q = scratch_2
+                .digits
+                .saturating_add(1)
+                .saturating_sub(modulus.digits);
+            assert!(scratch_0.digits <= max_q);
             assert!(scratch_1.digits <= modulus.digits);
 
             Self::fma(
@@ -779,6 +795,8 @@ fn write_bigint(
     const {
         assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
     }
+    // NOTE: even if oracle overstates the number of digits (so - iterator length), it is not important
+    // as long as caller checks that number of digits is within bounds of soundness
     unsafe {
         let num_digits = to_consume.next_multiple_of(8) / 8;
         let dst_capacity = dst.clear_as_capacity_mut();
