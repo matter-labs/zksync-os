@@ -37,4 +37,5 @@ pub const BN254_PAIRING_BASE_NATIVE_COST: u64 = native_with_delegations!(13_000_
 pub const BN254_PAIRING_PER_PAIR_NATIVE_COST: u64 = BN254_PAIRING_BASE_NATIVE_COST;
 pub const MODEXP_WORST_CASE_NATIVE_PER_GAS: u64 = 300;
 pub const P256_NATIVE_COST: u64 = native_with_delegations!(500_000, 71_000, 0);
+// TODO(EVM-1178) Add more vectors and benchmark cost better
 pub const POINT_EVALUATION_NATIVE_COST: u64 = native_with_delegations!(49_900_000, 3_301_000, 0);
