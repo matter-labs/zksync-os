@@ -377,10 +377,13 @@ impl<A: Allocator + Clone> BigintRepr<A> {
             );
             advisor.get_reduction_op_advice(&scratch_2, modulus, &mut scratch_0, &mut scratch_1);
             // now we should enforce everything backwards
-            let max_q = scratch_2
-                .digits
-                .saturating_add(1)
-                .saturating_sub(modulus.digits);
+            let max_q = if scratch_2.digits < modulus.digits {
+                0
+            } else if scratch_2.digits == modulus.digits {
+                1
+            } else {
+                scratch_2.digits + 1 - modulus.digits
+            };
             assert!(scratch_0.digits <= max_q);
 
             assert!(scratch_1.digits <= modulus.digits);
@@ -443,10 +446,13 @@ impl<A: Allocator + Clone> BigintRepr<A> {
             );
             advisor.get_reduction_op_advice(&scratch_2, modulus, &mut scratch_0, &mut scratch_1);
             // now we should enforce everything backwards
-            let max_q = scratch_2
-                .digits
-                .saturating_add(1)
-                .saturating_sub(modulus.digits);
+            let max_q = if scratch_2.digits < modulus.digits {
+                0
+            } else if scratch_2.digits == modulus.digits {
+                1
+            } else {
+                scratch_2.digits + 1 - modulus.digits
+            };
             assert!(scratch_0.digits <= max_q);
             assert!(scratch_1.digits <= modulus.digits);
 
