@@ -18,21 +18,21 @@ use zksync_os_evm_errors::EvmError;
 #[derive(Default, Debug)]
 #[allow(dead_code)]
 pub struct EvmExecutionStep {
-    pc: usize,
-    opcode_raw: u8,
-    opcode: Option<String>,
-    gas: u64,
+    pub pc: usize,
+    pub opcode_raw: u8,
+    pub opcode: Option<String>,
+    pub gas: u64,
     /// Gas used for opcode execution, None means we can't derive this value
-    gas_used: Option<u64>,
-    memory: Option<Vec<u8>>,
-    mem_size: usize,
-    stack: Option<Vec<U256>>,
-    return_data: Option<Vec<u8>>,
-    storage: Option<Vec<(Bytes32, Bytes32)>>,
-    transient_storage: Option<Vec<(Bytes32, Bytes32)>>,
-    depth: usize,
-    refund: u64,
-    error: Option<EvmError>,
+    pub gas_used: Option<u64>,
+    pub memory: Option<Vec<u8>>,
+    pub mem_size: usize,
+    pub stack: Option<Vec<U256>>,
+    pub return_data: Option<Vec<u8>>,
+    pub storage: Option<Vec<(Bytes32, Bytes32)>>,
+    pub transient_storage: Option<Vec<(Bytes32, Bytes32)>>,
+    pub depth: usize,
+    pub refund: u64,
+    pub error: Option<EvmError>,
 }
 
 #[derive(Default, Debug)]
