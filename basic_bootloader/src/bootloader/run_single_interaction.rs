@@ -4,7 +4,7 @@ use arrayvec::ArrayVec;
 use errors::BootloaderSubsystemError;
 use system_hooks::addresses_constants::L2_BASE_TOKEN_ADDRESS;
 use system_hooks::HooksStorage;
-use zk_ee::kv_markers::MAX_EVENT_TOPICS;
+use zk_ee::storage_types::MAX_EVENT_TOPICS;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::CallModifier;
