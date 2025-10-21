@@ -383,7 +383,6 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                 .saturating_sub(modulus.digits);
             assert!(scratch_0.digits <= max_q);
 
-            // assert!(scratch_0.digits <= scratch_2.digits + 1 - modulus.digits);
             assert!(scratch_1.digits <= modulus.digits);
 
             Self::fma(
@@ -444,7 +443,6 @@ impl<A: Allocator + Clone> BigintRepr<A> {
             );
             advisor.get_reduction_op_advice(&scratch_2, modulus, &mut scratch_0, &mut scratch_1);
             // now we should enforce everything backwards
-            // assert!(scratch_0.digits <= scratch_2.digits + 1 - modulus.digits);
             let max_q = scratch_2
                 .digits
                 .saturating_add(1)
