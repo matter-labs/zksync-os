@@ -5,6 +5,7 @@ mod db;
 mod rpc;
 use rig::log::{debug, error, info};
 use rig::Chain;
+use zk_ee::system::tracer::NopTracer;
 
 use crate::calltrace::CallTrace;
 use crate::native_model::compute_ratio;
@@ -173,7 +174,12 @@ fn run_block(
         ..Default::default()
     };
     let (output, stats, _) = chain
-        .run_block_with_extra_stats(transactions, Some(block_context), Some(run_config))
+        .run_block_with_extra_stats(
+            transactions,
+            Some(block_context),
+            Some(run_config),
+            &mut NopTracer::default(),
+        )
         .unwrap();
 
     info!("Actual gas used: {}", output.header.gas_used);

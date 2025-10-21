@@ -115,7 +115,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         *stack_head = value.into_u256_be();
 
-        tracer.on_storage_write(THIS_EE_TYPE, false, self.address, key, value);
+        tracer.on_storage_read(THIS_EE_TYPE, false, self.address, key, value);
 
         Ok(())
     }
@@ -137,7 +137,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         *stack_head = value.into_u256_be();
 
-        tracer.on_storage_write(THIS_EE_TYPE, true, self.address, key, value);
+        tracer.on_storage_read(THIS_EE_TYPE, true, self.address, key, value);
 
         Ok(())
     }
