@@ -328,10 +328,11 @@ where
         let amount = gas_price
             .checked_mul(U256::from(transaction.gas_limit()))
             .ok_or(internal_error!("gp*gl"))?;
-        let coinbase = system.get_coinbase();
+        // Only spend the amount now, the transfer to coinbase happens after
+        // execution
         system
             .io
-            .transfer_nominal_token_value(caller_ee_type, resources, &from, &coinbase, &amount)
+            .update_account_nominal_token_balance(caller_ee_type, resources, &from, &amount, true)
             .map_err(|e| match e {
                 SubsystemError::LeafUsage(interface_error) => {
                     let _ = system

@@ -721,7 +721,7 @@ where
                 native_used,
             },
             pubdata_used,
-        ) = Self::refund_transaction(
+        ) = Self::refund_transaction_and_pay_operator(
             system,
             system_functions,
             tx_hash,
@@ -951,7 +951,7 @@ where
 
     // Returns (refund_info, total_pubdata_used)
     #[allow(clippy::too_many_arguments)]
-    fn refund_transaction(
+    fn refund_transaction_and_pay_operator(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _tx_hash: Bytes32,
@@ -1006,23 +1006,59 @@ where
             .gas_refund
             .checked_mul(gas_price)
             .ok_or(internal_error!("tgf*gp"))?;
+        // On Ethereum, only the priority fee part is sent to the coinbase
+        // We leave this configurable, as we don't need to adhere to EIP 1559
+        // fee mechanisms.
+        let gas_price_for_operator = if cfg!(feature = "burn_base_fee") {
+            let base_fee = system.get_eip1559_basefee();
+            gas_price.saturating_sub(base_fee)
+        } else {
+            gas_price
+        };
+        let token_to_pay_operator = U256::from(refund_info.gas_used)
+            .checked_mul(gas_price_for_operator)
+            .ok_or(internal_error!("gu*gpfo"))?;
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
-        let coinbase = system.get_coinbase();
+        // First refund the sender
         system
             .io
-            .transfer_nominal_token_value(
+            .update_account_nominal_token_balance(
                 caller_ee_type,
                 &mut inf_resources,
-                &coinbase,
                 &refund_recipient,
                 &token_to_refund,
+                false,
             )
             .map_err(|e| match e {
                 // Balance errors can not be cascaded
                 SubsystemError::Cascaded(CascadedError(inner, _)) => match inner {},
                 SubsystemError::LeafUsage(InterfaceError(ie, _)) => match ie {
                     BalanceError::InsufficientBalance => {
-                        interface_error!(BootloaderInterfaceError::CantPayRefundInsufficientBalance)
+                        unreachable!("Cannot be insufficient when incrementing balance")
+                    }
+                    BalanceError::Overflow => {
+                        interface_error!(BootloaderInterfaceError::CantPayRefundOverflow)
+                    }
+                },
+                other => wrap_error!(other),
+            })?;
+        // Next we pay the operator
+        let coinbase = system.get_coinbase();
+        system
+            .io
+            .update_account_nominal_token_balance(
+                caller_ee_type,
+                &mut inf_resources,
+                &coinbase,
+                &token_to_pay_operator,
+                false,
+            )
+            .map_err(|e| match e {
+                // Balance errors can not be cascaded
+                SubsystemError::Cascaded(CascadedError(inner, _)) => match inner {},
+                SubsystemError::LeafUsage(InterfaceError(ie, _)) => match ie {
+                    BalanceError::InsufficientBalance => {
+                        unreachable!("Cannot be insufficient when incrementing balance")
                     }
                     BalanceError::Overflow => {
                         interface_error!(BootloaderInterfaceError::CantPayRefundOverflow)

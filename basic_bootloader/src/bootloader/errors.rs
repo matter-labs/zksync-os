@@ -227,8 +227,8 @@ macro_rules! require_internal {
 
 zk_ee::define_subsystem!(Bootloader,
 interface BootloaderInterfaceError {
-    CantPayRefundInsufficientBalance,
     CantPayRefundOverflow,
+    CantPayOperatorOverflow,
     MintingBalanceOverflow,
     TopLevelInsufficientBalance,
 },
