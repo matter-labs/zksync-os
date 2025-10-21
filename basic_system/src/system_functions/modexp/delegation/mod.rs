@@ -5,14 +5,12 @@ use core::alloc::Allocator;
 mod bigint;
 mod u256;
 
-use self::bigint::{BigintRepr, OracleAdvisor};
+use self::bigint::BigintRepr;
 
-use zk_ee::{
-    oracle::IOOracle,
-    system::{logger::Logger, NullLogger},
-};
+use zk_ee::system::{logger::Logger, NullLogger};
 
-pub(super) fn modexp<O: IOOracle, L: Logger, A: Allocator + Clone>(
+#[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
+pub(super) fn modexp<O: zk_ee::oracle::IOOracle, L: Logger, A: Allocator + Clone>(
     base: &[u8],
     exp: &[u8],
     modulus: &[u8],
@@ -20,7 +18,7 @@ pub(super) fn modexp<O: IOOracle, L: Logger, A: Allocator + Clone>(
     _logger: &mut L,
     allocator: A,
 ) -> Vec<u8, A> {
-    let mut advisor = OracleAdvisor { inner: oracle };
+    let mut advisor = self::bigint::OracleAdvisor { inner: oracle };
 
     modexp_inner::<L, A>(base, exp, modulus, _logger, &mut advisor, allocator)
 }
@@ -78,8 +76,8 @@ mod test {
         let mut advisor = NaiveAdvisor;
         let allocator = Global;
 
-        let m = BigintRepr::from_big_endian_with_double_capacity(&modulus, allocator.clone());
-        let output = if m.digits == 0 {
+        let m = BigintRepr::from_big_endian_with_double_capacity(&modulus, allocator);
+        if m.digits == 0 {
             Vec::new_in(allocator)
         } else {
             // another short circuit (as parsing below is infallible - we can even skip parsing the base and exponent)
@@ -91,14 +89,11 @@ mod test {
             let x = BigintRepr::from_big_endian_with_double_capacity_or_min_capacity(
                 &base,
                 min_capacity,
-                allocator.clone(),
+                allocator,
             );
-            let x = x.modpow(&exp, m, &mut advisor, allocator.clone());
-            let r = x.to_big_endian(allocator);
-            r
-        };
-
-        output
+            let x = x.modpow(&exp, m, &mut advisor, allocator);
+            x.to_big_endian(allocator)
+        }
     }
 
     // #[ignore = "depends on init and features"]

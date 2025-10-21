@@ -19,7 +19,7 @@ impl core::fmt::Debug for DelegatedU256 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "0x")?;
         for digit in self.0.iter().rev() {
-            write!(f, "{:016x}", digit)?;
+            write!(f, "{digit:016x}")?;
         }
 
         Ok(())
