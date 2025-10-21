@@ -303,6 +303,14 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
     fn after_execution_frame_completed(&mut self, result: Option<(&S::Resources, &CallResult<S>)>) {
         assert_ne!(self.current_call_depth, 0);
 
+        if let Some(call_result) = result {
+            let last_call_gas_record = self.gas_used_by_calls.pop().expect("Should exist");
+            self.gas_used_by_last_call =
+                last_call_gas_record - call_result.0.ergs().0 / ERGS_PER_GAS; // Save gas used by call
+        } else {
+            // Something terrible happened (fatal error)
+        }
+
         // Hacking our way to track gas used by call-like opcodes
         if let Some((opcode_log_index, last_known_gas)) =
             self.pending_call_opcodes.remove(&self.current_call_depth)
@@ -327,14 +335,6 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
                     opcode_log.gas_used = None
                 }
             }
-        }
-
-        if let Some(call_result) = result {
-            let last_call_gas_record = self.gas_used_by_calls.pop().expect("Should exist");
-            self.gas_used_by_last_call =
-                last_call_gas_record - call_result.0.ergs().0 / ERGS_PER_GAS; // Save gas used by call
-        } else {
-            // Something terrible happened (fatal error)
         }
 
         self.current_call_depth -= 1;
