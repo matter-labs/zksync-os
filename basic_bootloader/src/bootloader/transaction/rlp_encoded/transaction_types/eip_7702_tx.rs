@@ -88,11 +88,6 @@ impl<'a> RlpListDecode<'a> for EIP7702Tx<'a> {
             .try_into()
             .map_err(|_| InvalidTransaction::InvalidStructure)?;
 
-        if to.iter().all(|&b| b == 0) {
-            // Deployment transactions are not allowed in EIP-7702
-            return Err(InvalidTransaction::EIP7702HasNullDestination);
-        }
-
         let value = r.u256()?;
         let data = r.bytes()?;
         let access_list = AccessList::decode_list_from(r)?;
@@ -121,6 +116,8 @@ impl<'a> RlpListDecode<'a> for EIP7702Tx<'a> {
 
 #[cfg(test)]
 mod test {
+    use std::vec;
+
     use super::*;
     use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::RlpListDecode;
     use crate::bootloader::transaction::rlp_encoded::rlp::test_helpers::*;
@@ -398,5 +395,97 @@ mod test {
 
         let res: Result<EIP7702Tx, _> = RlpListDecode::decode_list_full(&bytes);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn eip7702_rejects_empty_to() {
+        let to_bad = vec![];
+        let access_list = encode(&AccessList::default());
+        let auth_list = encode(Vec::<SignedAuthorization>::new());
+        let bytes = rlp_list(&[
+            rlp_uint(1),
+            rlp_uint(0),
+            rlp_uint(1),
+            rlp_uint(1),
+            rlp_uint(21_000),
+            rlp_bytes(&to_bad), // invalid
+            rlp_uint(0),
+            rlp_bytes(&[]),
+            access_list,
+            auth_list,
+        ]);
+
+        let res: Result<EIP7702Tx, _> = RlpListDecode::decode_list_full(&bytes);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn parses_eip7702_transfer_to_0() {
+        let to = address!("0x0000000000000000000000000000000000000000");
+
+        // Authorization list with two entries
+        let auth0 = signed_auth_from_rs(
+            1,
+            address!("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            0,
+            0,
+            &[],
+            &[0xEE; 32],
+        );
+        let auth1 = signed_auth_from_rs(
+            1,
+            address!("0xcccccccccccccccccccccccccccccccccccccccc"),
+            1,
+            1,
+            &[0x01, 0x02],
+            &[0x03, 0x04],
+        );
+        let auth_list = vec![auth0, auth1];
+        let bytes = encode_eip7702_payload(
+            10,      // chain_id
+            99,      // nonce
+            5,       // maxPriorityFeePerGas
+            7,       // maxFeePerGas
+            800_000, // gasLimit
+            to,
+            0, // value
+            &[0xAA, 0xBB, 0xCC],
+            AccessList(vec![]),
+            auth_list,
+        );
+
+        let tx: EIP7702Tx = RlpListDecode::decode_list_full(&bytes).expect("parse should succeed");
+
+        assert_eq!(tx.chain_id, 10);
+        assert_eq!(tx.nonce, 99);
+        assert_eq!(tx.gas_limit, 800_000);
+        assert_eq!(tx.max_priority_fee_per_gas, RuintU256::from(5u128));
+        assert_eq!(tx.max_fee_per_gas, RuintU256::from(7u128));
+        assert_eq!(tx.to, to.as_slice());
+        assert_eq!(tx.data, &[0xAA, 0xBB, 0xCC]);
+
+        // Authorization list assertions
+        assert_eq!(tx.authorization_list.count, Some(2));
+        let mut it = tx.authorization_list.iter();
+
+        let a0 = it.next().unwrap();
+        assert_eq!(
+            a0.address,
+            address!("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").as_slice()
+        );
+        assert_eq!(a0.y_parity, 0);
+        assert_eq!(a0.r.len(), 0);
+        assert_eq!(a0.s.len(), 32);
+
+        let a1 = it.next().unwrap();
+        assert_eq!(
+            a1.address,
+            address!("0xcccccccccccccccccccccccccccccccccccccccc").as_slice()
+        );
+        assert_eq!(a1.y_parity, 1);
+        assert_eq!(&a1.r, &[0x01, 0x02]);
+        assert_eq!(&a1.s, &[0x03, 0x04]);
+
+        assert!(it.next().is_none());
     }
 }
