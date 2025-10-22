@@ -67,7 +67,8 @@ pub struct NewModelAccountCache<
 > {
     pub(crate) cache:
         HistoryMap<BitsOrd160, CacheRecord<AccountProperties, AccountPropertiesMetadata>, A>,
-    pub(crate) current_tx_number: u32,
+    // Note: this doesn't need to be equal to the actual tx number in the block, it just needs to be able to differentiate between transactions.
+    pub(crate) current_tx_id: u32,
     alloc: A,
     phantom: PhantomData<(R, P, SF)>,
 }
@@ -83,7 +84,7 @@ impl<
     pub fn new_from_parts(allocator: A) -> Self {
         Self {
             cache: HistoryMap::new(allocator.clone()),
-            current_tx_number: 0,
+            current_tx_id: 0,
             alloc: allocator.clone(),
             phantom: PhantomData,
         }
@@ -193,10 +194,7 @@ impl<
             })
             .and_then(|mut x| {
                 // Warm up element according to EVM rules if needed
-                let is_warm = x
-                    .current()
-                    .metadata()
-                    .considered_warm(self.current_tx_number);
+                let is_warm = x.current().metadata().considered_warm(self.current_tx_id);
                 if is_warm == false {
                     if initialized_element == false {
                         // Element exists in cache, but wasn't touched in current tx yet
@@ -223,7 +221,7 @@ impl<
 
                     x.update(|cache_record| {
                         cache_record.update_metadata(|m| {
-                            m.last_touched_in_tx = Some(self.current_tx_number);
+                            m.last_touched_in_tx = Some(self.current_tx_id);
                             Ok(())
                         })
                     })?;
@@ -721,7 +719,7 @@ impl<
 
         // we charged for everything, and so all IO below will use infinite ergs
 
-        let cur_tx = self.current_tx_number;
+        let cur_tx = self.current_tx_id;
 
         let mut account_data = resources.with_infinite_ergs(|inf_resources| {
             self.materialize_element::<PROOF_ENV>(
@@ -837,7 +835,7 @@ impl<
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError> {
-        let cur_tx = self.current_tx_number;
+        let cur_tx = self.current_tx_id;
         let alloc = self.alloc.clone();
 
         let mut account_data = resources.with_infinite_ergs(|inf_resources| {
@@ -1055,7 +1053,7 @@ impl<
         oracle: &mut impl IOOracle,
         in_constructor: bool,
     ) -> Result<U256, DeconstructionSubsystemError> {
-        let cur_tx = self.current_tx_number;
+        let cur_tx = self.current_tx_id;
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             from_ee,
             resources,
@@ -1144,7 +1142,7 @@ impl<
         &mut self,
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
     ) -> Result<(), InternalError> {
-        self.current_tx_number += 1;
+        self.current_tx_id += 1;
 
         // Actually deconstructing accounts
         self.cache

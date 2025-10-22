@@ -59,10 +59,13 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BlockOutput 
 
         let mut block_computaional_native_used = 0;
 
+        // We cannot simply use `enumerate` here, because some transactions can be invalid
+        // Invalid transactions are not counted in the tx_number for events/logs, so we need
+        // to assign tx_number manually.
+        let mut tx_number = 0;
         let tx_results = tx_results
             .into_iter()
-            .enumerate()
-            .map(|(tx_number, result)| {
+            .map(|result| {
                 result
                     .map(|output| {
                         let execution_result = if output.status {
@@ -78,7 +81,7 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BlockOutput 
                             ExecutionResult::Revert(output.output)
                         };
                         block_computaional_native_used += output.computational_native_used;
-                        TxOutput {
+                        let o = TxOutput {
                             gas_used: output.gas_used,
                             gas_refunded: output.gas_refunded,
                             native_used: output.native_used,
@@ -107,7 +110,9 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BlockOutput 
                                 .collect(),
                             execution_result,
                             storage_writes: vec![],
-                        }
+                        };
+                        tx_number += 1;
+                        o
                     })
                     .map_err(IntoInterface::into_interface)
             })

@@ -285,11 +285,12 @@ where
                                 if tx_processing_result.is_upgrade_tx {
                                     upgrade_tx_hash = tx_processing_result.tx_hash;
                                 }
+
+                                // Only bump tx number when tx is successful
+                                system.flush_tx()?;
                             }
                         }
                     }
-
-                    system.flush_tx()?;
 
                     let mut logger = system.get_logger();
                     let _ = logger.write_fmt(format_args!("TX execution ends\n"));

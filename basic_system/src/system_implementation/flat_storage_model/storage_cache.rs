@@ -88,8 +88,8 @@ pub struct StorageElementMetadata {
 }
 
 impl StorageElementMetadata {
-    pub fn considered_warm(&self, current_tx_number: TransactionId) -> bool {
-        self.last_touched_in_tx == Some(current_tx_number)
+    pub fn considered_warm(&self, current_tx_id: TransactionId) -> bool {
+        self.last_touched_in_tx == Some(current_tx_id)
     }
 }
 
@@ -104,7 +104,8 @@ pub struct GenericPubdataAwarePlainStorage<
 > {
     pub(crate) cache: HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
     pub(crate) resources_policy: P,
-    pub(crate) current_tx_number: TransactionId,
+    // Note: this doesn't need to be equal to the actual tx number in the block, it just needs to be able to differentiate between transactions.
+    pub(crate) current_tx_id: TransactionId,
     pub(crate) initial_values: BTreeMap<K, (V, TransactionId), A>, // Used to cache initial values at the beginning of the tx (For EVM gas model)
     #[cfg(feature = "evm_refunds")]
     pub(crate) evm_refunds_counter: HistoryCounter<u32, SF, M, A>, // Used to keep track of EVM gas refunds
@@ -131,7 +132,7 @@ impl<
     pub fn new_from_parts(allocator: A, resources_policy: P) -> Self {
         Self {
             cache: HistoryMap::new(allocator.clone()),
-            current_tx_number: TransactionId(0),
+            current_tx_id: TransactionId(0),
             resources_policy,
             initial_values: BTreeMap::new_in(allocator.clone()),
             #[cfg(feature = "evm_refunds")]
@@ -150,7 +151,7 @@ impl<
     }
 
     pub fn finish_tx(&mut self) {
-        self.current_tx_number.0 += 1;
+        self.current_tx_id.0 += 1;
     }
 
     #[track_caller]
@@ -181,7 +182,7 @@ impl<
     fn materialize_element<'a>(
         cache: &'a mut HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A>,
         resources_policy: &mut P,
-        current_tx_number: TransactionId,
+        current_tx_id: TransactionId,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         address: &StorageAddress<EthereumIOTypesConfig>,
@@ -230,7 +231,7 @@ impl<
             })
             .and_then(|mut x| {
                 // Warm up element according to EVM rules if needed
-                let is_warm_read = x.current().metadata().considered_warm(current_tx_number);
+                let is_warm_read = x.current().metadata().considered_warm(current_tx_id);
                 if is_warm_read == false {
                     if initialized_element == false {
                         // Element exists in cache, but wasn't touched in current tx yet
@@ -240,7 +241,7 @@ impl<
 
                     x.update(|cache_record| {
                         cache_record.update_metadata(|m| {
-                            m.last_touched_in_tx = Some(current_tx_number);
+                            m.last_touched_in_tx = Some(current_tx_id);
                             Ok(())
                         })
                     })?;
@@ -263,7 +264,7 @@ where {
         let (addr_data, _) = Self::materialize_element(
             &mut self.cache,
             &mut self.resources_policy,
-            self.current_tx_number,
+            self.current_tx_id,
             ee_type,
             resources,
             address,
@@ -288,7 +289,7 @@ where {
         let (mut addr_data, is_warm_read) = Self::materialize_element(
             &mut self.cache,
             &mut self.resources_policy,
-            self.current_tx_number,
+            self.current_tx_id,
             ee_type,
             resources,
             address,
@@ -303,14 +304,14 @@ where {
         let val_at_tx_start = match self.initial_values.entry(*key) {
             alloc::collections::btree_map::Entry::Vacant(vacant_entry) => {
                 &vacant_entry
-                    .insert((val_current.clone(), self.current_tx_number))
+                    .insert((val_current.clone(), self.current_tx_id))
                     .0
             }
             alloc::collections::btree_map::Entry::Occupied(occupied_entry) => {
                 let (value, tx_number) = occupied_entry.into_mut();
-                if *tx_number != self.current_tx_number {
+                if *tx_number != self.current_tx_id {
                     *value = val_current.clone();
-                    *tx_number = self.current_tx_number;
+                    *tx_number = self.current_tx_id;
                 }
                 value
             }
