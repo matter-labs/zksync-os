@@ -1061,7 +1061,7 @@ where
                         unreachable!("Cannot be insufficient when incrementing balance")
                     }
                     BalanceError::Overflow => {
-                        interface_error!(BootloaderInterfaceError::CantPayRefundOverflow)
+                        interface_error!(BootloaderInterfaceError::CantPayOperatorOverflow)
                     }
                 },
                 other => wrap_error!(other),
