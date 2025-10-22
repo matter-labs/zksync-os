@@ -127,6 +127,7 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
     oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
+    oracle.add_external_processor(UARTPrintResponder);
 
     // We'll wrap the source, to collect all the reads.
     let copy_source = ReadWitnessSource::new(oracle);
