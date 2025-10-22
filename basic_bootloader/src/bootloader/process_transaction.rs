@@ -1010,7 +1010,9 @@ where
         // go to the operator. Base fees are effectively "burned" (not transferred anywhere).
         let gas_price_for_operator = if cfg!(feature = "burn_base_fee") {
             let base_fee = system.get_eip1559_basefee();
-            gas_price.saturating_sub(base_fee)
+            gas_price
+                .checked_sub(base_fee)
+                .ok_or(internal_error!("Gas_price - base_fee underflow"))?
         } else {
             gas_price
         };
