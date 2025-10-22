@@ -1006,9 +1006,8 @@ where
             .gas_refund
             .checked_mul(gas_price)
             .ok_or(internal_error!("tgf*gp"))?;
-        // On Ethereum, only the priority fee part is sent to the coinbase
-        // We leave this configurable, as we don't need to adhere to EIP 1559
-        // fee mechanisms.
+        // EIP-1559 compatibility: When burn_base_fee is enabled, only priority fees
+        // go to the operator. Base fees are effectively "burned" (not transferred anywhere).
         let gas_price_for_operator = if cfg!(feature = "burn_base_fee") {
             let base_fee = system.get_eip1559_basefee();
             gas_price.saturating_sub(base_fee)
@@ -1043,6 +1042,10 @@ where
                 other => wrap_error!(other),
             })?;
         // Next we pay the operator
+        // ARCHITECTURE NOTE: Fee payment is split into two phases:
+        // 1. Deduct full fee from sender at transaction start (in pay_for_transaction)
+        // 2. Transfer actual payment to operator after execution (here)
+        // This ensures sender has sufficient funds before execution begins
         let coinbase = system.get_coinbase();
         system
             .io

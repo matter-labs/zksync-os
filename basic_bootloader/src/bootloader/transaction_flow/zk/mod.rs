@@ -328,8 +328,10 @@ where
         let amount = gas_price
             .checked_mul(U256::from(transaction.gas_limit()))
             .ok_or(internal_error!("gp*gl"))?;
-        // Only spend the amount now, the transfer to coinbase happens after
-        // execution
+        // ARCHITECTURE NOTE: Fee payment is split into two phases:
+        // 1. Deduct full fee from sender at transaction start (here)
+        // 2. Transfer actual payment to operator after execution (in refund_transaction_and_pay_operator)
+        // This ensures sender has sufficient funds before execution begins
         system
             .io
             .update_account_nominal_token_balance(caller_ee_type, resources, &from, &amount, true)
