@@ -41,7 +41,7 @@ jobs:
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
-              run: cargo test --release -j 3 -- --skip binary_checker
+              run: cargo test --release -j 3 -- --skip verify_default_binary
 
     pectra-tests:
         name: pectra-tests
