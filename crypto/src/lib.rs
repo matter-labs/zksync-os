@@ -13,7 +13,7 @@
     feature = "testing",
     test
 ))]
-mod ark_ff_delegation;
+pub mod ark_ff_delegation;
 #[allow(clippy::all)]
 #[allow(unused_imports, dead_code)]
 #[cfg(any(

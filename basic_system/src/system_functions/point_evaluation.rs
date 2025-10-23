@@ -33,14 +33,71 @@ impl<R: Resources> SystemFunction<R, PointEvaluationErrors> for PointEvaluationI
     }
 }
 
-pub const TRUSTED_SETUP_TAU_G2_BYTES: [u8; 96] = const {
-    let Ok(res) = const_hex::const_decode_to_array(
-        b"b5bfd7dd8cdeb128843bc287230af38926187075cbfbefa81009a2ce615ac53d2914e5870cb452d2afaaab24f3499f72185cbfee53492714734429b7b38608e23926c911cceceac9a36851477ba4c60b087041de621000edc98edada20c1def2"
-    ) else {
-        panic!()
-    };
+#[cfg(not(target_arch = "riscv32"))]
+pub const G2_BY_TAU_POINT: <crypto::bls12_381::curves::Bls12_381 as crypto::ark_ec::pairing::Pairing>::G2Affine = crypto::bls12_381::curves::g2::G2Affine {
+    x: crypto::bls12_381::fields::Fq2 {
+        c0: crypto::ark_ff::fields::models::Fp(
+            crypto::BigInt(
+                [6998771983072852473, 11736241389176950350, 14652389186963586383, 7123021877941670904, 207427363641627917, 1666061032901291221]
+            ),
+            core::marker::PhantomData
+        ),
+        c1: crypto::ark_ff::fields::models::Fp(
+            crypto::BigInt(
+                [1270972800850449493, 331328462692285148, 9602917463918608193, 2816806383447892978, 8933573566397811232, 215261465954158607]
+            ),
+            core::marker::PhantomData
+        )
+    },
+    y: crypto::bls12_381::fields::Fq2 {
+        c0: crypto::ark_ff::fields::models::Fp(
+            crypto::BigInt(
+                [12255148049650361111, 16300459039673357879, 7278512065901627776, 15013916996328221833, 6959599066670318708, 1753751357774418949]
+            ),
+            core::marker::PhantomData
+        ),
+        c1: crypto::ark_ff::fields::models::Fp(
+            crypto::BigInt(
+                [6097766243631356938, 3657144287806647550, 7252852235594748032, 6043526089682840990, 694068262573112211, 1355366081521641917]
+            ),
+            core::marker::PhantomData
+        )
+    },
+    infinity: false,
+};
 
-    res
+
+#[cfg(target_arch = "riscv32")]
+pub const G2_BY_TAU_POINT: <crypto::bls12_381::curves::Bls12_381 as crypto::ark_ec::pairing::Pairing>::G2Affine = crypto::bls12_381::curves::g2::G2Affine {
+    x: crypto::bls12_381::fields::Fq2 {
+        c0: crypto::ark_ff_delegation::Fp(
+            crypto::BigInt(
+                [15222373064398286084, 13305997496817878699, 6179074517294182750, 14794871321375031765, 2834697192260086091, 387745707543054929, 0, 0]
+            ),
+            core::marker::PhantomData
+        ),
+        c1: crypto::ark_ff_delegation::Fp(
+            crypto::BigInt(
+                [802106297986366494, 7763332301576374198, 16078281631408652708, 4142264898103746401, 12005984959834078047, 248731809877450469, 0, 0]
+            ),
+            core::marker::PhantomData
+        )
+    },
+    y: crypto::bls12_381::fields::Fq2 {
+        c0: crypto::ark_ff_delegation::Fp(
+            crypto::BigInt(
+                [4900293511062467887, 17213741567581943225, 16312230343184456439, 4417609035285159901, 8724769964152345554, 1569984678681432578, 0, 0]
+            ),
+            core::marker::PhantomData
+        ),
+        c1: crypto::ark_ff_delegation::Fp(
+            crypto::BigInt(
+                [10357602823164305765, 17761333828174651100, 14619682016189758143, 14389745726652808402, 3537342951673246453, 1861810530228151377, 0, 0]
+            ),
+            core::marker::PhantomData
+        )
+    },
+    infinity: false,
 };
 
 pub const POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE: [u8; 64] = const {
@@ -96,8 +153,6 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
         ),
     ))?;
 
-    use crypto::ark_serialize::CanonicalDeserialize;
-    let g2_by_tau_point = <crypto::bls12_381::curves::Bls12_381 as crypto::ark_ec::pairing::Pairing>::G2Affine::deserialize_compressed(&TRUSTED_SETUP_TAU_G2_BYTES[..]).expect("must decode from trusted setup");
     let prepared_g2_generator: <crypto::bls12_381::curves::Bls12_381 as crypto::ark_ec::pairing::Pairing>::G2Prepared = crypto::bls12_381::G2Affine::generator().into();
 
     if input.len() != 192 {
@@ -146,7 +201,7 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
     let mut y_minus_p = crypto::bls12_381::G1Affine::generator().mul_bigint(&y);
     y_minus_p -= &commitment_point;
 
-    let mut g2_el: crypto::bls12_381::G2Projective = g2_by_tau_point.into();
+    let mut g2_el: crypto::bls12_381::G2Projective = G2_BY_TAU_POINT.into();
     let z_in_g2 = crypto::bls12_381::G2Affine::generator().mul_bigint(&z);
     g2_el -= z_in_g2;
 
