@@ -7,6 +7,9 @@ use zk_ee::interface_error;
 use zk_ee::out_of_return_memory;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::*;
+use consts::{G2_BY_TAU_POINT, PREPARED_G2_GENERATOR};
+
+mod consts;
 
 ///
 /// Point evaluation system function implementation.
@@ -33,72 +36,6 @@ impl<R: Resources> SystemFunction<R, PointEvaluationErrors> for PointEvaluationI
     }
 }
 
-#[cfg(not(target_arch = "riscv32"))]
-pub const G2_BY_TAU_POINT: <crypto::bls12_381::curves::Bls12_381 as crypto::ark_ec::pairing::Pairing>::G2Affine = crypto::bls12_381::curves::g2::G2Affine {
-    x: crypto::bls12_381::fields::Fq2 {
-        c0: crypto::ark_ff::fields::models::Fp(
-            crypto::BigInt(
-                [6998771983072852473, 11736241389176950350, 14652389186963586383, 7123021877941670904, 207427363641627917, 1666061032901291221]
-            ),
-            core::marker::PhantomData
-        ),
-        c1: crypto::ark_ff::fields::models::Fp(
-            crypto::BigInt(
-                [1270972800850449493, 331328462692285148, 9602917463918608193, 2816806383447892978, 8933573566397811232, 215261465954158607]
-            ),
-            core::marker::PhantomData
-        )
-    },
-    y: crypto::bls12_381::fields::Fq2 {
-        c0: crypto::ark_ff::fields::models::Fp(
-            crypto::BigInt(
-                [12255148049650361111, 16300459039673357879, 7278512065901627776, 15013916996328221833, 6959599066670318708, 1753751357774418949]
-            ),
-            core::marker::PhantomData
-        ),
-        c1: crypto::ark_ff::fields::models::Fp(
-            crypto::BigInt(
-                [6097766243631356938, 3657144287806647550, 7252852235594748032, 6043526089682840990, 694068262573112211, 1355366081521641917]
-            ),
-            core::marker::PhantomData
-        )
-    },
-    infinity: false,
-};
-
-
-#[cfg(target_arch = "riscv32")]
-pub const G2_BY_TAU_POINT: <crypto::bls12_381::curves::Bls12_381 as crypto::ark_ec::pairing::Pairing>::G2Affine = crypto::bls12_381::curves::g2::G2Affine {
-    x: crypto::bls12_381::fields::Fq2 {
-        c0: crypto::ark_ff_delegation::Fp(
-            crypto::BigInt(
-                [15222373064398286084, 13305997496817878699, 6179074517294182750, 14794871321375031765, 2834697192260086091, 387745707543054929, 0, 0]
-            ),
-            core::marker::PhantomData
-        ),
-        c1: crypto::ark_ff_delegation::Fp(
-            crypto::BigInt(
-                [802106297986366494, 7763332301576374198, 16078281631408652708, 4142264898103746401, 12005984959834078047, 248731809877450469, 0, 0]
-            ),
-            core::marker::PhantomData
-        )
-    },
-    y: crypto::bls12_381::fields::Fq2 {
-        c0: crypto::ark_ff_delegation::Fp(
-            crypto::BigInt(
-                [4900293511062467887, 17213741567581943225, 16312230343184456439, 4417609035285159901, 8724769964152345554, 1569984678681432578, 0, 0]
-            ),
-            core::marker::PhantomData
-        ),
-        c1: crypto::ark_ff_delegation::Fp(
-            crypto::BigInt(
-                [10357602823164305765, 17761333828174651100, 14619682016189758143, 14389745726652808402, 3537342951673246453, 1861810530228151377, 0, 0]
-            ),
-            core::marker::PhantomData
-        )
-    },
-    infinity: false,
-};
 
 pub const POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE: [u8; 64] = const {
     // u256_be(4096) || u256_be(BLS12-381 Fr characteristic)
@@ -152,8 +89,6 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
             POINT_EVALUATION_NATIVE_COST,
         ),
     ))?;
-
-    let prepared_g2_generator: <crypto::bls12_381::curves::Bls12_381 as crypto::ark_ec::pairing::Pairing>::G2Prepared = crypto::bls12_381::G2Affine::generator().into();
 
     if input.len() != 192 {
         return Err(interface_error!(
@@ -211,7 +146,7 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
 
     let gt_el = crypto::bls12_381::curves::Bls12_381::multi_pairing(
         [y_minus_p_prepared, proof],
-        [prepared_g2_generator.clone(), g2_el],
+        [PREPARED_G2_GENERATOR.clone(), g2_el],
     );
     if gt_el.0 == <crypto::bls12_381::curves::Bls12_381 as crypto::ark_ec::pairing::Pairing>::TargetField::ONE {
         dst.try_extend(POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE).map_err(|_| out_of_return_memory!())?;
@@ -356,7 +291,7 @@ mod tests {
             0xd8, 0x05, 0x53, 0xbd, 0xa4, 0x02, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0xff, 0xff, 0xff,
             0x00, 0x00, 0x00, 0x01,
         ]
-        .to_vec();
+            .to_vec();
         let y = hex!("1522a4a7f34e1ea350ae07c29c96c7e79655aa926122e95fe69fcbd932ca49e9").to_vec();
         let proof = hex!("a62ad71d14c5719385c0686f1871430475bf3a00f0aa3f7b8dd99a9abc2160744faf0070725e00b60ad9a026a15b1a8c").to_vec();
 
@@ -397,7 +332,7 @@ mod tests {
             0xd8, 0x05, 0x53, 0xbd, 0xa4, 0x02, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0xff, 0xff, 0xff,
             0x00, 0x00, 0x00, 0x01,
         ]
-        .to_vec();
+            .to_vec();
         let proof = hex!("a62ad71d14c5719385c0686f1871430475bf3a00f0aa3f7b8dd99a9abc2160744faf0070725e00b60ad9a026a15b1a8c").to_vec();
 
         let input = [versioned_hash, z, invalid_y, commitment, proof].concat();
