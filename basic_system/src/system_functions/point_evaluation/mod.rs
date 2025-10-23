@@ -1,4 +1,5 @@
 use crate::cost_constants::{POINT_EVALUATION_COST_ERGS, POINT_EVALUATION_NATIVE_COST};
+use consts::{G2_BY_TAU_POINT, PREPARED_G2_GENERATOR};
 use crypto::ark_ec::pairing::Pairing;
 use crypto::ark_ec::AffineRepr;
 use crypto::ark_ff::{Field, PrimeField};
@@ -7,7 +8,6 @@ use zk_ee::interface_error;
 use zk_ee::out_of_return_memory;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::*;
-use consts::{G2_BY_TAU_POINT, PREPARED_G2_GENERATOR};
 
 mod consts;
 
@@ -35,7 +35,6 @@ impl<R: Resources> SystemFunction<R, PointEvaluationErrors> for PointEvaluationI
         })
     }
 }
-
 
 pub const POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE: [u8; 64] = const {
     // u256_be(4096) || u256_be(BLS12-381 Fr characteristic)
@@ -291,7 +290,7 @@ mod tests {
             0xd8, 0x05, 0x53, 0xbd, 0xa4, 0x02, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0xff, 0xff, 0xff,
             0x00, 0x00, 0x00, 0x01,
         ]
-            .to_vec();
+        .to_vec();
         let y = hex!("1522a4a7f34e1ea350ae07c29c96c7e79655aa926122e95fe69fcbd932ca49e9").to_vec();
         let proof = hex!("a62ad71d14c5719385c0686f1871430475bf3a00f0aa3f7b8dd99a9abc2160744faf0070725e00b60ad9a026a15b1a8c").to_vec();
 
@@ -332,7 +331,7 @@ mod tests {
             0xd8, 0x05, 0x53, 0xbd, 0xa4, 0x02, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0xff, 0xff, 0xff,
             0x00, 0x00, 0x00, 0x01,
         ]
-            .to_vec();
+        .to_vec();
         let proof = hex!("a62ad71d14c5719385c0686f1871430475bf3a00f0aa3f7b8dd99a9abc2160744faf0070725e00b60ad9a026a15b1a8c").to_vec();
 
         let input = [versioned_hash, z, invalid_y, commitment, proof].concat();
