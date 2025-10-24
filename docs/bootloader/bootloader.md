@@ -23,7 +23,6 @@ In addition, the `basic_bootloader` crate has the following compilation flags:
 
 - `code_in_kernel_space`: to enable normal contract execution for addresses in the range `[0, SPECIAL_ADDRESS_SPACE_BOUND]`.
 - `transfers_to_kernel_space`: to enable token transfers to addresses in the range `[0, SPECIAL_ADDRESS_SPACE_BOUND]`. Note: the bootloader itself has a special formal address (0x8001) that is always allowed to receive token transfers. This is used to collect fees.
-- `charge_priority_fee`: to enable charging for the EIP-1559 tip (priority fee) on top of the base fee.
 - `evm-compatibility`: enables all the previous flags, needed for the EVM test suite.
 
 ## Code execution
