@@ -381,6 +381,18 @@ where
     } else {
         abi_encoded_message_length
     };
+
+    // First we charge for copying the message
+    let native_copy_cost = evm_interpreter::native_resource_constants::COPY_BASE_NATIVE_COST
+        .saturating_add(
+            evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST
+                .saturating_mul(abi_encoded_message_length as u64),
+        );
+    evm_interpreter::charge_native_and_proportional_gas::<S::Resources>(
+        resources,
+        native_copy_cost,
+    )?;
+
     let mut message: alloc::vec::Vec<u8, S::Allocator> = alloc::vec::Vec::with_capacity_in(
         abi_encoded_message_length as usize + 32,
         system.get_allocator(),
@@ -431,6 +443,18 @@ where
     } else {
         abi_encoded_event_length
     };
+
+    // First we charge for copying the event data
+    let native_copy_cost = evm_interpreter::native_resource_constants::COPY_BASE_NATIVE_COST
+        .saturating_add(
+            evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST
+                .saturating_mul(abi_encoded_event_length as u64),
+        );
+    evm_interpreter::charge_native_and_proportional_gas::<S::Resources>(
+        resources,
+        native_copy_cost,
+    )?;
+
     let mut event_data =
         alloc::vec::Vec::with_capacity_in(abi_encoded_event_length + 32, system.get_allocator());
     event_data.extend_from_slice(&nominal_token_value.to_be_bytes::<32>());
