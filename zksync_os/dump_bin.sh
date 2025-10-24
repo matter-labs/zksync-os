@@ -26,13 +26,13 @@ FEATURES="proving"
 # Adjust for server modes
 case "$TYPE" in
   server)
-    FEATURES="$FEATURES,server,evm_compatibility"
+    FEATURES="$FEATURES,server"
     BIN_NAME="server_app.bin"
     ELF_NAME="server_app.elf"
     TEXT_NAME="server_app.text"
     ;;
   server-logging-enabled)
-    FEATURES="$FEATURES,server,evm_compatibility,print_debug_info"
+    FEATURES="$FEATURES,server,print_debug_info"
     BIN_NAME="server_app_logging_enabled.bin"
     ELF_NAME="server_app_logging_enabled.elf"
     TEXT_NAME="server_app_logging_enabled.text"
@@ -62,13 +62,13 @@ case "$TYPE" in
     TEXT_NAME="evm_replay.text"
     ;;
   multiblock-batch)
-    FEATURES="$FEATURES,evm_compatibility,multiblock-batch"
+    FEATURES="$FEATURES,multiblock-batch"
     BIN_NAME="multiblock_batch.bin"
     ELF_NAME="multiblock_batch.elf"
     TEXT_NAME="multiblock_batch.text"
     ;;
   multiblock-batch-logging-enabled)
-    FEATURES="$FEATURES,evm_compatibility,multiblock-batch,print_debug_info"
+    FEATURES="$FEATURES,multiblock-batch,print_debug_info"
     BIN_NAME="multiblock_batch_logging_enabled.bin"
     ELF_NAME="multiblock_batch_logging_enabled.elf"
     TEXT_NAME="multiblock_batch_logging_enabled.text"
