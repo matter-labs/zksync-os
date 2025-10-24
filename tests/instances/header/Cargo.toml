@@ -17,4 +17,3 @@ basic_bootloader = { path = "../../../basic_bootloader" }
 [features]
 e2e_proving = ["rig/e2e_proving"]
 cycle_marker = ["rig/cycle_marker"]
-pectra = ["rig/pectra"]

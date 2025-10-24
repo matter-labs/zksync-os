@@ -5,7 +5,6 @@
 use alloy::consensus::{TxEip1559, TxEip2930, TxLegacy};
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
-#[cfg(feature = "pectra")]
 use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
@@ -420,7 +419,6 @@ fn test_tx_with_access_list() {
     assert!(result0.is_ok_and(|o| o.is_success()));
 }
 
-#[cfg(feature = "pectra")]
 #[test]
 fn test_tx_with_authorization_list() {
     use rig::alloy::eips::eip7702::*;
@@ -479,7 +477,7 @@ fn test_tx_with_authorization_list() {
     );
 
     let run_config = rig::chain::RunConfig {
-        app: Some("pectra".to_string()),
+        app: Some("for_tests".to_string()),
         only_forward: false,
         check_storage_diff_hashes: true,
         ..Default::default()
@@ -493,7 +491,6 @@ fn test_tx_with_authorization_list() {
 
 // Test that slots made warm in a tx are cold in the next tx
 #[test]
-
 fn test_cold_in_new_tx() {
     let mut chain = Chain::empty(None);
 

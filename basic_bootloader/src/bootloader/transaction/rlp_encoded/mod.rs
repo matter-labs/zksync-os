@@ -21,7 +21,7 @@ mod transaction_types;
 
 pub use self::transaction::RlpEncodedTransaction;
 pub use transaction_types::eip_2930_tx::AccessListForAddress;
-#[cfg(feature = "pectra")]
+#[cfg(feature = "eip-7702")]
 pub use transaction_types::eip_7702_tx::{AuthorizationEntry, AuthorizationList};
 
 use super::TxError;

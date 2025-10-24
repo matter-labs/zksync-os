@@ -766,7 +766,7 @@ where
         )
         .and_then(|account_properties| {
             // Note: we ignore delegation in case if this is a constructor call. EE should revert due to collision.
-            let properties = if cfg!(feature = "pectra")
+            let properties = if cfg!(feature = "eip-7702")
                 && account_properties.is_delegated.0
                 && call_request.modifier != CallModifier::Constructor
             {

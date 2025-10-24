@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {server|server-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|pectra|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests}"
+USAGE="Usage: $0 --type {server|server-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests}"
 TYPE=""
 
 # Parse --type argument
@@ -26,13 +26,13 @@ FEATURES="proving"
 # Adjust for server modes
 case "$TYPE" in
   server)
-    FEATURES="$FEATURES,evm_compatibility"
+    FEATURES="$FEATURES,server,evm_compatibility"
     BIN_NAME="server_app.bin"
     ELF_NAME="server_app.elf"
     TEXT_NAME="server_app.text"
     ;;
   server-logging-enabled)
-    FEATURES="$FEATURES,evm_compatibility,print_debug_info"
+    FEATURES="$FEATURES,server,evm_compatibility,print_debug_info"
     BIN_NAME="server_app_logging_enabled.bin"
     ELF_NAME="server_app_logging_enabled.elf"
     TEXT_NAME="server_app_logging_enabled.text"
@@ -60,12 +60,6 @@ case "$TYPE" in
     BIN_NAME="evm_replay.bin"
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
-    ;;
-  pectra)
-    FEATURES="$FEATURES,pectra"
-    BIN_NAME="pectra.bin"
-    ELF_NAME="pectra.elf"
-    TEXT_NAME="pectra.text"
     ;;
   multiblock-batch)
     FEATURES="$FEATURES,evm_compatibility,multiblock-batch"
