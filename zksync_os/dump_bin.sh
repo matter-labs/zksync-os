@@ -45,9 +45,9 @@ case "$TYPE" in
     ;;
   for-tests-logging-enabled)
     FEATURES="$FEATURES,for_tests,print_debug_info"
-    BIN_NAME="for_tests_logging_enabled.bin"
-    ELF_NAME="for_tests_logging_enabled.elf"
-    TEXT_NAME="for_tests_logging_enabled.text"
+    BIN_NAME="for_tests.bin"
+    ELF_NAME="for_tests.elf"
+    TEXT_NAME="for_tests.text"
     ;;
   evm-replay)
     FEATURES="$FEATURES,eth_runner"
