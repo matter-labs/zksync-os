@@ -145,9 +145,10 @@ fn l2_base_token_hook_inner<S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
-    evm_interpreter::charge_native_and_proportional_gas::<S::Resources>(
+    evm_interpreter::charge_native_and_ergs::<S::Resources>(
         resources,
         HOOK_BASE_NATIVE_COST,
+        HOOK_BASE_ERGS_COST,
     )?;
 
     if calldata.len() < 4 {
@@ -253,8 +254,6 @@ where
         resources,
         system,
         L2_BASE_TOKEN_ADDRESS,
-        // Use EVM EE to charge for gas too
-        ExecutionEnvironmentType::EVM as u8,
     )?;
 
     // event Withdrawal(address indexed _l2Sender, address indexed _l1Receiver, uint256 _amount);
@@ -388,10 +387,10 @@ where
             evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST
                 .saturating_mul(abi_encoded_message_length as u64),
         );
-    evm_interpreter::charge_native_and_proportional_gas::<S::Resources>(
-        resources,
-        native_copy_cost,
-    )?;
+    let to_charge = S::Resources::from_native(
+        <S::Resources as Resources>::Native::from_computational(native_copy_cost),
+    );
+    resources.charge(&to_charge)?;
 
     let mut message: alloc::vec::Vec<u8, S::Allocator> = alloc::vec::Vec::with_capacity_in(
         abi_encoded_message_length as usize + 32,
@@ -413,14 +412,7 @@ where
         abi_encoded_message_length as usize - message.len(),
     ));
 
-    let result = send_to_l1_inner(
-        &message,
-        resources,
-        system,
-        L2_BASE_TOKEN_ADDRESS,
-        // Use EVM EE to charge for gas too
-        ExecutionEnvironmentType::EVM as u8,
-    )?;
+    let result = send_to_l1_inner(&message, resources, system, L2_BASE_TOKEN_ADDRESS)?;
 
     /*
         event WithdrawalWithMessage(
@@ -450,10 +442,10 @@ where
             evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST
                 .saturating_mul(abi_encoded_event_length as u64),
         );
-    evm_interpreter::charge_native_and_proportional_gas::<S::Resources>(
-        resources,
-        native_copy_cost,
-    )?;
+    let to_charge = S::Resources::from_native(
+        <S::Resources as Resources>::Native::from_computational(native_copy_cost),
+    );
+    resources.charge(&to_charge)?;
 
     let mut event_data =
         alloc::vec::Vec::with_capacity_in(abi_encoded_event_length + 32, system.get_allocator());

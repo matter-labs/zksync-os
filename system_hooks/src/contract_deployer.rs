@@ -115,12 +115,10 @@ fn contract_deployer_hook_inner<S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
-    // Snapshot of resources before the hook, to adjust gas usage later
-    let resources_before = resources.clone();
-
-    evm_interpreter::charge_native_and_proportional_gas::<S::Resources>(
+    evm_interpreter::charge_native_and_ergs::<S::Resources>(
         resources,
         HOOK_BASE_NATIVE_COST,
+        HOOK_BASE_ERGS_COST,
     )?;
 
     if calldata.len() < 4 {
@@ -187,6 +185,10 @@ where
             }
             // Also EIP-3541(reject code starting with 0xEF) should be validated by governance.
 
+            // Charge extra ergs for the next call
+            let ergs = set_bytecode_details_extra_ergs(bytecode_length);
+            resources.charge(&S::Resources::from_ergs(ergs))?;
+
             system.set_bytecode_details(
                 resources,
                 &address,
@@ -198,14 +200,26 @@ where
                 bytecode_length,
             )?;
 
-            // Adjust gas usage to be proportional to native used
-            evm_interpreter::post_charge_proportional_gas::<S::Resources>(
-                resources,
-                resources_before,
-            )?;
-
             Ok(Ok(&[]))
         }
         _ => Ok(Err("Contract deployer hook: unknown selector")),
     }
+}
+
+///
+/// We add some ergs cost to account for work charged in native only.
+/// This is:
+///  - Getting preimage of [bytecode_len] length.
+///  - Creating artifacts for code.
+///  - Hashing (Blake2s) bytecode+artifacts.
+///
+/// Note that the IO access gas cost is added by set_bytecode_details.
+/// Instead of doing a fine-grained calculation, we pick a constant
+/// (to be multiplied by the bytecode length) that should be big enough
+/// to cover for this.
+/// Note: the native resources still protect us from DoS in case this
+/// approximation is too low.
+///
+fn set_bytecode_details_extra_ergs(bytecode_len: u32) -> Ergs {
+    SET_BYTECODE_DETAILS_EXTRA_ERGS_PER_BYTE.times(bytecode_len as u64)
 }

@@ -6,8 +6,7 @@ use zk_ee::system::errors::subsystem::SubsystemError;
 use super::*;
 
 use crate::cost_constants::{
-    KECCAK256_BASE_NATIVE_COST, KECCAK256_CHUNK_SIZE, KECCAK256_PER_WORD_COST_ERGS,
-    KECCAK256_ROUND_NATIVE_COST, KECCAK256_STATIC_COST_ERGS,
+    KECCAK256_BASE_NATIVE_COST, KECCAK256_CHUNK_SIZE, KECCAK256_ROUND_NATIVE_COST,
 };
 
 ///
@@ -41,8 +40,7 @@ fn keccak256_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resources>(
     dst: &mut D,
     resources: &mut R,
 ) -> Result<(), SubsystemError<Keccak256Errors>> {
-    let words = src.len().div_ceil(32);
-    let ergs_cost = KECCAK256_STATIC_COST_ERGS + KECCAK256_PER_WORD_COST_ERGS.times(words as u64);
+    let ergs_cost = evm_interpreter::keccak256_ergs_cost(src.len());
     let native_cost = keccak256_native_cost::<R>(src.len());
     resources.charge(&R::from_ergs_and_native(ergs_cost, native_cost))?;
 

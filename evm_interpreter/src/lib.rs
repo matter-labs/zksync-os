@@ -33,7 +33,7 @@ use either::Either;
 use errors::EvmSubsystemError;
 use evm_stack::EvmStack;
 use gas::Gas;
-use native_resource_constants::AVERAGE_NATIVE_PER_GAS;
+use gas_constants::{SHA3, SHA3WORD};
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::slice_vec::SliceVec;
@@ -471,46 +471,22 @@ impl From<InternalError> for ExitCode {
 }
 
 ///
-/// Charge native and a proportional amount of ergs.
-/// The ergs are computed as:
-/// native / AVERAGE_NATIVE_PER_GAS * ERGS_PER_GAS
-///
-pub fn charge_native_and_proportional_gas<R: Resources>(
+/// Charge native and ergs.
+pub fn charge_native_and_ergs<R: Resources>(
     resources: &mut R,
-    native_to_charge: u64,
+    native: u64,
+    ergs: Ergs,
 ) -> Result<(), SystemError> {
     use zk_ee::system::Computational;
-    let ergs = Ergs(
-        native_to_charge
-            .div_ceil(AVERAGE_NATIVE_PER_GAS)
-            .saturating_mul(ERGS_PER_GAS),
-    );
-    let to_charge = R::from_ergs_and_native(ergs, R::Native::from_computational(native_to_charge));
+    let to_charge = R::from_ergs_and_native(ergs, R::Native::from_computational(native));
     resources.charge(&to_charge)
 }
 
 ///
-/// Helper to charge gas after the execution of a system hook.
-/// To be used when charging gas on the fly is too complex, as in
-/// the contract deployer.
+/// Ergs cost for keccak on a given input size.
 ///
-pub fn post_charge_proportional_gas<R: Resources>(
-    resources: &mut R,
-    resources_before_hook: R,
-) -> Result<(), SystemError> {
-    use zk_ee::system::Computational;
-    let native_used = resources
-        .native()
-        .diff(resources_before_hook.native())
-        .as_u64();
-    let proportional_ergs_from_native = native_used
-        .div_ceil(AVERAGE_NATIVE_PER_GAS)
-        .saturating_mul(ERGS_PER_GAS);
-    let ergs_used = resources.ergs().diff(resources_before_hook.ergs()).0;
-    let ergs_to_charge = proportional_ergs_from_native.saturating_sub(ergs_used);
-    if ergs_to_charge > 0 {
-        resources.charge(&R::from_ergs(Ergs(ergs_to_charge)))
-    } else {
-        Ok(())
-    }
+pub fn keccak256_ergs_cost(len: usize) -> Ergs {
+    let words = len.div_ceil(32);
+    let gas_cost = SHA3.saturating_add(SHA3WORD.saturating_mul(words as u64));
+    Ergs(gas_cost.saturating_mul(ERGS_PER_GAS))
 }

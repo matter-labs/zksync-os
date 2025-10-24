@@ -1,8 +1,6 @@
 use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::{native_with_delegations, system::Ergs};
 
-pub const KECCAK256_STATIC_COST_ERGS: Ergs = Ergs(30 * ERGS_PER_GAS);
-pub const KECCAK256_PER_WORD_COST_ERGS: Ergs = Ergs(6 * ERGS_PER_GAS);
 #[allow(clippy::identity_op)]
 pub const BLAKE2S256_PER_ROUND_COST_ERGS: Ergs = Ergs(1 * ERGS_PER_GAS);
 

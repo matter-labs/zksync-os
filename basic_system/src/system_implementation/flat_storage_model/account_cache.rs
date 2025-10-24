@@ -894,8 +894,7 @@ impl<
         let alloc = self.alloc.clone();
 
         let mut account_data = self.materialize_element::<PROOF_ENV>(
-            // Use EVM to charge gas
-            ExecutionEnvironmentType::EVM,
+            ee,
             resources,
             at_address,
             storage,

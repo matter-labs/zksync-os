@@ -183,7 +183,7 @@ impl<
 
     fn emit_l1_message(
         &mut self,
-        ee_type: ExecutionEnvironmentType,
+        _ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         data: &[u8],
@@ -210,15 +210,7 @@ impl<
             + EVENT_STORAGE_BASE_NATIVE_COST
             + EVENT_DATA_PER_BYTE_COST * (data.len() as u64);
 
-        // On EVM EE, we also charge a proportional amount of gas
-        match ee_type {
-            ExecutionEnvironmentType::NoEE => {
-                resources.charge(&R::from_native(R::Native::from_computational(native)))?
-            }
-            ExecutionEnvironmentType::EVM => {
-                evm_interpreter::charge_native_and_proportional_gas::<R>(resources, native)?;
-            }
-        };
+        resources.charge(&R::from_native(R::Native::from_computational(native)))?;
 
         // TODO(EVM-1078): for Era backward compatibility we may need to add events for l2 to l1 log and l1 message
 
