@@ -5347,8 +5347,7 @@ entries:
                 hash: '0xa42670801ec7a8ca7301d5b99b4d49eb'
                 enabled: true
           stRefundTest:
-            enabled: false
-            comment: We do not support EVM refunds
+            enabled: true
             entries:
               refund50_1.json:
                 hash: '0xa678f72542cef5ebffc46d0cd2b1cd22'
