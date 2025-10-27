@@ -206,8 +206,8 @@ where
                             let _ = system.get_logger().write_fmt(format_args!(
                                 "Tx execution result: Validation error = {err:?}\n",
                             ));
-                            // Finish the frame opened before processing the tx
-                            system.finish_global_frame(None)?;
+                            // Revert to state before transaction
+                            system.finish_global_frame(Some(&pre_tx_rollback_handle))?;
                             result_keeper.tx_processed(Err(err));
                         }
                         Ok(tx_processing_result) => {
