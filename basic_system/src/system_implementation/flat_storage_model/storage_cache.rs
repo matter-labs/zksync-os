@@ -678,12 +678,21 @@ impl<
 
             let current_value = element_history.current().value();
             let initial_value = element_history.initial().value();
+            let at_tx_start_value = element_history.first().value();
 
-            if initial_value != current_value {
+            // If the current value is resetting to the initial one,
+            // we don't consider this diff in the pubdata charging.
+            // This change will be optimized away, so it's actually reducing
+            // pubdata.
+            if current_value == initial_value {
+                continue;
+            }
+
+            if at_tx_start_value != current_value {
                 // TODO(EVM-1074): use tree index instead of key for repeated writes
                 pubdata_used += 32; // key
                 pubdata_used += ValueDiffCompressionStrategy::optimal_compression_length(
-                    initial_value,
+                    at_tx_start_value,
                     current_value,
                 ) as u32;
             }

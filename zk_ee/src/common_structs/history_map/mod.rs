@@ -278,6 +278,10 @@ where
         unsafe { &self.history.initial.as_ref().value }
     }
 
+    pub fn first(&self) -> &V {
+        unsafe { &self.history.first.as_ref().value }
+    }
+
     /// Returns (initial_value, current_value) if any
     pub fn get_initial_and_last_values(&self) -> Option<(&V, &V)> {
         self.history.get_initial_and_last_values()

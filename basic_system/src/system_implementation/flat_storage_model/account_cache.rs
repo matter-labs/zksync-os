@@ -376,11 +376,20 @@ impl<
 
             let current = element_history.current();
             let initial = element_history.initial();
+            let at_tx_start = element_history.first();
 
-            if current.value() != initial.value() {
+            // If the current value is resetting to the initial one,
+            // we don't consider this diff in the pubdata charging.
+            // This change will be optimized away, so it's actually reducing
+            // pubdata.
+            if current.value() == initial.value() {
+                continue;
+            }
+
+            if current.value() != at_tx_start.value() {
                 pubdata_used += 32; // key
                 pubdata_used += AccountProperties::diff_compression_length(
-                    initial.value(),
+                    at_tx_start.value(),
                     current.value(),
                     current.metadata().not_publish_bytecode,
                 )
