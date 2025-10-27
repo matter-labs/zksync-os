@@ -52,6 +52,7 @@ impl ChainStateCommitment {
 /// - upgrade tx: to check it on l1
 /// - extra inputs to validate(timestamp and chain id)
 ///
+#[cfg(feature = "aggregation")]
 pub struct BlocksOutput {
     /// Chain id used in the blocks.
     pub chain_id: U256,
@@ -69,6 +70,7 @@ pub struct BlocksOutput {
     pub upgrade_tx_hash: Bytes32,
 }
 
+#[cfg(feature = "aggregation")]
 impl BlocksOutput {
     ///
     /// Calculate blake2s hash of block(s) output.
@@ -93,12 +95,14 @@ impl BlocksOutput {
 /// Block(s) public input.
 /// It can be used for a single block or range of blocks.
 ///
+#[cfg(feature = "aggregation")]
 pub struct BlocksPublicInput {
     pub state_before: Bytes32,
     pub state_after: Bytes32,
     pub blocks_output: Bytes32,
 }
 
+#[cfg(feature = "aggregation")]
 impl BlocksPublicInput {
     ///
     /// Calculate blake2s hash of public input

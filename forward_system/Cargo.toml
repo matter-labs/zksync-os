@@ -22,6 +22,7 @@ basic_system = { path = "../basic_system", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
 zksync_os_evm_errors = { workspace = true, default-features = false }
 zksync_os_interface = { workspace = true, default-features = false }
+system_hooks = { path = "../system_hooks", default-features = false }
 
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 alloy = { version = "1", default-features = false }
@@ -38,9 +39,18 @@ default = ["testing"]
 error_origins = ["zk_ee/error_origins"]
 no_print = []
 unlimited_native = ["basic_bootloader/unlimited_native"]
-evm-compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-compatibility"]
-resources_for_tester = ["basic_bootloader/resources_for_tester"]
-disable_system_contracts = ["basic_bootloader/disable_system_contracts"]
-prevrandao = ["zk_ee/prevrandao"]
-evm_refunds = ["zk_ee/evm_refunds", "basic_system/evm_refunds", "basic_bootloader/evm_refunds", "evm_interpreter/evm_refunds"]
-pectra = ["basic_bootloader/pectra"]
+evm_compatibility = ["basic_bootloader/evm-compatibility", "basic_system/evm-compatibility"]
+
+# A feature for every specific use case
+
+# Features used for tests.
+for_tests = ["evm_compatibility", "system_hooks/p256_precompile", "system_hooks/point_eval_precompile"]
+
+# Features used for eth_runner
+eth_runner = ["evm_compatibility", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "unlimited_native"]
+
+# Features used for evm_tester
+evm_tester = ["evm_compatibility", "basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao","basic_bootloader/pectra", "system_hooks/p256_precompile","system_hooks/point_eval_precompile"]
+
+# Features used for pectra tests
+pectra = ["evm_compatibility", "basic_bootloader/pectra"]

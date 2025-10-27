@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-rig = { path = "../../rig" }
+rig = { path = "../../rig", features = ["for_tests"] }
 hex = "*"
 
 [features]

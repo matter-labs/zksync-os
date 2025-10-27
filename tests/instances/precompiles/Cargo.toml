@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-rig = { path = "../../rig", features = ["p256_precompile", "point_eval_precompile"] }
+rig = { path = "../../rig", features = ["for_tests"] }
 hex = "*"
 bytes = "1.9.0"
 cycle_marker = { path = "../../../cycle_marker" }

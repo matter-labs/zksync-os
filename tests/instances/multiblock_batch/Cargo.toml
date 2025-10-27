@@ -10,9 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-rig = { path = "../../rig" }
+rig = { path = "../../rig", features = ["for_tests"] }
 zksync_os_runner = { path = "../../../zksync_os_runner"}
-risc_v_simulator = { workspace = true, features = ["delegation"] }
+risc_v_simulator = { workspace = true }
 hex = "*"
 
 [features]

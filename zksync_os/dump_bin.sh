@@ -1,98 +1,93 @@
 #!/bin/sh
 set -e
 
-# Default mode
-TYPE="default"
+USAGE="Usage: $0 --type {server|server-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|pectra|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests}"
+TYPE=""
 
 # Parse --type argument
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --type)
+      [ "$#" -ge 2 ] || { echo "Missing value for --type"; echo "$USAGE"; exit 2; }
       TYPE="$2"
       shift 2
       ;;
     *)
       echo "Unknown argument: $1"
-      echo "Usage: $0 [--type default|for-tests|server|server-logging-enabled|evm-replay|evm-replay-benchmarking|debug-in-simulator|pectra|multiblock-batch|multiblock-batch-logging-enabled|evm-tester]"
-      exit 1
+      echo "$USAGE"
+      exit 2
       ;;
   esac
 done
 
 # Base features and output names
 FEATURES="proving"
-BIN_NAME="app.bin"
-ELF_NAME="app.elf"
-TEXT_NAME="app.text"
 
 # Adjust for server modes
 case "$TYPE" in
   server)
-    FEATURES="$FEATURES,proof_running_system/wrap-in-batch"
+    FEATURES="$FEATURES,evm_compatibility"
     BIN_NAME="server_app.bin"
     ELF_NAME="server_app.elf"
     TEXT_NAME="server_app.text"
     ;;
   server-logging-enabled)
-    FEATURES="$FEATURES,proof_running_system/wrap-in-batch,print_debug_info"
+    FEATURES="$FEATURES,evm_compatibility,print_debug_info"
     BIN_NAME="server_app_logging_enabled.bin"
     ELF_NAME="server_app_logging_enabled.elf"
     TEXT_NAME="server_app_logging_enabled.text"
     ;;
-  debug-in-simulator)
-    FEATURES="$FEATURES,print_debug_info,proof_running_system/cycle_marker,proof_running_system/p256_precompile,proof_running_system/state-diffs-pi"
-    BIN_NAME="app_debug.bin"
-    ELF_NAME="app_debug.elf"
-    TEXT_NAME="app_debug.text"
+  for-tests)
+    FEATURES="$FEATURES,for_tests"
+    BIN_NAME="for_tests.bin"
+    ELF_NAME="for_tests.elf"
+    TEXT_NAME="for_tests.text"
+    ;;
+  for-tests-logging-enabled)
+    FEATURES="$FEATURES,for_tests,print_debug_info"
+    BIN_NAME="for_tests_logging_enabled.bin"
+    ELF_NAME="for_tests_logging_enabled.elf"
+    TEXT_NAME="for_tests_logging_enabled.text"
     ;;
   evm-replay)
-    FEATURES="$FEATURES,proof_running_system/disable_system_contracts,proof_running_system/prevrandao,proof_running_system/evm_refunds,proof_running_system/state-diffs-pi"
+    FEATURES="$FEATURES,eth_runner"
     BIN_NAME="evm_replay.bin"
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
     ;;
   evm-replay-benchmarking)
-    FEATURES="$FEATURES,proof_running_system/unlimited_native,proof_running_system/disable_system_contracts,proof_running_system/cycle_marker,proof_running_system/prevrandao,proof_running_system/evm_refunds,proof_running_system/state-diffs-pi"
+    FEATURES="$FEATURES,eth_runner,benchmarking"
     BIN_NAME="evm_replay.bin"
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
     ;;
   pectra)
-    FEATURES="$FEATURES,proof_running_system/pectra,proof_running_system/state-diffs-pi"
+    FEATURES="$FEATURES,pectra"
     BIN_NAME="pectra.bin"
     ELF_NAME="pectra.elf"
     TEXT_NAME="pectra.text"
     ;;
   multiblock-batch)
-    FEATURES="$FEATURES,proof_running_system/multiblock-batch"
+    FEATURES="$FEATURES,evm_compatibility,multiblock-batch"
     BIN_NAME="multiblock_batch.bin"
     ELF_NAME="multiblock_batch.elf"
     TEXT_NAME="multiblock_batch.text"
     ;;
   multiblock-batch-logging-enabled)
-    FEATURES="$FEATURES,proof_running_system/multiblock-batch,print_debug_info"
+    FEATURES="$FEATURES,evm_compatibility,multiblock-batch,print_debug_info"
     BIN_NAME="multiblock_batch_logging_enabled.bin"
     ELF_NAME="multiblock_batch_logging_enabled.elf"
     TEXT_NAME="multiblock_batch_logging_enabled.text"
     ;;
   evm-tester)
-    FEATURES="$FEATURES,proof_running_system/state-diffs-pi,proof_running_system/resources_for_tester,proof_running_system/prevrandao,proof_running_system/pectra,proof_running_system/p256_precompile",
+    FEATURES="$FEATURES,evm_tester"
     BIN_NAME="evm_tester.bin"
     ELF_NAME="evm_tester.elf"
     TEXT_NAME="evm_tester.text"
     ;;
-  for-tests)
-    FEATURES="$FEATURES,proof_running_system/state-diffs-pi,proof_running_system/p256_precompile,proof_running_system/cycle_marker",proof_running_system/point_eval_precompile,
-    BIN_NAME="for_tests.bin"
-    ELF_NAME="for_tests.elf"
-    TEXT_NAME="for_tests.text"
-    ;;
-  default)
-    # leave defaults
-    ;;
   *)
     echo "Invalid --type: $TYPE"
-    echo "Valid types are: default, server, server-logging-enabled, evm-replay, for-tests, evm-replay-benchmarking, debug-in-simulator, multiblock-batch"
+    echo "$USAGE"
     exit 1
     ;;
 esac

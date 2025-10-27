@@ -15,7 +15,7 @@ features = ["http-rustls-tls", "test", "signing"]
 [dependencies]
 evm_interpreter = { path = "../../../evm_interpreter" }
 oracle_provider = { path = "../../../oracle_provider" }
-forward_system = { path = "../../../forward_system", features = ["no_print"] }
+forward_system = { path = "../../../forward_system", features = ["no_print", "for_tests"] }
 basic_system = { path = "../../../basic_system" }
 modexp = { path = "../../../supporting_crates/modexp" }
 basic_bootloader = { path = "../../../basic_bootloader" }
@@ -23,7 +23,7 @@ system_hooks = { path = "../../../system_hooks" }
 zk_ee = { path = "../../../zk_ee" }
 alloy = { version = "1", features = ["full", "eip712"]}
 fuzzer = { path = "../../fuzzer"}
-rig = { path = "../../rig", features = ["p256_precompile", "point_eval_precompile"] }
+rig = { path = "../../rig" }
 crypto = { path = "../../../crypto"}
 libfuzzer-sys = "0.4"
 hex = "*"

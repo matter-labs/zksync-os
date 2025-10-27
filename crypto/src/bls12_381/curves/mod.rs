@@ -14,6 +14,8 @@ mod g2_swu_iso;
 pub use self::{
     g1::{G1Affine, G1Projective},
     g2::{G2Affine, G2Projective},
+    pairing_impl::G2PreparedNoAlloc,
+    pairing_impl::BLS12_381_NUM_ELL_COEFFS,
 };
 
 // pub type Bls12_381 = Bls12<Config>;

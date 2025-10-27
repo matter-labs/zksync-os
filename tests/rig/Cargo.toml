@@ -41,19 +41,21 @@ zksync-web3-rs = { git = "https://github.com/lambdaclass/zksync-web3-rs.git" }
 bincode = "1.3"
 
 [features]
+default = ["testing", "risc_v_simulator/delegation"]
 opcode_stats = ["risc_v_simulator/opcode_stats"]
-testing = ["risc_v_simulator/delegation"]
+testing = []
 e2e_proving = ["prover_examples", "risc_v_simulator/delegation"]
-default = ["testing", "forward_system/evm-compatibility"]
 no_print = ["forward_system/no_print"]
 cycle_marker = ["dep:cycle_marker", "zksync_os_runner/cycle_marker", "zk_ee/cycle_marker", "evm_interpreter/cycle_marker", "basic_system/cycle_marker", "basic_bootloader/cycle_marker"]
 simulate_witness_gen = []
 unlimited_native = ["forward_system/unlimited_native"]
-resources_for_tester = ["forward_system/resources_for_tester"]
-p256_precompile = ["system_hooks/p256_precompile"]
-point_eval_precompile = ["system_hooks/point_eval_precompile"]
-disable_system_contracts = ["forward_system/disable_system_contracts"]
-prevrandao = ["zk_ee/prevrandao"]
-evm_refunds = ["forward_system/evm_refunds"]
+# Features for test instances
+for_tests = ["forward_system/for_tests"]
+# Features used for eth_runner
+eth_runner = ["forward_system/eth_runner"]
+# Features used for evm_tester
+evm_tester = ["forward_system/evm_tester"]
+# Features used for pectra tests
 pectra = ["forward_system/pectra"]
+
 

@@ -26,7 +26,6 @@ members = [
     "tests/instances/precompiles",
     "tests/instances/bench",
     "tests/instances/unit",
-    "tests/instances/eth_runner",
     "tests/instances/system_hooks",
     "tests/instances/multiblock_batch",
     "tests/instances/header",
@@ -40,6 +39,7 @@ exclude = [
     "crypto/src/blake2s/test_program",
     "circuit_test_program",
     "tests/evm_tester",
+    "tests/instances/eth_runner",
 ]
 
 [workspace.package]

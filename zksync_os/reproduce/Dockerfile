@@ -40,7 +40,7 @@ COPY . zksync_os
 
 WORKDIR /zksync_os/zksync_os
 
-RUN ./dump_bin.sh
+RUN ./dump_bin.sh --type for-tests
 RUN ./dump_bin.sh --type evm-replay
 RUN ./dump_bin.sh --type server-logging-enabled
 RUN ./dump_bin.sh --type server

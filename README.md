@@ -45,7 +45,7 @@ cargo build --release
 
 Navigate to the `zksync_os` directory and run:
 ```
-./dump_bin.sh
+./dump_bin.sh --type for-tests
 ```
 
 ## Testing
@@ -84,7 +84,7 @@ Run the following from the zksync-airbender repository:
 ```
 mkdir zkee_output
 
-cargo run --profile cli --no-default-features -p cli prove --bin ../zksync-os/zksync_os/app.bin --input-file ${CSR_READS_DUMP} --output-dir zkee_output
+cargo run --profile cli --no-default-features -p cli prove --bin ../zksync-os/zksync_os/for_tests.bin --input-file ${CSR_READS_DUMP} --output-dir zkee_output
 ```
 
 This generates multiple proof files in the `zkee_output` directory. For recursion (compressing proofs into fewer files), refer to the instructions in the `zksync-airbender` repository.
@@ -102,7 +102,7 @@ This generates multiple proof files in the `zkee_output` directory. For recursio
 Run [anvil-zksync from github](https://github.com/matter-labs/anvil-zksync) - **IMPORTANT** - make sure to use `zkos-dev` branch.
 
 ```shell
-cargo run  -- --use-zkos --zkos-bin-path=../zksync-os/zksync_os/app.bin
+cargo run  -- --use-zkos --zkos-bin-path=../zksync-os/zksync_os/for_tests.bin
 ```
 
 **Send transactions**
@@ -113,7 +113,7 @@ You can use any tool (for example forge) - to send transactions to the anvil bin
 
 From the zksync-airbender repo:
 ```
-    cargo run --no-default-features -- run --bin ../zksync-os/zksync_os/app.bin --input-rpc http://localhost:8012 --input-batch 15
+    cargo run --no-default-features -- run --bin ../zksync-os/zksync_os/for_tests.bin --input-rpc http://localhost:8012 --input-batch 15
 ```
 
 You can get the witness via the RPC call, where you pass the batch id as parameter:

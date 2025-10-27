@@ -2,54 +2,54 @@
 name: Daily Fuzz Build
 
 on:
-  schedule:
-    - cron: '0 1 * * *'
+    schedule:
+        - cron: "0 1 * * *"
 
 permissions: read-all
 
 jobs:
-  build-fuzz-targets:
-    name: Build fuzz targets
-    runs-on: [matterlabs-ci-runner]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    build-fuzz-targets:
+        name: Build fuzz targets
+        runs-on: [matterlabs-ci-runner]
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v3
 
-      - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: clippy, rustfmt
-          rustflags: ""
+            - name: Install Rust
+              uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  components: clippy, rustfmt
+                  rustflags: ""
 
-      - name: Setup
-        run: |
-          rustup set profile minimal
-          rustup target add riscv32i-unknown-none-elf
-          cargo install cargo-binutils
-          rustup component add llvm-tools-preview
-          rustup component add rust-src
+            - name: Setup
+              run: |
+                  rustup set profile minimal
+                  rustup target add riscv32i-unknown-none-elf
+                  cargo install cargo-binutils
+                  rustup component add llvm-tools-preview
+                  rustup component add rust-src
 
-      - name: Compile for RISC-V
-        working-directory: ./zksync_os
-        run: ./dump_bin.sh
+            - name: Compile for RISC-V
+              working-directory: ./zksync_os
+              run: ./dump_bin.sh --type for-tests
 
-      - name: Compile for forward running
-        run: cargo build --release
+            - name: Compile for forward running
+              run: cargo build --release
 
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz
+            - name: Install cargo-fuzz
+              run: cargo install cargo-fuzz
 
-      - name: Build fuzz tests
-        run: |
-          cd tests/fuzzer
-          cargo fuzz build -D
+            - name: Build fuzz tests
+              run: |
+                  cd tests/fuzzer
+                  cargo fuzz build -D
 
-      - name: Run regression tests
-        run: |
-          cd tests/fuzzer
-          ./fuzz.sh regression
+            - name: Run regression tests
+              run: |
+                  cd tests/fuzzer
+                  ./fuzz.sh regression
 
-      - name: Run smoke fuzz tests
-        run: |
-          cd tests/fuzzer
-          ./fuzz.sh smoke
+            - name: Run smoke fuzz tests
+              run: |
+                  cd tests/fuzzer
+                  ./fuzz.sh smoke

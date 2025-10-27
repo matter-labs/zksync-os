@@ -49,13 +49,13 @@ alloy = { version = "=1.0.31", features = ["full", "eip712", "consensus"]}
 zksync_os_forward_system = {package = "forward_system", path = "../../forward_system" }
 zk_ee = { package = "zk_ee", path = "../../zk_ee" }
 zksync_os_evm_interpreter = { package = "evm_interpreter", path = "../../evm_interpreter" }
-zksync_os_basic_system = { package = "basic_system", path = "../../basic_system", features = ["evm-compatibility"] }
-zksync_os_basic_bootloader = { package = "basic_bootloader", path = "../../basic_bootloader", features = ["evm-compatibility", "resources_for_tester"] }
+zksync_os_basic_system = { package = "basic_system", path = "../../basic_system" }
+zksync_os_basic_bootloader = { package = "basic_bootloader", path = "../../basic_bootloader" }
 zksync_os_system_hooks = { package = "system_hooks", path = "../../system_hooks"}
 zksync_os_oracle_provider = {package = "oracle_provider", path = "../../oracle_provider"}
 zksync_os_runner = {package = "zksync_os_runner", path = "../../zksync_os_runner" }
 zksync_os_crypto = { package = "crypto", path="../../crypto" }
-zksync_os_rig = { package = "rig", path="../../tests/rig", features = ["pectra", "prevrandao", "p256_precompile", "point_eval_precompile"]}
+zksync_os_rig = { package = "rig", path="../../tests/rig", features = ["pectra", "evm_tester"]}
 
 risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.3.1", features=["delegation", "opcode_stats"]}
 

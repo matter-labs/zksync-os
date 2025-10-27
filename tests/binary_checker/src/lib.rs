@@ -11,7 +11,9 @@ mod tests {
 
         let zksync_os_path =
             std::env::var("ZKSYNC_OS_DIR").unwrap_or_else(|_| String::from("../../zksync_os"));
-        let file_path = PathBuf::from_str(&zksync_os_path).unwrap().join("app.text");
+        let file_path = PathBuf::from_str(&zksync_os_path)
+            .unwrap()
+            .join("server_app.text");
         let mut file = std::fs::File::open(file_path).unwrap();
         file.read_to_end(&mut binary).unwrap();
         assert!(binary.len() % 4 == 0);

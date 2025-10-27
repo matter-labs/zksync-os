@@ -1,4 +1,5 @@
 use crate::cost_constants::{POINT_EVALUATION_COST_ERGS, POINT_EVALUATION_NATIVE_COST};
+use consts::{G2_BY_TAU_POINT, PREPARED_G2_GENERATOR};
 use crypto::ark_ec::pairing::Pairing;
 use crypto::ark_ec::AffineRepr;
 use crypto::ark_ff::{Field, PrimeField};
@@ -7,6 +8,8 @@ use zk_ee::interface_error;
 use zk_ee::out_of_return_memory;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::*;
+
+mod consts;
 
 ///
 /// Point evaluation system function implementation.
@@ -32,16 +35,6 @@ impl<R: Resources> SystemFunction<R, PointEvaluationErrors> for PointEvaluationI
         })
     }
 }
-
-pub const TRUSTED_SETUP_TAU_G2_BYTES: [u8; 96] = const {
-    let Ok(res) = const_hex::const_decode_to_array(
-        b"b5bfd7dd8cdeb128843bc287230af38926187075cbfbefa81009a2ce615ac53d2914e5870cb452d2afaaab24f3499f72185cbfee53492714734429b7b38608e23926c911cceceac9a36851477ba4c60b087041de621000edc98edada20c1def2"
-    ) else {
-        panic!()
-    };
-
-    res
-};
 
 pub const POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE: [u8; 64] = const {
     // u256_be(4096) || u256_be(BLS12-381 Fr characteristic)
@@ -96,10 +89,6 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
         ),
     ))?;
 
-    use crypto::ark_serialize::CanonicalDeserialize;
-    let g2_by_tau_point = <crypto::bls12_381::curves::Bls12_381 as crypto::ark_ec::pairing::Pairing>::G2Affine::deserialize_compressed(&TRUSTED_SETUP_TAU_G2_BYTES[..]).expect("must decode from trusted setup");
-    let prepared_g2_generator: <crypto::bls12_381::curves::Bls12_381 as crypto::ark_ec::pairing::Pairing>::G2Prepared = crypto::bls12_381::G2Affine::generator().into();
-
     if input.len() != 192 {
         return Err(interface_error!(
             PointEvaluationInterfaceError::InvalidInputSize
@@ -146,7 +135,7 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
     let mut y_minus_p = crypto::bls12_381::G1Affine::generator().mul_bigint(&y);
     y_minus_p -= &commitment_point;
 
-    let mut g2_el: crypto::bls12_381::G2Projective = g2_by_tau_point.into();
+    let mut g2_el: crypto::bls12_381::G2Projective = G2_BY_TAU_POINT.into();
     let z_in_g2 = crypto::bls12_381::G2Affine::generator().mul_bigint(&z);
     g2_el -= z_in_g2;
 
@@ -156,7 +145,7 @@ fn point_evaluation_as_system_function_inner<D: ?Sized + TryExtend<u8>, R: Resou
 
     let gt_el = crypto::bls12_381::curves::Bls12_381::multi_pairing(
         [y_minus_p_prepared, proof],
-        [prepared_g2_generator.clone(), g2_el],
+        [PREPARED_G2_GENERATOR.clone(), g2_el],
     );
     if gt_el.0 == <crypto::bls12_381::curves::Bls12_381 as crypto::ark_ec::pairing::Pairing>::TargetField::ONE {
         dst.try_extend(POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE).map_err(|_| out_of_return_memory!())?;

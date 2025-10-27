@@ -2,6 +2,8 @@
 use super::*;
 use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_functions::keccak256::Keccak256Impl;
+#[cfg(feature = "aggregation")]
+use crate::system_implementation::system::public_input::{BlocksOutput, BlocksPublicInput};
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
@@ -414,7 +416,6 @@ impl<
             .map(|account_data| account_data.nonce.0)
     }
 
-    #[cfg(feature = "evm_refunds")]
     fn get_refund_counter(&self) -> u32 {
         self.storage.get_refund_counter()
     }
@@ -476,12 +477,7 @@ impl<
 }
 
 // In practice we will not use single block batches
-// This functionality is here only for the tests
-#[cfg(all(
-    not(feature = "wrap-in-batch"),
-    not(feature = "multiblock-batch"),
-    not(feature = "state-diffs-pi")
-))]
+#[cfg(feature = "aggregation")]
 impl<
         A: Allocator + Clone + Default,
         R: Resources,
@@ -587,7 +583,7 @@ impl<
 ///
 /// With `state-diffs-pi` feature is used for testing, to compare state diffs from forward run and proof run.
 ///
-#[cfg(any(feature = "wrap-in-batch", feature = "state-diffs-pi"))]
+#[cfg(not(any(feature = "multiblock-batch", feature = "aggregation")))]
 impl<
         A: Allocator + Clone + Default,
         R: Resources,
@@ -607,9 +603,6 @@ impl<
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
-        #[cfg(all(feature = "wrap-in-batch", feature = "state-diffs-pi"))]
-        panic!("Invalid features combination"); // Can't have both features enabled at the same time
-
         let (mut state_commitment, last_block_timestamp) = {
             let proof_data: ProofData<FlatStorageCommitment<TREE_HEIGHT>> =
                 ZKProofDataQuery::get(&mut self.oracle, &())
@@ -631,8 +624,7 @@ impl<
             last_block_timestamp,
         };
         let _ = logger.write_fmt(format_args!(
-            "PI calculation: state commitment before {:?}\n",
-            chain_state_commitment_before
+            "PI calculation: state commitment before {chain_state_commitment_before:?}\n",
         ));
 
         // finishing IO, applying changes
@@ -691,8 +683,7 @@ impl<
             last_block_timestamp: block_metadata.timestamp,
         };
         let _ = logger.write_fmt(format_args!(
-            "PI calculation: state commitment after {:?}\n",
-            chain_state_commitment_after
+            "PI calculation: state commitment after {chain_state_commitment_after:?}\n",
         ));
         let mut da_commitment_hasher = crypto::sha3::Keccak256::new();
         da_commitment_hasher.update([0u8; 32]); // we don't have to validate state diffs hash
@@ -713,8 +704,7 @@ impl<
             interop_root_rolling_hash: Bytes32::from([0u8; 32]), // for now no interop roots
         };
         let _ = logger.write_fmt(format_args!(
-            "PI calculation: batch output {:?}\n",
-            batch_output,
+            "PI calculation: batch output {batch_output:?}\n",
         ));
 
         let public_input = public_input::BatchPublicInput {
@@ -723,13 +713,11 @@ impl<
             batch_output: batch_output.hash().into(),
         };
         let _ = logger.write_fmt(format_args!(
-            "PI calculation: final batch public input {:?}\n",
-            public_input,
+            "PI calculation: final batch public input {public_input:?}\n",
         ));
         let public_input_hash: Bytes32 = public_input.hash().into();
         let _ = logger.write_fmt(format_args!(
-            "PI calculation: final batch public input hash {:?}\n",
-            public_input_hash,
+            "PI calculation: final batch public input hash {public_input_hash:?}\n",
         ));
 
         if cfg!(feature = "state-diffs-pi") {
@@ -1146,7 +1134,6 @@ where
     }
 
     // Add EVM refund to counter
-    #[cfg(feature = "evm_refunds")]
     fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError> {
         self.storage.add_evm_refund(refund)
     }

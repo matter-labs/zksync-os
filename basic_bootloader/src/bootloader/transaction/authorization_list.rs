@@ -147,18 +147,16 @@ where
         return Ok(false);
     }
     // 7. Add refund if authority is not empty.
-    #[cfg(feature = "evm_refunds")]
-    {
-        let is_empty = account_properties.nonce.0 == 0
-            && account_properties.unpadded_code_len.0 == 0
-            && account_properties.nominal_token_balance.0.is_zero();
-        if !is_empty {
-            system.io.add_evm_refund(
-                (evm_interpreter::gas_constants::NEWACCOUNT
-                    - evm_interpreter::gas_constants::PER_AUTH_BASE_COST) as u32,
-            )?
-        }
+    let is_empty = account_properties.nonce.0 == 0
+        && account_properties.unpadded_code_len.0 == 0
+        && account_properties.nominal_token_balance.0.is_zero();
+    if !is_empty {
+        system.io.add_evm_refund(
+            (evm_interpreter::gas_constants::NEWACCOUNT
+                - evm_interpreter::gas_constants::PER_AUTH_BASE_COST) as u32,
+        )?
     }
+
     let delegation_address = B160::from_be_bytes(*delegation_address);
     let _ = system.get_logger().write_fmt(format_args!(
         "Will delegate address 0x{:040x} -> 0x{:040x}\n",

@@ -483,7 +483,6 @@ impl<
             )
     }
 
-    #[cfg(feature = "evm_refunds")]
     fn get_refund_counter(&self) -> u32 {
         *self
             .storage_cache
@@ -494,7 +493,6 @@ impl<
     }
 
     // Add EVM refund to counter
-    #[cfg(feature = "evm_refunds")]
     fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError> {
         let mut gas_refunds = self
             .storage_cache
