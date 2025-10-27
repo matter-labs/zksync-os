@@ -35,8 +35,14 @@ pub const L1_TX_INTRINSIC_L2_GAS: u64 = 21_000;
 //  - Adding tx hash into l1 tx linear hasher
 pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 130_000;
 
-// Needed to publish the l1 tx log.
-pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88;
+// Pubdata needed for the diff in balance as a result of
+// the fee payment to the coinbase.
+// We take a worst-case value of 32 byte for the key and 33 for
+// the uncompressed update.
+const COINBASE_BALANCE_INTRINSIC_PUBDATA: u64 = 32 + 33;
+
+// Needed to publish the l1 tx log and coinbase balance.
+pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88 + COINBASE_BALANCE_INTRINSIC_PUBDATA;
 
 /// Does not include signature verification.
 pub const L2_TX_INTRINSIC_GAS: u64 = 18_000;
@@ -45,7 +51,7 @@ pub const L2_TX_INTRINSIC_GAS: u64 = 18_000;
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
 
 /// Value taken from system-contracts, to adjust.
-pub const L2_TX_INTRINSIC_PUBDATA: u64 = 0;
+pub const L2_TX_INTRINSIC_PUBDATA: u64 = COINBASE_BALANCE_INTRINSIC_PUBDATA;
 
 // Includes:
 //  - Transferring fee to coinbase.
