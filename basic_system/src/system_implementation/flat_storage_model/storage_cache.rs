@@ -4,6 +4,11 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::fmt::Debug;
 use core::alloc::Allocator;
+use evm_interpreter::gas_constants::COLD_SLOAD_COST;
+use evm_interpreter::gas_constants::GAS_STORAGE_SET;
+use evm_interpreter::gas_constants::GAS_STORAGE_UPDATE;
+use evm_interpreter::gas_constants::REFUND_SSTORE_CLEARS;
+use evm_interpreter::gas_constants::WARM_STORAGE_READ_COST;
 use ruint::aliases::B160;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
@@ -446,13 +451,13 @@ impl<
         };
 
         #[allow(unused_variables)]
-        let (old_value, val_at_tx_start) = self
+        let (current_value, val_at_tx_start) = self
             .0
             .apply_write_impl(ee_type, &sa, &key, new_value, oracle, resources)?;
 
         if ee_type == ExecutionEnvironmentType::EVM {
             // EVM specific refunds calculation
-            if old_value != *new_value {
+            if current_value != *new_value {
                 let val_at_tx_start = *val_at_tx_start;
 
                 let mut gas_refunds = self
@@ -462,24 +467,28 @@ impl<
                     .copied()
                     .unwrap_or_default();
 
-                if old_value == val_at_tx_start {
-                    if !val_at_tx_start.is_zero() && new_value.is_zero() {
-                        gas_refunds += 4800
-                    }
-                } else {
-                    if !val_at_tx_start.is_zero() {
-                        if old_value.is_zero() {
-                            gas_refunds -= 4800
-                        } else if new_value.is_zero() {
-                            gas_refunds += 4800
-                        }
-                    }
-                    if *new_value == val_at_tx_start {
-                        if val_at_tx_start.is_zero() {
-                            gas_refunds += 20000 - 100
-                        } else {
-                            gas_refunds += 5000 - 2100 - 100
-                        }
+                if val_at_tx_start.is_zero() == false
+                    && current_value.is_zero() == false
+                    && new_value.is_zero()
+                {
+                    // Storage is cleared for the first time in the transaction
+                    gas_refunds += REFUND_SSTORE_CLEARS as u32;
+                }
+
+                if val_at_tx_start.is_zero() == false && current_value.is_zero() {
+                    // Gas refund issued earlier to be reversed
+                    gas_refunds -= REFUND_SSTORE_CLEARS as u32;
+                }
+
+                if val_at_tx_start == *new_value {
+                    // Storage slot being restored to its original value
+                    if val_at_tx_start.is_zero() {
+                        // Slot was originally empty and was SET earlier
+                        gas_refunds += (GAS_STORAGE_SET - WARM_STORAGE_READ_COST) as u32;
+                    } else {
+                        // Slot was originally non-empty and was UPDATED earlier
+                        gas_refunds +=
+                            (GAS_STORAGE_UPDATE - COLD_SLOAD_COST - WARM_STORAGE_READ_COST) as u32;
                     }
                 }
 
@@ -487,7 +496,7 @@ impl<
             }
         }
 
-        Ok(old_value)
+        Ok(current_value)
     }
 
     fn read_special_account_property<T: storage_models::common_structs::SpecialAccountProperty>(
