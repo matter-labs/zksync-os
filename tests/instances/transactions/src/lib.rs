@@ -588,27 +588,31 @@ fn test_independent_txs_have_same_pubdata() {
     let to2 = address!("0000000000000000000000000000000000010003");
 
     let encoded_tx_1 = {
-        let tx = TxLegacy {
-            chain_id: 37u64.into(),
+        let tx = TxEip1559 {
+            chain_id: 37u64,
             nonce: 0,
-            gas_price: 1000,
+            max_fee_per_gas: 1500,
+            max_priority_fee_per_gas: 1500,
             gas_limit: 21_000,
             to: TxKind::Call(to1),
             value: U256::from(10),
             input: Default::default(),
+            ..Default::default()
         };
         rig::utils::sign_and_encode_alloy_tx(tx, &wallet1)
     };
 
     let encoded_tx_2 = {
-        let tx = TxLegacy {
-            chain_id: 37u64.into(),
+        let tx = TxEip1559 {
+            chain_id: 37u64,
             nonce: 0,
-            gas_price: 1000,
+            max_fee_per_gas: 1500,
+            max_priority_fee_per_gas: 1500,
             gas_limit: 21_000,
             to: TxKind::Call(to2),
             value: U256::from(10),
             input: Default::default(),
+            ..Default::default()
         };
         rig::utils::sign_and_encode_alloy_tx(tx, &wallet2)
     };
