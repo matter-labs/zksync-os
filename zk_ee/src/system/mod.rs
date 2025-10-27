@@ -223,7 +223,7 @@ where
     }
 
     /// Finishes current transaction execution
-    pub fn flush_tx(&mut self) -> Result<(), InternalError> {
+    pub fn finish_valid_tx(&mut self) -> Result<(), InternalError> {
         self.io.finish_tx()
     }
 

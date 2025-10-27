@@ -287,7 +287,7 @@ where
                                 }
 
                                 // Only bump tx number when tx is successful
-                                system.flush_tx()?;
+                                system.finish_valid_tx()?;
                             }
                         }
                     }
