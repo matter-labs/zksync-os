@@ -92,19 +92,6 @@ pub enum CallScheme {
     StaticCall,
 }
 
-/// Create scheme.
-#[repr(usize)]
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
-pub enum CreateScheme {
-    /// Legacy create scheme of `CREATE`.
-    Create = 1,
-    /// Create scheme of `CREATE2`.
-    Create2 {
-        /// Salt.
-        salt: U256,
-    },
-}
-
 impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub(crate) const PRINT_OPCODES: bool = false;
 
@@ -464,67 +451,68 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.returndata = returndata_region;
     }
 
-    pub fn derive_address_for_deployment(
-        system: &mut System<S>,
-        resources: &mut <S as SystemTypes>::Resources,
-        scheme: CreateScheme,
+    pub fn derive_address_for_deployment_create(
+        _resources: &mut <S as SystemTypes>::Resources,
         deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
         deployer_nonce: u64,
+    ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError> {
+        use crypto::sha3::{Digest, Keccak256};
+        let mut buffer = [0u8; crate::utils::MAX_CREATE_RLP_ENCODING_LEN];
+        let encoding_it = crate::utils::create_quasi_rlp(deployer_address, deployer_nonce);
+        let encoding_len = ExactSizeIterator::len(&encoding_it);
+        for (dst, src) in buffer.iter_mut().zip(encoding_it) {
+            *dst = src;
+        }
+        let new_address = Keccak256::digest(&buffer[..encoding_len]);
+        #[allow(deprecated)]
+        let new_address =
+            B160::try_from_be_slice(&new_address.as_slice()[12..]).expect("must create address");
+
+        Ok(new_address)
+    }
+
+    pub fn derive_address_for_deployment_create2(
+        system: &mut System<S>,
+        resources: &mut <S as SystemTypes>::Resources,
+        salt: U256,
+        deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
         deployment_code: &[u8],
     ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError> {
         use crypto::sha3::{Digest, Keccak256};
-        let deployed_address = match &scheme {
-            CreateScheme::Create => {
-                let mut buffer = [0u8; crate::utils::MAX_CREATE_RLP_ENCODING_LEN];
-                let encoding_it = crate::utils::create_quasi_rlp(deployer_address, deployer_nonce);
-                let encoding_len = ExactSizeIterator::len(&encoding_it);
-                for (dst, src) in buffer.iter_mut().zip(encoding_it) {
-                    *dst = src;
+        // we need to compute address based on the hash of the code and salt
+        let mut initcode_hash = ArrayBuilder::default();
+        resources
+            .with_infinite_ergs(|inf_resources| {
+                S::SystemFunctions::keccak256(
+                    deployment_code,
+                    &mut initcode_hash,
+                    inf_resources,
+                    system.get_allocator(),
+                )
+            })
+            .map_err(|e| -> EvmSubsystemError {
+                match e.root_cause() {
+                    RootCause::Runtime(e @ RuntimeError::FatalRuntimeError(_)) => {
+                        e.clone_or_copy().into()
+                    }
+                    _ => internal_error!("Keccak in create2 cannot fail").into(),
                 }
-                let new_address = Keccak256::digest(&buffer[..encoding_len]);
-                #[allow(deprecated)]
-                let new_address = B160::try_from_be_slice(&new_address.as_slice()[12..])
-                    .expect("must create address");
-                new_address
-            }
-            CreateScheme::Create2 { salt } => {
-                // we need to compute address based on the hash of the code and salt
-                let mut initcode_hash = ArrayBuilder::default();
-                resources
-                    .with_infinite_ergs(|inf_resources| {
-                        S::SystemFunctions::keccak256(
-                            deployment_code,
-                            &mut initcode_hash,
-                            inf_resources,
-                            system.get_allocator(),
-                        )
-                    })
-                    .map_err(|e| -> EvmSubsystemError {
-                        match e.root_cause() {
-                            RootCause::Runtime(e @ RuntimeError::FatalRuntimeError(_)) => {
-                                e.clone_or_copy().into()
-                            }
-                            _ => internal_error!("Keccak in create2 cannot fail").into(),
-                        }
-                    })?;
-                let initcode_hash = Bytes32::from_array(initcode_hash.build());
+            })?;
+        let initcode_hash = Bytes32::from_array(initcode_hash.build());
 
-                let mut create2_buffer = [0xffu8; 1 + 20 + 32 + 32];
-                create2_buffer[1..(1 + 20)]
-                    .copy_from_slice(&deployer_address.to_be_bytes::<{ B160::BYTES }>());
-                create2_buffer[(1 + 20)..(1 + 20 + 32)]
-                    .copy_from_slice(&salt.to_be_bytes::<{ U256::BYTES }>());
-                create2_buffer[(1 + 20 + 32)..(1 + 20 + 32 + 32)]
-                    .copy_from_slice(initcode_hash.as_u8_array_ref());
+        let mut create2_buffer = [0xffu8; 1 + 20 + 32 + 32];
+        create2_buffer[1..(1 + 20)]
+            .copy_from_slice(&deployer_address.to_be_bytes::<{ B160::BYTES }>());
+        create2_buffer[(1 + 20)..(1 + 20 + 32)]
+            .copy_from_slice(&salt.to_be_bytes::<{ U256::BYTES }>());
+        create2_buffer[(1 + 20 + 32)..(1 + 20 + 32 + 32)]
+            .copy_from_slice(initcode_hash.as_u8_array_ref());
 
-                let new_address = Keccak256::digest(&create2_buffer);
-                #[allow(deprecated)]
-                let new_address = B160::try_from_be_slice(&new_address.as_slice()[12..])
-                    .expect("must create address");
-                new_address
-            }
-        };
+        let new_address = Keccak256::digest(&create2_buffer);
+        #[allow(deprecated)]
+        let new_address =
+            B160::try_from_be_slice(&new_address.as_slice()[12..]).expect("must create address");
 
-        Ok(deployed_address)
+        Ok(new_address)
     }
 }

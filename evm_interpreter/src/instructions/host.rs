@@ -319,31 +319,31 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         self.gas.spend_gas(initcode_cost)?;
         let end = code_offset + len; // can not overflow as we resized heap above using same values
 
-        // we will charge for everything in the "should_continue..." function
-        let scheme = if IS_CREATE2 {
-            let salt = self.stack.pop_1()?;
-            CreateScheme::Create2 { salt: *salt }
-        } else {
-            CreateScheme::Create
-        };
-
         // TODO: not necessary once heaps get the same treatment as calldata
         let deployment_code = code_offset..end;
 
-        let deployer_nonce = self.gas.resources.with_infinite_ergs(|inf_resources| {
-            system
-                .io
-                .read_nonce(THIS_EE_TYPE, inf_resources, &self.address)
-        })?;
+        let deployed_address = if IS_CREATE2 {
+            let salt = self.stack.pop_1()?;
+            Self::derive_address_for_deployment_create2(
+                system,
+                self.gas.resources_mut(),
+                *salt,
+                &self.address,
+                &self.heap[deployment_code.clone()],
+            )?
+        } else {
+            let deployer_nonce = self.gas.resources.with_infinite_ergs(|inf_resources| {
+                system
+                    .io
+                    .read_nonce(THIS_EE_TYPE, inf_resources, &self.address)
+            })?;
 
-        let deployed_address = Self::derive_address_for_deployment(
-            system,
-            self.gas.resources_mut(),
-            scheme,
-            &self.address,
-            deployer_nonce,
-            &self.heap[deployment_code.clone()],
-        )?;
+            Self::derive_address_for_deployment_create(
+                self.gas.resources_mut(),
+                &self.address,
+                deployer_nonce,
+            )?
+        };
 
         // at this preemption point we give all resources to the system
         let all_resources = self.gas.take_resources();

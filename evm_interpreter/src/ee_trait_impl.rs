@@ -2,7 +2,6 @@ use super::*;
 use crate::errors::{EvmErrors, EvmInterfaceError, EvmSubsystemError};
 use crate::gas::gas_utils;
 use crate::gas_constants::{CALLVALUE, CALL_STIPEND, NEWACCOUNT};
-use crate::interpreter::CreateScheme;
 use core::fmt::Write;
 use core::mem;
 use zk_ee::common_structs::CalleeAccountProperties;
@@ -15,8 +14,6 @@ use zk_ee::system::*;
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::b160_to_u256;
 use zk_ee::{interface_error, internal_error, wrap_error};
-
-impl<S: SystemTypes> EEDeploymentExtraParameters<S> for CreateScheme {}
 
 impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Interpreter<'ee, S> {
     const NEEDS_SCRATCH_SPACE: bool = false;

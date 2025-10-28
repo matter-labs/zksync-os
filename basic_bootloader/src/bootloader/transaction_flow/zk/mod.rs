@@ -15,7 +15,6 @@ use crate::bootloader::{BasicBootloader, Bytes32};
 use basic_system::cost_constants::{ECRECOVER_COST_ERGS, ECRECOVER_NATIVE_COST};
 use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
-use evm_interpreter::interpreter::CreateScheme;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
 use system_hooks::HooksStorage;
@@ -454,13 +453,10 @@ where
             return Err(internal_error!("Deployment cannot target NoEE").into())
         }
         ExecutionEnvironmentType::EVM => {
-            SystemBoundEVMInterpreter::<S>::derive_address_for_deployment(
-                system,
+            SystemBoundEVMInterpreter::<S>::derive_address_for_deployment_create(
                 resources,
-                CreateScheme::Create,
                 &from,
                 existing_nonce,
-                main_calldata,
             )
             .map_err(|e| {
                 let ee_error: EESubsystemError = wrap_error!(e);
