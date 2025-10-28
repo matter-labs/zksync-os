@@ -310,6 +310,10 @@ where
         unsafe { &self.history.initial.as_ref().value }
     }
 
+    pub fn committed(&self) -> &V {
+        unsafe { &self.history.head.as_ref().value }
+    }
+
     #[allow(dead_code)]
     /// Returns (initial_value, current_value) if any
     pub fn get_initial_and_last_values(&self) -> Option<(&V, &V)> {
