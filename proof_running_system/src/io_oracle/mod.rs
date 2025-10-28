@@ -74,7 +74,7 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
         // write content
         let mut remaining_len = iterator_len;
         for value in iter_to_write {
-            assert!(iterator_len != 0);
+            assert!(remaining_len != 0);
             NDS::csr_write_impl(value);
             remaining_len -= 1;
         }
