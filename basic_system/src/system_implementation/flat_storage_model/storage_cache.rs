@@ -437,8 +437,6 @@ impl<
         if ee_type == ExecutionEnvironmentType::EVM {
             // EVM specific refunds calculation
             if old_value != *new_value {
-                let val_at_tx_start = val_at_tx_start;
-
                 let mut gas_refunds = self
                     .0
                     .evm_refunds_counter
