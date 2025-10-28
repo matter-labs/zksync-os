@@ -10,8 +10,6 @@ unsafe extern "C" fn start_rust() -> ! {
 }
 
 unsafe fn workload() -> ! {
-    crypto::init_lib();
-
     // just invoke blake
     use crypto::MiniDigest;
     let _output = core::hint::black_box(crypto::blake2s::Blake2s256::digest(&[1, 2, 3, 4, 5]));

@@ -27,9 +27,3 @@ pub use self::fq6::*;
 
 pub mod fq12;
 pub use self::fq12::*;
-
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-pub fn init() {
-    fq::init();
-    fr::init();
-}

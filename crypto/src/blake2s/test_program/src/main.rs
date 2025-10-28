@@ -47,7 +47,6 @@ unsafe fn workload() -> ! {
     let rodata_end = addr_of_mut!(_erodata);
     load_to_ram(load_address as *const u8, rodata_start as *mut u8, rodata_end as *mut u8);
 
-    crypto::init_lib();
 
     crypto::blake2s::blake2s_tests::run_tests();
     zksync_os_finish_success(&[1, 0, 0, 0, 0, 0, 0, 0]);

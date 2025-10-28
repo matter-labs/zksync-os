@@ -149,8 +149,6 @@ mod test {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_gen() {
-        crate::bls12_381::fields::init();
-
         let gen: G2Affine = curves::g2_swu_iso::SwuIsoConfig::GENERATOR;
         assert!(gen.is_on_curve());
         assert!(gen.is_in_correct_subgroup_assuming_on_curve());

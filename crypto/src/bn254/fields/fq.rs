@@ -1,28 +1,14 @@
 #[cfg(all(target_arch = "riscv32", not(feature = "bigint_ops")))]
 compile_error!("feature `bigint_ops` must be activated for RISC-V target");
 
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-pub fn init() {
-    unsafe {
-        MODULUS.as_mut_ptr().write(MODULUS_CONSTANT);
-        REDUCTION_CONST.as_mut_ptr().write(MONT_REDUCTION_CONSTANT);
-    }
-}
-
 pub type Fq = Fp256<MontBackend<FqConfig, 4>>;
 use crate::ark_ff_delegation::{BigInt, BigIntMacro, Fp, Fp256, MontBackend, MontConfig};
 use crate::bigint_delegation::{u256, DelegatedModParams, DelegatedMontParams};
 use ark_ff::ark_ff_macros::unroll_for_loops;
 use ark_ff::{AdditiveGroup, Zero};
-use core::mem::MaybeUninit;
 
 type B = BigInt<4>;
 type F = Fp<MontBackend<FqConfig, 4usize>, 4usize>;
-
-// we also need few empty representations
-// static mut MINUS_ONE_REPR: MaybeUninit<[u32; 8]> = MaybeUninit::uninit();
-static mut MODULUS: MaybeUninit<B> = MaybeUninit::uninit();
-static mut REDUCTION_CONST: MaybeUninit<B> = MaybeUninit::uninit();
 
 const MODULUS_CONSTANT: B =
     BigIntMacro!("21888242871839275222246405745257275088696311157297823662689037894645226208583");
@@ -43,13 +29,13 @@ struct FqParams;
 
 impl DelegatedModParams<4> for FqParams {
     unsafe fn modulus() -> &'static BigInt<4> {
-        unsafe { MODULUS.assume_init_ref() }
+        &MODULUS_CONSTANT
     }
 }
 
 impl DelegatedMontParams<4> for FqParams {
     unsafe fn reduction_const() -> &'static BigInt<4> {
-        unsafe { REDUCTION_CONST.assume_init_ref() }
+        &MONT_REDUCTION_CONSTANT
     }
 }
 
@@ -227,17 +213,10 @@ mod test {
     use super::Fq;
     use ark_ff::{Field, One, UniformRand, Zero};
 
-    fn init() {
-        super::init();
-        crate::bigint_delegation::init();
-    }
-
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul_properties() {
         const ITERATIONS: usize = 1000;
-        init();
-
         use ark_std::test_rng;
         let mut rng = test_rng();
         let zero = Fq::zero();
@@ -313,7 +292,6 @@ mod test {
 
         type RefFq = ark_bn254::Fq;
 
-        init();
         let a = Fq::from_str("-1").unwrap();
         let ref_a = RefFq::from_str("-1").unwrap();
 
@@ -333,7 +311,6 @@ mod test {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_bilinearity() {
-        init();
         for _ in 0..ITERATIONS {
             let mut rng = test_rng();
             let a: <Bn254 as Pairing>::G1 = UniformRand::rand(&mut rng);
@@ -364,7 +341,6 @@ mod test {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_multi_pairing() {
-        init();
         for _ in 0..ITERATIONS {
             let rng = &mut test_rng();
 
@@ -381,7 +357,6 @@ mod test {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_final_exp() {
-        init();
         for _ in 0..ITERATIONS {
             let rng = &mut test_rng();
             let fp_ext = <Bn254 as Pairing>::TargetField::rand(rng);

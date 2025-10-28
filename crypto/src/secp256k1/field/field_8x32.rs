@@ -1,38 +1,24 @@
 use crate::ark_ff_delegation::{BigInt, BigIntMacro, BigInteger};
 use crate::bigint_delegation::{u256, DelegatedBarretParams, DelegatedModParams};
 use crate::k256::FieldBytes;
-use core::mem::MaybeUninit;
 
 use super::field_10x26::FieldStorage10x26;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct FieldElement8x32(pub(super) BigInt<4>);
 
-static mut MODULUS: MaybeUninit<BigInt<4>> = MaybeUninit::uninit();
-static mut NEG_MODULUS: MaybeUninit<BigInt<4>> = MaybeUninit::uninit();
-
 #[derive(Debug, Default)]
 pub(super) struct FieldParams;
 
 impl DelegatedModParams<4> for FieldParams {
     unsafe fn modulus() -> &'static BigInt<4> {
-        unsafe { MODULUS.assume_init_ref() }
+        &FieldElement8x32::MODULUS.0
     }
 }
 
 impl DelegatedBarretParams<4> for FieldParams {
     unsafe fn neg_modulus() -> &'static BigInt<4> {
-        unsafe { NEG_MODULUS.assume_init_ref() }
-    }
-}
-
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-pub fn init() {
-    unsafe {
-        MODULUS.as_mut_ptr().write(FieldElement8x32::MODULUS.0);
-        NEG_MODULUS
-            .as_mut_ptr()
-            .write(FieldElement8x32::NEG_MODULUS.0);
+        &FieldElement8x32::NEG_MODULUS.0
     }
 }
 
@@ -219,7 +205,7 @@ impl FieldElement8x32 {
 #[cfg(test)]
 impl PartialEq for FieldElement8x32 {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { u256::eq_mod::<FieldParams>(&self.0, &other.0) }
+        u256::eq(&self.0, &other.0)
     }
 }
 
@@ -241,15 +227,9 @@ mod tests {
     use super::FieldElement8x32;
     use proptest::{prop_assert_eq, proptest};
 
-    fn init() {
-        crate::secp256k1::init();
-        crate::bigint_delegation::init();
-    }
-
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_invert() {
-        init();
         proptest!(|(x: FieldElement8x32)| {
             let mut a = x;
             a.invert_in_place();
@@ -271,7 +251,6 @@ mod tests {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul() {
-        init();
         proptest!(|(x: FieldElement8x32, y: FieldElement8x32, z: FieldElement8x32)| {
             let mut a = x;
             let mut b = y;
@@ -316,7 +295,6 @@ mod tests {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_add() {
-        init();
         proptest!(|(x: FieldElement8x32, y: FieldElement8x32, z: FieldElement8x32)| {
             let mut a = x;
             let mut b = y;

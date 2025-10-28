@@ -4,31 +4,6 @@ use crate::BigIntOps;
 #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
 const CARRY_BIT_IDX: usize = 6;
 
-#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
-pub(super) const ROM_BOUND: usize = 1 << 21;
-
-#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
-static mut SCRATCH: core::mem::MaybeUninit<U256> = core::mem::MaybeUninit::uninit();
-
-#[inline(always)]
-pub(super) fn copy_if_needed(operand: &U256) -> &U256 {
-    #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
-    unsafe {
-        let ptr = operand as *const U256;
-        if ptr.addr() < ROM_BOUND {
-            SCRATCH.as_mut_ptr().write(*operand);
-            SCRATCH.assume_init_ref()
-        } else {
-            operand
-        }
-    }
-
-    #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
-    {
-        operand
-    }
-}
-
 #[inline(always)]
 pub(super) fn add(a: &mut U256, b: &U256) -> u32 {
     bigint_op_delegation(a, b, BigIntOps::Add)
@@ -55,7 +30,8 @@ pub(super) fn mul_high(a: &mut U256, b: &U256) {
 }
 
 #[inline(always)]
-pub(super) fn eq(a: &mut U256, b: &U256) -> u32 {
+pub(super) fn eq(a: &U256, b: &U256) -> u32 {
+    let a = a as *const _ as *mut _;
     bigint_op_delegation(a, b, BigIntOps::Eq)
 }
 
@@ -80,21 +56,13 @@ pub(super) fn sub_and_negate_with_carry_bit(a: &mut U256, b: &U256, carry: bool)
 }
 
 #[inline(always)]
-fn bigint_op_delegation(a: &mut U256, b: &U256, op: BigIntOps) -> u32 {
+fn bigint_op_delegation(a: *mut U256, b: *const U256, op: BigIntOps) -> u32 {
     bigint_op_delegation_with_carry_bit(a, b, false, op)
 }
 
 #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
 #[inline(always)]
-fn bigint_op_delegation_with_carry_bit(a: &mut U256, b: &U256, carry: bool, op: BigIntOps) -> u32 {
-    let a = a as *mut U256;
-    let b = b as *const U256;
-    bigint_op_delegation_with_carry_bit_by_ptr(a, b, carry, op)
-}
-
-#[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
-#[inline(always)]
-pub(crate) fn bigint_op_delegation_with_carry_bit_by_ptr(
+pub(crate) fn bigint_op_delegation_with_carry_bit(
     a: *mut U256,
     b: *const U256,
     carry: bool,
@@ -125,15 +93,7 @@ pub(crate) fn bigint_op_delegation_with_carry_bit_by_ptr(
 
 #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
 #[inline(always)]
-fn bigint_op_delegation_with_carry_bit(a: &mut U256, b: &U256, carry: bool, op: BigIntOps) -> u32 {
-    let a_ptr = a as *mut U256;
-    let b_ptr = b as *const U256;
-    bigint_op_delegation_with_carry_bit_by_ptr(a_ptr, b_ptr, carry, op)
-}
-
-#[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
-#[inline(always)]
-pub(crate) fn bigint_op_delegation_with_carry_bit_by_ptr(
+pub(crate) fn bigint_op_delegation_with_carry_bit(
     _a_ptr: *mut U256,
     _b_ptr: *const U256,
     _carry: bool,

@@ -1,28 +1,17 @@
 use super::{delegation, DelegatedBarretParams, DelegatedModParams, DelegatedMontParams};
 use crate::ark_ff_delegation::{BigInt, BigInteger};
-use core::{fmt::Debug, marker::PhantomData, mem::MaybeUninit};
+use core::{fmt::Debug, marker::PhantomData};
 
 pub(super) type U256 = BigInt<4>;
 
-static mut COPY_PLACE_0: MaybeUninit<U256> = MaybeUninit::uninit();
-static mut COPY_PLACE_1: MaybeUninit<U256> = MaybeUninit::uninit();
-static mut COPY_PLACE_2: MaybeUninit<U256> = MaybeUninit::uninit();
-static mut COPY_PLACE_3: MaybeUninit<U256> = MaybeUninit::uninit();
-static mut ONE: MaybeUninit<U256> = MaybeUninit::uninit();
-static mut ZERO: MaybeUninit<U256> = MaybeUninit::uninit();
-static mut SCRATCH: MaybeUninit<U256> = MaybeUninit::uninit();
+static mut COPY_PLACE_0: U256 = U256::zero();
+static mut COPY_PLACE_1: U256 = U256::zero();
+static mut COPY_PLACE_2: U256 = U256::zero();
+static mut COPY_PLACE_3: U256 = U256::zero();
+static mut SCRATCH: U256 = U256::zero();
 
-pub fn init() {
-    unsafe {
-        COPY_PLACE_0.as_mut_ptr().write(U256::zero());
-        COPY_PLACE_1.as_mut_ptr().write(U256::zero());
-        COPY_PLACE_2.as_mut_ptr().write(U256::zero());
-        COPY_PLACE_3.as_mut_ptr().write(U256::zero());
-        ONE.as_mut_ptr().write(U256::one());
-        ZERO.as_mut_ptr().write(U256::zero());
-        SCRATCH.as_mut_ptr().write(U256::zero());
-    }
-}
+const ONE: U256 = U256::one();
+const ZERO: U256 = U256::zero();
 
 pub const fn from_bytes_unchecked(bytes: &[u8; 32]) -> U256 {
     BigInt::<4>([
@@ -52,59 +41,37 @@ pub fn to_be_bytes(a: U256) -> [u8; 32] {
 }
 
 #[inline(always)]
-pub fn copy(dst: &mut U256, src: &U256) {
-    #[cfg(all(target_arch = "riscv32", feature = "bigint_ops"))]
-    if (src as *const U256).addr() < delegation::ROM_BOUND {
-        *dst = *src;
-    } else {
-        delegation::memcpy(dst, src);
-    };
-
-    #[cfg(not(all(target_arch = "riscv32", feature = "bigint_ops")))]
-    {
-        *dst = *src;
-    }
-}
-
-#[inline(always)]
 /// adds `rhs` to `self` and returns the carry
 pub fn add_assign(a: &mut U256, b: &U256) -> bool {
-    let b = delegation::copy_if_needed(b);
     delegation::add(a, b) != 0
 }
 
 #[inline(always)]
 /// subtracts `rhs` from `self` and returns the borrow
 pub fn sub_assign(a: &mut U256, b: &U256) -> bool {
-    let b = delegation::copy_if_needed(b);
     delegation::sub(a, b) != 0
 }
 
 #[inline(always)]
 /// subtracts `self` from `rhs` and reutrns the borrow
 pub fn sub_and_negate_assign(a: &mut U256, b: &U256) -> bool {
-    let b = delegation::copy_if_needed(b);
     delegation::sub_and_negate(a, b) != 0
 }
 
 #[inline(always)]
 /// multiplies `self` with `rhs` and storest the lowest 256 bits in self
 pub fn mul_low_assign(a: &mut U256, b: &U256) {
-    let b = delegation::copy_if_needed(b);
     delegation::mul_low(a, b);
 }
 
 #[inline(always)]
 /// multiplies `self` with `rhs` and storest the highest 256 bits in self
 pub fn mul_high_assign(a: &mut U256, b: &U256) {
-    let b = delegation::copy_if_needed(b);
     delegation::mul_high(a, b);
 }
 
 #[inline(always)]
 pub fn mul_wide(a: &U256, b: &U256) -> (U256, U256) {
-    let b = delegation::copy_if_needed(b);
-
     let mut low = U256::zero();
     let mut high = U256::zero();
 
@@ -120,21 +87,18 @@ pub fn mul_wide(a: &U256, b: &U256) -> (U256, U256) {
 #[inline(always)]
 /// computes `self = self - rhs - carry` and returns the borrow
 pub fn sub_with_carry_bit(a: &mut U256, b: &U256, carry: bool) -> bool {
-    let b = delegation::copy_if_needed(b);
     delegation::sub_with_carry_bit(a, b, carry) != 0
 }
 
 #[inline(always)]
 /// computes `self = self + rhs + carry` and returns the carry
 pub fn add_with_carry_bit(a: &mut U256, b: &U256, carry: bool) -> bool {
-    let b = delegation::copy_if_needed(b);
     delegation::add_with_carry_bit(a, b, carry) != 0
 }
 
 #[inline(always)]
 /// computes `self = rhs - self - carry` and returns the borrow
 pub fn sub_and_negate_with_carry(a: &mut U256, b: &U256, carry: bool) -> bool {
-    let b = delegation::copy_if_needed(b);
     delegation::sub_and_negate_with_carry_bit(a, b, carry) != 0
 }
 
@@ -146,7 +110,6 @@ pub fn sub_and_negate_with_carry(a: &mut U256, b: &U256, carry: bool) -> bool {
 /// It is the responsibility of the caller to make sure that is the case
 pub unsafe fn sub_mod_with_carry<T: DelegatedModParams<4>>(a: &mut U256, carry: bool) {
     let borrow = delegation::sub(a, T::modulus()) != 0;
-
     if borrow && !carry {
         delegation::add(a, T::modulus());
     }
@@ -158,7 +121,6 @@ pub unsafe fn sub_mod_with_carry<T: DelegatedModParams<4>>(a: &mut U256, carry: 
 /// `DelegationModParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
 pub unsafe fn add_mod_assign<T: DelegatedModParams<4>>(a: &mut U256, b: &U256) {
-    let b = delegation::copy_if_needed(b);
     let carry = delegation::add(a, b) != 0;
     sub_mod_with_carry::<T>(a, carry);
 }
@@ -169,7 +131,6 @@ pub unsafe fn add_mod_assign<T: DelegatedModParams<4>>(a: &mut U256, b: &U256) {
 /// `DelegationModParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
 pub unsafe fn sub_mod_assign<T: DelegatedModParams<4>>(a: &mut U256, b: &U256) {
-    let b = delegation::copy_if_needed(b);
     let borrow = delegation::sub(a, b);
     if borrow != 0 {
         delegation::add(a, T::modulus());
@@ -182,9 +143,8 @@ pub unsafe fn sub_mod_assign<T: DelegatedModParams<4>>(a: &mut U256, b: &U256) {
 /// `DelegationModParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
 pub unsafe fn double_mod_assign<T: DelegatedModParams<4>>(a: &mut U256) {
-    let temp = unsafe { COPY_PLACE_0.assume_init_mut() };
-    delegation::memcpy(temp, a);
-    let carry = delegation::add(a, temp) != 0;
+    delegation::memcpy(&mut COPY_PLACE_0, a);
+    let carry = delegation::add(a, &COPY_PLACE_0) != 0;
     sub_mod_with_carry::<T>(a, carry);
 }
 
@@ -194,36 +154,26 @@ pub unsafe fn double_mod_assign<T: DelegatedModParams<4>>(a: &mut U256) {
 /// `DelegationModParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
 pub unsafe fn neg_mod_assign<T: DelegatedModParams<4>>(a: &mut U256) {
-    let zero = unsafe { ZERO.assume_init_ref() };
     // delegation::eq returns 1 if they are equal and zero if not
-    if delegation::eq(a, zero) == 0 {
+    if delegation::eq(a, &ZERO) == 0 {
         delegation::sub_and_negate(a, T::modulus());
     }
 }
 
 #[inline(always)]
 pub fn eq(a: &U256, b: &U256) -> bool {
-    let temp = unsafe { COPY_PLACE_0.assume_init_mut() };
-    delegation::memcpy(temp, a);
-    let b = delegation::copy_if_needed(b);
-
-    delegation::eq(temp, b) != 0
+    delegation::eq(a, b) != 0
 }
 
 #[inline(always)]
 pub fn is_zero(a: &U256) -> bool {
-    let zero = unsafe { ZERO.assume_init_ref() };
-    let temp = unsafe { COPY_PLACE_0.assume_init_mut() };
-    delegation::memcpy(temp, a);
-    delegation::eq(temp, zero) != 0
+    delegation::eq(a, &ZERO) != 0
 }
 
 #[inline(always)]
 /// it takes `a` as mutable for the purposes of delegation calls, but doesn't mutate it
 pub fn is_one(a: &mut U256) -> bool {
-    let one = unsafe { ONE.assume_init_ref() };
-
-    delegation::eq(a, one) != 0
+    delegation::eq(a, &ONE) != 0
 }
 
 #[inline(always)]
@@ -231,41 +181,11 @@ pub fn is_one(a: &mut U256) -> bool {
 /// `DelegationModParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
 pub unsafe fn is_zero_mod<T: DelegatedModParams<4>>(a: &U256) -> bool {
-    let temp = unsafe { COPY_PLACE_0.assume_init_mut() };
-    let zero = unsafe { ZERO.assume_init_ref() };
-
-    delegation::memcpy(temp, a);
-
-    (delegation::eq(temp, zero) != 0) || (delegation::eq(temp, T::modulus()) != 0)
-}
-
-#[inline(always)]
-/// # Safety
-/// `DelegationModParams` should only provide references to mutable statics.
-/// It is the responsibility of the caller to make sure that is the case
-pub unsafe fn eq_mod<T: DelegatedModParams<4>>(a: &U256, b: &U256) -> bool {
-    let temp0 = unsafe { COPY_PLACE_0.assume_init_mut() };
-    delegation::memcpy(temp0, a);
-
-    let b = delegation::copy_if_needed(b);
-
-    if delegation::eq(temp0, b) == 0 {
-        let temp1 = unsafe { COPY_PLACE_1.assume_init_mut() };
-        delegation::memcpy(temp1, b);
-
-        sub_mod_with_carry::<T>(temp0, false);
-        sub_mod_with_carry::<T>(temp1, false);
-
-        delegation::eq(temp0, temp1) != 0
-    } else {
-        true
-    }
+    (delegation::eq(a, &ZERO) != 0) || (delegation::eq(a, T::modulus()) != 0)
 }
 
 pub fn lt(a: &U256, b: &U256) -> bool {
-    let b = delegation::copy_if_needed(b);
-
-    let temp = unsafe { COPY_PLACE_0.assume_init_mut() };
+    let temp = unsafe { &mut COPY_PLACE_0 };
     delegation::memcpy(temp, a);
 
     // if we get a borrow, then self < other
@@ -273,9 +193,7 @@ pub fn lt(a: &U256, b: &U256) -> bool {
 }
 
 pub fn leq(a: &U256, b: &U256) -> bool {
-    let b = delegation::copy_if_needed(b);
-
-    let temp = unsafe { COPY_PLACE_0.assume_init_mut() };
+    let temp = unsafe { &mut COPY_PLACE_0 };
     delegation::memcpy(temp, a);
 
     // if we get a borrow, then self < other
@@ -288,10 +206,8 @@ pub fn leq(a: &U256, b: &U256) -> bool {
 /// `DelegationBarretParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
 pub unsafe fn mul_assign_barret<T: DelegatedBarretParams<4>>(a: &mut U256, b: &U256) {
-    let b = delegation::copy_if_needed(b);
-
-    let temp0 = unsafe { COPY_PLACE_1.assume_init_mut() };
-    let temp1 = unsafe { COPY_PLACE_2.assume_init_mut() };
+    let temp0 = unsafe { &mut COPY_PLACE_1 };
+    let temp1 = unsafe { &mut COPY_PLACE_2 };
 
     // we will keep high part of product in temp0 until the very end
     delegation::memcpy(temp0, a);
@@ -308,8 +224,7 @@ pub unsafe fn mul_assign_barret<T: DelegatedBarretParams<4>>(a: &mut U256, b: &U
     // add and propagate the carry
     let carry = delegation::add(a, temp1) != 0;
     if carry {
-        let one = unsafe { ONE.assume_init_ref() };
-        delegation::add(temp0, one);
+        delegation::add(temp0, &ONE);
     }
 
     delegation::mul_low(temp0, T::neg_modulus());
@@ -323,7 +238,7 @@ pub unsafe fn mul_assign_barret<T: DelegatedBarretParams<4>>(a: &mut U256, b: &U
 /// `DelegationBarretParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
 pub unsafe fn square_assign_barret<T: DelegatedBarretParams<4>>(a: &mut U256) {
-    let b = unsafe { COPY_PLACE_0.assume_init_mut() };
+    let b = unsafe { &mut COPY_PLACE_0 };
     delegation::memcpy(b, a);
 
     mul_assign_barret::<T>(a, b);
@@ -334,7 +249,7 @@ pub unsafe fn square_assign_barret<T: DelegatedBarretParams<4>>(a: &mut U256) {
 /// `DelegationMontParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
 pub unsafe fn square_assign_montgomery<T: DelegatedMontParams<4>>(a: &mut U256) {
-    let b = unsafe { COPY_PLACE_0.assume_init_mut() };
+    let b = unsafe { &mut COPY_PLACE_0 };
     delegation::memcpy(b, a);
 
     mul_assign_montgomery::<T>(a, b);
@@ -346,11 +261,9 @@ pub unsafe fn square_assign_montgomery<T: DelegatedMontParams<4>>(a: &mut U256) 
 /// # Safety
 ///
 pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams<4>>(a: &mut U256, b: &U256) {
-    let b = delegation::copy_if_needed(b);
-
-    let temp0 = unsafe { COPY_PLACE_1.assume_init_mut() };
-    let temp1 = unsafe { COPY_PLACE_2.assume_init_mut() };
-    let temp2 = unsafe { COPY_PLACE_3.assume_init_mut() };
+    let temp0 = unsafe { &mut COPY_PLACE_1 };
+    let temp1 = unsafe { &mut COPY_PLACE_2 };
+    let temp2 = unsafe { &mut COPY_PLACE_3 };
 
     delegation::memcpy(temp0, a);
 
@@ -371,8 +284,7 @@ pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams<4>>(a: &mut U256, b: 
     debug_assert!(temp2.is_zero());
 
     if carry {
-        let one = unsafe { ONE.assume_init_ref() };
-        delegation::add(temp1, one);
+        delegation::add(temp1, &ONE);
     }
 
     let carry = delegation::add(a, temp1) != 0;
@@ -416,7 +328,7 @@ mod tests {
 
     impl DelegatedModParams<4> for ZeroMod {
         unsafe fn modulus() -> &'static BigInt<4> {
-            unsafe { ZERO.assume_init_ref() }
+            &ZERO
         }
     }
 

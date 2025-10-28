@@ -7,26 +7,18 @@ compile_error!("feature `bigint_ops` must be activated for RISC-V target");
 
 // NOTE: we operate with 256-bit "limbs", so Montgomery representation is 512 bits
 
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-pub fn init() {
-    unsafe {
-        MODULUS.as_mut_ptr().write(MODULUS_CONSTANT);
-        REDUCTION_CONST.as_mut_ptr().write(MONT_REDUCTION_CONSTANT);
-    }
-}
-
 #[derive(Default)]
 struct FqParams;
 
 impl DelegatedModParams<8> for FqParams {
     unsafe fn modulus() -> &'static BigInt<8> {
-        unsafe { MODULUS.assume_init_ref() }
+        &MODULUS_CONSTANT
     }
 }
 
 impl DelegatedMontParams<8> for FqParams {
     unsafe fn reduction_const() -> &'static BigInt<4> {
-        unsafe { REDUCTION_CONST.assume_init_ref() }
+        &MONT_REDUCTION_CONSTANT
     }
 }
 
@@ -40,15 +32,9 @@ pub type Fq = Fp512<MontBackend<FqConfig, NUM_LIMBS>>;
 use crate::ark_ff_delegation::{BigInt, BigIntMacro, Fp, Fp512, MontBackend, MontConfig};
 use crate::bigint_delegation::{u512, DelegatedModParams, DelegatedMontParams};
 use ark_ff::{AdditiveGroup, Field, Zero};
-use core::mem::MaybeUninit;
 
 type B = BigInt<NUM_LIMBS>;
 type F = Fp<MontBackend<FqConfig, NUM_LIMBS>, NUM_LIMBS>;
-
-// we also need few empty representations
-
-static mut MODULUS: MaybeUninit<BigInt<8>> = MaybeUninit::uninit();
-static mut REDUCTION_CONST: MaybeUninit<BigInt<4>> = MaybeUninit::uninit();
 
 const MODULUS_CONSTANT: BigInt<8> = BigIntMacro!("4002409555221667393417789825735904156556882819939007885332058136124031650490837864442687629129015664037894272559787");
 // it's - MODULUS^-1 mod 2^256
@@ -193,17 +179,10 @@ mod test {
     use super::{BigInt, Fq, FqConfig, MontConfig, B};
     use ark_ff::{Field, One, UniformRand, Zero};
 
-    fn init() {
-        crate::bls12_381::fields::init();
-        crate::bigint_delegation::init();
-    }
-
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul_compare() {
         const ITERATIONS: usize = 100000;
-        init();
-
         let one_bigint = BigInt::one();
         let t = Fq::from_bigint(one_bigint).unwrap();
         assert_eq!(t.0, FqConfig::R);
@@ -240,8 +219,6 @@ mod test {
     #[test]
     fn test_mul_properties() {
         const ITERATIONS: usize = 1000;
-        init();
-
         use ark_std::test_rng;
         let mut rng = test_rng();
         let zero = Fq::zero();
@@ -400,7 +377,6 @@ mod test {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_bilinearity() {
-        init();
         for _ in 0..100 {
             let mut rng = test_rng();
             let a: <Bls12_381_Ref as Pairing>::G1 = UniformRand::rand(&mut rng);
@@ -434,7 +410,6 @@ mod test {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_multi_pairing() {
-        init();
         for _ in 0..ITERATIONS {
             let rng = &mut test_rng();
 
@@ -457,7 +432,6 @@ mod test {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_final_exp() {
-        init();
         for _ in 0..ITERATIONS {
             let rng = &mut test_rng();
             let fp_ext = <Bls12_381_Ref as Pairing>::TargetField::rand(rng);

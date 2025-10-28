@@ -14,8 +14,6 @@ mod mod_inv64;
 
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 mod field_8x32;
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-pub use field_8x32::init;
 
 #[cfg(all(debug_assertions, not(feature = "bigint_ops")))]
 mod field_impl;

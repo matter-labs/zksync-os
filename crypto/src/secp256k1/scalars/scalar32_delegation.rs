@@ -1,36 +1,22 @@
 use crate::ark_ff_delegation::BigInt;
 use crate::bigint_delegation::{u256, DelegatedModParams, DelegatedMontParams};
-use core::mem::MaybeUninit;
 
 const _: () = const {
     assert!(core::mem::size_of::<crate::k256::Scalar>() == core::mem::size_of::<ScalarInner>());
 };
-
-static mut MODULUS: MaybeUninit<BigInt<4>> = MaybeUninit::uninit();
-static mut REDUCTION_CONST: MaybeUninit<BigInt<4>> = MaybeUninit::uninit();
 
 #[derive(Debug, Default)]
 pub(super) struct ScalarParams;
 
 impl DelegatedModParams<4> for ScalarParams {
     unsafe fn modulus() -> &'static BigInt<4> {
-        unsafe { MODULUS.assume_init_ref() }
+        &ScalarInner::ORDER.0
     }
 }
 
 impl DelegatedMontParams<4> for ScalarParams {
     unsafe fn reduction_const() -> &'static BigInt<4> {
-        unsafe { REDUCTION_CONST.assume_init_ref() }
-    }
-}
-
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-pub fn init() {
-    unsafe {
-        MODULUS.as_mut_ptr().write(ScalarInner::ORDER.0);
-        REDUCTION_CONST
-            .as_mut_ptr()
-            .write(ScalarInner::REDUCTION_CONST.0);
+        &ScalarInner::REDUCTION_CONST.0
     }
 }
 
@@ -222,7 +208,7 @@ impl ScalarInner {
 
     #[inline(always)]
     pub(super) fn eq_impl(&self, other: &Self) -> bool {
-        unsafe { u256::eq_mod::<ScalarParams>(&self.0, &other.0) }
+        u256::eq(&self.0, &other.0)
     }
 
     fn integer_mul_shift_384_vartime(&mut self, b: &Self) {
@@ -334,15 +320,9 @@ mod tests {
     use super::ScalarInner;
     use proptest::{prop_assert_eq, proptest};
 
-    fn init() {
-        crate::secp256k1::init();
-        crate::bigint_delegation::init();
-    }
-
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_zero() {
-        init();
         let zero = ScalarInner::ZERO;
         let order = ScalarInner::ORDER;
         let one = ScalarInner::ONE;
@@ -357,7 +337,6 @@ mod tests {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul() {
-        init();
         proptest!(|(x: ScalarInner, y: ScalarInner, z: ScalarInner)| {
             let mut a = x;
             let mut b = y;
@@ -401,7 +380,6 @@ mod tests {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_add() {
-        init();
         proptest!(|(x: ScalarInner, y: ScalarInner, z: ScalarInner)| {
             let mut a = x;
             let mut b = y;
@@ -431,7 +409,6 @@ mod tests {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn to_bytes_round() {
-        init();
         proptest!(|(x: ScalarInner)| {
             prop_assert_eq!(ScalarInner::from_be_bytes(&x.to_be_bytes()), x)
         })
@@ -440,7 +417,6 @@ mod tests {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn from_bytes_round() {
-        init();
         proptest!(|(bytes: [u8; 32])| {
             prop_assert_eq!(ScalarInner::from_be_bytes(&bytes).to_be_bytes(), bytes)
         });
@@ -449,7 +425,6 @@ mod tests {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn to_montgomerry_round() {
-        init();
         proptest!(|(x: ScalarInner)| {
             prop_assert_eq!(x.to_integer().to_representation(), x);
         })

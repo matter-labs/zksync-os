@@ -15,9 +15,6 @@ cfg_if::cfg_if! {
 
 pub(super) use fe64::FieldElement as FieldElementConst;
 
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-pub use fe32_delegation::init;
-
 use super::Secp256r1Err;
 
 const MODULUS: [u64; 4] = [18446744073709551615, 4294967295, 0, 18446744069414584321];

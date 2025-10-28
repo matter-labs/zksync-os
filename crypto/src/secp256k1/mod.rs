@@ -19,12 +19,6 @@ pub use recover::recover_with_context;
 #[cfg(feature = "secp256k1-static-context")]
 pub use recover::recover;
 
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-pub fn init() {
-    scalars::init();
-    field::init();
-}
-
 #[derive(Debug, PartialEq)]
 pub enum Secp256k1Err {
     OperationOverflow,

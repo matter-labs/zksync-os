@@ -5,7 +5,7 @@ use super::BigIntOps;
 /// Requires pointers to be 32-byte alligned, and point to RAM based allocation of at least 32 byte size
 #[inline(always)]
 pub unsafe fn bigint_op_delegation_raw(a: *mut (), b: *const (), op: BigIntOps) -> u32 {
-    crate::bigint_delegation::delegation::bigint_op_delegation_with_carry_bit_by_ptr(
+    crate::bigint_delegation::delegation::bigint_op_delegation_with_carry_bit(
         a.cast(),
         b.cast(),
         false,
@@ -23,7 +23,7 @@ pub unsafe fn bigint_op_delegation_with_carry_bit_raw(
     carry: bool,
     op: BigIntOps,
 ) -> u32 {
-    crate::bigint_delegation::delegation::bigint_op_delegation_with_carry_bit_by_ptr(
+    crate::bigint_delegation::delegation::bigint_op_delegation_with_carry_bit(
         a.cast(),
         b.cast(),
         carry,

@@ -2,7 +2,7 @@
 mod fq;
 
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-pub use self::fq::{init, Fq};
+pub use self::fq::Fq;
 
 #[cfg(not(any(all(target_arch = "riscv32", feature = "bigint_ops"), test)))]
 pub use ark_bn254::Fq;

@@ -167,7 +167,6 @@ mod test {
     #[test]
     fn test_pairing_inner() {
         let allocator = std::alloc::Global;
-        crypto::init_lib();
 
         let src = hex::decode(
             "\
@@ -192,7 +191,6 @@ mod test {
     #[ignore = "requires single threaded runner"]
     #[test]
     fn test_pairing_external() {
-        crypto::init_lib();
         let allocator = std::alloc::Global;
 
         let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;

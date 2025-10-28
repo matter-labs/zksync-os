@@ -4,11 +4,6 @@ pub(crate) mod delegation;
 pub mod u256;
 pub mod u512;
 
-pub(crate) fn init() {
-    u256::init();
-    u512::init();
-}
-
 pub trait DelegatedModParams<const N: usize>: Default {
     /// Provides a reference to the modululs for delegation purposes
     /// # Safety

@@ -13,8 +13,6 @@ mod scalar32;
 
 #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
 pub(crate) mod scalar32_delegation;
-#[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-pub use scalar32_delegation::init;
 
 cfg_if! {
     if #[cfg(feature = "bigint_ops")] {
@@ -201,15 +199,8 @@ mod tests {
     use super::Scalar;
     use proptest::{prop_assert, prop_assert_eq, proptest};
 
-    fn init() {
-        #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-        super::scalar32_delegation::init();
-    }
-
     #[test]
     fn test_zero() {
-        init();
-
         assert_eq!(Scalar::ZERO, Scalar::ORDER);
         assert!(Scalar::ZERO.is_zero());
         assert!(Scalar::ORDER.is_zero());
@@ -217,8 +208,6 @@ mod tests {
 
     #[test]
     fn test_mul() {
-        init();
-
         proptest!(|(x: Scalar, y: Scalar, z: Scalar)| {
             prop_assert_eq!(x * y, y * x);
             prop_assert_eq!((x * y) * z, x * (y * z));
@@ -231,8 +220,6 @@ mod tests {
 
     #[test]
     fn test_add() {
-        init();
-
         proptest!(|(x: Scalar, y: Scalar, z: Scalar)| {
             prop_assert_eq!(x + y, y + x);
             prop_assert_eq!(x + Scalar::ZERO, x);
@@ -243,8 +230,6 @@ mod tests {
 
     #[test]
     fn test_decompose() {
-        init();
-
         proptest!(|(k: Scalar)| {
             let (mut r1, mut r2) = k.decompose();
             let lambda = -Scalar::MINUS_LAMBDA;

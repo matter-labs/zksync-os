@@ -76,17 +76,6 @@ pub use self::raw_delegation_interface::{
     bigint_op_delegation_raw, bigint_op_delegation_with_carry_bit_raw,
 };
 
-pub fn init_lib() {
-    #[cfg(any(all(target_arch = "riscv32", feature = "bigint_ops"), test))]
-    {
-        bn254::fields::init();
-        bls12_381::fields::init();
-        secp256k1::init();
-        bigint_delegation::init();
-        secp256r1::init();
-    }
-}
-
 pub enum BigIntOps {
     Add = 0,
     Sub = 1,

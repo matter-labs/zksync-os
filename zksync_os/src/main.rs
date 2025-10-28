@@ -208,11 +208,6 @@ unsafe fn workload() -> ! {
     let _ =
         LoggerTy::default().write_fmt(format_args!("Entry routine is done, moving into payload\n"));
 
-    // When using blake circuits - make sure that they are initialized.
-    // Otherwise, it will try accessing not-set memory.
-
-    #[cfg(any(feature = "delegation", feature = "proving"))]
-    crypto::init_lib();
 
     // and crunch
     let output = proof_running_system::system::bootloader::run_proving::<

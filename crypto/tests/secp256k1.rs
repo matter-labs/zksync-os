@@ -43,9 +43,6 @@ impl Arbitrary for PrivateKey {
 
 #[test]
 fn selftest() {
-    #[cfg(feature = "bigint_ops")]
-    crypto::init_lib();
-
     proptest!(|(message: Message, private_key: PrivateKey)| {
         let message = message.0;
         let private_key = private_key.0;
