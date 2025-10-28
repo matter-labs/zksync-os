@@ -151,7 +151,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         allocator: A,
     ) -> Self {
         if bytes.is_empty() {
-            let backing = Vec::new_in(allocator);
+            let backing = Vec::with_capacity_in(min_capacity, allocator);
             return Self { backing, digits: 0 };
         }
         let (remainder, digits_bytes) = bytes.as_rchunks::<32>();
