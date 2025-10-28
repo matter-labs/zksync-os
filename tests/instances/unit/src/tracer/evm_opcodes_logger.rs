@@ -8,7 +8,6 @@
 
 use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{address, Address, TxKind, U256};
-use rig::alloy::rpc::types::trace::opcode;
 use rig::forward_system::system::system::ForwardRunningSystem;
 use rig::forward_system::system::tracers::evm_opcodes_logger::EvmOpcodesLogger;
 use rig::ruint::aliases::B160;

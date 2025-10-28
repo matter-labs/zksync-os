@@ -128,7 +128,7 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodesLogger<S> {
         opcode: u8,
         interpreter_state: &impl EvmFrameInterface<S>,
     ) {
-        if self.limit != 0 && self.steps_counter > self.limit {
+        if self.limit != 0 && self.steps_counter >= self.limit {
             return;
         }
         self.steps_counter += 1;
