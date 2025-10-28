@@ -53,9 +53,6 @@ impl Display for Secp256k1Err {
 
 #[cfg(feature = "secp256k1-static-context")]
 pub fn ecrecover_test() {
-    #[cfg(feature = "bigint_ops")]
-    init();
-
     use crate::k256::{
         ecdsa::{hazmat::bits2field, SigningKey},
         elliptic_curve::{group::GroupEncoding, ops::Reduce},
