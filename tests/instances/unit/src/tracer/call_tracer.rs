@@ -3,8 +3,7 @@
 //!
 //! Tests for the CallTracer tracer.
 //!
-//! This test verifies that CallTracer correctly captures call frames,
-//! gas usage, nested calls, contract deployments, and error handling.
+//! This is a minimalistic sanity checking. Does not properly cover all cases and functionality
 
 use rig::alloy::primitives::address;
 use rig::forward_system::system::tracers::call_tracer::{CallTracer, CallType};

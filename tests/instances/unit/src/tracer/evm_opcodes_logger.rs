@@ -3,8 +3,7 @@
 //!
 //! Test for the EvmOpcodesLogger tracer.
 //!
-//! This test verifies that EvmOpcodesLogger correctly captures EVM execution steps,
-//! gas usage, storage operations, and call frame management.
+//! This is a minimalistic sanity checking. Does not properly cover all cases and functionality
 
 use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{address, Address, TxKind, U256};
