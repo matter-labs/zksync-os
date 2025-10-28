@@ -15,7 +15,7 @@ pub struct HistoryRecord<V> {
 pub struct ElementWithHistory<V, A: Allocator + Clone> {
     /// Initial record (before history started)
     pub initial: HistoryRecordLink<V>,
-    pub first: HistoryRecordLink<V>,
+    first: HistoryRecordLink<V>,
     /// Current history record
     pub head: HistoryRecordLink<V>,
     /// Record that has been committed, or initial if not commit has been
