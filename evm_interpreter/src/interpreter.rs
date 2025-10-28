@@ -474,7 +474,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn derive_address_for_deployment_create2(
         system: &mut System<S>,
         resources: &mut <S as SystemTypes>::Resources,
-        salt: U256,
+        salt: &U256,
         deployer_address: &<S::IOTypes as SystemIOTypesConfig>::Address,
         deployment_code: &[u8],
     ) -> Result<<S::IOTypes as SystemIOTypesConfig>::Address, EvmSubsystemError> {

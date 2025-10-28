@@ -327,7 +327,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             Self::derive_address_for_deployment_create2(
                 system,
                 self.gas.resources_mut(),
-                *salt,
+                salt,
                 &self.address,
                 &self.heap[deployment_code.clone()],
             )?
