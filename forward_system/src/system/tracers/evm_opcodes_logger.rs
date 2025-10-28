@@ -1,4 +1,15 @@
-// Reference implementation of EVM opcodes logger. Not feature complete for production
+//! # EVM Opcodes Logger - Reference Implementation
+//!
+//! **⚠️  WARNING: This module is NOT intended for production use! ⚠️**
+//!
+//! This is a reference implementation designed solely for:
+//! - Testing and validating tracing traits
+//! - Demonstrating the general design patterns for EVM tracers
+//! - Development and debugging purposes
+//!
+//! The implementation is incomplete and may have performance issues,
+//! missing edge cases, and other limitations that make it unsuitable
+//! for production environments.
 
 use std::{collections::HashMap, marker::PhantomData};
 
@@ -313,7 +324,7 @@ impl<S: EthereumLikeTypes> Tracer<S> for EvmOpcodesLogger<S> {
 
         if let Some((_, _)) = self.pending_call_opcodes.remove(&self.current_call_depth) {
             // Looks like call frame finished immediately after call-like opcode
-            // TODO: Should not happen, check Revm
+            // Should not happen since even out-of-bounds execution is interpreted as STOP opcode
             unreachable!();
         }
 

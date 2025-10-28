@@ -1,4 +1,15 @@
-// Reference implementation of call tracer.
+//! # Call Tracer - Reference Implementation
+//!
+//! **⚠️  WARNING: This module is NOT intended for production use! ⚠️**
+//!
+//! This is a reference implementation designed solely for:
+//! - Testing and validating tracing traits
+//! - Demonstrating the general design patterns for EVM tracers
+//! - Development and debugging purposes
+//!
+//! The implementation is incomplete and may have performance issues,
+//! missing edge cases, and other limitations that make it unsuitable
+//! for production environments.
 
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::{B160, U256};
