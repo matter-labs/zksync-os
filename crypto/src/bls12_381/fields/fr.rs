@@ -5,15 +5,16 @@ use crate::ark_ff_delegation::{BigInt, BigIntMacro, Fp, Fp256, MontBackend, Mont
 use crate::bigint_delegation::{u256, DelegatedModParams, DelegatedMontParams};
 use ark_ff::{AdditiveGroup, Zero};
 
-const MONT_REDUCTION_CONSTANT: BigInt<4> =
+static MONT_REDUCTION_CONSTANT: BigInt<4> =
     BigIntMacro!("27711634432943687283656245953990505159342029877880134060146103271536583507967");
+static MODULUS: BigInt<4> = FrConfig::MODULUS;
 
 #[derive(Default, Debug)]
 pub struct FrParams;
 
 impl DelegatedModParams<4> for FrParams {
     unsafe fn modulus() -> &'static BigInt<4> {
-        &FrConfig::MODULUS
+        &MODULUS
     }
 }
 

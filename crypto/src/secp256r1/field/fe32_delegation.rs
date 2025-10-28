@@ -18,9 +18,9 @@ impl core::fmt::Debug for FieldElement {
     }
 }
 
-const MODULUS: BigInt<4> = BigInt::<4>(super::MODULUS);
-const REDUCTION_CONST: BigInt<4> = BigInt::<4>(super::REDUCTION_CONST);
-const R2: BigInt<4> = BigInt::<4>(super::R2);
+static MODULUS: BigInt<4> = BigInt::<4>(super::MODULUS);
+static REDUCTION_CONST: BigInt<4> = BigInt::<4>(super::REDUCTION_CONST);
+static R2: BigInt<4> = BigInt::<4>(super::R2);
 
 #[derive(Default, Debug)]
 pub struct FieldParams;

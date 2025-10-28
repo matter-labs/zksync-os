@@ -10,8 +10,8 @@ static mut COPY_PLACE_2: U256 = U256::zero();
 static mut COPY_PLACE_3: U256 = U256::zero();
 static mut SCRATCH: U256 = U256::zero();
 
-const ONE: U256 = U256::one();
-const ZERO: U256 = U256::zero();
+static ONE: U256 = U256::one();
+static ZERO: U256 = U256::zero();
 
 pub const fn from_bytes_unchecked(bytes: &[u8; 32]) -> U256 {
     BigInt::<4>([

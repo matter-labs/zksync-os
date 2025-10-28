@@ -7,18 +7,21 @@ use super::field_10x26::FieldStorage10x26;
 #[derive(Clone, Copy, Debug)]
 pub(super) struct FieldElement8x32(pub(super) BigInt<4>);
 
+static MODULUS: BigInt<4> = FieldElement8x32::MODULUS;
+static NEG_MODULUS: BigInt<4> = FieldElement8x32::NEG_MODULUS;
+
 #[derive(Debug, Default)]
 pub(super) struct FieldParams;
 
 impl DelegatedModParams<4> for FieldParams {
     unsafe fn modulus() -> &'static BigInt<4> {
-        &FieldElement8x32::MODULUS.0
+        &MODULUS
     }
 }
 
 impl DelegatedBarretParams<4> for FieldParams {
     unsafe fn neg_modulus() -> &'static BigInt<4> {
-        &FieldElement8x32::NEG_MODULUS.0
+        &NEG_MODULUS
     }
 }
 
@@ -29,10 +32,10 @@ impl FieldElement8x32 {
     ));
     pub(super) const ONE: Self = Self(BigInt::one());
     // 2^256 - MODULUS
-    const NEG_MODULUS: Self = Self(BigIntMacro!("4294968273"));
-    const MODULUS: Self = Self(BigIntMacro!(
+    const NEG_MODULUS: BigInt<4> = BigIntMacro!("4294968273");
+    const MODULUS: BigInt<4> = BigIntMacro!(
         "115792089237316195423570985008687907853269984665640564039457584007908834671663"
-    ));
+    );
 
     #[inline(always)]
     pub(super) const fn from_bytes_unchecked(bytes: &[u8; 32]) -> Self {
@@ -43,7 +46,7 @@ impl FieldElement8x32 {
     pub(super) fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
         let value = Self::from_bytes_unchecked(bytes);
 
-        if u256::leq(&value.0, &Self::MODULUS.0) {
+        if u256::leq(&value.0, &Self::MODULUS) {
             Some(value)
         } else {
             None

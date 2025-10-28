@@ -5,18 +5,21 @@ const _: () = const {
     assert!(core::mem::size_of::<crate::k256::Scalar>() == core::mem::size_of::<ScalarInner>());
 };
 
+static MODULUS: BigInt<4> = ScalarInner::ORDER.0;
+static REDUCTION_CONST: BigInt<4> = ScalarInner::REDUCTION_CONST.0;
+
 #[derive(Debug, Default)]
 pub(super) struct ScalarParams;
 
 impl DelegatedModParams<4> for ScalarParams {
     unsafe fn modulus() -> &'static BigInt<4> {
-        &ScalarInner::ORDER.0
+        &MODULUS
     }
 }
 
 impl DelegatedMontParams<4> for ScalarParams {
     unsafe fn reduction_const() -> &'static BigInt<4> {
-        &ScalarInner::REDUCTION_CONST.0
+        &REDUCTION_CONST
     }
 }
 

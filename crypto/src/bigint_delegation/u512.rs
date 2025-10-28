@@ -7,8 +7,8 @@ use crate::ark_ff_delegation::{BigInt, BigInteger};
 
 pub(super) type U512 = BigInt<8>;
 
-const ZERO: U256 = U256::zero();
-const ONE: U256 = U256::one();
+static ZERO: U256 = U256::zero();
+static ONE: U256 = U256::one();
 static mut COPY_PLACE_0: U512 = U512::zero();
 static mut LOW_WORD_SCRATCH: U256 = U256::zero();
 static mut MUL_COPY_PLACE_0: U256 = U256::zero();

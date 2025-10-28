@@ -2,9 +2,9 @@ use crate::ark_ff_delegation::BigInt;
 use crate::bigint_delegation::{u256, DelegatedModParams, DelegatedMontParams};
 use crate::secp256r1::Secp256r1Err;
 
-const MODULUS: BigInt<4> = BigInt::<4>(super::MODULUS);
-const REDUCTION_CONST: BigInt<4> = BigInt::<4>(super::REDUCTION_CONST);
-const R2: BigInt<4> = BigInt::<4>(super::R2);
+static MODULUS: BigInt<4> = BigInt::<4>(super::MODULUS);
+static REDUCTION_CONST: BigInt<4> = BigInt::<4>(super::REDUCTION_CONST);
+static R2: BigInt<4> = BigInt::<4>(super::R2);
 
 #[derive(Default, Debug)]
 pub struct ScalarParams;
