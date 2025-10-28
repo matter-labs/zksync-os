@@ -311,7 +311,7 @@ where
     }
 
     pub fn committed(&self) -> &V {
-        unsafe { &self.history.head.as_ref().value }
+        unsafe { &self.history.committed.as_ref().value }
     }
 
     #[allow(dead_code)]
