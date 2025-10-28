@@ -5,6 +5,8 @@
 use alloy::consensus::{TxEip1559, TxEip2930, TxLegacy};
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
+#[cfg(feature = "pectra")]
+use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::ethers::types::Address;
