@@ -54,7 +54,8 @@ where
         let from = transaction.from();
 
         // EIP-3607: Reject transactions from senders with deployed code
-        if caller_is_code {
+        // We skip it for simulation to allow simulate calls between contracts
+        if Config::SIMULATION == false && caller_is_code {
             return Err(InvalidTransaction::RejectCallerWithCode.into());
         }
 
