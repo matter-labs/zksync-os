@@ -18,6 +18,9 @@ pub struct ElementWithHistory<V, A: Allocator + Clone> {
     pub first: HistoryRecordLink<V>,
     /// Current history record
     pub head: HistoryRecordLink<V>,
+    /// Record that has been committed, or initial if not commit has been
+    /// performed.
+    pub committed: HistoryRecordLink<V>,
     alloc: A,
 }
 
@@ -43,6 +46,7 @@ impl<V, A: Allocator + Clone> ElementWithHistory<V, A> {
             head: elem,
             initial: elem,
             first: elem,
+            committed: elem,
             alloc,
         }
     }
@@ -118,6 +122,9 @@ impl<V, A: Allocator + Clone> ElementWithHistory<V, A> {
     /// Commits (freezes) changes up to this point
     /// Frees memory taken by snapshots that can't be rollbacked to.
     pub fn commit(&mut self, records_memory_pool: &mut ElementPool<V, A>) {
+        // Head becomes the committed value
+        self.committed = self.head;
+
         // Case with only initial value (no writes at all)
         if self.head == self.initial {
             return;

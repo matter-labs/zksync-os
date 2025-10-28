@@ -278,8 +278,8 @@ where
         unsafe { &self.history.initial.as_ref().value }
     }
 
-    pub fn first(&self) -> &V {
-        unsafe { &self.history.first.as_ref().value }
+    pub fn committed(&self) -> &V {
+        unsafe { &self.history.committed.as_ref().value }
     }
 
     /// Returns (initial_value, current_value) if any

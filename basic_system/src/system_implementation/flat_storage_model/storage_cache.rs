@@ -678,7 +678,7 @@ impl<
 
             let current_value = element_history.current().value();
             let initial_value = element_history.initial().value();
-            let at_tx_start_value = element_history.first().value();
+            let at_tx_start_value = element_history.committed().value();
 
             // If the current value is resetting to the initial one,
             // we don't consider this diff in the pubdata charging.
