@@ -5,11 +5,11 @@
 use alloy::consensus::{TxEip1559, TxEip2930, TxLegacy};
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
-use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::ethers::types::Address;
 use rig::ruint::aliases::{B160, U256};
+use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::{alloy, ethers, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
@@ -1104,4 +1104,58 @@ fn test_selfdestruct_to_precompile_gas() {
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
     let gas_used = res0.clone().unwrap().gas_used;
     assert_eq!(gas_used, 26003);
+}
+
+#[test]
+fn test_reject_caller_with_code_behavior() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+
+    // Create a contract address with bytecode deployed
+    let contract_address = wallet.address();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    // Deploy bytecode to the contract address to make it a "contract with code"
+    chain.set_evm_bytecode(
+        B160::from_be_bytes(contract_address.into_array()),
+        &hex::decode("60006000f3").unwrap(), // Simple contract: PUSH1 0, PUSH1 0, RETURN
+    );
+
+    // Set balance for the contract address
+    chain.set_balance(
+        B160::from_be_bytes(contract_address.into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    let from_contract_tx = {
+        let tx = TxEip2930 {
+            chain_id: 37u64,
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 75_000,
+            to: TxKind::Call(target_address),
+            value: Default::default(),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    let result_simulation = chain.simulate_block(vec![from_contract_tx.clone()], None);
+
+    // In simulation mode, the transaction should succeed
+    assert!(result_simulation.tx_results[0].is_ok(),);
+
+    let tx_result = result_simulation.tx_results[0].as_ref().unwrap();
+    assert!(
+        tx_result.is_success(),
+        "Transaction should be successful in simulation mode"
+    );
+
+    // But in normal mode it should fail
+    let result_normal = chain.run_block(vec![from_contract_tx], None, run_config());
+    assert!(matches!(
+        result_normal.tx_results[0],
+        Err(InvalidTransaction::RejectCallerWithCode)
+    ));
 }

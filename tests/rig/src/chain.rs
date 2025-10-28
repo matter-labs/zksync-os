@@ -710,10 +710,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ///
     /// Set given account balance to `balance`.
     ///
-    /// **Note, that other account fields will be zeroed out(nonce, code).**
-    ///
     pub fn set_balance(&mut self, address: B160, balance: U256) -> &mut Self {
-        let mut account_properties = AccountProperties::TRIVIAL_VALUE;
+        let mut account_properties = self.get_account_properties(&address);
+
         account_properties.balance = balance;
         let encoding = account_properties.encoding();
         let properties_hash = account_properties.compute_hash();
@@ -737,14 +736,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ///
     /// Set given EVM bytecode on the given address.
     ///
-    /// **Note, that other account fields will be zeroed out(balance, code).**
-    ///
     pub fn set_evm_bytecode(&mut self, address: B160, bytecode: &[u8]) -> &mut Self {
         use zksync_os_api::helpers::*;
-        let mut account = AccountProperties::default();
-        let bytecode_and_artifacts = set_properties_code(&mut account, bytecode);
-        let encoding = account.encoding();
-        let properties_hash = account.compute_hash();
+        let mut account_properties = self.get_account_properties(&address);
+
+        let bytecode_and_artifacts = set_properties_code(&mut account_properties, bytecode);
+        let encoding = account_properties.encoding();
+        let properties_hash = account_properties.compute_hash();
 
         let key = address_into_special_storage_key(&address);
         let flat_key = derive_flat_storage_key(&ACCOUNT_PROPERTIES_STORAGE_ADDRESS, &key);
@@ -758,7 +756,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             .insert(&flat_key, &properties_hash);
         self.preimage_source
             .inner
-            .insert(account.bytecode_hash, bytecode_and_artifacts);
+            .insert(account_properties.bytecode_hash, bytecode_and_artifacts);
         self.preimage_source
             .inner
             .insert(properties_hash, encoding.to_vec());
