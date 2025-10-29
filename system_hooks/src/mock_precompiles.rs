@@ -37,7 +37,7 @@ pub(crate) mod mock_precompiles {
             _resources: &mut R,
             _allocator: A,
         ) -> Result<(), SubsystemError<MissingSystemFunctionErrors>> {
-            if input.len() != 193 {
+            if input.len() != 192 {
                 return Err(internal_error!("Invalid PointEval input length").into());
             }
             Ok(())
