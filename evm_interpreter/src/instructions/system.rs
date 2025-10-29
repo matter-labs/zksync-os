@@ -28,11 +28,6 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
             let memory_offset =
                 Self::cast_to_usize(&memory_offset, EvmError::InvalidOperandOOG.into())?;
 
-            let (_, of) = memory_offset.overflowing_add(len);
-            if of {
-                return Err(EvmError::MemoryLimitOOG.into());
-            }
-
             self.resize_heap(memory_offset, len)?;
 
             let allocator = system.get_allocator();
