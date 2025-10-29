@@ -90,6 +90,33 @@ impl<
         }
     }
 
+    fn charge_for_cold_access(
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut R,
+        address: &B160,
+        is_selfdestruct: bool,
+    ) -> Result<(), SystemError> {
+        match ee_type {
+            ExecutionEnvironmentType::NoEE => {}
+            ExecutionEnvironmentType::EVM => {
+                let cost: R = if evm_interpreter::utils::is_precompile(&address) {
+                    R::empty() // We've charged the access already.
+                } else {
+                    let mut cost = R::from_ergs(COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS);
+                    if is_selfdestruct {
+                        // Selfdestruct doesn't charge for warm, but it
+                        // includes the warm cost for cold access
+                        cost.add_ergs(WARM_PROPERTIES_ACCESS_COST_ERGS)
+                    }
+                    cost
+                };
+
+                resources.charge(&cost)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Read element and initialize it if needed
     fn materialize_element<const PROOF_ENV: bool>(
         &mut self,
@@ -133,24 +160,7 @@ impl<
                 initialized_element = true;
 
                 // - first get a hash of properties from storage
-                match ee_type {
-                    ExecutionEnvironmentType::NoEE => {}
-                    ExecutionEnvironmentType::EVM => {
-                        let cost: R = if evm_interpreter::utils::is_precompile(&address) {
-                            R::empty() // We've charged the access already.
-                        } else {
-                            let mut cost = R::from_ergs(COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS);
-                            if is_selfdestruct {
-                                // Selfdestruct doesn't charge for warm, but it
-                                // includes the warm cost for cold access
-                                cost.add_ergs(WARM_PROPERTIES_ACCESS_COST_ERGS)
-                            }
-                            cost
-                        };
-
-                        resources.charge(&cost)?;
-                    }
-                }
+                Self::charge_for_cold_access(ee_type, resources, address, is_selfdestruct)?;
 
                 // We use infinite resources to perform IO. This costs are charged
                 // every time we charge for "cold" access, to avoid native charging
@@ -201,25 +211,7 @@ impl<
                 if is_warm == false {
                     if initialized_element == false {
                         // Element exists in cache, but wasn't touched in current tx yet
-                        match ee_type {
-                            ExecutionEnvironmentType::NoEE => {}
-                            ExecutionEnvironmentType::EVM => {
-                                let cost: R = if evm_interpreter::utils::is_precompile(&address) {
-                                    R::empty() // We've charged the access already.
-                                } else {
-                                    let mut cost =
-                                        R::from_ergs(COLD_PROPERTIES_ACCESS_EXTRA_COST_ERGS);
-                                    if is_selfdestruct {
-                                        // Selfdestruct doesn't charge for warm, but it
-                                        // includes the warm cost for cold access
-                                        cost.add_ergs(WARM_PROPERTIES_ACCESS_COST_ERGS)
-                                    };
-                                    cost
-                                };
-
-                                resources.charge(&cost)?;
-                            }
-                        }
+                        Self::charge_for_cold_access(ee_type, resources, address, is_selfdestruct)?;
                     }
 
                     x.update(|cache_record| {
