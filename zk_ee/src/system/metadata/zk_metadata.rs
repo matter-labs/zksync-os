@@ -136,7 +136,7 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
     }
 
     fn block_historical_hash(&self, depth: u64) -> Option<Bytes32> {
-        if depth < BLOCK_HASHES_WINDOW_SIZE as u64 {
+        if depth <= BLOCK_HASHES_WINDOW_SIZE as u64 {
             let index = BLOCK_HASHES_WINDOW_SIZE as u64 - depth;
             Some(Bytes32::from_array(
                 self.block_hashes.0[index as usize].to_be_bytes::<32>(),
