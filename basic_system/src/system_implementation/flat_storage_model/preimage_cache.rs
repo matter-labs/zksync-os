@@ -68,6 +68,17 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         Ok(())
     }
 
+    fn charge_decommitment_native_cost(
+        resources: &mut R,
+        preimage_len: usize,
+    ) -> Result<(), SystemError> {
+        use zk_ee::system::Computational;
+        let native_cost =
+            PREIMAGE_CACHE_GET_NATIVE_COST.saturating_add(blake2s_native_cost(preimage_len));
+        resources.charge(&R::from_native(R::Native::from_computational(native_cost)))?;
+        Ok(())
+    }
+
     #[must_use]
     fn expose_preimage<const PROOF_ENV: bool>(
         &mut self,
@@ -78,16 +89,15 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         resources: &mut R,
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError> {
-        use zk_ee::system::Computational;
-
         // Special case, for 0 hash we return an empty slice.
         if hash.is_zero() {
             return Ok(&[]);
         }
 
-        resources.charge(&R::from_native(R::Native::from_computational(
-            PREIMAGE_CACHE_GET_NATIVE_COST,
-        )))?;
+        // We charge the decommitment even if the hash is cached.
+        // This way, native charging doesn't depend on the state of hashes.
+        Self::charge_decommitment_native_cost(resources, expected_preimage_len_in_bytes)?;
+
         if let Some(cached) = self.storage.get(hash) {
             unsafe {
                 let cached: &'static [u8] = core::mem::transmute(cached.as_slice());
@@ -112,9 +122,6 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
                 UsizeAlignedByteBox::from_usize_iterator_in(it, self.allocator.clone());
             // truncate
             buffered.truncated_to_byte_length(expected_preimage_len_in_bytes);
-
-            let native_cost = blake2s_native_cost(expected_preimage_len_in_bytes);
-            resources.charge(&R::from_native(R::Native::from_computational(native_cost)))?;
 
             if PROOF_ENV {
                 match preimage_type {
@@ -204,7 +211,7 @@ impl<R: Resources, A: Allocator + Clone> PreimageCacheModel
         resources: &mut Self::Resources,
         oracle: &mut impl IOOracle,
     ) -> Result<&'static [u8], SystemError> {
-        // we will NOT charge for preimages in here, but instead higher-level model should do it
+        // we will NOT charge ergs for preimages in here, but instead higher-level model should do it
 
         let PreimageRequest {
             hash,

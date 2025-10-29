@@ -152,15 +152,18 @@ impl<
                     }
                 }
 
+                // We use infinite resources to perform IO. This costs are charged
+                // every time we charge for "cold" access, to avoid native charging
+                // depending on the state of caches.
+                let mut inf_resources = R::FORMAL_INFINITE;
+
                 // to avoid divergence we read as-if infinite ergs
-                let hash = resources.with_infinite_ergs(|inf_resources| {
-                    storage.read_special_account_property::<AccountAggregateDataHash>(
-                        ExecutionEnvironmentType::NoEE,
-                        inf_resources,
-                        address,
-                        oracle,
-                    )
-                })?;
+                let hash = storage.read_special_account_property::<AccountAggregateDataHash>(
+                    ExecutionEnvironmentType::NoEE,
+                    &mut inf_resources,
+                    address,
+                    oracle,
+                )?;
 
                 let acc_data = match hash == Bytes32::ZERO {
                     true => (AccountProperties::default(), Appearance::Unset),
@@ -173,7 +176,7 @@ impl<
                                     as u32,
                                 preimage_type: PreimageType::AccountData,
                             },
-                            resources,
+                            &mut inf_resources,
                             oracle,
                         )?;
                         // it's redundant as preimages cache should just check it, but why not

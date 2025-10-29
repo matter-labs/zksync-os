@@ -224,9 +224,13 @@ impl<
                 let is_warm_read = x.current().metadata().considered_warm(current_tx_id);
                 if is_warm_read == false {
                     if initialized_element == false {
+                        let is_new_storage_slot = x.current().appearance() == Appearance::Unset;
                         // Element exists in cache, but wasn't touched in current tx yet
-                        resources_policy
-                            .charge_cold_storage_read_extra(ee_type, resources, false)?;
+                        resources_policy.charge_cold_storage_read_extra(
+                            ee_type,
+                            resources,
+                            is_new_storage_slot,
+                        )?;
                     }
 
                     x.update(|cache_record| {
