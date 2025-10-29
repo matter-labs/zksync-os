@@ -1,10 +1,7 @@
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
-use arrayvec::ArrayVec;
 use errors::BootloaderSubsystemError;
-use system_hooks::addresses_constants::L2_BASE_TOKEN_ADDRESS;
 use system_hooks::HooksStorage;
-use zk_ee::storage_types::MAX_EVENT_TOPICS;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::CallModifier;
@@ -12,12 +9,6 @@ use zk_ee::system::{EthereumLikeTypes, System};
 use zk_ee::{interface_error, internal_error, wrap_error};
 
 use super::*;
-
-// keccak256("Mint(address,uint256)")
-const MINT_TOPIC: [u8; 32] = [
-    0x0f, 0x67, 0x98, 0xa5, 0x60, 0x79, 0x3a, 0x54, 0xc3, 0xbc, 0xfe, 0x86, 0xa9, 0x3c, 0xde, 0x1e,
-    0x73, 0x08, 0x7d, 0x94, 0x4c, 0x0e, 0xa2, 0x05, 0x44, 0x13, 0x7d, 0x41, 0x21, 0x39, 0x68, 0x85,
-];
 
 impl<S: EthereumLikeTypes, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
 where
@@ -61,22 +52,6 @@ where
                     _ => wrap_error!(e),
                 }
             })?;
-
-        // Emit mint event
-        // event Mint(address indexed account, uint256 amount);
-        let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
-        topics.push(Bytes32::from_array(MINT_TOPIC));
-        topics.push(Bytes32::from_u256_be(&b160_to_u256(*to))); // account
-
-        resources.with_infinite_ergs(|inf_resources| {
-            system.io.emit_event(
-                ExecutionEnvironmentType::EVM, // Hardcoded as EVM
-                inf_resources,
-                &L2_BASE_TOKEN_ADDRESS,
-                &topics,
-                &nominal_token_value.to_be_bytes::<32>(), // _amount
-            )
-        })?;
 
         Ok(())
     }
