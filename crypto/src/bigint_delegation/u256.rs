@@ -172,7 +172,7 @@ pub fn is_zero(a: &U256) -> bool {
 
 #[inline(always)]
 /// it takes `a` as mutable for the purposes of delegation calls, but doesn't mutate it
-pub fn is_one(a: &mut U256) -> bool {
+pub fn is_one(a: &U256) -> bool {
     delegation::eq(a, &ONE) != 0
 }
 

@@ -147,7 +147,7 @@ fn __gcd_inverse(a: &Fr) -> Option<Fr> {
     let mut c = Fp::zero();
     let modulus = Fr::MODULUS;
 
-    while !u256::is_one(&mut u) && !u256::is_one(&mut v) {
+    while !u256::is_one(&u) && !u256::is_one(&v) {
         while u.is_even() {
             u.div2();
 
@@ -186,7 +186,7 @@ fn __gcd_inverse(a: &Fr) -> Option<Fr> {
         }
     }
 
-    if u256::is_one(&mut u) {
+    if u256::is_one(&u) {
         Some(b)
     } else {
         Some(c)
