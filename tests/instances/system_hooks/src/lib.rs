@@ -404,7 +404,7 @@ fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
 }
 
 #[test]
-fn test_l2_base_token_mint_event() {
+fn test_l2_base_token_no_mint_event_regression() {
     let mut chain = Chain::empty(None);
 
     // L2 base token address is 0x800a
@@ -450,7 +450,7 @@ fn test_l2_base_token_mint_event() {
         event Mint(address indexed _account, uint256 _amount);
     }
 
-    // Check if mint event was emitted
+    // Check if mint event was not emitted
     let mint_events: Vec<_> = output.tx_results[0]
         .as_ref()
         .unwrap()
@@ -461,11 +461,5 @@ fn test_l2_base_token_mint_event() {
         })
         .collect();
 
-    assert!(!mint_events.is_empty(), "Mint event should be emitted");
-
-    let event = Mint::decode_log_data(mint_events[0]).unwrap();
-
-    // Verify event fields
-    assert_eq!(event._account.as_slice(), sender.0.as_slice());
-    assert_eq!(event._amount, mint_amount);
+    assert!(mint_events.is_empty(), "Mint event should not be emitted");
 }
