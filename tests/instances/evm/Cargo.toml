@@ -1,0 +1,19 @@
+[package]
+name = "evm_tests"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+rig = { path = "../../rig", features = ["for_tests"] }
+hex = "*"
+alloy-sol-types = "1.4.0"
+
+[features]
+e2e_proving = ["rig/e2e_proving"]
+cycle_marker = ["rig/cycle_marker"]

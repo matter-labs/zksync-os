@@ -13,6 +13,7 @@ pub mod utils;
 
 pub use alloy;
 pub use alloy_rlp;
+pub use alloy_sol_types;
 pub use basic_system;
 pub use chain::BlockContext;
 pub use chain::Chain;
