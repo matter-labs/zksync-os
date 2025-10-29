@@ -34,12 +34,14 @@ pub(crate) fn log2floor(value: &U256) -> u64 {
         } else {
             l -= value.as_limbs()[i].leading_zeros() as u64;
             if l == 0 {
+                // Technically unreachable due to assert above
                 return l;
             } else {
                 return l - 1;
             }
         }
     }
+    // Technically unreachable due to assert above
     l
 }
 
