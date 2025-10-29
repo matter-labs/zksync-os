@@ -54,3 +54,6 @@ eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "
 # Features used for evm_tester
 evm_tester = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/eip-7702", "system_hooks/p256_precompile","system_hooks/point_eval_precompile",  "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native"]
 
+# Features used for legacy evm_tester. Only defined in forward system,
+# as the legacy evm_tester does not perform a proof run.
+evm_tester_legacy = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "basic_bootloader/eip-7702", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native"]
