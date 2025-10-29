@@ -68,7 +68,7 @@ impl<R: Resources, A: Allocator + Clone> BytecodeAndAccountDataPreimagesStorage<
         Ok(())
     }
 
-    fn charge_decommitment_native_cost(
+    pub fn charge_decommitment_native_cost(
         resources: &mut R,
         preimage_len: usize,
     ) -> Result<(), SystemError> {

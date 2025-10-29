@@ -90,7 +90,7 @@ impl<
         }
     }
 
-    fn charge_for_cold_access(
+    fn charge_ergs_for_cold_access(
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
         address: &B160,
@@ -114,6 +114,37 @@ impl<
                 resources.charge(&cost)?;
             }
         }
+        Ok(())
+    }
+
+    fn charge_native_for_cold_access(
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut R,
+        empty_account: bool,
+        policy: &P,
+    ) -> Result<(), SystemError> {
+        // We charge for 2 things:
+        // 1. Performing the special access for account properties
+        // 2. Decommitting the account properties
+
+        // 1. Charging for special access
+        resources.with_infinite_ergs(|res: &mut R| {
+            // Access list only matters for ergs, we set it to false
+            policy.charge_warm_storage_read(ee_type, res, false)
+        })?;
+        resources.with_infinite_ergs(|res| {
+            // We determine if it's a new slot by proxy of empty_account.
+            policy.charge_cold_storage_read_extra(ee_type, res, empty_account)
+        })?;
+
+        // 2. Charging the decommitment (only when account isn't empty)
+        if !empty_account {
+            BytecodeAndAccountDataPreimagesStorage::<R, A>::charge_decommitment_native_cost(
+                resources,
+                AccountProperties::ENCODED_SIZE,
+            )?;
+        }
+
         Ok(())
     }
 
@@ -160,7 +191,7 @@ impl<
                 initialized_element = true;
 
                 // - first get a hash of properties from storage
-                Self::charge_for_cold_access(ee_type, resources, address, is_selfdestruct)?;
+                Self::charge_ergs_for_cold_access(ee_type, resources, address, is_selfdestruct)?;
 
                 // We use infinite resources to perform IO. This costs are charged
                 // every time we charge for "cold" access, to avoid native charging
@@ -175,7 +206,15 @@ impl<
                     oracle,
                 )?;
 
-                let acc_data = match hash == Bytes32::ZERO {
+                let empty_account = hash == Bytes32::ZERO;
+                Self::charge_native_for_cold_access(
+                    ee_type,
+                    resources,
+                    empty_account,
+                    &storage.0.resources_policy,
+                )?;
+
+                let acc_data = match empty_account {
                     true => (AccountProperties::default(), Appearance::Unset),
                     false => {
                         let preimage = preimages_cache.get_preimage::<PROOF_ENV>(
@@ -211,7 +250,19 @@ impl<
                 if is_warm == false {
                     if initialized_element == false {
                         // Element exists in cache, but wasn't touched in current tx yet
-                        Self::charge_for_cold_access(ee_type, resources, address, is_selfdestruct)?;
+                        Self::charge_ergs_for_cold_access(
+                            ee_type,
+                            resources,
+                            address,
+                            is_selfdestruct,
+                        )?;
+                        let empty_account = x.current().appearance() == Appearance::Unset;
+                        Self::charge_native_for_cold_access(
+                            ee_type,
+                            resources,
+                            empty_account,
+                            &storage.0.resources_policy,
+                        )?;
                     }
 
                     x.update(|cache_record| {
