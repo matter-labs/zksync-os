@@ -772,9 +772,7 @@ where
                         .with_unpadded_code_len()
                         .with_artifacts_len()
                         .with_bytecode()
-                        .with_code_version()
-                        .with_nonce()
-                        .with_nominal_token_balance(),
+                        .with_code_version(),
                 )?;
                 (account_properties, Some(delegate_properties))
             } else {
