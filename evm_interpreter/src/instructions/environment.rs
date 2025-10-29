@@ -92,7 +92,7 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
     }
 
     pub fn blobhash(&mut self, _system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::VERYLOW, 40)?;
+        self.gas.spend_gas_and_native(gas_constants::BLOBHASH, 40)?;
         let stack_top = self.stack.top_mut()?; // We ignore argument
         *stack_top = U256::ZERO;
         Ok(())

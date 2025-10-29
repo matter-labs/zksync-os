@@ -21,6 +21,7 @@ pub const SHA3WORD: u64 = 6;
 pub const COPY: u64 = 3;
 pub const BLOCKHASH: u64 = 20;
 pub const CODEDEPOSIT: u64 = 200;
+pub const BLOBHASH: u64 = 3;
 
 // SSTORE write extras.
 pub const REFUND_SSTORE_CLEARS: i64 = 15000;
