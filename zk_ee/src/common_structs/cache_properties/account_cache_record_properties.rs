@@ -32,37 +32,43 @@ impl AccountCurrentAppearance {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct AccountCacheAppearance {
+pub struct AccountCacheRecordProperties {
     initial_appearance: AccountInitialAppearance,
     current_appearance: AccountCurrentAppearance,
 }
 
-impl AccountCacheAppearance {
-    pub fn new(
-        initial_appearance: AccountInitialAppearance,
-        current_appearance: AccountCurrentAppearance,
-    ) -> Self {
+impl AccountCacheRecordProperties {
+    pub fn new(is_new_account: bool, observe: bool) -> Self {
+        let initial_appearance = if is_new_account {
+            AccountInitialAppearance::Unset
+        } else {
+            AccountInitialAppearance::Retrieved
+        };
+
+        let current_appearance = if observe {
+            AccountCurrentAppearance::Observed
+        } else {
+            AccountCurrentAppearance::Touched
+        };
+
         Self {
             initial_appearance,
             current_appearance,
         }
     }
 
-    pub fn initial_appearance(&self) -> AccountInitialAppearance {
-        self.initial_appearance
-    }
-
-    pub fn current_appearance(&self) -> AccountCurrentAppearance {
-        self.current_appearance
+    /// Returns true if account didn't exist before
+    pub fn is_new_account(&self) -> bool {
+        self.initial_appearance == AccountInitialAppearance::Unset
     }
 
     /// Sets appearance to "observed" to distinguish from elements that were "observed" via explicit read
     /// or update. If it was observed before - does nothing
-    pub fn observe(&mut self) {
+    pub fn mark_as_observed(&mut self) {
         self.current_appearance = AccountCurrentAppearance::Observed;
     }
 
-    /// Sets appearance to "observed" after deconstruction
+    /// TODO
     pub fn assert_observed(&self) {
         assert!(self.current_appearance == AccountCurrentAppearance::Observed);
     }

@@ -1,2 +1,2 @@
+pub mod account_cache_record_properties;
 pub mod storage_cache_record_properties;
-pub mod structured_account_cache_record;

@@ -20,9 +20,7 @@ use ruint::aliases::U256;
 use storage_models::common_structs::AccountAggregateDataHash;
 use storage_models::common_structs::PreimageCacheModel;
 use storage_models::common_structs::StorageCacheModel;
-use zk_ee::common_structs::cache_properties::structured_account_cache_record::AccountCacheAppearance;
-use zk_ee::common_structs::cache_properties::structured_account_cache_record::AccountCurrentAppearance;
-use zk_ee::common_structs::cache_properties::structured_account_cache_record::AccountInitialAppearance;
+use zk_ee::common_structs::cache_properties::account_cache_record_properties::AccountCacheRecordProperties;
 use zk_ee::common_structs::cache_record::CacheRecord;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::history_map::HistoryMap;
@@ -58,7 +56,7 @@ type AddressItem<'a, A> = HistoryMapItemRefMut<
     BitsOrd<160, 3>,
     CacheRecord<AccountProperties, AccountPropertiesMetadata>,
     A,
-    AccountCacheAppearance,
+    AccountCacheRecordProperties,
 >;
 
 pub struct NewModelAccountCache<
@@ -72,7 +70,7 @@ pub struct NewModelAccountCache<
         BitsOrd160,
         CacheRecord<AccountProperties, AccountPropertiesMetadata>,
         A,
-        AccountCacheAppearance,
+        AccountCacheRecordProperties,
     >,
     // Note: this doesn't need to be equal to the actual tx number in the block, it just needs to be able to differentiate between transactions.
     pub(crate) current_tx_id: u32,
@@ -222,11 +220,8 @@ impl<
                     &storage.0.resources_policy,
                 )?;
 
-                let (acc_data, initial_appearance) = match empty_account {
-                    true => (
-                        AccountProperties::default(),
-                        AccountInitialAppearance::Unset,
-                    ),
+                let acc_data = match empty_account {
+                    true => AccountProperties::default(),
                     false => {
                         let preimage = preimages_cache.get_preimage::<PROOF_ENV>(
                             ee_type,
@@ -242,26 +237,18 @@ impl<
                         // it's redundant as preimages cache should just check it, but why not
                         assert_eq!(preimage.len(), AccountProperties::ENCODED_SIZE);
 
-                        let props =
-                            AccountProperties::decode(preimage.try_into().map_err(|_| {
-                                internal_error!("Unexpected preimage length for AccountProperties")
-                            })?);
-
-                        (props, AccountInitialAppearance::Retrieved)
+                        AccountProperties::decode(preimage.try_into().map_err(|_| {
+                            internal_error!("Unexpected preimage length for AccountProperties")
+                        })?)
                     }
                 };
 
-                let current_appearance = if observe {
-                    AccountCurrentAppearance::Observed
-                } else {
-                    AccountCurrentAppearance::Touched
-                };
-                let appearance =
-                    AccountCacheAppearance::new(initial_appearance, current_appearance);
-
                 // Note: we initialize it as cold, should be warmed up separately
                 // Since in case of revert it should become cold again and initial record can't be rolled back
-                Ok((CacheRecord::new(acc_data), appearance))
+                Ok((
+                    CacheRecord::new(acc_data),
+                    AccountCacheRecordProperties::new(empty_account, observe),
+                ))
             })
             .and_then(|mut x| {
                 // Warm up element according to EVM rules if needed
@@ -275,8 +262,7 @@ impl<
                             address,
                             is_selfdestruct,
                         )?;
-                        let empty_account = x.key_properties().initial_appearance()
-                            == AccountInitialAppearance::Unset;
+                        let empty_account = x.key_properties().is_new_account();
                         Self::charge_native_for_cold_access(
                             ee_type,
                             resources,
@@ -1161,7 +1147,7 @@ impl<
             account_data.current().metadata().deployed_in_tx == Some(cur_tx) || in_constructor;
 
         if should_be_deconstructed {
-            account_data.key_properties_mut().observe();
+            account_data.key_properties_mut().mark_as_observed();
             account_data.update(|data| {
                 data.update_metadata(|metadata| {
                     metadata.is_marked_for_deconstruction = true;
