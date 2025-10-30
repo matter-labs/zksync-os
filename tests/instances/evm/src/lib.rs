@@ -6,6 +6,8 @@
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy_sol_types::sol;
 use rig::alloy_sol_types::SolCall;
+use rig::zksync_os_interface::types::ExecutionOutput;
+use rig::zksync_os_interface::types::ExecutionResult;
 use rig::Chain;
 use rig::{
     alloy::primitives::address,
@@ -115,4 +117,13 @@ fn test_blockhash() {
 
     let tx_result = result.tx_results[0].as_ref().unwrap();
     assert!(tx_result.is_success(), "Transaction should be successful");
+    // check the output to ensure the contract was called
+    match &tx_result.execution_result {
+        ExecutionResult::Success(ExecutionOutput::Call(out)) => assert_eq!(
+            out,
+            &U256::ONE.to_be_bytes_vec(),
+            "Output data doesn't match"
+        ),
+        _ => panic!("Execution result must be a successful call"),
+    }
 }
