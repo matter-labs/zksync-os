@@ -276,6 +276,8 @@ function smoke() {
         "precompiles_ecmul"
         "precompiles_p256"
         "modexp_delegation"
+        "precompiles_diff_ecadd"
+        "precompiles_diff_sha256"
     )
 
     for TARGET in "${FUZZ_TARGETS[@]}"; do
