@@ -122,7 +122,7 @@ jobs:
                   rustup component add rust-src
             - name: Compile for RISC-V
               working-directory: ./zksync_os
-              run: ./dump_bin.sh --type server
+              run: ./dump_bin.sh --type singleblock-batch
             - name: Run binary checker
               run: cargo test -p binary_checker -- --nocapture
 

@@ -42,11 +42,11 @@ unlimited_native = ["basic_bootloader/unlimited_native"]
 
 # A feature for every specific use case
 
-# Features used for server.
-server = ["basic_bootloader/eip-7702", "system_hooks/p256_precompile"]
+# Features used for production, by both the singleblock_batch and multiblock_batch binaries.
+production = ["basic_bootloader/eip-7702", "system_hooks/p256_precompile"]
 
 # Features used for tests.
-for_tests = ["server", "system_hooks/point_eval_precompile"]
+for_tests = ["production", "system_hooks/point_eval_precompile"]
 
 # Features used for eth_runner
 eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "unlimited_native","basic_bootloader/burn_base_fee"]
