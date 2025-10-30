@@ -166,6 +166,8 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     caller: B160,
     caller_ee: u8,
 ) -> Result<Result<Bytes32, &'static str>, SystemError> {
+    // Note, that we do not enforce fully strict ABI encoding here
+
     // abi_encoded_message length shouldn't be able to overflow u32, due to gas
     // limitations.
     let abi_encoded_message_len: u32 = abi_encoded_message
