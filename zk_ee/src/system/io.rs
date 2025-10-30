@@ -228,7 +228,7 @@ pub struct AccountData<
 
 impl<A, B, C, D, E, F, G, H> AccountData<A, B, C, D, E, Just<u32>, Just<u32>, F, G, H, Just<bool>> {
     pub fn is_contract(&self) -> bool {
-        !self.is_delegated.0 && (self.unpadded_code_len.0 > 0 || self.artifacts_len.0 > 0)
+        !self.is_delegated.0 && self.unpadded_code_len.0 > 0
     }
 }
 
