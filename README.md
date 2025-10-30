@@ -16,7 +16,7 @@ The project contains the following crates (the list is not complete):
 
 * [zk_ee](./zk_ee/) - execution environment
 * [zksync_os](./zksync_os/) - operating system - that can handle multiple execution environments. Compiled into RISC-V.
-* [zksync_os_runner](./zksync_os_runner/) -  allows running programs on zksync_os using RISC-V simulator.
+* [zksync_os_runner](./zksync_os_runner/) - allows running programs on zksync_os using RISC-V simulator.
 * [basic_system](./basic_system/) - basic implementation of zk_ee::system and system functions
 * [basic_bootloader](./basic_bootloader/) - implementation of bootloader and main execution loop
 * [evm_interpreter](./evm_interpreter/) - EVM execution environment
@@ -52,18 +52,18 @@ Navigate to the `zksync_os` directory and run:
 
 ### Integration tests
 
-**To run the integration tests you should build ZKsync OS first, see `building` section above**
+**To run the integration tests you should build ZKsync OS first, see the `building` section above**
 
-Integration tests located in the `tests` folder. You can run them as regular cargo tests.
+Integration tests are located in the `tests` folder. You can run them as regular cargo tests.
 
-For example to run basic tests that executes a few ERC-20 calls using different tx types use:
+For example, to run basic tests that execute a few ERC-20 calls using different tx types use:
 ```
 cargo test --release -p transactions -- --nocapture
 ```
 
 ### Proving
 
-You can run proving by enabling `e2e_proving` feature while running a tests, for example:
+You can run proving by enabling the `e2e_proving` feature while running tests, for example:
 ```
 cargo test --release --features e2e_proving -p transactions -- --nocapture
 ```
@@ -72,8 +72,8 @@ cargo test --release --features e2e_proving -p transactions -- --nocapture
 
 **Generating the CRS File**
 
-You can set `CSR_READS_DUMP` env variable to dump csr reads for proving(witnesses) and then run any test.
-It will create csr file with path `CSR_READS_DUMP`.
+You can set the `CSR_READS_DUMP` env variable to dump CSR reads for proving (witnesses) and then run any test.
+It will create a CSR file with the path `CSR_READS_DUMP`.
 
 **Using the Prover CLI**
 
@@ -99,7 +99,7 @@ This generates multiple proof files in the `zkee_output` directory. For recursio
 
 **Anvil ZKsync**
 
-Run [anvil-zksync from github](https://github.com/matter-labs/anvil-zksync) - **IMPORTANT** - make sure to use `zkos-dev` branch.
+Run [anvil-zksync from GitHub](https://github.com/matter-labs/anvil-zksync) - **IMPORTANT** - make sure to use the `zkos-dev` branch.
 
 ```shell
 cargo run  -- --use-zkos --zkos-bin-path=../zksync-os/zksync_os/for_tests.bin
@@ -107,7 +107,7 @@ cargo run  -- --use-zkos --zkos-bin-path=../zksync-os/zksync_os/for_tests.bin
 
 **Send transactions**
 
-You can use any tool (for example forge) - to send transactions to the anvil binary.
+You can use any tool (for example, forge) to send transactions to the anvil binary.
 
 **Tell prover cli to get the witnesses from anvil-zksync**
 
@@ -116,7 +116,7 @@ From the zksync-airbender repo:
     cargo run --no-default-features -- run --bin ../zksync-os/zksync_os/for_tests.bin --input-rpc http://localhost:8012 --input-batch 15
 ```
 
-You can get the witness via the RPC call, where you pass the batch id as parameter:
+You can get the witness via the RPC call, where you pass the batch ID as a parameter:
 
 ```
 http POST http://127.0.0.1:8011 \
