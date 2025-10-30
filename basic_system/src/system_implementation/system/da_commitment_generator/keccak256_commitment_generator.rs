@@ -23,7 +23,7 @@ impl WriteBytes for Keccak256CommitmentGenerator {
 }
 
 impl DACommitmentGenerator for Keccak256CommitmentGenerator {
-    fn da_commitment(&mut self) -> Bytes32 {
+    fn finalize(&mut self) -> Bytes32 {
         let mut da_commitment_hasher = crypto::sha3::Keccak256::new();
         da_commitment_hasher.update([0u8; 32]); // we don't have to validate state diffs hash
         da_commitment_hasher.update(self.pubdata_hasher.finalize_reset()); // full pubdata keccak

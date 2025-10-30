@@ -10,8 +10,13 @@ pub use blake2s_commitment_generator::Blake2sCommitmentGenerator;
 pub use keccak256_commitment_generator::Keccak256CommitmentGenerator;
 
 pub trait DACommitmentGenerator: WriteBytes {
-    // we accept mutable reference to make this trait dyn compatible
-    fn da_commitment(&mut self) -> Bytes32;
+    ///
+    /// Generate DA commitment from the consumed data.
+    ///
+    /// Please note, that structure shouldn't be used after this call.
+    /// It accepts `&mut self` to make the trait dyn compatible.
+    ///
+    fn finalize(&mut self) -> Bytes32;
 }
 
 pub struct NopCommitmentGenerator;
@@ -21,7 +26,7 @@ impl WriteBytes for NopCommitmentGenerator {
 }
 
 impl DACommitmentGenerator for NopCommitmentGenerator {
-    fn da_commitment(&mut self) -> Bytes32 {
+    fn finalize(&mut self) -> Bytes32 {
         Bytes32::zero()
     }
 }
