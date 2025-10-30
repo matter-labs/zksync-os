@@ -6,14 +6,12 @@ mod tests {
 
     use prover::{cs::machine::Machine, field::Mersenne31Field};
 
-    fn read_text_section() -> Vec<u32> {
+    fn read_text_section(app: &str) -> Vec<u32> {
         let mut binary = vec![];
 
         let zksync_os_path =
             std::env::var("ZKSYNC_OS_DIR").unwrap_or_else(|_| String::from("../../zksync_os"));
-        let file_path = PathBuf::from_str(&zksync_os_path)
-            .unwrap()
-            .join("singleblock_batch.text");
+        let file_path = PathBuf::from_str(&zksync_os_path).unwrap().join(app);
         let mut file = std::fs::File::open(file_path).unwrap();
         file.read_to_end(&mut binary).unwrap();
         assert!(binary.len() % 4 == 0);
@@ -24,9 +22,8 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn verify_default_binary() {
-        let text_section = read_text_section();
+    fn verify_binary(app: &str) {
+        let text_section = read_text_section(app);
         type M = prover::cs::machine::machine_configurations::full_isa_with_delegation_no_exceptions_no_signed_mul_div::FullIsaMachineWithDelegationNoExceptionHandlingNoSignedMulDiv;
         let unsupported_opcodes =
             <M as Machine<Mersenne31Field>>::verify_bytecode_base(&text_section);
@@ -39,5 +36,11 @@ mod tests {
             }
             panic!("Unsupported opcodes in binary");
         }
+    }
+
+    #[test]
+    fn verify_default_binaries() {
+        verify_binary("singleblock_batch.text");
+        verify_binary("multiblock_batch.text")
     }
 }
