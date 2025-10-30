@@ -52,7 +52,8 @@ impl StorageCacheRecordProperties {
         self.initial_appearance == StorageInitialAppearance::NonExisting
     }
 
-    /// TODO
+    /// Returns true if the initial value from storage was accessed/used.
+    /// This excludes slots that were only touched but never observed, updated, or deleted.
     pub fn is_initial_value_used(&self) -> bool {
         matches!(
             self.current_appearance,

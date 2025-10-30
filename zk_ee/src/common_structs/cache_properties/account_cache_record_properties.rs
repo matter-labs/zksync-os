@@ -68,7 +68,8 @@ impl AccountCacheRecordProperties {
         self.current_appearance = AccountCurrentAppearance::Observed;
     }
 
-    /// TODO
+    /// Asserts that the account cache entry has been observed (not just touched).
+    /// Used for validation during account deconstruction to ensure proper cache state.
     pub fn assert_observed(&self) {
         assert!(self.current_appearance == AccountCurrentAppearance::Observed);
     }

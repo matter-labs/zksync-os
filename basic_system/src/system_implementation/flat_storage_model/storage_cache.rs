@@ -614,7 +614,7 @@ impl<
     {
         self.0.cache.iter().map(|item| {
             let is_new_storage_slot = item.key_properties().is_new_storage_slot();
-            let initial_value_used = item.key_properties().is_initial_value_used(); // TODO what?
+            let initial_value_used = item.key_properties().is_initial_value_used();
             let current_record = item.current();
             let initial_record = item.initial();
             (
