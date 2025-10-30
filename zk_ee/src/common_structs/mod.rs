@@ -1,3 +1,4 @@
+pub mod cache_properties;
 pub mod cache_record;
 pub mod callee_account_properties;
 pub mod da_commitment_scheme;
@@ -11,8 +12,6 @@ pub mod proof_data;
 pub mod pubdata_compression;
 pub mod skip_list_quasi_vec;
 pub mod state_root_view;
-pub mod structured_account_cache_record;
-pub mod structured_storage_cache_record;
 pub mod warm_storage_key;
 pub mod warm_storage_value;
 

@@ -104,9 +104,9 @@ where
         let v = match entry {
             Entry::Occupied(o) => o.into_mut(),
             Entry::Vacant(vacant_entry) => {
-                let (v, a) = spawn_v()?;
+                let (v, properties) = spawn_v()?;
                 vacant_entry.insert(ElementWithHistory::new(
-                    a,
+                    properties,
                     v,
                     &mut self.records_memory_pool,
                     self.state.alloc.clone(),

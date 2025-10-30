@@ -7,7 +7,7 @@ use core::fmt::Debug;
 pub enum StorageInitialAppearance {
     /// Represent uninitialized element - it doesn't exist in persistent form, so it it would be modified
     /// into non-trivial state, then it would need to be persisted as "insert"
-    Empty,
+    NonExisting,
     /// Populated with some preexisted value
     Existing,
 }
@@ -27,45 +27,56 @@ pub enum StorageCurrentAppearance {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct StorageCacheAppearance {
+pub struct StorageCacheRecordProperties {
     initial_appearance: StorageInitialAppearance,
     current_appearance: StorageCurrentAppearance,
 }
 
-impl StorageCacheAppearance {
-    pub fn new(
-        initial_appearance: StorageInitialAppearance,
-        current_appearance: StorageCurrentAppearance,
-    ) -> Self {
+impl StorageCacheRecordProperties {
+    pub fn new(is_new_storage_slot: bool) -> Self {
+        let initial_appearance = if is_new_storage_slot {
+            // Didn't exist before
+            StorageInitialAppearance::NonExisting
+        } else {
+            StorageInitialAppearance::Existing
+        };
+
         Self {
             initial_appearance,
-            current_appearance,
+            current_appearance: StorageCurrentAppearance::Observed,
         }
     }
 
-    pub fn initial_appearance(&self) -> StorageInitialAppearance {
-        self.initial_appearance
+    /// Returns true if slot didn't exist before
+    pub fn is_new_storage_slot(&self) -> bool {
+        self.initial_appearance == StorageInitialAppearance::NonExisting
     }
 
-    pub fn current_appearance(&self) -> StorageCurrentAppearance {
-        self.current_appearance
+    /// TODO
+    pub fn is_initial_value_used(&self) -> bool {
+        matches!(
+            self.current_appearance,
+            StorageCurrentAppearance::Observed
+                | StorageCurrentAppearance::Updated
+                | StorageCurrentAppearance::Deleted
+        )
     }
 
     /// Sets appearance to "observed" to distinguish from elements that were "observed" via explicit read
     /// or update. If it was observed before - does nothing
-    pub fn observe(&mut self) {
+    pub fn mark_as_observed(&mut self) {
         if self.current_appearance == StorageCurrentAppearance::Touched {
             self.current_appearance = StorageCurrentAppearance::Observed;
         };
     }
 
     /// Mark element as "update", meaning it was written to, but net difference can be trivial anyway
-    pub fn update(&mut self) {
+    pub fn mark_as_updated(&mut self) {
         self.current_appearance = StorageCurrentAppearance::Updated;
     }
 
     /// Mark element as "update", meaning it was written to, but net difference can be trivial anyway
-    pub fn delete(&mut self) {
+    pub fn mark_as_deleted(&mut self) {
         self.current_appearance = StorageCurrentAppearance::Deleted;
     }
 }
