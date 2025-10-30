@@ -39,7 +39,7 @@ impl DelegatedMontParams<4> for FieldParams {
 
 impl FieldElement {
     pub(crate) const ZERO: Self = Self::from_words_unchecked([0; 4]);
-    // montgomerry form
+    // montgomery form
     pub(crate) const ONE: Self =
         Self::from_words_unchecked([1, 18446744069414584320, 18446744073709551615, 4294967294]);
 

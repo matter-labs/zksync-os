@@ -4,7 +4,7 @@ use core::{
     ops::{AddAssign, MulAssign, SubAssign},
 };
 
-use crate::secp256r1::u64_arithmatic::*;
+use crate::secp256r1::u64_arithmetic::*;
 
 use super::{MODULUS, R2};
 
@@ -24,7 +24,7 @@ impl core::fmt::Debug for FieldElement {
 
 impl FieldElement {
     pub(crate) const ZERO: Self = Self::from_words_unchecked([0; 4]);
-    // montgomerry form
+    // montgomery form
     pub(crate) const ONE: Self =
         Self::from_words_unchecked([1, 18446744069414584320, 18446744073709551615, 4294967294]);
 

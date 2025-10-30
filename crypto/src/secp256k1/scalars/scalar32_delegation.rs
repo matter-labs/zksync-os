@@ -172,7 +172,7 @@ impl ScalarInner {
         }
     }
 
-    // The input should be in montgomerry form, the output is in integer form
+    // The input should be in montgomery form, the output is in integer form
     #[inline(always)]
     pub(super) fn decompose_128(&self) -> (Self, Self) {
         let integer_form = self.to_integer();
@@ -184,7 +184,7 @@ impl ScalarInner {
         (Self(r1), Self(r2))
     }
 
-    // The input should be in montgomerry form, the output is in integer form
+    // The input should be in montgomery form, the output is in integer form
     pub(super) fn decompose(self) -> (Self, Self) {
         // Not to efficient as we kick out of Montgomery form
         let int_form = self.to_integer();
@@ -427,7 +427,7 @@ mod tests {
 
     #[ignore = "requires single threaded runner"]
     #[test]
-    fn to_montgomerry_round() {
+    fn to_montgomery_round() {
         proptest!(|(x: ScalarInner)| {
             prop_assert_eq!(x.to_integer().to_representation(), x);
         })

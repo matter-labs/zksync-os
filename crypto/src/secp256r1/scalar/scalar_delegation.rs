@@ -26,7 +26,7 @@ pub struct Scalar(BigInt<4>);
 
 impl Scalar {
     pub(crate) const ZERO: Self = Self(BigInt::zero());
-    // montgomerry form
+    // montgomery form
     pub(crate) const ONE: Self = Self(BigInt::<4>([
         884452912994769583,
         4834901526196019579,

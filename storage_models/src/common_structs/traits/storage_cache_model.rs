@@ -15,7 +15,7 @@ impl SpecialAccountProperty for AccountAggregateDataHash {
 
 // TODO: extend when needed
 
-// We call it "cache model" because real work do dump everything into KV-storage
+// We call it "cache model" because real work to dump everything into KV-storage
 // is somewhere outside of it, but this "cache" is fully responsible for resources management
 pub trait StorageCacheModel: Sized + SnapshottableIo {
     type IOTypes: SystemIOTypesConfig;

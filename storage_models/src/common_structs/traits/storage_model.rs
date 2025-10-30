@@ -17,7 +17,7 @@ use zk_ee::{
 /// Storage model trait needed to allow using different storage models in the system.
 ///
 /// It defines methods to read/write contracts storage slots and account data,
-/// but all the details about underlying structure, commitment, pubdata compression are hidden behind this trait.
+/// but all the details about underlying structure, commitment, and pubdata compression are hidden behind this trait.
 ///
 pub trait StorageModel: Sized + SnapshottableIo {
     type IOTypes: SystemIOTypesConfig;

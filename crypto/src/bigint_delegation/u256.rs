@@ -256,8 +256,8 @@ pub unsafe fn square_assign_montgomery<T: DelegatedMontParams<4>>(a: &mut U256) 
 }
 
 #[inline(always)]
-/// Modular multiplication with montgomerry reduction.
-/// It's the responsibility of the caller to make sure the parameters are in montgomerry form.
+/// Modular multiplication with montgomery reduction.
+/// It's the responsibility of the caller to make sure the parameters are in montgomery form.
 /// # Safety
 ///
 pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams<4>>(a: &mut U256, b: &U256) {

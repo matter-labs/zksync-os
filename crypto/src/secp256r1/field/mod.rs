@@ -30,12 +30,12 @@ const R2: [u64; 4] = [3, 18446744056529682431, 18446744073709551614, 21474836477
 const REDUCTION_CONST: [u64; 4] = [1, 4294967296, 0, 18446744069414584322];
 
 impl FieldElement {
-    // montgomerry form
+    // montgomery form
     pub(super) const HALF: Self = Self::from_words_unchecked([0, 0, 0, 9223372036854775808]);
-    // montgomerry form
+    // montgomery form
     pub(super) const EQUATION_A: Self =
         Self::from_words_unchecked([18446744073709551612, 17179869183, 0, 18446744056529682436]);
-    // montgomerry form
+    // montgomery form
     pub(super) const EQUATION_B: Self = Self::from_words_unchecked([
         15608596021259845087,
         12461466548982526096,
@@ -376,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn montgomerry_repr_round() {
+    fn montgomery_repr_round() {
         #[cfg(feature = "bigint_ops")]
         init();
 

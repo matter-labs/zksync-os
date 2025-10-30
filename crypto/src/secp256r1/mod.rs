@@ -3,7 +3,7 @@ mod context;
 mod field;
 mod points;
 mod scalar;
-mod u64_arithmatic;
+mod u64_arithmetic;
 mod verify;
 mod wnaf;
 
@@ -42,7 +42,7 @@ impl Display for Secp256r1Err {
                 "secp256r1: Could not recover curve point from coordinates"
             ),
             Secp256r1Err::RecoveredInfinity => {
-                write!(f, "secp256r1: Recieved coordinates of point at infinity")
+                write!(f, "secp256r1: Received coordinates of point at infinity")
             }
             Secp256r1Err::InvalidFieldBytes => write!(f, "secp256r1: Field bytes out of range"),
         }

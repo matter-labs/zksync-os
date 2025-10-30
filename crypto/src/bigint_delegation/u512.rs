@@ -130,8 +130,8 @@ pub unsafe fn neg_mod_assign<T: DelegatedModParams<8>>(a: &mut U512) {
     }
 }
 
-/// Compute `self = self * rhs mod modulus` using montgomerry reduction.
-/// Both `self` and `rhs` are assumed to be in montgomerry form.
+/// Compute `self = self * rhs mod modulus` using montgomery reduction.
+/// Both `self` and `rhs` are assumed to be in montgomery form.
 /// The reduction constant is expected to be `-1/modulus mod 2^256`
 /// # Safety
 /// `DelegationMontParams` should only provide references to mutable statics.
@@ -302,8 +302,8 @@ pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams<8>>(a: &mut U512, b: 
     debug_assert!(a.0[6..8].iter().all(|&x| x == 0));
 }
 
-/// Compute `self = self^2 mod modulus` using montgomerry reduction.
-/// `self` should be in montgomerry form.
+/// Compute `self = self^2 mod modulus` using montgomery reduction.
+/// `self` should be in montgomery form.
 /// The reduction constant is expected to be `-1/modulus mod 2^256`
 /// # Safety
 /// `DelegationMontParams` should only provide references to mutable statics.

@@ -38,8 +38,8 @@ impl MemorySource for DummyMemorySource {
 }
 
 ///
-/// Structure that is responsible to buffer incoming queries till the end,
-/// and then dispatch it to various responders. When constructed it checks
+/// Structure that is responsible for buffering incoming queries till the end,
+/// and then dispatching them to various responders. When constructed it checks
 /// that responders do not try to serve the same query ID.
 pub struct ZkEENonDeterminismSource<M: MemorySource> {
     query_buffer: Option<QueryBuffer>,
@@ -122,7 +122,7 @@ impl<M: MemorySource> ZkEENonDeterminismSource<M> {
             return iterator_len_to_indicate;
         }
 
-        // This is the 32 bit remaining from the previous item - return them now.
+        // This is the 32 bits remaining from the previous item - return them now.
         if let Some(high) = self.high_half.take() {
             return high;
         }
@@ -203,7 +203,7 @@ impl IOOracle for ZkEENonDeterminismSource<DummyMemorySource> {
             return Ok(Box::new([].into_iter()));
         }
         let Some(processor) = self.ranges.get(&query_type).copied() else {
-            return Err(internal_error!("invalid query ID "));
+            return Err(internal_error!("invalid query ID"));
         };
         let processor = &mut self.processors[processor];
         let response = processor.process_buffered_query(
@@ -276,7 +276,7 @@ impl QueryBuffer {
     }
 }
 
-// now we hook an access
+// Now we hook an access
 impl<M: MemorySource> NonDeterminismCSRSource<M> for ZkEENonDeterminismSource<M> {
     #[allow(clippy::let_and_return)]
     fn read(&mut self) -> u32 {
@@ -313,7 +313,7 @@ impl<M: MemorySource> ReadWitnessSource<M> {
 impl<M: MemorySource> NonDeterminismCSRSource<M> for ReadWitnessSource<M> {
     fn read(&mut self) -> u32 {
         let item = self.original_source.read();
-        // on read - remember the items.
+        // On read - remember the items.
         self.read_items.borrow_mut().push(item);
         item
     }

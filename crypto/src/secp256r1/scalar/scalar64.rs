@@ -1,5 +1,5 @@
 // based on https://github.com/RustCrypto/elliptic-curves/blob/master/p256/src/arithmetic/scalar/scalar64.rs
-use crate::secp256r1::{u64_arithmatic::*, Secp256r1Err};
+use crate::secp256r1::{u64_arithmetic::*, Secp256r1Err};
 
 use super::{MODULUS, MU};
 
