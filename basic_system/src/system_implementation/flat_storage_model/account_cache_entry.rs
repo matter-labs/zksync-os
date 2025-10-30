@@ -115,7 +115,7 @@ pub struct AccountPropertiesMetadata {
     /// Transaction where this account was last accessed.
     /// Considered warm if equal to Some(current_tx)
     pub last_touched_in_tx: Option<u32>,
-    /// Special flag that allows to avoid publishing bytecode for deployed account.
+    /// Special flag that allows avoiding publishing bytecode for deployed account.
     /// In practice, it can be set to `true` only during special protocol upgrade txs.
     /// For protocol upgrades it's ensured by governance that bytecodes are already published separately.
     pub not_publish_bytecode: bool,

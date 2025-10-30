@@ -202,7 +202,7 @@ impl BatchPublicInput {
 }
 
 ///
-/// Batch PI builder, it allows to apply blocks info on by one to persist data needed for the batch PI and at the end create it.
+/// Batch PI builder, it allows applying blocks info one by one to persist data needed for the batch PI and at the end create it.
 ///
 pub struct BatchPublicInputBuilder<A: alloc::alloc::Allocator> {
     is_first_block: bool,

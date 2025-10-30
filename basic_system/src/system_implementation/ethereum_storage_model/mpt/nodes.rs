@@ -2,12 +2,12 @@
 // instead we will just store worst-case common prefix in leaf and extension nodes
 
 // Small note on the logic: we implement nodes just as indexes,
-// but we should store sufficicent information for deletes or inserts (updates can not change node type)
+// but we should store sufficient information for deletes or inserts (updates can not change node type)
 // Let's go through the different types of inserts and deletes (we will delete before inserts for simplicity in practice)
 // Deletes:
 // - Delete leaf - cascade it all the way up until we hit branch, see below
 // - Delete from branch, and branch doesn't get converted - fine
-// - Delete from branch, so it becomes extension - huge pain, as we have to cascase it all the way down to next branch or leaf
+// - Delete from branch, so it becomes extension - huge pain, as we have to cascade it all the way down to next branch or leaf
 // Inserts are more involved:
 // - Inserts directly into branch - simplest case
 // - Inserts somewhere near the leaf - convert to branch, but types of nodes do not change
