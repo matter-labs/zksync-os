@@ -14,7 +14,7 @@ pub mod helpers;
 pub use forward_system::run::run_block;
 use zk_ee::common_structs::ProofData;
 
-/// Runs a block in riscV - using zksync_os binary - and returns the
+/// Runs a block in RISC-V - using zksync_os binary - and returns the
 /// witness that can be passed to the prover subsystem.
 pub fn run_block_generate_witness(
     block_context: BlockContext,

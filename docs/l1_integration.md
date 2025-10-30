@@ -1,16 +1,16 @@
 # L1 integration
 
-ZKsyncOS will be used for ZK rollups/validiums, which means that state transition correctness should be verified on the settlement layer (we'll call it l1 for simplicity).
-More precisely, we will store some state commitment on the settlement layer, and for each block/batch, we are going to generate a proof that will prove that there are inputs to perform valid state transition from the state commitment saved on l1 to some other.
+ZKsyncOS will be used for ZK rollups/validiums, which means that state transition correctness should be verified on the settlement layer (we'll call it L1 for simplicity).
+More precisely, we will store some state commitment on the settlement layer, and for each block/batch, we are going to generate a proof that will prove that there are inputs to perform valid state transition from the state commitment saved on L1 to some other.
 It means that the state before and after transition should be a part of ZK proof public input (or part of preimage). But also public input should include other data for different purposes: messaging, DA validation, and inputs validation.
 
-Apart from that, we are going to implement a messaging mechanism, that allows to send trustless messages from the settlement layer to chain(l2) and back.
-This mechanism will be [Era VM compatible](https://docs.zksync.io/zksync-protocol/rollup/l1_l2_communication), it includes l1 -> l2 txs and l2 -> l1 messages.
+Apart from that, we are going to implement a messaging mechanism that allows sending trustless messages from the settlement layer to chain (L2) and back.
+This mechanism will be [Era VM compatible](https://docs.zksync.io/zksync-protocol/rollup/l1_l2_communication), it includes L1 -> L2 txs and L2 -> L1 messages.
 
 ## Public input structure
 
 By convention, final values from registers x10-x17 will be exposed as proof public input by our RISC-V prover.
-As was mentioned we should expose some information about the state transition via public input.
+As mentioned, we should expose some information about the state transition via public input.
 
 ### Simplified example
 Let's first describe a simplified example of how it could look to prove state transition on the settlement layer just for understanding:
@@ -19,16 +19,16 @@ Let's first describe a simplified example of how it could look to prove state tr
 Then on the settlement layer in order to make a state transition we should verify the proof, open the preimage to the public input, and:
 - check that `state_commitment_before` is the one saved in the chain contract
 - update state commitment saved in the contract to `state_commitment_after`
-- validate that we passed in calldata preimage to `pubdata_keccak256`. Pubdata - data needed for chain execution, in our case to recover state and l2 to l1 messages.
-- open l1_txs_hash, and check that such transactions were indeed requested on the settlement layer. After that mark them as processed somehow.
+- validate that we passed in calldata preimage to `pubdata_keccak256`. Pubdata - data needed for chain execution, in our case to recover state and L2 to L1 messages.
+- open l1_txs_hash, and check that such transactions were indeed requested on the settlement layer. After that, mark them as processed somehow.
 - publish `l2_to_l1_messages_merkle_tree_root`, so users will be able to prove some message inclusion on the settlement layer
 
 ### Aggregation
 
 The current design is not finalized, but most likely we'll implement block aggregation.
-It's going to be a separate rust(compiled to risc-v) program that verifies block proofs and combines their inputs/outputs.
-And only after such aggregated blocks set will be proven on the settlement layer at once.
-It means that block public input should be optimized, and designed for future aggregation.
+It's going to be a separate Rust (compiled to RISC-V) program that verifies block proofs and combines their inputs/outputs.
+And only after such an aggregated blocks set will be proven on the settlement layer at once.
+It means that block public input should be optimized and designed for future aggregation.
 
 Please note, that aggregation itself is out of scope.
 

@@ -11,7 +11,7 @@ The bootloader is the component responsible for implementing the general blockch
 7. Repeat from 3 until there are no more transactions.
 8. Finalizing the block.
 
-This component is, as the name suggest, the entrypoint of the system. The function [`run_prepared`](../../basic_bootloader/src/bootloader/mod.rs) implements this top-level main loop.
+This component is, as the name suggests, the entrypoint of the system. The function [`run_prepared`](../../basic_bootloader/src/bootloader/mod.rs) implements this top-level main loop.
 
 ## Configuration
 
@@ -27,7 +27,7 @@ A contract call is executed through an interplay between the bootloader and (pot
 
 ## Block header
 
-At the end of the execution bootloader outputs block header to the system.
+At the end of the execution, the bootloader outputs block header to the system.
 
 For the block header, we use Ethereum block header format.
 However, some of the fields will be set differently in the first version for simplification (most likely it will change before the mainnet launch).

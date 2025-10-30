@@ -92,7 +92,7 @@ impl BlockHeader {
     ) -> Self {
         Self {
             parent_hash,
-            // omners list is empty after EIP-3675
+            // ommers list is empty after EIP-3675
             ommers_hash: Bytes32::from(EMPTY_OMMER_ROOT_HASH),
             beneficiary,
             // for now state root is zero

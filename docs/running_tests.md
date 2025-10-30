@@ -10,7 +10,7 @@ Detailed instructions for building ZKsyncOS can be found in the [README](../READ
 
 ## Instances and rig
 
-The testing rig provides methods to simplify the writing of tests. The main abstraction here is [`Chain`](../tests/rig/src/chain.rs), which represent an in-memory state of the chain. A test can specify predeployed contracts and balance/nonce for given addresses. After preparation of the initial chain state, the test has to define the transactions to be executed. Finally, the test calls `run_block` to execute it.
+The testing rig provides methods to simplify the writing of tests. The main abstraction here is [`Chain`](../tests/rig/src/chain.rs), which represents an in-memory state of the chain. A test can specify predeployed contracts and balance/nonce for given addresses. After preparation of the initial chain state, the test has to define the transactions to be executed. Finally, the test calls `run_block` to execute it.
 
 ### Concrete system implementation entry points
 
@@ -25,7 +25,7 @@ To actually compute the proof after both runs, the `e2e_proving` feature needs t
 
 ## Fuzzing
 
-We employ two approaches to fuzz testing coverage-guide fuzzing for low-level primitives and metamorphic differential fuzzing.
+We employ two approaches to fuzz testing: coverage-guided fuzzing for low-level primitives and metamorphic differential fuzzing.
 
 The first approach is implemented in the [`tests/fuzzer`](../tests/fuzzer/) directory. 
 It includes fuzz targets for core cryptographic functions, system infrastructure, precompiles and Bootloader's entry points.
@@ -41,8 +41,8 @@ The resulting test cases are then executed using [EVM tester](https://github.com
 to validate correctness and detect panics or discrepancies.
 
 Both fuzzing strategies are executed on a daily basis as part of our testing pipeline:
- - Fuzzing of the primitives run daily using [GitHub Actions](../.github/workflows/fuzz.yml)) 
- - Metamorphic testing run continuously in our cloud-based test infrastructure for deeper, longer fuzzing sessions.
+ - Fuzzing of the primitives runs daily using [GitHub Actions](../.github/workflows/fuzz.yml) 
+ - Metamorphic testing runs continuously in our cloud-based test infrastructure for deeper, longer fuzzing sessions.
 
 ## EVM tester
 

@@ -2,13 +2,13 @@
 
 Note: this doc is outdated
 
-Proving ethereum blocks consists of 3 steps:
-* getting necessary information about the block (transactions, traces etc)
-* putting this information into a format that prover understands (witness generation)
+Proving Ethereum blocks consists of 3 steps:
+* getting necessary information about the block (transactions, traces, etc.)
+* putting this information into a format that the prover understands (witness generation)
 * running the prover.
 
 
-You can run the provers either on GPU (faster) or on CPU.
+You can run the prover either on GPU (faster) or on CPU.
 
 ## Running end-to-end
 

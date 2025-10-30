@@ -116,7 +116,7 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
     /// Create structure from buffer.
     ///
     /// Validates that all the fields are correctly and tightly packed.
-    /// Also validate that all the fields set correctly, in accordance to its type.
+    /// Also validate that all the fields set correctly, in accordance with its type.
     ///
     #[allow(clippy::result_unit_err)]
     pub fn try_from_buffer(buffer: UsizeAlignedByteBox<A>) -> Result<Self, ()> {
@@ -211,7 +211,7 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
     }
 
     ///
-    /// Validate that all the fields set correctly, in accordance to its type
+    /// Validate that all the fields set correctly, in accordance with its type
     ///
     #[allow(clippy::result_unit_err)]
     fn validate_structure(&self) -> Result<(), ()> {
