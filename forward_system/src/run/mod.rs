@@ -72,7 +72,7 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     tx_result_callback: TR,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
-    let block_metadata_reponsder = BlockMetadataResponder {
+    let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
     let tx_data_responder = TxDataResponder {
@@ -85,7 +85,7 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     let tree_responder = ReadTreeResponder { tree };
 
     let mut oracle = ZkEENonDeterminismSource::default();
-    oracle.add_external_processor(block_metadata_reponsder);
+    oracle.add_external_processor(block_metadata_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
@@ -105,7 +105,7 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     preimage_source: PS,
     tx_source: TS,
 ) -> Result<Vec<u32>, ForwardSubsystemError> {
-    let block_metadata_reponsder = BlockMetadataResponder {
+    let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
     let tx_data_responder = TxDataResponder {
@@ -121,7 +121,7 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     let tree_responder = ReadTreeResponder { tree };
 
     let mut oracle = ZkEENonDeterminismSource::default();
-    oracle.add_external_processor(block_metadata_reponsder);
+    oracle.add_external_processor(block_metadata_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(preimage_responder);
@@ -243,7 +243,7 @@ pub fn run_block_with_oracle_dump_ext<
     proof_data: Option<ProofData<StorageCommitment>>,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
-    let block_metadata_reponsder = BlockMetadataResponder {
+    let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
     let tx_data_responder = TxDataResponder {
@@ -259,7 +259,7 @@ pub fn run_block_with_oracle_dump_ext<
     if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
         let dump = ForwardRunningOracleDump {
             zk_proof_data_responder: zk_proof_data_responder.clone(),
-            block_metadata_reponsder,
+            block_metadata_responder,
             tree_responder: tree_responder.clone(),
             tx_data_responder: tx_data_responder.clone(),
             preimage_responder: preimage_responder.clone(),
@@ -269,7 +269,7 @@ pub fn run_block_with_oracle_dump_ext<
     }
 
     let mut oracle = ZkEENonDeterminismSource::default();
-    oracle.add_external_processor(block_metadata_reponsder);
+    oracle.add_external_processor(block_metadata_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
@@ -298,14 +298,14 @@ pub fn run_block_from_oracle_dump<
 
     let ForwardRunningOracleDump {
         zk_proof_data_responder,
-        block_metadata_reponsder,
+        block_metadata_responder,
         tree_responder,
         tx_data_responder,
         preimage_responder,
     } = dump;
 
     let mut oracle = ZkEENonDeterminismSource::default();
-    oracle.add_external_processor(block_metadata_reponsder);
+    oracle.add_external_processor(block_metadata_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
@@ -336,7 +336,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
         transactions: vec![transaction].into(),
     };
 
-    let block_metadata_reponsder = BlockMetadataResponder {
+    let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
     let tx_data_responder = TxDataResponder {
@@ -349,7 +349,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
     let storage_responder = ReadStorageResponder { storage };
 
     let mut oracle = ZkEENonDeterminismSource::default();
-    oracle.add_external_processor(block_metadata_reponsder);
+    oracle.add_external_processor(block_metadata_responder);
     oracle.add_external_processor(tx_data_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(storage_responder);

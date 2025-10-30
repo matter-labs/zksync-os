@@ -1,6 +1,6 @@
 //!
 //! L1 messenger system hook implementation.
-//! It implements a `sendToL1` method, works same way as in Era.
+//! It implements a `sendToL1` method, works the same way as in Era.
 //!
 use super::*;
 use arrayvec::ArrayVec;
@@ -41,7 +41,7 @@ where
     debug_assert_eq!(callee, L1_MESSENGER_ADDRESS);
 
     let mut error = false;
-    // There is no "payable" methods
+    // There are no "payable" methods
     error |= nominal_token_value != U256::ZERO;
     let mut is_static = false;
     match modifier {

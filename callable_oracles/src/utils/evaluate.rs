@@ -129,6 +129,6 @@ pub unsafe fn read_struct<T, M: MemorySource>(memory: &M, offset: u32) -> Result
         unsafe { ptr.cast::<u32>().add(i / 4).write(v) };
     }
 
-    // Safety: written all bytes.
+    // Safety: have written all bytes.
     unsafe { Ok(r.assume_init()) }
 }

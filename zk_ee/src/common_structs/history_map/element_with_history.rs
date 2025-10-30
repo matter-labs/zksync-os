@@ -120,7 +120,7 @@ impl<V, A: Allocator + Clone> ElementWithHistory<V, A> {
     }
 
     /// Commits (freezes) changes up to this point
-    /// Frees memory taken by snapshots that can't be rollbacked to.
+    /// Frees memory taken by snapshots that can't be rolled back to.
     pub fn commit(&mut self, records_memory_pool: &mut ElementPool<V, A>) {
         // Head becomes the committed value
         self.committed = self.head;

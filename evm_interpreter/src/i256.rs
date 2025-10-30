@@ -67,7 +67,7 @@ pub fn i256_cmp(first: &U256, second: &U256) -> Ordering {
         (false, true) => Ordering::Greater, // positive > negative,
         _ => {
             // same sign, trivial for both positives
-            // in two complements min negative value is < -1 if viewed as unsigned bit patterns, so we can perform same ops
+            // in two's complement min negative value is < -1 if viewed as unsigned bit patterns, so we can perform same ops
             let (tmp, uf) = first.overflowing_sub(*second);
             if uf {
                 Ordering::Less
@@ -102,7 +102,7 @@ pub fn i256_div(dividend: &mut U256, divisor_or_quotient: &mut U256) {
         return;
     }
 
-    // this is unsigned division of moduluses
+    // this is unsigned division of moduli
     let (quotient, _) = dividend.div_rem(*divisor_or_quotient);
 
     // set sign bit to zero
@@ -140,7 +140,7 @@ pub fn i256_mod(dividend: &mut U256, divisor_or_remainder: &mut U256) {
 
     let _ = i256_sign::<true>(divisor_or_remainder);
 
-    // this is unsigned division of moduluses
+    // this is unsigned division of moduli
     let (_q, r) = dividend.div_rem(*divisor_or_remainder);
     *divisor_or_remainder = r;
 

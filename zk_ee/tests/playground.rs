@@ -23,7 +23,7 @@ fn miri_rollback_reuse() {
 
     let mut v = map.get_or_insert::<()>(&1, || Ok(4)).unwrap();
 
-    // This snapshot will be rollbacked.
+    // This snapshot will be rolled back.
     v.update::<_, ()>(|x| {
         *x = 3;
         Ok(())
@@ -37,7 +37,7 @@ fn miri_rollback_reuse() {
 
     let mut v = map.get_or_insert::<()>(&1, || Ok(5)).unwrap();
 
-    // This will create a new snapshot and will reuse the one that rollbacked.
+    // This will create a new snapshot and will reuse the one that rolled back.
     v.update::<_, ()>(|x| {
         *x = 6;
         Ok(())

@@ -35,7 +35,7 @@ where
 
     debug_assert_eq!(callee, CONTRACT_DEPLOYER_ADDRESS);
 
-    // There is no "payable" methods
+    // There are no "payable" methods
     let mut error = nominal_token_value != U256::ZERO;
     let mut is_static = false;
     match modifier {
