@@ -62,13 +62,13 @@ case "$TYPE" in
     TEXT_NAME="evm_replay.text"
     ;;
   multiblock-batch)
-    FEATURES="$FEATURES,multiblock-batch"
+    FEATURES="$FEATURES,server,multiblock-batch"
     BIN_NAME="multiblock_batch.bin"
     ELF_NAME="multiblock_batch.elf"
     TEXT_NAME="multiblock_batch.text"
     ;;
   multiblock-batch-logging-enabled)
-    FEATURES="$FEATURES,multiblock-batch,print_debug_info"
+    FEATURES="$FEATURES,server,multiblock-batch,print_debug_info"
     BIN_NAME="multiblock_batch_logging_enabled.bin"
     ELF_NAME="multiblock_batch_logging_enabled.elf"
     TEXT_NAME="multiblock_batch_logging_enabled.text"
