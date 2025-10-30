@@ -861,7 +861,14 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
         let q_len = it.next().expect("quotient length");
         let r_len = it.next().expect("remainder length");
 
-        let max_quotient_digits = a.digits + 1 - m.digits;
+        let max_quotient_digits = if a.digits < m.digits {
+            0
+        } else if a.digits == m.digits {
+            1
+        } else {
+            a.digits + 1 - m.digits
+        };
+
         let max_remainder_digits = m.digits;
 
         const {
