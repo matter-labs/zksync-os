@@ -84,9 +84,8 @@ where
             ))
         }
         Err(e) => match e.root_cause() {
-            RootCause::Runtime(RuntimeError::OutOfErgs(_))
-            | RootCause::Internal(_)
-            | RootCause::Usage(_) => {
+            // Following EVM precompiles, we burn all gas on out-of-gas or invalid inputs
+            RootCause::Runtime(RuntimeError::OutOfErgs(_)) | RootCause::Usage(_) => {
                 let _ = system
                     .get_logger()
                     .write_fmt(format_args!("Out of gas during system hook\nError:{e:?}"));
@@ -94,8 +93,11 @@ where
                 let (_, rest) = return_vec.destruct();
                 Ok((make_error_return_state(resources), rest))
             }
+            // Internal error means something is fatally wrong inside the hook, so we propagate it
+            RootCause::Internal(e) => Err(e.clone_or_copy().into()),
+            // On fatal runtime error (e.g., out of return memory or native resources) we also propagate the error
             RootCause::Runtime(e @ RuntimeError::FatalRuntimeError(_)) => {
-                Err(Into::<SystemError>::into(e.clone_or_copy()))
+                Err(e.clone_or_copy().into())
             }
         },
     }

@@ -59,7 +59,13 @@ define_subsystem!(PointEvaluation,
                   }
 );
 
-define_subsystem!(MissingSystemFunction);
+define_subsystem!(MissingSystemFunction,
+                    // Used only for tests
+                  interface MockedSystemFunctionError
+                  {
+                      InvalidInputLength,
+                  }
+);
 
 ///
 /// System function implementation.
