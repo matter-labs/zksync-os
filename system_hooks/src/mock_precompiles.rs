@@ -8,7 +8,7 @@ pub(crate) mod mock_precompiles {
         interface_error,
         system::{
             base_system_functions::MissingSystemFunctionErrors, errors::subsystem::SubsystemError,
-            Resources, SystemFunction, MockedSystemFunctionError
+            MockedSystemFunctionError, Resources, SystemFunction,
         },
     };
 
