@@ -185,7 +185,7 @@ where
             }
             // Also EIP-3541(reject code starting with 0xEF) should be validated by governance.
 
-            // Charge extra ergs for the next call
+            // Charge extra ergs for `set_bytecode_details`
             let ergs = set_bytecode_details_extra_ergs(bytecode_length);
             resources.charge(&S::Resources::from_ergs(ergs))?;
 
