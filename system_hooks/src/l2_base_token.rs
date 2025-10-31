@@ -436,7 +436,7 @@ where
         abi_encoded_event_length
     };
 
-    // First we charge for copying the event data
+    // Now we charge for copying the event data
     let native_copy_cost = evm_interpreter::native_resource_constants::COPY_BASE_NATIVE_COST
         .saturating_add(
             evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST
