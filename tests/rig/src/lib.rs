@@ -9,6 +9,7 @@
 //!
 use std::sync::Once;
 pub mod chain;
+pub mod testing_utils;
 pub mod utils;
 
 pub use alloy;

@@ -8,6 +8,7 @@ use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
 use rig::ruint::aliases::B160;
+use rig::testing_utils::call_address_and_measure_gas_cost;
 use rig::utils::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
@@ -462,4 +463,125 @@ fn test_l2_base_token_no_mint_event_regression() {
         .collect();
 
     assert!(mint_events.is_empty(), "Mint event should not be emitted");
+}
+
+#[test]
+fn test_contract_deployer_gas_charging() {
+    let complex_upgrader_address = address!("000000000000000000000000000000000000800f");
+    let contract_deployer_address = address!("0000000000000000000000000000000000008006");
+
+    // setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
+    let bytecode = hex::decode("0123456789").unwrap();
+    let code_hash = Bytes32::from_array(
+        hex::decode("1c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7")
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    );
+    let calldata =
+        hex::decode("f6eca0b000000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
+            .unwrap();
+
+    let gas_used = call_address_and_measure_gas_cost(
+        contract_deployer_address,
+        complex_upgrader_address,
+        0,
+        calldata,
+        vec![(code_hash, bytecode)],
+    );
+
+    // The hook should charge HOOK_BASE_ERGS_COST (100 gas) + extra for bytecode length
+    assert_eq!(gas_used, 2950);
+}
+
+#[test]
+fn test_l1_messenger_gas_charging() {
+    let l1_messenger_address = address!("0000000000000000000000000000000000008008");
+    let sender = address!("1234567890123456789012345678901234567890");
+
+    // sendToL1(bytes) - 62f84b24
+    let message = b"test message to L1";
+    let mut calldata = Vec::new();
+    calldata.extend_from_slice(&hex::decode("62f84b24").unwrap()); // sendToL1 selector
+    calldata.extend_from_slice(&[0u8; 31]); // offset padding
+    calldata.push(0x20); // offset to data (32 bytes)
+    calldata.extend_from_slice(&[0u8; 31]); // length padding
+    calldata.push(message.len() as u8); // message length
+    calldata.extend_from_slice(message); // message data
+                                         // Pad to 32 byte boundary
+    let padding_needed = 32 - (message.len() % 32);
+    if padding_needed != 32 {
+        calldata.extend_from_slice(&vec![0u8; padding_needed]);
+    }
+
+    let gas_used =
+        call_address_and_measure_gas_cost(l1_messenger_address, sender, 0, calldata, vec![]);
+
+    // Verify that gas was charged - this should include the hook gas cost + keccak + LOG costs
+    // The hook should charge HOOK_BASE_ERGS_COST (100 gas) + keccak256 costs + LOG costs
+    assert_eq!(gas_used, 3133);
+}
+
+#[test]
+fn test_l2_base_token_withdraw_gas_charging() {
+    let l2_base_token_address = address!("000000000000000000000000000000000000800a");
+    let sender = address!("1234567890123456789012345678901234567890");
+    let l1_receiver = address!("0987654321098765432109876543210987654321");
+
+    // Prepare withdraw(address) calldata - 51cff8d9
+    let mut calldata = Vec::new();
+    calldata.extend_from_slice(&hex::decode("51cff8d9").unwrap()); // withdraw selector
+    calldata.extend_from_slice(&[0u8; 12]); // padding for address
+    calldata.extend_from_slice(l1_receiver.as_slice()); // l1_receiver address
+
+    let gas_used = call_address_and_measure_gas_cost(
+        l2_base_token_address,
+        sender,
+        1000000000000000000u64,
+        calldata,
+        vec![],
+    );
+
+    assert_eq!(gas_used, 5561);
+}
+
+#[test]
+fn test_l2_base_token_withdraw_with_message_gas_charging() {
+    let l2_base_token_address = address!("000000000000000000000000000000000000800a");
+    let sender = address!("1234567890123456789012345678901234567890");
+    let l1_receiver = address!("0987654321098765432109876543210987654321");
+    let additional_data = b"test message data";
+
+    // Prepare withdrawWithMessage(address,bytes) calldata - 84bc3eb0
+    let mut calldata = Vec::new();
+    calldata.extend_from_slice(&hex::decode("84bc3eb0").unwrap()); // withdrawWithMessage selector
+    calldata.extend_from_slice(&[0u8; 12]); // padding for address
+    calldata.extend_from_slice(l1_receiver.as_slice()); // l1_receiver address
+
+    // Offset to the bytes data (0x40 = 64)
+    calldata.extend_from_slice(&[0u8; 31]);
+    calldata.push(0x40);
+
+    // Length of additional data
+    calldata.extend_from_slice(&[0u8; 31]);
+    calldata.push(additional_data.len() as u8);
+
+    // Additional data, padded to 32 bytes
+    calldata.extend_from_slice(additional_data);
+    let padding_needed = 32 - (additional_data.len() % 32);
+    if padding_needed != 32 {
+        calldata.extend_from_slice(&vec![0u8; padding_needed]);
+    }
+
+    let gas_used = call_address_and_measure_gas_cost(
+        l2_base_token_address,
+        sender,
+        2000000000000000000u64,
+        calldata,
+        vec![],
+    );
+
+    // Verify that gas was charged - this should include hook gas cost + memory copy costs + L1 message costs + event costs
+    // The hook should charge HOOK_BASE_ERGS_COST (100 gas) + copy costs + L1 message costs + event emission costs
+    assert_eq!(gas_used, 6893);
 }
