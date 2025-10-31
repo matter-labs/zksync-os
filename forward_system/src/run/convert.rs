@@ -30,6 +30,7 @@ impl FromInterface<BlockContext> for BlockMetadataFromOracle {
             gas_limit: value.gas_limit,
             pubdata_limit: value.pubdata_limit,
             mix_hash: value.mix_hash,
+            blob_fee: todo!(),
         }
     }
 }

@@ -1,5 +1,6 @@
 pub mod eip_1559_tx;
 pub mod eip_2930_tx;
+pub mod eip_4844_tx;
 pub mod eip_7702_tx;
 pub mod legacy_tx;
 pub mod service_tx;

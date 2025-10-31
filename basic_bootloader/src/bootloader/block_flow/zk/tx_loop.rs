@@ -130,6 +130,8 @@ where
                             let next_block_pubdata_used =
                                 block_data.block_pubdata_used + tx_processing_result.pubdata_used;
                             let block_logs_used = system.io.logs_len();
+                            let next_block_blob_gas_used =
+                                block_data.block_blob_gas_used + tx_processing_result.blob_gas_used;
 
                             // Check if the transaction made the block reach any of the limits
                             // for gas, native, pubdata or logs.
@@ -139,6 +141,7 @@ where
                                 next_block_computational_native_used,
                                 next_block_pubdata_used,
                                 block_logs_used,
+                                next_block_blob_gas_used,
                             ) {
                                 // Revert to state before transaction
                                 system.finish_global_frame(Some(&pre_tx_rollback_handle))?;
@@ -149,6 +152,7 @@ where
                                 block_data.block_computational_native_used =
                                     next_block_computational_native_used;
                                 block_data.block_pubdata_used = next_block_pubdata_used;
+                                block_data.block_blob_gas_used = next_block_blob_gas_used;
                                 is_first_tx = false;
 
                                 // Finish the frame opened before processing the tx

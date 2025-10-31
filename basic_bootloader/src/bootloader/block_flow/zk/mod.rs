@@ -30,6 +30,7 @@ fn check_for_block_limits<S: EthereumLikeTypes>(
     computational_native_used: u64,
     pubdata_used: u64,
     logs_used: u64,
+    blob_gas_used: u64,
 ) -> Result<(), InvalidTransaction>
 where
     S::IO: IOSubsystemExt,
@@ -63,6 +64,12 @@ where
             "Block logs limit reached, invalidating transaction\n"
         );
         Err(InvalidTransaction::BlockL2ToL1LogsLimitReached)
+    } else if blob_gas_used > system.get_blob_gas_limit() {
+        system_log!(
+            system,
+            "Block blob gas limit reached, invalidating transaction\n"
+        );
+        Err(InvalidTransaction::BlockBlobGasLimitReached)
     } else {
         Ok(())
     }

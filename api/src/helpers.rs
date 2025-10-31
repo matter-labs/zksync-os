@@ -217,11 +217,14 @@ pub fn encode_envelope_2718(env: &TxEnvelope) -> Vec<u8> {
             out.push(0x02);
             signed.rlp_encode(&mut out);
         }
+        EthereumTxEnvelope::Eip4844(signed) => {
+            out.push(0x03);
+            signed.rlp_encode(&mut out);
+        }
         EthereumTxEnvelope::Eip7702(signed) => {
             out.push(0x04);
             signed.rlp_encode(&mut out);
         }
-        _ => unimplemented!(),
     }
     out
 }
@@ -233,13 +236,19 @@ pub fn sign_and_encode_transaction_request(
     req: TransactionRequest,
     wallet: &PrivateKeySigner,
 ) -> EncodedTx {
-    let typed_tx = req.build_typed_tx().expect("Failed to build typed tx");
+    let typed_tx = if req.blob_versioned_hashes.is_some() {
+        req.build_4844_without_sidecar()
+            .expect("Failed to build 4844 tx")
+            .into()
+    } else {
+        req.build_typed_tx().expect("Failed to build typed tx")
+    };
     match typed_tx {
         TypedTransaction::Legacy(tx) => sign_and_encode_alloy_tx(tx, wallet),
         TypedTransaction::Eip1559(tx) => sign_and_encode_alloy_tx(tx, wallet),
         TypedTransaction::Eip7702(tx) => sign_and_encode_alloy_tx(tx, wallet),
         TypedTransaction::Eip2930(tx) => sign_and_encode_alloy_tx(tx, wallet),
-        TypedTransaction::Eip4844(_) => panic!("Unsupported tx type"),
+        TypedTransaction::Eip4844(tx) => sign_and_encode_alloy_tx(tx, wallet),
     }
 }
 

@@ -31,25 +31,13 @@ pub trait BasicBlockMetadata<IOTypes: SystemIOTypesConfig> {
     fn eip1559_basefee(&self) -> U256;
 
     /// Maximum number of blobs allowed per block (EIP-4844 style), if supported.
-    ///
-    /// Return `0` if blobs are unsupported.
-    fn max_blobs(&self) -> usize {
-        0
-    }
+    fn max_blobs(&self) -> usize;
 
     /// Block-level limit for blob gas (EIP-4844), if supported.
-    ///
-    /// Default is `u64::MAX`.
-    fn blobs_gas_limit(&self) -> u64 {
-        u64::MAX
-    }
+    fn blobs_gas_limit(&self) -> u64;
 
     /// Base fee per blob gas*(EIP-4844), if supported.
-    ///
-    /// Default is `0`.
-    fn blob_base_fee_per_gas(&self) -> U256 {
-        U256::ZERO
-    }
+    fn blob_base_fee_per_gas(&self) -> U256;
 }
 
 /// Transaction-level metadata describing the currently executing transaction.
@@ -62,14 +50,10 @@ pub trait BasicTransactionMetadata<IOTypes: SystemIOTypesConfig> {
     fn tx_gas_price(&self) -> U256;
 
     /// Number of EIP-4844 blobs carried by this transaction (if any).
-    fn num_blobs(&self) -> usize {
-        0
-    }
+    fn num_blobs(&self) -> usize;
 
     /// Hash (commitment) of the `idx`-th blob for this transaction, if present.
-    fn get_blob_hash(&self, _idx: usize) -> Option<Bytes32> {
-        None
-    }
+    fn get_blob_hash(&self, _idx: usize) -> Option<Bytes32>;
 }
 
 /// ZKsync-specific pricing knobs that are *not* standardized by Ethereum.

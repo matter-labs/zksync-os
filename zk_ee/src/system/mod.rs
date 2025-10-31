@@ -152,6 +152,14 @@ impl<S: SystemTypes> System<S> {
         self.metadata.eip1559_basefee()
     }
 
+    pub fn get_blob_base_fee_per_gas(&self) -> ruint::aliases::U256 {
+        self.metadata.blob_base_fee_per_gas()
+    }
+
+    pub fn get_blob_gas_limit(&self) -> u64 {
+        self.metadata.blobs_gas_limit()
+    }
+
     pub fn get_gas_limit(&self) -> u64 {
         self.metadata.block_gas_limit()
     }
@@ -162,6 +170,10 @@ impl<S: SystemTypes> System<S> {
 
     pub fn get_timestamp(&self) -> u64 {
         self.metadata.block_timestamp()
+    }
+
+    pub fn get_blob_hash(&self, idx: usize) -> Option<Bytes32> {
+        self.metadata.get_blob_hash(idx)
     }
 
     pub fn set_tx_context(

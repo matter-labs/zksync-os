@@ -91,15 +91,25 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         Ok(())
     }
 
-    pub fn blobhash(&mut self, _system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::BLOBHASH, 40)?;
-        let stack_top = self.stack.top_mut()?; // We ignore argument
-        *stack_top = U256::ZERO;
+    pub fn blobhash(&mut self, system: &mut System<S>) -> InstructionResult {
+        self.gas
+            .spend_gas_and_native(gas_constants::BLOBHASH, 100)?;
+        let stack_top = self.stack.top_mut()?;
+        if let Some(index) = u256_try_to_usize(&*stack_top) {
+            if let Some(blob_hash) = system.get_blob_hash(index) {
+                *stack_top = U256::from_be_bytes(blob_hash.as_u8_array());
+            } else {
+                *stack_top = U256::ZERO;
+            }
+        } else {
+            *stack_top = U256::ZERO;
+        }
+
         Ok(())
     }
 
-    pub fn blobbasefee(&mut self, _system: &mut System<S>) -> InstructionResult {
-        self.gas.spend_gas_and_native(gas_constants::BASE, 40)?;
-        self.stack.push(&U256::from(1))
+    pub fn blobbasefee(&mut self, system: &mut System<S>) -> InstructionResult {
+        self.gas.spend_gas_and_native(gas_constants::BASE, 100)?;
+        self.stack.push(&system.get_blob_base_fee_per_gas())
     }
 }

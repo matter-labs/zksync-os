@@ -16,6 +16,7 @@ use crate::bootloader::transaction_flow::{ExecutionOutput, ExecutionResult};
 use crate::bootloader::InvalidTransaction;
 use crate::bootloader::{BasicBootloader, BootloaderSubsystemError};
 use crate::require_internal;
+use arrayvec::ArrayVec;
 use core::fmt::Write;
 use ruint::aliases::{B160, U256};
 use zk_ee::common_structs::system_hooks::HooksStorage;
@@ -348,6 +349,7 @@ where
         computational_native_used,
         native_used,
         pubdata_used: pubdata_used + L1_TX_INTRINSIC_PUBDATA,
+        blob_gas_used: 0,
     })
 }
 
@@ -384,6 +386,7 @@ where
     system.set_tx_context(TxLevelMetadata {
         tx_gas_price: gas_price,
         tx_origin: from,
+        blobs: ArrayVec::new(),
     });
 
     // Start a frame, to revert minting of value if execution fails

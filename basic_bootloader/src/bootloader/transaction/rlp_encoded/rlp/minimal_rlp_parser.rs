@@ -284,7 +284,6 @@ impl<'a> RlpFixedItem<'a> for B160 {
 }
 
 // Lists of fixed-length items
-// To be used by 4844 txs.
 #[derive(Clone, Copy, Debug)]
 pub struct FixedList<'a, T: RlpFixedItem<'a>> {
     payload: &'a [u8], // concatenation of encoded items

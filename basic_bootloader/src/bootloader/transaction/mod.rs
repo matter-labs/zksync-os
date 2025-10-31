@@ -8,6 +8,7 @@
 //!
 
 use super::errors::TxError;
+use crate::bootloader::transaction::rlp_encoded::BlobHashesList;
 use crate::bootloader::BootloaderSubsystemError;
 use crate::bootloader::InvalidTransaction;
 use core::alloc::Allocator;
@@ -254,6 +255,22 @@ impl<A: Allocator> Transaction<A> {
         match self {
             Self::Abi(tx) => tx.len(),
             Self::Rlp(tx) => tx.len(),
+        }
+    }
+
+    /// Returns the max fee per blob gas, if present.
+    pub fn max_fee_per_blob_gas(&self) -> Option<&U256> {
+        match self {
+            Self::Abi(_) => None,
+            Self::Rlp(tx) => tx.max_fee_per_blob_gas(),
+        }
+    }
+
+    /// Returns the list of blob hashes, if present.
+    pub fn blobs<'a>(&'a self) -> Option<BlobHashesList<'a>> {
+        match self {
+            Self::Abi(_) => None,
+            Self::Rlp(tx) => tx.blobs_list(),
         }
     }
 }

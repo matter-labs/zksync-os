@@ -2,6 +2,7 @@ use super::TxContextForPreAndPostProcessing;
 use crate::bootloader::constants::*;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::access_list::parse_and_warm_up_access_list;
+use crate::bootloader::transaction::rlp_encoded::BlobHashesList;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
 use crate::bootloader::transaction_flow::gas_helpers::{create_resources_for_tx, get_gas_price};
 use crate::bootloader::BasicBootloaderExecutionConfig;
@@ -16,14 +17,17 @@ use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
-use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
+use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
+use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
+use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::resources::Computational;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, EthereumLikeTypes, System};
-use zk_ee::system::{AccountDataRequest, SystemFunctions};
+use zk_ee::system::{AccountDataRequest, SystemFunctions, VERSIONED_HASH_VERSION_KZG};
 use zk_ee::system::{Ergs, IOSubsystemExt, Resources};
 use zk_ee::system::{IOSubsystem, NonceError};
 use zk_ee::system::{Resource, SystemTypes};
+use zk_ee::system::{GAS_PER_BLOB, MAX_BLOBS_PER_BLOCK};
 use zk_ee::system_log;
 use zk_ee::{internal_error, out_of_native_resources};
 use zk_ee::{utils::*, wrap_error};
@@ -44,7 +48,8 @@ pub(crate) fn validate_and_compute_fee_for_transaction<
 ) -> Result<TxContextForPreAndPostProcessing<S>, TxError>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata,
+    S::Metadata: ZkSpecificPricingMetadata
+        + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
 {
     // NOTE: this function checks the transaction validity a-la Ethereum one,
     // but also takes into account ZK/L2 specific pieces, such as pubdata in state-diffs model,
@@ -291,6 +296,30 @@ where
     // Access list
     parse_and_warm_up_access_list(system, &mut tx_resources.main_resources, &transaction)?;
 
+    // Parse blobs, if any
+    // No need to feature gate this part, as blobs() should return an empty list
+    // for non-EIP4844 transactions.
+    let blobs = if let Some(blobs_list) = transaction.blobs() {
+        let tx_max_fee_per_blob_gas = transaction.max_fee_per_blob_gas().ok_or(internal_error!(
+            "Tx with blobs must define max_fee_per_blob_gas"
+        ))?;
+        let block_base_fee_per_blob_gas = system.get_blob_base_fee_per_gas();
+        if &block_base_fee_per_blob_gas > tx_max_fee_per_blob_gas {
+            return Err(TxError::Validation(
+                InvalidTransaction::BlobBaseFeeGreaterThanMaxFeePerBlobGas,
+            ));
+        }
+
+        match parse_blobs_list::<MAX_BLOBS_PER_BLOCK>(blobs_list) {
+            Ok(blobs) => blobs,
+            Err(e) => {
+                return Err(e);
+            }
+        }
+    } else {
+        arrayvec::ArrayVec::new()
+    };
+
     // Now we can apply access list and authorization list, while simultaneously charging for them
     // Parse, validate and apply authorization list, following EIP-7702
     #[cfg(feature = "eip-7702")]
@@ -319,14 +348,48 @@ where
         ));
     }
 
+    system.set_tx_context(TxLevelMetadata {
+        tx_origin: *transaction.from(),
+        tx_gas_price: gas_price,
+        blobs,
+    });
+
     // But the fee to charge is based on current block context, and not worst case of max fee (backward-compatible manner)
-    let fee_amount = gas_price
+    let gas_fee_amount = gas_price
         .checked_mul(U256::from(tx_gas_limit))
         .ok_or(internal_error!("gas price by tx gas limit"))?;
 
+    // Note: no need to feature gate this part, as for non-EIP4844 transactions
+    // num_blobs will be 0.
+    let num_blobs = system.metadata.num_blobs();
+    // NOTE: it's a special resource - not transaction gas. Will be used to charge fee only
+    let blob_gas_used = num_blobs as u64 * GAS_PER_BLOB;
+    let fee_for_blob_gas = if blob_gas_used > 0 {
+        let _ = system.get_logger().write_fmt(format_args!(
+            "Blob gas price = {}\n",
+            &system.get_blob_base_fee_per_gas()
+        ));
+
+        let Some(value) = system
+            .get_blob_base_fee_per_gas()
+            .checked_mul(U256::from(blob_gas_used))
+        else {
+            return Err(TxError::Validation(
+                InvalidTransaction::OverflowPaymentInTransaction,
+            ));
+        };
+
+        value
+    } else {
+        U256::ZERO
+    };
+    let fee_to_prepay = gas_fee_amount
+        .checked_add(fee_for_blob_gas)
+        .ok_or(internal_error!("gfa+ffbg"))?;
+
     Ok(TxContextForPreAndPostProcessing {
         resources: tx_resources,
-        fee_to_prepay: fee_amount,
+        fee_to_prepay,
         gas_price,
         minimal_ergs_to_charge: Ergs(minimal_gas_used.saturating_mul(ERGS_PER_GAS)),
         originator_nonce_to_use: old_nonce,
@@ -373,4 +436,35 @@ pub(crate) fn compute_calldata_tokens(calldata: &[u8]) -> (u64, u64) {
     {
         (num_tokens, L2_TX_INTRINSIC_GAS)
     }
+}
+
+pub fn parse_blobs_list<const MAX_BLOBS_IN_TX: usize>(
+    blobs_list: BlobHashesList<'_>,
+) -> Result<arrayvec::ArrayVec<Bytes32, MAX_BLOBS_IN_TX>, TxError> {
+    let mut result = arrayvec::ArrayVec::<_, MAX_BLOBS_IN_TX>::new();
+    if blobs_list.count > MAX_BLOBS_IN_TX {
+        return Err(TxError::Validation(InvalidTransaction::BlobListTooLong));
+    }
+
+    for blob_hash in blobs_list.iter() {
+        let blob_hash = blob_hash?;
+
+        if blob_hash[0] != VERSIONED_HASH_VERSION_KZG {
+            return Err(TxError::Validation(
+                InvalidTransaction::BlobElementIsNotSupported,
+            ));
+        }
+
+        // NOTE: we do NOT check that this blob hash is meaningful - we are not worried about block validity
+        // from consensus perspective. And KZG blob precompile requires explicit preimage anyway
+        let blob_hash = Bytes32::from_array(*blob_hash);
+        result.push(blob_hash);
+    }
+
+    if result.is_empty() {
+        // transactions that allow blobs should have at least one
+        return Err(TxError::Validation(InvalidTransaction::EmptyBlobList));
+    }
+
+    Ok(result)
 }
