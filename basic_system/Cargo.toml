@@ -19,7 +19,7 @@ either = { version = "*", default-features = false }
 storage_models = { path = "../storage_models", default-features = false }
 modexp = { path = "../supporting_crates/modexp" }
 cycle_marker = { path = "../cycle_marker" }
-num-bigint = { version =  "*", optional = true}
+num-bigint = { version =  "0.4", optional = true}
 num-traits = { version =  "*", optional = true}
 
 cfg-if = "1.0.0"
