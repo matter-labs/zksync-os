@@ -20,7 +20,7 @@ blake2s_u32 = { workspace = true, optional = true, default-features = false }
 ripemd = { version = "0.1", default-features = false }
 ruint = { version = "1.12.4", default-features = false }
 
-cfg-if = "1.0.0"
+cfg-if = "1.0.4"
 const_for = "0.1.5"
 
 # zeroize = { version = "1", default-features = false, optional = true }
