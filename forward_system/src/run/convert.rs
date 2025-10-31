@@ -30,7 +30,7 @@ impl FromInterface<BlockContext> for BlockMetadataFromOracle {
             gas_limit: value.gas_limit,
             pubdata_limit: value.pubdata_limit,
             mix_hash: value.mix_hash,
-            blob_fee: todo!(),
+            blob_fee: value.blob_fee,
         }
     }
 }
@@ -75,6 +75,11 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockL2ToL1LogsLimitReached => { InvalidTransaction::BlockL2ToL1LogsLimitReached }
             basic_bootloader::bootloader::errors::InvalidTransaction::AuthListIsEmpty => {InvalidTransaction::AuthListIsEmpty}
             basic_bootloader::bootloader::errors::InvalidTransaction::EIP7702HasNullDestination => {InvalidTransaction::EIP7702HasNullDestination}
+            basic_bootloader::bootloader::errors::InvalidTransaction::BlockBlobGasLimitReached => {InvalidTransaction::BlockBlobGasLimitReached}
+            basic_bootloader::bootloader::errors::InvalidTransaction::BlobBaseFeeGreaterThanMaxFeePerBlobGas => {InvalidTransaction::BlobBaseFeeGreaterThanMaxFeePerBlobGas}
+            basic_bootloader::bootloader::errors::InvalidTransaction::BlobListTooLong => {InvalidTransaction::BlobListTooLong}
+            basic_bootloader::bootloader::errors::InvalidTransaction::EmptyBlobList => {InvalidTransaction::EmptyBlobList}
+            basic_bootloader::bootloader::errors::InvalidTransaction::BlobElementIsNotSupported => {InvalidTransaction::BlobElementIsNotSupported}
             // TODO: add missing errors to interface
             _ => todo!()
         }
