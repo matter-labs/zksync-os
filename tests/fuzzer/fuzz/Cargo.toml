@@ -265,3 +265,31 @@ path = "fuzz_targets/precompiles_diff/sha256.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "precompiles_diff_keccak256"
+path = "fuzz_targets/precompiles_diff/sha256.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "precompiles_diff_ripemd160"
+path = "fuzz_targets/precompiles_diff/sha256.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "precompiles_diff_ecmul"
+path = "fuzz_targets/precompiles_diff/ecmul.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "precompiles_diff_modexp"
+path = "fuzz_targets/precompiles_diff/modexp.rs"
+test = false
+doc = false
+bench = false

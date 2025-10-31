@@ -66,7 +66,7 @@ cleanup() {
 
   # Minimize corpus for the current target
   if [[ -n "${target:-}" ]]; then
-    cargo fuzz cmin "$target" "$corpus" -- -merge=1
+    cargo fuzz cmin "$target" "$corpus/$target" -- -merge=1
   fi
 }
 
