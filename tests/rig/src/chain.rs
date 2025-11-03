@@ -831,7 +831,7 @@ fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
     zksync_os_path.join(filename)
 }
 
-fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {
+pub fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {
     get_zksync_os_path(app_name, "bin")
 }
 

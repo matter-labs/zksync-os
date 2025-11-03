@@ -30,9 +30,11 @@ csv = "1.3"
 # zerocopy 0.8.29 introduced a compilation issue, remove this
 # when the compilation issue is resolved
 zerocopy = { version = "=0.8.28" }
-
+reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"] }
 
 [features]
 simulate_witness_gen = ["rig/simulate_witness_gen"]
+proving = ["rig/airbender_cli"]
+gpu = ["rig/gpu"]
 default = []
 
