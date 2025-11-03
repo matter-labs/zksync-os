@@ -1,6 +1,7 @@
 use crate::test::case::transaction::encode_transaction;
 use crate::utils::*;
 use alloy::primitives::*;
+use core::panic;
 use std::cmp::min;
 use std::str::FromStr;
 use zk_ee::utils::u256_to_u64_saturated;
@@ -17,6 +18,8 @@ use zksync_os_rig::Chain;
 
 use crate::test::case::transaction::Transaction;
 
+use super::execution_result;
+
 // mod transaction;
 
 #[derive(Clone, Default)]
@@ -30,6 +33,7 @@ pub struct ZKsyncOSEVMContext {
     pub base_fee: U256,
     pub tx_origin: Address,
     pub mix_hash: U256,
+    pub blob_fee: U256,
 }
 
 ///
@@ -92,6 +96,7 @@ impl ZKsyncOS {
             coinbase: ruint::Bits::try_from_be_slice(system_context.coinbase.as_slice())
                 .expect("Invalid coinbase"),
             mix_hash: system_context.mix_hash,
+            blob_fee: system_context.blob_fee,
         };
 
         let run_config = RunConfig {
@@ -113,6 +118,10 @@ impl ZKsyncOS {
     ) -> anyhow::Result<Vec<ZKsyncOSTxExecutionResult>, String> {
         match result {
             Ok(result) => {
+                if result.tx_results.iter().any(|r| r.as_ref().is_err()) {
+                    // If any tx is invalid, the tests consider the entire block as invalid
+                    return Err("Invalid tx".to_string());
+                }
                 let mut results = vec![];
                 for tx_result in result.tx_results {
                     let r = Self::get_transaction_execution_result(tx_result)?;
