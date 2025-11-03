@@ -1,6 +1,11 @@
-# Transaction format
+# Transaction formats
 
-ZKsyncOS expects transactions with the following fields:
+ZKsyncOS transactions have two encoding formats:
+
+1. ABI-encoded: used for L1->L2 transactions, upgrade transactions and 712 transactions. This format is defined in the next section.
+2. RLP-encoded: used for L2 transactions. These follow the standard Ethereum RLP encoding for legacy, EIP-2930, EIP-1559 and EIP-7702 transactions.
+
+## ABI-encoded ZKsync-specific transactions
 
 | Field                     | Type         | Description                                                                                                                                                                                                                     |
 |---------------------------|--------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -19,16 +24,14 @@ ZKsyncOS expects transactions with the following fields:
 | `signature`               | `bytes`      | Signature of the transaction.                                                                                                                                                                                                   |
 | `factory_deps`            | `bytes`      | Only for EraVM. Properly formatted hashes of bytecodes to be published on L1 with this transaction. Previously published bytecodes won't incur additional fees.                                                                  |
 | `paymaster_input`         | `bytes`      | Input for the paymaster. Legacy field, unused currently.                                                                                                                                                                                                        |
-| `reserved_dynamic`        | `bytes`      | Field used for extra functionality.  Currently, it's used for access and authorization lists. The field is encoded as a list, to be able to extend it in the future. The field is encoded a the ABI encoding of a bytestring containing the ABI encoding of the list itself. Currently the list contains 2 elements. First, the access list: encoded as `tuple(address, bytes32[])[]`, i.e. a list of (address, keys) pairs. Second, the authorization list: encoded as `tuple(chain_id, address, nonce, y_parity, r, s)[]`.                                                  |
+| `reserved_dynamic`        | `bytes`      | Field used for extra functionality.                                                  |
 
 ### Transaction Types
 
+Note that transaction types 0,1,2 and 4 are used for RLP-encoded L2 transactions, representing legacy, EIP-2930, EIP-1559 and EIP-7702 transactions.s
+
 | Value   | Description                                                                                       |
 |---------|---------------------------------------------------------------------------------------------------|
-| `0x0`   | Legacy transaction.                                                                              |
-| `0x1`   | EIP-2930 transaction.                                                                            |
-| `0x2`   | EIP-1559 transaction.                                                                            |
-| `0x4`   | EIP-7702 transaction.                                                                            |
 | `0x71`  | EIP-712 transaction following the [Era format](https://docs.zksync.io/zksync-protocol/rollup/transaction-lifecycle#eip-712-0x71). |
 | `0x7E`  | Upgrade transaction.                                                                             |
 | `0x7F`  | L1 -> L2 transaction.                                                                            |
@@ -42,4 +45,4 @@ ZKsyncOS expects transactions with the following fields:
 | `2`     | Reserved for future use.                                                                    | Reserved for future use.                                                                    |
 | `3`     | Reserved for future use.                                                                    | Reserved for future use.                                                                    |
 
-Transactions are encoded using the tightly packed ABI encoding for this list of fields. All numeric types are encoded as big-endian `U256`. Encoding and hashing of transactions is implemented in this [module](../../basic_bootloader/src/bootloader/transaction/mod.rs).
+These transactions are encoded using the tightly packed ABI encoding for this list of fields. All numeric types are encoded as big-endian `U256`. Encoding and hashing of transactions is implemented in this [module](../../basic_bootloader/src/bootloader/transaction/abi_encoded/mod.rs).
