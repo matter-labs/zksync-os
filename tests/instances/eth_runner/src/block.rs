@@ -34,8 +34,14 @@ impl Block {
         }
     }
 
-    pub fn get_transactions(self, calltrace: &CallTrace) -> (Vec<EncodedTx>, HashSet<usize>) {
+    /// Returns (transactions, skipped, has_call_to_unsupported_precompile)
+    pub fn get_transactions(
+        self,
+        calltrace: &CallTrace,
+        single_tx: Option<u64>,
+    ) -> (Vec<EncodedTx>, HashSet<usize>, bool) {
         let mut skipped: HashSet<usize> = HashSet::new();
+        let mut has_call_to_unsupported_precompile = false;
         (
             self.result
                 .transactions
