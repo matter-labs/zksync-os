@@ -330,6 +330,17 @@ fn zksync_os_output_into_account_state(
     Ok(updates)
 }
 
+fn compute_tx_rolling_hash_for_receipts(receipts: &Vec<TransactionReceipt>) -> [u8; 32] {
+    let mut hasher = rig::crypto::sha3::Keccak256::new();
+    let mut tx_rolling_hash = [0u8; 32];
+    for receipt in receipts {
+        hasher.update(tx_rolling_hash);
+        hasher.update(receipt.transaction_hash);
+        tx_rolling_hash = hasher.finalize_reset();
+    }
+    tx_rolling_hash
+}
+
 pub fn post_check(
     output: BlockOutput,
     receipts: Vec<TransactionReceipt>,
@@ -339,6 +350,17 @@ pub fn post_check(
 ) -> Result<(), PostCheckError> {
     fn u256_to_usize(src: &U256) -> usize {
         zk_ee::utils::u256_to_u64_saturated(src) as usize
+    }
+
+    let reference_rolling_tx_hash = compute_tx_rolling_hash_for_receipts(&receipts);
+    let zksync_os_tx_rolling_hash = output.header.inner().transactions_root.0;
+    if reference_rolling_tx_hash != zksync_os_tx_rolling_hash {
+        error!(
+            "Transaction rolling hash mismatch, reference {}, got {}",
+            hex::encode(reference_rolling_tx_hash),
+            hex::encode(zksync_os_tx_rolling_hash)
+        );
+        return Err(PostCheckError::BadTxRollingHash);
     }
 
     for (res, receipt) in output.tx_results.iter().zip(receipts.iter()) {
