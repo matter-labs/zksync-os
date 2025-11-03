@@ -25,7 +25,7 @@ impl Block {
             timestamp: self.result.header.timestamp,
             eip1559_basefee: base_fee,
             pubdata_price: U256::ZERO,
-            native_price: base_fee / U256::from(100),
+            native_price: (base_fee / U256::from(100)).max(U256::ONE),
             coinbase: B160::from_be_bytes(self.result.header.beneficiary.0 .0),
             gas_limit: self.result.header.gas_limit,
             pubdata_limit: u64::MAX,
