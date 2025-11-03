@@ -110,9 +110,15 @@ fn run_block(
     info!("\n ===================");
     info!("Running block: {block_number}");
 
-    let miner = block.result.header.beneficiary;
     let block_context = block.get_block_context();
-    let (transactions, skipped) = block.get_transactions(&call);
+    let (transactions, skipped, calls_unsupported_precompile) =
+        block.get_transactions(&call, single_tx);
+    if calls_unsupported_precompile {
+        // Here it makes little sense to run the block, as the post check is gonna fail
+        // We just skip it, marking it as successful
+        warn!("Skipping block {block_number}, as it calls to an unsupported precompile");
+        return Ok(BlockStatus::Success);
+    }
     info!("Transactions to run: {}", transactions.len());
 
     let receipts: Vec<TransactionReceipt> = receipts

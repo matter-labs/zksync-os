@@ -50,11 +50,14 @@ impl Block {
                 .zip(calltrace.result.iter())
                 .filter_map(|((i, tx), calltrace)| {
                     // Skip unsupported txs or tx that call into unsupported precompiles
-                    let calls_unsupported_percompile =
-                        || calltrace.result.has_call_to_unsupported_precompile();
+
                     let transaction_type = tx.ty();
-                    let supported_tx_type = transaction_type <= 2;
-                    if supported_tx_type && !calls_unsupported_percompile() {
+                    let supported_tx_type = transaction_type <= 3;
+                    let single_tx_cond = single_tx.is_none_or(|idx| idx as usize == i);
+                    let unsupported_precompile =
+                        calltrace.result.has_call_to_unsupported_precompile();
+                    has_call_to_unsupported_precompile |= unsupported_precompile;
+                    if single_tx_cond && supported_tx_type && !unsupported_precompile {
                         Some(encode_alloy_rpc_tx(tx))
                     } else {
                         warn!("Skipping unsupported transaction of type {transaction_type:?}");
@@ -64,6 +67,7 @@ impl Block {
                 })
                 .collect(),
             skipped,
+            has_call_to_unsupported_precompile,
         )
     }
 }
