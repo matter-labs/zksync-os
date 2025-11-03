@@ -1,6 +1,8 @@
 use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
+use alloy::consensus::error;
 use alloy::hex;
+use rig::crypto::MiniDigest;
 use rig::log::{error, info};
 use rig::zksync_os_interface::types::BlockOutput;
 use ruint::aliases::{B160, B256, U256};
@@ -10,11 +12,20 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum PostCheckError {
-    InvalidTx { id: TxId },
+    InvalidTx { id: TxId, msg: String },
     TxShouldHaveFailed { id: TxId },
     IncorrectLogs { id: TxId },
     GasMismatch { id: TxId },
-    Internal,
+    BadTxRollingHash,
+    Internal { msg: String },
+}
+
+macro_rules! error_internal {
+    ($($arg:tt)*) => {{
+        let __msg = format!($($arg)*);
+        error!("{}", __msg);
+        return Err(PostCheckError::Internal { msg: __msg });
+    }};
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -25,55 +36,53 @@ pub enum TxId {
 }
 
 impl DiffTrace {
-    fn collect_diffs(self, prestate_cache: &Cache, miner: B160) -> HashMap<B160, AccountState> {
+    fn collect_diffs(self, prestate_cache: &Cache) -> HashMap<B160, AccountState> {
         let mut updates: HashMap<B160, AccountState> = HashMap::new();
         self.result.iter().for_each(|item| {
             item.result.post.iter().for_each(|(address, account)| {
-                if address.0 != miner {
-                    let entry = updates.entry(address.0).or_default();
-                    account
-                        .balance
-                        .into_iter()
-                        .for_each(|bal| entry.balance = Some(bal));
-                    account
-                        .nonce
-                        .into_iter()
-                        .for_each(|x| entry.nonce = Some(x));
-                    account
-                        .code
-                        .clone()
-                        .into_iter()
-                        .for_each(|x| entry.code = Some(x));
+                let entry = updates.entry(address.0).or_default();
+                account
+                    .balance
+                    .into_iter()
+                    .for_each(|bal| entry.balance = Some(bal));
+                account
+                    .nonce
+                    .into_iter()
+                    .for_each(|x| entry.nonce = Some(x));
+                account
+                    .code
+                    .clone()
+                    .into_iter()
+                    .for_each(|x| entry.code = Some(x));
 
-                    // Populate storage slot clears (slots present in pre but
-                    // absent in post). Write 0 to them.
-                    if let Some(pre_account) = item.result.pre.get(address) {
-                        if let Some(pre_storage) = pre_account.storage.as_ref() {
-                            let cleared_keys = pre_storage.keys().filter(|k| {
-                                account
-                                    .storage
-                                    .as_ref()
-                                    .is_none_or(|post_storage| !post_storage.contains_key(k))
-                            });
-                            let entry_storage = entry.storage.get_or_insert_default();
-                            cleared_keys.into_iter().for_each(|key| {
-                                entry_storage.insert(*key, B256::ZERO);
-                            })
-                        }
-                    }
-
-                    // Populate storage slot writes
-                    if let Some(storage) = account.storage.as_ref() {
+                // Populate storage slot clears (slots present in pre but
+                // absent in post). Write 0 to them.
+                if let Some(pre_account) = item.result.pre.get(address) {
+                    if let Some(pre_storage) = pre_account.storage.as_ref() {
+                        let cleared_keys = pre_storage.keys().filter(|k| {
+                            account
+                                .storage
+                                .as_ref()
+                                .is_none_or(|post_storage| !post_storage.contains_key(k))
+                        });
                         let entry_storage = entry.storage.get_or_insert_default();
-                        storage.iter().for_each(|(key, value)| {
-                            entry_storage.insert(*key, *value);
+                        cleared_keys.into_iter().for_each(|key| {
+                            entry_storage.insert(*key, B256::ZERO);
                         })
                     }
+                }
+
+                // Populate storage slot writes
+                if let Some(storage) = account.storage.as_ref() {
+                    let entry_storage = entry.storage.get_or_insert_default();
+                    storage.iter().for_each(|(key, value)| {
+                        entry_storage.insert(*key, *value);
+                    })
                 }
             });
             // Add account clears
             item.result.pre.iter().for_each(|(address, _)| {
-                if address.0 != miner && !updates.contains_key(&address.0) {
+                if !updates.contains_key(&address.0) {
                     let acc = AccountState {
                         balance: Some(U256::ZERO),
                         ..Default::default()
@@ -119,9 +128,8 @@ impl DiffTrace {
         self,
         output: BlockOutput,
         prestate_cache: Cache,
-        miner: B160,
     ) -> Result<(), PostCheckError> {
-        let diffs = self.collect_diffs(&prestate_cache, miner);
+        let diffs = self.collect_diffs(&prestate_cache);
         let zksync_os_diffs = zksync_os_output_into_account_state(output, &prestate_cache)?;
 
         // Reference => ZKsync OS check:
@@ -129,67 +137,60 @@ impl DiffTrace {
             let zk_account = match zksync_os_diffs.get(address) {
                 Some(v) => v,
                 None => {
-                    error!(
+                    error_internal!(
                         "ZKsync OS must have write for account {} {:?}",
                         hex::encode(address.to_be_bytes_vec()),
                         account
-                    );
-                    return Err(PostCheckError::Internal);
+                    )
                 }
             };
             if let Some(bal) = account.balance {
-                // Balance might differ due to refunds and access list gas charging
                 if Some(bal) != zk_account.balance {
-                    error!(
+                    error_internal!(
                         "Balance for {} is {:?} but expected {:?}.\n  Difference: {:?}",
                         hex::encode(address.to_be_bytes_vec()),
                         zk_account.balance,
                         bal,
                         zk_account.balance.unwrap_or(U256::ZERO).abs_diff(bal),
-                    );
-                    return Err(PostCheckError::Internal);
+                    )
                 };
             }
             if let Some(nonce) = account.nonce {
                 if nonce != zk_account.nonce.unwrap() {
-                    error!(
+                    error_internal!(
                         "Nonce for address {} differed. ZKsync OS: {:?}, reference: {:?}",
                         hex::encode(address.to_be_bytes_vec()),
                         zk_account.nonce.unwrap(),
                         nonce
-                    );
-                    return Err(PostCheckError::Internal);
+                    )
                 }
             }
             if account.code.is_some() && account.code != zk_account.code {
-                error!(
+                error_internal!(
                     "Code for address {} differed. ZKsync OS: {}, reference: {}",
                     hex::encode(address.to_be_bytes_vec()),
                     hex::encode(zk_account.code.as_ref().unwrap_or_default()),
                     hex::encode(account.code.as_ref().unwrap_or_default())
-                );
-                return Err(PostCheckError::Internal);
+                )
             }
             if let Some(storage) = &account.storage {
                 for (key, value) in storage {
                     let zksync_os_value = match zk_account.storage.as_ref().unwrap().get(key) {
                         Some(v) => v,
                         None => {
-                            error!(
+                            error_internal!(
                                 "Should have value for slot {} at address {}",
                                 key,
                                 hex::encode(address.to_be_bytes_vec())
-                            );
-                            return Err(PostCheckError::Internal);
+                            )
                         }
                     };
                     if value != zksync_os_value {
-                        error!(
+                        error_internal!(
                           "Value for slot {} at address {} differed. ZKsync OS: {:?}, reference: {:?}",
                           key,
                           hex::encode(address.to_be_bytes_vec()),
-                          zksync_os_value, value);
-                        return Err(PostCheckError::Internal);
+                          zksync_os_value, value)
                     }
                 }
 
@@ -197,8 +198,7 @@ impl DiffTrace {
                     // In the diff trace, slot clearing is not present in post,
                     // so we have to allow the case when v == 0.
                     if !(v.as_uint().is_zero() || storage.contains_key(k)) {
-                        error!("Key {k:?} for {address:?} not present in reference");
-                        return Err(PostCheckError::Internal);
+                        error_internal!("Key {k:?} for {address:?} not present in reference")
                     }
                 }
             }
@@ -208,7 +208,7 @@ impl DiffTrace {
         for (address, acc) in zksync_os_diffs.iter() {
             // Just check that it's part of the reference diffs,
             // all else should be checked already
-            if address != &miner && !acc.is_empty() {
+            if !acc.is_empty() {
                 match diffs.get(address) {
                     Some(_) => (),
                     None => {
@@ -220,12 +220,11 @@ impl DiffTrace {
                             acc,
                             &prestate_cache,
                         ) {
-                            error!(
+                            error_internal!(
                                 "Reference must have write for account {} {:?}",
                                 hex::encode(address.to_be_bytes_vec()),
                                 acc
-                            );
-                            return Err(PostCheckError::Internal);
+                            )
                         }
                     }
                 }
@@ -279,8 +278,7 @@ fn zksync_os_output_into_account_state(
                 let encoded = match preimages.get(w.value.as_slice()) {
                     Some(x) => x.clone(),
                     None => {
-                        error!("Must contain preimage for account {address:#?}");
-                        return Err(PostCheckError::Internal);
+                        error_internal!("Must contain preimage for account {address:#?}")
                     }
                 };
                 AccountProperties::decode(&encoded.try_into().unwrap())
@@ -346,7 +344,6 @@ pub fn post_check(
     receipts: Vec<TransactionReceipt>,
     diff_trace: DiffTrace,
     prestate_cache: Cache,
-    miner: B160,
 ) -> Result<(), PostCheckError> {
     fn u256_to_usize(src: &U256) -> usize {
         zk_ee::utils::u256_to_u64_saturated(src) as usize
@@ -373,6 +370,7 @@ pub fn post_check(
                 );
                 return Err(PostCheckError::InvalidTx {
                     id: TxId::Hash(receipt.transaction_hash.to_string()),
+                    msg: format!(":e#?"),
                 });
             }
         };
@@ -384,6 +382,7 @@ pub fn post_check(
                 );
                 return Err(PostCheckError::InvalidTx {
                     id: TxId::Index(u256_to_usize(&receipt.transaction_index)),
+                    msg: "Should have succeeded".to_string(),
                 });
             };
         } else if receipt.status == Some(alloy::primitives::U256::ZERO) && res.is_success() {
@@ -439,7 +438,7 @@ pub fn post_check(
         }
     }
 
-    diff_trace.check_storage_writes(output, prestate_cache, miner)?;
+    diff_trace.check_storage_writes(output, prestate_cache)?;
 
     info!("All good!");
     Ok(())
