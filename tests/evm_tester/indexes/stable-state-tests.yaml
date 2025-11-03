@@ -110,35 +110,34 @@ entries:
             enabled: true
       eip4844_blobs:
         enabled: true
-        comment: Blobs are not supported
         entries:
           test_blob_gas_subtraction_tx.json:
             hash: '0x7eea1187ec53de582e8ea431f6cb5879'
-            enabled: false
+            enabled: true
           test_blob_tx_attribute_calldata_opcodes.json:
             hash: '0xf6ea83a6b8f6b94f42a4753f3de82672'
-            enabled: false
+            enabled: true
           test_blob_tx_attribute_gasprice_opcode.json:
             hash: '0xbd0280a3958bf18d0581b49d253828c1'
-            enabled: false
+            enabled: true
           test_blob_tx_attribute_opcodes.json:
             hash: '0xd0e1a89464e41822aa3d635cf45785b7'
-            enabled: false
+            enabled: true
           test_blob_tx_attribute_value_opcode.json:
             hash: '0x0f8d1334a4b8e9dffc9ca7294c21ae0f'
-            enabled: false
+            enabled: true
           test_blob_type_tx_pre_fork.json:
             hash: '0x2c4e316399e5ae0378bd530c29bfabd1'
-            enabled: false
+            enabled: true
           test_blobhash_gas_cost.json:
             hash: '0xe40e8964669599b90f2d9768b8218cf2'
-            enabled: false
+            enabled: true
           test_blobhash_opcode_contexts.json:
             hash: '0xa93bc9df7033ad4b4f5c1df522d64ef8'
-            enabled: false
+            enabled: true
           test_blobhash_opcode_contexts_tx_types.json:
             hash: '0x1a937bef99d1cca44f19f0b2e0f99bff'
-            enabled: false
+            enabled: true
           test_call_opcode_types.json:
             hash: '0xd45b831003250fc57669a26b9a17343b'
             enabled: true
@@ -147,10 +146,10 @@ entries:
             enabled: true
           test_insufficient_balance_blob_tx.json:
             hash: '0x3970a62a13e7cdf7cb139c95e20f12eb'
-            enabled: false
+            enabled: true
           test_invalid_blob_hash_versioning_single_tx.json:
             hash: '0xde1618610763bd5d0c34c0108c854beb'
-            enabled: false
+            enabled: true
           test_invalid_inputs.json:
             hash: '0x17a27c87f38375ef4a6875336f57382c'
             enabled: true
@@ -159,10 +158,10 @@ entries:
             enabled: true
           test_invalid_tx_blob_count.json:
             hash: '0x06c329a3219cc59f8a7c286d5cac8d70'
-            enabled: false
+            enabled: true
           test_invalid_tx_max_fee_per_blob_gas_state.json:
             hash: '0xff779d18addc1da4c2284ce60ff6135a'
-            enabled: false
+            enabled: true
           test_point_evaluation_precompile_gas_usage.json:
             hash: '0xcf52e62f3b702fa3c058ce69917174bc'
             enabled: true
@@ -171,7 +170,7 @@ entries:
             enabled: true
           test_sufficient_balance_blob_tx.json:
             hash: '0x6fd7a46d20105fd55426e5d525562cf2'
-            enabled: false
+            enabled: true
           test_tx_entry_point.json:
             hash: '0x98e271874e88382cb132a0e25112d2b2'
             enabled: true
