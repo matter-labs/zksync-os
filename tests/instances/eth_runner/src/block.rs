@@ -15,6 +15,12 @@ pub struct Block {
 impl Block {
     pub fn get_block_context(&self) -> rig::BlockContext {
         let base_fee = U256::from(self.result.header.base_fee_per_gas.unwrap_or(1000));
+        let blob_fee = self
+            .result
+            .header
+            .blob_fee()
+            .map(U256::from)
+            .unwrap_or(U256::MAX);
         rig::BlockContext {
             timestamp: self.result.header.timestamp,
             eip1559_basefee: base_fee,
@@ -24,6 +30,7 @@ impl Block {
             gas_limit: self.result.header.gas_limit,
             pubdata_limit: u64::MAX,
             mix_hash: U256::from_be_bytes(self.result.header.mix_hash.0),
+            blob_fee,
         }
     }
 
