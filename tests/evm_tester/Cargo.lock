@@ -8781,15 +8781,15 @@ dependencies = [
 
 [[package]]
 name = "zksync_os_evm_errors"
-version = "0.0.8"
+version = "0.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95ddc4ac82441385017e569ee1b060502a2af4d78c4fb7b24bcee70b0b96e6a3"
+checksum = "12685073683de64e01a87b0f0a8c1e11df2ea3d6dc3846f1320153ef2fe499ed"
 
 [[package]]
 name = "zksync_os_interface"
-version = "0.0.8"
+version = "0.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "419c83b063e48b1aee60a5022cc51acaac10adc0e54a1e777a3442c3ff22b122"
+checksum = "f4dc1ea70bb0c23682a0e0b88ba7ed17656257de2e00bc0f75784c3053a178d5"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
