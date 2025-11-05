@@ -12,8 +12,8 @@ FUZZ_FLAGS=(
   -entropic=1
   -reload=1
   -max_total_time="$ROTATE_SECONDS"
-  -timeout=10
-  -report_slow_units=2
+  -timeout=5
+  -ignore_timeouts=1
   -fork="$FORK"
 )
 

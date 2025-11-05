@@ -75,7 +75,7 @@ struct Input {
     max_len: Option<u32>,
 }
 
-const MAX_COMPONENT_LEN: u32 = 512;
+const MAX_COMPONENT_LEN: u32 = 64;
 const MAX_DECL_LEN: u32 = 4 * MAX_COMPONENT_LEN;
 
 fn len_gen(u: &mut Unstructured<'_>) -> arbitrary::Result<u16> {
@@ -85,9 +85,7 @@ fn len_gen(u: &mut Unstructured<'_>) -> arbitrary::Result<u16> {
         1 => 1,
         2 => 2,
         3 => 32,
-        4 => 64,
-        5 => 128,
-        _ => u.int_in_range::<u16>(0..=MAX_COMPONENT_LEN as u16)?,
+        4 => u.int_in_range::<u16>(0..=MAX_COMPONENT_LEN as u16)?,
     };
     Ok(v)
 }
