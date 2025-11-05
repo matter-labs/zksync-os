@@ -85,7 +85,7 @@ fn len_gen(u: &mut Unstructured<'_>) -> arbitrary::Result<u16> {
         1 => 1,
         2 => 2,
         3 => 32,
-        4 => u.int_in_range::<u16>(0..=MAX_COMPONENT_LEN as u16)?,
+        _ => u.int_in_range::<u16>(0..=MAX_COMPONENT_LEN as u16)?,
     };
     Ok(v)
 }
