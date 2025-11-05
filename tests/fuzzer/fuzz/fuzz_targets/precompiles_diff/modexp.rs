@@ -1,12 +1,18 @@
 #![no_main]
 #![feature(allocator_api)]
 
-use arbitrary::{Arbitrary, Unstructured};
 use libfuzzer_sys::fuzz_target;
-use fuzz_precompiles_forward::precompiles::modexp as modexp_forward;
-use fuzz_precompiles_proving::precompiles::modexp as modexp_proving;
-use revm_precompile::modexp;
 use revm::primitives::U256;
+use revm_precompile::modexp::berlin_run;
+use arbitrary::{Arbitrary, Unstructured};
+use zk_ee::system::Resource;
+use basic_system::system_functions::modexp::delegation::delegated_modexp_with_naive_advisor;
+use zk_ee::system::base_system_functions::ModExpErrors;
+use zk_ee::system::errors::subsystem::SubsystemError;
+use basic_system::system_functions::modexp::ModExpImpl;
+use zk_ee::reference_implementations::BaseResources;
+use zk_ee::system::{SystemFunction,SystemFunctionExt};
+use zk_ee::reference_implementations::DecreasingNative;
 
 #[derive(Arbitrary, Debug, Clone, Copy)]
 enum LenMode {
@@ -46,7 +52,7 @@ struct Input {
     #[arbitrary(with = len_gen)]
     ml: u16,
 
-    // Content kinds
+    // Component kinds
     ek: ExpKind,
     mk: ModKind,
 
@@ -74,7 +80,7 @@ const MAX_DECL_LEN: u32 = 4 * MAX_COMPONENT_LEN;
 
 fn len_gen(u: &mut Unstructured<'_>) -> arbitrary::Result<u16> {
     let pick: u8 = u.arbitrary()?;
-    let v = match pick {
+    let v = match pick % 8 {
         0 => 0,
         1 => 1,
         2 => 2,
@@ -167,7 +173,16 @@ fn be_u256(n: usize) -> [u8; 32] {
     U256::from(n).to_be_bytes()
 }
 
-fn build_input_bytes(mut u: &mut Unstructured<'_>, i: &Input) -> Vec<u8> {
+#[inline]
+fn normalize_be(s: &[u8]) -> &[u8] {
+    let i = s.iter().position(|&b| b != 0).unwrap_or(s.len());
+    &s[i..]
+}
+
+fn build_input_bytes(
+    mut u: &mut Unstructured<'_>,
+    i: &Input
+) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
     let bl = i.bl as usize;
     let el = i.el as usize;
     let ml = i.ml as usize;
@@ -180,8 +195,8 @@ fn build_input_bytes(mut u: &mut Unstructured<'_>, i: &Input) -> Vec<u8> {
     let mel = mutate_len(el as u32, i.el_lm, i.el_rand);
     let mml = mutate_len(ml as u32, i.ml_lm, i.ml_rand);
 
-    let exp = shape_exponent(exp_raw, i.ek);
-    let modu = shape_modulus(mod_raw, i.mk);
+    let exp  = shape_exponent(exp_raw.clone(), i.ek);
+    let modu = shape_modulus(mod_raw.clone(), i.mk);
 
     let mut out = Vec::with_capacity(96 + bl + el + ml);
     out.extend_from_slice(&be_u256(mbl as usize));
@@ -195,7 +210,7 @@ fn build_input_bytes(mut u: &mut Unstructured<'_>, i: &Input) -> Vec<u8> {
         let t = t as usize;
         if t < out.len() { out.truncate(t); }
     }
-    out
+    (out, base, exp_raw, mod_raw)
 }
 
 fn fuzz(data: &[u8]) {
@@ -205,38 +220,57 @@ fn fuzz(data: &[u8]) {
         Err(_) => return,
     };
 
-    let in_bytes = build_input_bytes(&mut u, &input);
+    let (in_bytes, base, exp, modu) = build_input_bytes(&mut u, &input);
 
     let mut dst1 = Vec::new();
-    let mut dst2 = Vec::new();
 
-    let r_reth = modexp::berlin_run(&in_bytes, u64::MAX);
+    let r_reth = berlin_run(&in_bytes, u64::MAX);
     let reth_ok = r_reth.as_ref().is_ok_and(|x| !x.reverted);
+    let reth_out = r_reth.unwrap().bytes.to_vec();
 
     let r1 = modexp_forward(&in_bytes, &mut dst1);
     let r1_ok = r1.is_ok();
 
-    // Skip if both RETH and Forward run failed
-    if !reth_ok && !r1_ok {
-        return;
-    }
+    assert!(!(reth_ok ^ r1_ok), "forward <> reth status mismatch");
+    assert_eq!(dst1, reth_out, "forward <> reth bytes mismatch");
 
-    let r2 = modexp_proving(&in_bytes, &mut dst2);
-    let r2_ok = r2.is_ok();
+    let res_delegated = delegated_modexp_with_naive_advisor(&base, &exp, &modu);
+    let res_forward = modexp::modexp(&base, &exp, &modu, std::alloc::Global);
+    assert_eq!(
+        normalize_be(&res_delegated),
+        normalize_be(&res_forward),
+        "forward <> proving bytes mismatch"
+    );
+}
 
-    if reth_ok || r1_ok || r2_ok {
-        assert!(reth_ok, "reth reverted but others accepted");
-        assert!(r1_ok, "forward run rejected but reth accepted");
-        assert!(r2_ok, "proving run rejected but reth accepted");
-
-        let reth_out = r_reth.unwrap().bytes.to_vec();
-
-        assert_eq!(dst1, reth_out, "forward <> reth bytes mismatch");
-        assert_eq!(dst2, reth_out, "proving <> reth bytes mismatch");
-    }
+pub fn modexp_forward(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<ModExpErrors>> {
+    let allocator = std::alloc::Global;
+    let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
+    ModExpImpl::execute(
+        &src,
+        dst,
+        &mut resource,
+        &mut DummyOracle {},
+        &mut zk_ee::system::NullLogger,
+        allocator,
+    )
 }
 
 fuzz_target!(|data: &[u8]| {
     // call fuzzing in a separate function, so we can see its coverage
     fuzz(data);
 });
+
+struct DummyOracle {}
+
+impl zk_ee::oracle::IOOracle for DummyOracle {
+    type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+
+    fn raw_query<'a, I: zk_ee::oracle::usize_serialization::UsizeSerializable + zk_ee::oracle::usize_serialization::UsizeDeserializable>(
+        &'a mut self,
+        _query_type: u32,
+        _input: &I,
+    ) -> Result<Self::RawIterator<'a>, zk_ee::system::errors::internal::InternalError> {
+        unreachable!("oracle should not be consulted on native targets");
+    }
+}
