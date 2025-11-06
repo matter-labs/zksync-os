@@ -680,32 +680,36 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                         );
                         next_to_init_digit = dst_digit + 1;
                     } else {
-                        let of = bigint_op_delegation_raw(
+                        let mut of = bigint_op_delegation_raw(
                             dst_scratch_capacity[dst_digit].as_mut_ptr().cast(),
                             carry_scratch.cast(),
                             BigIntOps::Add,
                         );
-                        if of > 0 {
-                            let next_dst_digit = dst_digit + 1;
-                            if next_dst_digit < max_product_digits {
-                                carry_propagation_scratch.as_limbs_mut()[0] = of as u64;
-                                if next_dst_digit == next_to_init_digit {
-                                    // no carry is possible here
-                                    let _ = bigint_op_delegation_raw(
-                                        dst_scratch_capacity[next_dst_digit].as_mut_ptr().cast(),
-                                        (carry_propagation_scratch as *const DelegatedU256).cast(),
-                                        BigIntOps::MemCpy,
-                                    );
-                                    next_to_init_digit = next_dst_digit + 1;
-                                } else {
-                                    // no carry is possible here
-                                    let _ = bigint_op_delegation_raw(
-                                        dst_scratch_capacity[next_dst_digit].as_mut_ptr().cast(),
-                                        (carry_propagation_scratch as *const DelegatedU256).cast(),
-                                        BigIntOps::Add,
-                                    );
+                        
+                        let mut current_digit = dst_digit;
+                        while of > 0 {
+                            current_digit += 1;
+                            if current_digit >= max_product_digits {
+                                debug_assert!(of == 0);
+                                break;
+                            }
                             
-                                }
+                            carry_propagation_scratch.as_limbs_mut()[0] = of as u64;
+                            
+                            if current_digit == next_to_init_digit {
+                                let _ = bigint_op_delegation_raw(
+                                    dst_scratch_capacity[current_digit].as_mut_ptr().cast(),
+                                    (carry_propagation_scratch as *const DelegatedU256).cast(),
+                                    BigIntOps::MemCpy,
+                                );
+                                next_to_init_digit = current_digit + 1;
+                                break;
+                            } else {
+                                of = bigint_op_delegation_raw(
+                                    dst_scratch_capacity[current_digit].as_mut_ptr().cast(),
+                                    (carry_propagation_scratch as *const DelegatedU256).cast(),
+                                    BigIntOps::Add,
+                                );
                             }
                         }
                     }
