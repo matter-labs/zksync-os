@@ -186,9 +186,10 @@ impl<A: Allocator + Clone> BigintRepr<A> {
 
         let capacity_for_scratched_in_reduction =
             core::cmp::max(modulus.digits * 2, modulus.digits + self.digits);
-
+        // quotient 
         let mut scratch_0 =
             Self::with_capacity_in(capacity_for_scratched_in_reduction, allocator.clone());
+        // remainder
         let mut scratch_1 =
             Self::with_capacity_in(capacity_for_scratched_in_reduction, allocator.clone());
         let mut scratch_2 =
@@ -668,6 +669,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                 if dst_digit >= max_product_digits {
                     // abort propagation - we apriori expect that in well-formed case
                     // those digits can not exist
+                    debug_assert!((*carry_scratch).is_zero());
                 } else {
                     assert!(next_to_init_digit >= dst_digit);
                     if dst_digit == next_to_init_digit {
@@ -683,7 +685,29 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                             carry_scratch.cast(),
                             BigIntOps::Add,
                         );
-                        assert_eq!(of, 0);
+                        if of > 0 {
+                            let next_dst_digit = dst_digit + 1;
+                            if next_dst_digit < max_product_digits {
+                                carry_propagation_scratch.as_limbs_mut()[0] = of as u64;
+                                if next_dst_digit == next_to_init_digit {
+                                    // no carry is possible here
+                                    let _ = bigint_op_delegation_raw(
+                                        dst_scratch_capacity[next_dst_digit].as_mut_ptr().cast(),
+                                        (carry_propagation_scratch as *const DelegatedU256).cast(),
+                                        BigIntOps::MemCpy,
+                                    );
+                                    next_to_init_digit = next_dst_digit + 1;
+                                } else {
+                                    // no carry is possible here
+                                    let _ = bigint_op_delegation_raw(
+                                        dst_scratch_capacity[next_dst_digit].as_mut_ptr().cast(),
+                                        (carry_propagation_scratch as *const DelegatedU256).cast(),
+                                        BigIntOps::Add,
+                                    );
+                            
+                                }
+                            }
+                        }
                     }
                 }
             }

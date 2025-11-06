@@ -288,4 +288,21 @@ mod test {
 
         assert_eq!(output, expected);
     }
+
+    #[test]
+    fn test_fuzzer_crash_case() {
+        let base = vec![255u8];
+        let exp = vec![48, 255, 128, 209];
+        let modulus = vec![
+            214, 2, 245, 148, 60, 16, 255, 255, 255, 255, 255, 255, 255, 12, 0, 0, 
+            0, 216, 112, 144, 135, 112, 173, 239, 243, 255, 194, 78, 78, 1, 46, 10, 
+            211, 128, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ];
+
+        let output = invoke_precompile_no_prepadding(&modulus, &base, &exp);
+        
+        println!("Output: {:?}", hex::encode(&output));
+    }
+
 }
