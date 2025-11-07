@@ -3,13 +3,14 @@ use basic_system::system_functions::sha256::Sha256Impl;
 use basic_system::system_functions::keccak256::Keccak256Impl;
 use basic_system::system_functions::ripemd160::RipeMd160Impl;
 use basic_system::system_functions::bn254_ecmul::Bn254MulImpl;
+use basic_system::system_functions::p256_verify::P256VerifyImpl;
 use zk_ee::reference_implementations::BaseResources;
 use zk_ee::system::{SystemFunction,SystemFunctionExt};
 use zk_ee::system::Resource;
 use zk_ee::reference_implementations::DecreasingNative;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::base_system_functions::{Bn254AddErrors,Sha256Errors,RipeMd160Errors,Keccak256Errors,
-Bn254MulErrors};
+Bn254MulErrors,P256VerifyErrors};
 
 pub fn ecadd(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Bn254AddErrors>> {
     let allocator = std::alloc::Global;
@@ -39,4 +40,10 @@ pub fn ecmul(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Bn254Mu
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
     Bn254MulImpl::execute(&src, dst, &mut resource, allocator)
+}
+
+pub fn p256_verify(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<P256VerifyErrors>> {
+    let allocator = std::alloc::Global;
+    let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
+    P256VerifyImpl::execute(&src, dst, &mut resource, allocator)
 }

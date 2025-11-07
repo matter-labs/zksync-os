@@ -42,6 +42,7 @@ bytes = "1.10.0"
 ark-ff = "0.4"
 ark-ec = "0.4"
 ark-bn254 = "0.4"
+p256 = { version = "0.13", features = ["ecdsa"] }
 
 [[bin]]
 name = "ripemd160"
@@ -291,6 +292,13 @@ bench = false
 [[bin]]
 name = "precompiles_diff_modexp"
 path = "fuzz_targets/precompiles_diff/modexp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "precompiles_diff_p256_verify"
+path = "fuzz_targets/precompiles_diff/p256_verify.rs"
 test = false
 doc = false
 bench = false
