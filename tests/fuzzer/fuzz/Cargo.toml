@@ -27,6 +27,7 @@ rig = { path = "../../rig" }
 crypto = { path = "../../../crypto"}
 fuzz_precompiles_forward = { path = "./wrappers/fuzz_precompiles_forward" }
 fuzz_precompiles_proving = { path = "./wrappers/fuzz_precompiles_proving" }
+basic_system_proving = { path = "./wrappers/basic_system_proving" }
 libfuzzer-sys = "0.4"
 hex = "*"
 sha2 = "0.10.8"

@@ -6,7 +6,7 @@ use revm::primitives::U256;
 use revm_precompile::modexp::berlin_run;
 use arbitrary::{Arbitrary, Unstructured};
 use zk_ee::system::Resource;
-use basic_system::system_functions::modexp::delegation::delegated_modexp_with_naive_advisor;
+use basic_system_proving::system_functions::modexp::delegation::delegated_modexp_with_naive_advisor;
 use zk_ee::system::base_system_functions::ModExpErrors;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use basic_system::system_functions::modexp::ModExpImpl;
