@@ -134,3 +134,21 @@ pub fn build_point_bytes(kind: PointKind, s_bytes: [u8; 32], mx: CoordMut, my: C
         }
     }
 }
+
+#[inline]
+pub fn be_inc_inplace(x: &mut [u8; 32]) {
+    for i in (0..32).rev() {
+        let (v, c) = x[i].overflowing_add(1);
+        x[i] = v;
+        if !c { break; }
+    }
+}
+
+#[inline]
+pub fn be_dec_inplace(x: &mut [u8; 32]) {
+    for i in (0..32).rev() {
+        let (v, b) = x[i].overflowing_sub(1);
+        x[i] = v;
+        if !b { break; }
+    }
+}

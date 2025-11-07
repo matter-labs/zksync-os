@@ -10,6 +10,9 @@ use p256::ecdsa::{SigningKey,Signature};
 use p256::ecdsa::signature::hazmat::PrehashSigner;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::ecdsa::VerifyingKey;
+use crate::common::{be_inc_inplace,be_dec_inplace};
+
+mod common;
 
 const IN_LEN: usize = 160;
 
@@ -66,24 +69,6 @@ enum Mutation {
 
     HighS,          // s = n - 1
     LowS,           // s = floor(n/2)
-}
-
-#[inline]
-fn be_inc_inplace(x: &mut [u8; 32]) {
-    for i in (0..32).rev() {
-        let (v, c) = x[i].overflowing_add(1);
-        x[i] = v;
-        if !c { break; }
-    }
-}
-
-#[inline]
-fn be_dec_inplace(x: &mut [u8; 32]) {
-    for i in (0..32).rev() {
-        let (v, b) = x[i].overflowing_sub(1);
-        x[i] = v;
-        if !b { break; }
-    }
 }
 
 fn apply_mut(
@@ -156,7 +141,7 @@ fn build_input(u: &mut Unstructured<'_>, i: &Input) -> Vec<u8> {
             let n = u.int_in_range::<usize>(0..=IN_LEN).unwrap_or(0);
             let mut v = vec![0u8; n];
             let _ = u.fill_buffer(&mut v);
-            
+
             if let Some(t) = i.trunc {
                 let t = t as usize;
                 if t < v.len() { v.truncate(t); }
@@ -215,7 +200,7 @@ fn fuzz(data: &[u8]) {
         (false, false, false) => { }
         _ => {
             panic!(
-                "status mismatch p256_verify: reth_ok={reth_ok} fwd_ok={fwd_ok} prv_ok={prv_ok}, in_len={}",
+                "status mismatch: reth_ok={reth_ok} fwd_ok={fwd_ok} prv_ok={prv_ok}, in_len={}",
                 in_bytes.len()
             );
         }
