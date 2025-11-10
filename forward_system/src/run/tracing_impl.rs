@@ -23,15 +23,24 @@ struct ExecutionEnvironmentLaunchParamsWrapped<'a, 'b, S: EthereumLikeTypes>(
 /// Wrapper around [`EvmFrameInterface`] to make it compatible with interface tracing API.
 struct EvmFrameInterfaceWrapped<'a, S: EthereumLikeTypes, T: EvmFrameInterface<S>> {
     inner: &'a T,
+    stack_wrapper: EvmStackInterfaceWrapped<'a>,
     _phantom: PhantomData<S>,
 }
 
-impl<'a, S: EthereumLikeTypes, T: EvmFrameInterface<S>> From<&'a T>
+/// Wrapper around internal [`EvmStackInterface`] to make it compatible with interface tracing API.
+struct EvmStackInterfaceWrapped<'a> {
+    inner: &'a dyn zk_ee::system::evm::EvmStackInterface,
+}
+
+impl<'a, S: EthereumLikeTypes + 'a, T: EvmFrameInterface<S>> From<&'a T>
     for EvmFrameInterfaceWrapped<'a, S, T>
 {
     fn from(value: &'a T) -> Self {
         Self {
             inner: value,
+            stack_wrapper: EvmStackInterfaceWrapped {
+                inner: value.stack(),
+            },
             _phantom: PhantomData,
         }
     }
@@ -304,5 +313,23 @@ impl<'a, S: EthereumLikeTypes, T: EvmFrameInterface<S>>
 
     fn is_constructor(&self) -> bool {
         self.inner.is_constructor()
+    }
+
+    fn stack(&self) -> &impl zksync_os_interface::tracing::EvmStackInterface {
+        &self.stack_wrapper
+    }
+}
+
+impl<'a> zksync_os_interface::tracing::EvmStackInterface for EvmStackInterfaceWrapped<'a> {
+    fn to_slice(&self) -> &[U256] {
+        self.inner.to_slice()
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn peek_n(&self, index: usize) -> Result<&U256, EvmError> {
+        self.inner.peek_n(index)
     }
 }
