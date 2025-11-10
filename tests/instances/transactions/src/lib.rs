@@ -14,6 +14,7 @@ use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::{alloy, ethers, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
+use std::u64;
 use zksync_web3_rs::eip712::Eip712Meta;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 mod native_charging;
@@ -1308,4 +1309,50 @@ fn test_reject_caller_with_code_behavior() {
         result_normal.tx_results[0],
         Err(InvalidTransaction::RejectCallerWithCode)
     ));
+}
+
+#[test]
+fn test_expensive_pubdata() {
+    // Test if a transaction can be executed even if the pubdata price is such that
+    // validation pubdata requires to use withheld resources.
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    // Set balance for the contract address
+    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+
+    let tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 134217728,
+            max_priority_fee_per_gas: 134217728,
+            gas_limit: 75_000,
+            to: TxKind::Call(target_address),
+            value: Default::default(),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    // Validation uses 40 bytes of pubdata, we want the validation
+    // pubdata charge to be > MAX_NATIVE_COMPUTATIONAL (2^35), to
+    // ensure we use withheld resources for it.
+    let native_price = U256::from(100);
+    // Value s.t. (pubdata_price / native_price) * 40 > MAX_NATIVE_COMPUTATIONAL
+    let pubdata_price = U256::from(85899346000u64);
+
+    let block_context = BlockContext {
+        native_price,
+        pubdata_price,
+        eip1559_basefee: U256::from(1),
+        ..Default::default()
+    };
+    // Check tx succeeds
+    let result = chain.run_block(vec![tx], Some(block_context), run_config());
+    let res0 = result.tx_results.first().expect("Must have a tx result");
+    assert!(res0.as_ref().is_ok(), "Tx should succeed");
 }
