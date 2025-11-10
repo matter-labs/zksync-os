@@ -34,6 +34,7 @@ use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
 use zk_ee::system::{EthereumLikeTypes, Resources};
 use zk_ee::wrap_error;
@@ -42,6 +43,7 @@ use zk_ee::wrap_error;
 #[derive(Default)]
 struct ValidationResult {
     validation_pubdata: u64,
+    main_native_used_for_pubdata: u64,
 }
 
 impl<
@@ -571,7 +573,7 @@ where
 
         let ResourcesForTx {
             main_resources: mut resources,
-            withheld: withheld_resources,
+            withheld: mut withheld_resources,
             intrinsic_computational_native_charged,
         } = get_resources_for_tx::<S>(
             gas_limit,
@@ -631,7 +633,10 @@ where
         charge_keccak(transaction.len(), &mut resources)?;
         let suggested_signed_hash: Bytes32 = transaction.signed_hash::<S::Resources>(chain_id)?;
 
-        let ValidationResult { validation_pubdata } = Self::transaction_validation::<Config>(
+        let ValidationResult {
+            validation_pubdata,
+            main_native_used_for_pubdata,
+        } = Self::transaction_validation::<Config>(
             system,
             system_functions,
             memories.reborrow(),
@@ -644,6 +649,7 @@ where
             caller_is_code,
             caller_nonce,
             &mut resources,
+            &mut withheld_resources,
             tracer,
         )?;
 
@@ -740,11 +746,13 @@ where
 
         // Add back the intrinsic native charged in get_resources_for_tx,
         // as initial_resources doesn't include them.
+        // Also discount native used for pubdata
         let computational_native_used = resources_before_refund
             .diff(initial_resources)
             .native()
             .as_u64()
-            + intrinsic_computational_native_charged;
+            + intrinsic_computational_native_charged
+            - main_native_used_for_pubdata;
 
         #[cfg(not(target_arch = "riscv32"))]
         cycle_marker::log_marker(
@@ -786,6 +794,7 @@ where
         caller_is_code: bool,
         caller_nonce: u64,
         resources: &mut S::Resources,
+        withheld_resources: &mut S::Resources,
         tracer: &mut impl Tracer<S>,
     ) -> Result<ValidationResult, TxError> {
         let _ = system
@@ -848,13 +857,55 @@ where
         // Charge for validation pubdata
         let (validation_pubdata, to_charge_for_pubdata) =
             get_resources_to_charge_for_pubdata(system, native_per_pubdata, None)?;
-        resources.charge(&to_charge_for_pubdata)?;
+        let main_native_used_for_pubdata = Self::charge_for_validation_pubdata_using_withheld(
+            resources,
+            withheld_resources,
+            &to_charge_for_pubdata,
+        )?;
 
         let _ = system
             .get_logger()
             .write_fmt(format_args!("Validation completed\n"));
 
-        Ok(ValidationResult { validation_pubdata })
+        Ok(ValidationResult {
+            validation_pubdata,
+            main_native_used_for_pubdata,
+        })
+    }
+
+    ///
+    /// Charge validation pubdata using both main and withheld resources.
+    /// First try to use withheld.
+    /// Returns the amount of native from the main resources used for pubdata,
+    /// this value is used for the computation of [computational_native_used].
+    ///
+    fn charge_for_validation_pubdata_using_withheld(
+        resources: &mut S::Resources,
+        withheld_resources: &mut S::Resources,
+        to_charge_for_pubdata: &S::Resources,
+    ) -> Result<u64, SystemError> {
+        if withheld_resources.has_enough(to_charge_for_pubdata) {
+            // Simple case, just spend directly from withheld
+            withheld_resources.charge(to_charge_for_pubdata)?;
+            return Ok(0);
+        }
+
+        if withheld_resources.is_empty() {
+            // Simple case, just spend directly from main resources
+            resources.charge(to_charge_for_pubdata)?;
+            return Ok(to_charge_for_pubdata.native().as_u64());
+        }
+
+        // General case: first compute the part that should be charged from
+        // withheld.
+        let to_charge_from_main = to_charge_for_pubdata.diff(withheld_resources.clone());
+        // Then charge from withheld, this will return an Err with OON and zero it out.
+        // We ignore the error and continue charging from the main resources.
+        if withheld_resources.charge(to_charge_for_pubdata).is_ok() {
+            return Err(internal_error!("Withheld should be insufficient, checked above").into());
+        }
+        resources.charge(&to_charge_from_main)?;
+        Ok(to_charge_from_main.native().as_u64())
     }
 
     // Returns (execution_result, pubdata_used, to_charge_for_pubdata)
