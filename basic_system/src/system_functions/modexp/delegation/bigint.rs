@@ -186,7 +186,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
 
         let capacity_for_scratched_in_reduction =
             core::cmp::max(modulus.digits * 2, modulus.digits + self.digits);
-        // quotient 
+        // quotient
         let mut scratch_0 =
             Self::with_capacity_in(capacity_for_scratched_in_reduction, allocator.clone());
         // remainder
@@ -685,7 +685,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                             carry_scratch.cast(),
                             BigIntOps::Add,
                         );
-                        
+
                         let mut current_digit = dst_digit;
                         while of > 0 {
                             current_digit += 1;
@@ -693,9 +693,9 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                                 debug_assert!(of == 0);
                                 break;
                             }
-                            
+
                             carry_propagation_scratch.as_limbs_mut()[0] = of as u64;
-                            
+
                             if current_digit == next_to_init_digit {
                                 let _ = bigint_op_delegation_raw(
                                     dst_scratch_capacity[current_digit].as_mut_ptr().cast(),
