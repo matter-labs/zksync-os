@@ -44,13 +44,6 @@ struct Input {
 
 static KS: Lazy<&'static KzgSettings> = Lazy::new(|| ethereum_kzg_settings(0));
 
-#[inline]
-fn le_bytes32_to_be(x: &c_kzg::Bytes32) -> [u8; 32] {
-    let mut out = *x.as_ref();
-    out.reverse();
-    out
-}
-
 fn gen_valid(u: &mut Unstructured<'_>) -> Option<Vec<u8>> {
     let mut buf = vec![0u8; BYTES_PER_BLOB as usize];
     for fe in buf.chunks_mut(32) {
@@ -68,8 +61,6 @@ fn gen_valid(u: &mut Unstructured<'_>) -> Option<Vec<u8>> {
     let (proof, y) = KS.compute_kzg_proof(&blob, &z).ok()?;
 
     let vh = commitment_versioned_hash(&commitment);
-    let z_be = le_bytes32_to_be(&z);
-    let y_be = le_bytes32_to_be(&y);
 
     let mut out = vec![0u8; IN_LEN];
     let mut off = 0;
