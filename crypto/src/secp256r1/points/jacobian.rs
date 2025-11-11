@@ -28,6 +28,12 @@ impl Jacobian {
         z: FieldElement::ONE,
     };
 
+    pub(crate) const INFINITY: Self = Self {
+        x: FieldElement::ZERO,
+        y: FieldElement::ONE,
+        z: FieldElement::ZERO,
+    };
+
     pub(crate) fn is_infinity(&self) -> bool {
         self.z.is_zero()
     }
