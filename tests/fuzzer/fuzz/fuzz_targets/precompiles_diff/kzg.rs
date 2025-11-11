@@ -10,11 +10,14 @@ use fuzz_precompiles_proving::precompiles::kzg as kzg_proving;
 use c_kzg::{Blob,Bytes32,KzgCommitment,KzgProof,KzgSettings,
 ethereum_kzg_settings,BYTES_PER_BLOB};
 use once_cell::sync::Lazy;
+use revm::primitives::keccak256;
+use sha2::{Digest, Sha256};
 
-const C_LEN: usize = 48; // Commitment
-const P_LEN: usize = 48; // Proof
-const F_LEN: usize = 32; // Field element
-const IN_LEN: usize = C_LEN + F_LEN + F_LEN + P_LEN;
+const VH_LEN: usize = 32; // Vershioned hash 
+const C_LEN: usize = 48;  // Commitment
+const P_LEN: usize = 48;  // Proof
+const F_LEN: usize = 32;  // Field element
+const IN_LEN: usize = VH_LEN + C_LEN + F_LEN + F_LEN + P_LEN;
 
 #[derive(Arbitrary, Debug, Clone, Copy)]
 enum FieldSel { Commit, Z, Y, Proof }
@@ -41,6 +44,13 @@ struct Input {
 
 static KS: Lazy<&'static KzgSettings> = Lazy::new(|| ethereum_kzg_settings(0));
 
+#[inline]
+fn le_bytes32_to_be(x: &c_kzg::Bytes32) -> [u8; 32] {
+    let mut out = *x.as_ref();
+    out.reverse();
+    out
+}
+
 fn gen_valid(u: &mut Unstructured<'_>) -> Option<Vec<u8>> {
     let mut buf = vec![0u8; BYTES_PER_BLOB as usize];
     for fe in buf.chunks_mut(32) {
@@ -57,20 +67,47 @@ fn gen_valid(u: &mut Unstructured<'_>) -> Option<Vec<u8>> {
     let commitment = KS.blob_to_kzg_commitment(&blob).ok()?;
     let (proof, y) = KS.compute_kzg_proof(&blob, &z).ok()?;
 
+    let vh = commitment_versioned_hash(&commitment);
+    let z_be = le_bytes32_to_be(&z);
+    let y_be = le_bytes32_to_be(&y);
+
     let mut out = vec![0u8; IN_LEN];
-    out[0..C_LEN].copy_from_slice(commitment.to_bytes().as_ref());
-    out[C_LEN..C_LEN + F_LEN].copy_from_slice(z.as_ref());
-    out[C_LEN + F_LEN..C_LEN + 2 * F_LEN].copy_from_slice(y.as_ref());
-    out[C_LEN + 2 * F_LEN..IN_LEN].copy_from_slice(proof.to_bytes().as_ref());
+    let mut off = 0;
+
+    out[off..off+VH_LEN].copy_from_slice(&vh);
+    off += VH_LEN;
+
+    out[off..off+F_LEN].copy_from_slice(z.as_ref());
+    off += F_LEN;
+
+    out[off..off+F_LEN].copy_from_slice(y.as_ref());
+    off += F_LEN;
+
+    out[off..off+C_LEN].copy_from_slice(commitment.to_bytes().as_ref());
+    off += C_LEN;
+
+    out[off..off+P_LEN].copy_from_slice(proof.to_bytes().as_ref());
+
     Some(out)
+}
+
+#[inline]
+fn commitment_versioned_hash(commitment: &KzgCommitment) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(commitment.to_bytes().as_ref());
+    let k = hasher.finalize();
+    let mut out = [0u8; 32];
+    out[0] = 0x01;
+    out[1..].copy_from_slice(&k[1..]);
+    out
 }
 
 fn field_range(sel: FieldSel) -> (usize, usize) {
     match sel {
-        FieldSel::Commit => (0, C_LEN),
-        FieldSel::Z      => (C_LEN, C_LEN + F_LEN),
-        FieldSel::Y      => (C_LEN + F_LEN, C_LEN + 2 * F_LEN),
-        FieldSel::Proof  => (C_LEN + 2 * F_LEN, IN_LEN),
+        FieldSel::Commit => (VH_LEN + 2*F_LEN, VH_LEN + 2*F_LEN + C_LEN),
+        FieldSel::Z      => (VH_LEN, VH_LEN + F_LEN),
+        FieldSel::Y      => (VH_LEN + F_LEN, VH_LEN + 2*F_LEN),
+        FieldSel::Proof  => (VH_LEN + 2*F_LEN + C_LEN, IN_LEN),
     }
 }
 
