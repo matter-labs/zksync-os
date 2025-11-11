@@ -102,9 +102,6 @@ mod tests {
     use proptest::{prop_assert_eq, proptest};
     #[test]
     fn test_invert() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         proptest!(|(x: Scalar)| {
             let mut a = x;
             a.invert_in_place();

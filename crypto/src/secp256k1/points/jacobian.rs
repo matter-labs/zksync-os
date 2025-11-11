@@ -488,9 +488,6 @@ mod tests {
 
     #[test]
     fn test_infinity_check() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         // Check that the infinity constant is infinity
         let inf = Jacobian::INFINITY;
         assert!(inf.is_infinity());
@@ -528,9 +525,6 @@ mod tests {
 
     #[test]
     fn test_add_basic() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         let g = Affine::GENERATOR;
         let mut a = Jacobian::INFINITY;
         a.add_ge_in_place(Affine::INFINITY, None);
@@ -569,9 +563,6 @@ mod tests {
 
     #[test]
     fn test_repeated_add() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         let g = Affine::GENERATOR;
 
         let mut p = g.to_jacobian();
@@ -615,9 +606,6 @@ mod tests {
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
     fn test_double() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         use crate::secp256k1::context::ECRECOVER_CONTEXT;
 
         // tt = 8G
@@ -638,9 +626,6 @@ mod tests {
 
     #[test]
     fn test_add_zinv() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         proptest!(|(a: Jacobian, b: Jacobian)| {
             let mut t = a;
             t.add_zinv_in_place(Affine { x: b.x, y: b.y, infinity: false}, &b.z);

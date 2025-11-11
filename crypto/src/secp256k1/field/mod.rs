@@ -353,9 +353,6 @@ mod tests {
 
     #[test]
     fn storage_round_trip() {
-        #[cfg(feature = "bigint_ops")]
-        super::field_8x32::init();
-
         proptest!(|(x: FieldElement)| {
              prop_assert_eq!(x.to_storage().to_field_elem(), x);
         })
@@ -363,9 +360,6 @@ mod tests {
 
     #[test]
     fn to_bytes_round_trip() {
-        #[cfg(feature = "bigint_ops")]
-        super::field_8x32::init();
-
         proptest!(|(x: FieldElement)| {
             let bytes: [u8; 32] = x.to_bytes().as_slice().try_into().unwrap();
             prop_assert_eq!(
@@ -377,9 +371,6 @@ mod tests {
 
     #[test]
     fn from_bytes_round_trip() {
-        #[cfg(feature = "bigint_ops")]
-        super::field_8x32::init();
-
         proptest!(|(bytes: [u8; 32])| {
             prop_assert_eq!(
                 &*FieldElement::from_bytes(&bytes).unwrap().to_bytes(),
@@ -390,9 +381,6 @@ mod tests {
 
     #[test]
     fn test_mul() {
-        #[cfg(feature = "bigint_ops")]
-        super::field_8x32::init();
-
         proptest!(|(x: FieldElement, y: FieldElement, z: FieldElement)| {
             let mut a = x;
             let mut b = y;
@@ -442,9 +430,6 @@ mod tests {
 
     #[test]
     fn test_invert() {
-        #[cfg(feature = "bigint_ops")]
-        super::field_8x32::init();
-
         proptest!(|(x: FieldElement)| {
             let mut a = x;
             a.invert_in_place();
@@ -476,9 +461,6 @@ mod tests {
 
     #[test]
     fn test_add() {
-        #[cfg(feature = "bigint_ops")]
-        super::field_8x32::init();
-
         proptest!(|(x: FieldElement, y: FieldElement, z: FieldElement)| {
             let mut a = x;
             let mut b = y;
@@ -520,9 +502,6 @@ mod tests {
 
     #[test]
     fn test_square() {
-        #[cfg(feature = "bigint_ops")]
-        super::field_8x32::init();
-
         proptest!(|(x: FieldElement)| {
             let mut x_neg = x;
             x_neg.negate_in_place(1);

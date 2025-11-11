@@ -391,9 +391,6 @@ mod tests {
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
     fn ecmult_0I_0G() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         assert_eq!(ECRECOVER_CONTEXT.pre_g[0].to_affine(), Affine::GENERATOR);
 
         // 0*infinity + 0*G = 0
@@ -411,9 +408,6 @@ mod tests {
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
     fn ecmult_0I_1G() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         // 0*infinity + 1*G = G
         let mut res = ecmult(
             &Jacobian::INFINITY,
@@ -431,9 +425,6 @@ mod tests {
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
     fn ecmult_0I_3G() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         // 0*infinity + 3*G = 3*G
         let res = ecmult(
             &Jacobian::INFINITY,
@@ -449,9 +440,6 @@ mod tests {
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
     fn ecmult_0I_5G() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         let res = ecmult(
             &Jacobian::INFINITY,
             &Scalar::ZERO,
@@ -466,9 +454,6 @@ mod tests {
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
     fn ecmult_0I_8G() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         // t = 5G + 3G
         let mut t = ECRECOVER_CONTEXT.pre_g[2].to_affine().to_jacobian();
         t.add_ge_in_place(ECRECOVER_CONTEXT.pre_g[1].to_affine(), None);
@@ -490,9 +475,6 @@ mod tests {
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
     fn ecmult_1G_0G() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         let res = ecmult(
             &Affine::GENERATOR.to_jacobian(),
             &Scalar::ONE,
@@ -507,9 +489,6 @@ mod tests {
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
     fn ecmult_1G_1G() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         let res = ecmult(
             &Affine::GENERATOR.to_jacobian(),
             &Scalar::ONE,
@@ -527,9 +506,6 @@ mod tests {
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
     fn ecmult_1G_2G() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         let res = ecmult(
             &Affine::GENERATOR.to_jacobian(),
             &Scalar::ONE,
@@ -544,9 +520,6 @@ mod tests {
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
     fn ecmult_2G_1G() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         let mut res = ecmult(
             &Affine::GENERATOR.to_jacobian(),
             &Scalar::from_u128(2),
@@ -613,9 +586,6 @@ mod tests {
     #[cfg(feature = "secp256k1-static-context")]
     #[test]
     fn test_regressions() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         // recover point at infinity
         assert_eq!(
             recover_from_digest(

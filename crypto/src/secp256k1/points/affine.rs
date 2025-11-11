@@ -278,9 +278,6 @@ mod tests {
 
     #[test]
     fn test_set_xo() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         let g = Affine::GENERATOR;
         let x = g.x;
         let y_is_odd = false;
@@ -291,9 +288,6 @@ mod tests {
 
     #[test]
     fn jacobian_round_trip() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256k1::init();
-
         proptest!(|(x: Affine)| {
             prop_assert_eq!(x.to_jacobian().to_affine(), x);
         });
