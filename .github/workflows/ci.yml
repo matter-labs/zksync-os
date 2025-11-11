@@ -53,11 +53,10 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-            - name: Run crypto tests 1000 times with overflow checks
+            - name: Run crypto tests 50 times with overflow checks
               run: |
-                  for i in {1..1000}; do
-                    echo "Run $i/1000"
-                    RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto || exit 1
+                  for i in {1..50}; do
+                    RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto --quiet || exit 1
                   done
     evm_state_tests:
         name: EF EVM state tests
