@@ -376,17 +376,8 @@ mod tests {
         test_vectors::ADD_TEST_VECTORS,
     };
 
-    #[cfg(feature = "bigint_ops")]
-    fn init() {
-        crate::secp256r1::init();
-        crate::bigint_delegation::init();
-    }
-
     #[test]
     fn test_infinity_check() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256r1::init();
-
         // Check that the infinity constant is infinity
         let inf = Jacobian::INFINITY;
         assert!(inf.is_infinity());
@@ -424,9 +415,6 @@ mod tests {
 
     #[test]
     fn compare_double() {
-        #[cfg(feature = "bigint_ops")]
-        init();
-
         let mut g = Jacobian::GENERATOR;
         let mut g_const = JacobianConst::GENERATOR;
         for _ in 0..100 {
@@ -438,9 +426,6 @@ mod tests {
 
     #[test]
     fn compare_add() {
-        #[cfg(feature = "bigint_ops")]
-        init();
-
         let mut a = Jacobian::GENERATOR;
         let mut b = JacobianConst::GENERATOR;
         let mut c = Jacobian::GENERATOR;
@@ -459,9 +444,6 @@ mod tests {
 
     #[test]
     fn test_add() {
-        #[cfg(feature = "bigint_ops")]
-        init();
-
         let mut g = Jacobian::GENERATOR;
 
         for (x_bytes, y_bytes) in ADD_TEST_VECTORS {

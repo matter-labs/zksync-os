@@ -116,17 +116,8 @@ mod test {
         test_vectors::MUL_TEST_VECTORS,
     };
 
-    #[cfg(feature = "bigint_ops")]
-    fn init() {
-        crate::secp256r1::init();
-        crate::bigint_delegation::init();
-    }
-
     #[test]
     fn test_ecmult_mix() {
-        #[cfg(feature = "bigint_ops")]
-        init();
-
         assert_eq!(
             JacobianConst::GENERATOR.double().to_affine(),
             ecmult(Jacobian::GENERATOR, Scalar::ONE, Scalar::ONE, &TABLE_G).to_affine()
@@ -196,9 +187,6 @@ mod test {
 
     #[test]
     fn test_ecmult() {
-        #[cfg(feature = "bigint_ops")]
-        init();
-
         for (k_bytes, x_bytes, y_bytes) in MUL_TEST_VECTORS {
             let k = Scalar::reduce_be_bytes(k_bytes);
             let expected = Jacobian {

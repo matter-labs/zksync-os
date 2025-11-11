@@ -176,17 +176,8 @@ mod tests {
 
     use super::*;
 
-    #[cfg(feature = "bigint_ops")]
-    fn init() {
-        crate::secp256r1::init();
-        crate::bigint_delegation::init();
-    }
-
     #[test]
     fn test_mul() {
-        #[cfg(feature = "bigint_ops")]
-        init();
-
         proptest!(|(x: Scalar, y: Scalar, z: Scalar)| {
             prop_assert_eq!(x * &Scalar::ONE, x);
             prop_assert_eq  !(x * &Scalar::ZERO, Scalar::ZERO);
@@ -197,9 +188,6 @@ mod tests {
 
     #[test]
     fn test_invert() {
-        #[cfg(feature = "bigint_ops")]
-        init();
-
         proptest!(|(s: Scalar)| {
             let mut a = s;
             a.invert_assign();

@@ -94,9 +94,6 @@ mod tests {
 
     #[test]
     fn test_infinity_check() {
-        #[cfg(feature = "bigint_ops")]
-        crate::secp256r1::init();
-
         let inf = Affine::INFINITY;
         assert!(inf.is_infinity());
 
