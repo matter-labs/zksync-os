@@ -30,8 +30,8 @@ enum Mutation {
     None,         // Generates combination of valid random pairs (P,Q) and/or inverse pairs (P,Q), (-P,Q) 
     Flip(Coord),  // Bit flip mutation
     Zero(Coord),  // Zeroes out a particular coordinate of P, Q points (see Coord enum)
-    AllZeroG1,    // Zeroes out a particaluar P point
-    AllZeroG2,    // Zeroes out a particaluar Q point
+    AllZeroG1,    // Zeroes out a particular P point
+    AllZeroG2,    // Zeroes out a particular Q point
 }
 
 #[derive(Arbitrary, Debug, Clone)]
@@ -194,11 +194,11 @@ pub fn gen_pairs(
         let s2: u16 = u.arbitrary().unwrap_or(3).max(1);
         let p = (g1.mul_bigint(bi(s1 as u64))).into_affine();
         let q = (g2.mul_bigint(bi(s2 as u64))).into_affine();
-        let pn = (-G1Projective::from(p)).into_affine();
+        let p_neg = (-G1Projective::from(p)).into_affine();
 
         out.extend_from_slice(&encode_g1(p));
         out.extend_from_slice(&encode_g2(q));
-        out.extend_from_slice(&encode_g1(pn));
+        out.extend_from_slice(&encode_g1(p_neg));
         out.extend_from_slice(&encode_g2(q));
     }
 
