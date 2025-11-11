@@ -487,6 +487,46 @@ mod tests {
     use super::JacobianConst;
 
     #[test]
+    fn test_infinity_check() {
+        #[cfg(feature = "bigint_ops")]
+        crate::secp256k1::init();
+
+        // Check that the infinity constant is infinity
+        let inf = Jacobian::INFINITY;
+        assert!(inf.is_infinity());
+        let inf = JacobianConst::INFINITY;
+        assert!(inf.is_infinity());
+
+        // (1, 1, 0) is infinity
+        let ooz = Jacobian {
+            x: FieldElement::ONE,
+            y: FieldElement::ONE,
+            z: FieldElement::ZERO,
+        };
+        assert!(ooz.is_infinity());
+        let ooz = JacobianConst {
+            x: FieldElementConst::ONE,
+            y: FieldElementConst::ONE,
+            z: FieldElementConst::ZERO,
+        };
+        assert!(ooz.is_infinity());
+
+        // (1, 1, 0) isn't infinity
+        let zzo = Jacobian {
+            x: FieldElement::ZERO,
+            y: FieldElement::ZERO,
+            z: FieldElement::ONE,
+        };
+        assert!(!zzo.is_infinity());
+        let zzo = JacobianConst {
+            x: FieldElementConst::ZERO,
+            y: FieldElementConst::ZERO,
+            z: FieldElementConst::ONE,
+        };
+        assert!(!zzo.is_infinity());
+    }
+
+    #[test]
     fn test_add_basic() {
         #[cfg(feature = "bigint_ops")]
         crate::secp256k1::init();

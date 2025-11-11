@@ -371,7 +371,7 @@ impl JacobianConst {
 #[cfg(test)]
 mod tests {
     use crate::secp256r1::{
-        field::FieldElement,
+        field::{FieldElement, FieldElementConst},
         points::{Affine, Jacobian, JacobianConst},
         test_vectors::ADD_TEST_VECTORS,
     };
@@ -380,6 +380,46 @@ mod tests {
     fn init() {
         crate::secp256r1::init();
         crate::bigint_delegation::init();
+    }
+
+    #[test]
+    fn test_infinity_check() {
+        #[cfg(feature = "bigint_ops")]
+        crate::secp256r1::init();
+
+        // Check that the infinity constant is infinity
+        let inf = Jacobian::INFINITY;
+        assert!(inf.is_infinity());
+        let inf = JacobianConst::INFINITY;
+        assert!(inf.is_infinity_const());
+
+        // (1, 1, 0) is infinity
+        let ooz = Jacobian {
+            x: FieldElement::ONE,
+            y: FieldElement::ONE,
+            z: FieldElement::ZERO,
+        };
+        assert!(ooz.is_infinity());
+        let ooz = JacobianConst {
+            x: FieldElementConst::ONE,
+            y: FieldElementConst::ONE,
+            z: FieldElementConst::ZERO,
+        };
+        assert!(ooz.is_infinity_const());
+
+        // (1, 1, 0) isn't infinity
+        let zzo = Jacobian {
+            x: FieldElement::ZERO,
+            y: FieldElement::ZERO,
+            z: FieldElement::ONE,
+        };
+        assert!(!zzo.is_infinity());
+        let zzo = JacobianConst {
+            x: FieldElementConst::ZERO,
+            y: FieldElementConst::ZERO,
+            z: FieldElementConst::ONE,
+        };
+        assert!(!zzo.is_infinity_const());
     }
 
     #[test]
