@@ -43,7 +43,7 @@ where
         modifier,
     } = request;
 
-    debug_assert_eq!(callee, L1_MESSENGER_ADDRESS);
+    debug_assert_eq!(callee, L1_MESSENGER_ADDRESS_HOOK);
 
     let mut error = false;
     // There are no "payable" methods
@@ -120,7 +120,7 @@ const L1_MESSAGE_SENT_TOPIC: [u8; 32] = [
 ];
 
 fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
-    calldata: &[u8],
+    message: &[u8],
     resources: &mut S::Resources,
     system: &mut System<S>,
     caller: B160,
@@ -135,30 +135,12 @@ where
         HOOK_BASE_ERGS_COST,
     )?;
 
-    if calldata.len() < 4 {
+    if is_static {
         return Ok(Err(
-            "L1 messenger failure: calldata shorter than selector length",
+            "L1 messenger failure: sendToL1 called with static context",
         ));
     }
-    let mut selector = [0u8; 4];
-    selector.copy_from_slice(&calldata[..4]);
-    let _ = system
-        .get_logger()
-        .write_fmt(format_args!("Selector for l1 messenger:"));
-    let _ = system.get_logger().log_data(selector.iter().copied());
-
-    match selector {
-        s if s == SEND_TO_L1_SELECTOR => {
-            if is_static {
-                return Ok(Err(
-                    "L1 messenger failure: sendToL1 called with static context",
-                ));
-            }
-
-            send_to_l1_inner(&calldata[4..], resources, system, caller)
-        }
-        _ => Ok(Err("L1 messenger: unknown selector")),
-    }
+    send_to_l1_inner(&message, resources, system, caller)
 }
 
 /// Sends a message to L1 and emits the needed events.
@@ -167,119 +149,33 @@ where
 /// 32 bytes length of the message
 /// followed by the message itself, padded to be a multiple of 32 bytes.
 pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
-    abi_encoded_message: &[u8],
+    message: &[u8],
     resources: &mut S::Resources,
     system: &mut System<S>,
     caller: B160,
 ) -> Result<Result<Bytes32, &'static str>, SystemError> {
-    // Note that we do not enforce fully strict ABI encoding here
+    // charge for message length
+    let l1_message_cost = l1_message_ergs_cost(message.len());
+    resources.charge(&S::Resources::from_ergs(l1_message_cost))?;
 
-    // abi_encoded_message length shouldn't be able to overflow u32, due to gas
-    // limitations.
-    let abi_encoded_message_len: u32 = abi_encoded_message
-        .len()
-        .try_into()
-        .map_err(|_| internal_error!("abi_encoded_message is larger than u32"))?;
+    // emit L1 message
+    let message_hash =
+        system
+            .io
+            .emit_l1_message(ExecutionEnvironmentType::NoEE, resources, &caller, message)?;
 
-    // following solidity abi for sendToL1(bytes _message)
-    if abi_encoded_message_len < 32 {
-        return Ok(Err(
-            "L1 messenger failure: sendToL1 called with invalid calldata",
-        ));
-    }
-
-    let message_offset: u32 = match U256::from_be_slice(&abi_encoded_message[..32]).try_into() {
-        Ok(offset) => offset,
-        Err(_) => {
-            return Ok(Err(
-                "L1 messenger failure: sendToL1 called with invalid calldata",
-            ))
-        }
-    };
-    // Note, that in general, Solidity allows to have non-strict offsets, i.e. it should be possible
-    // to call a function with offset pointing to a faraway point in calldata. However,
-    // when explicitly calling a contract Solidity encodes it via a strict encoding and allowing
-    // only standard encoding here allows for cheaper and easier implementation.
-    if message_offset != 32 {
-        return Ok(Err(
-            "L1 messenger failure: sendToL1 expects strict message offset",
-        ));
-    }
-    // length located at message_offset..message_offset+32
-    // we want to check that message_offset+32 will not overflow u32
-    let length_encoding_end = match message_offset.checked_add(32) {
-        Some(length_encoding_end) => length_encoding_end,
-        None => {
-            return Ok(Err(
-                "L1 messenger failure: sendToL1 called with invalid calldata",
-            ))
-        }
-    };
-    if abi_encoded_message_len < length_encoding_end {
-        return Ok(Err(
-            "L1 messenger failure: sendToL1 called with invalid calldata",
-        ));
-    }
-    let length: u32 = match U256::from_be_slice(
-        &abi_encoded_message[(length_encoding_end as usize) - 32..length_encoding_end as usize],
-    )
-    .try_into()
-    {
-        Ok(length) => length,
-        Err(_) => {
-            return Ok(Err(
-                "L1 messenger failure: sendToL1 called with invalid calldata",
-            ))
-        }
-    };
-    // to check that it will not overflow
-    let message_end = match length_encoding_end.checked_add(length) {
-        Some(message_end) => message_end,
-        None => {
-            return Ok(Err(
-                "L1 messenger failure: sendToL1 called with invalid calldata",
-            ))
-        }
-    };
-    if abi_encoded_message_len < message_end {
-        return Ok(Err(
-            "L1 messenger failure: sendToL1 called with invalid calldata",
-        ));
-    }
-
-    // Note, that in general, Solidity allows to have non-strict offsets, i.e. it should be possible
-    // to call a function with offset pointing to a faraway point in calldata. However,
-    // when explicitly calling a contract Solidity encodes it via a strict encoding and allowing
-    // only standard encoding here allows for cheaper and easier implementation.
-    if abi_encoded_message_len % 32 != 0 {
-        return Ok(Err("Calldata is not well formed"));
-    }
-
-    let message = &abi_encoded_message[(length_encoding_end as usize)..message_end as usize];
-    // Charge gas for l1 message
-    let l1_message_cost_ergs = l1_message_ergs_cost(message.len());
-    resources.charge(&S::Resources::from_ergs(l1_message_cost_ergs))?;
-    let message_hash = system.io.emit_l1_message(
-        // We already charged gas for it
-        ExecutionEnvironmentType::NoEE,
-        resources,
-        &caller,
-        message,
-    )?;
-
+    // emit corresponding event
     let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
     topics.push(Bytes32::from_array(L1_MESSAGE_SENT_TOPIC));
     topics.push(Bytes32::from_u256_be(&b160_to_u256(caller)));
     topics.push(message_hash);
 
     system.io.emit_event(
-        // Use EVM to charge gas for this operation
         ExecutionEnvironmentType::EVM,
         resources,
         &L1_MESSENGER_ADDRESS,
         &topics,
-        // We are lucky that the encoding of the event is exactly same as encoding of the bytes in the calldata
-        &abi_encoded_message,
+        message,
     )?;
 
     Ok(Ok(message_hash))
