@@ -453,7 +453,7 @@ impl<
     type FinalData = O;
     fn finish(
         mut self,
-        _block_metadata: BlockMetadataFromOracle,
+        block_metadata: BlockMetadataFromOracle,
         current_block_hash: Bytes32,
         _l1_to_l2_txs_hash: Bytes32,
         _upgrade_tx_hash: Bytes32,
@@ -462,6 +462,7 @@ impl<
     ) -> Self::FinalData {
         result_keeper.pubdata(&[PUBDATA_ENCODING_VERSION]);
         result_keeper.pubdata(current_block_hash.as_u8_ref());
+        result_keeper.pubdata(&block_metadata.timestamp.to_be_bytes());
         // dump pubdata and state diffs
         self.storage
             .finish(
@@ -532,6 +533,7 @@ impl<
         // Write version byte first to enable future pubdata format upgrades
         da_commitment_generator.write(&[PUBDATA_ENCODING_VERSION]);
         da_commitment_generator.write(current_block_hash.as_u8_ref());
+        da_commitment_generator.write(&block_metadata.timestamp.to_be_bytes());
         let mut l2_to_l1_logs_hasher = Blake2s256::new();
 
         self.storage
@@ -647,6 +649,7 @@ impl<
         // Write version byte first to enable future pubdata format upgrades
         da_commitment_generator.write(&[PUBDATA_ENCODING_VERSION]);
         da_commitment_generator.write(current_block_hash.as_u8_ref());
+        da_commitment_generator.write(&block_metadata.timestamp.to_be_bytes());
 
         let state_diffs_hash = if cfg!(feature = "state-diffs-pi") {
             self.storage
@@ -836,6 +839,9 @@ where
             .as_mut()
             .unwrap()
             .write(current_block_hash.as_u8_ref());
+        builder
+            .da_commitment_generator
+            .write(&block_metadata.timestamp.to_be_bytes());
 
         self.storage
             .finish(

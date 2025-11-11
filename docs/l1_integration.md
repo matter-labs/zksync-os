@@ -138,6 +138,7 @@ Pubdata includes data needed to restore the full chain state(everything under co
 Now it includes(for each block):
 - pubdata encoding version (currently 0x01)
 - block hash
+- block timestamp (8 bytes, BE)
 - state diffs, for the current storage model it's:
   - compressed diffs for contracts storage slots changed during block execution
   - accounts changes(nonce, balance, bytecode)
