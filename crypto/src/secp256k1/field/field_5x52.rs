@@ -558,10 +558,10 @@ impl proptest::arbitrary::Arbitrary for FieldElement5x52 {
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         use proptest::prelude::{any, Strategy};
 
-        any::<[u64; 5]>().prop_map(|limbs| Self(limbs).normalize())
+        any::<[u8; 32]>().prop_map(|bytes| Self::from_bytes_unchecked(&bytes).normalize())
     }
 
-    type Strategy = proptest::arbitrary::Mapped<[u64; 5], Self>;
+    type Strategy = proptest::arbitrary::Mapped<[u8; 32], Self>;
 }
 
 #[cfg(test)]

@@ -800,10 +800,10 @@ impl proptest::arbitrary::Arbitrary for FieldElement10x26 {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         use proptest::prelude::{any, Strategy};
 
-        any::<[u32; 10]>().prop_map(|limbs| Self(limbs).normalize())
+        any::<[u8; 32]>().prop_map(|bytes| Self::from_bytes_unchecked(&bytes).normalize())
     }
 
-    type Strategy = proptest::arbitrary::Mapped<[u32; 10], Self>;
+    type Strategy = proptest::arbitrary::Mapped<[u8; 32], Self>;
 }
 
 #[cfg(test)]
