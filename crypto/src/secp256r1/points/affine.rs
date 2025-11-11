@@ -19,7 +19,7 @@ impl Affine {
     };
 
     pub(crate) fn is_infinity(&self) -> bool {
-        self.infinity || (self.x.is_zero() || self.y.is_zero())
+        self.infinity || (self.x.is_zero() && self.y.is_zero())
     }
 
     pub(crate) fn from_be_bytes(x: &[u8; 32], y: &[u8; 32]) -> Result<Self, Secp256r1Err> {

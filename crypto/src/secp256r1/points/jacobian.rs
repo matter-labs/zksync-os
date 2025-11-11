@@ -29,7 +29,7 @@ impl Jacobian {
     };
 
     pub(crate) fn is_infinity(&self) -> bool {
-        self.z.is_zero() || (self.y.is_zero() && self.x.is_zero())
+        self.z.is_zero()
     }
 
     // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2004-hmv
@@ -258,7 +258,7 @@ pub(crate) struct JacobianConst {
 impl JacobianConst {
     const INFINITY: Self = Self {
         x: FieldElementConst::ZERO,
-        y: FieldElementConst::ZERO,
+        y: FieldElementConst::ONE,
         z: FieldElementConst::ZERO,
     };
 
@@ -280,7 +280,7 @@ impl JacobianConst {
     };
 
     pub(crate) const fn is_infinity_const(&self) -> bool {
-        self.z.is_zero() || (self.x.is_zero() || self.y.is_zero())
+        self.z.is_zero()
     }
 
     #[cfg(test)]

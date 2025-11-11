@@ -63,6 +63,9 @@ impl AffineConst {
     }
 
     pub(crate) const fn to_jacobian(self) -> JacobianConst {
+        if self.is_infinity() {
+            return JacobianConst::INFINITY;
+        }
         JacobianConst {
             x: self.x,
             y: self.y,
@@ -209,7 +212,10 @@ impl Affine {
         self.infinity = a.infinity;
     }
 
-    pub(crate) const fn to_jacobian(self) -> Jacobian {
+    pub(crate) fn to_jacobian(self) -> Jacobian {
+        if self.is_infinity() {
+            return Jacobian::INFINITY;
+        }
         Jacobian {
             x: self.x,
             y: self.y,
