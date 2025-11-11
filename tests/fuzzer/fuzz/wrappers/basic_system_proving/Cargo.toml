@@ -61,8 +61,8 @@ alloy = { version = "1", features = ["rlp", "full"] }
 alloy-rlp = { version = "*" }
 alloy-primitives = { version = "1", features = ["arbitrary"] }
 reqwest = { version = "*", features = ["blocking", "json"] }
-reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git" }
-reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git" }
+reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git", tag = "v1.8.4" }
+reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git", tag = "v1.8.4" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
