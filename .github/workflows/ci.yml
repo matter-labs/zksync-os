@@ -42,6 +42,23 @@ jobs:
               run: cargo test --release --no-run
             - name: Run rust tests
               run: cargo test --release -j 3 -- --skip verify_default_binaries
+    crypto_test:
+        name: crypto crate tests
+        runs-on: [matterlabs-ci-runner]
+        steps:
+            - uses: actions/checkout@v3
+            - uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  rustflags: ""
+            - name: Setup
+              run: |
+                  rustup set profile minimal
+            - name: Run crypto tests 1000 times with overflow checks
+              run: |
+                  for i in {1..1000}; do
+                    echo "Run $i/1000"
+                    RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto || exit 1
+                  done
     evm_state_tests:
         name: EF EVM state tests
         runs-on: [matterlabs-ci-runner-high-performance]
