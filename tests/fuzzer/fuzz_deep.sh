@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 # Settings to configure through env variables
+ONE_SHOT="${ONE_SHOT:-}"
 ROTATE_SECONDS="${ROTATE_SECONDS:-86400}"
 FORK="${FORK:-$(nproc)}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
@@ -108,11 +109,8 @@ logs="$workdir/logs"
 
 mkdir -p "$logs"
 
-# Run fuzzing round-robin schedule
-idx=0
-while true; do
-  target="${TARGETS[$idx]}"
-  idx=$(( (idx + 1) % ${#TARGETS[@]} ))
+run_target() {
+  local target="$1"
 
   stamp="$(date +'%Y-%m-%d_%H-%M-%S')"
   log_file="$logs/${target}_${stamp}.log"
@@ -132,4 +130,21 @@ while true; do
   cleanup
 
   notify_slack ":white_check_mark: Completed $target fuzzing; corpus minimized."
+}
+
+# Run each target exactly once then exit when ONE_SHOT is set
+if [[ -n "${ONE_SHOT:-}" ]]; then
+  overall=0
+  for t in "${TARGETS[@]}"; do
+    run_target "$t" || overall=$?
+  done
+  exit "$overall"
+fi
+
+# Run fuzzing round-robin schedule (default)
+idx=0
+while true; do
+  target="${TARGETS[$idx]}"
+  idx=$(( (idx + 1) % ${#TARGETS[@]} ))
+  run_target "$target"
 done

@@ -9,7 +9,7 @@ pub mod ecrecover;
 pub mod keccak256;
 pub mod modexp;
 pub mod p256_verify;
-mod point_evaluation;
+pub mod point_evaluation;
 pub mod ripemd160;
 pub mod sha256;
 

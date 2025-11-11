@@ -43,6 +43,7 @@ ark-ff = "0.4"
 ark-ec = "0.4"
 ark-bn254 = "0.4"
 p256 = { version = "0.13", features = ["ecdsa"] }
+c-kzg = { version = "2.1.5" }
 
 [[bin]]
 name = "ripemd160"
@@ -306,6 +307,20 @@ bench = false
 [[bin]]
 name = "precompiles_diff_ecrecover"
 path = "fuzz_targets/precompiles_diff/ecrecover.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "precompiles_diff_pairing"
+path = "fuzz_targets/precompiles_diff/pairing.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "precompiles_diff_kzg"
+path = "fuzz_targets/precompiles_diff/kzg.rs"
 test = false
 doc = false
 bench = false
