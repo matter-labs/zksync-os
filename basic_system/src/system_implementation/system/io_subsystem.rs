@@ -528,6 +528,7 @@ impl<
 
         // finishing IO, applying changes
         let mut da_commitment_generator = crate::system_implementation::system::da_commitment_generator::Blake2sCommitmentGenerator::new();
+        // Write version byte first to enable future pubdata format upgrades
         da_commitment_generator.write(&[PUBDATA_ENCODING_VERSION]);
         da_commitment_generator.write(current_block_hash.as_u8_ref());
         let mut l2_to_l1_logs_hasher = Blake2s256::new();
@@ -642,6 +643,7 @@ impl<
             da_commitment_generator_from_scheme(self.da_commitment_scheme.unwrap(), A::default())
                 .unwrap();
 
+        // Write version byte first to enable future pubdata format upgrades
         da_commitment_generator.write(&[PUBDATA_ENCODING_VERSION]);
         da_commitment_generator.write(current_block_hash.as_u8_ref());
 
@@ -822,16 +824,17 @@ where
             assert_eq!(builder.da_commitment_scheme.unwrap(), da_commitment_scheme);
         }
 
-        builder
-            .da_commitment_generator
-            .as_mut()
-            .unwrap()
-            .write(current_block_hash.as_u8_ref());
+        // Write version byte first to enable future pubdata format upgrades
         builder
             .da_commitment_generator
             .as_mut()
             .unwrap()
             .write(&[PUBDATA_ENCODING_VERSION]);
+        builder
+            .da_commitment_generator
+            .as_mut()
+            .unwrap()
+            .write(current_block_hash.as_u8_ref());
 
         self.storage
             .finish(
