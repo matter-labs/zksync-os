@@ -8,6 +8,7 @@ use alloy::signers::local::PrivateKeySigner;
 use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
+use rig::basic_system::system_implementation::system::pubdata::PUBDATA_ENCODING_VERSION;
 use rig::ethers::types::Address;
 use rig::ruint::aliases::{B160, U256};
 use rig::zksync_os_interface::error::InvalidTransaction;
@@ -1360,4 +1361,46 @@ fn test_expensive_pubdata() {
     let result = chain.run_block(vec![tx], Some(block_context), None, run_config());
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
+}
+
+#[test]
+fn test_check_pubdata_encoding_version() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    // Set balance for the contract address
+    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+
+    let tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 134217728,
+            max_priority_fee_per_gas: 134217728,
+            gas_limit: 75_000,
+            to: TxKind::Call(target_address),
+            value: Default::default(),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    let native_price = U256::from(100);
+    let pubdata_price = U256::from(2);
+
+    let block_context = BlockContext {
+        native_price,
+        pubdata_price,
+        eip1559_basefee: U256::from(1),
+        ..Default::default()
+    };
+    // Check tx succeeds
+    let result = chain.run_block(vec![tx], Some(block_context), None, run_config());
+    let res0 = result.tx_results.first().expect("Must have a tx result");
+    assert!(res0.as_ref().is_ok(), "Tx should succeed");
+
+    assert_eq!(result.pubdata[0], PUBDATA_ENCODING_VERSION);
 }
