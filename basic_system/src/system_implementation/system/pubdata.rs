@@ -1,0 +1,1 @@
+pub const PUBDATA_ENCODING_VERSION: u8 = 1;

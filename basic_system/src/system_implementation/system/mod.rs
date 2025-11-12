@@ -24,6 +24,7 @@ use zk_ee::{
 
 pub mod da_commitment_generator;
 mod io_subsystem;
+pub mod pubdata;
 mod public_input;
 
 pub use self::io_subsystem::*;
