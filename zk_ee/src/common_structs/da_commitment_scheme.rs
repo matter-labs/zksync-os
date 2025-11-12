@@ -1,6 +1,8 @@
-use crate::internal_error;
-use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
-use crate::system::errors::internal::InternalError;
+use crate::{
+    internal_error,
+    oracle::{query_ids::DA_COMMITMENT_SCHEME_QUERY_ID, IOOracle},
+    system::errors::internal::InternalError,
+};
 
 ///
 /// Rust representation of `L2DACommitmentScheme` from l1 contracts.
@@ -39,31 +41,11 @@ impl TryFrom<u8> for DACommitmentScheme {
     }
 }
 
-impl UsizeSerializable for DACommitmentScheme {
-    const USIZE_LEN: usize = <u8 as UsizeSerializable>::USIZE_LEN;
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        cfg_if::cfg_if!(
-            if #[cfg(target_endian = "big")] {
-                compile_error!("unsupported architecture: big endian arch is not supported")
-            } else if #[cfg(target_pointer_width = "32")] {
-                let low = *self as u8 as usize;
-                let high = 0;
-                return [low, high].into_iter();
-            } else if #[cfg(target_pointer_width = "64")] {
-                return core::iter::once(*self as usize)
-            } else {
-                compile_error!("unsupported architecture")
-            }
-        );
-    }
-}
-
-impl UsizeDeserializable for DACommitmentScheme {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        DACommitmentScheme::try_from(u8::from_iter(src)?)
-            .map_err(|_| internal_error!("Failed to parse proof data: invalid da commitment value"))
+impl DACommitmentScheme {
+    pub fn try_from_oracle<O: IOOracle>(oracle: &mut O) -> Result<Self, InternalError> {
+        let da_commitment_scheme_id_raw: u8 =
+            oracle.query_with_empty_input(DA_COMMITMENT_SCHEME_QUERY_ID)?;
+        DACommitmentScheme::try_from(da_commitment_scheme_id_raw)
+            .map_err(|_| internal_error!("Invalid DA commitment scheme ID"))
     }
 }
