@@ -460,6 +460,7 @@ impl<
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
+        result_keeper.pubdata(&[PUBDATA_ENCODING_VERSION]);
         result_keeper.pubdata(current_block_hash.as_u8_ref());
         // dump pubdata and state diffs
         self.storage
