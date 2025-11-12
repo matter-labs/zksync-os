@@ -62,15 +62,24 @@ impl UsizeDeserializable for KZGCommitmentAndProof {
     }
 }
 
+pub trait BlobCommitmentAndProofAdvisor {
+    fn get_blob_commitment_and_proof_advice(&mut self, data: &[u8]) -> KZGCommitmentAndProof;
+}
+
+pub struct OracleBasedBlobCommitmentAndProofAdvisor<'a, O: zk_ee::oracle::IOOracle> {
+    pub oracle: &'a mut O,
+}
+
 // Right now, we run it only on RISC-V, but in theory, it should be possible to make it runnable on native arch as well
-pub fn blob_commitment_and_proof_advice(
-    data: &[u8],
-    oracle: &mut impl zk_ee::oracle::IOOracle,
-) -> KZGCommitmentAndProof {
-    oracle
-        .query_serializable(
-            BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
-            &(data.as_ptr() as usize as u64, data.len() as u64),
-        )
-        .expect("must deserialize commitment and proof")
+impl<'a, O: zk_ee::oracle::IOOracle> BlobCommitmentAndProofAdvisor
+    for OracleBasedBlobCommitmentAndProofAdvisor<'a, O>
+{
+    fn get_blob_commitment_and_proof_advice(&mut self, data: &[u8]) -> KZGCommitmentAndProof {
+        self.oracle
+            .query_serializable(
+                BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
+                &(data.as_ptr() as usize as u64, data.len() as u64),
+            )
+            .expect("must deserialize commitment and proof")
+    }
 }

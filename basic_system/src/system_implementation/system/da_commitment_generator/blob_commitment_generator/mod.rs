@@ -1,5 +1,6 @@
 use crate::system_functions::point_evaluation::{parse_g1_compressed, versioned_hash_for_kzg};
 use crate::system_implementation::system::da_commitment_generator::DACommitmentGenerator;
+use crate::system_implementation::system::da_commitment_generator::blob_commitment_generator::commitment_and_proof_advice::{BlobCommitmentAndProofAdvisor, OracleBasedBlobCommitmentAndProofAdvisor};
 use arrayvec::ArrayVec;
 use crypto::ark_ff::Field;
 use crypto::ark_ff::One;
@@ -73,10 +74,11 @@ impl<O: IOOracle> DACommitmentGenerator<O> for BlobCommitmentGenerator {
         // len should be [0, len be, 23 zeroes] BE
         let length = self.buffer.len() - 31;
         self.buffer[0..8].copy_from_slice(&(length as u64).to_be_bytes());
+        let mut advisor = OracleBasedBlobCommitmentAndProofAdvisor { oracle };
         for chunk in self.buffer.chunks(ENCODABLE_BYTES_PER_BLOB) {
             cycle_marker::wrap!("blob_versioned_hash", {
                 self.versioned_hashes_hasher
-                    .update(&blob_versioned_hash(chunk, oracle));
+                    .update(&blob_versioned_hash_with_advisor(chunk, &mut advisor));
             });
         }
         self.versioned_hashes_hasher.finalize_reset().into()
@@ -89,9 +91,16 @@ impl<O: IOOracle> DACommitmentGenerator<O> for BlobCommitmentGenerator {
 /// Please note, that `data` is not the blob itself, but data we encode into the blob.
 /// For encoding, we chunk `data` by 31 bytes and interpret each chunk as BE blob element.
 ///
-fn blob_versioned_hash(data: &[u8], oracle: &mut impl IOOracle) -> [u8; 32] {
-    let commitment_and_proof =
-        commitment_and_proof_advice::blob_commitment_and_proof_advice(data, oracle);
+pub fn blob_versioned_hash_with_advisor(
+    data: &[u8],
+    advisor: &mut impl BlobCommitmentAndProofAdvisor,
+) -> [u8; 32] {
+    debug_assert!(data.len() <= ENCODABLE_BYTES_PER_BLOB);
+
+    // We get commitment and proof from an external source (advisor)
+    // Correctness is checked below
+    let commitment_and_proof = advisor.get_blob_commitment_and_proof_advice(data);
+
     let commitment = parse_g1_compressed(&commitment_and_proof.commitment)
         .expect("Invalid blob commitment point");
     let proof = parse_g1_compressed(&commitment_and_proof.proof).expect("Invalid blob proof point");

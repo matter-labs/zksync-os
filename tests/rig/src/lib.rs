@@ -16,6 +16,7 @@ pub use alloy;
 pub use alloy_rlp;
 pub use alloy_sol_types;
 pub use basic_system;
+pub use callable_oracles;
 pub use chain::BlockContext;
 pub use chain::Chain;
 pub use ethers;

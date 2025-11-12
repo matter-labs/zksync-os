@@ -5,7 +5,7 @@ use zk_ee::utils::Bytes32;
 
 #[cfg(feature = "aggregation")]
 mod blake2s_commitment_generator;
-mod blob_commitment_generator;
+pub mod blob_commitment_generator;
 mod keccak256_commitment_generator;
 
 #[cfg(feature = "aggregation")]
