@@ -275,6 +275,7 @@ function smoke() {
         "precompiles_ecadd"
         "precompiles_ecmul"
         "precompiles_p256"
+        "precompiles_kzg_point_eval"
         "modexp_delegation"
         "precompiles_diff_ecadd"
         "precompiles_diff_sha256"
@@ -353,7 +354,12 @@ function regression() {
             echo "============================================"
 
             # Run the target against the corpus file
-            "$BIN" "$CORPUS_FILE" -rss_limit_mb=8192 -close_fd_mask=3
+            if [ "$TARGET" = "kzg_blobs" ]; then
+                # max_len is equal to ENCODABLE_BYTES_PER_BLOB
+                "$BIN" "$CORPUS_FILE" -rss_limit_mb=8192 -close_fd_mask=3 -max_len=126976
+            else
+                "$BIN" "$CORPUS_FILE" -rss_limit_mb=8192 -close_fd_mask=3
+            fi
             exit_code=$?
             if [ $exit_code -eq 0 ]; then
                 echo "$TARGET: finished fuzz target"
