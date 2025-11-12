@@ -841,6 +841,8 @@ where
             .write(current_block_hash.as_u8_ref());
         builder
             .da_commitment_generator
+            .as_mut()
+            .unwrap()
             .write(&block_metadata.timestamp.to_be_bytes());
 
         self.storage
