@@ -17,6 +17,7 @@ evm_interpreter = { path = "../../../evm_interpreter" }
 oracle_provider = { path = "../../../oracle_provider" }
 forward_system = { path = "../../../forward_system", features = ["no_print", "for_tests"] }
 basic_system = { path = "../../../basic_system" }
+callable_oracles = { path = "../../../callable_oracles" }
 modexp = { path = "../../../supporting_crates/modexp" }
 basic_bootloader = { path = "../../../basic_bootloader" }
 system_hooks = { path = "../../../system_hooks" }
@@ -255,6 +256,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "precompiles_kzg_point_eval"
+path = "fuzz_targets/precompiles/precompiles_kzg_point_eval.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "precompiles_diff_ecadd"
 path = "fuzz_targets/precompiles_diff/ecadd.rs"
 test = false
@@ -306,6 +314,13 @@ bench = false
 [[bin]]
 name = "precompiles_diff_ecrecover"
 path = "fuzz_targets/precompiles_diff/ecrecover.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "kzg_blobs"
+path = "fuzz_targets/kzg_blobs/kzg_blobs.rs"
 test = false
 doc = false
 bench = false
