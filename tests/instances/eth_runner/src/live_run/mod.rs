@@ -311,10 +311,19 @@ fn run_block_with_retries(
     single_tx: Option<u64>,
     gpu_shared_state: &mut Option<&mut GpuSharedState>,
     only_forward: bool,
+    backup_endpoint: Option<&String>,
 ) -> Result<BlockStatus> {
     const MAX_RETRIES: usize = 3;
 
     for attempt in 1..=MAX_RETRIES {
+        let endpoint = if attempt == 1 {
+            endpoint
+        } else if let Some(backup) = backup_endpoint {
+            warn!("Switching to backup endpoint for block {block_number} on attempt {attempt}");
+            backup.as_str()
+        } else {
+            endpoint
+        };
         match run_block(
             block_number,
             db,
@@ -357,6 +366,7 @@ pub fn live_run(
     webhook: Option<String>,
     single_tx: Option<u64>,
     only_forward: bool,
+    backup_endpoint: Option<String>,
 ) -> Result<()> {
     if let Some(webhook) = webhook.clone() {
         install_panic_hook(webhook);
@@ -406,6 +416,7 @@ pub fn live_run(
             single_tx,
             gpu_state,
             only_forward,
+            backup_endpoint.as_ref(),
         )? {
             failures += 1;
             if let Some(webhook) = webhook.as_ref() {
