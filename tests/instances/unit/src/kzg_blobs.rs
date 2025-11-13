@@ -20,11 +20,12 @@ fn get_alloy_versioned_hash(data: &[u8]) -> [u8; 32] {
 
     let mut alloy_hashes_iter = blob_sidecar.versioned_hashes();
     let versioned_hash_alloy = alloy_hashes_iter.next().expect("Should exist");
-    //assert!(alloy_hashes_iter.next().is_none());
+    assert!(alloy_hashes_iter.next().is_none());
 
     versioned_hash_alloy.0
 }
 
+// We need to prepend data with len for our encoding. Alloy's SimpleCoder does it under the hood
 fn encode_pubdata(data: &[u8]) -> Vec<u8> {
     // we allocate 31 byte to encode length as a separate field element for convenience
     let mut vec = Vec::from([0u8; 31]);
@@ -39,9 +40,11 @@ fn encode_pubdata(data: &[u8]) -> Vec<u8> {
 fn test_blob_with_max_size() {
     let mut advisor = BlobCommitmentAndProofAdvisorImplementation;
 
-    let data = [1; ENCODABLE_BYTES_PER_BLOB];
-    let versioned_hash = blob_versioned_hash_with_advisor(&data, &mut advisor);
+    let data = [1; ENCODABLE_BYTES_PER_BLOB - 31];
+    let encoded_data = encode_pubdata(&data);
+    assert_eq!(encoded_data.len(), ENCODABLE_BYTES_PER_BLOB);
 
+    let versioned_hash = blob_versioned_hash_with_advisor(&encoded_data, &mut advisor);
     let versioned_hash_expected = get_alloy_versioned_hash(&data);
 
     assert_eq!(versioned_hash, versioned_hash_expected)
@@ -51,9 +54,9 @@ fn test_blob_with_max_size() {
 fn test_blob_with_data() {
     let mut advisor = BlobCommitmentAndProofAdvisorImplementation;
 
-    let data = encode_pubdata(&[1; 1024]);
+    let data = [1; 1024];
 
-    let versioned_hash = blob_versioned_hash_with_advisor(&data, &mut advisor);
+    let versioned_hash = blob_versioned_hash_with_advisor(&encode_pubdata(&data), &mut advisor);
     let versioned_hash_expected = get_alloy_versioned_hash(&data);
 
     assert_eq!(versioned_hash, versioned_hash_expected)
@@ -64,8 +67,8 @@ fn test_empty_blob() {
     let mut advisor = BlobCommitmentAndProofAdvisorImplementation;
 
     let data = [];
-    let versioned_hash = blob_versioned_hash_with_advisor(&data, &mut advisor);
 
+    let versioned_hash = blob_versioned_hash_with_advisor(&encode_pubdata(&data), &mut advisor);
     let versioned_hash_expected = get_alloy_versioned_hash(&data);
 
     assert_eq!(versioned_hash, versioned_hash_expected)
