@@ -4,6 +4,8 @@
 
 use crate::chain::BlockContext;
 use crate::Chain;
+use alloy::consensus::SidecarBuilder;
+use alloy::consensus::SimpleCoder;
 use alloy::consensus::TxEip1559;
 use alloy::consensus::TxEnvelope;
 use alloy::primitives::Address;
@@ -377,4 +379,27 @@ pub fn calldata_for_forwarder(target: alloy::primitives::Address, input: &[u8]) 
         call_data: input.to_vec().into(),
     };
     call.abi_encode()
+}
+
+pub fn get_alloy_4844_blob_versioned_hash(data: &[u8]) -> [u8; 32] {
+    let blob_sidecar = SidecarBuilder::<SimpleCoder>::from_slice(&data)
+        .build()
+        .unwrap();
+
+    let mut alloy_hashes_iter = blob_sidecar.versioned_hashes();
+    let versioned_hash_alloy = alloy_hashes_iter.next().expect("Should exist");
+    assert!(alloy_hashes_iter.next().is_none());
+
+    versioned_hash_alloy.0
+}
+
+// We need to prepend data with len for our encoding. Alloy's SimpleCoder does it under the hood
+pub fn encode_pubdata_for_4844_blobs(data: &[u8]) -> Vec<u8> {
+    // we allocate 31 byte to encode length as a separate field element for convenience
+    let mut vec = Vec::from([0u8; 31]);
+    vec.extend_from_slice(&data);
+    let length = vec.len() - 31;
+    vec[0..8].copy_from_slice(&(length as u64).to_be_bytes());
+
+    vec
 }
