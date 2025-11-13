@@ -134,7 +134,9 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
     oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
-    oracle.add_external_processor(callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default());
+    oracle.add_external_processor(
+        callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
+    );
     oracle.add_external_processor(UARTPrintResponder);
 
     // We'll wrap the source, to collect all the reads.
@@ -364,7 +366,9 @@ pub fn run_block_with_oracle_dump_ext<
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
     oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
-    oracle.add_external_processor(callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default());
+    oracle.add_external_processor(
+        callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
+    );
     oracle.add_external_processor(UARTPrintResponder);
 
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
@@ -403,7 +407,9 @@ pub fn run_block_from_oracle_dump<
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
     oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
-    oracle.add_external_processor(callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default());
+    oracle.add_external_processor(
+        callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
+    );
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
