@@ -15,7 +15,6 @@ use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::{alloy, ethers, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
-use std::u64;
 use zksync_web3_rs::eip712::Eip712Meta;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 mod native_charging;
@@ -1403,4 +1402,55 @@ fn test_check_pubdata_encoding_version() {
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
     assert_eq!(result.pubdata[0], PUBDATA_ENCODING_VERSION);
+}
+
+#[test]
+fn test_check_pubdata_has_timestamp() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    // Set balance for the contract address
+    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+
+    let tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 134217728,
+            max_priority_fee_per_gas: 134217728,
+            gas_limit: 75_000,
+            to: TxKind::Call(target_address),
+            value: Default::default(),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    let native_price = U256::from(100);
+    let pubdata_price = U256::from(2);
+    let timestamp: u64 = 42;
+
+    let block_context = BlockContext {
+        native_price,
+        pubdata_price,
+        eip1559_basefee: U256::from(1),
+        timestamp,
+        ..Default::default()
+    };
+    // Check tx succeeds
+    let result = chain.run_block(vec![tx], Some(block_context), None, run_config());
+    let res0 = result.tx_results.first().expect("Must have a tx result");
+    assert!(res0.as_ref().is_ok(), "Tx should succeed");
+
+    // Pubdata format is [VERSION(1)][BLOCK_HASH(32)][TIMESTAMP(8)][DIFFS...]
+    let pubdata_timestamp_bytes = &result.pubdata.as_slice()[33..41];
+    let pubdata_timestamp = u64::from_be_bytes(
+        pubdata_timestamp_bytes
+            .try_into()
+            .expect("Slice with incorrect length"),
+    );
+    assert_eq!(timestamp, pubdata_timestamp, "Timestamps do not match");
 }
