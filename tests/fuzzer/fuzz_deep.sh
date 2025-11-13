@@ -16,7 +16,6 @@ FUZZ_FLAGS=(
   -timeout=5
   -ignore_timeouts=1
   -fork="$FORK"
-  -report_slow_units=0
   -verbosity=0
 )
 
@@ -161,7 +160,7 @@ run_target() {
 
   mapfile -t flags < <(printf "%s\n" "${FUZZ_FLAGS[@]}")
 
-  ( setsid stdbuf -oL -eL cargo fuzz run "$target" -- "${flags[@]}" 2>&1 | tee -a "$log_file" ) &
+  ( setsid stdbuf -oL -eL cargo fuzz run "$target" -- "${flags[@]}" ) >> "$log_file" 2>&1 &
   run_pid=$!
 
   wait "$run_pid" 2>/dev/null
