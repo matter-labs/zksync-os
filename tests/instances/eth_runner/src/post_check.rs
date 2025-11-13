@@ -37,10 +37,11 @@ pub enum TxId {
 
 impl DiffTrace {
     fn collect_diffs(self, prestate_cache: &Cache) -> HashMap<B160, AccountState> {
-        let mut updates: HashMap<B160, AccountState> = HashMap::new();
-        self.result.iter().for_each(|item| {
+        let mut updates: HashMap<B160, (Option<usize>, AccountState)> = HashMap::new();
+        self.result.iter().enumerate().for_each(|(idx, item)| {
             item.result.post.iter().for_each(|(address, account)| {
-                let entry = updates.entry(address.0).or_default();
+                let (last_updated_at, entry) = updates.entry(address.0).or_default();
+                *last_updated_at = Some(idx);
                 account
                     .balance
                     .into_iter()
@@ -82,12 +83,18 @@ impl DiffTrace {
             });
             // Add account clears
             item.result.pre.iter().for_each(|(address, _)| {
-                if !updates.contains_key(&address.0) {
+                // We consider a selfdestruct either when an account is in "pre" but never
+                // updated, or if it in pre for transaction after its last update.
+                if !updates.contains_key(&address.0)
+                    || updates[&address.0]
+                        .0
+                        .is_some_and(|last_update| last_update < idx)
+                {
                     let acc = AccountState {
                         balance: Some(U256::ZERO),
                         ..Default::default()
                     };
-                    updates.insert(address.0, acc);
+                    updates.insert(address.0, (Some(idx), acc));
                 }
             })
         });
@@ -99,7 +106,7 @@ impl DiffTrace {
         // case where the logs add an empty entry for accounts that haven't been
         // modified.
 
-        updates.retain(|address, account| {
+        updates.retain(|address, (_, account)| {
             if let Some(storage) = account.storage.as_mut() {
                 storage.retain(|key, new_val| match prestate_cache.get_slot(address, key) {
                     None => *new_val != B256::ZERO,
@@ -121,7 +128,7 @@ impl DiffTrace {
             !account.is_empty()
         });
 
-        updates
+        updates.into_iter().map(|(k, (_, v))| (k, v)).collect()
     }
 
     pub fn check_storage_writes(
