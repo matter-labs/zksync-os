@@ -136,6 +136,7 @@ Also, in the future, it can be a third-party DA solution such as Celestia, Avail
 
 Pubdata includes data needed to restore the full chain state(everything under commitment mentioned in the public input section) and data for messaging.
 Now it includes(for each block):
+- pubdata encoding version (currently 0x01)
 - block hash
 - state diffs, for the current storage model it's:
   - compressed diffs for contracts storage slots changed during block execution

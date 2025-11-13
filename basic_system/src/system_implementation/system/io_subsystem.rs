@@ -5,6 +5,7 @@ use crate::system_functions::keccak256::Keccak256Impl;
 use crate::system_implementation::system::da_commitment_generator::{
     da_commitment_generator_from_scheme, NopCommitmentGenerator,
 };
+use crate::system_implementation::system::pubdata::PUBDATA_ENCODING_VERSION;
 #[cfg(feature = "aggregation")]
 use crate::system_implementation::system::public_input::{BlocksOutput, BlocksPublicInput};
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
@@ -459,6 +460,7 @@ impl<
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
         mut logger: impl Logger,
     ) -> Self::FinalData {
+        result_keeper.pubdata(&[PUBDATA_ENCODING_VERSION]);
         result_keeper.pubdata(current_block_hash.as_u8_ref());
         // dump pubdata and state diffs
         self.storage
@@ -527,6 +529,8 @@ impl<
 
         // finishing IO, applying changes
         let mut da_commitment_generator = crate::system_implementation::system::da_commitment_generator::Blake2sCommitmentGenerator::new();
+        // Write version byte first to enable future pubdata format upgrades
+        da_commitment_generator.write(&[PUBDATA_ENCODING_VERSION]);
         da_commitment_generator.write(current_block_hash.as_u8_ref());
         let mut l2_to_l1_logs_hasher = Blake2s256::new();
 
@@ -639,6 +643,9 @@ impl<
         let mut da_commitment_generator =
             da_commitment_generator_from_scheme(self.da_commitment_scheme.unwrap(), A::default())
                 .unwrap();
+
+        // Write version byte first to enable future pubdata format upgrades
+        da_commitment_generator.write(&[PUBDATA_ENCODING_VERSION]);
         da_commitment_generator.write(current_block_hash.as_u8_ref());
 
         let state_diffs_hash = if cfg!(feature = "state-diffs-pi") {
@@ -818,6 +825,12 @@ where
             assert_eq!(builder.da_commitment_scheme.unwrap(), da_commitment_scheme);
         }
 
+        // Write version byte first to enable future pubdata format upgrades
+        builder
+            .da_commitment_generator
+            .as_mut()
+            .unwrap()
+            .write(&[PUBDATA_ENCODING_VERSION]);
         builder
             .da_commitment_generator
             .as_mut()
