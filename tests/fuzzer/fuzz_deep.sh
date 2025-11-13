@@ -42,19 +42,54 @@ filter_targets_by_prefixes() {
   done | awk '!seen[$0]++'
 }
 
+is_ignored_artifact() {
+  local f="$1"
+  [[ "$f" == timeout-* ]] && return 0
+  [[ "$f" == slow-unit-* ]] && return 0
+  return 1
+}
+
+clean_ignored_artifacts() {
+  local artifacts_dir="$1" target="$2"
+  local dir="$artifacts_dir/$target"
+  [[ -d "$dir" ]] || return 0
+  shopt -s nullglob
+  local f
+  for f in "$dir"/timeout-* "$dir"/slow-unit-*; do
+    [[ -e "$f" ]] || continue
+    rm -f -- "$f"
+  done
+  shopt -u nullglob
+}
+
 monitor_findings() {
+  shopt -s nullglob
+
   local artifacts="$1" target="$2"
+  local f
   local -a known=()
-  mapfile -t known < <(ls -1 "$artifacts/$target" 2>/dev/null)
+  for f in "$artifacts/$target"/*; do
+    f=$(basename -- "$f")
+    is_ignored_artifact "$f" && continue
+    known+=("$f")
+  done
+
   while sleep 30; do
     local -a current=()
-    mapfile -t current < <(ls -1 "$artifacts/$target" 2>/dev/null)
+    for f in "$artifacts/$target"/*; do
+      f=$(basename -- "$f")
+      is_ignored_artifact "$f" && continue
+      current+=("$f")
+    done
+
     for f in "${current[@]}"; do
       [[ " ${known[*]} " == *" $f "* ]] && continue
       notify_slack ":rotating_light: Crash detected :rotating_light: $artifacts/$target/$f"
     done
     known=("${current[@]}")
   done
+
+  shopt -u nullglob
 }
 
 cleanup() {
@@ -69,6 +104,7 @@ cleanup() {
 
   # Minimize corpus for the current target
   if [[ -n "${target:-}" ]]; then
+    clean_ignored_artifacts "$artifacts" "$target"
     cargo fuzz cmin "$target" "$corpus/$target" -- -merge=1
   fi
 }
@@ -110,12 +146,14 @@ logs="$workdir/logs"
 mkdir -p "$logs"
 
 run_target() {
-  local target="$1"
+  target="$1"
 
   stamp="$(date +'%Y-%m-%d_%H-%M-%S')"
   log_file="$logs/${target}_${stamp}.log"
 
   notify_slack ":hourglass_flowing_sand: Fuzzing $target for ${ROTATE_SECONDS}s (fork=$FORK)"
+
+  clean_ignored_artifacts "$artifacts" "$target"
 
   monitor_findings "$artifacts" "$target" &
   mon_pid=$!
