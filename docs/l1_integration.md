@@ -96,6 +96,8 @@ This includes almost the same data as block(s) output, with 2 main differences:
 - `l2_logs_tree_root` instead `l2_to_l1_logs_hashes_blake2s_hash`, we'll build tree during aggregation.
 - `da_commitment_scheme` and `da_commitment` instead of `blake2s`. We can generate different pubdata commitment during aggregation. Useful for different DA layers(`keccak256` for calldata, nothing for validiums, chunk + KZG commitments for Ethereum blobs).
 
+For detailed information about the supported DA commitment schemes, their implementations, and use cases, see [Data Availability Commitment Schemes](./da_commitment_schemes.md).
+
 For more details about public inputs check implementation: [public_input.rs](../basic_system/src/system_implementation/system/public_input.rs)
 
 ## Messaging
