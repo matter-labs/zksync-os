@@ -16,6 +16,8 @@ FUZZ_FLAGS=(
   -timeout=5
   -ignore_timeouts=1
   -fork="$FORK"
+  -report_slow_units=0
+  -verbosity=0
 )
 
 notify_slack() {
@@ -50,8 +52,7 @@ is_ignored_artifact() {
 }
 
 clean_ignored_artifacts() {
-  local artifacts_dir="$1" target="$2"
-  local dir="$artifacts_dir/$target"
+  local dir="$1/$2"
   [[ -d "$dir" ]] || return 0
   shopt -s nullglob
   local f
