@@ -381,25 +381,53 @@ pub fn calldata_for_forwarder(target: alloy::primitives::Address, input: &[u8]) 
     call.abi_encode()
 }
 
+/// Generate a 4844 blob versioned hash using Alloy's reference implementation.
+///
+/// # Arguments
+/// * `data` - Raw data to be encoded into a blob
+///
+/// # Returns
+/// * `[u8; 32]` - The versioned hash of the blob
 pub fn get_alloy_4844_blob_versioned_hash(data: &[u8]) -> [u8; 32] {
-    let blob_sidecar = SidecarBuilder::<SimpleCoder>::from_slice(&data)
+    // Create a blob sidecar using Alloy's SimpleCoder (handles encoding internally)
+    let blob_sidecar = SidecarBuilder::<SimpleCoder>::from_slice(data)
         .build()
         .unwrap();
 
+    // Extract the versioned hash - there should be exactly one for single blob
     let mut alloy_hashes_iter = blob_sidecar.versioned_hashes();
     let versioned_hash_alloy = alloy_hashes_iter.next().expect("Should exist");
-    assert!(alloy_hashes_iter.next().is_none());
+    assert!(
+        alloy_hashes_iter.next().is_none(),
+        "Should only have one blob"
+    );
 
     versioned_hash_alloy.0
 }
 
-// We need to prepend data with len for our encoding. Alloy's SimpleCoder does it under the hood
+/// Encode raw pubdata for EIP-4844 blob format.
+///
+/// We need to prepend the data with its length to match the expected blob format used by Alloy's SimpleCoder.
+///
+/// # Format
+/// - First 31 bytes: Length prefix (first 8 bytes contain the actual length as big-endian u64)
+/// - Remaining bytes: The actual data
+///
+/// # Arguments
+/// * `data` - Raw data to encode
+///
+/// # Returns
+/// * `Vec<u8>` - Encoded data ready for blob commitment generation
 pub fn encode_pubdata_for_4844_blobs(data: &[u8]) -> Vec<u8> {
-    // we allocate 31 byte to encode length as a separate field element for convenience
+    // Allocate 31 bytes for the length prefix (using 31 bytes for field element alignment)
     let mut vec = Vec::from([0u8; 31]);
-    vec.extend_from_slice(&data);
-    let length = vec.len() - 31;
+    // Get the length of the actual data
+    let length = data.len();
+
+    // Store the length in the first 8 bytes as a big-endian u64
     vec[0..8].copy_from_slice(&(length as u64).to_be_bytes());
+
+    vec.extend_from_slice(data);
 
     vec
 }
