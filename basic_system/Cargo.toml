@@ -31,10 +31,6 @@ serde = { version = "1.0", default-features = false, features = ["derive", "allo
 strum_macros = "0.27.1"
 paste = "1.0.15"
 
-[target.'cfg(not(target_arch = "riscv32"))'.dependencies]
-alloy-consensus = { version = "1.0.41" }
-c-kzg = { version = "2.1.5" }
-
 [features]
 testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "rand", "crypto/testing", "num-bigint", "num-traits"]
 default = ["testing"]

@@ -35,6 +35,7 @@ pub fn evaluate_blob_polynomial(data: &[u8], x: &crypto::bls12_381::Fr) -> crypt
     let poly = unsafe { MaybeUninit::array_assume_init(poly) };
 
     // barycentric Lagrange interpolation evaluation
+    // based on https://github.com/ethereum/c-kzg-4844/blob/8b59c2922d78ae792889452ece33a4054c60aab1/src/eip4844/eip4844.c#L192
 
     let inverses_in: [crypto::bls12_381::Fr; ELEMENTS_PER_4844_BLOB] =
         core::array::from_fn(|i| *x - BRP_ROOTS_OF_UNITY[i]);
