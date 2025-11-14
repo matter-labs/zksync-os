@@ -332,9 +332,10 @@ where
 
         let l1_to_l2_tx_hash = Bytes32::from(l1_to_l2_txs_hasher.finalize());
 
+        // uses global alloc
         #[cfg(not(target_arch = "riscv32"))]
         cycle_marker::log_marker(
-            format!(
+            alloc::format!(
                 "Spent ergs for [run_prepared]: {}",
                 result_keeper.get_gas_used() * evm_interpreter::ERGS_PER_GAS
             )

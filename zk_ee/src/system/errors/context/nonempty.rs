@@ -9,12 +9,12 @@ use super::{
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ErrorContext {
-    values: Vec<NamedContextElement>,
+    values: alloc::vec::Vec<NamedContextElement>,
 }
 
 impl IErrorContext for ErrorContext {
     #[inline(always)]
-    fn get(&self, name: &str) -> Option<&String> {
+    fn get(&self, name: &str) -> Option<&alloc::string::String> {
         self.values
             .iter()
             .find(|e| (e.name == name))
@@ -22,12 +22,12 @@ impl IErrorContext for ErrorContext {
     }
 
     #[inline(always)]
-    fn to_vec(&self) -> Option<Vec<NamedContextElement>> {
+    fn to_vec(&self) -> Option<alloc::vec::Vec<NamedContextElement>> {
         Some(self.values.clone())
     }
 
     #[inline(always)]
-    fn into_vec(self) -> Option<Vec<NamedContextElement>> {
+    fn into_vec(self) -> Option<alloc::vec::Vec<NamedContextElement>> {
         Some(self.values)
     }
 
@@ -35,7 +35,7 @@ impl IErrorContext for ErrorContext {
     fn push(
         mut self,
         name: &'static str,
-        value: impl ToString,
+        value: impl alloc::string::ToString,
         visibility: ValueVisibility,
     ) -> Self {
         let mut perform_push_value = || {
@@ -57,7 +57,7 @@ impl IErrorContext for ErrorContext {
     #[inline(always)]
     fn push_lazy<F>(mut self, name: &'static str, f: F, visibility: ValueVisibility) -> Self
     where
-        F: FnOnce() -> String,
+        F: FnOnce() -> alloc::string::String,
     {
         let should_include = match visibility {
             ValueVisibility::AnyForwardRun => true,
