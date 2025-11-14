@@ -766,7 +766,8 @@ where
         // uses global alloc
         #[cfg(not(target_arch = "riscv32"))]
         cycle_marker::log_marker(
-            alloc::format!("Spent native for [process_transaction]: {computational_native_used}").as_str(),
+            alloc::format!("Spent native for [process_transaction]: {computational_native_used}")
+                .as_str(),
         );
 
         Ok(TxProcessingResult {
