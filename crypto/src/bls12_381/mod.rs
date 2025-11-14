@@ -12,6 +12,7 @@ use crate::ark_ec::AffineRepr;
 use crate::ark_ff::{Field, PrimeField};
 use consts::{G2_BY_TAU_POINT, PREPARED_G2_GENERATOR};
 
+#[inline(always)]
 pub fn verify_kzg_proof(
     commitment: G1Affine,
     proof: G1Affine,
