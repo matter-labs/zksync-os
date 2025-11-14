@@ -26,4 +26,4 @@ zksync_os_interface = { workspace = true }
 
 [features]
 # By default, use the risc_v_simulator with delegation (which is faster).
-default = ["risc_v_simulator/delegation", "forward_system/production"]
+default = ["risc_v_simulator/delegation"]
