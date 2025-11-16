@@ -11,7 +11,8 @@ use zk_ee::{
 /// This processor provides a simple HashMap-based implementation for storage
 /// queries. It's primarily used for testing or scenarios where the entire
 /// storage state can be held in memory.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
 pub struct InMemoryInitialStorageSlotValueResponder {
     /// Two-level map: address -> (storage_key -> storage_value)
     pub values_map: HashMap<B160, HashMap<Bytes32, Bytes32>>,

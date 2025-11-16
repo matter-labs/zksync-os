@@ -12,7 +12,6 @@ pub mod result_keeper;
 pub mod test_impl;
 mod tracing_impl;
 
-use crate::run::query_processors::ForwardRunningOracleDump;
 use crate::run::query_processors::GenericPreimageResponder;
 use crate::run::query_processors::ReadStorageResponder;
 use crate::run::query_processors::ReadTreeResponder;
@@ -22,11 +21,9 @@ use crate::run::query_processors::ZKProofDataResponder;
 use crate::run::query_processors::{BlockMetadataResponder, DACommitmentSchemeResponder};
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;
-use crate::system::bootloader::run_forward_no_panic;
 use crate::system::system::CallSimulationBootloader;
 use crate::system::system::CallSimulationSystem;
 use crate::system::system::ForwardRunningSystem;
-use basic_bootloader::bootloader::config::BasicBootloaderExecutionConfig;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
 };
@@ -48,7 +45,6 @@ pub use preimage_source::PreimageSource;
 use zk_ee::wrap_error;
 use zksync_os_interface::traits::EncodedTx;
 
-use std::fs::File;
 use std::path::PathBuf;
 pub use tx_result_callback::TxResultCallback;
 pub use tx_source::NextTxResponse;
@@ -286,6 +282,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     oracle
 }
 
+#[cfg(feature = "testing")]
 pub fn run_block_with_oracle_dump<
     T: ReadStorageTree + Clone + serde::Serialize,
     PS: PreimageSource + Clone + serde::Serialize,
@@ -313,12 +310,13 @@ pub fn run_block_with_oracle_dump<
     )
 }
 
+#[cfg(feature = "testing")]
 pub fn run_block_with_oracle_dump_ext<
     T: ReadStorageTree + Clone + serde::Serialize,
     PS: PreimageSource + Clone + serde::Serialize,
     TS: TxSource + Clone + serde::Serialize,
     TR: TxResultCallback,
-    Config: BasicBootloaderExecutionConfig,
+    Config: basic_bootloader::bootloader::config::BasicBootloaderExecutionConfig,
 >(
     block_context: BlockContext,
     tree: T,
@@ -346,7 +344,7 @@ pub fn run_block_with_oracle_dump_ext<
     };
 
     if let Ok(path) = std::env::var("ORACLE_DUMP_FILE") {
-        let dump = ForwardRunningOracleDump {
+        let dump = crate::run::query_processors::ForwardRunningOracleDump {
             zk_proof_data_responder: zk_proof_data_responder.clone(),
             da_commitment_scheme_responder: da_commitment_scheme_responder.clone(),
             block_metadata_responder,
@@ -354,7 +352,7 @@ pub fn run_block_with_oracle_dump_ext<
             tx_data_responder: tx_data_responder.clone(),
             preimage_responder: preimage_responder.clone(),
         };
-        let file = File::create(path).expect("should create file");
+        let file = std::fs::File::create(path).expect("should create file");
         bincode::serialize_into(file, &dump).expect("should write to file");
     }
 
@@ -373,10 +371,11 @@ pub fn run_block_with_oracle_dump_ext<
 
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
 
-    run_forward_no_panic::<Config>(oracle, &mut result_keeper, tracer).map_err(wrap_error!())?;
+    crate::system::bootloader::run_forward_no_panic::<Config>(oracle, &mut result_keeper, tracer).map_err(wrap_error!())?;
     Ok(result_keeper.into())
 }
 
+#[cfg(feature = "testing")]
 pub fn run_block_from_oracle_dump<
     T: ReadStorageTree + Clone + serde::de::DeserializeOwned,
     PS: PreimageSource + Clone + serde::de::DeserializeOwned,
@@ -386,11 +385,11 @@ pub fn run_block_from_oracle_dump<
     tracer: &mut impl Tracer<ForwardRunningSystem>,
 ) -> Result<BlockOutput, ForwardSubsystemError> {
     let path = path.unwrap_or_else(|| std::env::var("ORACLE_DUMP_FILE").unwrap());
-    let file = File::open(path).expect("should open file");
-    let dump: ForwardRunningOracleDump<T, PS, TS> =
+    let file = std::fs::File::open(path).expect("should open file");
+    let dump: crate::run::query_processors::ForwardRunningOracleDump<T, PS, TS> =
         bincode::deserialize_from(file).expect("should deserialize");
 
-    let ForwardRunningOracleDump {
+    let crate::run::query_processors::ForwardRunningOracleDump {
         zk_proof_data_responder,
         da_commitment_scheme_responder,
         block_metadata_responder,

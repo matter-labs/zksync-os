@@ -5,7 +5,8 @@ use zk_ee::oracle::query_ids::DA_COMMITMENT_SCHEME_QUERY_ID;
 /// This processor handles DA commitment scheme request.
 ///
 /// The data is consumed once per query and must be set initially.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
 pub struct DACommitmentSchemeResponder {
     pub da_commitment_scheme: Option<DACommitmentScheme>,
 }

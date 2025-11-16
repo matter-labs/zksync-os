@@ -29,7 +29,8 @@ pub use self::zk_proof_data::ZKProofDataResponder;
 use crate::run::*;
 
 /// A collection of oracle query processors for forward running execution with oracle dump.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug)]
 pub struct ForwardRunningOracleDump<
     T: ReadStorageTree + Clone,
     PS: PreimageSource + Clone,

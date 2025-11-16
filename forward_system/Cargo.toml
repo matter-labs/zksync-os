@@ -25,16 +25,16 @@ zksync_os_interface = { workspace = true, default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }
 
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
-alloy = { version = "1", default-features = false }
+alloy = { version = "1", default-features = false, features = ["consensus"] }
 arrayvec = { version = "0.7.4", default-features = false }
-hex = { version = "*", optional = true }
+hex = { version = "*" }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 bincode = "1.3"
 strum_macros = "0.27.1"
 paste = "1.0.15"
 
 [features]
-testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "basic_bootloader/testing", "hex"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "basic_system/testing", "basic_bootloader/testing"]
 default = ["testing"]
 error_origins = ["zk_ee/error_origins"]
 no_print = []

@@ -2,7 +2,8 @@ use crate::run::PreimageSource;
 use std::collections::HashMap;
 use zk_ee::utils::Bytes32;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
 pub struct InMemoryPreimageSource {
     pub inner: HashMap<Bytes32, Vec<u8>>,
 }
