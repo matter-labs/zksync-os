@@ -371,7 +371,8 @@ pub fn run_block_with_oracle_dump_ext<
 
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
 
-    crate::system::bootloader::run_forward_no_panic::<Config>(oracle, &mut result_keeper, tracer).map_err(wrap_error!())?;
+    crate::system::bootloader::run_forward_no_panic::<Config>(oracle, &mut result_keeper, tracer)
+        .map_err(wrap_error!())?;
     Ok(result_keeper.into())
 }
 
