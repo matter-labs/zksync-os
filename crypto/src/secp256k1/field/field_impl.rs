@@ -79,7 +79,7 @@ impl FieldElementImpl {
     }
 
     pub(super) fn mul_int_in_place(&mut self, rhs: u32) {
-        self.magnitude += rhs;
+        self.magnitude *= rhs;
         debug_assert!(self.magnitude <= Self::max_magnitude());
 
         self.value.mul_int_in_place(rhs);
@@ -159,7 +159,7 @@ impl FieldElementImpl {
     }
 
     pub(super) const fn mul_int(&self, rhs: u32) -> Self {
-        let new_magnitude = self.magnitude + rhs;
+        let new_magnitude = self.magnitude * rhs;
         debug_assert!(new_magnitude <= Self::max_magnitude());
 
         let value = self.value.mul_int(rhs);
