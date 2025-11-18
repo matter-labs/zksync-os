@@ -29,13 +29,18 @@ pub const L1_MESSENGER_ADDRESS_LOW: u16 = 0x8008;
 pub const L1_MESSENGER_ADDRESS: B160 = B160::from_limbs([L1_MESSENGER_ADDRESS_LOW as u64, 0, 0]);
 
 // l2 to l1 messenger system hook needed for all envs
-pub const L1_MESSENGER_ADDRESS_HOOK_LOW: u16 = 0x8017;
+pub const L1_MESSENGER_ADDRESS_HOOK_LOW: u16 = 0x7001; // write a thread
 pub const L1_MESSENGER_ADDRESS_HOOK: B160 =
-    B160::from_limbs([L1_MESSENGER_ADDRESS_LOW as u64, 0, 0]);
+    B160::from_limbs([L1_MESSENGER_ADDRESS_HOOK_LOW as u64, 0, 0]);
 
 // l2 base token system hook (contract) needed for all envs (base token withdrawals)
 pub const L2_BASE_TOKEN_ADDRESS_LOW: u16 = 0x800a;
 pub const L2_BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([L2_BASE_TOKEN_ADDRESS_LOW as u64, 0, 0]);
+
+// burn native token system hook needed for all envs (base token withdrawals)
+pub const BURN_NATIVE_TOKEN_ADDRESS_LOW: u16 = 0x7002;
+pub const BURN_NATIVE_TOKEN_ADDRESS: B160 =
+    B160::from_limbs([BURN_NATIVE_TOKEN_ADDRESS_LOW as u64, 0, 0]);
 
 // ERA VM system contracts (in fact we need implement only the methods that should be available for user contracts)
 // TODO: may be better to implement as ifs inside EraVM EE

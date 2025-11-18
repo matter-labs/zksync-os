@@ -29,9 +29,9 @@
 extern crate alloc;
 
 use crate::addresses_constants::*;
+use crate::burn_native_token::burn_native_token_hook;
 use crate::contract_deployer::contract_deployer_hook;
 use crate::l1_messenger::l1_messenger_hook;
-use crate::l2_base_token::l2_base_token_hook;
 use alloc::collections::BTreeMap;
 use core::marker::PhantomData;
 use core::{alloc::Allocator, mem::MaybeUninit};
@@ -58,9 +58,10 @@ pub mod addresses_constants;
 #[cfg(feature = "mock-unsupported-precompiles")]
 mod mock_precompiles;
 
+pub mod burn_native_token;
 pub mod contract_deployer;
 pub mod l1_messenger;
-pub mod l2_base_token;
+pub mod l1_messenger_test;
 mod precompiles;
 
 /// System hooks process the given call request.
@@ -250,11 +251,18 @@ where
     }
 
     pub fn add_l1_messenger(&mut self) {
-        self.add_hook(L1_MESSENGER_ADDRESS_LOW, SystemHook(l1_messenger_hook))
+        self.add_hook(
+            L1_MESSENGER_ADDRESS_HOOK_LOW,
+            SystemHook(l1_messenger_hook),
+        ) // Update address for system hook
     }
 
-    pub fn add_l2_base_token(&mut self) {
-        self.add_hook(L2_BASE_TOKEN_ADDRESS_LOW, SystemHook(l2_base_token_hook))
+    // Add burn native token instead add_l2_base_token
+    pub fn add_burn_native_token(&mut self) {
+        self.add_hook(
+            BURN_NATIVE_TOKEN_ADDRESS_LOW,
+            SystemHook(burn_native_token_hook),
+        )
     }
 
     pub fn add_contract_deployer(&mut self) {

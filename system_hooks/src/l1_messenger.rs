@@ -3,7 +3,6 @@
 //! It implements a `sendToL1` method, works the same way as in Era.
 //!
 use super::*;
-use arrayvec::ArrayVec;
 use core::fmt::Write;
 use evm_interpreter::{
     gas_constants::{LOG, LOGDATA},
@@ -14,13 +13,11 @@ use zk_ee::{
     common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE,
     execution_environment_type::ExecutionEnvironmentType,
     internal_error, out_of_return_memory,
-    storage_types::MAX_EVENT_TOPICS,
     system::{
         errors::{runtime::RuntimeError, system::SystemError},
-        logger::Logger,
         CallModifier, CompletedExecution, ExternalCallRequest,
     },
-    utils::{b160_to_u256, Bytes32},
+    utils::Bytes32,
 };
 
 pub fn l1_messenger_hook<'a, S: EthereumLikeTypes>(
@@ -111,13 +108,6 @@ where
         Err(SystemError::LeafDefect(e)) => Err(e.into()),
     }
 }
-// sendToL1(bytes) - 62f84b24
-pub const SEND_TO_L1_SELECTOR: &[u8] = &[0x62, 0xf8, 0x4b, 0x24];
-
-const L1_MESSAGE_SENT_TOPIC: [u8; 32] = [
-    0x3a, 0x36, 0xe4, 0x72, 0x91, 0xf4, 0x20, 0x1f, 0xaf, 0x13, 0x7f, 0xab, 0x08, 0x1d, 0x92, 0x29,
-    0x5b, 0xce, 0x2d, 0x53, 0xbe, 0x2c, 0x6c, 0xa6, 0x8b, 0xa8, 0x2c, 0x7f, 0xaa, 0x9c, 0xe2, 0x41,
-];
 
 fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
     message: &[u8],
@@ -140,6 +130,7 @@ where
             "L1 messenger failure: sendToL1 called with static context",
         ));
     }
+
     send_to_l1_inner(&message, resources, system, caller)
 }
 
@@ -163,20 +154,6 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
         system
             .io
             .emit_l1_message(ExecutionEnvironmentType::NoEE, resources, &caller, message)?;
-
-    // emit corresponding event
-    let mut topics = ArrayVec::<Bytes32, MAX_EVENT_TOPICS>::new();
-    topics.push(Bytes32::from_array(L1_MESSAGE_SENT_TOPIC));
-    topics.push(Bytes32::from_u256_be(&b160_to_u256(caller)));
-    topics.push(message_hash);
-
-    system.io.emit_event(
-        ExecutionEnvironmentType::EVM,
-        resources,
-        &L1_MESSENGER_ADDRESS,
-        &topics,
-        message,
-    )?;
 
     Ok(Ok(message_hash))
 }

@@ -130,7 +130,7 @@ where
         #[cfg(not(feature = "disable_system_contracts"))]
         {
             system_functions.add_l1_messenger();
-            system_functions.add_l2_base_token();
+            system_functions.add_burn_native_token();
             system_functions.add_contract_deployer();
         }
 
