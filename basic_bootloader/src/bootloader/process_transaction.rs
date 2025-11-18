@@ -185,10 +185,9 @@ where
         )?;
 
         // TODO: l1 transaction preparation (marking factory deps)
-        let chain_id = system.get_chain_id();
 
         let (tx_hash, preparation_out_of_resources): (Bytes32, bool) = match transaction
-            .calculate_hash(chain_id, &mut resources)
+            .calculate_hash(&mut resources)
         {
             Ok(h) => (h.into(), false),
             Err(e) => {
@@ -208,7 +207,7 @@ where
                         let mut inf_resources = S::Resources::FORMAL_INFINITE;
                         (
                             transaction
-                                .calculate_hash(chain_id, &mut inf_resources)
+                                .calculate_hash(&mut inf_resources)
                                 .expect("must succeed")
                                 .into(),
                             true,
@@ -620,18 +619,16 @@ where
             tx_gas_price: gas_price,
         });
 
-        let chain_id = system.get_chain_id();
-
         // Process access list
         parse_and_warm_up_access_list(system, &mut resources, &transaction)?;
 
-        let tx_hash: Bytes32 = transaction.transaction_hash(chain_id, &mut resources)?;
+        let tx_hash: Bytes32 = transaction.transaction_hash(&mut resources)?;
 
         // We have to charge native for this hash, as it's computed during parsing
         // for RLP-encoded transactions.
         // We over-estimate using the total tx length
         charge_keccak(transaction.len(), &mut resources)?;
-        let suggested_signed_hash: Bytes32 = transaction.signed_hash::<S::Resources>(chain_id)?;
+        let suggested_signed_hash: Bytes32 = transaction.signed_hash()?;
 
         let ValidationResult {
             validation_pubdata,

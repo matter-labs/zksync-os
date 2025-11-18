@@ -9,13 +9,11 @@ use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_system::system_implementation::system::pubdata::PUBDATA_ENCODING_VERSION;
-use rig::ethers::types::Address;
 use rig::ruint::aliases::{B160, U256};
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::{alloy, ethers, zksync_web3_rs, Chain};
+use rig::{alloy, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
-use zksync_web3_rs::eip712::Eip712Meta;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 mod native_charging;
 
@@ -27,7 +25,9 @@ fn run_config() -> Option<rig::chain::RunConfig> {
         ..Default::default()
     })
 }
-fn run_base_system_common(use_712: bool) {
+
+#[test]
+fn run_base_system() {
     let mut chain = Chain::empty(None);
     // FIXME: this address looks very similar to bridgehub/shared bridge on gateway.
     // Which seems to suggest that it is special.
@@ -48,21 +48,8 @@ fn run_base_system_common(use_712: bool) {
 
     let from = wallet_ethers.address();
     let to = address!("0000000000000000000000000000000000010002");
-    let meta = Eip712Meta::new().gas_per_pubdata(0);
 
-    let encoded_mint_tx = if use_712 {
-        let mint_tx = rig::zksync_web3_rs::eip712::Eip712TransactionRequest::new()
-            .chain_id(37)
-            .from(from)
-            .to(rig::ethers::abi::Address::from_str(to.to_string().as_str()).unwrap())
-            .gas_limit(120_000)
-            .max_fee_per_gas(1000)
-            .max_priority_fee_per_gas(1000)
-            .data(hex::decode(ERC_20_MINT_CALLDATA).unwrap())
-            .custom_data(meta.clone())
-            .nonce(0);
-        rig::utils::sign_and_encode_eip712_tx(mint_tx, &wallet_ethers)
-    } else {
+    let encoded_mint_tx = {
         let mint_tx = TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -75,19 +62,7 @@ fn run_base_system_common(use_712: bool) {
         rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
     };
 
-    let encoded_transfer_tx = if use_712 {
-        let transfer_tx = zksync_web3_rs::eip712::Eip712TransactionRequest::new()
-            .chain_id(37)
-            .from(from)
-            .to(ethers::abi::Address::from_str(to.to_string().as_str()).unwrap())
-            .gas_limit(100_000)
-            .max_fee_per_gas(1000)
-            .max_priority_fee_per_gas(1000)
-            .data(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-            .custom_data(meta.clone())
-            .nonce(1);
-        rig::utils::sign_and_encode_eip712_tx(transfer_tx, &wallet_ethers)
-    } else {
+    let encoded_transfer_tx = {
         let transfer_tx = TxEip1559 {
             chain_id: 37u64,
             nonce: 1,
@@ -103,21 +78,7 @@ fn run_base_system_common(use_712: bool) {
     };
 
     // `to` == null
-    let encoded_deployment_tx = if use_712 {
-        let deployment_tx = zksync_web3_rs::eip712::Eip712TransactionRequest::new()
-            .chain_id(37)
-            .from(from)
-            .gas_limit(1_200_000)
-            .max_fee_per_gas(1000)
-            .max_priority_fee_per_gas(1000)
-            .data(hex::decode(ERC_20_DEPLOYMENT_BYTECODE).unwrap())
-            .custom_data(meta.clone())
-            .nonce(2);
-        rig::utils::sign_and_encode_eip712_tx(
-            deployment_tx,
-            &LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap(),
-        )
-    } else {
+    let encoded_deployment_tx = {
         let deployment_tx = TxEip2930 {
             chain_id: 37u64,
             nonce: 2,
@@ -130,22 +91,7 @@ fn run_base_system_common(use_712: bool) {
         };
         rig::utils::sign_and_encode_alloy_tx(deployment_tx, &wallet)
     };
-    let encoded_transfer_to_eoa_tx = if use_712 {
-        let eoa_to = "4242000000000000000000000000000000000000";
-        let deployment_tx = zksync_web3_rs::eip712::Eip712TransactionRequest::new()
-            .chain_id(37)
-            .from(eoa_wallet_ethers.address())
-            .gas_limit(21_000)
-            .max_fee_per_gas(1000)
-            .max_priority_fee_per_gas(1000)
-            .to(rig::ethers::abi::Address::from_str(eoa_to).unwrap())
-            .custom_data(meta.clone())
-            .nonce(0);
-        rig::utils::sign_and_encode_eip712_tx(
-            deployment_tx,
-            &LocalWallet::from_bytes(eoa_wallet.to_bytes().as_slice()).unwrap(),
-        )
-    } else {
+    let encoded_transfer_to_eoa_tx = {
         let eoa_to = address!("4242000000000000000000000000000000000000");
         let transfer_to_eoa = TxEip1559 {
             chain_id: 37u64,
@@ -161,21 +107,7 @@ fn run_base_system_common(use_712: bool) {
         rig::utils::sign_and_encode_alloy_tx(transfer_to_eoa, &eoa_wallet)
     };
 
-    let deployed = Address::from_str("0x14c252e395055507b10f199dd569f2379465d874").unwrap();
-
-    let encoded_mint2_tx = if use_712 {
-        let mint_tx = zksync_web3_rs::eip712::Eip712TransactionRequest::new()
-            .chain_id(37)
-            .from(from)
-            .to(deployed)
-            .gas_limit(100_000)
-            .max_fee_per_gas(1000)
-            .max_priority_fee_per_gas(1000)
-            .data(hex::decode(ERC_20_MINT_CALLDATA).unwrap())
-            .custom_data(meta.clone())
-            .nonce(3);
-        rig::utils::sign_and_encode_eip712_tx(mint_tx, &wallet_ethers)
-    } else {
+    let encoded_mint2_tx = {
         let mint_tx = TxEip1559 {
             chain_id: 37u64,
             nonce: 3,
@@ -863,16 +795,6 @@ fn test_regression_returndata_empty_3541() {
     // Assert all txs succeeded
     let result0 = output.tx_results.first().unwrap().clone();
     assert!(result0.is_ok_and(|o| o.is_success()));
-}
-
-#[test]
-fn run_base_system() {
-    run_base_system_common(false);
-}
-
-#[test]
-fn run_base_712_system() {
-    run_base_system_common(true);
 }
 
 /// Test that transactions with balance calculation overflow are properly rejected

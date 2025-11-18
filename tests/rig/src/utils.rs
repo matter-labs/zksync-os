@@ -21,9 +21,6 @@ use std::str::FromStr;
 pub use zksync_os_api::helpers::*;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::types::BlockOutput;
-use zksync_web3_rs::eip712::{Eip712Transaction, Eip712TransactionRequest};
-use zksync_web3_rs::signers::Signer;
-use zksync_web3_rs::zks_utils::EIP712_TX_TYPE;
 
 pub use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
@@ -112,73 +109,6 @@ pub fn sign_and_encode_ethers_legacy_tx(
         Address::from_slice(a.as_bytes())
     };
     EncodedTx::Rlp(raw.to_vec(), from)
-}
-
-///
-/// Sign and encode EIP-712 zkSync transaction using given wallet.
-///
-/// Panics if needed fields are missed or too big.
-///
-pub fn sign_and_encode_eip712_tx(
-    tx: Eip712TransactionRequest,
-    wallet: &ethers::signers::LocalWallet,
-) -> EncodedTx {
-    let request = tx.clone();
-    let signable_data: Eip712Transaction = request.clone().try_into().unwrap();
-    // Use the correct value for gasPerPubdataByteLimit, there's a bug in the
-    // zksync-web3-rs crate.
-    let signable_data = signable_data.gas_per_pubdata_byte_limit(tx.custom_data.gas_per_pubdata);
-    let signature: ethers::types::Signature =
-        futures::executor::block_on(wallet.sign_typed_data(&signable_data))
-            .expect("signing failed");
-
-    let tx_type = EIP712_TX_TYPE;
-    let from = wallet.address().0;
-    let to = Some(tx.to.0);
-    let gas_limit = tx.gas_limit.unwrap().as_u128();
-    let gas_per_pubdata_byte_limit = Some(tx.custom_data.gas_per_pubdata.as_u128());
-    let max_fee_per_gas = tx.max_fee_per_gas.unwrap().as_u128();
-    let max_priority_fee_per_gas = Some(tx.max_priority_fee_per_gas.as_u128());
-    let paymaster = Some(
-        tx.custom_data
-            .clone()
-            .paymaster_params
-            .map(|p| p.paymaster.0)
-            .unwrap_or_default(),
-    );
-    let nonce = tx.nonce.as_u128();
-    let mut value = [0u8; 32];
-    tx.value.to_big_endian(&mut value);
-    let data = tx.data.0.to_vec();
-    assert!(
-        tx.custom_data.factory_deps.is_empty(),
-        "factory deps not supported for now"
-    );
-    let signature = signature.to_vec();
-    let paymaster_input = Some(
-        tx.custom_data
-            .paymaster_params
-            .map(|p| p.paymaster_input)
-            .unwrap_or_default(),
-    );
-
-    encode_tx(
-        tx_type,
-        from,
-        to,
-        gas_limit,
-        gas_per_pubdata_byte_limit,
-        max_fee_per_gas,
-        max_priority_fee_per_gas,
-        paymaster,
-        nonce,
-        value,
-        data,
-        signature,
-        paymaster_input,
-        None,
-        true,
-    )
 }
 
 ///

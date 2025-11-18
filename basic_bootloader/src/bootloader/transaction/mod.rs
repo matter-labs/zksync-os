@@ -168,26 +168,22 @@ impl<A: Allocator> Transaction<A> {
     /// Computes the transaction hash used for indexing or inclusion.
     pub fn transaction_hash<R: Resources>(
         &mut self,
-        chain_id: u64,
         resources: &mut R,
     ) -> Result<Bytes32, TxError> {
         match self {
             Self::Rlp(tx) => tx.transaction_hash(resources),
-            Self::Abi(tx) => tx
-                .calculate_hash(chain_id, resources)
-                .map(Bytes32::from_array),
+            Self::Abi(tx) => tx.calculate_hash(resources).map(Bytes32::from_array),
         }
     }
 
     /// Returns the signing hash for signature verification.
-    pub fn signed_hash<R: Resources>(&mut self, chain_id: u64) -> Result<Bytes32, TxError> {
+    pub fn signed_hash(&mut self) -> Result<Bytes32, TxError> {
         // Caller should charge native for this hash
-        let mut inf_resources = R::FORMAL_INFINITE;
         match self {
             Self::Rlp(tx) => Ok(*tx.hash_for_signature_verification()),
-            Self::Abi(tx) => tx
-                .calculate_signed_hash(chain_id, &mut inf_resources)
-                .map(Bytes32::from_array),
+            Self::Abi(_tx) => {
+                Err(internal_error!("ABI encoded transactions do not support signed hash").into())
+            }
         }
     }
 

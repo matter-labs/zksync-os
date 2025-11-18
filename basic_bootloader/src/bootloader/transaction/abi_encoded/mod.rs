@@ -9,7 +9,6 @@
 //! unique Layer 2 features that cannot be expressed in standard
 //! Ethereum transaction formats. This includes:
 //!
-//! - **`EIP_712_TX_TYPE` (0x71)**: User-submitted transactions with EIP-712 signing
 //! - **`L1_L2_TX_TYPE` (0x7f)**: Transactions initiated from L1 (deposits, forced transactions)
 //! - **`UPGRADE_TX_TYPE` (0x7e)**: System upgrade transactions (protocol changes)
 
@@ -96,8 +95,6 @@ pub struct AbiEncodedTransaction<A: Allocator> {
 
 #[allow(dead_code)]
 impl<A: Allocator> AbiEncodedTransaction<A> {
-    /// The type id of EIP712 transactions.
-    pub const EIP_712_TX_TYPE: u8 = 0x71;
     /// The type id of protocol upgrade transactions.
     pub const UPGRADE_TX_TYPE: u8 = 0x7e;
     /// The type id of L1 -> L2 transactions.
@@ -218,7 +215,7 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
         let tx_type = self.tx_type.read();
 
         match tx_type {
-            Self::UPGRADE_TX_TYPE | Self::L1_L2_TX_TYPE | Self::EIP_712_TX_TYPE => {}
+            Self::UPGRADE_TX_TYPE | Self::L1_L2_TX_TYPE => {}
             _ => return Err(()),
         }
 
@@ -232,7 +229,7 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
             }
         }
 
-        // paymasters are not supported, even for EIP712 txs
+        // paymasters are not supported
         if self.paymaster.read() != B160::ZERO {
             return Err(());
         }
@@ -248,16 +245,10 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
                 }
             }
         }
-        // reserved[1] = refund recipient for l1 to l2 and upgrade txs,
-        // for EIP712 txs should be zero
+        // reserved[1] = refund recipient for l1 to l2 and upgrade txs
         match tx_type {
             Self::L1_L2_TX_TYPE | Self::UPGRADE_TX_TYPE => {
                 // TODO: validate address?
-            }
-            Self::EIP_712_TX_TYPE => {
-                if !self.reserved[1].read().is_zero() {
-                    return Err(());
-                }
             }
             _ => unreachable!(),
         }
@@ -280,7 +271,7 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
             }
         }
 
-        // paymasters are not supported, even for EIP712 txs
+        // paymasters are not supported
         if !self.paymaster_input.range.is_empty() {
             return Err(());
         }
@@ -325,187 +316,16 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
     }
 
     ///
-    /// Calculate the signed transaction hash.
-    /// i.e. the one should be signed for the EOA accounts.
-    ///
-    pub fn calculate_signed_hash<R: Resources>(
-        &self,
-        chain_id: u64,
-        resources: &mut R,
-    ) -> Result<[u8; 32], TxError> {
-        let tx_type = self.tx_type.read();
-        match tx_type {
-            Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_signed_hash(chain_id, resources),
-            _ => Err(
-                internal_error!("Invalid type for signed hash, most likely l1 or upgrade").into(),
-            ),
-        }
-    }
-
-    ///
     /// Calculate the transaction hash.
     /// i.e. the transaction hash to be used in the explorer.
     ///
-    pub fn calculate_hash<R: Resources>(
-        &self,
-        chain_id: u64,
-        resources: &mut R,
-    ) -> Result<[u8; 32], TxError> {
+    pub fn calculate_hash<R: Resources>(&self, resources: &mut R) -> Result<[u8; 32], TxError> {
         let tx_type = self.tx_type.read();
         match tx_type {
-            Self::EIP_712_TX_TYPE => self.eip712_tx_calculate_hash(chain_id, resources),
             Self::L1_L2_TX_TYPE => self.l1_tx_calculate_hash(resources),
             Self::UPGRADE_TX_TYPE => self.l1_tx_calculate_hash(resources),
             _ => Err(internal_error!("Type should be validated").into()),
         }
-    }
-
-    // Keccak256 of:
-    // EIP712Domain(string name,string version,uint256 chainId)
-    // = c2f8787176b8ac6bf7215b4adcc1e069bf4ab82d9ab1df05a57a91d425935b6e
-    const DOMAIN_TYPE_HASH: [u8; 32] = [
-        0xc2, 0xf8, 0x78, 0x71, 0x76, 0xb8, 0xac, 0x6b, 0xf7, 0x21, 0x5b, 0x4a, 0xdc, 0xc1, 0xe0,
-        0x69, 0xbf, 0x4a, 0xb8, 0x2d, 0x9a, 0xb1, 0xdf, 0x05, 0xa5, 0x7a, 0x91, 0xd4, 0x25, 0x93,
-        0x5b, 0x6e,
-    ];
-
-    // Keccak256 of:
-    // zkSync
-    // = 19b453ce45aaaaf3a300f5a9ec95869b4f28ab10430b572ee218c3a6a5e07d6f
-    const DOMAIN_NAME_HASH: [u8; 32] = [
-        0x19, 0xb4, 0x53, 0xce, 0x45, 0xaa, 0xaa, 0xf3, 0xa3, 0x00, 0xf5, 0xa9, 0xec, 0x95, 0x86,
-        0x9b, 0x4f, 0x28, 0xab, 0x10, 0x43, 0x0b, 0x57, 0x2e, 0xe2, 0x18, 0xc3, 0xa6, 0xa5, 0xe0,
-        0x7d, 0x6f,
-    ];
-    // Keccak256 of:
-    // 2
-    // = ad7c5bef027816a800da1736444fb58a807ef4c9603b7848673f7e3a68eb14a5
-    const DOMAIN_VERSION_HASH: [u8; 32] = [
-        0xad, 0x7c, 0x5b, 0xef, 0x02, 0x78, 0x16, 0xa8, 0x00, 0xda, 0x17, 0x36, 0x44, 0x4f, 0xb5,
-        0x8a, 0x80, 0x7e, 0xf4, 0xc9, 0x60, 0x3b, 0x78, 0x48, 0x67, 0x3f, 0x7e, 0x3a, 0x68, 0xeb,
-        0x14, 0xa5,
-    ];
-
-    fn domain_hash_struct<R: Resources>(
-        chain_id: u64,
-        resources: &mut R,
-    ) -> Result<[u8; 32], TxError> {
-        let len = Self::DOMAIN_TYPE_HASH.len()
-            + Self::DOMAIN_NAME_HASH.len()
-            + Self::DOMAIN_VERSION_HASH.len()
-            + U256::BYTES;
-        charge_keccak(len, resources)?;
-
-        let mut hasher = Keccak256::new();
-        hasher.update(Self::DOMAIN_TYPE_HASH);
-        hasher.update(Self::DOMAIN_NAME_HASH);
-        hasher.update(Self::DOMAIN_VERSION_HASH);
-        hasher.update(U256::from(chain_id).to_be_bytes::<32>());
-        Ok(*hasher.finalize().split_first_chunk::<32>().unwrap().0)
-    }
-
-    // Keccak256 of:
-    // Transaction(uint256 txType,uint256 from,uint256 to,uint256 gasLimit,uint256 gasPerPubdataByteLimit,uint256 maxFeePerGas,uint256 maxPriorityFeePerGas,uint256 paymaster,uint256 nonce,uint256 value,bytes data,bytes32[] factoryDeps,bytes paymasterInput)
-    // = 848e1bfa1ac4e3576b728bda6721b215c70a7799a5b4866282a71bab954baac8
-    const TYPE_HASH: [u8; 32] = [
-        0x84, 0x8e, 0x1b, 0xfa, 0x1a, 0xc4, 0xe3, 0x57, 0x6b, 0x72, 0x8b, 0xda, 0x67, 0x21, 0xb2,
-        0x15, 0xc7, 0x0a, 0x77, 0x99, 0xa5, 0xb4, 0x86, 0x62, 0x82, 0xa7, 0x1b, 0xab, 0x95, 0x4b,
-        0xaa, 0xc8,
-    ];
-
-    fn hash_struct<R: Resources>(&self, resources: &mut R) -> Result<[u8; 32], TxError> {
-        let len = U256::BYTES * 14;
-        charge_keccak(len, resources)?;
-
-        let mut hasher = Keccak256::new();
-        hasher.update(Self::TYPE_HASH);
-        hasher.update(self.tx_type.encoding(&self.underlying_buffer.as_slice()));
-        hasher.update(self.from.encoding(&self.underlying_buffer.as_slice()));
-        hasher.update(self.to.encoding(&self.underlying_buffer.as_slice()));
-        hasher.update(self.gas_limit.encoding(&self.underlying_buffer.as_slice()));
-        hasher.update(
-            self.gas_per_pubdata_limit
-                .encoding(&self.underlying_buffer.as_slice()),
-        );
-        hasher.update(
-            self.max_fee_per_gas
-                .encoding(&self.underlying_buffer.as_slice()),
-        );
-        hasher.update(
-            self.max_priority_fee_per_gas
-                .encoding(&self.underlying_buffer.as_slice()),
-        );
-        hasher.update(self.paymaster.encoding(&self.underlying_buffer.as_slice()));
-        hasher.update(self.nonce.encoding(&self.underlying_buffer.as_slice()));
-        hasher.update(self.value.encoding(&self.underlying_buffer.as_slice()));
-
-        charge_keccak(self.data.range.len(), resources)?;
-        let data_hash = <Keccak256 as MiniDigest>::digest(
-            self.data.encoding(&self.underlying_buffer.as_slice()),
-        );
-        hasher.update(&data_hash);
-
-        charge_keccak(self.factory_deps.range.len(), resources)?;
-        let factory_deps_hash = <Keccak256 as MiniDigest>::digest(
-            self.factory_deps
-                .encoding(&self.underlying_buffer.as_slice()),
-        );
-        hasher.update(&factory_deps_hash);
-
-        charge_keccak(self.paymaster_input.range.len(), resources)?;
-        let paymaster_input_hash = <Keccak256 as MiniDigest>::digest(
-            self.paymaster_input
-                .encoding(&self.underlying_buffer.as_slice()),
-        );
-        hasher.update(&paymaster_input_hash);
-
-        Ok(hasher.finalize())
-    }
-
-    ///
-    /// Calculate signed tx hash(the one that should be signed by the sender):
-    /// Keccak256(0x19 0x01 ‖ domainSeparator ‖ hashStruct(tx))
-    ///
-    fn eip712_tx_calculate_signed_hash<R: Resources>(
-        &self,
-        chain_id: u64,
-        resources: &mut R,
-    ) -> Result<[u8; 32], TxError> {
-        let domain_separator = Self::domain_hash_struct(chain_id, resources)?;
-        let hs = self.hash_struct(resources)?;
-        charge_keccak(2 + 2 * U256::BYTES, resources)?;
-        let mut hasher = Keccak256::new();
-        hasher.update([0x19, 0x01]);
-        hasher.update(domain_separator);
-        hasher.update(hs);
-
-        Ok(hasher.finalize())
-    }
-
-    ///
-    /// Calculate tx hash with signature(to be used in the explorer):
-    /// Keccak256(signed_hash || Keccak256(signature))
-    ///
-    fn eip712_tx_calculate_hash<R: Resources>(
-        &self,
-        chain_id: u64,
-        resources: &mut R,
-    ) -> Result<[u8; 32], TxError> {
-        let signed_hash = self.eip712_tx_calculate_signed_hash(chain_id, resources)?;
-        // First charge for hashing the signature
-        charge_keccak(self.signature.range.len(), resources)?;
-        // Next charge for combining the two hashes
-        charge_keccak(U256::BYTES * 2, resources)?;
-
-        let signature_hash = <Keccak256 as MiniDigest>::digest(
-            self.signature.encoding(&self.underlying_buffer.as_slice()),
-        );
-
-        let mut hasher = Keccak256::new();
-        hasher.update(signed_hash);
-        hasher.update(signature_hash);
-
-        Ok(hasher.finalize())
     }
 
     ///
@@ -521,23 +341,14 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
         Ok(hasher.finalize())
     }
 
-    /// Checks if the transaction is of type EIP-712
-    pub fn is_eip_712(&self) -> bool {
-        self.tx_type.read() == Self::EIP_712_TX_TYPE
-    }
-
     /// Returns the balance required to process the transaction.
     /// If the calculation overflows, returns `None`.
     pub fn required_balance(&self) -> Option<U256> {
-        if self.is_eip_712() && self.paymaster.read() != B160::ZERO {
-            Some(self.value.read())
-        } else {
-            let fee_amount = self
-                .max_fee_per_gas
-                .read()
-                .checked_mul(U256::from(self.gas_limit.read()))?;
-            self.value.read().checked_add(U256::from(fee_amount))
-        }
+        let fee_amount = self
+            .max_fee_per_gas
+            .read()
+            .checked_mul(U256::from(self.gas_limit.read()))?;
+        self.value.read().checked_add(U256::from(fee_amount))
     }
 
     #[allow(clippy::len_without_is_empty)]
@@ -559,10 +370,6 @@ impl<T: 'static + Clone + Copy + core::fmt::Debug> ParsedValue<T> {
 
     pub fn read_ref(&self) -> &T {
         &self.value
-    }
-
-    fn encoding<'a>(&self, source: &'a [u8]) -> &'a [u8] {
-        unsafe { source.get_unchecked(self.range.clone()) }
     }
 }
 

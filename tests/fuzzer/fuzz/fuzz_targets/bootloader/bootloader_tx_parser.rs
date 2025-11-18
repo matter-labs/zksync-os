@@ -25,7 +25,6 @@ fn fuzz(data: &[u8]) {
     let _ = transaction.tx_type.read();
     let _ = transaction.required_balance();
     let _ = transaction.calldata();
-    let _ = transaction.is_eip_712();
     let _ = transaction.paymaster_input();
     let _ = transaction.signature();
     let _ = transaction.tx_body_length();
