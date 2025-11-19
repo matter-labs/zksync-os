@@ -66,15 +66,23 @@ impl LegacyPayloadParser {
         expected_chain_id: u64,
     ) -> Result<(LegacyTXInner<'a>, LegacySignatureData<'a>, Bytes32), TxError> {
         // Legacy path: input must be a single list with 9 elements total.
-        let mut outer = Rlp::new(src).list()?;
+        let mut outer = Rlp::new(src);
+
+        // Strip the list encoding
+        let mut inner = outer.list()?;
+
+        // Outer list must be fully consumed
+        if !outer.is_empty() {
+            return Err(InvalidTransaction::InvalidStructure.into());
+        }
 
         // Capture the concatenation bytes of the first 6 fields for hashing.
-        let mark = outer.mark();
-        let legacy_inner: LegacyTXInner<'a> = LegacyTXInner::decode_list_body(&mut outer)?;
-        let inner_slice = outer.consumed_since(mark);
+        let mark = inner.mark();
+        let legacy_inner: LegacyTXInner<'a> = LegacyTXInner::decode_list_body(&mut inner)?;
+        let inner_slice = inner.consumed_since(mark);
 
-        let legacy_signature = LegacySignatureData::decode_list_body(&mut outer)?;
-        if !outer.is_empty() {
+        let legacy_signature = LegacySignatureData::decode_list_body(&mut inner)?;
+        if !inner.is_empty() {
             return Err(InvalidTransaction::InvalidStructure.into());
         }
 
@@ -263,5 +271,19 @@ mod test {
         // Regression: both r and s should be at most 32 bytes each.
         let bytes = malformed_sig_rlp_r_33_s_31();
         LegacySignatureData::decode_list_full(&bytes).expect_err("Parsing should fail");
+    }
+
+    #[test]
+    fn rejects_outer_with_more_than_list() {
+        // Regression: outer RLP must be a single list only.
+        let mut encoded = hex::decode("f901ab820215840cc9aa6c82ca9c94bf7cf0d775d6ac130912a22861773c21661095a280b90144baae8abf0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000008f3ffa11cd5915f0e869192663b905504a2ef4a500000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000064d22c0930000000000000000000000000953ca96b057d5397ce7791c5ae9b5a19b135234100000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000689010fd0000000000000000000000000000000000000000000000000000000026a005b37d188e6af6851c1036a5c42113ada300c03403d340d4c9ba8102146e9a76a0471b7967f289f3248f4250d0dbcb8e7391ea0b9252385377909911420f164db7").unwrap();
+
+        encoded.push(0x00); // extra byte at the end
+        let res = LegacyPayloadParser::try_parse_and_hash_for_signature_verification(&encoded, 1);
+
+        assert!(
+            res.is_err(),
+            "trailing bytes after the outer RLP list must cause a parse error"
+        );
     }
 }
