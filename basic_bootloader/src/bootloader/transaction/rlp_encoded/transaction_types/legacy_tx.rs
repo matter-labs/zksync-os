@@ -128,7 +128,7 @@ impl<'a> RlpListDecode<'a> for LegacySignatureData<'a> {
         let v = r.u64()?;
         let r_bytes = r.bytes()?;
         let s = r.bytes()?;
-        if r_bytes.len() + s.len() > 64 {
+        if r_bytes.len() > 32 || s.len() > 32 {
             return Err(InvalidTransaction::InvalidStructure);
         }
         let new = Self { v, r: r_bytes, s };
@@ -237,5 +237,31 @@ mod test {
 
         assert_eq!(tx.to.len(), 0, "contract creation must have empty `to`");
         assert_eq!(tx.data, &*initcode);
+    }
+
+    fn malformed_sig_rlp_r_33_s_31() -> Vec<u8> {
+        let v = 0x1b_u8;
+        let r_payload = [0x11u8; 33];
+        let s_payload = [0x22u8; 31];
+
+        let mut payload = Vec::new();
+        payload.push(v);
+        payload.push(0x80 + r_payload.len() as u8);
+        payload.extend_from_slice(&r_payload);
+        payload.push(0x80 + s_payload.len() as u8);
+        payload.extend_from_slice(&s_payload);
+
+        let mut out = Vec::new();
+        out.push(0xf8);
+        out.push(payload.len() as u8);
+        out.extend_from_slice(&payload);
+        out
+    }
+
+    #[test]
+    fn rejects_too_long_signature_fields() {
+        // Regression: both r and s should be at most 32 bytes each.
+        let bytes = malformed_sig_rlp_r_33_s_31();
+        LegacySignatureData::decode_list_full(&bytes).expect_err("Parsing should fail");
     }
 }
