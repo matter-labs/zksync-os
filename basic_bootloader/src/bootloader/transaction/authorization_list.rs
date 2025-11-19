@@ -222,8 +222,11 @@ fn recover_authority<S: EthereumLikeTypes>(
     use zk_ee::system::SystemFunctions;
     let mut ecrecover_input = [0u8; 128];
     let (parity, r, s) = auth_sig_data;
+    if parity > 1 {
+        return Ok(None);
+    }
     ecrecover_input[0..32].copy_from_slice(msg);
-    ecrecover_input[63] = if parity <= 1 { parity + 27 } else { parity };
+    ecrecover_input[63] = parity + 27;
     ecrecover_input[64..96][(32 - r.len())..].copy_from_slice(r);
     ecrecover_input[96..128][(32 - s.len())..].copy_from_slice(s);
     let mut ecrecover_output = ArrayBuilder::default();
