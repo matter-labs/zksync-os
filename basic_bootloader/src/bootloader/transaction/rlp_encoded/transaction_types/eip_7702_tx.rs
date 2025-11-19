@@ -33,7 +33,13 @@ impl<'a> RlpListDecode<'a> for AuthorizationEntry<'a> {
         let nonce = r.u64()?;
         let y_parity = r.u8()?;
         let r_bytes = r.bytes()?;
+        if r_bytes.len() > 32 {
+            return Err(InvalidTransaction::InvalidStructure);
+        }
         let s_bytes = r.bytes()?;
+        if s_bytes.len() > 32 {
+            return Err(InvalidTransaction::InvalidStructure);
+        }
         Ok(Self {
             chain_id,
             address,
@@ -274,6 +280,33 @@ mod test {
             vec![0x01],
             rlp_bytes(&[0x11]),
             rlp_bytes(&[0x22]),
+        ]);
+        let bytes = rlp_list(&[entry]);
+        let res: Result<AuthorizationList, _> = AuthorizationList::decode_list_full(&bytes);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn authorization_list_r_s_too_long_fails() {
+        let entry = rlp_list(&[
+            rlp_uint(1),
+            rlp_bytes(&[0xAA, 20]),
+            rlp_uint(0),
+            vec![0x01],
+            rlp_bytes(&[0x11; 33]), // r too long
+            rlp_bytes(&[0x22]),
+        ]);
+        let bytes = rlp_list(&[entry]);
+        let res: Result<AuthorizationList, _> = AuthorizationList::decode_list_full(&bytes);
+        assert!(res.is_err());
+
+        let entry = rlp_list(&[
+            rlp_uint(1),
+            rlp_bytes(&[0xAA; 20]),
+            rlp_uint(0),
+            vec![0x01],
+            rlp_bytes(&[0x22]),
+            rlp_bytes(&[0x11; 33]), // s too long
         ]);
         let bytes = rlp_list(&[entry]);
         let res: Result<AuthorizationList, _> = AuthorizationList::decode_list_full(&bytes);
