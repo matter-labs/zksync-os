@@ -78,11 +78,12 @@ impl<'a> Rlp<'a> {
             Ok(&self.bytes[self.pos - 1..self.pos])
         } else if m <= 0xb7 {
             let len = (m - 0x80) as usize;
-            if len == 1 && self.bytes[self.pos] < 0x80 {
+            let payload = self.take_exact(len)?;
+            if len == 1 && payload[0] < 0x80 {
                 // non-canonical single byte
                 return Err(InvalidTransaction::InvalidStructure);
             }
-            self.take_exact(len)
+            Ok(payload)
         } else if m < 0xc0 {
             let ll = (m - 0xb7) as usize;
             // we make some reasonable bound here - max u32 length
@@ -548,5 +549,12 @@ mod tests {
         assert!(items[0].is_ok());
         assert!(items[1].is_ok());
         assert!(items[2].is_ok());
+    }
+
+    #[test]
+    fn test_rlp_regression_non_canonical_single_byte_panic() {
+        // In the past, this input caused a panic instead of an error
+        let mut rlp = Rlp::new(&[0x81]);
+        assert!(rlp.bytes().is_err());
     }
 }
