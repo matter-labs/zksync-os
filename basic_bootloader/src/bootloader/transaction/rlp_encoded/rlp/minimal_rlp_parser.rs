@@ -131,7 +131,14 @@ impl<'a> Rlp<'a> {
         let s = self.bytes()?;
         match s.len() {
             0 => Ok(0),
-            1 => Ok(s[0]),
+            1 => {
+                if s[0] == 0 {
+                    // non-canonical encoding of zero
+                    Err(InvalidTransaction::InvalidStructure)
+                } else {
+                    Ok(s[0])
+                }
+            }
             _ => Err(InvalidTransaction::InvalidStructure),
         }
     }
@@ -152,6 +159,10 @@ impl<'a> Rlp<'a> {
         if s.len() > 8 {
             return Err(InvalidTransaction::InvalidStructure);
         }
+        // No leading zeroes allowed
+        if s.len() > 1 && s[0] == 0 {
+            return Err(InvalidTransaction::InvalidStructure);
+        }
         let mut buf = [0u8; 8];
         buf[8 - s.len()..].copy_from_slice(s);
         Ok(u64::from_be_bytes(buf))
@@ -159,7 +170,12 @@ impl<'a> Rlp<'a> {
 
     /// Decode U256 from a big-endian byte string.
     pub fn u256(&mut self) -> Result<U256, InvalidTransaction> {
-        U256::try_from_be_slice(self.bytes()?).ok_or(InvalidTransaction::InvalidStructure)
+        let s = self.bytes()?;
+        // No leading zeroes allowed
+        if s.len() > 1 && s[0] == 0 {
+            return Err(InvalidTransaction::InvalidStructure);
+        }
+        U256::try_from_be_slice(s).ok_or(InvalidTransaction::InvalidStructure)
     }
 }
 
@@ -556,5 +572,17 @@ mod tests {
         // In the past, this input caused a panic instead of an error
         let mut rlp = Rlp::new(&[0x81]);
         assert!(rlp.bytes().is_err());
+    }
+
+    #[test]
+    fn test_rlp_regression_non_canonical_leading_zeroes() {
+        let mut rlp = Rlp::new(&[0x00]); // 0 should be encoded as empty string
+        assert!(rlp.u8().is_err());
+
+        let mut rlp = Rlp::new(&[0x82, 0x00, 0x01]); // Represents 1 with leading zero
+        assert!(rlp.u64().is_err());
+
+        let mut rlp = Rlp::new(&[0x82, 0x00, 0x01]); // Represents 1 with leading zero
+        assert!(rlp.u256().is_err());
     }
 }
