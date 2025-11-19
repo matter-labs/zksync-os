@@ -183,11 +183,12 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
     pub fn sig_parity_r_s<'a>(&'a self) -> (bool, &'a [u8], &'a [u8]) {
         match &self.inner {
             RlpEncodedTxInner::Legacy(_, sig) => {
-                ((sig.v - 27) == 1, sig.r, sig.s) // prechecked
+                let parity = sig.v - U256::from(27) == U256::ONE;
+                (parity, sig.r, sig.s) // prechecked
             }
             RlpEncodedTxInner::LegacyWithEIP155(_, sig) => {
                 let chain_id = self.chain_id;
-                let parity = sig.v - 35 - (chain_id * 2); // no underflows
+                let parity = sig.v - U256::from(35) - (U256::from(chain_id) * U256::from(2)); // no underflows
                 (parity == 1, sig.r, sig.s)
             }
             RlpEncodedTxInner::EIP2930(_, sig) => (sig.y_parity, sig.r, sig.s),

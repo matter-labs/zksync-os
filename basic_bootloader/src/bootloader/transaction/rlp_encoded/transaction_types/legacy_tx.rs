@@ -94,8 +94,8 @@ impl LegacyPayloadParser {
             hasher.finalize_reset().into()
         } else {
             // EIP-155 protected legacy: v must match 35 + 2*chainId (+ {0,1})
-            let min_v = 35u64 + (expected_chain_id * 2);
-            if !(legacy_signature.v == min_v || legacy_signature.v == min_v + 1) {
+            let min_v = U256::from(35) + U256::from(expected_chain_id) * U256::from(2);
+            if !(legacy_signature.v == min_v || legacy_signature.v == min_v + U256::ONE) {
                 return Err(InvalidTransaction::InvalidEncoding.into());
             }
 
@@ -120,7 +120,7 @@ impl LegacyPayloadParser {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LegacySignatureData<'a> {
-    pub(crate) v: u64,
+    pub(crate) v: U256,
     pub(crate) r: &'a [u8],
     pub(crate) s: &'a [u8],
 }
@@ -133,7 +133,7 @@ impl<'a> LegacySignatureData<'a> {
 
 impl<'a> RlpListDecode<'a> for LegacySignatureData<'a> {
     fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
-        let v = r.u64()?;
+        let v = r.u256()?;
         let r_bytes = r.bytes()?;
         let s = r.bytes()?;
         // Check that r and s are at most 32 bytes each, and are not
