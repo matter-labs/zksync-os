@@ -136,7 +136,13 @@ impl<'a> RlpListDecode<'a> for LegacySignatureData<'a> {
         let v = r.u64()?;
         let r_bytes = r.bytes()?;
         let s = r.bytes()?;
-        if r_bytes.len() > 32 || s.len() > 32 {
+        // Check that r and s are at most 32 bytes each, and are not
+        // non-canonically encoded (no leading zeroes).
+        if r_bytes.len() > 32
+            || s.len() > 32
+            || (!r_bytes.is_empty() && r_bytes[0] == 0)
+            || (!s.is_empty() && s[0] == 0)
+        {
             return Err(InvalidTransaction::InvalidStructure);
         }
         let new = Self { v, r: r_bytes, s };
@@ -270,6 +276,32 @@ mod test {
     fn rejects_too_long_signature_fields() {
         // Regression: both r and s should be at most 32 bytes each.
         let bytes = malformed_sig_rlp_r_33_s_31();
+        LegacySignatureData::decode_list_full(&bytes).expect_err("Parsing should fail");
+    }
+
+    fn malformed_sig_rlp_r_leading_zeroes() -> Vec<u8> {
+        let v = 0x1b_u8;
+        let r_payload = [0x00, 0x11];
+        let s_payload = [0x22u8; 31];
+
+        let mut payload = Vec::new();
+        payload.push(v);
+        payload.push(0x80 + r_payload.len() as u8);
+        payload.extend_from_slice(&r_payload);
+        payload.push(0x80 + s_payload.len() as u8);
+        payload.extend_from_slice(&s_payload);
+
+        let mut out = Vec::new();
+        out.push(0xf8);
+        out.push(payload.len() as u8);
+        out.extend_from_slice(&payload);
+        out
+    }
+
+    #[test]
+    fn rejects_sig_leading_zeroes() {
+        // Regression: leading zeroes in r or s are not allowed.
+        let bytes = malformed_sig_rlp_r_leading_zeroes();
         LegacySignatureData::decode_list_full(&bytes).expect_err("Parsing should fail");
     }
 
