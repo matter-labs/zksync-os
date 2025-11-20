@@ -86,7 +86,7 @@ impl FieldElement {
         for i in 0..4 {
             let modulus = &MODULUS[4 - i - 1];
             let value = &self.0[4 - i - 1];
-            
+
             if modulus > value {
                 return false;
             } else if modulus < value {
