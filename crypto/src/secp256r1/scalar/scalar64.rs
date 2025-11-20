@@ -47,8 +47,9 @@ impl Scalar {
     }
 
     fn overflow(&self) -> bool {
-        let (_, of) = overflowing_sub(&MODULUS, &self.0);
-        of
+        let (_, of) = overflowing_sub(&self.0, &MODULUS);
+        // temp.0 >= MODULUS
+        !of
     }
 
     #[cfg(test)]
