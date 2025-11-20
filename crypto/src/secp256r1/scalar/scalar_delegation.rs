@@ -68,9 +68,7 @@ impl Scalar {
     fn overflow(&self) -> bool {
         let mut temp = *self;
         let borrow = u256::sub_and_negate_assign(&mut temp.0, &MODULUS);
-
-        // temp.0 >= MODULUS
-        !borrow
+        borrow
     }
 
     pub(crate) fn from_words(words: [u64; 4]) -> Self {
