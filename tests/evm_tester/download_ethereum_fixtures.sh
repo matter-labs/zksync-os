@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # URLs of the tarballs
-DEVELOP_TAR_URL="https://github.com/ethereum/execution-spec-tests/releases/download/v5.1.0/fixtures_develop.tar.gz"
-STABLE_TAR_URL="https://github.com/ethereum/execution-spec-tests/releases/download/v5.1.0/fixtures_stable.tar.gz"
+DEVELOP_TAR_URL="https://github.com/ethereum/execution-spec-tests/releases/download/v5.3.0/fixtures_develop.tar.gz"
+STABLE_TAR_URL="https://github.com/ethereum/execution-spec-tests/releases/download/v5.3.0/fixtures_stable.tar.gz"
 
 # Target directory
 TARGET_DIR="ethereum-fixtures"
