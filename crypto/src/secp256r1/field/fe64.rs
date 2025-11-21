@@ -83,9 +83,9 @@ impl FieldElement {
     }
 
     pub(crate) fn overflow(&self) -> bool {
-        for i in 0..4 {
-            let modulus = &MODULUS[4 - i - 1];
-            let value = &self.0[4 - i - 1];
+        for i in (0..4).rev() {
+            let modulus = &MODULUS[i];
+            let value = &self.0[i];
 
             if modulus > value {
                 return false;
