@@ -129,7 +129,7 @@ fn prepare_chain() -> (Chain, EncodedTx) {
     );
 
     let dummy_l2_interop_roots_storage_bytecode =
-        fs::read_to_string("dummy_interop_root_storage.txt").expect("Should read bytecode");
+        fs::read_to_string("dummy_interop_root_storage_v30.txt").expect("Should read bytecode");
     let bytecode = hex::decode(dummy_l2_interop_roots_storage_bytecode).unwrap();
     chain.set_evm_bytecode(L2_INTEROP_ROOT_STORAGE_ADDRESS, &bytecode);
 

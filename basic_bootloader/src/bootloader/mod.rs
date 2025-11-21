@@ -452,7 +452,7 @@ where
         let mut resources = S::Resources::FORMAL_INFINITE;
         let native_resource_before_processing = resources.native().as_u64();
 
-        for interop_root in interop_roots.iter() {
+        /*for interop_root in interop_roots.iter() {
             resources = Self::add_interop_root_to_l2_interop_root_storage(
                 interop_root.chain_id,
                 interop_root.block_or_batch_number,
@@ -463,7 +463,16 @@ where
                 resources,
                 tracer,
             )?;
-        }
+        }*/
+
+        resources = Self::add_interop_roots_to_l2_interop_root_storage_batch(
+            &interop_roots,
+            system,
+            system_functions,
+            memories,
+            resources,
+            tracer,
+        )?;
 
         let native_resources_used_by_calls = native_resource_before_processing
             .checked_sub(resources.native().as_u64())
