@@ -1,12 +1,11 @@
 use crypto::{
     p256::{
         ecdsa::{
-            signature::hazmat::{PrehashSigner, PrehashVerifier},
-            Signature, SigningKey, VerifyingKey,
+            Signature, SigningKey, VerifyingKey, signature::hazmat::{PrehashSigner, PrehashVerifier}
         },
         elliptic_curve::{rand_core::OsRng, sec1::ToEncodedPoint},
     },
-    secp256r1::verify,
+    secp256r1::{Secp256r1Err, verify},
     sha3::{Digest, Keccak256},
 };
 use proptest::prelude::*;
@@ -30,47 +29,106 @@ fn split_public_key(pk: &VerifyingKey) -> Option<([u8; 32], [u8; 32])> {
     }
 }
 
+fn get_input(msg: [u8; 100]) -> ([u8; 32], [u8; 32], [u8; 32], [u8; 32], [u8; 32]) {
+    let digest = {
+        let mut hasher = Keccak256::new();
+        hasher.update(&msg);
+        let res = hasher.finalize();
+        let mut hash_bytes = [0u8; 32];
+        hash_bytes.copy_from_slice(&res);
+        hash_bytes
+    };
+
+    let signing_key = SigningKey::random(&mut OsRng);
+    let verify_key = signing_key.verifying_key();
+    let sig: Signature = signing_key.sign_prehash(&digest).unwrap();
+
+    // sanity check
+    assert!(verify_key.verify_prehash(&digest, &sig).is_ok());
+
+    let (r_bytes, s_bytes) = split_signature(&sig);
+    let (x_bytes, y_bytes) = split_public_key(&verify_key).unwrap();
+
+    (digest, r_bytes, s_bytes, x_bytes, y_bytes)
+}
+
 #[test]
 fn selftest() {
     proptest!(|(msg: [u8; 100])| {
-            let digest = {
-                let mut hasher = Keccak256::new();
-                hasher.update(&msg);
-                let res = hasher.finalize();
-                let mut hash_bytes = [0u8; 32];
-                hash_bytes.copy_from_slice(&res);
-                hash_bytes
-            };
+            let (digest, r, s, x, y) = get_input(msg);
 
-            let signing_key = SigningKey::random(&mut OsRng);
-            let verify_key = signing_key.verifying_key();
-            let sig: Signature = signing_key.sign_prehash(&digest).unwrap();
+            let result = verify(&digest, &r, &s, &x, &y);
 
-            // sanity check
-            prop_assert!(verify_key.verify_prehash(&digest, &sig).is_ok());
-
-            let (r_bytes, s_bytes) = split_signature(&sig);
-            let (x_bytes, y_bytes) = split_public_key(&verify_key).unwrap();
-
-            let result = verify(&digest, &r_bytes, &s_bytes, &x_bytes, &y_bytes);
-
+            // Ok(true) means verification succeful
             prop_assert!(result.unwrap());
     })
 }
 
 #[test]
-fn bad_message() {
-    proptest!(|(msg: [u8; 10], bad_msg: [u8; 10])| {
-            if msg != bad_msg {
-                let digest = {
-                    let mut hasher = Keccak256::new();
-                    hasher.update(&msg);
-                    let res = hasher.finalize();
-                    let mut hash_bytes = [0u8; 32];
-                    hash_bytes.copy_from_slice(&res);
-                    hash_bytes
-                };
+fn invalid_input() {
+    use ruint::aliases::U256;
+    use hex_literal::hex;
 
+    const ORDER: [u8; 32] = hex!("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551");
+    const MODULUS: [u8; 32] = hex!("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff");
+
+    let order = U256::from_be_bytes(ORDER);
+    let modulus = U256::from_be_bytes(MODULUS); 
+
+    proptest!(|(k: u8)| {
+        let msg = [42; 100];
+        let (digest, r, s, x, y) = get_input(msg);
+
+        // r = order + k
+        let result = verify(
+            &digest, 
+            &(U256::from(k) + order).to_be_bytes(), 
+            &s, 
+            &x, 
+            &y
+        );
+        
+        prop_assert!(matches!(result, Err(Secp256r1Err::InvalidSignature)));
+
+        // s = order + k
+        let result = verify(
+            &digest, 
+            &r, 
+            &(U256::from(k) + order).to_be_bytes(), 
+            &x, 
+            &y
+        );
+
+        prop_assert!(matches!(result, Err(Secp256r1Err::InvalidSignature)));
+
+        // x = order + k
+        let result = verify(
+            &digest, 
+            &r, 
+            &s, 
+            &(U256::from(k) + modulus).to_be_bytes(), 
+            &y
+        );
+
+        prop_assert!(matches!(result, Err(Secp256r1Err::InvalidFieldBytes)));
+
+        // y = order + k
+        let result = verify(
+            &digest, 
+            &r, 
+            &s, 
+            &x, 
+            &(U256::from(k) + modulus).to_be_bytes()
+        );
+
+        prop_assert!(matches!(result, Err(Secp256r1Err::InvalidFieldBytes)));
+    })
+}
+
+#[test]
+fn bad_message() {
+    proptest!(|(msg: [u8; 100], bad_msg: [u8; 100])| {
+            if msg != bad_msg {
                 let bad_digest = {
                     let mut hasher = Keccak256::new();
                     hasher.update(&bad_msg);
@@ -80,17 +138,11 @@ fn bad_message() {
                     hash_bytes
                 };
 
-                let signing_key = SigningKey::random(&mut OsRng);
-                let verify_key = signing_key.verifying_key();
-                let sig: Signature = signing_key.sign_prehash(&digest).unwrap();
+                let (digest, r, s, x, y) = get_input(msg);
 
-                // sanity check
-                prop_assert!(verify_key.verify_prehash(&bad_digest, &sig).is_err());
+                let result = verify(&bad_digest, &r, &s, &x, &y);
 
-                let (r_bytes, s_bytes) = split_signature(&sig);
-                let (x_bytes, y_bytes) = split_public_key(&verify_key).unwrap();
-
-                let result = verify(&bad_digest, &r_bytes, &s_bytes, &x_bytes, &y_bytes);
+                // Ok(false) means verification failed
                 prop_assert!(!result.unwrap());
             }
     })
@@ -121,6 +173,7 @@ fn bad_signature() {
 
                 let result = verify(&digest, &r_bytes, &s_bytes, &x_bytes, &y_bytes);
 
+                // Ok(false) means verification failed
                 prop_assert!(!result.unwrap());
             }
     })
@@ -153,6 +206,7 @@ fn bad_signing_key() {
 
                 let result = verify(&digest, &r_bytes, &s_bytes, &x_bytes, &y_bytes);
 
+                // Ok(false) means verification failed
                 prop_assert!(!result.unwrap());
             }
     })
