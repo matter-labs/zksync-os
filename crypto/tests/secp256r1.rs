@@ -1,11 +1,12 @@
 use crypto::{
     p256::{
         ecdsa::{
-            Signature, SigningKey, VerifyingKey, signature::hazmat::{PrehashSigner, PrehashVerifier}
+            signature::hazmat::{PrehashSigner, PrehashVerifier},
+            Signature, SigningKey, VerifyingKey,
         },
         elliptic_curve::{rand_core::OsRng, sec1::ToEncodedPoint},
     },
-    secp256r1::{Secp256r1Err, verify},
+    secp256r1::{verify, Secp256r1Err},
     sha3::{Digest, Keccak256},
 };
 use proptest::prelude::*;
@@ -66,14 +67,16 @@ fn selftest() {
 
 #[test]
 fn invalid_input() {
-    use ruint::aliases::U256;
     use hex_literal::hex;
+    use ruint::aliases::U256;
 
-    const ORDER: [u8; 32] = hex!("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551");
-    const MODULUS: [u8; 32] = hex!("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff");
+    const ORDER: [u8; 32] =
+        hex!("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551");
+    const MODULUS: [u8; 32] =
+        hex!("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff");
 
     let order = U256::from_be_bytes(ORDER);
-    let modulus = U256::from_be_bytes(MODULUS); 
+    let modulus = U256::from_be_bytes(MODULUS);
 
     proptest!(|(k: u8, msg: [u8; 100])| {
         let k = U256::from(k);
@@ -81,10 +84,10 @@ fn invalid_input() {
 
         // r = order + k
         let result = verify(
-            &digest, 
-            &(k + order).to_be_bytes(), 
-            &s, 
-            &x, 
+            &digest,
+            &(k + order).to_be_bytes(),
+            &s,
+            &x,
             &y
         );
 
@@ -92,10 +95,10 @@ fn invalid_input() {
 
         // s = order + k
         let result = verify(
-            &digest, 
-            &r, 
-            &(k + order).to_be_bytes(), 
-            &x, 
+            &digest,
+            &r,
+            &(k + order).to_be_bytes(),
+            &x,
             &y
         );
 
@@ -103,10 +106,10 @@ fn invalid_input() {
 
         // x = order + k
         let result = verify(
-            &digest, 
-            &r, 
-            &s, 
-            &(k + modulus).to_be_bytes(), 
+            &digest,
+            &r,
+            &s,
+            &(k + modulus).to_be_bytes(),
             &y
         );
 
@@ -114,10 +117,10 @@ fn invalid_input() {
 
         // y = order + k
         let result = verify(
-            &digest, 
-            &r, 
-            &s, 
-            &x, 
+            &digest,
+            &r,
+            &s,
+            &x,
             &(k + modulus).to_be_bytes()
         );
 
