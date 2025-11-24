@@ -75,26 +75,26 @@ fn invalid_input() {
     let order = U256::from_be_bytes(ORDER);
     let modulus = U256::from_be_bytes(MODULUS); 
 
-    proptest!(|(k: u8)| {
-        let msg = [42; 100];
+    proptest!(|(k: u8, msg: [u8; 100])| {
+        let k = U256::from(k);
         let (digest, r, s, x, y) = get_input(msg);
 
         // r = order + k
         let result = verify(
             &digest, 
-            &(U256::from(k) + order).to_be_bytes(), 
+            &(k + order).to_be_bytes(), 
             &s, 
             &x, 
             &y
         );
-        
+
         prop_assert!(matches!(result, Err(Secp256r1Err::InvalidSignature)));
 
         // s = order + k
         let result = verify(
             &digest, 
             &r, 
-            &(U256::from(k) + order).to_be_bytes(), 
+            &(k + order).to_be_bytes(), 
             &x, 
             &y
         );
@@ -106,7 +106,7 @@ fn invalid_input() {
             &digest, 
             &r, 
             &s, 
-            &(U256::from(k) + modulus).to_be_bytes(), 
+            &(k + modulus).to_be_bytes(), 
             &y
         );
 
@@ -118,10 +118,43 @@ fn invalid_input() {
             &r, 
             &s, 
             &x, 
-            &(U256::from(k) + modulus).to_be_bytes()
+            &(k + modulus).to_be_bytes()
         );
 
         prop_assert!(matches!(result, Err(Secp256r1Err::InvalidFieldBytes)));
+
+        // x = x + k
+        let result = verify(
+            &digest,
+            &r,
+            &s,
+            &U256::from_be_bytes(x).add_mod(k.max(U256::ONE), modulus).to_be_bytes(),
+            &y
+        );
+
+        prop_assert!(matches!(result, Err(Secp256r1Err::InvalidCoordinates)));
+
+        // y = y + k
+        let result = verify(
+            &digest,
+            &r,
+            &s,
+            &x,
+            &U256::from_be_bytes(y).add_mod(k.max(U256::ONE), modulus).to_be_bytes(),
+        );
+
+        prop_assert!(matches!(result, Err(Secp256r1Err::InvalidCoordinates)));
+
+        // x = 0, y = 0
+         let result = verify(
+            &digest,
+            &r,
+            &s,
+            &[0; 32],
+            &[0; 32]
+        );
+
+        prop_assert!(matches!(result, Err(Secp256r1Err::RecoveredInfinity)));
     })
 }
 
