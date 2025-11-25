@@ -39,9 +39,9 @@ jobs:
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile
-              run: cargo test --release --no-run
+              run: cargo test --locked --release --no-run
             - name: Run rust tests
-              run: cargo test --release -j 3 -- --skip verify_default_binaries
+              run: cargo test --locked --release -j 3 -- --skip verify_default_binaries
     crypto_test:
         name: crypto crate tests
         runs-on: [matterlabs-ci-runner]
@@ -77,7 +77,7 @@ jobs:
                   ./download_ethereum_fixtures.sh
             - name: Run EVM state tests
               working-directory: ./tests/evm_tester
-              run: cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print
+              run: cargo run --locked --bin evm-tester --release --features zksync_os_forward_system/no_print
 
     # We will keep it for a while just in case.
     evm_state_tests_legacy:
@@ -118,7 +118,7 @@ jobs:
                   ./download_ethereum_fixtures.sh
             - name: Run EVM state tests
               working-directory: ./era-evm-tester
-              run: cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print -- --environment=ZKsyncOS --spec_tests
+              run: cargo run --locked --bin evm-tester --release --features zksync_os_forward_system/no_print -- --environment=ZKsyncOS --spec_tests
 
     verify_binary:
         name: Verify binary
@@ -142,7 +142,7 @@ jobs:
                   ./dump_bin.sh --type singleblock-batch
                   ./dump_bin.sh --type multiblock-batch
             - name: Run binary checker
-              run: cargo test -p binary_checker -- --nocapture
+              run: cargo test --locked -p binary_checker -- --nocapture
 
     e2e_prove:
         name: e2e_prove
@@ -165,7 +165,7 @@ jobs:
                   ./dump_bin.sh --type for-tests
             - name: Run proving test
               # Runs with e2e_proving feature
-              run: cargo test --release -p transactions --features e2e_proving run_base_system -- --nocapture
+              run: cargo test --locked --release -p transactions --features e2e_proving run_base_system -- --nocapture
 
     blake_tests:
         name: blake_tests
@@ -188,8 +188,8 @@ jobs:
             - name: Run proving test
               working-directory: ./crypto/src/blake2s
               run: |
-                  cargo test --release run_naive_test
-                  cargo test --release run_extended_delegation_test
+                  cargo test --locked --release run_naive_test
+                  cargo test --locked --release run_extended_delegation_test
 
     formatting:
         name: cargo fmt
@@ -212,7 +212,7 @@ jobs:
                   components: clippy
             - name: Run Clippy
               run: |
-                  cargo clippy --all -- -D warnings
+                  cargo clippy --locked --all -- -D warnings
 
     typos:
         name: typos check
