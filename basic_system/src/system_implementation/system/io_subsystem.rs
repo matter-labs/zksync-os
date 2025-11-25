@@ -24,6 +24,7 @@ use storage_models::common_structs::generic_transient_storage::GenericTransientS
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
+use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
 use zk_ee::common_structs::ProofData;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
 use zk_ee::interface_error;
@@ -55,6 +56,7 @@ pub struct FullIO<
     pub(crate) transient_storage: GenericTransientStorage<WarmStorageKey, Bytes32, SF, M, A>,
     pub(crate) logs_storage: LogsStorage<SF, M, A>,
     pub(crate) events_storage: EventsStorage<MAX_EVENT_TOPICS, SF, M, A>,
+    pub(crate) interop_root_storage: InteropRootStorage<SF, M, A>,
     pub(crate) allocator: A,
     pub(crate) oracle: O,
     pub(crate) tx_number: u32,
@@ -66,6 +68,7 @@ pub struct FullIOStateSnapshot {
     transient: CacheSnapshotId,
     messages: usize,
     events: usize,
+    interop_roots: usize,
 }
 
 impl<
@@ -226,6 +229,13 @@ impl<
         Ok(data_hash)
     }
 
+    fn add_interop_root(
+        &mut self,
+        interop_root: zk_ee::common_structs::interop_root_storage::InteropRoot,
+    ) -> Result<(), SystemError> {
+        self.interop_root_storage.push_root(interop_root)
+    }
+
     fn get_nominal_token_balance(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -369,12 +379,14 @@ impl<
         let transient = self.transient_storage.start_frame();
         let messages = self.logs_storage.start_frame();
         let events = self.events_storage.start_frame();
+        let interop_roots = self.interop_root_storage.start_frame();
 
         Ok(FullIOStateSnapshot {
             io,
             transient,
             messages,
             events,
+            interop_roots,
         })
     }
 
@@ -389,6 +401,8 @@ impl<
             .finish_frame(rollback_handle.map(|x| x.messages));
         self.events_storage
             .finish_frame(rollback_handle.map(|x| x.events));
+        self.interop_root_storage
+            .finish_frame(rollback_handle.map(|x| x.interop_roots));
 
         Ok(())
     }
@@ -924,6 +938,8 @@ where
         let logs_storage = LogsStorage::<SF, M, A>::new_from_parts(allocator.clone());
         let events_storage =
             EventsStorage::<MAX_EVENT_TOPICS, SF, M, A>::new_from_parts(allocator.clone());
+        let interop_root_storage =
+            InteropRootStorage::<SF, M, A>::new_from_parts(allocator.clone());
 
         let da_commitment_scheme = if PROOF_ENV {
             Some(DACommitmentScheme::try_from_oracle(&mut oracle)?)
@@ -935,6 +951,7 @@ where
             transient_storage,
             events_storage,
             logs_storage,
+            interop_root_storage,
             allocator,
             oracle,
             tx_number: 0u32,

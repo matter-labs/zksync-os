@@ -5,6 +5,7 @@
 
 use core::marker::PhantomData;
 
+use super::common_structs::interop_root_storage::InteropRoot;
 use super::errors::internal::InternalError;
 use super::errors::system::SystemError;
 use super::logger::Logger;
@@ -110,6 +111,9 @@ pub trait IOSubsystem: Sized {
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         data: &[u8],
     ) -> Result<Bytes32, SystemError>;
+
+    /// Add an interop root.
+    fn add_interop_root(&mut self, interop_root: InteropRoot) -> Result<(), SystemError>;
 
     /// Mark an account to be destructed at the end of the transaction.
     /// Perform token transfer to beneficiary. Returns amount of token transferred.
