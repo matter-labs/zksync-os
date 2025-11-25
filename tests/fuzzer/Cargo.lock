@@ -3641,7 +3641,7 @@ dependencies = [
  "ruint",
  "strum_macros 0.27.2",
  "zk_ee",
- "zksync_os_evm_errors 0.0.10",
+ "zksync_os_evm_errors 0.0.9",
 ]
 
 [[package]]
@@ -3881,7 +3881,7 @@ dependencies = [
  "strum_macros 0.27.2",
  "system_hooks",
  "zk_ee",
- "zksync_os_evm_errors 0.0.10",
+ "zksync_os_evm_errors 0.0.9",
  "zksync_os_interface",
  "zksync_os_runner",
 ]
@@ -10020,7 +10020,7 @@ dependencies = [
  "ruint",
  "serde",
  "strum_macros 0.27.2",
- "zksync_os_evm_errors 0.0.10",
+ "zksync_os_evm_errors 0.0.9",
 ]
 
 [[package]]
@@ -10104,18 +10104,20 @@ checksum = "95ddc4ac82441385017e569ee1b060502a2af4d78c4fb7b24bcee70b0b96e6a3"
 
 [[package]]
 name = "zksync_os_evm_errors"
-version = "0.0.10"
-source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-prover-input-gen#16f2306bb4c3b6cb7465f6809637661ff4f2f86f"
+version = "0.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12685073683de64e01a87b0f0a8c1e11df2ea3d6dc3846f1320153ef2fe499ed"
 
 [[package]]
 name = "zksync_os_interface"
-version = "0.0.10"
-source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-prover-input-gen#16f2306bb4c3b6cb7465f6809637661ff4f2f86f"
+version = "0.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4dc1ea70bb0c23682a0e0b88ba7ed17656257de2e00bc0f75784c3053a178d5"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
  "serde",
- "zksync_os_evm_errors 0.0.10",
+ "zksync_os_evm_errors 0.0.9",
 ]
 
 [[package]]
