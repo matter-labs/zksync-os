@@ -71,13 +71,7 @@ where
 
     let mut resources = available_resources;
 
-    let result = l1_messenger_hook_inner(
-        &calldata,
-        &mut resources,
-        system,
-        caller_ee,
-        is_static,
-    );
+    let result = l1_messenger_hook_inner(&calldata, &mut resources, system, caller_ee, is_static);
 
     match result {
         Ok(Ok(return_data)) => {
@@ -145,10 +139,9 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     resources: &mut S::Resources,
     system: &mut System<S>,
 ) -> Result<Result<Bytes32, &'static str>, SystemError> {
-    let address_sender =
-        B160::try_from_be_slice(&calldata[12..32]).ok_or(SystemError::LeafDefect(
-            internal_error!("Failed to create B160 from 20 byte array"),
-        ))?;
+    let address_sender = B160::try_from_be_slice(&calldata[12..32]).ok_or(
+        SystemError::LeafDefect(internal_error!("Failed to create B160 from 20 byte array")),
+    )?;
 
     let offset: usize = U256::from_be_slice(&calldata[32..64])
         .try_into()
@@ -171,10 +164,12 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     resources.charge(&S::Resources::from_ergs(l1_message_cost))?;
 
     // emit L1 message
-    let message_hash =
-        system
-            .io
-            .emit_l1_message(ExecutionEnvironmentType::NoEE, resources, &address_sender, message)?;
+    let message_hash = system.io.emit_l1_message(
+        ExecutionEnvironmentType::NoEE,
+        resources,
+        &address_sender,
+        message,
+    )?;
 
     Ok(Ok(message_hash))
 }

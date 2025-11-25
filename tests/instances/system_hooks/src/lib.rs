@@ -15,7 +15,9 @@ use rig::utils::{
 use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_interface::types::ExecutionResult;
 use rig::{alloy, Chain};
-use system_hooks::addresses_constants::{CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS};
+use system_hooks::addresses_constants::{
+    CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
+};
 
 #[test]
 fn test_set_bytecode_details_evm() {

@@ -6,8 +6,10 @@ use forward_system::system::tracers::call_tracer::CallTracer;
 use ruint::aliases::B160;
 use zk_ee::utils::Bytes32;
 
-use system_hooks::addresses_constants::{CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS};
 use crate::{utils, Chain};
+use system_hooks::addresses_constants::{
+    CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
+};
 
 /// Recursive search for a required call
 fn get_first_traced_subcall_to<'a>(

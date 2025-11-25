@@ -4,6 +4,7 @@
 //! It's needed for protocol upgrades.
 //!
 use super::super::*;
+use crate::addresses_constants::{CONTRACT_DEPLOYER_ADDRESS, SET_BYTECODE_ON_ADDRESS_HOOK};
 use core::fmt::Write;
 use evm_interpreter::MAX_CODE_SIZE;
 use ruint::aliases::{B160, U256};
@@ -11,7 +12,6 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::utils::Bytes32;
 use zk_ee::{internal_error, out_of_return_memory};
-use crate::addresses_constants::{CONTRACT_DEPLOYER_ADDRESS, SET_BYTECODE_ON_ADDRESS_HOOK};
 
 // setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
 pub const SET_EVM_BYTECODE_DETAILS: &[u8] = &[0x23, 0x1b, 0x39, 0x57];
@@ -45,9 +45,10 @@ where
     let mut is_static = false;
     match modifier {
         CallModifier::Constructor => {
-            return Err(
-                internal_error!("Set bytecode on address hook called with constructor modifier").into(),
+            return Err(internal_error!(
+                "Set bytecode on address hook called with constructor modifier"
             )
+            .into())
         }
         CallModifier::Delegate
         | CallModifier::DelegateStatic
@@ -67,13 +68,8 @@ where
 
     let mut resources = available_resources;
 
-    let result = set_bytecode_on_address_hook_inner(
-        &calldata,
-        &mut resources,
-        system,
-        caller_ee,
-        is_static,
-    );
+    let result =
+        set_bytecode_on_address_hook_inner(&calldata, &mut resources, system, caller_ee, is_static);
 
     match result {
         Ok(Ok(return_data)) => {
@@ -135,13 +131,11 @@ where
         ));
     }
 
-    let address =
-        B160::try_from_be_slice(&calldata[12..32]).ok_or(SystemError::LeafDefect(
-            internal_error!("Failed to create B160 from 20 byte array"),
-        ))?;
+    let address = B160::try_from_be_slice(&calldata[12..32]).ok_or(SystemError::LeafDefect(
+        internal_error!("Failed to create B160 from 20 byte array"),
+    ))?;
 
-    let bytecode_hash =
-        Bytes32::from_array(calldata[32..64].try_into().expect("Always valid"));
+    let bytecode_hash = Bytes32::from_array(calldata[32..64].try_into().expect("Always valid"));
 
     let bytecode_length: u32 = match U256::from_be_slice(&calldata[64..96]).try_into() {
         Ok(length) => length,
@@ -153,7 +147,8 @@ where
     let observable_bytecode_hash =
         Bytes32::from_array(calldata[96..128].try_into().expect("Always valid"));
 
-    let observable_bytecode_length: u32 = match U256::from_be_slice(&calldata[128..160]).try_into() {
+    let observable_bytecode_length: u32 = match U256::from_be_slice(&calldata[128..160]).try_into()
+    {
         Ok(length) => length,
         Err(_) => return Ok(Err(
             "Set bytecode on address failure: setBytecodeDetailsEVM called with invalid calldata",
