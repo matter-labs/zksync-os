@@ -20,10 +20,12 @@ use evm_interpreter::gas_constants::LOGDATA;
 use evm_interpreter::gas_constants::LOGTOPIC;
 use evm_interpreter::gas_constants::TLOAD;
 use evm_interpreter::gas_constants::TSTORE;
+use interop_roots::calculate_interop_roots_rolling_hash;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
+use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
 use zk_ee::common_structs::ProofData;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
@@ -229,10 +231,7 @@ impl<
         Ok(data_hash)
     }
 
-    fn add_interop_root(
-        &mut self,
-        interop_root: zk_ee::common_structs::interop_root_storage::InteropRoot,
-    ) -> Result<(), SystemError> {
+    fn add_interop_root(&mut self, interop_root: InteropRoot) -> Result<(), SystemError> {
         self.interop_root_storage.push_root(interop_root)
     }
 
@@ -585,6 +584,12 @@ impl<
             last_block_timestamp: block_metadata.timestamp,
         };
 
+        let interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
+            Bytes32::zero(),
+            self.interop_root_storage.iter(),
+            &mut crypto::sha3::Keccak256::new(),
+        );
+
         // other outputs to be opened on the settlement layer/aggregation program
         let block_output = BlocksOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
@@ -594,6 +599,7 @@ impl<
             priority_ops_hashes_hash: l1_to_l2_txs_hash,
             l2_to_l1_logs_hashes_hash: l2_to_l1_logs_hashes_hash.into(),
             upgrade_tx_hash,
+            interop_roots_rolling_hash,
         };
 
         let public_input = BlocksPublicInput {
@@ -718,6 +724,13 @@ impl<
         let _ = logger.write_fmt(format_args!(
             "PI calculation: state commitment after {chain_state_commitment_after:?}\n",
         ));
+
+        let interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
+            Bytes32::zero(),
+            self.interop_root_storage.iter(),
+            &mut crypto::sha3::Keccak256::new(),
+        );
+
         let batch_output = public_input::BatchOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
             first_block_timestamp: block_metadata.timestamp,
@@ -728,7 +741,7 @@ impl<
             priority_operations_hash: l1_txs_commitment.1,
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash,
-            interop_root_rolling_hash: Bytes32::from([0u8; 32]), // for now no interop roots
+            interop_roots_rolling_hash,
         };
         let _ = logger.write_fmt(format_args!(
             "PI calculation: batch output {batch_output:?}\n",
@@ -898,12 +911,15 @@ where
             last_block_timestamp: block_metadata.timestamp,
         };
 
+        let interop_roots_iter = self.interop_root_storage.iter();
+
         builder.apply_block(
             chain_state_commitment_before.hash().into(),
             chain_state_commitment_after.hash().into(),
             block_metadata.timestamp,
             U256::try_from(block_metadata.chain_id).unwrap(),
             upgrade_tx_hash,
+            interop_roots_iter,
         );
 
         self.oracle

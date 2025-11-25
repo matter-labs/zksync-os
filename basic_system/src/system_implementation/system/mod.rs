@@ -23,6 +23,7 @@ use zk_ee::{
 };
 
 pub mod da_commitment_generator;
+pub mod interop_roots;
 mod io_subsystem;
 pub mod pubdata;
 mod public_input;
