@@ -40,6 +40,7 @@ where
         modifier,
     } = request;
 
+    debug_assert_eq!(caller, L1_MESSENGER_ADDRESS);
     debug_assert_eq!(callee, L1_MESSENGER_ADDRESS_HOOK);
 
     let mut error = false;
@@ -74,7 +75,6 @@ where
         &calldata,
         &mut resources,
         system,
-        caller,
         caller_ee,
         is_static,
     );
@@ -108,12 +108,13 @@ where
         Err(SystemError::LeafDefect(e)) => Err(e.into()),
     }
 }
+// sendToL1(bytes) - 62f84b24
+pub const SEND_TO_L1_SELECTOR: &[u8] = &[0x62, 0xf8, 0x4b, 0x24];
 
 fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
-    message: &[u8],
+    calldata: &[u8],
     resources: &mut S::Resources,
     system: &mut System<S>,
-    caller: B160,
     _caller_ee: u8,
     is_static: bool,
 ) -> Result<Result<Bytes32, &'static str>, SystemError>
@@ -131,7 +132,7 @@ where
         ));
     }
 
-    send_to_l1_inner(&message, resources, system, caller)
+    send_to_l1_inner(&calldata, resources, system)
 }
 
 /// Sends a message to L1 and emits the needed events.
@@ -140,11 +141,31 @@ where
 /// 32 bytes length of the message
 /// followed by the message itself, padded to be a multiple of 32 bytes.
 pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
-    message: &[u8],
+    calldata: &[u8],
     resources: &mut S::Resources,
     system: &mut System<S>,
-    caller: B160,
 ) -> Result<Result<Bytes32, &'static str>, SystemError> {
+    let address_sender =
+        B160::try_from_be_slice(&calldata[12..32]).ok_or(SystemError::LeafDefect(
+            internal_error!("Failed to create B160 from 20 byte array"),
+        ))?;
+
+    let offset: usize = U256::from_be_slice(&calldata[32..64])
+        .try_into()
+        .map_err(|_| SystemError::LeafDefect(internal_error!("Invalid offset word")))?;
+
+    let length: usize = U256::from_be_slice(&calldata[offset..offset + 32])
+        .try_into()
+        .map_err(|_| SystemError::LeafDefect(internal_error!("Invalid length word")))?;
+
+    // 4) slice message
+    let start = offset + 32;
+    let end = start + length;
+    if calldata.len() < end {
+        return Ok(Err("L1 messenger failure: truncated bytes payload"));
+    }
+    let message = &calldata[start..end];
+
     // charge for message length
     let l1_message_cost = l1_message_ergs_cost(message.len());
     resources.charge(&S::Resources::from_ergs(l1_message_cost))?;
@@ -153,7 +174,7 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     let message_hash =
         system
             .io
-            .emit_l1_message(ExecutionEnvironmentType::NoEE, resources, &caller, message)?;
+            .emit_l1_message(ExecutionEnvironmentType::NoEE, resources, &address_sender, message)?;
 
     Ok(Ok(message_hash))
 }

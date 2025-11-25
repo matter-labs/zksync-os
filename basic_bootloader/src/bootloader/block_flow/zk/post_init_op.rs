@@ -15,7 +15,7 @@ where
         {
             system_hooks::add_l1_messenger(system_functions)?;
             system_hooks::add_l2_base_token(system_functions)?;
-            system_hooks::add_contract_deployer(system_functions)?;
+            system_hooks::add_set_bytecode_on_address(system_functions)?;
             system_hooks::add_interop_root_reporter(system_functions)?;
         }
 

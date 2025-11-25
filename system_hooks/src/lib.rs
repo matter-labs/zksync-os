@@ -29,9 +29,8 @@
 extern crate alloc;
 
 use crate::addresses_constants::*;
-use crate::call_hooks::contract_deployer::contract_deployer_hook;
+use crate::call_hooks::set_bytecode_on_address::set_bytecode_on_address_hook;
 use crate::call_hooks::l1_messenger::l1_messenger_hook;
-use crate::call_hooks::l2_base_token::l2_base_token_hook;
 use crate::event_hooks::interop_root_reporter::interop_root_reporter_event_hook;
 use call_hooks::precompiles::{
     pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors,

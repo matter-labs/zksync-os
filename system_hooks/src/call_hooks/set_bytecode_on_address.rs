@@ -1,5 +1,5 @@
 //!
-//! Contract deployer system hook implementation.
+//! Set bytecode on address system hook implementation.
 //! It implements a `setDeployedCodeEVM` method, similar to Era.
 //! It's needed for protocol upgrades.
 //!
@@ -11,8 +11,12 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::utils::Bytes32;
 use zk_ee::{internal_error, out_of_return_memory};
+use crate::addresses_constants::{CONTRACT_DEPLOYER_ADDRESS, SET_BYTECODE_ON_ADDRESS_HOOK};
 
-pub fn contract_deployer_hook<'a, S: EthereumLikeTypes>(
+// setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
+pub const SET_EVM_BYTECODE_DETAILS: &[u8] = &[0x23, 0x1b, 0x39, 0x57];
+
+pub fn set_bytecode_on_address_hook<'a, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
     caller_ee: u8,
     system: &mut System<S>,
@@ -33,7 +37,8 @@ where
         modifier,
     } = request;
 
-    debug_assert_eq!(callee, CONTRACT_DEPLOYER_ADDRESS);
+    debug_assert_eq!(caller, CONTRACT_DEPLOYER_ADDRESS);
+    debug_assert_eq!(callee, SET_BYTECODE_ON_ADDRESS_HOOK);
 
     // There are no "payable" methods
     let mut error = nominal_token_value != U256::ZERO;
@@ -41,7 +46,7 @@ where
     match modifier {
         CallModifier::Constructor => {
             return Err(
-                internal_error!("Contract deployer hook called with constructor modifier").into(),
+                internal_error!("Set bytecode on address hook called with constructor modifier").into(),
             )
         }
         CallModifier::Delegate
@@ -62,11 +67,10 @@ where
 
     let mut resources = available_resources;
 
-    let result = contract_deployer_hook_inner(
+    let result = set_bytecode_on_address_hook_inner(
         &calldata,
         &mut resources,
         system,
-        caller,
         caller_ee,
         is_static,
     );
@@ -100,15 +104,10 @@ where
     }
 }
 
-// setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
-pub const SET_EVM_BYTECODE_DETAILS: &[u8] = &[0xf6, 0xec, 0xa0, 0xb0];
-pub const L2_COMPLEX_UPGRADER_ADDRESS: B160 = B160::from_limbs([0x800f, 0, 0]);
-
-fn contract_deployer_hook_inner<S: EthereumLikeTypes>(
-    mut calldata: &[u8],
+fn set_bytecode_on_address_hook_inner<S: EthereumLikeTypes>(
+    calldata: &[u8],
     resources: &mut S::Resources,
     system: &mut System<S>,
-    caller: B160,
     _caller_ee: u8,
     is_static: bool,
 ) -> Result<Result<&'static [u8], &'static str>, SystemError>
@@ -121,89 +120,72 @@ where
         HOOK_BASE_ERGS_COST,
     )?;
 
-    if calldata.len() < 4 {
+    if is_static {
         return Ok(Err(
-            "Contract deployer hook failure: calldata shorter than selector length",
+            "Set bytecode on address failure: setBytecodeDetailsEVM called with static context",
         ));
     }
+
     let mut selector = [0u8; 4];
     selector.copy_from_slice(&calldata[..4]);
 
-    match selector {
-        s if s == SET_EVM_BYTECODE_DETAILS => {
-            if is_static {
-                return Ok(Err(
-                    "Contract deployer failure: setBytecodeDetailsEVM called with static context",
-                ));
-            }
-            // in future we need to handle regular(not genesis) protocol upgrades
-            if caller != L2_COMPLEX_UPGRADER_ADDRESS {
-                return Ok(Err(
-                    "Contract deployer failure: unauthorized caller for setBytecodeDetailsEVM",
-                ));
-            }
-
-            // decoding according to setBytecodeDetailsEVM(address,bytes32,uint32,bytes32)
-            calldata = &calldata[4..];
-            if calldata.len() < 128 {
-                return Ok(Err(
-                    "Contract deployer failure: setBytecodeDetailsEVM called with invalid calldata",
-                ));
-            }
-
-            // check that first 12 bytes in address encoding are zero
-            if calldata[0..12].iter().any(|byte| *byte != 0) {
-                return Ok(Err(
-                    "Contract deployer failure: setBytecodeDetailsEVM called with invalid calldata",
-                ));
-            }
-            let address =
-                B160::try_from_be_slice(&calldata[12..32]).ok_or(SystemError::LeafDefect(
-                    internal_error!("Failed to create B160 from 20 byte array"),
-                ))?;
-
-            let bytecode_hash =
-                Bytes32::from_array(calldata[32..64].try_into().expect("Always valid"));
-
-            let bytecode_length: u32 = match U256::from_be_slice(&calldata[64..96]).try_into() {
-                Ok(length) => length,
-                Err(_) => return Ok(Err(
-                    "Contract deployer failure: setBytecodeDetailsEVM called with invalid calldata",
-                )),
-            };
-
-            let observable_bytecode_hash =
-                Bytes32::from_array(calldata[96..128].try_into().expect("Always valid"));
-
-            // Although this can be called as a part of protocol upgrade,
-            // we are checking the next invariants, just in case
-            // EIP-158: reject code of length > 24576.
-            if bytecode_length as usize > MAX_CODE_SIZE {
-                return Ok(Err(
-                    "Contract deployer failure: setBytecodeDetailsEVM called with invalid bytecode(length > 24576)",
-                ));
-            }
-            // Also EIP-3541(reject code starting with 0xEF) should be validated by governance.
-
-            // Charge extra ergs for `set_bytecode_details`
-            let ergs = set_bytecode_details_extra_ergs(bytecode_length);
-            resources.charge(&S::Resources::from_ergs(ergs))?;
-
-            system.set_bytecode_details(
-                resources,
-                &address,
-                ExecutionEnvironmentType::EVM,
-                bytecode_hash,
-                bytecode_length,
-                0,
-                observable_bytecode_hash,
-                bytecode_length,
-            )?;
-
-            Ok(Ok(&[]))
-        }
-        _ => Ok(Err("Contract deployer hook: unknown selector")),
+    if calldata.len() < 128 {
+        return Ok(Err(
+            "Set bytecode on address failure: setBytecodeDetailsEVM called with invalid calldata",
+        ));
     }
+
+    let address =
+        B160::try_from_be_slice(&calldata[12..32]).ok_or(SystemError::LeafDefect(
+            internal_error!("Failed to create B160 from 20 byte array"),
+        ))?;
+
+    let bytecode_hash =
+        Bytes32::from_array(calldata[32..64].try_into().expect("Always valid"));
+
+    let bytecode_length: u32 = match U256::from_be_slice(&calldata[64..96]).try_into() {
+        Ok(length) => length,
+        Err(_) => return Ok(Err(
+            "Set bytecode on address failure: setBytecodeDetailsEVM called with invalid calldata",
+        )),
+    };
+
+    let observable_bytecode_hash =
+        Bytes32::from_array(calldata[96..128].try_into().expect("Always valid"));
+
+    let observable_bytecode_length: u32 = match U256::from_be_slice(&calldata[128..160]).try_into() {
+        Ok(length) => length,
+        Err(_) => return Ok(Err(
+            "Set bytecode on address failure: setBytecodeDetailsEVM called with invalid calldata",
+        )),
+    };
+
+    // Although this can be called as a part of protocol upgrade,
+    // we are checking the next invariants, just in case
+    // EIP-158: reject code of length > 24576.
+    if bytecode_length as usize > MAX_CODE_SIZE {
+        return Ok(Err(
+            "Set bytecode on address failure: setBytecodeDetailsEVM called with invalid bytecode(length > 24576)",
+        ));
+    }
+    // Also EIP-3541(reject code starting with 0xEF) should be validated by governance.
+
+    // Charge extra ergs for `set_bytecode_details`
+    let ergs = set_bytecode_details_extra_ergs(bytecode_length);
+    resources.charge(&S::Resources::from_ergs(ergs))?;
+
+    system.set_bytecode_details(
+        resources,
+        &address,
+        ExecutionEnvironmentType::EVM,
+        bytecode_hash,
+        bytecode_length,
+        0,
+        observable_bytecode_hash,
+        observable_bytecode_length,
+    )?;
+
+    Ok(Ok(&[]))
 }
 
 ///
