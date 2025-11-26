@@ -132,6 +132,7 @@ where
             system_functions.add_l1_messenger();
             system_functions.add_l2_base_token();
             system_functions.add_contract_deployer();
+            system_functions.add_interop_root_reporter();
         }
 
         let mut tx_rolling_hash = [0u8; 32];

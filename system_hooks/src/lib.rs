@@ -30,6 +30,7 @@ extern crate alloc;
 
 use crate::addresses_constants::*;
 use crate::contract_deployer::contract_deployer_hook;
+use crate::interop_root_reporter::interop_root_reporter_hook;
 use crate::l1_messenger::l1_messenger_hook;
 use crate::l2_base_token::l2_base_token_hook;
 use alloc::collections::BTreeMap;
@@ -59,6 +60,7 @@ pub mod addresses_constants;
 mod mock_precompiles;
 
 pub mod contract_deployer;
+pub mod interop_root_reporter;
 pub mod l1_messenger;
 pub mod l2_base_token;
 mod precompiles;
@@ -261,6 +263,13 @@ where
         self.add_hook(
             CONTRACT_DEPLOYER_ADDRESS_LOW,
             SystemHook(contract_deployer_hook),
+        )
+    }
+
+    pub fn add_interop_root_reporter(&mut self) {
+        self.add_hook(
+            INTEROP_ROOT_REPORTER_ADDRESS_HOOK_LOW,
+            SystemHook(interop_root_reporter_hook),
         )
     }
 
