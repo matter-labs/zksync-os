@@ -66,6 +66,11 @@ prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag
 execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
 prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
 
+# zerocopy 0.8.29 introduced a compilation issue, remove this
+# when the compilation issue is resolved
+zerocopy = { version = "=0.8.28" }
+
+
 # [profile.dev]
 # opt-level = 0
 # lto = false
@@ -91,3 +96,4 @@ debug = true
 # prover_examples = { path = "../zksync-airbender/circuit_defs/prover_examples" }
 # risc_v_simulator = { path = "../zksync-airbender/risc_v_simulator" }
 # execution_utils = { path = "../zksync-airbender/execution_utils" }
+

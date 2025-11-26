@@ -27,7 +27,12 @@ sled = {version = "0.34" }
 bincode = { version = "2", features = ["serde"] }
 serde_with = "3.13.0"
 csv = "1.3"
+# zerocopy 0.8.29 introduced a compilation issue, remove this
+# when the compilation issue is resolved
+zerocopy = { version = "=0.8.28" }
+
 
 [features]
 simulate_witness_gen = ["rig/simulate_witness_gen"]
 default = []
+

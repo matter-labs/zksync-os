@@ -45,6 +45,9 @@ ark-ec = "0.4"
 ark-bn254 = "0.4"
 p256 = { version = "0.13", features = ["ecdsa"] }
 c-kzg = { version = "2.1.5" }
+# zerocopy 0.8.29 introduced a compilation issue, remove this
+# when the compilation issue is resolved
+zerocopy = { version = "=0.8.28" }
 
 [[bin]]
 name = "ripemd160"

@@ -30,6 +30,7 @@ rand = {version = "0.9.0", optional = true}
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
 strum_macros = "0.27.1"
 paste = "1.0.15"
+zerocopy = { workspace = true }
 
 [features]
 testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "rand", "crypto/testing", "num-bigint", "num-traits"]
