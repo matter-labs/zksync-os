@@ -2,6 +2,8 @@ use crypto::MiniDigest;
 use ruint::aliases::U256;
 use zk_ee::{common_structs::interop_root_storage::InteropRoot, utils::Bytes32};
 
+use crate::system_functions::keccak256::keccak256_native_cost_u64;
+
 /// Calculates a rolling keccak256 hash over a sequence of interop roots.
 /// This creates a cumulative digest that can be verified on settlement layers.
 ///
@@ -27,4 +29,8 @@ pub fn calculate_interop_roots_rolling_hash<'a>(
     }
 
     rolling_hash
+}
+
+pub fn per_root_computational_native_cost() -> u64 {
+    keccak256_native_cost_u64(96 + 32)
 }

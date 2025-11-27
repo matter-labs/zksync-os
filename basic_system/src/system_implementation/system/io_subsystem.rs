@@ -11,6 +11,7 @@ use crate::system_implementation::system::public_input::{BlocksOutput, BlocksPub
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
+use cost_constants::INTEROP_ROOT_STORAGE_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use crypto::blake2s::Blake2s256;
@@ -21,6 +22,7 @@ use evm_interpreter::gas_constants::LOGTOPIC;
 use evm_interpreter::gas_constants::TLOAD;
 use evm_interpreter::gas_constants::TSTORE;
 use interop_roots::calculate_interop_roots_rolling_hash;
+use interop_roots::per_root_computational_native_cost;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
@@ -231,7 +233,29 @@ impl<
         Ok(data_hash)
     }
 
-    fn add_interop_root(&mut self, interop_root: InteropRoot) -> Result<(), SystemError> {
+    fn add_interop_root(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        interop_root: InteropRoot,
+    ) -> Result<(), SystemError> {
+        let ergs = if ee_type == ExecutionEnvironmentType::EVM {
+            // For gas costs, we use the same as for storing an event with data
+            // of length=96
+            let gas = LOG + 96 * LOGDATA;
+            Ergs(gas * ERGS_PER_GAS)
+        } else {
+            Ergs::empty()
+        };
+        // For native we charge for the storage and the computation of the rolling
+        // hash (keccak of old hash || new root).
+        let native = <Self::Resources as Resources>::Native::from_computational(
+            INTEROP_ROOT_STORAGE_NATIVE_COST + per_root_computational_native_cost(),
+        );
+
+        let to_charge = Self::Resources::from_ergs_and_native(ergs, native);
+        resources.charge(&to_charge)?;
+
         self.interop_root_storage.push_root(interop_root)
     }
 

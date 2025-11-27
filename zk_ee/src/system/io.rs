@@ -113,7 +113,12 @@ pub trait IOSubsystem: Sized {
     ) -> Result<Bytes32, SystemError>;
 
     /// Add an interop root.
-    fn add_interop_root(&mut self, interop_root: InteropRoot) -> Result<(), SystemError>;
+    fn add_interop_root(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        interop_root: InteropRoot,
+    ) -> Result<(), SystemError>;
 
     /// Mark an account to be destructed at the end of the transaction.
     /// Perform token transfer to beneficiary. Returns amount of token transferred.

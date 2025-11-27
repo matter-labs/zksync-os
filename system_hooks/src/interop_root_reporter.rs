@@ -3,9 +3,11 @@
 //!
 use super::*;
 use core::fmt::Write;
+use evm_interpreter::gas_constants::{LOG, LOGDATA};
 use ruint::aliases::U256;
 use zk_ee::{
     common_structs::interop_root_storage::InteropRoot,
+    execution_environment_type::ExecutionEnvironmentType,
     internal_error,
     system::{
         errors::{runtime::RuntimeError, system::SystemError},
@@ -131,19 +133,23 @@ where
 /// [64..95] root
 pub(crate) fn report_inner<S: EthereumLikeTypes>(
     calldata: &[u8],
-    _resources: &mut S::Resources,
+    resources: &mut S::Resources,
     system: &mut System<S>,
 ) -> Result<Result<(), &'static str>, SystemError> {
     let chain_id = U256::from_be_slice(&calldata[0..32]);
     let block_or_batch_number = U256::from_be_slice(&calldata[32..64]);
     let root = Bytes32::from_array(calldata[64..96].try_into().unwrap());
 
-    // TODO: charge ergs for storing the root
-    system.io.add_interop_root(InteropRoot {
-        root,
-        block_or_batch_number,
-        chain_id,
-    })?;
+    system.io.add_interop_root(
+        // To charge for gas: we charge LOG + 96 * LOGDATA = 1143 gas
+        ExecutionEnvironmentType::EVM,
+        resources,
+        InteropRoot {
+            root,
+            block_or_batch_number,
+            chain_id,
+        },
+    )?;
 
     Ok(Ok(()))
 }
