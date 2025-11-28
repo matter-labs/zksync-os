@@ -12,7 +12,6 @@ mod da_commitment_scheme;
 mod generic_preimage;
 mod read_storage;
 mod read_tree;
-mod simple_storage_map;
 mod tx_data;
 mod uart_print;
 mod zk_proof_data;
