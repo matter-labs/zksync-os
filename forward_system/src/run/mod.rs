@@ -33,7 +33,6 @@ use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
 use zk_ee::common_structs::ProofData;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::utils::Bytes32;
 
 pub use interface_impl::RunBlockForward;
 pub use tree::LeafProof;
