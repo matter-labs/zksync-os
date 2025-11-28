@@ -221,14 +221,7 @@ impl<A: Allocator> Transaction<A> {
                     None
                 }
             }
-            Self::Abi(tx) => {
-                // Checked in the structure validation that `to` is null
-                if !tx.reserved[1].read().is_zero() {
-                    Some(ExecutionEnvironmentType::EVM)
-                } else {
-                    None
-                }
-            }
+            Self::Abi(_tx) => None,
         }
     }
 
