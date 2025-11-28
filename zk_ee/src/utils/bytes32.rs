@@ -321,7 +321,9 @@ impl UsizeDeserializable for Bytes32 {
         if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
             return Err(internal_error!("b160 deserialization failed: too short"));
         }
-        for dst in this.assume_init_mut().as_usize_array_mut().iter_mut() {
+        // Initialize
+        let value: &mut Self = this.write(Self::ZERO);
+        for dst in value.as_usize_array_mut().iter_mut() {
             *dst = src.next().unwrap_unchecked()
         }
 
