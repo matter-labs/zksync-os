@@ -286,7 +286,7 @@ pub enum TxEncodingFormat {
 }
 
 impl UsizeDeserializable for TxEncodingFormat {
-    const USIZE_LEN: usize = 1;
+    const USIZE_LEN: usize = <u8 as UsizeDeserializable>::USIZE_LEN;
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         let byte = <u8 as UsizeDeserializable>::from_iter(src)?;
