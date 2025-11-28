@@ -9,7 +9,7 @@ pub trait BasicBlockMetadata<IOTypes: SystemIOTypesConfig> {
     /// Current block number.
     fn block_number(&self) -> u64;
 
-    /// Hash of a recent historical block at `depth` (0 = parent of the current block).
+    /// Hash of a recent historical block at `depth` (1 = parent of the current block).
     fn block_historical_hash(&self, depth: u64) -> Option<Bytes32>;
 
     /// Block timestamp.
