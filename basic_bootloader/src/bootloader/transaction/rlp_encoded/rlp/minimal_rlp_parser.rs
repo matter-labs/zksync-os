@@ -253,7 +253,7 @@ impl<'a> RlpItemDecode<'a> for &'a [u8; 32] {
 impl<'a> RlpFixedItem<'a> for &'a [u8; 32] {
     const ENCODING_LEN: usize = 1 + 32; // 0xa0 + 32
     fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, InvalidTransaction> {
-        if encoded.len() != 33 || encoded[0] != 0xa0 {
+        if encoded.len() != Self::ENCODING_LEN || encoded[0] != 0xa0 {
             return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(encoded[1..].try_into().unwrap())
@@ -274,7 +274,7 @@ impl<'a> RlpItemDecode<'a> for B160 {
 impl<'a> RlpFixedItem<'a> for B160 {
     const ENCODING_LEN: usize = 1 + 20; // 0x94 + 20
     fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, InvalidTransaction> {
-        if encoded.len() != 21 || encoded[0] != 0x94 {
+        if encoded.len() != Self::ENCODING_LEN || encoded[0] != 0x94 {
             return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(B160::from_be_bytes::<{ B160::BYTES }>(
