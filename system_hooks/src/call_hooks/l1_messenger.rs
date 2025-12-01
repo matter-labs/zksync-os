@@ -107,8 +107,6 @@ where
         Err(SystemError::LeafDefect(e)) => Err(e.into()),
     }
 }
-// sendToL1(bytes) - 62f84b24
-pub const SEND_TO_L1_SELECTOR: &[u8] = &[0x62, 0xf8, 0x4b, 0x24];
 
 fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
     calldata: &[u8],

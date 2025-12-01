@@ -29,6 +29,9 @@ use zk_ee::system::{Resource, System};
 
 mod common;
 
+// sendToL1(bytes) - 62f84b24
+const SEND_TO_L1_SELECTOR: &[u8] = &[0x62, 0xf8, 0x4b, 0x24];
+
 #[derive(Debug)]
 struct CallDataFuzz {
     raw: Box<[u8]>,
