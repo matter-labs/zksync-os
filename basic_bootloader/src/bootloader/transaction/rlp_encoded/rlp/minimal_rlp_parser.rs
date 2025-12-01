@@ -303,13 +303,12 @@ pub struct FixedListIter<'a, T: RlpFixedItem<'a>> {
 impl<'a, T: RlpFixedItem<'a>> FixedList<'a, T> {
     // Parse a list header and return a fixed-length view
     pub fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
-        let mut inner = r.list()?;
+        let inner = r.list()?;
         let all = inner.remaining();
         if all.len() % T::ENCODING_LEN != 0 {
             return Err(InvalidTransaction::InvalidStructure);
         }
         let count = all.len() / T::ENCODING_LEN;
-        inner.take_exact(all.len())?; // consume to satisfy caller's emptiness check
         Ok(Self {
             payload: all,
             count,
@@ -372,7 +371,7 @@ pub struct HomListIter<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> {
 
 impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
     pub fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
-        let mut inner = r.list()?;
+        let inner = r.list()?;
         let all = inner.remaining();
 
         let count = if VALIDATE {
@@ -387,7 +386,6 @@ impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
             None
         };
 
-        inner.take_exact(all.len())?;
         Ok(Self {
             payload: all,
             count,
