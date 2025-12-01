@@ -34,6 +34,9 @@ pub fn recover_with_context(
     context: &ECMultContext,
 ) -> Result<Affine, Secp256k1Err> {
     let (mut sigr, mut sigs) = Scalar::from_signature(signature);
+    if sigr.is_zero() || sigs.is_zero() {
+        return Err(Secp256k1Err::InvalidParams)
+    }
     let message = Scalar::from_k256_scalar(*message);
 
     // We go through bytes because it's mod GROUP_ORDER and later we need mod BASE FIELD
