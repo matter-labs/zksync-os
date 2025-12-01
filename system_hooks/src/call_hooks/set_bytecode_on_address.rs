@@ -37,8 +37,12 @@ where
         modifier,
     } = request;
 
-    debug_assert_eq!(caller, CONTRACT_DEPLOYER_ADDRESS);
-    debug_assert_eq!(callee, SET_BYTECODE_ON_ADDRESS_HOOK);
+    if caller != CONTRACT_DEPLOYER_ADDRESS || callee != SET_BYTECODE_ON_ADDRESS_HOOK {
+        let _ = system.get_logger().write_fmt(format_args!(
+            "Set bytecode hook revert: invalid caller (caller={caller:?}, callee={callee:?})\n"
+        ));
+        return Ok((make_error_return_state(available_resources), return_memory));
+    }
 
     // There are no "payable" methods
     let mut error = nominal_token_value != U256::ZERO;

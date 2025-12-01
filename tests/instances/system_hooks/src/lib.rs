@@ -136,6 +136,109 @@ fn test_set_deployed_bytecode_evm_unauthorized() {
 }
 
 #[test]
+fn test_l1_messenger_hook_succeeds() {
+    let mut chain = Chain::empty(None);
+    // making sure hooks are installed
+    install_system_contracts(&mut chain, false, false, true);
+
+    let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
+
+    let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
+
+    // Calldata that the hook *expects*:
+    // abi.encode(msg.sender, _message)
+    let hook_calldata = hex::decode(
+        "000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    .unwrap();
+
+    let tx = TransactionRequest {
+        chain_id: Some(37),
+        from: Some(l1_messenger_contract),
+        to: Some(TxKind::Call(l1_messenger_hook)),
+        input: hook_calldata.into(),
+        gas: Some(200_000),
+        max_fee_per_gas: Some(1000),
+        max_priority_fee_per_gas: Some(1000),
+        value: Some(alloy::primitives::U256::from(0)),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    };
+
+    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let transactions = vec![encoded_tx];
+
+    let output = chain.run_block(transactions, None, None, None);
+
+    let tx_result = &output
+        .tx_results
+        .first()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .execution_result;
+
+    match tx_result {
+        ExecutionResult::Success(_) => {
+            // ok
+        }
+        _ => {
+            panic!("L1 messenger hook call from authorized sender did not succeed: {tx_result:?}");
+        }
+    }
+}
+
+#[test]
+fn test_l1_messenger_hook_unauthorized_sender_reverts() {
+    let mut chain = Chain::empty(None);
+    // making sure hooks are installed
+    install_system_contracts(&mut chain, false, false, true);
+
+    // ❌ this should NOT be the L1Messenger system contract address
+    let unauthorized_from = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+    let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
+
+    // Calldata that the hook *expects*:
+    // abi.encode(msg.sender, _message)
+    // For the unauthorized test we don't care about the message contents,
+    // we just want msg.sender (on the hook side) to be wrong (EOA instead of system contract).
+    let hook_calldata = hex::decode(
+    "000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    )
+    .unwrap();
+
+    let tx = TransactionRequest {
+        chain_id: Some(37),
+        from: Some(unauthorized_from),
+        to: Some(TxKind::Call(l1_messenger_hook)),
+        input: hook_calldata.into(),
+        gas: Some(200_000),
+        max_fee_per_gas: Some(1000),
+        max_priority_fee_per_gas: Some(1000),
+        value: Some(alloy::primitives::U256::from(0)),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    };
+
+    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let transactions = vec![encoded_tx];
+
+    let output = chain.run_block(transactions, None, None, None);
+
+    let tx_result = &output
+        .tx_results
+        .first()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .execution_result;
+
+    if let ExecutionResult::Success(_) = tx_result {
+        panic!("L1 messenger hook call from unauthorized sender did not revert");
+    }
+}
+
+#[test]
 fn test_l2_base_token_withdraw_events() {
     let mut chain = Chain::empty(None);
     install_system_contracts(&mut chain, true, true, false);

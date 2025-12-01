@@ -3,6 +3,7 @@
 //! It implements a `sendToL1` method, works the same way as in Era.
 //!
 use super::*;
+use crate::addresses_constants::{L1_MESSENGER_ADDRESS, L1_MESSENGER_ADDRESS_HOOK};
 use core::fmt::Write;
 use evm_interpreter::{
     gas_constants::{LOG, LOGDATA},
@@ -40,8 +41,12 @@ where
         modifier,
     } = request;
 
-    debug_assert_eq!(caller, L1_MESSENGER_ADDRESS);
-    debug_assert_eq!(callee, L1_MESSENGER_ADDRESS_HOOK);
+    if caller != L1_MESSENGER_ADDRESS || callee != L1_MESSENGER_ADDRESS_HOOK {
+        let _ = system.get_logger().write_fmt(format_args!(
+            "Set bytecode hook revert: invalid caller (caller={caller:?}, callee={callee:?})\n"
+        ));
+        return Ok((make_error_return_state(available_resources), return_memory));
+    }
 
     let mut error = false;
     // There are no "payable" methods
@@ -129,11 +134,8 @@ where
     send_to_l1_inner(&calldata, resources, system)
 }
 
-/// Sends a message to L1 and emits the needed events.
-/// Note, that the ABI-encoded event should consist of the following:
-/// 32 bytes offset (must be 32)
-/// 32 bytes length of the message
-/// followed by the message itself, padded to be a multiple of 32 bytes.
+/// Only sends a message to L1 (emit_l1_message), events are emitted on the contract level.
+/// Returns message hash.
 pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     calldata: &[u8],
     resources: &mut S::Resources,
@@ -151,7 +153,6 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
         .try_into()
         .map_err(|_| SystemError::LeafDefect(internal_error!("Invalid length word")))?;
 
-    // 4) slice message
     let start = offset + 32;
     let end = start + length;
     if calldata.len() < end {
