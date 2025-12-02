@@ -33,12 +33,9 @@ pub const L2_BASE_TOKEN_ADDRESS_LOW: u16 = 0x800a;
 pub const L2_BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([L2_BASE_TOKEN_ADDRESS_LOW as u64, 0, 0]);
 
 // L2 interop root storage system contract
-pub const L2_INTEROP_ROOT_STORAGE_ADDRESS: B160 = B160::from_limbs([0x10008, 0, 0]);
-
-// Interop root reporter hook needed for all envs
-pub const INTEROP_ROOT_REPORTER_ADDRESS_HOOK_LOW: u16 = 0x7003;
-pub const INTEROP_ROOT_REPORTER_ADDRESS_HOOK: B160 =
-    B160::from_limbs([INTEROP_ROOT_REPORTER_ADDRESS_HOOK_LOW as u64, 0, 0]);
+pub const L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW: u32 = 0x10008;
+pub const L2_INTEROP_ROOT_STORAGE_ADDRESS: B160 =
+    B160::from_limbs([L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW as u64, 0, 0]);
 
 // ERA VM system contracts (in fact we need implement only the methods that should be available for user contracts)
 // TODO: may be better to implement as ifs inside EraVM EE

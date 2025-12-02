@@ -132,7 +132,7 @@ where
             system_hooks::add_l1_messenger(&mut system_functions);
             system_hooks::add_l2_base_token(&mut system_functions);
             system_hooks::add_contract_deployer(&mut system_functions);
-            // system_hooks::add_interop_root_reporter(&mut system_functions);
+            system_hooks::add_interop_root_reporter(&mut system_functions);
         }
 
         let mut tx_rolling_hash = [0u8; 32];

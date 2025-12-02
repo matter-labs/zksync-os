@@ -30,14 +30,14 @@ extern crate alloc;
 
 use crate::addresses_constants::*;
 use crate::contract_deployer::contract_deployer_hook;
-use crate::interop_root_reporter::interop_root_reporter_hook;
+use crate::interop_root_reporter::interop_root_reporter_event_hook;
 use crate::l1_messenger::l1_messenger_hook;
 use crate::l2_base_token::l2_base_token_hook;
 use core::marker::PhantomData;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use evm_interpreter::ERGS_PER_GAS;
 use precompiles::{pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors};
-use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook};
+use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook, SystemEventHook};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::system::errors::subsystem::SubsystemError;
 #[cfg(feature = "mock-unsupported-precompiles")]
@@ -234,12 +234,14 @@ pub fn add_contract_deployer<S: EthereumLikeTypes, A: Allocator + Clone>(
     )
 }
 
-// pub fn add_interop_root_reporter(hooks : &mut HooksStorage<S, A>) {
-//     self.add_call_hook(
-//         INTEROP_ROOT_REPORTER_ADDRESS_HOOK_LOW,
-//         SystemCallHook::new(interop_root_reporter_hook),
-//     )
-// }
+pub fn add_interop_root_reporter<S: EthereumLikeTypes, A: Allocator + Clone>(
+    hooks: &mut HooksStorage<S, A>,
+) {
+    hooks.add_event_hook(
+        L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW,
+        SystemEventHook::new(interop_root_reporter_event_hook),
+    )
+}
 
 fn add_precompile<S: EthereumLikeTypes, A: Allocator + Clone, P, E>(
     hooks: &mut HooksStorage<S, A>,

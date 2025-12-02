@@ -235,25 +235,17 @@ impl<
 
     fn add_interop_root(
         &mut self,
-        ee_type: ExecutionEnvironmentType,
+        _ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         interop_root: InteropRoot,
     ) -> Result<(), SystemError> {
-        let ergs = if ee_type == ExecutionEnvironmentType::EVM {
-            // For gas costs, we use the same as for storing an event with data
-            // of length=96
-            let gas = LOG + 96 * LOGDATA;
-            Ergs(gas * ERGS_PER_GAS)
-        } else {
-            Ergs::empty()
-        };
         // For native we charge for the storage and the computation of the rolling
         // hash (keccak of old hash || new root).
         let native = <Self::Resources as Resources>::Native::from_computational(
             INTEROP_ROOT_STORAGE_NATIVE_COST + per_root_computational_native_cost(),
         );
 
-        let to_charge = Self::Resources::from_ergs_and_native(ergs, native);
+        let to_charge = Self::Resources::from_native(native);
         resources.charge(&to_charge)?;
 
         self.interop_root_storage.push_root(interop_root)

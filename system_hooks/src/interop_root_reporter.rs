@@ -2,147 +2,70 @@
 //! Interop root reporter system hook implementation.
 //!
 use super::*;
-use core::fmt::Write;
-use evm_interpreter::gas_constants::{LOG, LOGDATA};
 use ruint::aliases::U256;
+use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::{
     common_structs::interop_root_storage::InteropRoot,
-    execution_environment_type::ExecutionEnvironmentType,
-    internal_error,
-    system::{
-        errors::{runtime::RuntimeError, system::SystemError},
-        CallModifier, CompletedExecution, ExternalCallRequest,
-    },
-    utils::Bytes32,
+    execution_environment_type::ExecutionEnvironmentType, internal_error,
+    storage_types::MAX_EVENT_TOPICS, system::errors::system::SystemError, utils::Bytes32,
 };
 
-pub fn interop_root_reporter_hook<'a, S: EthereumLikeTypes>(
-    request: ExternalCallRequest<S>,
-    caller_ee: u8,
-    system: &mut System<S>,
-    return_memory: &'a mut [MaybeUninit<u8>],
-) -> Result<(CompletedExecution<'a, S>, &'a mut [MaybeUninit<u8>]), SystemError>
-where
-{
-    let ExternalCallRequest {
-        available_resources,
-        ergs_to_pass: _,
-        input: calldata,
-        call_scratch_space: _,
-        nominal_token_value,
-        caller,
-        callee,
-        callers_caller: _,
-        modifier,
-    } = request;
+// InteropRootAdded(uint256,uint256,bytes32[]) - 6b451b8422636e45b93bf7f594fa2c1769d039766c4254a6e7f9c0ee1715cdb0
+pub const INTEROP_ROOT_ADDED_EVENT_SIG: [u8; 32] = [
+    0x6b, 0x45, 0x1b, 0x84, 0x22, 0x63, 0x6e, 0x45, 0xb9, 0x3b, 0xf7, 0xf5, 0x94, 0xfa, 0x2c, 0x17,
+    0x69, 0xd0, 0x39, 0x76, 0x6c, 0x42, 0x54, 0xa6, 0xe7, 0xf9, 0xc0, 0xee, 0x17, 0x15, 0xcd, 0xb0,
+];
 
-    debug_assert_eq!(caller, L2_INTEROP_ROOT_STORAGE_ADDRESS);
-    debug_assert_eq!(callee, INTEROP_ROOT_REPORTER_ADDRESS_HOOK);
-
-    let mut error = false;
-    // There are no "payable" methods
-    error |= nominal_token_value != U256::ZERO;
-    let mut is_static = false;
-    match modifier {
-        CallModifier::Constructor => {
-            return Err(internal_error!(
-                "Interop root reporter hook called with constructor modifier"
-            )
-            .into())
-        }
-        CallModifier::Delegate
-        | CallModifier::DelegateStatic
-        | CallModifier::EVMCallcode
-        | CallModifier::EVMCallcodeStatic => {
-            error = true;
-        }
-        CallModifier::Static | CallModifier::ZKVMSystemStatic => {
-            is_static = true;
-        }
-        _ => {}
-    }
-
-    if error {
-        return Ok((make_error_return_state(available_resources), return_memory));
-    }
-
-    let mut resources = available_resources;
-
-    let result =
-        interop_root_reporter_inner(&calldata, &mut resources, system, caller_ee, is_static);
-
-    match result {
-        Ok(Ok(())) => {
-            let return_memory = SliceVec::new(return_memory);
-            let (returndata, rest) = return_memory.destruct();
-            Ok((
-                make_return_state_from_returndata_region(resources, returndata),
-                rest,
-            ))
-        }
-        Ok(Err(e)) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Revert: {e:?}\n"));
-            Ok((make_error_return_state(resources), return_memory))
-        }
-        Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Out of gas during system hook\n"));
-            Ok((make_error_return_state(resources), return_memory))
-        }
-        Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => Err(e),
-        Err(SystemError::LeafDefect(e)) => Err(e.into()),
-    }
-}
-
-fn interop_root_reporter_inner<S: EthereumLikeTypes>(
-    calldata: &[u8],
-    resources: &mut S::Resources,
-    system: &mut System<S>,
+pub fn interop_root_reporter_event_hook<'a, S: EthereumLikeTypes>(
+    topics: &arrayvec::ArrayVec<<S::IOTypes as SystemIOTypesConfig>::EventKey, MAX_EVENT_TOPICS>,
+    data: &[u8],
     _caller_ee: u8,
-    is_static: bool,
-) -> Result<Result<(), &'static str>, SystemError>
+    system: &mut System<S>,
+    resources: &mut S::Resources,
+) -> Result<(), SystemError>
 where
 {
-    evm_interpreter::charge_native_and_ergs::<S::Resources>(
-        resources,
-        HOOK_BASE_NATIVE_COST,
-        HOOK_BASE_ERGS_COST,
-    )?;
-
-    if calldata.len() != 96 {
-        return Ok(Err(
-            "Interop root reporter failure: calldata length mismatch",
-        ));
+    // First, ensure we're capturing the InteropRootAdded event
+    if topics[0].as_u8_array() != INTEROP_ROOT_ADDED_EVENT_SIG {
+        return Ok(());
+    }
+    // Internal error if the data supplied doesn't match the expected value
+    if data.len() != 96 {
+        return Err(internal_error!("Interop root reporter event hook received bad data").into());
     }
 
-    if is_static {
-        return Ok(Err(
-            "Interop root reporter failure: called with static context",
-        ));
+    // Parse data
+    let offset: u32 = match U256::from_be_slice(&data[..32]).try_into() {
+        Ok(offset) => offset,
+        Err(_) => {
+            return Err(
+                internal_error!("Interop root reporter event hook received bad offset").into(),
+            );
+        }
+    };
+    // This event is part of the system, but we check it anyways
+    if offset != 32 {
+        return Err(internal_error!("Interop root reporter event hook received bad offset").into());
     }
 
-    report_inner(&calldata, resources, system)
-}
+    let len: u32 = match U256::from_be_slice(&data[32..64]).try_into() {
+        Ok(offset) => offset,
+        Err(_) => {
+            return Err(
+                internal_error!("Interop root reporter event hook received bad length").into(),
+            );
+        }
+    };
+    // It should have exactly one side
+    if len != 1 {
+        return Err(internal_error!("Interop root reporter event hook received bad length").into());
+    }
 
-/// Saves an interop root passed as calldata following the encoding:
-/// [ 0..31] chainId
-/// [32..63] blockOrBatchNumber
-/// [64..95] root
-pub(crate) fn report_inner<S: EthereumLikeTypes>(
-    calldata: &[u8],
-    resources: &mut S::Resources,
-    system: &mut System<S>,
-) -> Result<Result<(), &'static str>, SystemError> {
-    let chain_id = U256::from_be_slice(&calldata[0..32]);
-    let block_or_batch_number = U256::from_be_slice(&calldata[32..64]);
-    let root = Bytes32::from_array(calldata[64..96].try_into().unwrap());
-
+    let root = Bytes32::from_array(data[64..96].try_into().unwrap());
+    let chain_id = U256::from_be_bytes(topics[1].as_u8_array());
+    let block_or_batch_number = U256::from_be_bytes(topics[2].as_u8_array());
     system.io.add_interop_root(
-        // To charge for gas: we charge LOG + 96 * LOGDATA = 1143 gas
-        ExecutionEnvironmentType::EVM,
+        ExecutionEnvironmentType::NoEE,
         resources,
         InteropRoot {
             root,
@@ -151,5 +74,5 @@ pub(crate) fn report_inner<S: EthereumLikeTypes>(
         },
     )?;
 
-    Ok(Ok(()))
+    Ok(())
 }
