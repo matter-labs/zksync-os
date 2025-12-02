@@ -2,7 +2,7 @@ use super::gas_helpers::get_resources_for_tx;
 use super::transaction::{abi_encoded::AbiEncodedTransaction, Transaction};
 use super::*;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
-use crate::bootloader::constants::UPGRADE_TX_NATIVE_PER_GAS;
+use crate::bootloader::constants::FREE_L1_TX_NATIVE_PER_GAS;
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError::Validation;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
@@ -140,14 +140,14 @@ where
 
         // For L1->L2 txs, we use a constant native price to avoid censorship.
         let native_price = L1_TX_NATIVE_PRICE;
-        let native_per_gas = if is_priority_op {
+        let native_per_gas = if !gas_price.is_zero() {
             if Config::SIMULATION {
                 SIMULATION_NATIVE_PER_GAS
             } else {
                 gas_price.div_ceil(native_price)
             }
         } else {
-            UPGRADE_TX_NATIVE_PER_GAS
+            FREE_L1_TX_NATIVE_PER_GAS
         };
         let native_per_pubdata = U256::from(gas_per_pubdata)
             .checked_mul(native_per_gas)

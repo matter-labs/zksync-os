@@ -22,7 +22,7 @@ pub const MAX_CALLSTACK_DEPTH: usize = 1025;
 /// 32 for the suggested_signed_hash and 32 for the offset itself.
 pub const TX_CALLDATA_OFFSET: usize = 0x60;
 
-/// Maximum value of gas that can be represented as ergs in a u64.
+/// Maximum value of gas that can be represented as ergs in an u64.
 pub const MAX_BLOCK_GAS_LIMIT: u64 = u64::MAX / ERGS_PER_GAS;
 
 // Just for EVM compatibility.
@@ -79,6 +79,6 @@ pub const SIMULATION_NATIVE_PER_GAS: U256 = U256::from_limbs([100, 0, 0, 0]);
 // TODO (EVM-1157): find a reasonable value for it.
 pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
 
-// Upgrade transactions are expected to have ~72 million gas. We will use enough
+// Upgrade, service and gateway mailbox transactions are expected to have ~72 million gas. We will use enough
 // gas to ensure that multiplied by the 72 million they exceed the native computational limit.
-pub const UPGRADE_TX_NATIVE_PER_GAS: U256 = U256::from_limbs([10000, 0, 0, 0]);
+pub const FREE_L1_TX_NATIVE_PER_GAS: U256 = U256::from_limbs([10000, 0, 0, 0]);

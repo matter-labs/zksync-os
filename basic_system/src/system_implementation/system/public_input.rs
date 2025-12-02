@@ -71,6 +71,8 @@ pub struct BlocksOutput {
     pub l2_to_l1_logs_hashes_hash: Bytes32,
     /// Protocol upgrade tx hash (0 if there wasn't)
     pub upgrade_tx_hash: Bytes32,
+    /// Root of chains message roots tree(non-zero only for settlement layer).
+    pub multichain_root: Bytes32,
 }
 
 #[cfg(feature = "aggregation")]
@@ -148,7 +150,7 @@ pub struct BatchOutput {
     /// L2 logs tree root.
     /// Note that it's full root, it's keccak256 of:
     /// - merkle root of l2 -> l1 logs in the batch .
-    /// - aggregated root - commitment to logs emitted on chains that settle on the current.
+    /// - multichain root - commitment to logs emitted on chains that settle on the current.
     pub l2_logs_tree_root: Bytes32,
     /// Protocol upgrade tx hash (0 if there wasn't)
     pub upgrade_tx_hash: Bytes32,
@@ -218,6 +220,7 @@ pub struct BatchPublicInputBuilder<A: alloc::alloc::Allocator, O: IOOracle> {
     pub number_of_layer_1_txs: U256,
     pub l1_txs_rolling_hash: Bytes32,
     upgrade_tx_hash: Option<Bytes32>,
+    multichain_root: Bytes32,
 }
 
 impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
@@ -240,6 +243,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
                 0x5d, 0x85, 0xa4, 0x70,
             ]),
             upgrade_tx_hash: None,
+            multichain_root: Bytes32::zero(),
         }
     }
 
@@ -254,6 +258,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
         block_timestamp: u64,
         chain_id: U256,
         upgrade_tx_hash: Bytes32,
+        multichain_root: Bytes32,
     ) {
         if self.is_first_block {
             self.initial_state_commitment = Some(state_commitment_before);
@@ -273,6 +278,8 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             assert_eq!(self.chain_id.unwrap(), chain_id);
             assert!(upgrade_tx_hash.is_zero());
         }
+        // we always override multichain root with latest
+        self.multichain_root = multichain_root;
     }
 
     ///
@@ -281,10 +288,10 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
     pub fn into_public_input(self, mut logger: impl Logger, oracle: &mut O) -> BatchPublicInput {
         assert!(!self.is_first_block);
 
-        let mut full_root_hasher = crypto::sha3::Keccak256::new();
-        full_root_hasher.update(Self::l2_logs_root(self.logs_storage).as_u8_ref());
-        full_root_hasher.update([0u8; 32]); // aggregated root 0 for now
-        let full_l2_to_l1_logs_root = full_root_hasher.finalize();
+        let mut chain_batch_root_hasher = crypto::sha3::Keccak256::new();
+        chain_batch_root_hasher.update(Self::l2_logs_root(self.logs_storage).as_u8_ref());
+        chain_batch_root_hasher.update(self.multichain_root.as_u8_ref());
+        let chain_batch_root = chain_batch_root_hasher.finalize();
 
         let batch_output = public_input::BatchOutput {
             chain_id: self.chain_id.unwrap(),
@@ -294,7 +301,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             pubdata_commitment: self.da_commitment_generator.unwrap().finalize(oracle),
             number_of_layer_1_txs: self.number_of_layer_1_txs,
             priority_operations_hash: self.l1_txs_rolling_hash,
-            l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
+            l2_logs_tree_root: chain_batch_root.into(),
             upgrade_tx_hash: self.upgrade_tx_hash.unwrap(),
             interop_root_rolling_hash: Bytes32::from([0u8; 32]), // for now no interop roots
         };

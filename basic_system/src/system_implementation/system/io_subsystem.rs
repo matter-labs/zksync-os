@@ -1,4 +1,5 @@
 //! Implementation of the IO subsystem.
+
 use super::*;
 use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_functions::keccak256::Keccak256Impl;
@@ -8,6 +9,7 @@ use crate::system_implementation::system::da_commitment_generator::{
 use crate::system_implementation::system::pubdata::PUBDATA_ENCODING_VERSION;
 #[cfg(feature = "aggregation")]
 use crate::system_implementation::system::public_input::{BlocksOutput, BlocksPublicInput};
+use core::ops::Add;
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
@@ -20,6 +22,7 @@ use evm_interpreter::gas_constants::LOGDATA;
 use evm_interpreter::gas_constants::LOGTOPIC;
 use evm_interpreter::gas_constants::TLOAD;
 use evm_interpreter::gas_constants::TSTORE;
+use ruint::aliases::B160;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
@@ -536,6 +539,7 @@ impl<
         da_commitment_generator.write(&block_metadata.timestamp.to_be_bytes());
         let mut l2_to_l1_logs_hasher = Blake2s256::new();
 
+        let multichain_root = self.read_multichain_root();
         self.storage
             .finish(
                 &mut self.oracle,
@@ -580,6 +584,7 @@ impl<
             priority_ops_hashes_hash: l1_to_l2_txs_hash,
             l2_to_l1_logs_hashes_hash: l2_to_l1_logs_hashes_hash.into(),
             upgrade_tx_hash,
+            multichain_root,
         };
 
         let public_input = BlocksPublicInput {
@@ -651,6 +656,8 @@ impl<
         da_commitment_generator.write(current_block_hash.as_u8_ref());
         da_commitment_generator.write(&block_metadata.timestamp.to_be_bytes());
 
+        let multichain_root = self.read_multichain_root();
+
         let state_diffs_hash = if cfg!(feature = "state-diffs-pi") {
             self.storage
                 .finish_and_calculate_state_diffs_hash(
@@ -680,7 +687,7 @@ impl<
         result_keeper.events(self.events_storage.events_ref_iter());
         let mut full_root_hasher = crypto::sha3::Keccak256::new();
         full_root_hasher.update(self.logs_storage.tree_root().as_u8_ref());
-        full_root_hasher.update([0u8; 32]); // aggregated root 0 for now
+        full_root_hasher.update(multichain_root.as_u8_ref());
         let full_l2_to_l1_logs_root = full_root_hasher.finalize();
         let l1_txs_commitment = self.logs_storage.l1_txs_commitment();
 
@@ -781,8 +788,7 @@ impl<
         SF: StackFactory<M>,
         const M: usize,
         O: IOOracle,
-        const PROOF_ENV: bool,
-    > FullIO<A, R, P, SF, M, O, PROOF_ENV>
+    > FullIO<A, R, P, SF, M, O, true>
 where
     Self: FinishIO,
 {
@@ -845,6 +851,7 @@ where
             .unwrap()
             .write(&block_metadata.timestamp.to_be_bytes());
 
+        let multichain_root = self.read_multichain_root();
         self.storage
             .finish(
                 &mut self.oracle,
@@ -890,6 +897,7 @@ where
             block_metadata.timestamp,
             U256::try_from(block_metadata.chain_id).unwrap(),
             upgrade_tx_hash,
+            multichain_root,
         );
 
         self.oracle
@@ -1201,4 +1209,57 @@ impl<
         const PROOF_ENV: bool,
     > EthereumLikeIOSubsystem for FullIO<A, R, P, SF, M, O, PROOF_ENV>
 {
+}
+
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+        SF: StackFactory<M>,
+        const M: usize,
+        O: IOOracle,
+    > FullIO<A, R, P, SF, M, O, true>
+{
+    fn read_multichain_root(&mut self) -> Bytes32 {
+        const MESSAGE_ROOT_ADDRESS: B160 = B160::from_limbs([0x10005, 0, 0]);
+        const SHARED_TREE_HEIGHT_STORAGE_SLOT: [u8; 32] = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 4,
+        ];
+        const SHARED_TREE_NODES_STORAGE_SLOT: [u8; 32] = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 6,
+        ];
+        let mut inf_resources = R::FORMAL_INFINITE;
+
+        // we need to read self._nodes[self._height][0]
+        let tree_height = self
+            .storage_read::<false>(
+                ExecutionEnvironmentType::NoEE,
+                &mut inf_resources,
+                &MESSAGE_ROOT_ADDRESS,
+                &Bytes32::from_array(SHARED_TREE_HEIGHT_STORAGE_SLOT),
+            )
+            .expect("must read MessageRoot shared tree height");
+
+        let mut hasher = crypto::sha3::Keccak256::new();
+        hasher.update(&SHARED_TREE_NODES_STORAGE_SLOT);
+        // TODO: precompute
+        let nodes_start_slot = hasher.finalize();
+        // _nodes[height]
+        let nodes_height_array_slot = U256::from_be_bytes(nodes_start_slot)
+            .add(U256::from_be_bytes(tree_height.as_u8_array()));
+        hasher = crypto::sha3::Keccak256::new();
+        hasher.update(nodes_height_array_slot.to_be_bytes::<32>());
+        // _nodes[height][0]
+        let root_slot = hasher.finalize();
+
+        self.storage_read::<false>(
+            ExecutionEnvironmentType::NoEE,
+            &mut inf_resources,
+            &MESSAGE_ROOT_ADDRESS,
+            &Bytes32::from_array(root_slot),
+        )
+        .expect("must read MessageRoot shared tree height")
+    }
 }
