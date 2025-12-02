@@ -1,7 +1,7 @@
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use errors::BootloaderSubsystemError;
-use system_hooks::HooksStorage;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::CallModifier;

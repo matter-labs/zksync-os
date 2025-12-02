@@ -8,7 +8,7 @@ use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::Transaction;
 use ruint::aliases::{B160, U256};
-use system_hooks::HooksStorage;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::EthereumLikeTypes;

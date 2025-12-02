@@ -17,7 +17,7 @@ use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
-use system_hooks::HooksStorage;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::errors::interface::InterfaceError;

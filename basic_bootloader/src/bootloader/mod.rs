@@ -35,7 +35,7 @@ use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction_flow::{
     BasicTransactionFlow, ExecutionOutput, ExecutionResult, TxProcessingResult,
 };
-use system_hooks::HooksStorage;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::system::*;
 use zk_ee::utils::*;
 
@@ -125,14 +125,14 @@ where
 
         let mut system_functions = HooksStorage::new_in(system.get_allocator());
 
-        system_functions.add_precompiles();
+        system_hooks::add_precompiles(&mut system_functions);
 
         #[cfg(not(feature = "disable_system_contracts"))]
         {
-            system_functions.add_l1_messenger();
-            system_functions.add_l2_base_token();
-            system_functions.add_contract_deployer();
-            system_functions.add_interop_root_reporter();
+            system_hooks::add_l1_messenger(&mut system_functions);
+            system_hooks::add_l2_base_token(&mut system_functions);
+            system_hooks::add_contract_deployer(&mut system_functions);
+            // system_hooks::add_interop_root_reporter(&mut system_functions);
         }
 
         let mut tx_rolling_hash = [0u8; 32];

@@ -1,3 +1,6 @@
+use arrayvec::ArrayVec;
+use common_structs::system_hooks::HooksStorage;
+use types_config::TryIntoLowAddress;
 use utils::num_usize_words_for_u8_capacity;
 use utils::usize_rw::AsUsizeWritable;
 
@@ -53,6 +56,7 @@ use crate::utils::Bytes32;
 use crate::{
     execution_environment_type::ExecutionEnvironmentType,
     oracle::IOOracle,
+    storage_types::MAX_EVENT_TOPICS,
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
 };
 
@@ -168,6 +172,34 @@ impl<S: SystemTypes> System<S> {
 
     pub fn net_pubdata_used(&self) -> Result<u64, InternalError> {
         self.io.net_pubdata_used()
+    }
+
+    /// Emit an event, potentially capturing some using an event hook.
+    pub fn emit_event(
+        &mut self,
+        hooks: &mut HooksStorage<S, S::Allocator>,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut S::Resources,
+        address: &<S::IOTypes as SystemIOTypesConfig>::Address,
+        topics: &ArrayVec<<S::IOTypes as SystemIOTypesConfig>::EventKey, MAX_EVENT_TOPICS>,
+        data: &[u8],
+    ) -> Result<(), SystemError> {
+        // First, emit the event using io subsystem
+        self.io
+            .emit_event(ee_type, resources, address, topics, data)?;
+
+        // If successful, intercept event hook, if any
+        if let Some(address_low) = address.try_into_low() {
+            let _ = hooks.try_intercept_event(
+                address_low,
+                topics,
+                data,
+                ee_type as u8,
+                self,
+                resources,
+            )?;
+        }
+        Ok(())
     }
 }
 

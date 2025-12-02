@@ -4,6 +4,7 @@ use crate::gas::gas_utils;
 use crate::gas_constants::{CALLVALUE, CALL_STIPEND, NEWACCOUNT};
 use core::fmt::Write;
 use core::mem;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
@@ -51,6 +52,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
     fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         &'a mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
         tracer: &mut impl Tracer<S>,
@@ -198,13 +200,14 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         self.heap = heap;
         self.call_value = nominal_token_value;
 
-        self.execute_till_yield_point(system, tracer)
+        self.execute_till_yield_point(system, hooks, tracer)
     }
 
     /// Note: panics if `pending_os_request` is None
     fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         returned_resources: S::Resources,
         call_request_result: CallResult<'res, S>,
         tracer: &mut impl Tracer<S>,
@@ -279,7 +282,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             }
         }
 
-        self.execute_till_yield_point(system, tracer)
+        self.execute_till_yield_point(system, hooks, tracer)
     }
 
     fn calculate_resources_passed_in_external_call(

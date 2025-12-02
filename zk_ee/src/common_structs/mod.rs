@@ -12,6 +12,7 @@ pub mod proof_data;
 pub mod pubdata_compression;
 pub mod skip_list_quasi_vec;
 pub mod state_root_view;
+pub mod system_hooks;
 pub mod warm_storage_key;
 pub mod warm_storage_value;
 

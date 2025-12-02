@@ -6,7 +6,7 @@ use core::fmt::Write;
 use core::mem::MaybeUninit;
 use errors::internal::InternalError;
 use ruint::aliases::B160;
-use system_hooks::*;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::error_ctx;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -414,7 +414,13 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
         let new_ee_type = new_vm.ee_type();
 
         let mut preemption = new_vm
-            .start_executing_frame(self.system, external_call_launch_params, heap, tracer)
+            .start_executing_frame(
+                self.system,
+                self.hooks,
+                external_call_launch_params,
+                heap,
+                tracer,
+            )
             .map_err(wrap_error!())?;
 
         // Execute until we get `End` preemption point
@@ -446,7 +452,13 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
                     self.callstack_height -= 1;
 
                     preemption = new_vm
-                        .continue_after_preemption(self.system, resources_returned, result, tracer)
+                        .continue_after_preemption(
+                            self.system,
+                            self.hooks,
+                            resources_returned,
+                            result,
+                            tracer,
+                        )
                         .map_err(wrap_error!())?;
                 }
                 ExecutionEnvironmentPreemptionPoint::End(CompletedExecution {
