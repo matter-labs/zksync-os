@@ -50,7 +50,7 @@ fn run<const RANDOMIZED: bool>(
         .run_block_with_extra_stats(
             transactions,
             Some(block_context),
-            None,
+            Some(zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme::BlobsZKsyncOS),
             Some(run_config),
             &mut NopTracer::default(),
         )
