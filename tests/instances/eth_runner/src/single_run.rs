@@ -10,6 +10,7 @@ use rig::*;
 use std::fs::{self, File};
 use std::io::BufReader;
 use zk_ee::system::tracer::NopTracer;
+use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zksync_os_interface::traits::EncodedTx;
 
 #[allow(clippy::too_many_arguments)]
@@ -50,7 +51,7 @@ fn run<const RANDOMIZED: bool>(
         .run_block_with_extra_stats(
             transactions,
             Some(block_context),
-            None,
+            Some(DACommitmentScheme::BlobsZKsyncOS),
             Some(run_config),
             &mut NopTracer::default(),
         )
