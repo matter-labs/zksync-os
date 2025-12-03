@@ -215,18 +215,24 @@ impl Pairing for Bn254 {
 impl From<G2Affine> for G2PreparedNoAlloc {
     fn from(q: G2Affine) -> Self {
         if q.infinity {
-            #[allow(invalid_value)]
-            G2PreparedNoAlloc {
-                ell_coeffs: unsafe { core::mem::MaybeUninit::uninit().assume_init() }, // unused/filtered above
+            // coeffs should not be used
+            Self {
+                ell_coeffs: unsafe {
+                    [const { core::mem::MaybeUninit::uninit() }; BN254_NUM_ELL_COEFFS].map(
+                        |mut el| {
+                            el.write(Default::default());
+                            el.assume_init()
+                        },
+                    )
+                },
                 infinity: true,
             }
         } else {
             use ark_ff::{AdditiveGroup, One};
             let two_inv = Fq::one().double().inverse().unwrap();
             let mut i = 0;
-            let mut ell_coeffs: [core::mem::MaybeUninit<EllCoeff<Config>>; BN254_NUM_ELL_COEFFS] = unsafe {
-                [const { core::mem::MaybeUninit::uninit().assume_init() }; BN254_NUM_ELL_COEFFS]
-            };
+            let mut ell_coeffs: [core::mem::MaybeUninit<EllCoeff<Config>>; BN254_NUM_ELL_COEFFS] =
+                [const { core::mem::MaybeUninit::uninit() }; BN254_NUM_ELL_COEFFS];
 
             let mut r = G2HomProjective {
                 x: q.x,
