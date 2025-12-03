@@ -74,6 +74,7 @@ jobs:
             MARKER_PATH=$(pwd)/base_block_${blk}.bench cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" > base_block_${blk}.out
           done
           MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+          MARKER_PATH=$(pwd)/base_multiblock_batch.bench cargo test --release -j 3 --features rig/no_print,multiblock_batch_tests/cycle_marker,rig/unlimited_native -p multiblock_batch_tests -- run_multiblock_batch_proof_run_blobs
 
       - name: checkout PR
         run: |
@@ -107,7 +108,9 @@ jobs:
             fi
           done
           MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+          MARKER_PATH=$(pwd)/head_multiblock_batch.bench cargo test --release -j 3 --features rig/no_print,multiblock_batch_tests/cycle_marker,rig/unlimited_native -p multiblock_batch_tests -- run_multiblock_batch_proof_run_blobs
           pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
+          pairs="${pairs},(\"multiblock_batch\", \"base_multiblock_batch.bench\", \"head_multiblock_batch.bench\")"
           # Output all lines from the benchmark result starting from the "## ..." comparison header.
           # Since the output spans multiple lines, we use a heredoc declaration.
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
