@@ -173,7 +173,7 @@ fn run_block(
         check_storage_diff_hashes: true,
         ..Default::default()
     };
-    let (output, stats, _) = chain
+    let (output, stats, _, _) = chain
         .run_block_with_extra_stats(
             transactions,
             Some(block_context),
