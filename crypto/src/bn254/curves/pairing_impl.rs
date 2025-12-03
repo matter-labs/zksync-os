@@ -217,14 +217,7 @@ impl From<G2Affine> for G2PreparedNoAlloc {
         if q.infinity {
             // coeffs should not be used
             Self {
-                ell_coeffs: unsafe {
-                    [const { core::mem::MaybeUninit::uninit() }; BN254_NUM_ELL_COEFFS].map(
-                        |mut el| {
-                            el.write(Default::default());
-                            el.assume_init()
-                        },
-                    )
-                },
+                ell_coeffs: [Default::default(); BN254_NUM_ELL_COEFFS],
                 infinity: true,
             }
         } else {
