@@ -71,8 +71,8 @@ fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockO
 
     let run_config = rig::chain::RunConfig {
         app: Some("for_tests".to_string()),
-        only_forward: true,
-        check_storage_diff_hashes: false,
+        only_forward: false,
+        check_storage_diff_hashes: true,
         ..Default::default()
     };
     chain.run_block(
