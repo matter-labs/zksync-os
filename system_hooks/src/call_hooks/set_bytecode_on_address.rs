@@ -37,9 +37,10 @@ where
         modifier,
     } = request;
 
-    if caller != CONTRACT_DEPLOYER_ADDRESS || callee != SET_BYTECODE_ON_ADDRESS_HOOK {
+    debug_assert_eq!(callee, SET_BYTECODE_ON_ADDRESS_HOOK);
+    if caller != CONTRACT_DEPLOYER_ADDRESS {
         let _ = system.get_logger().write_fmt(format_args!(
-            "Set bytecode hook revert: invalid caller (caller={caller:?}, callee={callee:?})\n"
+            "Set bytecode hook revert: invalid caller (caller={caller:?})\n"
         ));
         return Ok((make_error_return_state(available_resources), return_memory));
     }
@@ -133,6 +134,13 @@ where
         return Ok(Err(
             "Set bytecode on address failure: setBytecodeDetailsEVM called with invalid calldata",
         ));
+    }
+
+    // Check that the first 12 bytes are zero (ABI left-padding for address)
+    if calldata[..12].iter().any(|&b| b != 0) {
+        return Err(SystemError::LeafDefect(internal_error!(
+            "Address word is not ABI-encoded (upper 12 bytes non-zero)"
+        )));
     }
 
     let address = B160::try_from_be_slice(&calldata[12..32]).ok_or(SystemError::LeafDefect(

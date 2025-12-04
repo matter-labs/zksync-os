@@ -97,6 +97,7 @@ impl<'a> Arbitrary<'a> for FuzzInput<'a> {
         let calldata2_raw: Vec<u8> = match selector {
             3 => {
                 // contract_deployer: setBytecodeDetailsEVM(address,bytes32,uint32,bytes32,uint32)
+                // function extended by the following parameter: observable_bytecode_len
                 let addr: [u8; 20] = Arbitrary::arbitrary(u)?;
                 let bytecode_hash: [u8; 32] = Arbitrary::arbitrary(u)?;
                 let bytecode_len: u32 = Arbitrary::arbitrary(u)?;

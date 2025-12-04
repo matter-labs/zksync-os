@@ -41,9 +41,10 @@ where
         modifier,
     } = request;
 
-    if caller != L1_MESSENGER_ADDRESS || callee != L1_MESSENGER_ADDRESS_HOOK {
+    debug_assert_eq!(callee, L1_MESSENGER_ADDRESS_HOOK);
+    if caller != L1_MESSENGER_ADDRESS {
         let _ = system.get_logger().write_fmt(format_args!(
-            "Set bytecode hook revert: invalid caller (caller={caller:?}, callee={callee:?})\n"
+            "Set bytecode hook revert: invalid caller (caller={caller:?})\n"
         ));
         return Ok((make_error_return_state(available_resources), return_memory));
     }
@@ -132,6 +133,7 @@ where
     send_to_l1_inner(&calldata, resources, system)
 }
 
+/// Receives calldata in the form of abi.encode(address msg.sender, bytes message)
 /// Only sends a message to L1 (emit_l1_message), events are emitted on the contract level.
 /// Returns message hash.
 pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
@@ -139,24 +141,11 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     resources: &mut S::Resources,
     system: &mut System<S>,
 ) -> Result<Result<Bytes32, &'static str>, SystemError> {
-    let address_sender = B160::try_from_be_slice(&calldata[12..32]).ok_or(
+    let address_sender = B160::try_from_be_slice(&calldata[0..20]).ok_or(
         SystemError::LeafDefect(internal_error!("Failed to create B160 from 20 byte array")),
     )?;
 
-    let offset: usize = U256::from_be_slice(&calldata[32..64])
-        .try_into()
-        .map_err(|_| SystemError::LeafDefect(internal_error!("Invalid offset word")))?;
-
-    let length: usize = U256::from_be_slice(&calldata[offset..offset + 32])
-        .try_into()
-        .map_err(|_| SystemError::LeafDefect(internal_error!("Invalid length word")))?;
-
-    let start = offset + 32;
-    let end = start + length;
-    if calldata.len() < end {
-        return Ok(Err("L1 messenger failure: truncated bytes payload"));
-    }
-    let message = &calldata[start..end];
+    let message = &calldata[20..];
 
     // charge for message length
     let l1_message_cost = l1_message_ergs_cost(message.len());
@@ -164,6 +153,7 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
 
     // emit L1 message
     let message_hash = system.io.emit_l1_message(
+        // We already charged gas for it
         ExecutionEnvironmentType::NoEE,
         resources,
         &address_sender,
