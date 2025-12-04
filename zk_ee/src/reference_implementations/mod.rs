@@ -98,13 +98,14 @@ impl<Native: Resource> Resource for BaseResources<Native> {
     }
 
     fn charge(&mut self, to_charge: &Self) -> Result<(), SystemError> {
-        if let Err(e) = self.native.charge(&to_charge.native) {
-            // If both out of ergs and native, just keep the native
-            // error.
-            let _ = self.ergs.charge(&to_charge.ergs);
+        if let Err(e) = self.ergs.charge(&to_charge.ergs) {
+            // This method pre-charges for computation, both in ergs and native.
+            // We first charge ergs, if they are insufficient, we do not charge
+            // native, as the execution will halt with OOE and the computation
+            // being charged for isn't performed.
             return Err(e);
         } else {
-            self.ergs.charge(&to_charge.ergs)?
+            self.native.charge(&to_charge.native)?
         };
         Ok(())
     }
@@ -191,5 +192,26 @@ impl<Native: Resource + Computational> Resources for BaseResources<Native> {
         let o = f(self);
         self.ergs = old_ergs;
         o
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::system::{errors::system::SystemError, Ergs, Resource, Resources};
+
+    use super::{BaseResources, DecreasingNative};
+
+    #[test]
+    fn test_oog_does_not_charge_native() {
+        let mut resources = BaseResources::from_ergs_and_native(Ergs(10), DecreasingNative(100));
+        let r = resources.charge(&BaseResources {
+            ergs: Ergs(11),
+            native: DecreasingNative(101),
+        });
+        assert!(r.is_err_and(|e| matches!(
+            e,
+            SystemError::LeafRuntime(crate::system::errors::runtime::RuntimeError::OutOfErgs(_))
+        )));
+        assert_eq!(resources.native().0, 100);
     }
 }
