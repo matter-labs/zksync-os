@@ -1249,7 +1249,7 @@ impl<
             &MESSAGE_ROOT_ADDRESS,
             &root_slot,
         )
-            .expect("must read MessageRoot shared tree height")
+        .expect("must read MessageRoot shared tree height")
     }
 }
 
@@ -1262,7 +1262,9 @@ impl<
 fn calculate_multichain_root_slot(tree_height: Bytes32) -> Bytes32 {
     // keccak256(0x0000000000000000000000000000000000000000000000000000000000000006)
     const NODES_FIRST_ELEMENT_SLOT: [u8; 32] = [
-        0xf6, 0x52, 0x22, 0x23, 0x13, 0xe2, 0x84, 0x59, 0x52, 0x8d, 0x92, 0x0b, 0x65, 0x11, 0x5c, 0x16, 0xc0, 0x4f, 0x3e, 0xfc, 0x82, 0xaa, 0xed, 0xc9, 0x7b, 0xe5, 0x9f, 0x3f, 0x37, 0x7c, 0x0d, 0x3f
+        0xf6, 0x52, 0x22, 0x23, 0x13, 0xe2, 0x84, 0x59, 0x52, 0x8d, 0x92, 0x0b, 0x65, 0x11, 0x5c,
+        0x16, 0xc0, 0x4f, 0x3e, 0xfc, 0x82, 0xaa, 0xed, 0xc9, 0x7b, 0xe5, 0x9f, 0x3f, 0x37, 0x7c,
+        0x0d, 0x3f,
     ];
 
     // _nodes[height] slot
@@ -1290,7 +1292,11 @@ mod tests {
         ];
         let root_slot = calculate_multichain_root_slot(Bytes32::from_array(tree_height));
 
-        assert_eq!(root_slot.as_u8_array().to_vec(), hex::decode("768c3a22b1e4688c94525eb9bc2cf1ce7601fc9e871dc6e10fc44f0f06340ce1").unwrap());
+        assert_eq!(
+            root_slot.as_u8_array().to_vec(),
+            hex::decode("768c3a22b1e4688c94525eb9bc2cf1ce7601fc9e871dc6e10fc44f0f06340ce1")
+                .unwrap()
+        );
     }
 
     #[test]
@@ -1301,7 +1307,11 @@ mod tests {
         ];
         let root_slot = calculate_multichain_root_slot(Bytes32::from_array(tree_height));
 
-        assert_eq!(root_slot.as_u8_array().to_vec(), hex::decode("38ace9b5569ba016113e31884532182bc747997e743c0b7f9c307302b5f83760").unwrap());
+        assert_eq!(
+            root_slot.as_u8_array().to_vec(),
+            hex::decode("38ace9b5569ba016113e31884532182bc747997e743c0b7f9c307302b5f83760")
+                .unwrap()
+        );
     }
 
     #[test]
@@ -1312,6 +1322,10 @@ mod tests {
         ];
         let root_slot = calculate_multichain_root_slot(Bytes32::from_array(tree_height));
 
-        assert_eq!(root_slot.as_u8_array().to_vec(), hex::decode("35817d789b7a6dbe8b95b0f21e189fb26d3d329de699cac7a267a9568298e0a5").unwrap());
+        assert_eq!(
+            root_slot.as_u8_array().to_vec(),
+            hex::decode("35817d789b7a6dbe8b95b0f21e189fb26d3d329de699cac7a267a9568298e0a5")
+                .unwrap()
+        );
     }
 }
