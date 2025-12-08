@@ -87,7 +87,7 @@ impl FieldElement5x52 {
     #[inline(always)]
     #[cfg(debug_assertions)]
     pub(super) const fn max_magnitude() -> u32 {
-        2047u32
+        16u32
     }
 
     #[inline(always)]
