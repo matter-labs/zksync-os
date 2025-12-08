@@ -267,7 +267,7 @@ mod tests {
             fe2.add_in_place(&FieldElementImpl::ONE);
         }
         assert_eq!(fe2.magnitude, 5);
-        
+
         fe2.normalize_in_place();
         assert_eq!(fe2.magnitude, 1);
 
