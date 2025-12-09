@@ -13,8 +13,8 @@ pub struct HistoryRecord<V> {
 
 /// The history linked list. Always has at least one item with the snapshot id of 0.
 pub struct ElementWithHistory<V, A: Allocator + Clone, EP = ()> {
-    /// Additional properties associated with the element
-    /// Doesn't change with rollbacks/commits
+    /// Additional properties associated with the element globally.
+    /// These properties persist across rollbacks/commits and don't participate in snapshots
     pub element_properties: EP,
     /// Initial record (before history started)
     pub initial: HistoryRecordLink<V>,
