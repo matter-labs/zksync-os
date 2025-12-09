@@ -638,7 +638,7 @@ fn test_l1_messenger_gas_charging() {
 
     // Verify that gas was charged - this should include the hook gas cost + keccak + LOG costs
     // The hook should charge HOOK_BASE_ERGS_COST (100 gas) + keccak256 costs + LOG costs
-    assert_eq!(gas_used, 9106);
+    assert_eq!(gas_used, 14991);
 }
 
 #[test]
@@ -661,7 +661,7 @@ fn test_l2_base_token_withdraw_gas_charging() {
         vec![],
     );
 
-    assert_eq!(gas_used, 55942);
+    assert_eq!(gas_used, 61845);
 }
 
 #[test]
@@ -702,5 +702,5 @@ fn test_l2_base_token_withdraw_with_message_gas_charging() {
 
     // Verify that gas was charged - this should include hook gas cost + memory copy costs + L1 message costs + event costs
     // The hook should charge HOOK_BASE_ERGS_COST (100 gas) + copy costs + L1 message costs + event emission costs
-    assert_eq!(gas_used, 58808);
+    assert_eq!(gas_used, 64737);
 }

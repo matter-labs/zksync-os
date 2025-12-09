@@ -5,13 +5,8 @@
 use super::*;
 use crate::addresses_constants::{L1_MESSENGER_ADDRESS, L1_MESSENGER_ADDRESS_HOOK};
 use core::fmt::Write;
-use evm_interpreter::{
-    gas_constants::{LOG, LOGDATA},
-    keccak256_ergs_cost,
-};
 use ruint::aliases::{B160, U256};
 use zk_ee::{
-    common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE,
     execution_environment_type::ExecutionEnvironmentType,
     internal_error, out_of_return_memory,
     system::{
@@ -147,13 +142,9 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
 
     let message = &calldata[20..];
 
-    // charge for message length
-    let l1_message_cost = l1_message_ergs_cost(message.len());
-    resources.charge(&S::Resources::from_ergs(l1_message_cost))?;
-
     // emit L1 message
     let message_hash = system.io.emit_l1_message(
-        // We already charged gas for it
+        // We already charged gas for it in L1Messenger smart contract
         ExecutionEnvironmentType::NoEE,
         resources,
         &address_sender,
@@ -161,24 +152,4 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     )?;
 
     Ok(Ok(message_hash))
-}
-
-///
-/// Ergs cost of emitting an L1 message.
-/// Computed as:
-///   keccak256_ergs_cost(L2_TO_L1_LOG_SERIALIZE_SIZE) +
-///   keccak256_ergs_cost(64) * 3 +
-///   keccak256_ergs_cost(message_len) +
-///   375 (same as LOG base) +
-///   8 * message_len (same as LOG for data)
-///
-/// See [io_subsystem::emit_l1_message] for more details
-/// about the 3 first components of this calculation.
-///
-fn l1_message_ergs_cost(message_len: usize) -> Ergs {
-    let hashing_cost = keccak256_ergs_cost(L2_TO_L1_LOG_SERIALIZE_SIZE)
-        + keccak256_ergs_cost(64).times(3)
-        + keccak256_ergs_cost(message_len);
-    let log_cost = Ergs(ERGS_PER_GAS * (LOG + LOGDATA * message_len as u64));
-    hashing_cost + log_cost
 }
