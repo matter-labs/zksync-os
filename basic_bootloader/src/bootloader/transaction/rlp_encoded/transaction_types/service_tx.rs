@@ -20,8 +20,10 @@ pub(crate) struct ServiceTx<'a> {
 
 const SERVICE_DESTINATION_WHITELIST: &[B160] = &[L2_INTEROP_ROOT_STORAGE_ADDRESS];
 
+pub const SERVICE_TX_TYPE: u8 = 0x7d;
+
 impl<'a> EthereumTxType for ServiceTx<'a> {
-    const TX_TYPE: u8 = 0x7d;
+    const TX_TYPE: u8 = SERVICE_TX_TYPE;
 }
 
 impl<'a> RlpListDecode<'a> for ServiceTx<'a> {

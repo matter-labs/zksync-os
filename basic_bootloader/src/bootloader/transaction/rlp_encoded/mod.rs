@@ -21,7 +21,7 @@ use zk_ee::utils::Bytes32;
 mod eip_2718_tx_envelope;
 mod rlp;
 mod transaction;
-mod transaction_types;
+pub mod transaction_types;
 
 pub use self::transaction::RlpEncodedTransaction;
 pub use transaction_types::eip_2930_tx::AccessListForAddress;

@@ -2,9 +2,13 @@ use alloy::consensus::{EthereumTxEnvelope, SignableTransaction};
 use alloy::consensus::{Signed, TxEnvelope, TypedTransaction};
 use alloy::dyn_abi::DynSolValue;
 use alloy::network::TxSignerSync;
+use alloy::primitives::Address;
 use alloy::primitives::Signature;
+use alloy::rlp::{encode, BufMut, Encodable};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
+use basic_bootloader::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
+use basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::SERVICE_TX_TYPE;
 use basic_system::system_implementation::flat_storage_model::bytecode_padding_len;
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use forward_system::run::PreimageSource;
@@ -234,4 +238,58 @@ pub fn sign_and_encode_transaction_request(
         TypedTransaction::Eip2930(tx) => sign_and_encode_alloy_tx(tx, wallet),
         TypedTransaction::Eip4844(_) => panic!("Unsupported tx type"),
     }
+}
+
+/// Helper wrapper representing the RLP *body* of a service tx:
+/// [nonce, gas_limit, to, data]
+struct ServiceTxBody<'a> {
+    nonce: u64,
+    gas_limit: u64,
+    to: &'a [u8; 20],
+    data: &'a [u8],
+}
+
+enum ServiceTxField<'b> {
+    U64(u64),
+    Bytes(&'b [u8]),
+}
+
+impl<'b> Encodable for ServiceTxField<'b> {
+    fn encode(&self, out: &mut dyn BufMut) {
+        match self {
+            ServiceTxField::U64(v) => v.encode(out),
+            ServiceTxField::Bytes(b) => (*b).encode(out),
+        }
+    }
+}
+
+impl<'a> Encodable for ServiceTxBody<'a> {
+    fn encode(&self, out: &mut dyn BufMut) {
+        let fields = vec![
+            ServiceTxField::U64(self.nonce),
+            ServiceTxField::U64(self.gas_limit),
+            ServiceTxField::Bytes(self.to.as_slice()),
+            ServiceTxField::Bytes(self.data),
+        ];
+
+        fields.encode(out);
+    }
+}
+
+///
+/// Encode a service transaction
+///
+pub fn encode_service_tx(nonce: u64, gas_limit: u64, to: &[u8; 20], data: &[u8]) -> EncodedTx {
+    let body = ServiceTxBody {
+        nonce,
+        gas_limit,
+        to,
+        data,
+    };
+    let rlp_body = encode(&body);
+    let mut out = Vec::with_capacity(1 + rlp_body.len());
+    out.push(SERVICE_TX_TYPE);
+    out.extend_from_slice(&rlp_body);
+    let from = Address::from_slice(&BOOTLOADER_FORMAL_ADDRESS.to_be_bytes::<20>());
+    EncodedTx::Rlp(out, from)
 }
