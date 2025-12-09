@@ -1,4 +1,3 @@
-pub mod cache_properties;
 pub mod cache_record;
 pub mod callee_account_properties;
 pub mod da_commitment_scheme;

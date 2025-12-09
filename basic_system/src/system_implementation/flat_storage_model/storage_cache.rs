@@ -1,4 +1,5 @@
 //! Storage cache, backed by a history map.
+use crate::system_implementation::caches::cache_element_properties::CacheElementProperties;
 use crate::system_implementation::flat_storage_model::address_into_special_storage_key;
 use alloc::collections::BTreeSet;
 use alloc::fmt::Debug;
@@ -6,7 +7,6 @@ use core::alloc::Allocator;
 use ruint::aliases::B160;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
-use zk_ee::common_structs::cache_properties::CacheElementProperties;
 use zk_ee::common_structs::cache_record::CacheRecord;
 use zk_ee::common_structs::history_counter::HistoryCounter;
 use zk_ee::common_structs::history_counter::HistoryCounterSnapshotId;
