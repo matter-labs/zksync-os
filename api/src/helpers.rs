@@ -7,6 +7,8 @@ use alloy::primitives::Signature;
 use alloy::rlp::{encode, BufMut, Encodable};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
+use alloy_sol_types::sol;
+use alloy_sol_types::SolCall;
 use basic_bootloader::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
 use basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::SERVICE_TX_TYPE;
 use basic_system::system_implementation::flat_storage_model::bytecode_padding_len;
@@ -15,6 +17,7 @@ use forward_system::run::PreimageSource;
 use ruint::aliases::U256;
 use std::alloc::Global;
 use std::ops::Add;
+use zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoot;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::EIP7702_DELEGATION_MARKER;
 use zk_ee::utils::Bytes32;
@@ -292,4 +295,49 @@ pub fn encode_service_tx(nonce: u64, gas_limit: u64, to: &[u8; 20], data: &[u8])
     out.extend_from_slice(&rlp_body);
     let from = Address::from_slice(&BOOTLOADER_FORMAL_ADDRESS.to_be_bytes::<20>());
     EncodedTx::Rlp(out, from)
+}
+
+///
+/// Calldata used by service transactions that import interop roots.
+///
+/// Constructs the calldata for:
+///
+/// function addInteropRootsInBatch(InteropRoot[] calldata interopRootsInput);
+///
+/// where
+///
+/// struct InteropRoot {
+///     uint256 chainId;
+///     uint256 blockOrBatchNumber;
+///     bytes32[] sides;
+/// }
+///
+pub fn encode_interop_root_import_calldata(interop_roots: Vec<StoredInteropRoot>) -> Vec<u8> {
+    // Declare sol interface
+    sol! {
+      struct InteropRoot {
+          uint256 chainId;
+          uint256 blockOrBatchNumber;
+          bytes32[] sides;
+      }
+
+      function addInteropRootsInBatch(InteropRoot[] calldata interopRootsInput);
+    }
+
+    // Construct calldata
+    let interop_roots: Vec<InteropRoot> = interop_roots
+        .into_iter()
+        .map(|r: StoredInteropRoot| {
+            let root_b256 = alloy::primitives::B256::from_slice(r.root.as_u8_ref());
+            InteropRoot {
+                chainId: r.chain_id,
+                blockOrBatchNumber: r.block_or_batch_number,
+                sides: vec![root_b256],
+            }
+        })
+        .collect();
+    addInteropRootsInBatchCall {
+        interopRootsInput: interop_roots,
+    }
+    .abi_encode()
 }
