@@ -20,7 +20,7 @@ use ruint::aliases::U256;
 use storage_models::common_structs::AccountAggregateDataHash;
 use storage_models::common_structs::PreimageCacheModel;
 use storage_models::common_structs::StorageCacheModel;
-use zk_ee::common_structs::cache_properties::account_cache_record_properties::AccountCacheRecordProperties;
+use zk_ee::common_structs::cache_properties::CacheElementProperties;
 use zk_ee::common_structs::cache_record::CacheRecord;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::history_map::HistoryMap;
@@ -56,7 +56,7 @@ type AddressItem<'a, A> = HistoryMapItemRefMut<
     BitsOrd<160, 3>,
     CacheRecord<AccountProperties, AccountPropertiesMetadata>,
     A,
-    AccountCacheRecordProperties,
+    CacheElementProperties,
 >;
 
 pub struct NewModelAccountCache<
@@ -70,7 +70,7 @@ pub struct NewModelAccountCache<
         BitsOrd160,
         CacheRecord<AccountProperties, AccountPropertiesMetadata>,
         A,
-        AccountCacheRecordProperties,
+        CacheElementProperties,
     >,
     // Note: this doesn't need to be equal to the actual tx number in the block, it just needs to be able to differentiate between transactions.
     pub(crate) current_tx_id: u32,
@@ -247,7 +247,7 @@ impl<
                 // Since in case of revert it should become cold again and initial record can't be rolled back
                 Ok((
                     CacheRecord::new(acc_data),
-                    AccountCacheRecordProperties::new(empty_account, observe),
+                    CacheElementProperties::new(empty_account, observe),
                 ))
             })
             .and_then(|mut x| {
@@ -262,7 +262,7 @@ impl<
                             address,
                             is_selfdestruct,
                         )?;
-                        let empty_account = x.key_properties().is_new_account();
+                        let empty_account = x.element_properties().is_new_element();
                         Self::charge_native_for_cold_access(
                             ee_type,
                             resources,
@@ -1129,7 +1129,7 @@ impl<
             oracle,
             true,
             false,
-            true,
+            false,
         )?;
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
@@ -1147,7 +1147,7 @@ impl<
             account_data.current().metadata().deployed_in_tx == Some(cur_tx) || in_constructor;
 
         if should_be_deconstructed {
-            account_data.key_properties_mut().mark_as_observed();
+            account_data.element_properties_mut().mark_value_as_known();
             account_data.update(|data| {
                 data.update_metadata(|metadata| {
                     metadata.is_marked_for_deconstruction = true;
@@ -1221,7 +1221,7 @@ impl<
                 if current.value.metadata().is_marked_for_deconstruction {
                     // NOTE: it can only happen if the account is initially empty,
                     // so we need to make sure that it was observed earlier - when bytecode was deployed
-                    cache_appearance.assert_observed();
+                    assert!(cache_appearance.is_value_known());
                     current.value.update(|x, metadata| {
                         metadata.is_marked_for_deconstruction = false;
                         *x = AccountProperties::TRIVIAL_VALUE;

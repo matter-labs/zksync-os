@@ -268,7 +268,7 @@ where
             let record = self.btree.get_mut(&k).unwrap();
             let initial = unsafe { record.initial.as_ref() };
             let current = unsafe { record.head.as_mut() };
-            let cache_appearance = &mut record.key_properties;
+            let cache_appearance = &mut record.element_properties;
             do_fn(k, (initial, current), cache_appearance)?
         }
 
@@ -292,7 +292,7 @@ where
     }
 
     pub fn key_properties(&self) -> &KP {
-        &self.history.key_properties
+        &self.history.element_properties
     }
 
     pub fn current(&self) -> &'a V {
@@ -339,12 +339,12 @@ where
         unsafe { &self.history.committed.as_ref().value }
     }
 
-    pub fn key_properties(&self) -> &KP {
-        &self.history.key_properties
+    pub fn element_properties(&self) -> &KP {
+        &self.history.element_properties
     }
 
-    pub fn key_properties_mut(&mut self) -> &mut KP {
-        &mut self.history.key_properties
+    pub fn element_properties_mut(&mut self) -> &mut KP {
+        &mut self.history.element_properties
     }
 
     #[allow(dead_code)]

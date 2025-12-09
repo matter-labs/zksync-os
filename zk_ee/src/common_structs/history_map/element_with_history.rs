@@ -12,8 +12,10 @@ pub struct HistoryRecord<V> {
 }
 
 /// The history linked list. Always has at least one item with the snapshot id of 0.
-pub struct ElementWithHistory<V, A: Allocator + Clone, KP = ()> {
-    pub key_properties: KP,
+pub struct ElementWithHistory<V, A: Allocator + Clone, EP = ()> {
+    /// Additional properties associated with the element
+    /// Doesn't change with rollbacks/commits
+    pub element_properties: EP,
     /// Initial record (before history started)
     pub initial: HistoryRecordLink<V>,
     first: HistoryRecordLink<V>,
@@ -49,7 +51,7 @@ impl<V, A: Allocator + Clone, KP> ElementWithHistory<V, A, KP> {
         let elem = records_memory_pool.create_element(initial_value, None, CacheSnapshotId(0));
 
         Self {
-            key_properties,
+            element_properties: key_properties,
             head: elem,
             initial: elem,
             first: elem,

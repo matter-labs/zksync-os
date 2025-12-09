@@ -6,7 +6,7 @@ use core::alloc::Allocator;
 use ruint::aliases::B160;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
-use zk_ee::common_structs::cache_properties::storage_cache_record_properties::StorageCacheRecordProperties;
+use zk_ee::common_structs::cache_properties::CacheElementProperties;
 use zk_ee::common_structs::cache_record::CacheRecord;
 use zk_ee::common_structs::history_counter::HistoryCounter;
 use zk_ee::common_structs::history_counter::HistoryCounterSnapshotId;
@@ -29,13 +29,8 @@ use zk_ee::{
 use zk_ee::common_structs::history_map::*;
 use zk_ee::common_structs::ValueDiffCompressionStrategy;
 
-type AddressItem<'a, K, V, A> = HistoryMapItemRefMut<
-    'a,
-    K,
-    CacheRecord<V, StorageElementMetadata>,
-    A,
-    StorageCacheRecordProperties,
->;
+type AddressItem<'a, K, V, A> =
+    HistoryMapItemRefMut<'a, K, CacheRecord<V, StorageElementMetadata>, A, CacheElementProperties>;
 
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
@@ -105,7 +100,7 @@ pub struct GenericPubdataAwarePlainStorage<
     P: StorageAccessPolicy<R, V>,
 > {
     pub(crate) cache:
-        HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A, StorageCacheRecordProperties>,
+        HistoryMap<K, CacheRecord<V, StorageElementMetadata>, A, CacheElementProperties>,
     pub(crate) resources_policy: P,
     // Note: this doesn't need to be equal to the actual tx number in the block, it just needs to be able to differentiate between transactions.
     pub(crate) current_tx_id: TransactionId,
@@ -178,7 +173,7 @@ impl<
             K,
             CacheRecord<V, StorageElementMetadata>,
             A,
-            StorageCacheRecordProperties,
+            CacheElementProperties,
         >,
         resources_policy: &mut P,
         current_tx_id: TransactionId,
@@ -220,7 +215,7 @@ impl<
                 // Since in case of revert it should become cold again and initial record can't be rolled back
                 Ok((
                     CacheRecord::new(data_from_oracle.initial_value.into()),
-                    StorageCacheRecordProperties::new(data_from_oracle.is_new_storage_slot),
+                    CacheElementProperties::new(data_from_oracle.is_new_storage_slot, true),
                 ))
             })
             .and_then(|mut x| {
@@ -228,7 +223,7 @@ impl<
                 let is_warm_read = x.current().metadata().considered_warm(current_tx_id);
                 if is_warm_read == false {
                     if initialized_element == false {
-                        let is_new_storage_slot = x.key_properties().is_new_storage_slot();
+                        let is_new_storage_slot = x.element_properties().is_new_element();
                         // Element exists in cache, but wasn't touched in current tx yet
                         resources_policy.charge_cold_storage_read_extra(
                             ee_type,
@@ -301,7 +296,7 @@ where {
         // Try to get initial value at the beginning of the tx.
         let val_at_tx_start = addr_data.committed().value().clone();
 
-        let is_new_slot = addr_data.key_properties().is_new_storage_slot();
+        let is_new_slot = addr_data.element_properties().is_new_element();
         self.resources_policy.charge_storage_write_extra(
             ee_type,
             &val_at_tx_start,
@@ -337,12 +332,8 @@ where {
                     cache_record.update(|v, _| {
                         *v = V::default();
                         Ok(())
-                    })?;
-                    Ok(())
-                })?;
-                x.key_properties_mut().mark_as_deleted();
-
-                Ok(())
+                    })
+                })
             })?;
 
         Ok(())
@@ -613,8 +604,8 @@ impl<
     ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SF, M, R, P>
     {
         self.0.cache.iter().map(|item| {
-            let is_new_storage_slot = item.key_properties().is_new_storage_slot();
-            let initial_value_used = item.key_properties().is_initial_value_used();
+            let is_new_storage_slot = item.key_properties().is_new_element();
+            let initial_value_used = item.key_properties().is_value_known();
             let current_record = item.current();
             let initial_record = item.initial();
             (
