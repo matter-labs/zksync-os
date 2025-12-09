@@ -3,6 +3,7 @@ use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
 use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
@@ -139,6 +140,9 @@ where
         let mut l1_to_l2_txs_hasher = crypto::blake2s::Blake2s256::new();
 
         let mut first_tx = true;
+        // Service blocks are blocks that only contain service transactions.
+        // Service transactions can only be included in service blocks.
+        let mut is_service_block = false;
         let mut upgrade_tx_hash = Bytes32::zero();
         let mut block_gas_used = 0;
         let mut block_computational_native_used = 0;
@@ -218,6 +222,14 @@ where
                                 "Tx execution result = {:?}\n",
                                 &tx_processing_result,
                             ));
+
+                            // Check for service block invariants
+                            Self::check_for_service_block_invariants(
+                                &mut is_service_block,
+                                first_tx,
+                                tx_processing_result.is_service_tx,
+                            )?;
+
                             // Do not update the accumulators yet, we may need to revert the transaction
                             let next_block_gas_used =
                                 block_gas_used + tx_processing_result.gas_used;
@@ -400,5 +412,32 @@ where
                 Ok(())
             }
         }
+    }
+
+    /// Check the service block invariants:
+    /// 1. If the first tx is a service tx, then the block is a service block
+    /// 2. Service transactions can only be processed in service blocks
+    /// 3. Non-service transactions cannot be processed in service blocks
+    fn check_for_service_block_invariants(
+        is_service_block: &mut bool,
+        is_first_tx: bool,
+        is_service_tx: bool,
+    ) -> Result<(), InternalError> {
+        //  1. If the first tx is a service tx, then the block is a service block
+        if is_first_tx && is_service_tx {
+            *is_service_block = true;
+        }
+        if *is_service_block {
+            if !is_service_tx {
+                // 3. Non-service transactions cannot be processed in service blocks
+                return Err(internal_error!("Non-service tx in service block"));
+            }
+        } else {
+            // 2. Service transactions can only be processed in service blocks
+            if is_service_tx {
+                return Err(internal_error!("Service tx in non-service block"));
+            }
+        }
+        Ok(())
     }
 }

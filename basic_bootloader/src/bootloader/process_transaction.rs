@@ -396,6 +396,7 @@ where
             tx_hash,
             is_l1_tx: is_priority_op,
             is_upgrade_tx: !is_priority_op,
+            is_service_tx: false,
             gas_used,
             gas_refunded: evm_refund,
             computational_native_used,
@@ -767,11 +768,14 @@ where
                 .as_str(),
         );
 
+        let is_service_tx = transaction.is_service();
+
         Ok(TxProcessingResult {
             result: execution_result,
             tx_hash,
             is_l1_tx: false,
             is_upgrade_tx: false,
+            is_service_tx,
             gas_used,
             gas_refunded: evm_refund,
             computational_native_used,

@@ -92,52 +92,55 @@ where
             Err(SystemError::LeafDefect(e)) => return Err(TxError::Internal(e.into())),
         }
 
-        // Even if we don't validate a signature, we still need to charge for ecrecover for equivalent behavior
-        if !Config::VALIDATE_EOA_SIGNATURE | Config::SIMULATION {
-            resources.charge(&Resources::from_ergs_and_native(
-                ECRECOVER_COST_ERGS,
-                <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
-                    ECRECOVER_NATIVE_COST,
-                ),
-            ))?;
-        } else {
-            let (parity, r, s) = transaction.sig_parity_r_s();
-            if U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
-                return Err(InvalidTransaction::MalleableSignature.into());
-            }
-
-            let mut ecrecover_input = [0u8; 128];
-            ecrecover_input[0..32].copy_from_slice(suggested_signed_hash.as_u8_array_ref());
-            ecrecover_input[63] = (parity as u8) + 27;
-            ecrecover_input[64..96][(32 - r.len())..].copy_from_slice(r);
-            ecrecover_input[96..128][(32 - s.len())..].copy_from_slice(s);
-
-            let mut ecrecover_output = ArrayBuilder::default();
-            S::SystemFunctions::secp256k1_ec_recover(
-                ecrecover_input.as_slice(),
-                &mut ecrecover_output,
-                resources,
-                system.get_allocator(),
-            )
-            .map_err(SystemError::from)?;
-
-            if ecrecover_output.is_empty() {
-                return Err(InvalidTransaction::IncorrectFrom {
-                    recovered: B160::ZERO,
-                    tx: *from,
+        // Only service transactions have no signature,
+        // we don't even charge gas/native related to ecrecover for them.
+        if let Some((parity, r, s)) = transaction.sig_parity_r_s() {
+            // Even if we don't validate a signature, we still need to charge for ecrecover for equivalent behavior
+            if !Config::VALIDATE_EOA_SIGNATURE | Config::SIMULATION {
+                resources.charge(&Resources::from_ergs_and_native(
+                    ECRECOVER_COST_ERGS,
+                    <<S as SystemTypes>::Resources as Resources>::Native::from_computational(
+                        ECRECOVER_NATIVE_COST,
+                    ),
+                ))?;
+            } else {
+                if U256::from_be_slice(s) > U256::from_be_bytes(SECP256K1N_HALF) {
+                    return Err(InvalidTransaction::MalleableSignature.into());
                 }
-                .into());
-            }
 
-            let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
-                .ok_or(internal_error!("Invalid ecrecover return value"))?;
+                let mut ecrecover_input = [0u8; 128];
+                ecrecover_input[0..32].copy_from_slice(suggested_signed_hash.as_u8_array_ref());
+                ecrecover_input[63] = (parity as u8) + 27;
+                ecrecover_input[64..96][(32 - r.len())..].copy_from_slice(r);
+                ecrecover_input[96..128][(32 - s.len())..].copy_from_slice(s);
 
-            if &recovered_from != from {
-                return Err(InvalidTransaction::IncorrectFrom {
-                    recovered: recovered_from,
-                    tx: *from,
+                let mut ecrecover_output = ArrayBuilder::default();
+                S::SystemFunctions::secp256k1_ec_recover(
+                    ecrecover_input.as_slice(),
+                    &mut ecrecover_output,
+                    resources,
+                    system.get_allocator(),
+                )
+                .map_err(SystemError::from)?;
+
+                if ecrecover_output.is_empty() {
+                    return Err(InvalidTransaction::IncorrectFrom {
+                        recovered: B160::ZERO,
+                        tx: *from,
+                    }
+                    .into());
                 }
-                .into());
+
+                let recovered_from = B160::try_from_be_slice(&ecrecover_output.build()[12..])
+                    .ok_or(internal_error!("Invalid ecrecover return value"))?;
+
+                if &recovered_from != from {
+                    return Err(InvalidTransaction::IncorrectFrom {
+                        recovered: recovered_from,
+                        tx: *from,
+                    }
+                    .into());
+                }
             }
         }
 

@@ -300,7 +300,7 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
         }
     }
 
-    pub fn sig_parity_r_s<'a>(&'a self) -> (bool, &'a [u8], &'a [u8]) {
+    pub fn sig_parity_r_s<'a>(&'a self) -> Option<(bool, &'a [u8], &'a [u8])> {
         let signature = unsafe {
             self.underlying_buffer
                 .as_slice()
@@ -312,7 +312,7 @@ impl<A: Allocator> AbiEncodedTransaction<A> {
         // Pre checked, but just in case
         assert!(*v == 27 || *v == 28);
         let parity = v - 27 == 1;
-        (parity, r, s)
+        Some((parity, r, s))
     }
 
     ///
