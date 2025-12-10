@@ -268,11 +268,14 @@ mod tests {
         }
         assert_eq!(fe2.magnitude, 5);
 
+        fe2.normalize_in_place();
+        assert_eq!(fe2.magnitude, 1);
+
         let multiplier2 = 4u32;
         let result = fe2.mul_int(multiplier2);
 
         assert_eq!(result.magnitude, fe2.magnitude * multiplier2);
-        assert_eq!(result.magnitude, 20);
+        assert_eq!(result.magnitude, 4);
 
         // Test edge cases
         let mut fe3 = FieldElementImpl::ONE;
