@@ -119,6 +119,8 @@ pub struct AccountPropertiesMetadata {
     /// In practice, it can be set to `true` only during special protocol upgrade txs.
     /// For protocol upgrades it's ensured by governance that bytecodes are already published separately.
     pub not_publish_bytecode: bool,
+    /// Marks if account is marked for deconstruction is transaction
+    pub is_marked_for_deconstruction: bool,
 }
 
 impl AccountPropertiesMetadata {

@@ -47,7 +47,7 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
         match self.head {
             None => {
                 // Allocate
-                let raw = Box::into_raw(Box::new_in(
+                let (raw, _) = Box::into_raw_with_allocator(Box::new_in(
                     HistoryRecord {
                         touch_ss_id: snapshot_id,
                         value,

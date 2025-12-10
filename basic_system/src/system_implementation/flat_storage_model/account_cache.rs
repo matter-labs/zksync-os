@@ -5,6 +5,7 @@ use super::AccountPropertiesMetadata;
 use super::BytecodeAndAccountDataPreimagesStorage;
 use super::NewStorageWithAccountPropertiesUnderHash;
 use crate::system_functions::keccak256::keccak256_native_cost;
+use crate::system_implementation::caches::cache_element_properties::CacheElementProperties;
 use crate::system_implementation::flat_storage_model::account_cache_entry::AccountProperties;
 use crate::system_implementation::flat_storage_model::bytecode_padding_len;
 use crate::system_implementation::flat_storage_model::cost_constants::*;
@@ -20,7 +21,6 @@ use ruint::aliases::U256;
 use storage_models::common_structs::AccountAggregateDataHash;
 use storage_models::common_structs::PreimageCacheModel;
 use storage_models::common_structs::StorageCacheModel;
-use zk_ee::common_structs::cache_record::Appearance;
 use zk_ee::common_structs::cache_record::CacheRecord;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
 use zk_ee::common_structs::history_map::HistoryMap;
@@ -56,6 +56,7 @@ type AddressItem<'a, A> = HistoryMapItemRefMut<
     BitsOrd<160, 3>,
     CacheRecord<AccountProperties, AccountPropertiesMetadata>,
     A,
+    CacheElementProperties,
 >;
 
 pub struct NewModelAccountCache<
@@ -65,8 +66,12 @@ pub struct NewModelAccountCache<
     SF: StackFactory<M>,
     const M: usize,
 > {
-    pub(crate) cache:
-        HistoryMap<BitsOrd160, CacheRecord<AccountProperties, AccountPropertiesMetadata>, A>,
+    pub(crate) cache: HistoryMap<
+        BitsOrd160,
+        CacheRecord<AccountProperties, AccountPropertiesMetadata>,
+        A,
+        CacheElementProperties,
+    >,
     // Note: this doesn't need to be equal to the actual tx number in the block, it just needs to be able to differentiate between transactions.
     pub(crate) current_tx_id: u32,
     alloc: A,
@@ -159,6 +164,7 @@ impl<
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
         is_access_list: bool,
+        observe: bool,
     ) -> Result<AddressItem<A>, SystemError> {
         let ergs = match ee_type {
             ExecutionEnvironmentType::NoEE => {
@@ -215,7 +221,7 @@ impl<
                 )?;
 
                 let acc_data = match empty_account {
-                    true => (AccountProperties::default(), Appearance::Unset),
+                    true => AccountProperties::default(),
                     false => {
                         let preimage = preimages_cache.get_preimage::<PROOF_ENV>(
                             ee_type,
@@ -231,18 +237,18 @@ impl<
                         // it's redundant as preimages cache should just check it, but why not
                         assert_eq!(preimage.len(), AccountProperties::ENCODED_SIZE);
 
-                        let props =
-                            AccountProperties::decode(preimage.try_into().map_err(|_| {
-                                internal_error!("Unexpected preimage length for AccountProperties")
-                            })?);
-
-                        (props, Appearance::Retrieved)
+                        AccountProperties::decode(preimage.try_into().map_err(|_| {
+                            internal_error!("Unexpected preimage length for AccountProperties")
+                        })?)
                     }
                 };
 
                 // Note: we initialize it as cold, should be warmed up separately
                 // Since in case of revert it should become cold again and initial record can't be rolled back
-                Ok(CacheRecord::new(acc_data.0, acc_data.1))
+                Ok((
+                    CacheRecord::new(acc_data),
+                    CacheElementProperties::new(empty_account, observe),
+                ))
             })
             .and_then(|mut x| {
                 // Warm up element according to EVM rules if needed
@@ -256,7 +262,7 @@ impl<
                             address,
                             is_selfdestruct,
                         )?;
-                        let empty_account = x.current().appearance() == Appearance::Unset;
+                        let empty_account = x.element_properties().is_new_element();
                         Self::charge_native_for_cold_access(
                             ee_type,
                             resources,
@@ -296,6 +302,7 @@ impl<
             oracle,
             is_selfdestruct,
             false,
+            true,
         )?;
 
         resources.charge(&R::from_native(R::Native::from_computational(
@@ -506,6 +513,7 @@ impl<
             oracle,
             false,
             is_access_list,
+            false,
         )?;
         Ok(())
     }
@@ -571,6 +579,7 @@ impl<
             oracle,
             false,
             false,
+            true,
         )?;
 
         let full_data = account_data.current().value();
@@ -654,6 +663,7 @@ impl<
             oracle,
             false,
             false,
+            true,
         )?;
 
         resources.charge(&R::from_native(R::Native::from_computational(
@@ -786,6 +796,7 @@ impl<
                 oracle,
                 false,
                 false,
+                true,
             )
         })?;
 
@@ -902,6 +913,7 @@ impl<
             oracle,
             false,
             false,
+            true,
         )?;
 
         let request = PreimageRequest {
@@ -997,6 +1009,7 @@ impl<
                 oracle,
                 false,
                 false,
+                true,
             )
         })?;
 
@@ -1116,6 +1129,7 @@ impl<
             oracle,
             true,
             false,
+            false,
         )?;
         resources.charge(&R::from_native(R::Native::from_computational(
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
@@ -1133,10 +1147,14 @@ impl<
             account_data.current().metadata().deployed_in_tx == Some(cur_tx) || in_constructor;
 
         if should_be_deconstructed {
-            account_data.update::<_, SystemError>(|cache_record| {
-                cache_record.deconstruct();
-                Ok(())
-            })?
+            account_data.element_properties_mut().mark_value_as_known();
+            account_data.update(|data| {
+                data.update_metadata(|metadata| {
+                    metadata.is_marked_for_deconstruction = true;
+
+                    Ok(())
+                })
+            })?;
         }
 
         // First do the token transfer
@@ -1198,11 +1216,14 @@ impl<
         self.current_tx_id += 1;
 
         // Actually deconstructing accounts
-        self.cache
-            .apply_to_last_record_of_pending_changes(|key, head_history_record| {
-                if head_history_record.value.appearance() == Appearance::Deconstructed {
-                    head_history_record.value.finish_deconstruction()?;
-                    head_history_record.value.update(|x, _| {
+        self.cache.apply_to_last_record_of_pending_changes(
+            |key, (_initial, current), cache_appearance| {
+                if current.value.metadata().is_marked_for_deconstruction {
+                    // NOTE: it can only happen if the account is initially empty,
+                    // so we need to make sure that it was observed earlier - when bytecode was deployed
+                    assert!(cache_appearance.is_value_known());
+                    current.value.update(|x, metadata| {
+                        metadata.is_marked_for_deconstruction = false;
                         *x = AccountProperties::TRIVIAL_VALUE;
                         Ok(())
                     })?;
@@ -1212,7 +1233,8 @@ impl<
                         .expect("must clear state for code deconstruction in same TX");
                 }
                 Ok(())
-            })?;
+            },
+        )?;
 
         Ok(())
     }
