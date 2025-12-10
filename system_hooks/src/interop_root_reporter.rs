@@ -16,7 +16,7 @@ pub const INTEROP_ROOT_ADDED_EVENT_SIG: [u8; 32] = [
     0x69, 0xd0, 0x39, 0x76, 0x6c, 0x42, 0x54, 0xa6, 0xe7, 0xf9, 0xc0, 0xee, 0x17, 0x15, 0xcd, 0xb0,
 ];
 
-pub fn interop_root_reporter_event_hook<'a, S: EthereumLikeTypes>(
+pub fn interop_root_reporter_event_hook<S: EthereumLikeTypes>(
     topics: &arrayvec::ArrayVec<<S::IOTypes as SystemIOTypesConfig>::EventKey, MAX_EVENT_TOPICS>,
     data: &[u8],
     _caller_ee: u8,
