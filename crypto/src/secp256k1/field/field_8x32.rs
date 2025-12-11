@@ -230,28 +230,33 @@ mod tests {
     use super::FieldElement8x32;
     use proptest::{prop_assert_eq, proptest};
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_invert() {
-        proptest!(|(x: FieldElement8x32)| {
-            let mut a = x;
-            a.invert_in_place();
-            a.invert_in_place();
-            prop_assert_eq!(a, x);
+        std::thread::Builder::new()
+            .stack_size(1 << 24)
+            .spawn(|| {
+                proptest!(|(x: FieldElement8x32)| {
+                    let mut a = x;
+                    a.invert_in_place();
+                    a.invert_in_place();
+                    prop_assert_eq!(a, x);
 
-            a = x;
-            a.invert_in_place();
-            a.mul_in_place(&x);
+                    a = x;
+                    a.invert_in_place();
+                    a.mul_in_place(&x);
 
-            if x.normalizes_to_zero() {
-                prop_assert_eq!(a, FieldElement8x32::ZERO);
-            } else {
-                prop_assert_eq!(a, FieldElement8x32::ONE);
-            }
-        })
+                    if x.normalizes_to_zero() {
+                        prop_assert_eq!(a, FieldElement8x32::ZERO);
+                    } else {
+                        prop_assert_eq!(a, FieldElement8x32::ONE);
+                    }
+                })
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul() {
         proptest!(|(x: FieldElement8x32, y: FieldElement8x32, z: FieldElement8x32)| {
@@ -295,7 +300,6 @@ mod tests {
         })
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_add() {
         proptest!(|(x: FieldElement8x32, y: FieldElement8x32, z: FieldElement8x32)| {
@@ -340,7 +344,6 @@ mod tests {
         })
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn from_bytes_round() {
         proptest!(|(bytes: [u8; 32])| {
@@ -348,7 +351,6 @@ mod tests {
         })
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn to_bytes_round() {
         proptest!(|(x: FieldElement8x32)| {

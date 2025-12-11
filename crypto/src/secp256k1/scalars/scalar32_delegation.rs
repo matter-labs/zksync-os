@@ -323,7 +323,6 @@ mod tests {
     use super::ScalarInner;
     use proptest::{prop_assert_eq, proptest};
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_zero() {
         let zero = ScalarInner::ZERO;
@@ -337,7 +336,6 @@ mod tests {
         assert_ne!(zero, one);
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul() {
         proptest!(|(x: ScalarInner, y: ScalarInner, z: ScalarInner)| {
@@ -380,7 +378,6 @@ mod tests {
         })
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_add() {
         proptest!(|(x: ScalarInner, y: ScalarInner, z: ScalarInner)| {
@@ -409,7 +406,6 @@ mod tests {
         })
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn to_bytes_round() {
         proptest!(|(x: ScalarInner)| {
@@ -417,7 +413,6 @@ mod tests {
         })
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn from_bytes_round() {
         proptest!(|(bytes: [u8; 32])| {
@@ -425,7 +420,6 @@ mod tests {
         });
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn to_montgomery_round() {
         proptest!(|(x: ScalarInner)| {

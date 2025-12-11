@@ -212,7 +212,6 @@ mod tests {
     use ark_ff::{AdditiveGroup, Field, Zero};
     use proptest::{prop_assert_eq, proptest};
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_inverse_properties() {
         proptest!(|(x: Fr)| {
@@ -225,7 +224,6 @@ mod tests {
         })
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul_properties() {
         proptest!(|(x: Fr, y: Fr, z: Fr)| {
@@ -237,7 +235,6 @@ mod tests {
         })
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_add_properties() {
         proptest!(|(x: Fr, y: Fr, z: Fr)| {
