@@ -226,13 +226,15 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
     fn finish_tx(&mut self) {
         assert_eq!(self.current_call_depth, 0);
         assert!(self.unfinished_calls.is_empty());
-        assert_eq!(self.finished_calls.len(), 1);
 
         // Sanity check
         assert!(self.create_operation_requested.is_none());
 
-        self.transactions
-            .push(self.finished_calls.pop().expect("Should exist"));
+        // We can have some edge cases when tx fails before any call frame is created
+        // In this case currently we just skip that transaction
+        if let Some(top_level_call) = self.finished_calls.pop() {
+            self.transactions.push(top_level_call);
+        }
     }
 
     #[inline(always)]

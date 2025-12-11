@@ -7,7 +7,8 @@
 
 use rig::alloy::primitives::address;
 use rig::forward_system::system::tracers::call_tracer::{CallTracer, CallType};
-use rig::ruint::aliases::B160;
+use rig::ruint::aliases::{B160, U256};
+use rig::BlockContext;
 
 use crate::tracer::run_chain_with_tracer;
 
@@ -29,6 +30,7 @@ fn test_call_tracer_basic_call() {
         contract_address,
         vec![(contract_address, test_contract_bytecode)],
         &mut tracer,
+        None,
     );
 
     // Verify transaction was captured
@@ -74,6 +76,7 @@ fn test_call_tracer_nested_calls() {
             (contract_b_address, contract_b_bytecode),
         ],
         &mut tracer,
+        None,
     );
 
     // Verify transaction was captured
@@ -120,6 +123,7 @@ fn test_call_tracer_with_logs() {
         contract_address,
         vec![(contract_address, test_contract_bytecode)],
         &mut tracer,
+        None,
     );
 
     let call = &tracer.transactions[0];
@@ -147,6 +151,7 @@ fn test_call_tracer_only_top_call() {
             (contract_b_address, contract_b_bytecode),
         ],
         &mut tracer,
+        None,
     );
 
     let main_call = &tracer.transactions[0];
@@ -169,6 +174,7 @@ fn test_call_tracer_return_data() {
         contract_address,
         vec![(contract_address, test_contract_bytecode)],
         &mut tracer,
+        None,
     );
 
     let call = &tracer.transactions[0];
@@ -177,5 +183,38 @@ fn test_call_tracer_return_data() {
     assert_eq!(
         call.output,
         hex::decode("4200000000000000000000000000000000000000000000000000000000000000").unwrap()
+    );
+}
+
+#[test]
+fn test_call_tracer_out_of_native_during_validation() {
+    let contract_address = address!("1000000000000000000000000000000000000001");
+
+    // Simple contract bytecode that returns a value:
+    // PUSH1 0x42    -> 6042
+    // PUSH1 0x00    -> 6000
+    // MSTORE        -> 52     (store 0x42 at memory position 0)
+    // PUSH1 0x20    -> 6020
+    // PUSH1 0x00    -> 6000
+    // RETURN        -> f3     (return 32 bytes from memory position 0)
+    let test_contract_bytecode = hex::decode("604260005260206000f3").unwrap();
+
+    let mut tracer = CallTracer::default();
+
+    let mut block_context = BlockContext::default();
+    block_context.native_price = U256::from(100000); // Set high native price to trigger out-of-native during validation
+
+    run_chain_with_tracer(
+        contract_address,
+        vec![(contract_address, test_contract_bytecode)],
+        &mut tracer,
+        Some(block_context),
+    );
+
+    // Verify transaction was captured
+    assert_eq!(
+        tracer.transactions.len(),
+        0,
+        "Should have no transactions recorded"
     );
 }
