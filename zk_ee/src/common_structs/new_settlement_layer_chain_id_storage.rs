@@ -1,4 +1,6 @@
-use crate::{memory::stack_trait::StackFactory, system::errors::system::SystemError};
+use crate::{
+    internal_error, memory::stack_trait::StackFactory, system::errors::system::SystemError,
+};
 use alloc::alloc::Global;
 use core::alloc::Allocator;
 use ruint::aliases::U256;
@@ -8,9 +10,9 @@ use super::history_counter::{HistoryCounter, HistoryCounterSnapshotId};
 pub type NewSettlementLayerChainIdSnapshotId = HistoryCounterSnapshotId;
 
 ///
-/// Storage for updates to the settlement layer chain id.
-/// We only care about the latest one, as there should only
-/// be at most one such update per batch.
+/// Storage for an update to the settlement layer chain id.
+/// If the system tries to update it more than once, it will
+/// result in an internal error.
 ///
 pub struct NewSettlementLayerChainIdStorage<
     SF: StackFactory<M>,
@@ -37,6 +39,12 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone>
     }
 
     pub fn update(&mut self, new_sl_chain_id: U256) -> Result<(), SystemError> {
+        if !self.value().is_zero() {
+            return Err(internal_error!(
+                "Tried to update settlement layer chain id more than once in a block"
+            )
+            .into());
+        }
         self.history.update(new_sl_chain_id);
 
         Ok(())
