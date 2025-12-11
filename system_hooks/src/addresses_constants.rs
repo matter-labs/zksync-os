@@ -44,7 +44,10 @@ pub const IMMUTABLE_SIMULATOR_ADDRESS: B160 = B160::from_limbs([0x8005, 0, 0]);
 pub const FORCE_DEPLOYER_ADDRESS: B160 = B160::from_limbs([0x8007, 0, 0]);
 pub const MSG_VALUE_SIMULATOR_ADDRESS: B160 = B160::from_limbs([0x8009, 0, 0]);
 pub const BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([0x800a, 0, 0]);
-pub const SYSTEM_CONTEXT_ADDRESS: B160 = B160::from_limbs([0x800b, 0, 0]);
+
+pub const SYSTEM_CONTEXT_ADDRESS_LOW: u32 = 0x800b;
+pub const SYSTEM_CONTEXT_ADDRESS: B160 =
+    B160::from_limbs([SYSTEM_CONTEXT_ADDRESS_LOW as u64, 0, 0]);
 // TODO: bootloader utilities is no longer needed
 pub const BOOTLOADER_UTILITIES_ADDRESS: B160 = B160::from_limbs([0x800c, 0, 0]);
 pub const EVENT_WRITER_ADDRESS: B160 = B160::from_limbs([0x800d, 0, 0]);
