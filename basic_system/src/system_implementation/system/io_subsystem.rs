@@ -29,6 +29,8 @@ use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
+use zk_ee::common_structs::new_settlement_layer_chain_id_storage;
+use zk_ee::common_structs::new_settlement_layer_chain_id_storage::NewSettlementLayerChainIdStorage;
 use zk_ee::common_structs::ProofData;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
 use zk_ee::interface_error;
@@ -62,6 +64,7 @@ pub struct FullIO<
     pub(crate) logs_storage: LogsStorage<SF, M, A>,
     pub(crate) events_storage: EventsStorage<MAX_EVENT_TOPICS, SF, M, A>,
     pub(crate) interop_root_storage: InteropRootStorage<SF, M, A>,
+    pub(crate) new_settlement_layer_chain_id_storage: NewSettlementLayerChainIdStorage<SF, M, A>,
     pub(crate) allocator: A,
     pub(crate) oracle: O,
     pub(crate) tx_number: u32,
@@ -606,6 +609,7 @@ impl<
             self.interop_root_storage.iter(),
             &mut crypto::sha3::Keccak256::new(),
         );
+        let new_settlement_layer_chain_id = self.new_settlement_layer_chain_id_storage.value();
 
         // other outputs to be opened on the settlement layer/aggregation program
         let block_output = BlocksOutput {
@@ -617,6 +621,7 @@ impl<
             l2_to_l1_logs_hashes_hash: l2_to_l1_logs_hashes_hash.into(),
             upgrade_tx_hash,
             interop_roots_rolling_hash,
+            new_settlement_layer_chain_id,
         };
 
         let public_input = BlocksPublicInput {
@@ -749,6 +754,7 @@ impl<
             self.interop_root_storage.iter(),
             &mut crypto::sha3::Keccak256::new(),
         );
+        let new_settlement_layer_chain_id = self.new_settlement_layer_chain_id_storage.value();
 
         let batch_output = public_input::BatchOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
@@ -761,6 +767,7 @@ impl<
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash,
             interop_roots_rolling_hash,
+            new_settlement_layer_chain_id,
         };
         logger_log!(logger, "PI calculation: batch output {batch_output:?}\n",);
 
@@ -932,6 +939,7 @@ where
         };
 
         let interop_roots_iter = self.interop_root_storage.iter();
+        let new_settlement_layer_chain_id = self.new_settlement_layer_chain_id_storage.value();
 
         builder.apply_block(
             chain_state_commitment_before.hash().into(),
@@ -940,6 +948,7 @@ where
             U256::try_from(block_metadata.chain_id).unwrap(),
             upgrade_tx_hash,
             interop_roots_iter,
+            new_settlement_layer_chain_id,
         );
 
         self.oracle
@@ -976,6 +985,8 @@ where
             EventsStorage::<MAX_EVENT_TOPICS, SF, M, A>::new_from_parts(allocator.clone());
         let interop_root_storage =
             InteropRootStorage::<SF, M, A>::new_from_parts(allocator.clone());
+        let new_settlement_layer_chain_id_storage =
+            NewSettlementLayerChainIdStorage::<SF, M, A>::new_from_parts(allocator.clone());
 
         let da_commitment_scheme = if PROOF_ENV {
             Some(DACommitmentScheme::try_from_oracle(&mut oracle)?)
@@ -992,6 +1003,7 @@ where
             oracle,
             tx_number: 0u32,
             da_commitment_scheme,
+            new_settlement_layer_chain_id_storage,
         };
 
         Ok(new)
