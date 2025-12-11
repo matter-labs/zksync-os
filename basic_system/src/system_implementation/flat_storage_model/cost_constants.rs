@@ -54,6 +54,11 @@ const INTEROP_ROOT_BYTE_LENGTH: u64 = 32 * 3;
 pub const INTEROP_ROOT_STORAGE_NATIVE_COST: u64 =
     EVENT_STORAGE_BASE_NATIVE_COST + INTEROP_ROOT_BYTE_LENGTH * EVENT_DATA_PER_BYTE_COST;
 
+// Same costs as for events, as the same structure is used.
+pub const SL_CHAIN_ID_BYTE_LENGTH: u64 = 32;
+pub const NEW_SL_CHAIN_ID_STORAGE_NATIVE_COST: u64 =
+    EVENT_STORAGE_BASE_NATIVE_COST + SL_CHAIN_ID_BYTE_LENGTH * EVENT_DATA_PER_BYTE_COST;
+
 // Helper to compute hashing native cost
 pub fn blake2s_native_cost(len: usize) -> u64 {
     let num_rounds = (len as u64).div_ceil(BLAKE2S_CHUNK_SIZE);

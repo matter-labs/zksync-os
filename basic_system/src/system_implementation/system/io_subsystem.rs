@@ -12,6 +12,7 @@ use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
 use cost_constants::INTEROP_ROOT_STORAGE_NATIVE_COST;
+use cost_constants::NEW_SL_CHAIN_ID_STORAGE_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use crypto::blake2s::Blake2s256;
@@ -29,7 +30,6 @@ use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
-use zk_ee::common_structs::new_settlement_layer_chain_id_storage;
 use zk_ee::common_structs::new_settlement_layer_chain_id_storage::NewSettlementLayerChainIdStorage;
 use zk_ee::common_structs::ProofData;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
@@ -253,6 +253,24 @@ impl<
         resources.charge(&to_charge)?;
 
         self.interop_root_storage.push_root(interop_root)
+    }
+
+    fn update_settlement_layer_chain_id(
+        &mut self,
+        _ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        new_sl_chain_id: U256,
+    ) -> Result<(), SystemError> {
+        // For native we charge just for the storage
+        let native = <Self::Resources as Resources>::Native::from_computational(
+            NEW_SL_CHAIN_ID_STORAGE_NATIVE_COST,
+        );
+
+        let to_charge = Self::Resources::from_native(native);
+        resources.charge(&to_charge)?;
+
+        self.new_settlement_layer_chain_id_storage
+            .update(new_sl_chain_id)
     }
 
     fn get_nominal_token_balance(

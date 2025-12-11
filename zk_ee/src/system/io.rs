@@ -120,6 +120,14 @@ pub trait IOSubsystem: Sized {
         interop_root: InteropRoot,
     ) -> Result<(), SystemError>;
 
+    /// Update settlement layer chain id.
+    fn update_settlement_layer_chain_id(
+        &mut self,
+        ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        new_sl_chain_id: U256,
+    ) -> Result<(), SystemError>;
+
     /// Mark an account to be destructed at the end of the transaction.
     /// Perform token transfer to beneficiary. Returns amount of token transferred.
     fn mark_for_deconstruction(
