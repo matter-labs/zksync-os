@@ -96,7 +96,7 @@ pub enum CreateType {
 
 #[derive(Default)]
 pub struct CallTracer {
-    pub transactions: Vec<Call>,
+    pub transactions: Vec<Option<Call>>,
     pub unfinished_calls: Vec<Call>,
     pub finished_calls: Vec<Call>,
     pub current_call_depth: usize,
@@ -231,10 +231,9 @@ impl<S: EthereumLikeTypes> Tracer<S> for CallTracer {
         assert!(self.create_operation_requested.is_none());
 
         // We can have some edge cases when tx fails before any call frame is created
-        // In this case currently we just skip that transaction
-        if let Some(top_level_call) = self.finished_calls.pop() {
-            self.transactions.push(top_level_call);
-        }
+        // In this case currently we just push `None` here
+        let top_level_call = self.finished_calls.pop();
+        self.transactions.push(top_level_call);
     }
 
     #[inline(always)]

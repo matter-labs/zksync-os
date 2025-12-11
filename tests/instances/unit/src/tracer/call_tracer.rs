@@ -40,7 +40,9 @@ fn test_call_tracer_basic_call() {
         "Should have one transaction recorded"
     );
 
-    let call = &tracer.transactions[0];
+    let call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
 
     // Verify basic call properties
     assert!(matches!(call.call_type, CallType::Call));
@@ -86,7 +88,9 @@ fn test_call_tracer_nested_calls() {
         "Should have one transaction recorded"
     );
 
-    let main_call = &tracer.transactions[0];
+    let main_call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
 
     // Verify main call has subcalls
     assert_eq!(main_call.calls.len(), 1, "Should have one subcall");
@@ -126,7 +130,9 @@ fn test_call_tracer_with_logs() {
         None,
     );
 
-    let call = &tracer.transactions[0];
+    let call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
 
     assert_eq!(call.logs.len(), 1);
 }
@@ -154,7 +160,9 @@ fn test_call_tracer_only_top_call() {
         None,
     );
 
-    let main_call = &tracer.transactions[0];
+    let main_call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
 
     assert_eq!(main_call.calls.len(), 0)
 }
@@ -177,7 +185,9 @@ fn test_call_tracer_return_data() {
         None,
     );
 
-    let call = &tracer.transactions[0];
+    let call = tracer.transactions[0]
+        .as_ref()
+        .expect("Should be populated");
 
     // Verify output data is captured
     assert_eq!(
@@ -211,10 +221,7 @@ fn test_call_tracer_out_of_native_during_validation() {
         Some(block_context),
     );
 
-    // Verify transaction was captured
-    assert_eq!(
-        tracer.transactions.len(),
-        0,
-        "Should have no transactions recorded"
-    );
+    let call = &tracer.transactions[0];
+
+    assert!(call.is_none());
 }

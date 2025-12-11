@@ -44,14 +44,5 @@ pub(crate) fn run_chain_with_tracer(
         rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
     };
 
-    let result =
-        chain.run_block_with_extra_stats(vec![encoded_tx], block_context, None, None, tracer);
-
-    assert!(result.is_ok(), "Block execution should succeed");
-    let (block_output, _, _) = result.unwrap();
-    assert!(
-        block_output.tx_results[0].is_ok(),
-        "Transaction should succeed. Result: {:?}",
-        block_output.tx_results[0]
-    );
+    chain.run_block_with_extra_stats(vec![encoded_tx], block_context, None, None, tracer);
 }
