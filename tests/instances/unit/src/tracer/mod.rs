@@ -16,6 +16,7 @@ pub(crate) fn run_chain_with_tracer(
     to: Address,
     contracts: Vec<(Address, Vec<u8>)>,
     tracer: &mut CallTracer,
+    block_context: Option<BlockContext>,
 ) {
     let mut chain = Chain::empty(None);
     let wallet = chain.random_signer();
