@@ -232,29 +232,22 @@ mod tests {
 
     #[test]
     fn test_invert() {
-        std::thread::Builder::new()
-            .stack_size(1 << 24)
-            .spawn(|| {
-                proptest!(|(x: FieldElement8x32)| {
-                    let mut a = x;
-                    a.invert_in_place();
-                    a.invert_in_place();
-                    prop_assert_eq!(a, x);
+        proptest!(|(x: FieldElement8x32)| {
+            let mut a = x;
+            a.invert_in_place();
+            a.invert_in_place();
+            prop_assert_eq!(a, x);
 
-                    a = x;
-                    a.invert_in_place();
-                    a.mul_in_place(&x);
+            a = x;
+            a.invert_in_place();
+            a.mul_in_place(&x);
 
-                    if x.normalizes_to_zero() {
-                        prop_assert_eq!(a, FieldElement8x32::ZERO);
-                    } else {
-                        prop_assert_eq!(a, FieldElement8x32::ONE);
-                    }
-                })
-            })
-            .unwrap()
-            .join()
-            .unwrap();
+            if x.normalizes_to_zero() {
+                prop_assert_eq!(a, FieldElement8x32::ZERO);
+            } else {
+                prop_assert_eq!(a, FieldElement8x32::ONE);
+            }
+        })
     }
 
     #[test]

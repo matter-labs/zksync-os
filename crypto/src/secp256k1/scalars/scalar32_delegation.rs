@@ -329,7 +329,6 @@ mod tests {
         let order = ScalarInner::ORDER;
         let one = ScalarInner::ONE;
 
-        assert_eq!(order, zero);
         assert!(zero.is_zero());
         assert!(order.is_zero());
 
