@@ -48,7 +48,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BlobCommitmentAndProofQuery<M>
         let data_len = it.next().unwrap() as u32;
         assert!(
             it.next().is_none(),
-            "A single RISC-V ptr should've been passed."
+            "RISC-V ptr and len should've been passed."
         );
 
         assert!(data_ptr.is_multiple_of(4));
