@@ -10,12 +10,8 @@ use super::errors::internal::InternalError;
 use super::errors::system::SystemError;
 use super::logger::Logger;
 use super::{IOResultKeeper, Resources};
-use crate::common_structs::{
-    GenericEventContentRef, GenericEventContentWithTxRef, GenericLogContentWithTxRef,
-};
 use crate::define_subsystem;
 use crate::execution_environment_type::ExecutionEnvironmentType;
-use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::oracle::IOOracle;
 use crate::storage_types::MAX_EVENT_TOPICS;
 use crate::system::metadata::zk_metadata::BlockMetadataFromOracle;
@@ -520,66 +516,6 @@ pub trait IOSubsystemExt: IOSubsystem {
 }
 
 pub trait EthereumLikeIOSubsystem: IOSubsystem<IOTypes = EthereumIOTypesConfig> {}
-
-// Proxy trait that allows one to get dumps of the final IO state. Largely it provides iterator-based accesses
-// to various elements of the IO:
-// - account and storages diffs
-// - logs
-// - l2 to l1 logs (if any)
-pub trait IOTeardown<IOTypes: SystemIOTypesConfig>: IOSubsystemExt<IOTypes = IOTypes> {
-    type IOStateCommitment: Clone + UsizeSerializable + UsizeDeserializable + core::fmt::Debug;
-
-    fn flush_caches(&mut self, result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>);
-
-    fn report_new_preimages(
-        &mut self,
-        result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
-    );
-
-    type AccountAddress<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
-    where
-        Self: 'a;
-    type AccountDiff<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
-    where
-        Self: 'a;
-    fn get_account_diff<'a>(
-        &'a self,
-        address: Self::AccountAddress<'a>,
-    ) -> Option<Self::AccountDiff<'a>>;
-    fn accounts_diffs_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = (Self::AccountAddress<'a>, Self::AccountDiff<'a>)> + Clone;
-
-    type StorageKey<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
-    where
-        Self: 'a;
-    type StorageDiff<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
-    where
-        Self: 'a;
-    fn get_storage_diff<'a>(&'a self, key: Self::StorageKey<'a>) -> Option<Self::StorageDiff<'a>>;
-    fn storage_diffs_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = (Self::StorageKey<'a>, Self::StorageDiff<'a>)> + Clone;
-
-    fn events_in_this_tx_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = GenericEventContentRef<'a, { MAX_EVENT_TOPICS }, IOTypes>> + Clone;
-
-    fn events_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = GenericEventContentWithTxRef<'a, { MAX_EVENT_TOPICS }, IOTypes>>
-           + Clone;
-    fn signals_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = GenericLogContentWithTxRef<'a, IOTypes>> + Clone;
-
-    fn update_commitment(
-        &mut self,
-        state_commitment: Option<&mut Self::IOStateCommitment>,
-        logger: &mut impl Logger,
-        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
-    );
-}
 
 define_subsystem!(Nonce,
 interface NonceError {
