@@ -9,12 +9,12 @@ impl<
 where
     S::IO: IOSubsystemExt,
 {
-    type BlockData = ZKBasicTransactionDataKeeper;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper;
     type BlockHeader = crate::bootloader::block_header::BlockHeader;
 
     fn post_op(
         system: System<S>,
-        block_data: Self::BlockData,
+        block_data: Self::BlockDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig, BlockHeader = Self::BlockHeader>,
     ) -> Result<<S::IO as IOSubsystemExt>::FinalData, BootloaderSubsystemError> {
         let tx_rolling_hash = block_data.transaction_hashes_accumulator.finish();

@@ -49,6 +49,11 @@ pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 28; // 256 MB
 pub(crate) const EVM_EE_BYTE: u8 = ExecutionEnvironmentType::EVM_EE_BYTE;
 pub const DEBUG_OUTPUT: bool = false;
 
+/// Generic bootloader implementation using composable block execution flow.
+///
+/// This bootloader uses the State Transition Function (STF) trait to compose
+/// different execution phases (metadata init, system init, transaction loop, finalization)
+/// into a complete block execution pipeline.
 pub struct BasicBootloader<S: EthereumLikeTypes, F: BasicTransactionFlow<S>>
 where
     S::IO: IOSubsystemExt,

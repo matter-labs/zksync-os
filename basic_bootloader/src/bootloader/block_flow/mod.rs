@@ -9,7 +9,7 @@ mod tx_loop;
 
 pub mod zk_block_flow;
 
-pub use self::block_data_keeper::{BlockTransactionsDataCollector, NopTransactionDataKeeper};
+pub use self::block_data_keeper::{BlockTransactionsDataKeeper, NopTransactionDataKeeper};
 pub use self::metadata_init_op::*;
 pub use self::post_system_init_op::*;
 pub use self::post_tx_loop_op::PostTxLoopOp;

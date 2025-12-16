@@ -5,13 +5,13 @@ impl<S: EthereumLikeTypes> PreTxLoopOp<S> for ZKHeaderStructurePreTxOp
 where
     S::IO: IOSubsystemExt,
 {
-    type PreTxLoopResult = ZKBasicTransactionDataKeeper;
+    type PreTxLoopResult = ZKBasicBlockDataKeeper;
 
     fn pre_op(
         _system: &mut System<S>,
         _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
     ) -> Self::PreTxLoopResult {
         // Just create data keeper
-        ZKBasicTransactionDataKeeper::new()
+        ZKBasicBlockDataKeeper::new()
     }
 }

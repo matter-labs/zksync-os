@@ -1,7 +1,9 @@
 use zk_ee::system::{IOSubsystemExt, SystemTypes};
 
-/// NOTE: Such keeper is expected to only bookkeep transactions that were actually included and processed
-pub trait BlockTransactionsDataCollector<S: SystemTypes>: core::fmt::Debug
+/// Trait for collecting and tracking data from transactions that are successfully processed in the current block.
+///
+/// NOTE: Only tracks transactions that were actually included and processed successfully.
+pub trait BlockTransactionsDataKeeper<S: SystemTypes>: core::fmt::Debug
 where
     S::IO: IOSubsystemExt,
 {
@@ -10,7 +12,7 @@ where
 #[derive(Debug)]
 pub struct NopTransactionDataKeeper;
 
-impl<S: SystemTypes> BlockTransactionsDataCollector<S> for NopTransactionDataKeeper where
+impl<S: SystemTypes> BlockTransactionsDataKeeper<S> for NopTransactionDataKeeper where
     S::IO: IOSubsystemExt
 {
 }

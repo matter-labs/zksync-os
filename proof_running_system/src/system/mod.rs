@@ -1,7 +1,7 @@
 use crate::io_oracle::CsrBasedIOOracle;
 use crate::system::bootloader::BootloaderAllocator;
 use alloc::alloc::Allocator;
-use basic_bootloader::bootloader::block_flow::ZKBasicTransactionDataKeeper;
+use basic_bootloader::bootloader::block_flow::ZKBasicBlockDataKeeper;
 use basic_bootloader::bootloader::block_flow::ZKHeaderPostInitOp;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePostTxOp;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePreTxOp;
@@ -59,7 +59,7 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for ProofRunningSystemTypes<O
 impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes for ProofRunningSystemTypes<O, L> {}
 
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper = ZKBasicTransactionDataKeeper;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper;
     type BlockHeader = basic_bootloader::bootloader::block_header::BlockHeader;
     type MetadataOp = zk_ee::system::metadata::zk_metadata::ZkMetadata;
     type PostSystemInitOp = ZKHeaderPostInitOp;

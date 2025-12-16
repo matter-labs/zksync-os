@@ -9,13 +9,13 @@ where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata,
 {
-    type BlockData = ZKBasicTransactionDataKeeper;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper;
 
     fn loop_op<'a, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         mut memories: RunnerMemoryBuffers<'a>,
-        block_data: &mut Self::BlockData,
+        block_data: &mut Self::BlockDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<(), BootloaderSubsystemError> {
