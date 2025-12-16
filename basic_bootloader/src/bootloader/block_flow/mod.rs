@@ -1,7 +1,6 @@
 use super::*;
 
 mod block_data_keeper;
-mod chain_check;
 mod metadata_init_op;
 mod post_system_init_op;
 mod post_tx_loop_op;
@@ -11,7 +10,6 @@ mod tx_loop;
 pub mod zk_block_flow;
 
 pub use self::block_data_keeper::{BlockTransactionsDataCollector, NopTransactionDataKeeper};
-pub use self::chain_check::*;
 pub use self::metadata_init_op::*;
 pub use self::post_system_init_op::*;
 pub use self::post_tx_loop_op::PostTxLoopOp;
