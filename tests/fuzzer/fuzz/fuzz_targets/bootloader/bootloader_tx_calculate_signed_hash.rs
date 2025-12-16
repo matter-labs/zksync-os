@@ -3,7 +3,7 @@
 #![feature(generic_const_exprs)]
 
 use basic_bootloader::bootloader::transaction::AbiEncodedTransaction;
-use rig::forward_system::system::system::ForwardRunningSystem;
+use rig::forward_system::system::system_types::ForwardRunningSystem;
 use zk_ee::reference_implementations::BaseResources;
 use zk_ee::reference_implementations::DecreasingNative;
 use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;

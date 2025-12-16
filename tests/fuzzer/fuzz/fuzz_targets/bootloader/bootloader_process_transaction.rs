@@ -12,7 +12,7 @@ use basic_bootloader::bootloader::BasicBootloader;
 use common::{mock_oracle_balance, mutate_transaction};
 use libfuzzer_sys::{fuzz_mutator, fuzz_target};
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource};
-use rig::forward_system::system::system::ForwardRunningSystem;
+use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::U256;
 use system_hooks::HooksStorage;
 use zk_ee::system::tracer::NopTracer;
