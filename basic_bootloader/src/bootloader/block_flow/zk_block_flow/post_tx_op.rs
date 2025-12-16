@@ -43,7 +43,7 @@ where
         let block_header = BlockHeader::new(
             previous_block_hash,
             beneficiary,
-            tx_rolling_hash.into(),
+            tx_rolling_hash,
             block_number,
             gas_limit,
             block_gas_used,
