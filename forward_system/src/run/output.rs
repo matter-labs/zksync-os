@@ -44,8 +44,10 @@ impl StorageWriteExt for StorageWrite {
     }
 }
 
-impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BlockOutput {
-    fn from(value: ForwardRunningResultKeeper<TR>) -> Self {
+impl<TR: TxResultCallback, T: 'static + Sized> From<ForwardRunningResultKeeper<TR, T>>
+    for BlockOutput
+{
+    fn from(value: ForwardRunningResultKeeper<TR, T>) -> Self {
         let ForwardRunningResultKeeper {
             block_header,
             events,

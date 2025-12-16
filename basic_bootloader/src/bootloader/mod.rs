@@ -7,6 +7,7 @@ use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
+pub mod block_flow;
 pub mod run_single_interaction;
 pub mod runner;
 pub mod supported_ees;
@@ -76,7 +77,7 @@ where
     /// and in prover (where oracle uses CRS registers to communicate).
     pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
         mut oracle: <S::IO as IOSubsystemExt>::IOOracle,
-        result_keeper: &mut impl ResultKeeperExt,
+        result_keeper: &mut impl ResultKeeperExt<S::IOTypes, BlockHeader = BlockHeader>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<<S::IO as IOSubsystemExt>::FinalData, BootloaderSubsystemError>
     where

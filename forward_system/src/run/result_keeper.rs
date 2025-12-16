@@ -15,8 +15,9 @@ use zk_ee::utils::{Bytes32, UsizeAlignedByteBox};
 // Use interface type as the direct place-in, can be changed in the future.
 pub use zksync_os_interface::types::TxProcessingOutputOwned;
 
-pub struct ForwardRunningResultKeeper<TR: TxResultCallback> {
+pub struct ForwardRunningResultKeeper<TR: TxResultCallback, T: 'static + Sized = ()> {
     pub block_header: Option<BlockHeader>,
+    pub block_header_t: Option<T>, // TODO phantom?
     pub events: Vec<GenericEventContent<MAX_EVENT_TOPICS, EthereumIOTypesConfig>>,
     pub logs: Vec<GenericLogContent<EthereumIOTypesConfig>>,
     pub storage_writes: Vec<(B160, Bytes32, Bytes32)>,
@@ -29,10 +30,11 @@ pub struct ForwardRunningResultKeeper<TR: TxResultCallback> {
     pub tx_result_callback: TR,
 }
 
-impl<TR: TxResultCallback> ForwardRunningResultKeeper<TR> {
+impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T> {
     pub fn new(tx_result_callback: TR) -> Self {
         Self {
             block_header: None,
+            block_header_t: None,
             events: vec![],
             logs: vec![],
             storage_writes: vec![],
@@ -44,8 +46,8 @@ impl<TR: TxResultCallback> ForwardRunningResultKeeper<TR> {
     }
 }
 
-impl<TR: TxResultCallback> IOResultKeeper<EthereumIOTypesConfig>
-    for ForwardRunningResultKeeper<TR>
+impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesConfig>
+    for ForwardRunningResultKeeper<TR, T>
 {
     fn events<'a>(
         &mut self,
@@ -90,7 +92,11 @@ impl<TR: TxResultCallback> IOResultKeeper<EthereumIOTypesConfig>
     }
 }
 
-impl<TR: TxResultCallback> ResultKeeperExt for ForwardRunningResultKeeper<TR> {
+impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesConfig>
+    for ForwardRunningResultKeeper<TR, T>
+{
+    type BlockHeader = T;
+
     fn tx_processed(
         &mut self,
         tx_result: Result<
@@ -121,5 +127,9 @@ impl<TR: TxResultCallback> ResultKeeperExt for ForwardRunningResultKeeper<TR> {
             .iter()
             .map(|r| r.as_ref().map_or(0, |r| r.gas_used))
             .sum()
+    }
+
+    fn record_sealed_block(&mut self, header: Self::BlockHeader) {
+        self.block_header_t = Some(header); // TODO looks like different versions are mixed here
     }
 }
