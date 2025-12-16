@@ -11,7 +11,7 @@ use zk_ee::system::SystemTypes;
 impl<S: SystemTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>> MetadataInitOp<S>
     for zk_ee::system::metadata::zk_metadata::ZkMetadata
 {
-    fn metadata_op<'a, Config: BasicBootloaderExecutionConfig>(
+    fn metadata_op<Config: BasicBootloaderExecutionConfig>(
         oracle: &mut impl IOOracle,
         _allocator: S::Allocator,
     ) -> Result<<S as SystemTypes>::Metadata, InternalError> {
