@@ -1,4 +1,3 @@
-use crate::bootloader::block_header::BlockHeader;
 ///
 /// This module contains definition of the result keeper trait.
 ///
@@ -28,7 +27,7 @@ pub trait ResultKeeperExt<IOTypes: SystemIOTypesConfig>: IOResultKeeper<IOTypes>
 
     fn tx_processed(&mut self, _tx_result: Result<TxProcessingOutput<'_>, InvalidTransaction>) {}
 
-    fn block_sealed(&mut self, _block_header: BlockHeader) {}
+    fn block_sealed(&mut self, _block_header: Self::BlockHeader) {}
 
     fn record_sealed_block(&mut self, _header: Self::BlockHeader) {}
 

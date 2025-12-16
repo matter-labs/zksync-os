@@ -1,5 +1,4 @@
 use crate::run::TxResultCallback;
-use basic_bootloader::bootloader::block_header::BlockHeader;
 use basic_bootloader::bootloader::result_keeper::{ResultKeeperExt, TxProcessingOutput};
 use ruint::aliases::B160;
 use std::alloc::Global;
@@ -16,8 +15,7 @@ use zk_ee::utils::{Bytes32, UsizeAlignedByteBox};
 pub use zksync_os_interface::types::TxProcessingOutputOwned;
 
 pub struct ForwardRunningResultKeeper<TR: TxResultCallback, T: 'static + Sized = ()> {
-    pub block_header: Option<BlockHeader>,
-    pub block_header_t: Option<T>, // TODO phantom?
+    pub block_header: Option<T>,
     pub events: Vec<GenericEventContent<MAX_EVENT_TOPICS, EthereumIOTypesConfig>>,
     pub logs: Vec<GenericLogContent<EthereumIOTypesConfig>>,
     pub storage_writes: Vec<(B160, Bytes32, Bytes32)>,
@@ -34,7 +32,6 @@ impl<TR: TxResultCallback, T: 'static + Sized> ForwardRunningResultKeeper<TR, T>
     pub fn new(tx_result_callback: TR) -> Self {
         Self {
             block_header: None,
-            block_header_t: None,
             events: vec![],
             logs: vec![],
             storage_writes: vec![],
@@ -118,7 +115,7 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
         self.tx_results.push(owned_result);
     }
 
-    fn block_sealed(&mut self, block_header: BlockHeader) {
+    fn block_sealed(&mut self, block_header: Self::BlockHeader) {
         self.block_header = Some(block_header);
     }
 
@@ -127,9 +124,5 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
             .iter()
             .map(|r| r.as_ref().map_or(0, |r| r.gas_used))
             .sum()
-    }
-
-    fn record_sealed_block(&mut self, header: Self::BlockHeader) {
-        self.block_header_t = Some(header); // TODO looks like different versions are mixed here
     }
 }
