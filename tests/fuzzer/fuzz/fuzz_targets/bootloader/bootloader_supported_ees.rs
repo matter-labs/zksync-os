@@ -240,11 +240,12 @@ fn fuzz(input: FuzzInput) {
         return;
     };
 
+    let mut result_keeper: NopResultKeeper<()> = NopResultKeeper::default();
     system.finish(
         Bytes32::default(),
         Bytes32::default(),
         Bytes32::default(),
-        &mut NopResultKeeper::default(),
+        &mut result_keeper,
     );
 }
 
