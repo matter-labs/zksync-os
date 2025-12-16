@@ -893,14 +893,14 @@ where
                 &mut self.oracle,
                 Some(&mut state_commitment),
                 builder.da_commitment_generator.as_mut().unwrap().as_mut(),
-                &mut NopResultKeeper,
+                &mut NopResultKeeper::default(),
                 &mut NullLogger,
             )
             .expect("Failed to finish storage");
 
         self.logs_storage.apply_pubdata(
             builder.da_commitment_generator.as_mut().unwrap().as_mut(),
-            &mut NopResultKeeper,
+            &mut NopResultKeeper::default(),
         );
         self.logs_storage
             .apply_to_array_vec(&mut builder.logs_storage);
