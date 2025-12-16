@@ -13,7 +13,7 @@ use ethers::signers::LocalWallet;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
-use forward_system::system::system::ForwardRunningSystem;
+use forward_system::system::system_types::ForwardRunningSystem;
 use log::{debug, info, trace};
 use oracle_provider::MemorySource;
 use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};

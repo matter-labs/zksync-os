@@ -1,4 +1,3 @@
-use crate::system::system::*;
 use basic_bootloader::bootloader::block_header as basic_booltoader_block_header;
 use basic_bootloader::bootloader::config::BasicBootloaderExecutionConfig;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
@@ -7,6 +6,9 @@ use oracle_provider::DummyMemorySource;
 use oracle_provider::ZkEENonDeterminismSource;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::types_config::EthereumIOTypesConfig;
+
+use crate::system::system_types::ForwardBootloader;
+use crate::system::system_types::ForwardRunningSystem;
 
 ///
 /// Run bootloader with forward system with a given `oracle`.

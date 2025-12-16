@@ -21,9 +21,9 @@ use crate::run::query_processors::ZKProofDataResponder;
 use crate::run::query_processors::{BlockMetadataResponder, DACommitmentSchemeResponder};
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;
-use crate::system::system::CallSimulationBootloader;
-use crate::system::system::CallSimulationSystem;
-use crate::system::system::ForwardRunningSystem;
+use crate::system::system_types::CallSimulationBootloader;
+use crate::system::system_types::CallSimulationSystem;
+use crate::system::system_types::ForwardRunningSystem;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
 };

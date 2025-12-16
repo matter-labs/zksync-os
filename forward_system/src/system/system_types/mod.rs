@@ -1,5 +1,12 @@
 use std::alloc::Global;
 
+use basic_bootloader::bootloader::block_flow::ZKBasicTransactionDataKeeper;
+use basic_bootloader::bootloader::block_flow::ZKHeaderPostInitOp;
+use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePostTxOp;
+use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePreTxOp;
+use basic_bootloader::bootloader::block_flow::ZKHeaderStructureTxLoop;
+use basic_bootloader::bootloader::stf::BasicSTF;
+use basic_bootloader::bootloader::stf::EthereumLikeBasicSTF;
 use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
 use basic_bootloader::bootloader::BasicBootloader;
 use basic_system::system_functions::NoStdSystemFunctions;
@@ -43,6 +50,18 @@ impl<O: IOOracle> SystemTypes for ForwardSystemTypes<O> {
 }
 
 impl<O: IOOracle> EthereumLikeTypes for ForwardSystemTypes<O> {}
+
+impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O> {
+    type BlockDataKeeper = ZKBasicTransactionDataKeeper;
+    type BlockHeader = basic_bootloader::bootloader::block_header::BlockHeader;
+    type PostSystemInitOp = ZKHeaderPostInitOp;
+    type MetadataOp = zk_ee::system::metadata::zk_metadata::ZkMetadata;
+    type PreTxLoopOp = ZKHeaderStructurePreTxOp;
+    type TxLoopOp = ZKHeaderStructureTxLoop;
+    type PostTxLoopOp = ZKHeaderStructurePostTxOp<false>;
+}
+
+impl<O: IOOracle> EthereumLikeBasicSTF for ForwardSystemTypes<O> {}
 
 pub type ForwardRunningSystem = ForwardSystemTypes<ZkEENonDeterminismSource<DummyMemorySource>>;
 

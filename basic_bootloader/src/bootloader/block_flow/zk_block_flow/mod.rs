@@ -5,6 +5,7 @@ use zk_ee::types_config::*;
 mod block_data;
 mod metadata_op;
 mod post_init_op;
+mod post_tx_op;
 mod pre_tx_loop;
 mod tx_loop;
 
@@ -30,7 +31,7 @@ fn check_for_block_limits<S: EthereumLikeTypes>(
     logs_used: u64,
 ) -> Result<(), InvalidTransaction>
 where
-    S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
+    S::IO: IOSubsystemExt,
     <S as SystemTypes>::Metadata: ZkSpecificPricingMetadata,
 {
     if cfg!(feature = "resources_for_tester") {
@@ -64,4 +65,31 @@ where
             Ok(())
         }
     }
+}
+
+/// Check the service block invariants:
+/// 1. If the first tx is a service tx, then the block is a service block
+/// 2. Service transactions can only be processed in service blocks
+/// 3. Non-service transactions cannot be processed in service blocks
+fn check_for_service_block_invariants(
+    is_service_block: &mut bool,
+    is_first_tx: bool,
+    is_service_tx: bool,
+) -> Result<(), InternalError> {
+    //  1. If the first tx is a service tx, then the block is a service block
+    if is_first_tx && is_service_tx {
+        *is_service_block = true;
+    }
+    if *is_service_block {
+        if !is_service_tx {
+            // 3. Non-service transactions cannot be processed in service blocks
+            return Err(internal_error!("Non-service tx in service block"));
+        }
+    } else {
+        // 2. Service transactions can only be processed in service blocks
+        if is_service_tx {
+            return Err(internal_error!("Service tx in non-service block"));
+        }
+    }
+    Ok(())
 }

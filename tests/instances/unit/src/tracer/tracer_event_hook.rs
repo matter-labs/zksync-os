@@ -8,7 +8,7 @@
 
 use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{address, TxKind, U256};
-use rig::forward_system::system::system::ForwardRunningSystem;
+use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::B160;
 use rig::zk_ee::system::tracer::evm_tracer::NopEvmTracer;
 use rig::zk_ee::{

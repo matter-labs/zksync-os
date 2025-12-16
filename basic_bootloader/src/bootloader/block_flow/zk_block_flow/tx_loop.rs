@@ -1,5 +1,3 @@
-use zk_ee::system::metadata::basic_metadata::BasicMetadata;
-
 use super::*;
 use crate::bootloader::{
     block_flow::tx_loop::TxLoopOp, transaction_flow::zk::ZkTransactionFlowOnlyEOA,
@@ -8,9 +6,8 @@ use crate::bootloader::{
 impl<S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>> TxLoopOp<S>
     for ZKHeaderStructureTxLoop
 where
-    S::IO: IOSubsystemExt + IOTeardown<EthereumIOTypesConfig>,
+    S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata,
-    <S::Metadata as BasicMetadata<S::IOTypes>>::TransactionMetadata: From<(B160, U256)>,
 {
     type BlockData = ZKBasicTransactionDataKeeper;
 
@@ -25,6 +22,9 @@ where
         cycle_marker::start!("run_tx_loop");
 
         let mut is_first_tx = true;
+        // Service blocks are blocks that only contain service transactions.
+        // Service transactions can only be included in service blocks.
+        let mut is_service_block = false;
 
         // TODO use preallocated data buffer?
 
@@ -109,6 +109,14 @@ where
                                 "Tx execution result = {:?}\n",
                                 &tx_processing_result,
                             ));
+
+                            // Check for service block invariants
+                            check_for_service_block_invariants(
+                                &mut is_service_block,
+                                is_first_tx,
+                                tx_processing_result.is_service_tx,
+                            )?;
+
                             // Do not update the accumulators yet, we may need to revert the transaction
                             let next_block_gas_used =
                                 block_data.block_gas_used + tx_processing_result.gas_used;
