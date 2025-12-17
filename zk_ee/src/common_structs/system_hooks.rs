@@ -1,4 +1,6 @@
+use crate::internal_error;
 use crate::storage_types::MAX_EVENT_TOPICS;
+use crate::system::errors::internal::InternalError;
 use crate::system::{
     errors::system::SystemError, CompletedExecution, ExternalCallRequest, System, SystemTypes,
 };
@@ -95,20 +97,32 @@ impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
     /// Adds a new call hook into a given address.
     /// Fails if there was another hook registered there before.
     ///
-    pub fn add_call_hook(&mut self, for_address_low: u16, hook: SystemCallHook<S>) {
+    pub fn add_call_hook(
+        &mut self,
+        for_address_low: u16,
+        hook: SystemCallHook<S>,
+    ) -> Result<(), InternalError> {
         let existing = self.call_hooks.insert(for_address_low, hook);
-        // TODO: internal error?
-        assert!(existing.is_none());
+        if existing.is_some() {
+            return Err(internal_error!("System call hook already registered"));
+        }
+        Ok(())
     }
 
     ///
     /// Adds a new event hook into a given address.
     /// Fails if there was another hook registered there before.
     ///
-    pub fn add_event_hook(&mut self, for_address_low: u32, hook: SystemEventHook<S>) {
+    pub fn add_event_hook(
+        &mut self,
+        for_address_low: u32,
+        hook: SystemEventHook<S>,
+    ) -> Result<(), InternalError> {
         let existing = self.event_hooks.insert(for_address_low, hook);
-        // TODO: internal error?
-        assert!(existing.is_none());
+        if existing.is_some() {
+            return Err(internal_error!("System event hook already registered"));
+        }
+        Ok(())
     }
 
     ///

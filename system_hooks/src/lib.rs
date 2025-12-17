@@ -41,6 +41,7 @@ use core::{alloc::Allocator, mem::MaybeUninit};
 use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook, SystemEventHook};
 use zk_ee::common_traits::TryExtend;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 #[cfg(feature = "mock-unsupported-precompiles")]
 use zk_ee::system::MissingSystemFunctionErrors;
@@ -122,7 +123,9 @@ where
 ///
 /// Adds EVM precompiles hooks.
 ///
-pub fn add_precompiles<S: EthereumLikeTypes, A: Allocator + Clone>(hooks: &mut HooksStorage<S, A>)
+pub fn add_precompiles<S: EthereumLikeTypes, A: Allocator + Clone>(
+    hooks: &mut HooksStorage<S, A>,
+) -> Result<(), InternalError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -131,39 +134,39 @@ where
         _,
         <S::SystemFunctions as SystemFunctions<_>>::Secp256k1ECRecover,
         Secp256k1ECRecoverErrors,
-    >(hooks, ECRECOVER_HOOK_ADDRESS_LOW);
+    >(hooks, ECRECOVER_HOOK_ADDRESS_LOW)?;
     add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::Sha256, Sha256Errors>(
         hooks,
         SHA256_HOOK_ADDRESS_LOW,
-    );
+    )?;
     add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::RipeMd160, RipeMd160Errors>(
         hooks,
         RIPEMD160_HOOK_ADDRESS_LOW,
-    );
+    )?;
     add_precompile::<_, _, IdentityPrecompile, IdentityPrecompileErrors>(
         hooks,
         ID_HOOK_ADDRESS_LOW,
-    );
+    )?;
     add_precompile_ext::<
         _,
         _,
         <S::SystemFunctionsExt as SystemFunctionsExt<_>>::ModExp,
         ModExpErrors,
-    >(hooks, MODEXP_HOOK_ADDRESS_LOW);
+    >(hooks, MODEXP_HOOK_ADDRESS_LOW)?;
     add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::Bn254Add, Bn254AddErrors>(
         hooks,
         ECADD_HOOK_ADDRESS_LOW,
-    );
+    )?;
     add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::Bn254Mul, Bn254MulErrors>(
         hooks,
         ECMUL_HOOK_ADDRESS_LOW,
-    );
+    )?;
     add_precompile::<
         _,
         _,
         <S::SystemFunctions as SystemFunctions<_>>::Bn254PairingCheck,
         Bn254PairingCheckErrors,
-    >(hooks, ECPAIRING_HOOK_ADDRESS_LOW);
+    >(hooks, ECPAIRING_HOOK_ADDRESS_LOW)?;
     #[cfg(feature = "mock-unsupported-precompiles")]
     {
         add_precompile::<
@@ -171,7 +174,7 @@ where
             _,
             crate::call_hooks::mock_precompiles::mock_precompiles::Blake2f,
             MissingSystemFunctionErrors,
-        >(hooks, BLAKE2F_HOOK_ADDRESS_LOW);
+        >(hooks, BLAKE2F_HOOK_ADDRESS_LOW)?;
 
         #[cfg(not(feature = "point_eval_precompile"))]
         add_precompile::<
@@ -179,7 +182,7 @@ where
             _,
             crate::call_hooks::mock_precompiles::mock_precompiles::PointEvaluation,
             MissingSystemFunctionErrors,
-        >(hooks, POINT_EVAL_HOOK_ADDRESS_LOW);
+        >(hooks, POINT_EVAL_HOOK_ADDRESS_LOW)?;
     }
     #[cfg(feature = "point_eval_precompile")]
     add_precompile::<
@@ -187,7 +190,7 @@ where
         _,
         <S::SystemFunctions as SystemFunctions<_>>::PointEvaluation,
         PointEvaluationErrors,
-    >(hooks, POINT_EVAL_HOOK_ADDRESS_LOW);
+    >(hooks, POINT_EVAL_HOOK_ADDRESS_LOW)?;
 
     #[cfg(feature = "p256_precompile")]
     {
@@ -196,20 +199,23 @@ where
             _,
             <S::SystemFunctions as SystemFunctions<_>>::P256Verify,
             P256VerifyErrors,
-        >(hooks, P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW);
+        >(hooks, P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW)?;
     }
+    Ok(())
 }
 
 pub fn add_l1_messenger<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks: &mut HooksStorage<S, A>,
-) {
+) -> Result<(), InternalError> {
     hooks.add_call_hook(
         L1_MESSENGER_ADDRESS_LOW,
         SystemCallHook::new(l1_messenger_hook),
     )
 }
 
-pub fn add_l2_base_token<S: EthereumLikeTypes, A: Allocator + Clone>(hooks: &mut HooksStorage<S, A>)
+pub fn add_l2_base_token<S: EthereumLikeTypes, A: Allocator + Clone>(
+    hooks: &mut HooksStorage<S, A>,
+) -> Result<(), InternalError>
 where
     S::IO: IOSubsystemExt,
 {
@@ -221,7 +227,8 @@ where
 
 pub fn add_contract_deployer<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks: &mut HooksStorage<S, A>,
-) where
+) -> Result<(), InternalError>
+where
     S::IO: IOSubsystemExt,
 {
     hooks.add_call_hook(
@@ -232,7 +239,7 @@ pub fn add_contract_deployer<S: EthereumLikeTypes, A: Allocator + Clone>(
 
 pub fn add_interop_root_reporter<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks: &mut HooksStorage<S, A>,
-) {
+) -> Result<(), InternalError> {
     hooks.add_event_hook(
         L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW,
         SystemEventHook::new(interop_root_reporter_event_hook),
@@ -242,7 +249,8 @@ pub fn add_interop_root_reporter<S: EthereumLikeTypes, A: Allocator + Clone>(
 fn add_precompile<S: EthereumLikeTypes, A: Allocator + Clone, P, E>(
     hooks: &mut HooksStorage<S, A>,
     address_low: u16,
-) where
+) -> Result<(), InternalError>
+where
     S::IO: IOSubsystemExt,
     P: SystemFunction<S::Resources, E>,
     E: Subsystem,
@@ -263,7 +271,8 @@ fn add_precompile_ext<
 >(
     hooks: &mut HooksStorage<S, A>,
     address_low: u16,
-) where
+) -> Result<(), InternalError>
+where
     S::IO: IOSubsystemExt,
 {
     hooks.add_call_hook(
