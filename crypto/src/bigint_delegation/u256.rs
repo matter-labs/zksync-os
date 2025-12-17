@@ -153,7 +153,7 @@ pub fn sub_and_negate_with_carry(a: &mut U256, b: &U256, carry: bool) -> bool {
 /// # Safety
 /// `DelegationModParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
-pub unsafe fn sub_mod_with_carry<T: DelegatedModParams<4>>(a: &mut U256, carry: bool) {
+unsafe fn sub_mod_with_carry<T: DelegatedModParams<4>>(a: &mut U256, carry: bool) {
     let borrow = delegation::sub(a, T::modulus()) != 0;
     if borrow && !carry {
         delegation::add(a, T::modulus());
