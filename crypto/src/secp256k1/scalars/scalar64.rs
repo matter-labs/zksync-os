@@ -359,7 +359,7 @@ fn sumadd(a: u64, c0: u64, c1: u64, c2: u64) -> (u64, u64, u64) {
     let (new_c2, of) = c2.overflowing_add(carry1 as u64);
 
     debug_assert!(!of);
-    
+
     (new_c0, new_c1, new_c2)
 }
 

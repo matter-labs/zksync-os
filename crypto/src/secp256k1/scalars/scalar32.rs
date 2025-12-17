@@ -508,7 +508,7 @@ fn sumadd_fast(a: u32, c0: u32, c1: u32) -> (u32, u32) {
     let (new_c1, of) = c1.overflowing_add(carry0 as u32);
 
     debug_assert!(!of);
-    
+
     (new_c0, new_c1)
 }
 
