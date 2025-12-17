@@ -53,9 +53,9 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-            - name: Run crypto tests 50 times with overflow checks
+            - name: Run crypto tests 10 times with overflow checks
               run: |
-                  for i in {1..50}; do
+                  for i in {1..10}; do
                     RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto --quiet || exit 1
                   done
     evm_state_tests:

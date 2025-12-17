@@ -58,11 +58,11 @@ fn ecmult(a: Jacobian, na: Scalar, ng: Scalar, table_g: &GeneratorMultiplesTable
         r.double_assign();
 
         if let Some(n) = wnaf_a.get_digit(i) {
-            r.add_assign(&table_a.get(n));
+            r.add_assign(&table_a.get(n, WINDOW_A));
         }
 
         if let Some(n) = wnaf_ng.get_digit(i) {
-            r.add_ge_assign(&table_g.get_ge(n));
+            r.add_ge_assign(&table_g.get_ge(n, WINDOW_G));
         }
     }
 
@@ -96,7 +96,9 @@ impl OddMultiplesTable {
         })
     }
 
-    fn get(&self, n: i32) -> Jacobian {
+    fn get(&self, n: i32, w: usize) -> Jacobian {
+        debug_assert!(((n & 1) == 1) && (n >= -((1 << (w - 1)) - 1)) && (n < (1 << (w - 1))));
+
         if n > 0 {
             self.0[(n - 1) as usize / 2]
         } else {

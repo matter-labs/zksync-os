@@ -179,7 +179,6 @@ mod test {
     use super::{BigInt, Fq, FqConfig, MontConfig, B};
     use ark_ff::{Field, One, UniformRand, Zero};
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul_compare() {
         const ITERATIONS: usize = 100000;
@@ -215,7 +214,6 @@ mod test {
         }
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul_properties() {
         const ITERATIONS: usize = 1000;
@@ -374,7 +372,6 @@ mod test {
         }
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_bilinearity() {
         for _ in 0..100 {
@@ -407,7 +404,6 @@ mod test {
         }
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_multi_pairing() {
         for _ in 0..ITERATIONS {
@@ -429,7 +425,6 @@ mod test {
         }
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_final_exp() {
         for _ in 0..ITERATIONS {

@@ -213,7 +213,6 @@ mod test {
     use super::Fq;
     use ark_ff::{Field, One, UniformRand, Zero};
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul_properties() {
         const ITERATIONS: usize = 1000;
@@ -285,7 +284,6 @@ mod test {
         }
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_mul_correctness() {
         use std::str::FromStr;
@@ -308,7 +306,6 @@ mod test {
     use ark_ff::{CyclotomicMultSubgroup, PrimeField};
     use ark_std::test_rng;
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_bilinearity() {
         for _ in 0..ITERATIONS {
@@ -338,7 +335,6 @@ mod test {
         }
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_multi_pairing() {
         for _ in 0..ITERATIONS {
@@ -354,7 +350,6 @@ mod test {
         }
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_final_exp() {
         for _ in 0..ITERATIONS {
