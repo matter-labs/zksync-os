@@ -220,8 +220,14 @@ fn fuzz(input: FuzzInput) {
                 _ => (),
             }
 
+            let mut hooks = zk_ee::common_structs::system_hooks::HooksStorage::<
+                ForwardRunningSystem,
+                _,
+                >::new_in(system.get_allocator());
+                
             let _ = vm_state.continue_after_preemption(
                 &mut system,
+                &mut hooks, 
                 inf_resources,
                 call_result,
                 &mut NopTracer::default(),
