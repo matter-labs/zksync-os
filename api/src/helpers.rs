@@ -244,9 +244,8 @@ pub fn sign_and_encode_transaction_request(
 }
 
 /// Helper wrapper representing the RLP *body* of a service tx:
-/// [nonce, gas_limit, to, data]
+/// [gas_limit, to, data]
 struct ServiceTxBody<'a> {
-    nonce: u64,
     gas_limit: u64,
     to: &'a [u8; 20],
     data: &'a [u8],
@@ -269,7 +268,6 @@ impl<'b> Encodable for ServiceTxField<'b> {
 impl<'a> Encodable for ServiceTxBody<'a> {
     fn encode(&self, out: &mut dyn BufMut) {
         let fields = vec![
-            ServiceTxField::U64(self.nonce),
             ServiceTxField::U64(self.gas_limit),
             ServiceTxField::Bytes(self.to.as_slice()),
             ServiceTxField::Bytes(self.data),
@@ -282,9 +280,8 @@ impl<'a> Encodable for ServiceTxBody<'a> {
 ///
 /// Encode a service transaction
 ///
-pub fn encode_service_tx(nonce: u64, gas_limit: u64, to: &[u8; 20], data: &[u8]) -> EncodedTx {
+pub fn encode_service_tx(gas_limit: u64, to: &[u8; 20], data: &[u8]) -> EncodedTx {
     let body = ServiceTxBody {
-        nonce,
         gas_limit,
         to,
         data,

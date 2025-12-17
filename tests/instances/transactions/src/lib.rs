@@ -1388,7 +1388,7 @@ fn test_simple_service_transaction() {
     // Set balance for the contract address
     chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
 
-    let tx = encode_service_tx(0, 500_000, &target_address, &[]);
+    let tx = encode_service_tx(500_000, &target_address, &[]);
 
     let block_context = BlockContext {
         eip1559_basefee: U256::ZERO,
@@ -1411,7 +1411,7 @@ fn test_simple_service_transaction_whitelist() {
     // Set balance for the contract address
     chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
 
-    let tx = encode_service_tx(0, 500_000, &target_address, &[]);
+    let tx = encode_service_tx(500_000, &target_address, &[]);
 
     let block_context = BlockContext {
         eip1559_basefee: U256::ZERO,
@@ -1434,9 +1434,9 @@ fn test_service_block_invariants() {
     chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
 
     // Check that a service block with several service txs works
-    let tx1 = encode_service_tx(0, 500_000, &target_address, &[]);
-    let tx2 = encode_service_tx(1, 500_000, &target_address, &[]);
-    let tx3 = encode_service_tx(2, 500_000, &target_address, &[]);
+    let tx1 = encode_service_tx(500_000, &target_address, &[]);
+    let tx2 = encode_service_tx(500_000, &target_address, &[]);
+    let tx3 = encode_service_tx(500_000, &target_address, &[]);
 
     let block_context = BlockContext {
         eip1559_basefee: U256::ZERO,
@@ -1450,7 +1450,7 @@ fn test_service_block_invariants() {
     );
 
     // Check that a service block with a non-service tx fails
-    let tx4 = encode_service_tx(3, 500_000, &target_address, &[]);
+    let tx4 = encode_service_tx(500_000, &target_address, &[]);
     let tx_non_service = {
         let tx = TxEip1559 {
             chain_id: 37u64,

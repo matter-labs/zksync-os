@@ -109,10 +109,10 @@ impl<A: Allocator> Transaction<A> {
     }
 
     /// Returns the transaction nonce as U256.
-    pub fn nonce(&self) -> U256 {
+    pub fn nonce(&self) -> Option<U256> {
         match self {
-            Self::Rlp(tx) => U256::from(tx.nonce()),
-            Self::Abi(tx) => tx.nonce.read(),
+            Self::Rlp(tx) => tx.nonce().map(U256::from),
+            Self::Abi(tx) => Some(tx.nonce.read()),
         }
     }
 

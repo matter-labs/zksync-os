@@ -84,15 +84,15 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
         }
     }
 
-    pub fn nonce(&self) -> u64 {
+    pub fn nonce(&self) -> Option<u64> {
         match &self.inner {
             RlpEncodedTxInner::Legacy(tx, _) | RlpEncodedTxInner::LegacyWithEIP155(tx, _) => {
-                tx.nonce
+                Some(tx.nonce)
             }
-            RlpEncodedTxInner::EIP2930(tx, _) => tx.nonce,
-            RlpEncodedTxInner::EIP1559(tx, _) => tx.nonce,
-            RlpEncodedTxInner::EIP7702(tx, _) => tx.nonce,
-            RlpEncodedTxInner::Service(tx) => tx.nonce,
+            RlpEncodedTxInner::EIP2930(tx, _) => Some(tx.nonce),
+            RlpEncodedTxInner::EIP1559(tx, _) => Some(tx.nonce),
+            RlpEncodedTxInner::EIP7702(tx, _) => Some(tx.nonce),
+            RlpEncodedTxInner::Service(_) => None,
         }
     }
 

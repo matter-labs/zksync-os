@@ -805,13 +805,15 @@ where
             .get_logger()
             .write_fmt(format_args!("Start of validation\n"));
 
-        // Nonce validation
-        let tx_nonce = u256_try_to_u64(&transaction.nonce()).ok_or(TxError::from(
-            InvalidTransaction::NonceOverflowInTransaction,
-        ))?;
+        // Nonce validation - skipped for service transactions
+        if let Some(nonce) = transaction.nonce() {
+            let tx_nonce = u256_try_to_u64(&nonce).ok_or(TxError::from(
+                InvalidTransaction::NonceOverflowInTransaction,
+            ))?;
 
-        if !Config::SIMULATION {
-            F::check_nonce_is_not_used(caller_nonce, tx_nonce)?;
+            if !Config::SIMULATION {
+                F::check_nonce_is_not_used(caller_nonce, tx_nonce)?;
+            }
         }
 
         // validation
@@ -829,15 +831,21 @@ where
             tracer,
         )?;
         let from = transaction.from();
-        // Check nonce has been marked
-        if !Config::SIMULATION {
-            F::check_nonce_is_used_after_validation(
-                system,
-                caller_ee_type,
-                resources,
-                tx_nonce,
-                *from,
-            )?;
+
+        // Check nonce has been marked - skipped for service transactions
+        if let Some(nonce) = transaction.nonce() {
+            let tx_nonce = u256_try_to_u64(&nonce).ok_or(TxError::from(
+                InvalidTransaction::NonceOverflowInTransaction,
+            ))?;
+            if !Config::SIMULATION {
+                F::check_nonce_is_used_after_validation(
+                    system,
+                    caller_ee_type,
+                    resources,
+                    tx_nonce,
+                    *from,
+                )?;
+            }
         }
 
         let _ = system.get_logger().write_fmt(format_args!(
