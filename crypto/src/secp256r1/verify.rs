@@ -97,7 +97,12 @@ impl OddMultiplesTable {
     }
 
     fn get(&self, n: i32, w: usize) -> Jacobian {
-        debug_assert!(((n & 1) == 1) && (n >= -((1 << (w - 1)) - 1)) && (n < (1 << (w - 1))));
+        debug_assert!(
+            (2..=31).contains(&w)
+                && ((n & 1) == 1)
+                && (n >= -((1 << (w - 1)) - 1))
+                && (n < (1 << (w - 1)))
+        );
 
         if n > 0 {
             self.0[(n - 1) as usize / 2]
