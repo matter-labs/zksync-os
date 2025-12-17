@@ -1,7 +1,7 @@
 //!
 //! Interop root reporter system hook implementation.
 //!
-use super::*;
+use super::super::*;
 use ruint::aliases::U256;
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::{

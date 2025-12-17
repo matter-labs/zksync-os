@@ -2,7 +2,7 @@
 //! L1 messenger system hook implementation.
 //! It implements a `sendToL1` method, works the same way as in Era.
 //!
-use super::*;
+use super::super::*;
 use arrayvec::ArrayVec;
 use core::fmt::Write;
 use evm_interpreter::{

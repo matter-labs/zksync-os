@@ -29,14 +29,16 @@
 extern crate alloc;
 
 use crate::addresses_constants::*;
-use crate::contract_deployer::contract_deployer_hook;
-use crate::interop_root_reporter::interop_root_reporter_event_hook;
-use crate::l1_messenger::l1_messenger_hook;
-use crate::l2_base_token::l2_base_token_hook;
+use crate::call_hooks::contract_deployer::contract_deployer_hook;
+use crate::call_hooks::l1_messenger::l1_messenger_hook;
+use crate::call_hooks::l2_base_token::l2_base_token_hook;
+use crate::event_hooks::interop_root_reporter::interop_root_reporter_event_hook;
+use call_hooks::precompiles::{
+    pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors,
+};
 use core::marker::PhantomData;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use evm_interpreter::ERGS_PER_GAS;
-use precompiles::{pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors};
 use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook, SystemEventHook};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::system::errors::subsystem::SubsystemError;
@@ -55,14 +57,8 @@ use zk_ee::{
 };
 
 pub mod addresses_constants;
-#[cfg(feature = "mock-unsupported-precompiles")]
-mod mock_precompiles;
-
-pub mod contract_deployer;
-pub mod interop_root_reporter;
-pub mod l1_messenger;
-pub mod l2_base_token;
-mod precompiles;
+pub mod call_hooks;
+pub mod event_hooks;
 
 pub trait SystemFunctionInvocation<S: SystemTypes, E: Subsystem>
 where
@@ -173,7 +169,7 @@ where
         add_precompile::<
             _,
             _,
-            crate::mock_precompiles::mock_precompiles::Blake2f,
+            crate::call_hooks::mock_precompiles::mock_precompiles::Blake2f,
             MissingSystemFunctionErrors,
         >(hooks, BLAKE2F_HOOK_ADDRESS_LOW);
 
@@ -181,7 +177,7 @@ where
         add_precompile::<
             _,
             _,
-            crate::mock_precompiles::mock_precompiles::PointEvaluation,
+            crate::call_hooks::mock_precompiles::mock_precompiles::PointEvaluation,
             MissingSystemFunctionErrors,
         >(hooks, POINT_EVAL_HOOK_ADDRESS_LOW);
     }

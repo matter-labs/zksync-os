@@ -26,6 +26,7 @@ pub use oracle_provider;
 pub use risc_v_simulator;
 pub use risc_v_simulator::sim::ProfilerConfig;
 pub use ruint;
+pub use system_hooks;
 pub use zk_ee;
 pub use zksync_os_api;
 pub use zksync_os_interface;

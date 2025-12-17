@@ -3,7 +3,7 @@
 //! It implements a `setDeployedCodeEVM` method, similar to Era.
 //! It's needed for protocol upgrades.
 //!
-use super::*;
+use super::super::*;
 use core::fmt::Write;
 use evm_interpreter::MAX_CODE_SIZE;
 use ruint::aliases::{B160, U256};
