@@ -46,7 +46,7 @@ impl FieldElement8x32 {
     pub(super) fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
         let value = Self::from_bytes_unchecked(bytes);
 
-        if u256::leq(&value.0, &Self::MODULUS) {
+        if u256::lt(&value.0, &Self::MODULUS) {
             Some(value)
         } else {
             None

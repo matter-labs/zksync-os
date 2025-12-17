@@ -130,6 +130,7 @@ impl FieldElementImpl {
 
     pub(super) fn normalize_in_place(&mut self) {
         if !self.normalized || self.magnitude > 1 {
+            debug_assert!(self.magnitude <= Self::max_magnitude());
             self.value.normalize_in_place();
             self.magnitude = 1;
             self.normalized = true;
@@ -137,6 +138,7 @@ impl FieldElementImpl {
     }
 
     pub(super) const fn normalizes_to_zero(&self) -> bool {
+        debug_assert!(self.magnitude <= Self::max_magnitude());
         self.value.normalizes_to_zero()
     }
 
@@ -192,6 +194,7 @@ impl FieldElementImpl {
         if self.normalized && self.magnitude <= 1 {
             self
         } else {
+            debug_assert!(self.magnitude <= Self::max_magnitude());
             Self::new_normalized(self.value.normalize())
         }
     }
