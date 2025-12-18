@@ -38,8 +38,8 @@ use crate::bootloader::transaction_flow::{
     BasicTransactionFlow, ExecutionOutput, ExecutionResult, TxProcessingResult,
 };
 use zk_ee::common_structs::system_hooks::HooksStorage;
-use zk_ee::{internal_error, system::*};
 use zk_ee::utils::*;
+use zk_ee::{internal_error, system::*};
 
 use core::fmt::Write;
 
