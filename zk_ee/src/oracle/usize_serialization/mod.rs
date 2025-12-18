@@ -333,15 +333,15 @@ impl UsizeDeserializable for B160 {
         if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
             return Err(internal_error!("b160 deserialization failed: too short"));
         }
-        let mut new = B160::ZERO;
-        unsafe {
-            for dst in new.as_limbs_mut().iter_mut() {
-                *dst = <u64 as UsizeDeserializable>::from_iter(src).unwrap_unchecked();
-            }
+        let mut limbs = [0u64; B160::LIMBS];
+        for limb in &mut limbs {
+            *limb = unsafe { <u64 as UsizeDeserializable>::from_iter(src).unwrap_unchecked() };
         }
+        let new = B160::from_limbs(limbs);
 
         Ok(new)
     }
+
     unsafe fn init_from_iter(
         this: &mut MaybeUninit<Self>,
         src: &mut impl ExactSizeIterator<Item = usize>,
@@ -349,11 +349,12 @@ impl UsizeDeserializable for B160 {
         if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
             return Err(internal_error!("b160 deserialization failed: too short"));
         }
-        // Initialize
-        let value: &mut Self = this.write(Self::ZERO);
-        for dst in value.as_limbs_mut().iter_mut() {
-            *dst = <u64 as UsizeDeserializable>::from_iter(src).unwrap_unchecked();
+        let mut limbs = [0u64; B160::LIMBS];
+        for limb in &mut limbs {
+            *limb = unsafe { <u64 as UsizeDeserializable>::from_iter(src).unwrap_unchecked() };
         }
+        // Initialize
+        this.write(B160::from_limbs(limbs));
 
         Ok(())
     }
