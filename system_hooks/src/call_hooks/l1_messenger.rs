@@ -2,7 +2,7 @@
 //! L1 messenger system hook implementation.
 //! It implements a `sendToL1` method, works the same way as in Era.
 //!
-use super::*;
+use super::super::*;
 use crate::addresses_constants::{L1_MESSENGER_ADDRESS, L1_MESSENGER_ADDRESS_HOOK};
 use core::fmt::Write;
 use ruint::aliases::{B160, U256};
