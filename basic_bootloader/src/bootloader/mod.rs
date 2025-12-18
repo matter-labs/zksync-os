@@ -81,7 +81,7 @@ where
     where
         S::IO: IOSubsystemExt,
     {
-        cycle_marker::start!("run_prepared");
+        cycle_marker::start!("process_block");
         // initialize the system
         cycle_marker::start!("system_init");
 
@@ -130,7 +130,7 @@ where
 
         let res =
             <S::PostTxLoopOp as PostTxLoopOp<S>>::post_op(system, block_data_keeper, result_keeper);
-        cycle_marker::end!("run_prepared");
+        cycle_marker::end!("process_block");
         #[allow(clippy::let_and_return)]
         res
     }
