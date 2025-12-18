@@ -6402,3 +6402,72 @@ fn bench_modexp() {
         .expect("Tx should have succeeded");
     }
 }
+
+#[test]
+fn test_regression_p256_is_warm() {
+    let mut chain = rig::Chain::empty(None);
+    let wallet = chain.random_signer();
+    let target = Address::from_slice(
+        hex::decode("0000000000000000000000000000000000000100")
+            .unwrap()
+            .as_slice(),
+    );
+    let forwarder = address!("0x1000000000000000000000000000000000000000");
+
+    chain.set_balance(
+        B160::from_be_bytes(wallet.address().into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+    chain.set_evm_bytecode(
+        B160::from_be_bytes(forwarder.into_array()),
+        &hex::decode(FORWARDER_BYTECODE).unwrap(),
+    );
+
+    // Just enough for tx to succeed if the address is warm
+    let gas_limit = 54707;
+    let input = hex::decode("d1b3bd13d427f487b786a48d3a515c6fc1b0170ba3936bcd4ea53c960df3ef2f6e1207f671f5fa32eb46850921546ae5b03a4579012c562a62f4fb2d39269257bed27d4909e4f5ca8f543f5042691371b8fcc58f881e1b4daed7fa6f5b1b3898a880e9b88d6a707662aa25325798903d6e34740e832830860ba323d9e14defc75999af8ead7e63566aa8b94b7bb5dfa8e8f114c39ca179016f393363953f979a").unwrap();
+
+    let calldata = calldata_for_forwarder(target, &input);
+    let forwarded_tx = rig::utils::sign_and_encode_alloy_tx(
+        TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 25_000,
+            gas_limit,
+            to: rig::alloy::primitives::TxKind::Call(forwarder),
+            value: Default::default(),
+            input: calldata.into(),
+        },
+        &wallet,
+    );
+
+    // We use a very high native per gas ratio
+    let block_context = BlockContext {
+        native_price: U256::ONE,
+        eip1559_basefee: U256::from(25_000),
+        ..Default::default()
+    };
+
+    let run_config = rig::chain::RunConfig {
+        app: Some("for_tests".to_string()),
+        only_forward: false,
+        check_storage_diff_hashes: true,
+        ..Default::default()
+    };
+    let res = chain.run_block(
+        vec![forwarded_tx],
+        Some(block_context),
+        None,
+        Some(run_config),
+    );
+    let tx_res = res
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("Tx should have succeeded");
+    assert!(matches!(
+        tx_res.execution_result,
+        rig::zksync_os_interface::types::ExecutionResult::Success { .. }
+    ));
+}

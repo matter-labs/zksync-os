@@ -58,6 +58,7 @@ pub mod instructions;
 pub mod interpreter;
 pub mod native_resource_constants;
 pub mod opcodes;
+pub mod precompile_addresses;
 pub mod u256;
 pub mod utils;
 
