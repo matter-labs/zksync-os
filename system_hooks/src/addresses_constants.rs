@@ -15,6 +15,10 @@ pub const L1_MESSENGER_ADDRESS: B160 = B160::from_limbs([L1_MESSENGER_ADDRESS_LO
 pub const L2_BASE_TOKEN_ADDRESS_LOW: u16 = 0x800a;
 pub const L2_BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([L2_BASE_TOKEN_ADDRESS_LOW as u64, 0, 0]);
 
+// base token mint system hook
+pub const MINT_HOOK_ADDRESS_LOW: u16 = 0x7100;
+pub const MINT_HOOK_ADDRESS: B160 = B160::from_limbs([MINT_HOOK_ADDRESS_LOW as u64, 0, 0]);
+
 // L2 interop root storage system contract
 pub const L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW: u32 = 0x10008;
 pub const L2_INTEROP_ROOT_STORAGE_ADDRESS: B160 =

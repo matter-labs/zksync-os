@@ -32,6 +32,7 @@ use crate::addresses_constants::*;
 use crate::call_hooks::contract_deployer::contract_deployer_hook;
 use crate::call_hooks::l1_messenger::l1_messenger_hook;
 use crate::call_hooks::l2_base_token::l2_base_token_hook;
+use crate::call_hooks::mint_base_token::mint_base_token_hook;
 use crate::event_hooks::interop_root_reporter::interop_root_reporter_event_hook;
 use call_hooks::precompiles::{
     pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors,
@@ -236,6 +237,18 @@ where
     hooks.add_call_hook(
         CONTRACT_DEPLOYER_ADDRESS_LOW,
         SystemCallHook::new(contract_deployer_hook),
+    )
+}
+
+pub fn add_base_token_mint<S: EthereumLikeTypes, A: Allocator + Clone>(
+    hooks: &mut HooksStorage<S, A>,
+) -> Result<(), InternalError>
+where
+    S::IO: IOSubsystemExt,
+{
+    hooks.add_call_hook(
+        MINT_HOOK_ADDRESS_LOW,
+        SystemCallHook::new(mint_base_token_hook),
     )
 }
 
