@@ -19,7 +19,7 @@ where
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<(), BootloaderSubsystemError> {
-        cycle_marker::start!("run_prepared");
+        cycle_marker::start!("run_tx_loop");
 
         let mut is_first_tx = true;
         // Service blocks are blocks that only contain service transactions.
@@ -201,7 +201,7 @@ where
             }
         }
 
-        cycle_marker::end!("run_prepared");
+        cycle_marker::end!("run_tx_loop");
 
         Ok(())
     }
