@@ -6030,7 +6030,8 @@ entries:
                 enabled: true
               failed_tx_xcf416c53_Paris.json:
                 hash: '0xd1e70b0519d03fd5630e44b299d763ba'
-                enabled: true
+                enabled: false
+                comment: "We currently support a mix set of precompiles"
               gasPrice0.json:
                 hash: '0xdabb75e60ea48704f3c9265e4130351a'
                 enabled: true
