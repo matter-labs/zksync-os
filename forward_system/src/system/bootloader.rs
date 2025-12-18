@@ -1,4 +1,4 @@
-use crate::system::system::*;
+use basic_bootloader::bootloader::block_header as basic_booltoader_block_header;
 use basic_bootloader::bootloader::config::BasicBootloaderExecutionConfig;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use basic_bootloader::bootloader::result_keeper::ResultKeeperExt;
@@ -13,7 +13,10 @@ use zk_ee::system::validator::TxValidator;
 ///
 pub fn run_forward<Config: BasicBootloaderExecutionConfig>(
     oracle: ZkEENonDeterminismSource<DummyMemorySource>,
-    result_keeper: &mut impl ResultKeeperExt,
+    result_keeper: &mut impl ResultKeeperExt<
+        EthereumIOTypesConfig,
+        BlockHeader = basic_booltoader_block_header::BlockHeader,
+    >,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
     validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) {
@@ -26,7 +29,10 @@ pub fn run_forward<Config: BasicBootloaderExecutionConfig>(
 
 pub fn run_forward_no_panic<Config: BasicBootloaderExecutionConfig>(
     oracle: ZkEENonDeterminismSource<DummyMemorySource>,
-    result_keeper: &mut impl ResultKeeperExt,
+    result_keeper: &mut impl ResultKeeperExt<
+        EthereumIOTypesConfig,
+        BlockHeader = basic_booltoader_block_header::BlockHeader,
+    >,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
     validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) -> Result<(), BootloaderSubsystemError> {

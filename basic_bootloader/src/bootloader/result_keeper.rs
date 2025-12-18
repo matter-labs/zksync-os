@@ -1,4 +1,3 @@
-use crate::bootloader::block_header::BlockHeader;
 ///
 /// This module contains definition of the result keeper trait.
 ///
@@ -10,7 +9,7 @@ use crate::bootloader::block_header::BlockHeader;
 use crate::bootloader::errors::InvalidTransaction;
 use ruint::aliases::B160;
 use zk_ee::system::{IOResultKeeper, NopResultKeeper};
-use zk_ee::types_config::EthereumIOTypesConfig;
+use zk_ee::types_config::SystemIOTypesConfig;
 
 pub struct TxProcessingOutput<'a> {
     pub status: bool,
@@ -23,14 +22,22 @@ pub struct TxProcessingOutput<'a> {
     pub pubdata_used: u64,
 }
 
-pub trait ResultKeeperExt: IOResultKeeper<EthereumIOTypesConfig> {
+pub trait ResultKeeperExt<IOTypes: SystemIOTypesConfig>: IOResultKeeper<IOTypes> {
+    type BlockHeader: 'static + Sized;
+
     fn tx_processed(&mut self, _tx_result: Result<TxProcessingOutput<'_>, InvalidTransaction>) {}
 
-    fn block_sealed(&mut self, _block_header: BlockHeader) {}
+    fn block_sealed(&mut self, _block_header: Self::BlockHeader) {}
+
+    fn record_sealed_block(&mut self, _header: Self::BlockHeader) {}
 
     fn get_gas_used(&self) -> u64 {
         0u64
     }
 }
 
-impl ResultKeeperExt for NopResultKeeper {}
+impl<T: 'static + Sized, IOTypes: SystemIOTypesConfig> ResultKeeperExt<IOTypes>
+    for NopResultKeeper<T>
+{
+    type BlockHeader = T;
+}

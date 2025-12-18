@@ -219,7 +219,7 @@ pub fn run_proving_inner<
         let (io, block_metadata, current_block_hash, upgrade_tx_hash) =
             ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
                 oracle,
-                &mut NopResultKeeper,
+                &mut NopResultKeeper::default(),
                 &mut NopTracer::default(),
                 &mut NopTxValidator,
             )

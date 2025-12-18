@@ -4,7 +4,6 @@ use crate::run::convert::IntoInterface;
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::run::TxResultCallback;
 use alloy::primitives::Address;
-pub use basic_bootloader::bootloader::block_header::BlockHeader;
 use ruint::aliases::B160;
 use std::collections::HashMap;
 use zk_ee::common_structs::{derive_flat_storage_key, GenericLogContent, PreimageType};
@@ -44,8 +43,16 @@ impl StorageWriteExt for StorageWrite {
     }
 }
 
-impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BlockOutput {
-    fn from(value: ForwardRunningResultKeeper<TR>) -> Self {
+impl<TR: TxResultCallback>
+    From<ForwardRunningResultKeeper<TR, basic_bootloader::bootloader::block_header::BlockHeader>>
+    for BlockOutput
+{
+    fn from(
+        value: ForwardRunningResultKeeper<
+            TR,
+            basic_bootloader::bootloader::block_header::BlockHeader,
+        >,
+    ) -> Self {
         let ForwardRunningResultKeeper {
             block_header,
             events,

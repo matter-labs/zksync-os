@@ -888,19 +888,21 @@ where
             .unwrap()
             .write(&block_metadata.timestamp.to_be_bytes());
 
+        let mut result_keeper: zk_ee::system::NopResultKeeper<()> = NopResultKeeper::default();
+
         self.storage
             .finish(
                 &mut self.oracle,
                 Some(&mut state_commitment),
                 builder.da_commitment_generator.as_mut().unwrap().as_mut(),
-                &mut NopResultKeeper,
+                &mut result_keeper,
                 &mut NullLogger,
             )
             .expect("Failed to finish storage");
 
         self.logs_storage.apply_pubdata(
             builder.da_commitment_generator.as_mut().unwrap().as_mut(),
-            &mut NopResultKeeper,
+            &mut result_keeper,
         );
         self.logs_storage
             .apply_to_array_vec(&mut builder.logs_storage);

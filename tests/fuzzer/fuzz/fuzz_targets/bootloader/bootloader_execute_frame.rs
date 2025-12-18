@@ -7,7 +7,7 @@ use arbitrary::Arbitrary;
 use basic_bootloader::bootloader::supported_ees::SupportedEEVMState;
 use libfuzzer_sys::fuzz_target;
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
-use rig::forward_system::system::system::ForwardRunningSystem;
+use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
 use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::memory::slice_vec::SliceVec;
@@ -137,11 +137,12 @@ fn fuzz(input: FuzzInput) {
         return;
     };
 
+    let mut result_keeper: NopResultKeeper<()> = NopResultKeeper::default();
     system.finish(
         Bytes32::default(),
         Bytes32::default(),
         Bytes32::default(),
-        &mut NopResultKeeper,
+        &mut result_keeper,
     );
 }
 

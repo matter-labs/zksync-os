@@ -8,6 +8,7 @@ use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
 use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
 
+pub mod block_flow;
 pub mod run_single_interaction;
 pub mod runner;
 pub mod supported_ees;
@@ -23,27 +24,38 @@ pub mod constants;
 pub mod errors;
 pub mod result_keeper;
 mod rlp;
+pub mod stf;
 
-use alloc::boxed::Box;
-use core::fmt::Write;
-use crypto::MiniDigest;
-use zk_ee::internal_error;
-
+use crate::bootloader::block_flow::{
+    MetadataInitOp, PostSystemInitOp, PostTxLoopOp, PreTxLoopOp, TxLoopOp,
+};
 use crate::bootloader::block_header::BlockHeader;
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::result_keeper::*;
 use crate::bootloader::runner::RunnerMemoryBuffers;
+use crate::bootloader::stf::EthereumLikeBasicSTF;
 use crate::bootloader::transaction_flow::{
     BasicTransactionFlow, ExecutionOutput, ExecutionResult, TxProcessingResult,
 };
 use zk_ee::common_structs::system_hooks::HooksStorage;
-use zk_ee::system::*;
 use zk_ee::utils::*;
+use zk_ee::{internal_error, system::*};
+
+use alloc::boxed::Box;
+use core::fmt::Write;
+
+pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
+pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 28; // 256 MB
 
 pub(crate) const EVM_EE_BYTE: u8 = ExecutionEnvironmentType::EVM_EE_BYTE;
 pub const DEBUG_OUTPUT: bool = false;
 
+/// Generic bootloader implementation using composable block execution flow.
+///
+/// This bootloader uses the State Transition Function (STF) trait to compose
+/// different execution phases (metadata init, system init, transaction loop, finalization)
+/// into a complete block execution pipeline.
 pub struct BasicBootloader<S: EthereumLikeTypes, F: BasicTransactionFlow<S>>
 where
     S::IO: IOSubsystemExt,
@@ -53,102 +65,70 @@ where
 
 // TODO: type of Metadata is hardcoded for now, will be cleaned in future PRs
 impl<
-        S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
+        S: EthereumLikeBasicSTF<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
         F: BasicTransactionFlow<S>,
     > BasicBootloader<S, F>
 where
     S::IO: IOSubsystemExt,
 {
-    fn try_begin_next_tx(
-        system: &mut System<S>,
-    ) -> Option<Result<UsizeAlignedByteBox<S::Allocator>, NextTxSubsystemError>> {
-        let allocator = system.get_allocator();
-        let r = system.try_begin_next_tx(move |tx_length_in_bytes| {
-            UsizeAlignedByteBox::preallocated_in(tx_length_in_bytes, allocator)
-        })?;
-        Some(r.map(|(tx_length_in_bytes, mut buffer)| {
-            buffer.truncated_to_byte_length(tx_length_in_bytes);
-            buffer
-        }))
-    }
-
     /// Runs the transactions that it loads from the oracle.
     /// This code runs both in sequencer (then it uses ForwardOracle - that stores data in local variables)
     /// and in prover (where oracle uses CRS registers to communicate).
     pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
         mut oracle: <S::IO as IOSubsystemExt>::IOOracle,
-        result_keeper: &mut impl ResultKeeperExt,
+        result_keeper: &mut impl ResultKeeperExt<S::IOTypes, BlockHeader = S::BlockHeader>,
         tracer: &mut impl Tracer<S>,
         validator: &mut impl TxValidator<S>,
     ) -> Result<<S::IO as IOSubsystemExt>::FinalData, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
-        cycle_marker::start!("run_prepared");
+        cycle_marker::start!("process_block");
+        // initialize the system
+        cycle_marker::start!("system_init");
 
-        // TODO: this will be moved to metadata_op in a future PR
-        let metadata: S::Metadata = {
-            use zk_ee::oracle::query_ids::BLOCK_METADATA_QUERY_ID;
-            use zk_ee::oracle::IOOracle;
-            use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
-            use zk_ee::system::metadata::zk_metadata::{
-                BlockMetadataFromOracle, TxLevelMetadata, ZkMetadata,
-            };
-            let block_level: BlockMetadataFromOracle =
-                oracle.query_with_empty_input(BLOCK_METADATA_QUERY_ID)?;
-
-            let metadata = ZkMetadata {
-                tx_level: TxLevelMetadata::default(),
-                block_level,
-                _marker: core::marker::PhantomData,
-            };
-
-            if metadata.block_gas_limit() > MAX_BLOCK_GAS_LIMIT
-                || metadata.individual_tx_gas_limit() > MAX_TX_GAS_LIMIT
-            {
-                return Err(internal_error!("block or tx gas limit is too high").into());
-            }
-            metadata
-        };
+        let metadata = <S::MetadataOp as MetadataInitOp<S>>::metadata_op::<Config>(
+            &mut oracle,
+            S::Allocator::default(),
+        )?;
 
         // we will model initial calldata buffer as just another "heap"
         let mut system: System<S> = System::init_from_metadata_and_oracle(metadata, oracle)?;
+        let mut system_functions = HooksStorage::new_in(system.get_allocator());
 
-        pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
-        pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 28; // 256 MB
+        <S::PostSystemInitOp as PostSystemInitOp<S>>::post_init_op::<Config>(
+            &mut system,
+            &mut system_functions,
+        )?;
 
         let mut heaps = Box::new_uninit_slice_in(MAX_HEAP_BUFFER_SIZE, system.get_allocator());
         let mut return_data =
             Box::new_uninit_slice_in(MAX_RETURN_BUFFER_SIZE, system.get_allocator());
 
-        let mut memories = RunnerMemoryBuffers {
+        let memories = RunnerMemoryBuffers {
             heaps: &mut heaps,
             return_data: &mut return_data,
         };
 
-        let mut system_functions = HooksStorage::new_in(system.get_allocator());
+        cycle_marker::end!("system_init");
 
-        system_hooks::add_precompiles(&mut system_functions)?;
+        // Pre-op
+        let mut block_data_keeper =
+            <S::PreTxLoopOp as PreTxLoopOp<S>>::pre_op(&mut system, result_keeper);
 
-        #[cfg(not(feature = "disable_system_contracts"))]
-        {
-            system_hooks::add_l1_messenger(&mut system_functions)?;
-            system_hooks::add_l2_base_token(&mut system_functions)?;
-            system_hooks::add_contract_deployer(&mut system_functions)?;
-            system_hooks::add_interop_root_reporter(&mut system_functions)?;
-        }
+        // TX loop
+        <S::TxLoopOp as TxLoopOp<S>>::loop_op::<Config>(
+            &mut system,
+            &mut system_functions,
+            memories,
+            &mut block_data_keeper,
+            result_keeper,
+            tracer,
+        )?;
 
-        let mut tx_rolling_hash = [0u8; 32];
-        let mut l1_to_l2_txs_hasher = crypto::blake2s::Blake2s256::new();
+        // whatever the non-persistent data was there, it's now gone
 
-        let mut first_tx = true;
-        // Service blocks are blocks that only contain service transactions.
-        // Service transactions can only be included in service blocks.
-        let mut is_service_block = false;
-        let mut upgrade_tx_hash = Bytes32::zero();
-        let mut block_gas_used = 0;
-        let mut block_computational_native_used = 0;
-        let mut block_pubdata_used = 0;
+        // Post-op
 
         // now we can run every transaction
         while let Some(r) = Self::try_begin_next_tx(&mut system) {
@@ -378,77 +358,6 @@ where
         let r = system.finish(block_hash, l1_to_l2_tx_hash, upgrade_tx_hash, result_keeper);
         cycle_marker::end!("run_prepared");
         #[allow(clippy::let_and_return)]
-        Ok(r)
-    }
-
-    /// Check if the transaction made the block reach any of the limits
-    /// for gas, native, pubdata or logs.
-    /// If one such limit is reached, return the corresponding validation
-    /// error.
-    fn check_for_block_limits(
-        system: &mut System<S>,
-        gas_used: u64,
-        computational_native_used: u64,
-        pubdata_used: u64,
-        logs_used: u64,
-    ) -> Result<(), InvalidTransaction> {
-        if cfg!(feature = "resources_for_tester") {
-            // EVM tester uses some really high gas limits,
-            // so we don't limit the block's native resource.
-            Ok(())
-        } else {
-            let mut logger = system.get_logger();
-
-            if gas_used > system.get_gas_limit() {
-                let _ = logger.write_fmt(format_args!(
-                    "Block gas limit reached, invalidating transaction\n"
-                ));
-                Err(InvalidTransaction::BlockGasLimitReached)
-            } else if computational_native_used > MAX_NATIVE_COMPUTATIONAL {
-                let _ = logger.write_fmt(format_args!(
-                    "Block native limit reached, invalidating transaction\n"
-                ));
-                Err(InvalidTransaction::BlockNativeLimitReached)
-            } else if pubdata_used > system.get_pubdata_limit() {
-                let _ = logger.write_fmt(format_args!(
-                    "Block pubdata limit reached, invalidating transaction\n"
-                ));
-                Err(InvalidTransaction::BlockPubdataLimitReached)
-            } else if logs_used > MAX_NUMBER_OF_LOGS {
-                let _ = logger.write_fmt(format_args!(
-                    "Block logs limit reached, invalidating transaction\n"
-                ));
-                Err(InvalidTransaction::BlockL2ToL1LogsLimitReached)
-            } else {
-                Ok(())
-            }
-        }
-    }
-
-    /// Check the service block invariants:
-    /// 1. If the first tx is a service tx, then the block is a service block
-    /// 2. Service transactions can only be processed in service blocks
-    /// 3. Non-service transactions cannot be processed in service blocks
-    fn check_for_service_block_invariants(
-        is_service_block: &mut bool,
-        is_first_tx: bool,
-        is_service_tx: bool,
-    ) -> Result<(), InternalError> {
-        //  1. If the first tx is a service tx, then the block is a service block
-        if is_first_tx && is_service_tx {
-            *is_service_block = true;
-        }
-        if *is_service_block {
-            if !is_service_tx {
-                // 3. Non-service transactions cannot be processed in service blocks
-                return Err(internal_error!("Non-service tx in service block"));
-            }
-        } else {
-            // 2. Service transactions can only be processed in service blocks
-            if is_service_tx {
-                return Err(internal_error!("Service tx in non-service block"));
-            }
-        }
-        Ok(())
+        res
     }
 }
