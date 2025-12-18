@@ -133,9 +133,6 @@ where
         ));
     }
 
-    let mut selector = [0u8; 4];
-    selector.copy_from_slice(&calldata[..4]);
-
     if calldata.len() < 128 {
         return Ok(Err(
             "Set bytecode on address failure: called with invalid calldata",
