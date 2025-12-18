@@ -1,6 +1,9 @@
 //!
 //! L1 messenger system hook implementation.
-//! It implements a `sendToL1` method, works the same way as in Era.
+//! This system hook is called by the L1 messenger system contract to send messages to L1.
+//!
+//! Note: By design this system hook should be indistinguishable from a call
+//! to an empty account (for EVM compatibility reasons).
 //!
 use super::super::*;
 use crate::addresses_constants::{L1_MESSENGER_ADDRESS, L1_MESSENGER_ADDRESS_HOOK};
@@ -37,15 +40,24 @@ where
     } = request;
 
     debug_assert_eq!(callee, L1_MESSENGER_ADDRESS_HOOK);
+
+    // Can be used only by L1 messenger system contract
     if caller != L1_MESSENGER_ADDRESS {
         let _ = system.get_logger().write_fmt(format_args!(
-            "Set bytecode hook revert: invalid caller (caller={caller:?})\n"
+            "L1 messenger hook: invalid caller (caller={caller:?})\n"
         ));
-        return Ok((make_error_return_state(available_resources), return_memory));
+        // Pretend to be an empty account
+        return Ok((
+            make_return_state_from_returndata_region(available_resources, &[]),
+            return_memory,
+        ));
     }
 
+    // Note: it's ok to revert below even when it breaks EVM compatibility, since
+    // the L1 messenger system contract should guarantee correct usage.
+
     let mut error = false;
-    // There are no "payable" methods
+    // This hook doesn't accept any native token value
     error |= nominal_token_value != U256::ZERO;
     let mut is_static = false;
     match modifier {
@@ -116,9 +128,10 @@ where
     evm_interpreter::charge_native_and_ergs::<S::Resources>(
         resources,
         HOOK_BASE_NATIVE_COST,
-        HOOK_BASE_ERGS_COST,
+        Ergs(0), // Do not charge EVM gas here, it is already charged in L1Messenger smart contract
     )?;
 
+    // Should never happen
     if is_static {
         return Ok(Err(
             "L1 messenger failure: sendToL1 called with static context",
@@ -144,7 +157,7 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
 
     // emit L1 message
     let message_hash = system.io.emit_l1_message(
-        // We already charged gas for it in L1Messenger smart contract
+        // Gas should be charged by the L1Messenger system contract
         ExecutionEnvironmentType::NoEE,
         resources,
         &address_sender,

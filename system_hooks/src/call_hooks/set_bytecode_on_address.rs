@@ -40,9 +40,13 @@ where
     debug_assert_eq!(callee, SET_BYTECODE_ON_ADDRESS_HOOK);
     if caller != CONTRACT_DEPLOYER_ADDRESS {
         let _ = system.get_logger().write_fmt(format_args!(
-            "Set bytecode hook revert: invalid caller (caller={caller:?})\n"
+            "Set bytecode hook: invalid caller (caller={caller:?})\n"
         ));
-        return Ok((make_error_return_state(available_resources), return_memory));
+        // Pretend to be an empty account
+        return Ok((
+            make_return_state_from_returndata_region(available_resources, &[]),
+            return_memory,
+        ));
     }
 
     // There are no "payable" methods
