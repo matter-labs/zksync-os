@@ -209,7 +209,7 @@ pub fn add_l1_messenger<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks: &mut HooksStorage<S, A>,
 ) -> Result<(), InternalError> {
     hooks.add_call_hook(
-        L1_MESSENGER_ADDRESS_LOW,
+        L1_MESSENGER_ADDRESS_HOOK_LOW,
         SystemCallHook::new(l1_messenger_hook),
     )
 }

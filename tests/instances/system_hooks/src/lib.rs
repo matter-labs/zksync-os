@@ -7,6 +7,7 @@ use alloy::primitives::TxKind;
 use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
+use rig::chain::RunConfig;
 use rig::ruint::aliases::B160;
 use rig::testing_utils::call_address_and_measure_gas_cost;
 use rig::testing_utils::install_system_contracts;
@@ -131,7 +132,7 @@ fn test_set_deployed_bytecode_evm_unauthorized() {
         .unwrap()
         .execution_result;
 
-    assert!(matches!(result, ExecutionResult::Success(_)));
+    assert!(matches!(result, ExecutionResult::Revert(_)));
 }
 
 #[test]
@@ -197,9 +198,7 @@ fn test_l1_messenger_hook_fails_with_invalid_calldata() {
     let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
 
     // Invalid calldata
-    let hook_calldata = hex::decode(
-        "000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-    .unwrap();
+    let hook_calldata = hex::decode("00000000000000000000000011111111").unwrap();
 
     let tx = TransactionRequest {
         chain_id: Some(37),
