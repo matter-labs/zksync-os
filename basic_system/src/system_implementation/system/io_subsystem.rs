@@ -11,6 +11,7 @@ use crate::system_implementation::system::public_input::{BlocksOutput, BlocksPub
 use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
+use cost_constants::INTEROP_ROOT_STORAGE_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use crypto::blake2s::Blake2s256;
@@ -20,10 +21,14 @@ use evm_interpreter::gas_constants::LOGDATA;
 use evm_interpreter::gas_constants::LOGTOPIC;
 use evm_interpreter::gas_constants::TLOAD;
 use evm_interpreter::gas_constants::TSTORE;
+use interop_roots::calculate_interop_roots_rolling_hash;
+use interop_roots::per_root_computational_native_cost;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
+use zk_ee::common_structs::interop_root_storage::InteropRoot;
+use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
 use zk_ee::common_structs::ProofData;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
 use zk_ee::interface_error;
@@ -55,6 +60,7 @@ pub struct FullIO<
     pub(crate) transient_storage: GenericTransientStorage<WarmStorageKey, Bytes32, SF, M, A>,
     pub(crate) logs_storage: LogsStorage<SF, M, A>,
     pub(crate) events_storage: EventsStorage<MAX_EVENT_TOPICS, SF, M, A>,
+    pub(crate) interop_root_storage: InteropRootStorage<SF, M, A>,
     pub(crate) allocator: A,
     pub(crate) oracle: O,
     pub(crate) tx_number: u32,
@@ -66,6 +72,7 @@ pub struct FullIOStateSnapshot {
     transient: CacheSnapshotId,
     messages: usize,
     events: usize,
+    interop_roots: usize,
 }
 
 impl<
@@ -226,6 +233,24 @@ impl<
         Ok(data_hash)
     }
 
+    fn add_interop_root(
+        &mut self,
+        _ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        interop_root: InteropRoot,
+    ) -> Result<(), SystemError> {
+        // For native we charge for the storage and the computation of the rolling
+        // hash (keccak of old hash || new root).
+        let native = <Self::Resources as Resources>::Native::from_computational(
+            INTEROP_ROOT_STORAGE_NATIVE_COST + per_root_computational_native_cost(),
+        );
+
+        let to_charge = Self::Resources::from_native(native);
+        resources.charge(&to_charge)?;
+
+        self.interop_root_storage.push_root(interop_root)
+    }
+
     fn get_nominal_token_balance(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -369,12 +394,14 @@ impl<
         let transient = self.transient_storage.start_frame();
         let messages = self.logs_storage.start_frame();
         let events = self.events_storage.start_frame();
+        let interop_roots = self.interop_root_storage.start_frame();
 
         Ok(FullIOStateSnapshot {
             io,
             transient,
             messages,
             events,
+            interop_roots,
         })
     }
 
@@ -389,6 +416,8 @@ impl<
             .finish_frame(rollback_handle.map(|x| x.messages));
         self.events_storage
             .finish_frame(rollback_handle.map(|x| x.events));
+        self.interop_root_storage
+            .finish_frame(rollback_handle.map(|x| x.interop_roots));
 
         Ok(())
     }
@@ -571,6 +600,12 @@ impl<
             last_block_timestamp: block_metadata.timestamp,
         };
 
+        let interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
+            Bytes32::zero(),
+            self.interop_root_storage.iter(),
+            &mut crypto::sha3::Keccak256::new(),
+        );
+
         // other outputs to be opened on the settlement layer/aggregation program
         let block_output = BlocksOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
@@ -580,6 +615,7 @@ impl<
             priority_ops_hashes_hash: l1_to_l2_txs_hash,
             l2_to_l1_logs_hashes_hash: l2_to_l1_logs_hashes_hash.into(),
             upgrade_tx_hash,
+            interop_roots_rolling_hash,
         };
 
         let public_input = BlocksPublicInput {
@@ -704,6 +740,13 @@ impl<
         let _ = logger.write_fmt(format_args!(
             "PI calculation: state commitment after {chain_state_commitment_after:?}\n",
         ));
+
+        let interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
+            Bytes32::zero(),
+            self.interop_root_storage.iter(),
+            &mut crypto::sha3::Keccak256::new(),
+        );
+
         let batch_output = public_input::BatchOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
             first_block_timestamp: block_metadata.timestamp,
@@ -714,7 +757,7 @@ impl<
             priority_operations_hash: l1_txs_commitment.1,
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash,
-            interop_root_rolling_hash: Bytes32::from([0u8; 32]), // for now no interop roots
+            interop_roots_rolling_hash,
         };
         let _ = logger.write_fmt(format_args!(
             "PI calculation: batch output {batch_output:?}\n",
@@ -884,12 +927,15 @@ where
             last_block_timestamp: block_metadata.timestamp,
         };
 
+        let interop_roots_iter = self.interop_root_storage.iter();
+
         builder.apply_block(
             chain_state_commitment_before.hash().into(),
             chain_state_commitment_after.hash().into(),
             block_metadata.timestamp,
             U256::try_from(block_metadata.chain_id).unwrap(),
             upgrade_tx_hash,
+            interop_roots_iter,
         );
 
         self.oracle
@@ -924,6 +970,8 @@ where
         let logs_storage = LogsStorage::<SF, M, A>::new_from_parts(allocator.clone());
         let events_storage =
             EventsStorage::<MAX_EVENT_TOPICS, SF, M, A>::new_from_parts(allocator.clone());
+        let interop_root_storage =
+            InteropRootStorage::<SF, M, A>::new_from_parts(allocator.clone());
 
         let da_commitment_scheme = if PROOF_ENV {
             Some(DACommitmentScheme::try_from_oracle(&mut oracle)?)
@@ -935,6 +983,7 @@ where
             transient_storage,
             events_storage,
             logs_storage,
+            interop_root_storage,
             allocator,
             oracle,
             tx_number: 0u32,

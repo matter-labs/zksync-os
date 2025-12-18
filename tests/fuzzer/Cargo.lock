@@ -1869,6 +1869,7 @@ dependencies = [
  "serde",
  "storage_models",
  "strum_macros 0.27.2",
+ "zerocopy",
  "zk_ee",
 ]
 
@@ -10080,6 +10081,8 @@ name = "zksync_os_api"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "alloy-sol-types",
+ "basic_bootloader",
  "basic_system",
  "callable_oracles",
  "crypto",
@@ -10102,14 +10105,12 @@ checksum = "95ddc4ac82441385017e569ee1b060502a2af4d78c4fb7b24bcee70b0b96e6a3"
 [[package]]
 name = "zksync_os_evm_errors"
 version = "0.0.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b3ad55a8aa3498e304565de55b61dc930bac227c8c5e81284b623c69f2143d2"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-prover-input-gen#16f2306bb4c3b6cb7465f6809637661ff4f2f86f"
 
 [[package]]
 name = "zksync_os_interface"
 version = "0.0.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3476c481db1ea2db28ed8cbdfef391576288cb9e13241f7944274b72cf1e251e"
+source = "git+https://github.com/matter-labs/zksync-os-interface?branch=alocascio-prover-input-gen#16f2306bb4c3b6cb7465f6809637661ff4f2f86f"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",

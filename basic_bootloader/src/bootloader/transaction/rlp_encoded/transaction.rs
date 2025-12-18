@@ -60,7 +60,9 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::parse_and_compute_signed_hash(
                 unsafe { core::mem::transmute::<&[u8], &[u8]>(buffer.as_slice()) },
                 expected_chain_id,
+                &from,
             )?;
+
         Ok(Self {
             buffer,
             inner,
@@ -71,6 +73,10 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
         })
     }
 
+    pub fn is_service(&self) -> bool {
+        matches!(&self.inner, RlpEncodedTxInner::Service(_))
+    }
+
     pub fn chain_id(&self) -> Option<u64> {
         match &self.inner {
             RlpEncodedTxInner::Legacy(_, _) => None,
@@ -78,14 +84,15 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
         }
     }
 
-    pub fn nonce(&self) -> u64 {
+    pub fn nonce(&self) -> Option<u64> {
         match &self.inner {
             RlpEncodedTxInner::Legacy(tx, _) | RlpEncodedTxInner::LegacyWithEIP155(tx, _) => {
-                tx.nonce
+                Some(tx.nonce)
             }
-            RlpEncodedTxInner::EIP2930(tx, _) => tx.nonce,
-            RlpEncodedTxInner::EIP1559(tx, _) => tx.nonce,
-            RlpEncodedTxInner::EIP7702(tx, _) => tx.nonce,
+            RlpEncodedTxInner::EIP2930(tx, _) => Some(tx.nonce),
+            RlpEncodedTxInner::EIP1559(tx, _) => Some(tx.nonce),
+            RlpEncodedTxInner::EIP7702(tx, _) => Some(tx.nonce),
+            RlpEncodedTxInner::Service(_) => None,
         }
     }
 
@@ -97,6 +104,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP2930(tx, _) => &tx.value,
             RlpEncodedTxInner::EIP1559(tx, _) => &tx.value,
             RlpEncodedTxInner::EIP7702(tx, _) => &tx.value,
+            RlpEncodedTxInner::Service(_) => &U256::ZERO,
         }
     }
 
@@ -128,6 +136,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP2930(_, _) => EIP2930Tx::TX_TYPE,
             RlpEncodedTxInner::EIP1559(_, _) => EIP1559Tx::TX_TYPE,
             RlpEncodedTxInner::EIP7702(_, _) => EIP7702Tx::TX_TYPE,
+            RlpEncodedTxInner::Service(_) => ServiceTx::TX_TYPE,
         }
     }
 
@@ -139,6 +148,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP2930(tx, _) => tx.data,
             RlpEncodedTxInner::EIP1559(tx, _) => tx.data,
             RlpEncodedTxInner::EIP7702(tx, _) => tx.data,
+            RlpEncodedTxInner::Service(tx) => tx.data,
         }
     }
 
@@ -148,6 +158,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP2930(tx, _) => Some(tx.access_list),
             RlpEncodedTxInner::EIP1559(tx, _) => Some(tx.access_list),
             RlpEncodedTxInner::EIP7702(tx, _) => Some(tx.access_list),
+            RlpEncodedTxInner::Service(_) => None,
         }
     }
 
@@ -159,6 +170,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP2930(tx, _) => Some(tx.access_list.iter()),
             RlpEncodedTxInner::EIP1559(tx, _) => Some(tx.access_list.iter()),
             RlpEncodedTxInner::EIP7702(tx, _) => Some(tx.access_list.iter()),
+            RlpEncodedTxInner::Service(_) => None,
         }
     }
 
@@ -182,20 +194,21 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
         &self.from
     }
 
-    pub fn sig_parity_r_s<'a>(&'a self) -> (bool, &'a [u8], &'a [u8]) {
+    pub fn sig_parity_r_s<'a>(&'a self) -> Option<(bool, &'a [u8], &'a [u8])> {
         match &self.inner {
             RlpEncodedTxInner::Legacy(_, sig) => {
                 let parity = sig.v - U256::from(27) == U256::ONE;
-                (parity, sig.r, sig.s) // prechecked
+                Some((parity, sig.r, sig.s)) // prechecked
             }
             RlpEncodedTxInner::LegacyWithEIP155(_, sig) => {
                 let chain_id = self.chain_id;
                 let parity = sig.v - U256::from(35) - (U256::from(chain_id) * U256::from(2)); // no underflows
-                (parity == 1, sig.r, sig.s)
+                Some((parity == 1, sig.r, sig.s))
             }
-            RlpEncodedTxInner::EIP2930(_, sig) => (sig.y_parity, sig.r, sig.s),
-            RlpEncodedTxInner::EIP1559(_, sig) => (sig.y_parity, sig.r, sig.s),
-            RlpEncodedTxInner::EIP7702(_, sig) => (sig.y_parity, sig.r, sig.s),
+            RlpEncodedTxInner::EIP2930(_, sig) => Some((sig.y_parity, sig.r, sig.s)),
+            RlpEncodedTxInner::EIP1559(_, sig) => Some((sig.y_parity, sig.r, sig.s)),
+            RlpEncodedTxInner::EIP7702(_, sig) => Some((sig.y_parity, sig.r, sig.s)),
+            RlpEncodedTxInner::Service(_) => None,
         }
     }
 
@@ -214,6 +227,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP2930(tx, _) => tx.gas_limit,
             RlpEncodedTxInner::EIP1559(tx, _) => tx.gas_limit,
             RlpEncodedTxInner::EIP7702(tx, _) => tx.gas_limit,
+            RlpEncodedTxInner::Service(tx) => tx.gas_limit,
         }
     }
 
@@ -232,6 +246,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP2930(tx, _) => map_fn(tx.to),
             RlpEncodedTxInner::EIP1559(tx, _) => map_fn(tx.to),
             RlpEncodedTxInner::EIP7702(tx, _) => Some(B160::from_be_bytes(*tx.to)),
+            RlpEncodedTxInner::Service(tx) => Some(B160::from_be_bytes(*tx.to)),
         }
     }
 
@@ -243,6 +258,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP2930(tx, _) => &tx.gas_price,
             RlpEncodedTxInner::EIP1559(tx, _) => &tx.max_fee_per_gas,
             RlpEncodedTxInner::EIP7702(tx, _) => &tx.max_fee_per_gas,
+            RlpEncodedTxInner::Service(_) => &U256::ZERO,
         }
     }
 
@@ -252,6 +268,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP2930(_, _) => None,
             RlpEncodedTxInner::EIP1559(tx, _) => Some(&tx.max_priority_fee_per_gas),
             RlpEncodedTxInner::EIP7702(tx, _) => Some(&tx.max_priority_fee_per_gas),
+            RlpEncodedTxInner::Service(_) => None,
         }
     }
 

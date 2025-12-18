@@ -19,6 +19,7 @@ use super::system::System;
 use super::system::SystemTypes;
 use super::tracer::Tracer;
 use super::IOSubsystemExt;
+use crate::common_structs::system_hooks::HooksStorage;
 use crate::common_structs::CalleeAccountProperties;
 use crate::internal_error;
 use crate::memory::slice_vec::SliceVec;
@@ -68,6 +69,7 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         &'a mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
         tracer: &mut impl Tracer<S>,
@@ -92,6 +94,7 @@ pub trait ExecutionEnvironment<'ee, S: SystemTypes, Es: Subsystem>: Sized {
     fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         returned_resources: S::Resources,
         call_request_result: CallResult<'res, S>,
         tracer: &mut impl Tracer<S>,

@@ -120,9 +120,14 @@ fn fuzz(input: FuzzInput) {
     ) else {
         return;
     };
+    let mut hooks_storage = zk_ee::common_structs::system_hooks::HooksStorage::<
+        ForwardRunningSystem,
+        _,
+    >::new_in(system.get_allocator());
 
     let _ = vm_state.start_executing_frame(
         &mut system,
+        &mut hooks_storage,
         ee_launch_params,
         heap,
         &mut NopTracer::default(),

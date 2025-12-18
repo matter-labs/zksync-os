@@ -4,6 +4,7 @@ use core::ops::Range;
 use errors::EvmSubsystemError;
 use native_resource_constants::STEP_NATIVE_COST;
 use ruint::aliases::B160;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::memory::ArrayBuilder;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
@@ -23,13 +24,14 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn execute_till_yield_point<'a>(
         &'a mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<ExecutionEnvironmentPreemptionPoint<'a, S>, EvmSubsystemError>
     where
         S::IO: IOSubsystemExt,
     {
         let mut external_call = None;
-        let exit_code = self.run(system, &mut external_call, tracer)?;
+        let exit_code = self.run(system, hooks, &mut external_call, tracer)?;
 
         if let ExitCode::FatalError(e) = exit_code {
             return Err(e);
@@ -112,6 +114,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn run(
         &mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         external_call_dest: &mut Option<EVMCallRequest<S>>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<ExitCode, EvmSubsystemError> {
@@ -286,11 +289,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::TSTORE => self.tstore(system, tracer),
                     opcodes::MCOPY => self.mcopy(),
                     opcodes::GAS => self.gas(),
-                    opcodes::LOG0 => self.log::<0>(system, tracer),
-                    opcodes::LOG1 => self.log::<1>(system, tracer),
-                    opcodes::LOG2 => self.log::<2>(system, tracer),
-                    opcodes::LOG3 => self.log::<3>(system, tracer),
-                    opcodes::LOG4 => self.log::<4>(system, tracer),
+                    opcodes::LOG0 => self.log::<0>(system, hooks, tracer),
+                    opcodes::LOG1 => self.log::<1>(system, hooks, tracer),
+                    opcodes::LOG2 => self.log::<2>(system, hooks, tracer),
+                    opcodes::LOG3 => self.log::<3>(system, hooks, tracer),
+                    opcodes::LOG4 => self.log::<4>(system, hooks, tracer),
                     opcodes::SELFDESTRUCT => self.selfdestruct(system, tracer),
                     opcodes::CHAINID => self.chainid(system),
                     opcodes::BLOBHASH => self.blobhash(system),

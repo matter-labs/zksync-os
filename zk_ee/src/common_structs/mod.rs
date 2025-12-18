@@ -5,12 +5,14 @@ pub mod events_storage;
 pub mod history_counter;
 pub mod history_list;
 pub mod history_map;
+pub mod interop_root_storage;
 pub mod logs_storage;
 pub mod new_preimages_publication_storage;
 pub mod proof_data;
 pub mod pubdata_compression;
 pub mod skip_list_quasi_vec;
 pub mod state_root_view;
+pub mod system_hooks;
 pub mod warm_storage_key;
 pub mod warm_storage_value;
 

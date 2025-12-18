@@ -10,6 +10,7 @@ use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_system::system_implementation::system::pubdata::PUBDATA_ENCODING_VERSION;
 use rig::ruint::aliases::{B160, U256};
+use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::{alloy, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
@@ -1375,4 +1376,119 @@ fn test_check_pubdata_has_timestamp() {
             .expect("Slice with incorrect length"),
     );
     assert_eq!(timestamp, pubdata_timestamp, "Timestamps do not match");
+}
+
+#[test]
+fn test_simple_service_transaction() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    let target_address = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes::<20>();
+
+    // Set balance for the contract address
+    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+
+    let tx = encode_service_tx(500_000, &target_address, &[]);
+
+    let block_context = BlockContext {
+        eip1559_basefee: U256::ZERO,
+        ..Default::default()
+    };
+    // Check tx succeeds
+    let result = chain.run_block(vec![tx], Some(block_context), None, run_config());
+    let res0 = result.tx_results.first().expect("Must have a tx result");
+    assert!(res0.as_ref().is_ok(), "Tx should succeed");
+}
+
+#[test]
+fn test_simple_service_transaction_whitelist() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    // Invalid target
+    let target_address = [0u8; 20];
+
+    // Set balance for the contract address
+    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+
+    let tx = encode_service_tx(500_000, &target_address, &[]);
+
+    let block_context = BlockContext {
+        eip1559_basefee: U256::ZERO,
+        ..Default::default()
+    };
+    // Check tx succeeds
+    let result = chain.run_block(vec![tx], Some(block_context), None, run_config());
+    let res0 = result.tx_results.first().expect("Must have a tx result");
+    assert!(res0.as_ref().is_err(), "Tx should fail");
+}
+
+#[test]
+fn test_service_block_invariants() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    let target_address = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes::<20>();
+
+    // Set balance for the contract address
+    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+
+    // Check that a service block with several service txs works
+    let tx1 = encode_service_tx(500_000, &target_address, &[]);
+    let tx2 = encode_service_tx(500_000, &target_address, &[]);
+    let tx3 = encode_service_tx(500_000, &target_address, &[]);
+
+    let block_context = BlockContext {
+        eip1559_basefee: U256::ZERO,
+        ..Default::default()
+    };
+    // Check txs succeed
+    let result = chain.run_block(vec![tx1, tx2, tx3], Some(block_context), None, run_config());
+    assert!(
+        result.tx_results.iter().all(|res| res.is_ok()),
+        "All txs should succeed"
+    );
+
+    // Check that a service block with a non-service tx fails
+    let tx4 = encode_service_tx(500_000, &target_address, &[]);
+    let tx_non_service = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 134217728,
+            max_priority_fee_per_gas: 134217728,
+            gas_limit: 75_000,
+            to: TxKind::Call(address!("4242000000000000000000000000000000000000")),
+            value: Default::default(),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let block_context = BlockContext {
+        eip1559_basefee: U256::ZERO,
+        ..Default::default()
+    };
+    chain
+        .run_block_no_panic(
+            vec![tx4.clone(), tx_non_service.clone()],
+            Some(block_context),
+            None,
+            run_config(),
+        )
+        .expect_err("Service block with non service tx should fail");
+
+    // Check that a non-service block with a service tx fails
+    let block_context = BlockContext {
+        eip1559_basefee: U256::ZERO,
+        ..Default::default()
+    };
+    chain
+        .run_block_no_panic(
+            vec![tx_non_service, tx4],
+            Some(block_context),
+            None,
+            run_config(),
+        )
+        .expect_err("Service block with non service tx should fail");
 }

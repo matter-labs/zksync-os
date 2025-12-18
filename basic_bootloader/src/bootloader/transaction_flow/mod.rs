@@ -8,7 +8,7 @@ use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::Transaction;
 use ruint::aliases::{B160, U256};
-use system_hooks::HooksStorage;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
@@ -73,6 +73,7 @@ pub struct TxProcessingResult<'a> {
     pub tx_hash: Bytes32,
     pub is_l1_tx: bool,
     pub is_upgrade_tx: bool,
+    pub is_service_tx: bool,
     pub gas_used: u64,
     pub gas_refunded: u64,
     pub computational_native_used: u64,

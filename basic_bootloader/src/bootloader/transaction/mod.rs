@@ -101,11 +101,18 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
-    /// Returns the transaction nonce as U256.
-    pub fn nonce(&self) -> U256 {
+    pub fn is_service(&self) -> bool {
         match self {
-            Self::Rlp(tx) => U256::from(tx.nonce()),
-            Self::Abi(tx) => tx.nonce.read(),
+            Self::Abi(_) => false,
+            Self::Rlp(tx) => tx.is_service(),
+        }
+    }
+
+    /// Returns the transaction nonce as U256.
+    pub fn nonce(&self) -> Option<U256> {
+        match self {
+            Self::Rlp(tx) => tx.nonce().map(U256::from),
+            Self::Abi(tx) => Some(tx.nonce.read()),
         }
     }
 
@@ -195,8 +202,9 @@ impl<A: Allocator> Transaction<A> {
         }
     }
 
-    /// Returns the signature as `(y_parity, r, s)` borrowed from the underlying tx.
-    pub fn sig_parity_r_s<'a>(&'a self) -> (bool, &'a [u8], &'a [u8]) {
+    /// Returns the signature as `Some((y_parity, r, s))` borrowed from the underlying tx.
+    /// Returns None for transactions with no signature (service txs).
+    pub fn sig_parity_r_s<'a>(&'a self) -> Option<(bool, &'a [u8], &'a [u8])> {
         match self {
             Self::Rlp(tx) => tx.sig_parity_r_s(),
             Self::Abi(tx) => tx.sig_parity_r_s(),

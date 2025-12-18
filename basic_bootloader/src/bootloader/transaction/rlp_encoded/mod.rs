@@ -1,5 +1,9 @@
 use crypto::MiniDigest;
+use rlp::minimal_rlp_parser::RlpListDecode;
+use ruint::aliases::B160;
+use transaction_types::service_tx::ServiceTx;
 
+use crate::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
 use crate::bootloader::errors::InvalidTransaction;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser::Rlp;
 use crate::bootloader::transaction::rlp_encoded::transaction_types::legacy_tx::{
@@ -17,7 +21,7 @@ use zk_ee::utils::Bytes32;
 mod eip_2718_tx_envelope;
 mod rlp;
 mod transaction;
-mod transaction_types;
+pub mod transaction_types;
 
 pub use self::transaction::RlpEncodedTransaction;
 pub use transaction_types::eip_2930_tx::AccessListForAddress;
@@ -33,13 +37,16 @@ pub(crate) enum RlpEncodedTxInner<'a> {
     EIP2930(EIP2930Tx<'a>, EIP2718SignatureData<'a>),
     EIP1559(EIP1559Tx<'a>, EIP2718SignatureData<'a>),
     EIP7702(EIP7702Tx<'a>, EIP2718SignatureData<'a>),
+    Service(ServiceTx<'a>),
 }
 
 impl<'a> RlpEncodedTxInner<'a> {
     // NOTE: u64 chain ID allows to avoid handling some overflows below
+    // For service txs, the signed hash is Bytes32::ZERO.
     pub(crate) fn parse_and_compute_signed_hash(
         input: &'a [u8],
         expected_chain_id: u64,
+        from: &B160,
     ) -> Result<(Self, Bytes32), TxError> {
         // Try to read a leading single-byte item as the typed marker.
         // For typed txs, this is a bare byte (1/2/4) followed by an RLP list.
@@ -77,6 +84,20 @@ impl<'a> RlpEncodedTxInner<'a> {
                         return Err(InvalidTransaction::InvalidChainId.into());
                     }
                     Ok((Self::EIP7702(tx, sig_data), sig_hash))
+                }
+                ServiceTx::TX_TYPE => {
+                    // Check that from provided by oracle is BOOTLOADER_FORMAL_ADDRESS
+                    if from != &BOOTLOADER_FORMAL_ADDRESS {
+                        return Err(InvalidTransaction::IncorrectFrom {
+                            tx: *from,
+                            recovered: BOOTLOADER_FORMAL_ADDRESS,
+                        }
+                        .into());
+                    }
+
+                    let tx = ServiceTx::decode_list_from(&mut r)?;
+
+                    Ok((Self::Service(tx), Bytes32::ZERO))
                 }
                 _ => Err(InvalidTransaction::InvalidEncoding.into()),
             }
@@ -169,5 +190,21 @@ mod test {
             alloy_signed_hash,
             tx.hash_for_signature_verification().as_u8_array()
         )
+    }
+
+    #[test]
+    fn test_on_random_service() {
+        let input = hex::decode("7df90210830f4240940000000000000000000000000000000000010008b901f4000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3").unwrap();
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        let _tx =
+            RlpEncodedTransaction::parse_from_buffer(buffer, 1, BOOTLOADER_FORMAL_ADDRESS).unwrap();
+    }
+
+    #[test]
+    fn test_on_random_service_fails_on_bad_from() {
+        let input = hex::decode("7df90210830f4240940000000000000000000000000000000000010008b901f4000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3").unwrap();
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        let _ = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO)
+            .expect_err("Only bootloader address is allowed");
     }
 }

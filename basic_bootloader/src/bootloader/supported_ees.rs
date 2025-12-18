@@ -1,7 +1,7 @@
 use crate::bootloader::EVM_EE_BYTE;
 use errors::{EESubsystemError, InterfaceError};
 use zk_ee::{
-    common_structs::CalleeAccountProperties,
+    common_structs::{system_hooks::HooksStorage, CalleeAccountProperties},
     execution_environment_type::ExecutionEnvironmentType,
     interface_error,
     memory::slice_vec::SliceVec,
@@ -97,6 +97,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
     pub fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         &'a mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         initial_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
         tracer: &mut impl Tracer<S>,
@@ -106,7 +107,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
     {
         match self {
             Self::EVM(evm_frame) => evm_frame
-                .start_executing_frame(system, initial_state, heap, tracer)
+                .start_executing_frame(system, hooks, initial_state, heap, tracer)
                 .map_err(wrap_error!()),
         }
     }
@@ -114,6 +115,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
     pub fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         returned_resources: S::Resources,
         call_result: CallResult<'res, S>,
         tracer: &mut impl Tracer<S>,
@@ -123,7 +125,7 @@ impl<'ee, S: EthereumLikeTypes> SupportedEEVMState<'ee, S> {
     {
         match self {
             Self::EVM(evm_frame) => evm_frame
-                .continue_after_preemption(system, returned_resources, call_result, tracer)
+                .continue_after_preemption(system, hooks, returned_resources, call_result, tracer)
                 .map_err(wrap_error!()),
         }
     }

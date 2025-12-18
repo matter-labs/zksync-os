@@ -12,7 +12,7 @@
 //! - ecmul
 //! - ecpairing
 //!
-use super::*;
+use super::super::*;
 use core::fmt::Write;
 use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::{

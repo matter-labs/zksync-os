@@ -1,10 +1,12 @@
 use crate::system_implementation::system::da_commitment_generator::DACommitmentGenerator;
+use crate::system_implementation::system::interop_roots::calculate_interop_roots_rolling_hash;
 use crate::system_implementation::system::public_input;
 use arrayvec::ArrayVec;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::U256;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
+use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::logger::Logger;
 use zk_ee::utils::Bytes32;
@@ -71,6 +73,8 @@ pub struct BlocksOutput {
     pub l2_to_l1_logs_hashes_hash: Bytes32,
     /// Protocol upgrade tx hash (0 if there wasn't)
     pub upgrade_tx_hash: Bytes32,
+    /// Linear keccak256 hash of interop roots
+    pub interop_roots_rolling_hash: Bytes32,
 }
 
 #[cfg(feature = "aggregation")]
@@ -90,6 +94,7 @@ impl BlocksOutput {
         hasher.update(self.priority_ops_hashes_hash.as_u8_ref());
         hasher.update(self.l2_to_l1_logs_hashes_hash.as_u8_ref());
         hasher.update(self.upgrade_tx_hash.as_u8_ref());
+        hasher.update(self.interop_roots_rolling_hash.as_u8_ref());
         hasher.finalize()
     }
 }
@@ -152,8 +157,8 @@ pub struct BatchOutput {
     pub l2_logs_tree_root: Bytes32,
     /// Protocol upgrade tx hash (0 if there wasn't)
     pub upgrade_tx_hash: Bytes32,
-    /// Rolling hash of all the interop roots included in this batch.
-    pub interop_root_rolling_hash: Bytes32,
+    /// Linear keccak256 hash of interop roots
+    pub interop_roots_rolling_hash: Bytes32,
 }
 
 impl BatchOutput {
@@ -173,7 +178,7 @@ impl BatchOutput {
         hasher.update(self.priority_operations_hash.as_u8_ref());
         hasher.update(self.l2_logs_tree_root.as_u8_ref());
         hasher.update(self.upgrade_tx_hash.as_u8_ref());
-        hasher.update(self.interop_root_rolling_hash.as_u8_ref());
+        hasher.update(self.interop_roots_rolling_hash.as_u8_ref());
         hasher.finalize()
     }
 }
@@ -218,6 +223,7 @@ pub struct BatchPublicInputBuilder<A: alloc::alloc::Allocator, O: IOOracle> {
     pub number_of_layer_1_txs: U256,
     pub l1_txs_rolling_hash: Bytes32,
     upgrade_tx_hash: Option<Bytes32>,
+    interop_roots_rolling_hash: Bytes32,
 }
 
 impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
@@ -240,6 +246,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
                 0x5d, 0x85, 0xa4, 0x70,
             ]),
             upgrade_tx_hash: None,
+            interop_roots_rolling_hash: Bytes32::ZERO,
         }
     }
 
@@ -247,13 +254,14 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
     /// Apply information about a processed block.
     /// Please note, that pubdata, l2 -> l1 logs, and l1 -> l2 txs commitment should be handled separately using corresponding public fields of this structure.
     ///
-    pub fn apply_block(
+    pub fn apply_block<'a>(
         &mut self,
         state_commitment_before: Bytes32,
         state_commitment_after: Bytes32,
         block_timestamp: u64,
         chain_id: U256,
         upgrade_tx_hash: Bytes32,
+        interop_roots: impl Iterator<Item = &'a InteropRoot>,
     ) {
         if self.is_first_block {
             self.initial_state_commitment = Some(state_commitment_before);
@@ -273,6 +281,12 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             assert_eq!(self.chain_id.unwrap(), chain_id);
             assert!(upgrade_tx_hash.is_zero());
         }
+
+        self.interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
+            self.interop_roots_rolling_hash,
+            interop_roots,
+            &mut crypto::sha3::Keccak256::new(),
+        );
     }
 
     ///
@@ -296,7 +310,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             priority_operations_hash: self.l1_txs_rolling_hash,
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash: self.upgrade_tx_hash.unwrap(),
-            interop_root_rolling_hash: Bytes32::from([0u8; 32]), // for now no interop roots
+            interop_roots_rolling_hash: self.interop_roots_rolling_hash,
         };
         let public_input = BatchPublicInput {
             state_before: self.initial_state_commitment.unwrap(),

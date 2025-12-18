@@ -10,9 +10,9 @@
 //!
 //! ## Notes
 //! - Minting is performed in the bootloader automatically with corresponding "Mint" events if L1->L2 or upgrade tx has some value attached
-use crate::l1_messenger::send_to_l1_inner;
+use crate::call_hooks::l1_messenger::send_to_l1_inner;
 
-use super::*;
+use super::super::*;
 use arrayvec::ArrayVec;
 use core::fmt::Write;
 use ruint::aliases::{B160, U256};

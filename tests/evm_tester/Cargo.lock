@@ -8782,6 +8782,8 @@ name = "zksync_os_api"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "alloy-sol-types",
+ "basic_bootloader",
  "basic_system",
  "callable_oracles",
  "crypto",

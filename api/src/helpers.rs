@@ -2,15 +2,22 @@ use alloy::consensus::{EthereumTxEnvelope, SignableTransaction};
 use alloy::consensus::{Signed, TxEnvelope, TypedTransaction};
 use alloy::dyn_abi::DynSolValue;
 use alloy::network::TxSignerSync;
+use alloy::primitives::Address;
 use alloy::primitives::Signature;
+use alloy::rlp::{encode, BufMut, Encodable};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
+use alloy_sol_types::sol;
+use alloy_sol_types::SolCall;
+use basic_bootloader::bootloader::constants::BOOTLOADER_FORMAL_ADDRESS;
+use basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::SERVICE_TX_TYPE;
 use basic_system::system_implementation::flat_storage_model::bytecode_padding_len;
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use forward_system::run::PreimageSource;
 use ruint::aliases::U256;
 use std::alloc::Global;
 use std::ops::Add;
+use zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoot;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::EIP7702_DELEGATION_MARKER;
 use zk_ee::utils::Bytes32;
@@ -234,4 +241,100 @@ pub fn sign_and_encode_transaction_request(
         TypedTransaction::Eip2930(tx) => sign_and_encode_alloy_tx(tx, wallet),
         TypedTransaction::Eip4844(_) => panic!("Unsupported tx type"),
     }
+}
+
+/// Helper wrapper representing the RLP *body* of a service tx:
+/// [gas_limit, to, data]
+struct ServiceTxBody<'a> {
+    gas_limit: u64,
+    to: &'a [u8; 20],
+    data: &'a [u8],
+}
+
+enum ServiceTxField<'b> {
+    U64(u64),
+    Bytes(&'b [u8]),
+}
+
+impl<'b> Encodable for ServiceTxField<'b> {
+    fn encode(&self, out: &mut dyn BufMut) {
+        match self {
+            ServiceTxField::U64(v) => v.encode(out),
+            ServiceTxField::Bytes(b) => (*b).encode(out),
+        }
+    }
+}
+
+impl<'a> Encodable for ServiceTxBody<'a> {
+    fn encode(&self, out: &mut dyn BufMut) {
+        let fields = vec![
+            ServiceTxField::U64(self.gas_limit),
+            ServiceTxField::Bytes(self.to.as_slice()),
+            ServiceTxField::Bytes(self.data),
+        ];
+
+        fields.encode(out);
+    }
+}
+
+///
+/// Encode a service transaction
+///
+pub fn encode_service_tx(gas_limit: u64, to: &[u8; 20], data: &[u8]) -> EncodedTx {
+    let body = ServiceTxBody {
+        gas_limit,
+        to,
+        data,
+    };
+    let rlp_body = encode(&body);
+    let mut out = Vec::with_capacity(1 + rlp_body.len());
+    out.push(SERVICE_TX_TYPE);
+    out.extend_from_slice(&rlp_body);
+    let from = Address::from_slice(&BOOTLOADER_FORMAL_ADDRESS.to_be_bytes::<20>());
+    EncodedTx::Rlp(out, from)
+}
+
+///
+/// Calldata used by service transactions that import interop roots.
+///
+/// Constructs the calldata for:
+///
+/// function addInteropRootsInBatch(InteropRoot[] calldata interopRootsInput);
+///
+/// where
+///
+/// struct InteropRoot {
+///     uint256 chainId;
+///     uint256 blockOrBatchNumber;
+///     bytes32[] sides;
+/// }
+///
+pub fn encode_interop_root_import_calldata(interop_roots: Vec<StoredInteropRoot>) -> Vec<u8> {
+    // Declare sol interface
+    sol! {
+      struct InteropRoot {
+          uint256 chainId;
+          uint256 blockOrBatchNumber;
+          bytes32[] sides;
+      }
+
+      function addInteropRootsInBatch(InteropRoot[] calldata interopRootsInput);
+    }
+
+    // Construct calldata
+    let interop_roots: Vec<InteropRoot> = interop_roots
+        .into_iter()
+        .map(|r: StoredInteropRoot| {
+            let root_b256 = alloy::primitives::B256::from_slice(r.root.as_u8_ref());
+            InteropRoot {
+                chainId: r.chain_id,
+                blockOrBatchNumber: r.block_or_batch_number,
+                sides: vec![root_b256],
+            }
+        })
+        .collect();
+    addInteropRootsInBatchCall {
+        interopRootsInput: interop_roots,
+    }
+    .abi_encode()
 }
