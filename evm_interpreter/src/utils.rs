@@ -163,10 +163,12 @@ pub(crate) fn create_quasi_rlp(address: &B160, nonce: u64) -> impl ExactSizeIter
 /// Helper to check if an address is an ethereum precompile
 #[inline(always)]
 pub fn is_precompile(address: &B160) -> bool {
-    let highest_precompile_address = 10;
     let limbs = address.as_limbs();
     if limbs[1] != 0u64 || limbs[2] != 0u64 {
         return false;
     }
-    limbs[0] > 0 && limbs[0] <= highest_precompile_address
+    let Ok(low) = limbs[0].try_into() else {
+        return false;
+    };
+    precompile_addresses::PRECOMPILE_ADDRESSES_LOWS.contains(&low)
 }

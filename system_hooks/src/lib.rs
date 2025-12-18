@@ -38,9 +38,11 @@ use call_hooks::precompiles::{
 };
 use core::marker::PhantomData;
 use core::{alloc::Allocator, mem::MaybeUninit};
+use evm_interpreter::precompile_addresses::*;
 use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook, SystemEventHook};
 use zk_ee::common_traits::TryExtend;
+use zk_ee::internal_error;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 #[cfg(feature = "mock-unsupported-precompiles")]
@@ -255,6 +257,12 @@ where
     P: SystemFunction<S::Resources, E>,
     E: Subsystem,
 {
+    // Sanity check to ensure that the address being added is indeed in the precompile addresses list
+    if !PRECOMPILE_ADDRESSES_LOWS.contains(&address_low) {
+        return Err(internal_error!(
+            "Attempted to add a precompile that is not in the precompile addresses list"
+        ));
+    }
     hooks.add_call_hook(
         address_low,
         SystemCallHook::new(
