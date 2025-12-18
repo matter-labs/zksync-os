@@ -81,6 +81,7 @@ where
     where
         S::IO: IOSubsystemExt,
     {
+        cycle_marker::start!("process_block");
         // initialize the system
         cycle_marker::start!("system_init");
 
@@ -127,6 +128,9 @@ where
 
         // Post-op
 
-        <S::PostTxLoopOp as PostTxLoopOp<S>>::post_op(system, block_data_keeper, result_keeper)
+        let res =
+            <S::PostTxLoopOp as PostTxLoopOp<S>>::post_op(system, block_data_keeper, result_keeper);
+        cycle_marker::end!("process_block");
+        res
     }
 }
