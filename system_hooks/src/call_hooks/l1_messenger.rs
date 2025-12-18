@@ -149,6 +149,12 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     resources: &mut S::Resources,
     system: &mut System<S>,
 ) -> Result<Result<Bytes32, &'static str>, SystemError> {
+    if calldata.len() < 20 {
+        return Ok(Err(
+            "L1 messenger failure: sendToL1 called with invalid calldata",
+        ));
+    }
+
     let address_sender = B160::try_from_be_slice(&calldata[0..20]).ok_or(
         SystemError::LeafDefect(internal_error!("Failed to create B160 from 20 byte array")),
     )?;
