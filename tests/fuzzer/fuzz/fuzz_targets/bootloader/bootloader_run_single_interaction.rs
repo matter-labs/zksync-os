@@ -156,6 +156,10 @@ fn fuzz(input: FuzzInput) {
 
     system_hooks::add_precompiles(&mut system_functions).expect("Should add precompiles");
 
+    system_hooks::add_l1_messenger(system_functions)?;
+    system_hooks::add_set_bytecode_on_address_hook(system_functions)?;
+    system_hooks::add_interop_root_reporter(system_functions)?;
+
     let mut inf_resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
     pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
     pub const MAX_RETURN_BUFFER_SIZE: usize = 1 << 28; // 256 MB
