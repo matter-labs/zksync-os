@@ -16,7 +16,7 @@ pub const L1_MESSENGER_ADDRESS_HOOK_LOW: u16 = 0x7001;
 pub const L1_MESSENGER_ADDRESS_HOOK: B160 =
     B160::from_limbs([L1_MESSENGER_ADDRESS_HOOK_LOW as u64, 0, 0]);
 
-// burn native token system hook needed for all envs (base token withdrawals)
+// system hook to set bytecode on address, needed for protocol upgrades
 pub const SET_BYTECODE_ON_ADDRESS_HOOK_LOW: u16 = 0x7002;
 pub const SET_BYTECODE_ON_ADDRESS_HOOK: B160 =
     B160::from_limbs([SET_BYTECODE_ON_ADDRESS_HOOK_LOW as u64, 0, 0]);
