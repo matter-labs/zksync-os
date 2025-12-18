@@ -163,7 +163,6 @@ mod test {
     use zk_ee::reference_implementations::DecreasingNative;
     use zk_ee::system::Resource;
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_pairing_inner() {
         let allocator = std::alloc::Global;
@@ -188,7 +187,6 @@ mod test {
         assert!(bn254_pairing_check_inner(2, src.as_slice(), allocator).unwrap());
     }
 
-    #[ignore = "requires single threaded runner"]
     #[test]
     fn test_pairing_external() {
         let allocator = std::alloc::Global;
