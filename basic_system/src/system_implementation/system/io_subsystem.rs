@@ -824,8 +824,7 @@ impl<
         SF: StackFactory<M>,
         const M: usize,
         O: IOOracle,
-        const PROOF_ENV: bool,
-    > FullIO<A, R, P, SF, M, O, PROOF_ENV>
+    > FullIO<A, R, P, SF, M, O, true>
 where
     Self: FinishIO,
 {

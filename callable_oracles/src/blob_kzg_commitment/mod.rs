@@ -1,6 +1,6 @@
 use crate::utils::evaluate::read_memory_as_u8;
 use crate::utils::usize_slice_iterator::UsizeSliceIteratorOwned;
-use alloy_consensus::private::alloy_eips::eip4844::kzg_to_versioned_hash;
+use basic_system::system_functions::point_evaluation::versioned_hash_for_kzg;
 use basic_system::system_implementation::system::da_commitment_generator::KZGCommitmentAndProof;
 use basic_system::system_implementation::system::da_commitment_generator::BLOB_COMMITMENT_AND_PROOF_QUERY_ID;
 use crypto::MiniDigest;
@@ -48,7 +48,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BlobCommitmentAndProofQuery<M>
         let data_len = it.next().unwrap() as u32;
         assert!(
             it.next().is_none(),
-            "A single RISC-V ptr should've been passed."
+            "RISC-V ptr and len should've been passed."
         );
 
         assert!(data_ptr.is_multiple_of(4));
@@ -81,7 +81,7 @@ pub fn blob_kzg_commitment_and_proof(data: &[u8]) -> KZGCommitmentAndProof {
     let commitment = kzg_settings.blob_to_kzg_commitment(&blob).unwrap();
 
     let mut hasher = crypto::blake2s::Blake2s256::new();
-    hasher.update(kzg_to_versioned_hash(commitment.as_slice()).as_slice());
+    hasher.update(versioned_hash_for_kzg(commitment.as_slice()).as_slice());
     hasher.update(data);
     let mut challenge_point = hasher.finalize();
     // truncate hash to 128 bits
