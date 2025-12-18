@@ -32,11 +32,9 @@ where
     // TODO: verify that we will use this caller
     if caller != L2_BASE_TOKEN_ADDRESS {
         // Pretend to be an empty account
-        let return_memory = SliceVec::new(return_memory);
-        let (returndata, rest) = return_memory.destruct();
         return Ok((
-            make_return_state_from_returndata_region(available_resources, returndata),
-            rest,
+            make_return_state_from_returndata_region(available_resources, &[]),
+            return_memory,
         ));
     }
 
