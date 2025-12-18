@@ -228,7 +228,7 @@ fn fuzz(input: FuzzInput) {
             .expect("Failed to initialize the mock system");
     let mut system_functions = HooksStorage::new_in(system.get_allocator());
 
-    system_hooks::add_precompiles(&mut system_functions)?;
+    system_hooks::add_precompiles(&mut system_functions).expect("Should add precompiles");
 
     let mut inf_resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
     pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
