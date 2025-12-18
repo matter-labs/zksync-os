@@ -13,9 +13,6 @@ use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::utils::Bytes32;
 use zk_ee::{internal_error, out_of_return_memory};
 
-// setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
-pub const SET_EVM_BYTECODE_DETAILS: &[u8] = &[0x23, 0x1b, 0x39, 0x57];
-
 pub fn set_bytecode_on_address_hook<'a, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
     caller_ee: u8,
@@ -38,6 +35,8 @@ where
     } = request;
 
     debug_assert_eq!(callee, SET_BYTECODE_ON_ADDRESS_HOOK);
+
+    // Can be used only by Contract Deployer system contract
     if caller != CONTRACT_DEPLOYER_ADDRESS {
         let _ = system.get_logger().write_fmt(format_args!(
             "Set bytecode hook: invalid caller (caller={caller:?})\n"
@@ -49,7 +48,10 @@ where
         ));
     }
 
-    // There are no "payable" methods
+    // Note: it's ok to revert below even when it breaks EVM compatibility, since
+    // this hook should be used in non-EVM-compatible context only (protocol upgrade).
+
+    // This hook doesn't accept any native token value
     let mut error = nominal_token_value != U256::ZERO;
     let mut is_static = false;
     match modifier {
@@ -127,7 +129,7 @@ where
 
     if is_static {
         return Ok(Err(
-            "Set bytecode on address failure: setBytecodeDetailsEVM called with static context",
+            "Set bytecode on address failure: called with static context",
         ));
     }
 
@@ -136,7 +138,7 @@ where
 
     if calldata.len() < 128 {
         return Ok(Err(
-            "Set bytecode on address failure: setBytecodeDetailsEVM called with invalid calldata",
+            "Set bytecode on address failure: called with invalid calldata",
         ));
     }
 
@@ -155,9 +157,11 @@ where
 
     let bytecode_length: u32 = match U256::from_be_slice(&calldata[64..96]).try_into() {
         Ok(length) => length,
-        Err(_) => return Ok(Err(
-            "Set bytecode on address failure: setBytecodeDetailsEVM called with invalid calldata",
-        )),
+        Err(_) => {
+            return Ok(Err(
+                "Set bytecode on address failure: called with invalid calldata",
+            ))
+        }
     };
 
     let observable_bytecode_hash =
@@ -166,9 +170,11 @@ where
     let observable_bytecode_length: u32 = match U256::from_be_slice(&calldata[128..160]).try_into()
     {
         Ok(length) => length,
-        Err(_) => return Ok(Err(
-            "Set bytecode on address failure: setBytecodeDetailsEVM called with invalid calldata",
-        )),
+        Err(_) => {
+            return Ok(Err(
+                "Set bytecode on address failure: called with invalid calldata",
+            ))
+        }
     };
 
     // Although this can be called as a part of protocol upgrade,
@@ -176,7 +182,7 @@ where
     // EIP-158: reject code of length > 24576.
     if bytecode_length as usize > MAX_CODE_SIZE {
         return Ok(Err(
-            "Set bytecode on address failure: setBytecodeDetailsEVM called with invalid bytecode(length > 24576)",
+            "Set bytecode on address failure: called with invalid bytecode(length > 24576)",
         ));
     }
     // Also EIP-3541(reject code starting with 0xEF) should be validated by governance.
