@@ -41,6 +41,7 @@ use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::utils::*;
 use zk_ee::{internal_error, system::*};
 
+use alloc::boxed::Box;
 use core::fmt::Write;
 
 pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
