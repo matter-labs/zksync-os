@@ -16,12 +16,12 @@ use rig::ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{
     CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
 };
-use system_hooks::contract_deployer::{L2_COMPLEX_UPGRADER_ADDRESS, SET_EVM_BYTECODE_DETAILS};
-use system_hooks::l1_messenger::SEND_TO_L1_SELECTOR;
-use system_hooks::l2_base_token::{
+use system_hooks::call_hookss::contract_deployer::{L2_COMPLEX_UPGRADER_ADDRESS, SET_EVM_BYTECODE_DETAILS};
+use system_hooks::call_hooks::l1_messenger::SEND_TO_L1_SELECTOR;
+use system_hooks::call_hooks::l2_base_token::{
     FINALIZE_ETH_WITHDRAWAL_SELECTOR, WITHDRAW_SELECTOR, WITHDRAW_WITH_MESSAGE_SELECTOR,
 };
-use system_hooks::HooksStorage;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::{Resource, System};
