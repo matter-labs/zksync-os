@@ -1,9 +1,10 @@
+use crate::{common_structs::skip_list_quasi_vec::ListVec, memory::stack_trait::Stack};
+
 use super::{
     element_with_history::{HistoryRecord, HistoryRecordLink},
     CacheSnapshotId,
 };
 use alloc::boxed::Box;
-use arrayvec::ArrayVec;
 use core::{alloc::Allocator, ptr::NonNull};
 
 /// Manages memory allocations for history records, reuses old allocations for optimization
@@ -12,7 +13,7 @@ pub struct ElementPool<V, A: Allocator + Clone> {
     head: Option<HistoryRecordLink<V>>,
     /// Tail of `recycled` sub-list
     last: Option<HistoryRecordLink<V>>,
-    buffer: ArrayVec<HistoryRecord<V>, 50>,
+    buffer: ListVec<HistoryRecord<V>, 50, A>,
     alloc: A,
 }
 
@@ -35,7 +36,7 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
         Self {
             head: Default::default(),
             last: Default::default(),
-            buffer: Default::default(),
+            buffer: ListVec::new_in(alloc.clone()),
             alloc,
         }
     }
@@ -54,7 +55,7 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
                     value,
                     previous,
                 });
-                NonNull::from_ref(self.buffer.last().unwrap())
+                NonNull::from_ref(self.buffer.top().unwrap())
             }
             Some(mut elem) => {
                 // Reuse old allocation
