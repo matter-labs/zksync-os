@@ -3,6 +3,7 @@ use super::{
     CacheSnapshotId,
 };
 use alloc::boxed::Box;
+use arrayvec::ArrayVec;
 use core::{alloc::Allocator, ptr::NonNull};
 
 /// Manages memory allocations for history records, reuses old allocations for optimization
@@ -11,6 +12,7 @@ pub struct ElementPool<V, A: Allocator + Clone> {
     head: Option<HistoryRecordLink<V>>,
     /// Tail of `recycled` sub-list
     last: Option<HistoryRecordLink<V>>,
+    buffer: ArrayVec<HistoryRecord<V>, 50>,
     alloc: A,
 }
 
@@ -33,6 +35,7 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
         Self {
             head: Default::default(),
             last: Default::default(),
+            buffer: Default::default(),
             alloc,
         }
     }
@@ -46,18 +49,12 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
     ) -> HistoryRecordLink<V> {
         match self.head {
             None => {
-                // Allocate
-                let (raw, _) = Box::into_raw_with_allocator(Box::new_in(
-                    HistoryRecord {
-                        touch_ss_id: snapshot_id,
-                        value,
-                        previous,
-                    },
-                    self.alloc.clone(),
-                ));
-                // Safety: `Box::into_raw` pinky swears that the ptr is non null and properly
-                // aligned.
-                unsafe { NonNull::new_unchecked(raw) }
+                self.buffer.push(HistoryRecord {
+                    touch_ss_id: snapshot_id,
+                    value,
+                    previous,
+                });
+                NonNull::from_ref(self.buffer.last().unwrap())
             }
             Some(mut elem) => {
                 // Reuse old allocation
