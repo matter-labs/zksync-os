@@ -29,7 +29,6 @@ where
 
     debug_assert_eq!(callee, MINT_HOOK_ADDRESS);
 
-    // TODO: verify that we will use this caller
     if caller != L2_BASE_TOKEN_ADDRESS {
         // Pretend to be an empty account
         return Ok((
