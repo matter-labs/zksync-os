@@ -585,3 +585,57 @@ fn test_l2_base_token_withdraw_with_message_gas_charging() {
     // The hook should charge HOOK_BASE_ERGS_COST (100 gas) + copy costs + L1 message costs + event emission costs
     assert_eq!(gas_used, 6893);
 }
+
+#[test]
+fn test_mint_base_token_hook() {
+    let mut chain = Chain::empty(None);
+
+    // L2 base token address is the only address allowed to call the mint hook
+    let l2_base_token_address = address!("000000000000000000000000000000000000800a");
+    // Mint hook address (0x7100)
+    let mint_hook_address = address!("0000000000000000000000000000000000007100");
+    let mint_amount = alloy::primitives::U256::from(3000000000000000000u64); // 3 ETH
+
+    // Check initial balance of L2_BASE_TOKEN_ADDRESS is zero
+    let initial_balance = chain
+        .get_account_properties(&B160::from_be_bytes(l2_base_token_address.into_array()))
+        .balance;
+    assert_eq!(initial_balance, alloy::primitives::U256::ZERO);
+
+    // Prepare calldata: 32 bytes containing the mint amount as U256 big-endian
+    let calldata = mint_amount.to_be_bytes::<32>().to_vec();
+
+    // Create transaction from L2_BASE_TOKEN_ADDRESS to MINT_HOOK_ADDRESS
+    let tx = TransactionRequest {
+        chain_id: Some(37),
+        from: Some(l2_base_token_address),
+        to: Some(TxKind::Call(mint_hook_address)),
+        input: calldata.into(),
+        value: Some(alloy::primitives::U256::ZERO), // No ETH value needed for mint
+        gas: Some(200_000),
+        max_fee_per_gas: Some(1000),
+        max_priority_fee_per_gas: Some(1000),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    };
+
+    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let transactions = vec![encoded_tx];
+
+    let output = chain.run_block(transactions, None, None, None);
+
+    // Assert transaction succeeded
+    assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
+        let success = r.clone().is_ok_and(|o| o.is_success());
+        if !success {
+            println!("Transaction {} failed with: {:?}", i, r)
+        }
+        success
+    }));
+
+    // Check that the caller's (L2_BASE_TOKEN_ADDRESS) balance was increased by the mint amount
+    let final_balance = chain
+        .get_account_properties(&B160::from_be_bytes(l2_base_token_address.into_array()))
+        .balance;
+    assert_eq!(final_balance, mint_amount);
+}
