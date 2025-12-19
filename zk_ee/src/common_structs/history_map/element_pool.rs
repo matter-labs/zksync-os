@@ -4,7 +4,6 @@ use super::{
     element_with_history::{HistoryRecord, HistoryRecordLink},
     CacheSnapshotId,
 };
-use alloc::boxed::Box;
 use core::{alloc::Allocator, ptr::NonNull};
 
 /// Manages memory allocations for history records, reuses old allocations for optimization
@@ -14,21 +13,6 @@ pub struct ElementPool<V, A: Allocator + Clone> {
     /// Tail of `recycled` sub-list
     last: Option<HistoryRecordLink<V>>,
     buffer: ListVec<HistoryRecord<V>, 50, A>,
-    alloc: A,
-}
-
-impl<V, A: Allocator + Clone> Drop for ElementPool<V, A> {
-    fn drop(&mut self) {
-        if let Some(head) = self.head {
-            let mut elem = unsafe { Box::from_raw_in(head.as_ptr(), self.alloc.clone()) };
-
-            while let Some(n) = elem.previous.take() {
-                let n = unsafe { Box::from_raw_in(n.as_ptr(), self.alloc.clone()) };
-
-                elem = n;
-            } // `n` is dropped here.
-        } // Last elem is dropped here.
-    }
 }
 
 impl<V, A: Allocator + Clone> ElementPool<V, A> {
@@ -37,7 +21,6 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
             head: Default::default(),
             last: Default::default(),
             buffer: ListVec::new_in(alloc.clone()),
-            alloc,
         }
     }
 

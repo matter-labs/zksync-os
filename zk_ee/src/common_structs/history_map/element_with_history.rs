@@ -27,18 +27,6 @@ pub struct ElementWithHistory<V, A: Allocator + Clone, EP = ()> {
     alloc: A,
 }
 
-impl<V, A: Allocator + Clone, KP> Drop for ElementWithHistory<V, A, KP> {
-    fn drop(&mut self) {
-        let mut elem = unsafe { Box::from_raw_in(self.head.as_ptr(), self.alloc.clone()) };
-
-        while let Some(n) = elem.previous.take() {
-            let n = unsafe { Box::from_raw_in(n.as_ptr(), self.alloc.clone()) };
-
-            elem = n;
-        } // `n` is dropped here.
-    } // last elem is dropped here.
-}
-
 impl<V, A: Allocator + Clone, KP> ElementWithHistory<V, A, KP> {
     #[inline(always)]
     pub fn new(
