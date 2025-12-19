@@ -592,7 +592,7 @@ fn test_mint_base_token_hook() {
 
     // L2 base token address is the only address allowed to call the mint hook
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
-    // Mint hook address
+    // Mint hook address (0x7100)
     let mint_hook_address = address!("0000000000000000000000000000000000007100");
     let mint_amount = alloy::primitives::U256::from(3000000000000000000u64); // 3 ETH
 

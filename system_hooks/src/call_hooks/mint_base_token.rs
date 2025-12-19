@@ -6,6 +6,13 @@ use zk_ee::internal_error;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 
+/// System hook that allows the L2 base token contract to mint tokens
+///
+/// ## Usage
+/// - Only callable by L2_BASE_TOKEN_ADDRESS (0x800a)
+/// - Expects exactly 32 bytes of calldata containing the mint amount as U256 big-endian
+/// - Increases the caller's nominal token balance by the specified amount
+/// - Fails if called in static context or with invalid calldata
 pub fn mint_base_token_hook<'a, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
     _caller_ee: u8,
@@ -29,6 +36,7 @@ where
 
     debug_assert_eq!(callee, MINT_HOOK_ADDRESS);
 
+    // Only allow L2 base token contract to mint tokens
     if caller != L2_BASE_TOKEN_ADDRESS {
         // Pretend to be an empty account
         return Ok((
@@ -86,12 +94,10 @@ where
     // We should never revert in practice, so it's ok to break EVM compatibility there
     match result {
         Ok(Ok(_)) => {
-            // Empty returndata region
-            let return_memory = SliceVec::new(return_memory);
-            let (returndata, rest) = return_memory.destruct();
+            // Successful mint - return empty data
             Ok((
-                make_return_state_from_returndata_region(resources, returndata),
-                rest,
+                make_return_state_from_returndata_region(resources, &[]),
+                return_memory,
             ))
         }
         Ok(Err(e)) => {
@@ -111,6 +117,7 @@ where
     }
 }
 
+/// Core minting logic that validates input and performs the token mint operation.
 #[allow(clippy::too_many_arguments)]
 fn mint<S: EthereumLikeTypes>(
     calldata: &[u8],
@@ -138,10 +145,11 @@ where
     Ok(Ok(()))
 }
 
+/// Updates the account's nominal token balance by adding the specified mint amount.
 fn mint_nominal_token_value<S: EthereumLikeTypes>(
     resources: &mut S::Resources,
     system: &mut System<S>,
-    benefeiciary: &B160,
+    beneficiary: &B160,
     nominal_token_value: &U256,
 ) -> Result<(), SystemError>
 where
@@ -151,9 +159,9 @@ where
     match system.io.update_account_nominal_token_balance(
         ExecutionEnvironmentType::EVM,
         resources,
-        benefeiciary,
+        beneficiary,
         &nominal_token_value,
-        false,
+        false, // false = add to balance, true = subtract from balance
     ) {
         Ok(_) => Ok(()),
         Err(SubsystemError::LeafUsage(_)) => Err(SystemError::LeafDefect(internal_error!(

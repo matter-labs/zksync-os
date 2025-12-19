@@ -15,7 +15,8 @@ pub const L1_MESSENGER_ADDRESS: B160 = B160::from_limbs([L1_MESSENGER_ADDRESS_LO
 pub const L2_BASE_TOKEN_ADDRESS_LOW: u16 = 0x800a;
 pub const L2_BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([L2_BASE_TOKEN_ADDRESS_LOW as u64, 0, 0]);
 
-// base token mint system hook
+// Base token mint system hook - allows L2 base token contract to mint tokens
+// Only callable by L2_BASE_TOKEN_ADDRESS (0x800a) with 32-byte calldata containing mint amount
 pub const MINT_HOOK_ADDRESS_LOW: u16 = 0x7100;
 pub const MINT_HOOK_ADDRESS: B160 = B160::from_limbs([MINT_HOOK_ADDRESS_LOW as u64, 0, 0]);
 
