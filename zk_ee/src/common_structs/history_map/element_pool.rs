@@ -5,6 +5,7 @@ use super::{
     CacheSnapshotId,
 };
 use core::{alloc::Allocator, ptr::NonNull};
+use std::mem::MaybeUninit;
 
 /// Manages memory allocations for history records, reuses old allocations for optimization
 pub struct ElementPool<V, A: Allocator + Clone> {
@@ -12,7 +13,7 @@ pub struct ElementPool<V, A: Allocator + Clone> {
     head: Option<HistoryRecordLink<V>>,
     /// Tail of `recycled` sub-list
     last: Option<HistoryRecordLink<V>>,
-    buffer: ListVec<HistoryRecord<V>, 50, A>,
+    buffer: ListVec<MaybeUninit<HistoryRecord<V>>, 50, A>,
 }
 
 impl<V, A: Allocator + Clone> ElementPool<V, A> {
@@ -33,12 +34,16 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
     ) -> HistoryRecordLink<V> {
         match self.head {
             None => {
-                self.buffer.push(HistoryRecord {
+                self.buffer.push(MaybeUninit::uninit());
+                let new_element = self.buffer.top_mut().unwrap();
+
+                new_element.write(HistoryRecord {
                     touch_ss_id: snapshot_id,
                     value,
                     previous,
                 });
-                NonNull::from_ref(self.buffer.top().unwrap())
+
+                unsafe { NonNull::from_ref(new_element.assume_init_ref()) }
             }
             Some(mut elem) => {
                 // Reuse old allocation
