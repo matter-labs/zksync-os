@@ -265,19 +265,21 @@ impl Test {
     pub fn run_zksync_os(self, summary: Arc<Mutex<Summary>>, proof_run: bool) {
         for case in self.cases {
             if let Some(filter_calldata) = self.skipped_calldatas.as_ref() {
-                if filter_calldata.contains(
-                    &case
-                        .pre_blocks
-                        .get(0)
-                        .unwrap()
-                        .transactions
-                        .get(0)
-                        .unwrap()
-                        .common()
-                        .data,
-                ) {
-                    Summary::ignored(summary.clone(), case.label);
-                    continue;
+                if &case.pre_blocks.get(0).unwrap().transactions.len() != &0 {
+                    if filter_calldata.contains(
+                        &case
+                            .pre_blocks
+                            .get(0)
+                            .unwrap()
+                            .transactions
+                            .get(0)
+                            .unwrap()
+                            .common()
+                            .data,
+                    ) {
+                        Summary::ignored(summary.clone(), case.label);
+                        continue;
+                    }
                 }
             }
 

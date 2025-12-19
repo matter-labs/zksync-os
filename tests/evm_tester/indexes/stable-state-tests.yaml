@@ -15,6 +15,9 @@ entries:
           test_account_storage_warm_cold_state.json:
             hash: '0xa274b36422e89cb6b9220f800a518b97'
             enabled: true
+          test_eip2930_tx_validity.json:
+            hash: '0x9ab897b065e207f2eb116512060d1efa'
+            enabled: true
           test_repeated_address_acl.json:
             hash: '0x02a942406f1c8dc9f42eb9acf55574c1'
             enabled: true
@@ -27,6 +30,18 @@ entries:
   byzantium:
     enabled: true
     entries:
+      eip196_ec_add_mul:
+        enabled: true
+        entries:
+          test_gas_costs.json:
+            hash: '0xfb21e3c61adb3c8d1fe6bed1ac94996d'
+            enabled: true
+      eip197_ec_pairing:
+        enabled: true
+        entries:
+          test_gas_costs.json:
+            hash: '0x2c4fc5330d69b834ab07bdcba47d7a42'
+            enabled: true
       eip198_modexp_precompile:
         enabled: true
         entries:
@@ -253,6 +268,9 @@ entries:
       create:
         enabled: true
         entries:
+          test_create_deposit_oog.json:
+            hash: '0x2a8a52b7d2e4e915e1ebaf66b30816ac'
+            enabled: true
           test_create_one_byte.json:
             hash: '0x8cdb0feeaa6c73ca043af2e73e976689'
             enabled: true
@@ -298,11 +316,17 @@ entries:
           test_calldatasize.json:
             hash: '0x6e016eed28769277367b35cc82d2dc2d'
             enabled: true
+          test_constant_gas.json:
+            hash: '0xfc7d148a512359a0b511c6f8f21d5cd4'
+            enabled: true
           test_cover_revert.json:
             hash: '0x57250bb8b3b59be560f8e3c31295301d'
             enabled: true
           test_dup.json:
             hash: '0x8bbdc45f061f0301c3fd39dfc29dfee5'
+            enabled: true
+          test_gas.json:
+            hash: '0x7ffb5a6b741e44509d8e01d6e8ec6503'
             enabled: true
           test_push.json:
             hash: '0x0a5101613d49a4e98bbc758079aae872'
@@ -319,6 +343,12 @@ entries:
           test_value_transfer_gas_calculation.json:
             hash: '0x7717f8962f9633cb07ac37e07c107204'
             enabled: true
+          test_value_transfer_gas_calculation_byzantium.json:
+            hash: '0xfe0a6174955c9d2ea468e0a7f649c455'
+            enabled: true
+          test_value_transfer_gas_calculation_homestead.json:
+            hash: '0x22a02627ce59f14651f0cbbfde45d790'
+            enabled: true
       precompiles:
         enabled: true
         entries:
@@ -328,6 +358,12 @@ entries:
             comment: 'TODO: we have a mixed set of precompiles currently'
           test_precompiles.json:
             hash: '0x8e492ea9edc777e61f29004bc99e4c45'
+            enabled: true
+      touch:
+        enabled: true
+        entries:
+          test_zero_gas_price_and_touching.json:
+            hash: '0x8ea94d12adb1dabd3669639b7bd57beb'
             enabled: true
   homestead:
     enabled: true
@@ -374,6 +410,15 @@ entries:
             enabled: true
           test_blake2b_large_gas_limit.json:
             hash: '0xb4502ead98b4cfac18e27ed87243203a'
+            enabled: true
+  london:
+    enabled: true
+    entries:
+      eip1559_fee_market_change:
+        enabled: true
+        entries:
+          test_eip1559_tx_validity.json:
+            hash: '0x8a132963f0edd9f4c7111cd96de75a0f'
             enabled: true
   osaka:
     enabled: true
@@ -425,12 +470,12 @@ entries:
         entries:
           test_init_collision_create_opcode.json:
             hash: '0x99657df19050400dd9ee4ce08e9f5ed8'
-            comment: "We do not check the storage"
             enabled: false
+            comment: We do not check the storage
           test_init_collision_create_tx.json:
             hash: '0x50c3851b8f012dd397190df531ace24b'
-            comment: "We do not check the storage"
             enabled: false
+            comment: We do not check the storage
   prague:
     enabled: true
     entries:
@@ -2477,7 +2522,7 @@ entries:
               RawBalanceGas.json:
                 hash: '0xdf4bfdd8f4bc2339582687d23a11ff75'
                 enabled: false
-                comment: 'TODO: current runner design doesn''t allow to warm caller'
+                comment: "TODO: current runner design doesn't allow to warm caller"
               RawCallCodeGas.json:
                 hash: '0x7b5603441497d50ce18cb4eb643f64cb'
                 enabled: true
@@ -2628,9 +2673,6 @@ entries:
               transactionIntinsicBug_Paris.json:
                 hash: '0x22ba4958a4a28e6c3ee883262d78c9ff'
                 enabled: true
-              typeTwoBerlin.json:
-                hash: '0xa0f80043f1c7196ad95b9067d212c323'
-                enabled: true
               valCausesOOF.json:
                 hash: '0x7ea95f960312f16070da68374cd78c2b'
                 enabled: true
@@ -2706,9 +2748,6 @@ entries:
           stExample:
             enabled: true
             entries:
-              accessListExample.json:
-                hash: '0xa0ab294f43ce56e251d39c413a591025'
-                enabled: true
               add11.json:
                 hash: '0xfed5e19708d578ea9e2a2577a269d089'
                 enabled: true
@@ -3685,9 +3724,6 @@ entries:
                 enabled: true
               CallEcrecover_Overflow.json:
                 hash: '0x66fc49f016c1c4955bf0d55bac080d20'
-                enabled: true
-              CallRipemd160_0.json:
-                hash: '0x180dc69920069718326e64718c98567a'
                 enabled: true
               CallRipemd160_1.json:
                 hash: '0xa9aa62d3da9771cc9b8868c55dedca78'
