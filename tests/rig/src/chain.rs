@@ -960,6 +960,33 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     ///
+    /// Initialize the L2 base token treasury with U256::MAX balance.
+    ///
+    /// This should be called during chain setup to pre-fund the treasury at address 0x800a.
+    /// The treasury is used by the bootloader to distribute tokens instead of minting them.
+    ///
+    pub fn initialize_treasury(&mut self) {
+        use system_hooks::addresses_constants::L2_BASE_TOKEN_ADDRESS;
+
+        // Set treasury balance to U256::MAX (2^256 - 1)
+        let treasury_balance = U256::MAX;
+
+        self.set_account_properties(
+            L2_BASE_TOKEN_ADDRESS,
+            Some(treasury_balance), // balance
+            None,                   // nonce stays 0
+            None,                   // no bytecode needed
+        );
+
+        /*#[cfg(not(target_arch = "riscv32"))]
+        println!(
+            "Treasury initialized at 0x{:x} with balance: {}",
+            L2_BASE_TOKEN_ADDRESS, treasury_balance
+        );
+        */
+    }
+
+    ///
     /// Set a storage slot
     ///
     pub fn set_storage_slot(&mut self, address: B160, key: U256, value: B256) {

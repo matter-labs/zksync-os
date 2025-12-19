@@ -4,7 +4,7 @@
 
 use arbitrary::{Arbitrary, Result, Unstructured};
 use basic_bootloader::bootloader::runner::RunnerMemoryBuffers;
-use basic_bootloader::bootloader::transaction_flow::zk::process_l1_transaction::mint_token;
+use basic_bootloader::bootloader::transaction_flow::zk::process_l1_transaction::transfer_from_treasury;
 use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
 use basic_bootloader::bootloader::BasicBootloader;
 use common::mock_oracle_balance;
@@ -175,7 +175,7 @@ fn fuzz(input: FuzzInput) {
 
     match selector {
         0 => {
-            let _ = mint_token::<ForwardRunningSystem>(
+            let _ = transfer_from_treasury::<ForwardRunningSystem>(
                 &mut system,
                 &amount,
                 &from,

@@ -251,6 +251,7 @@ interface BootloaderInterfaceError {
     CantPayOperatorOverflow,
     MintingBalanceOverflow,
     TopLevelInsufficientBalance,
+    TreasuryTransferFailed,
 },
 cascade WrappedError {
     Balance(BalanceSubsystemError),

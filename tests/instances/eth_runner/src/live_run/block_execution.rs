@@ -106,6 +106,7 @@ pub fn run_block(
 
     let setup_start = Instant::now();
     let mut chain = Chain::empty_randomized(Some(chain_id));
+    chain.initialize_treasury();
     chain.set_last_block_number(block_number - 1);
 
     let db_hash_start = Instant::now();

@@ -8,6 +8,7 @@ use std::path::PathBuf;
 #[test]
 fn get_name_sol() {
     let mut chain = rig::Chain::empty(None);
+    chain.initialize_treasury();
     let wallet = chain.random_wallet();
 
     let erc20_addr = Address::from_low_u64_ne(1);
@@ -77,6 +78,7 @@ fn get_name_sol() {
 #[test]
 fn balance_of_sol() {
     let mut chain = rig::Chain::empty(None);
+    chain.initialize_treasury();
     let wallet = chain.random_wallet();
 
     let erc20_addr = Address::from_low_u64_ne(1);
