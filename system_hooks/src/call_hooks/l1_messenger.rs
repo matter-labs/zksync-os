@@ -11,12 +11,11 @@ use core::fmt::Write;
 use ruint::aliases::{B160, U256};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
-    internal_error, out_of_return_memory,
+    internal_error,
     system::{
         errors::{runtime::RuntimeError, system::SystemError},
         CallModifier, CompletedExecution, ExternalCallRequest,
     },
-    utils::Bytes32,
 };
 
 pub fn l1_messenger_hook<'a, S: EthereumLikeTypes>(
@@ -87,18 +86,10 @@ where
     let result = l1_messenger_hook_inner(&calldata, &mut resources, system, caller_ee, is_static);
 
     match result {
-        Ok(Ok(return_data)) => {
-            let mut return_memory = SliceVec::new(return_memory);
-            // TODO: check endianness
-            return_memory
-                .try_extend(return_data.as_u8_ref().iter().copied())
-                .map_err(|_| out_of_return_memory!())?;
-            let (returndata, rest) = return_memory.destruct();
-            Ok((
-                make_return_state_from_returndata_region(resources, returndata),
-                rest,
-            ))
-        }
+        Ok(Ok(())) => Ok((
+            make_return_state_from_returndata_region(resources, &[]),
+            return_memory,
+        )),
         Ok(Err(e)) => {
             let _ = system
                 .get_logger()
@@ -122,7 +113,7 @@ fn l1_messenger_hook_inner<S: EthereumLikeTypes>(
     system: &mut System<S>,
     _caller_ee: u8,
     is_static: bool,
-) -> Result<Result<Bytes32, &'static str>, SystemError>
+) -> Result<Result<(), &'static str>, SystemError>
 where
 {
     evm_interpreter::charge_native_and_ergs::<S::Resources>(
@@ -148,7 +139,7 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     calldata: &[u8],
     resources: &mut S::Resources,
     system: &mut System<S>,
-) -> Result<Result<Bytes32, &'static str>, SystemError> {
+) -> Result<Result<(), &'static str>, SystemError> {
     if calldata.len() < 20 {
         return Ok(Err(
             "L1 messenger failure: sendToL1 called with invalid calldata",
@@ -161,8 +152,8 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
 
     let message = &calldata[20..];
 
-    // emit L1 message
-    let message_hash = system.io.emit_l1_message(
+    // emit L1 message (ignore returned hash)
+    system.io.emit_l1_message(
         // Gas should be charged by the L1Messenger system contract
         ExecutionEnvironmentType::NoEE,
         resources,
@@ -170,5 +161,5 @@ pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
         message,
     )?;
 
-    Ok(Ok(message_hash))
+    Ok(Ok(()))
 }
