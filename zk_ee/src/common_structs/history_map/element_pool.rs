@@ -4,8 +4,8 @@ use super::{
     element_with_history::{HistoryRecord, HistoryRecordLink},
     CacheSnapshotId,
 };
+use core::mem::MaybeUninit;
 use core::{alloc::Allocator, ptr::NonNull};
-use std::mem::MaybeUninit;
 
 /// Manages memory allocations for history records, reuses old allocations for optimization
 pub struct ElementPool<V, A: Allocator + Clone> {
