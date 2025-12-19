@@ -100,9 +100,9 @@ impl ZKsyncOS {
             check_storage_diff_hashes: proof_run,
             ..Default::default()
         };
-        let result = self
-            .chain
-            .run_block_no_panic(encoded_txs, Some(context), None, Some(run_config));
+        let result =
+            self.chain
+                .run_block_no_panic(encoded_txs, Some(context), None, Some(run_config));
 
         self.get_block_execution_result(result)
     }
