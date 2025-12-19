@@ -132,9 +132,9 @@ where
     send_to_l1_inner(&calldata, resources, system)
 }
 
-/// Receives calldata in the form of abi.encode(address msg.sender, bytes message)
+/// Receives calldata in the form of abi.encodePacked(address msg.sender, bytes message)
 /// Only sends a message to L1 (emit_l1_message), events are emitted on the contract level.
-/// Returns message hash.
+/// Returns nothing.
 pub(crate) fn send_to_l1_inner<S: EthereumLikeTypes>(
     calldata: &[u8],
     resources: &mut S::Resources,
