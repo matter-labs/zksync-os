@@ -18,7 +18,7 @@ where
             system_hooks::add_contract_deployer(system_functions)?;
             system_hooks::add_interop_root_reporter(system_functions)?;
 
-            // TODO: temporary solution, should be removed before the release
+            // TODO(EVM-1191): temporary solution, should be removed before the release
             system_hooks::add_base_token_mint(system_functions)?;
         }
 
