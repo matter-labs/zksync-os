@@ -18,6 +18,9 @@ entries:
           test_account_storage_warm_cold_state.json:
             hash: '0x9dc22377b814e6872ecafaf7bef6bfae'
             enabled: true
+          test_eip2930_tx_validity.json:
+            hash: '0x74229843a2cdb35269277f0de6e2c07b'
+            enabled: true
           test_repeated_address_acl.json:
             hash: '0xd90322e98276816e8be1e66fb003269c'
             enabled: true
@@ -30,6 +33,18 @@ entries:
   byzantium:
     enabled: true
     entries:
+      eip196_ec_add_mul:
+        enabled: true
+        entries:
+          test_gas_costs.json:
+            hash: '0x5514c8ec4fa1b8cdd1781929332c1439'
+            enabled: true
+      eip197_ec_pairing:
+        enabled: true
+        entries:
+          test_gas_costs.json:
+            hash: '0x080ac90c7030b50927ad52497c625c51'
+            enabled: true
       eip198_modexp_precompile:
         enabled: true
         entries:
@@ -399,6 +414,9 @@ entries:
       create:
         enabled: true
         entries:
+          test_create_deposit_oog.json:
+            hash: '0xe96ffacb011b1a1e06e06b0bdc13018c'
+            enabled: true
           test_create_one_byte.json:
             hash: '0x1dcf469b790d1afcfa4ad734d725b4f6'
             enabled: true
@@ -450,6 +468,9 @@ entries:
           test_calldatasize.json:
             hash: '0xc27db8098d75977e693098dd46c153d8'
             enabled: true
+          test_constant_gas.json:
+            hash: '0xc7ff3ef62afb0a175decf3ac6dcb4e1c'
+            enabled: true
           test_cover_revert.json:
             hash: '0x096c5544dbc15eca84c0eca10c8f5c19'
             enabled: true
@@ -458,6 +479,9 @@ entries:
             enabled: true
           test_dup.json:
             hash: '0x8b191319c8547e7c660ce5fc2a273495'
+            enabled: true
+          test_gas.json:
+            hash: '0x4c458e1c754a6007800aa1b1709b0f11'
             enabled: true
           test_genesis_hash_available.json:
             hash: '0x36ca17d536f49b03366d082b9451aad4'
@@ -477,6 +501,12 @@ entries:
           test_value_transfer_gas_calculation.json:
             hash: '0x69ef53f5b661a2b880798028f4e291c3'
             enabled: true
+          test_value_transfer_gas_calculation_byzantium.json:
+            hash: '0x453b68bafc32219a879ebae36a6dfb6c'
+            enabled: true
+          test_value_transfer_gas_calculation_homestead.json:
+            hash: '0x5c1d528b4681256797beded4cafe3e0e'
+            enabled: true
       precompiles:
         enabled: true
         entries:
@@ -492,6 +522,28 @@ entries:
         entries:
           test_scenarios.json:
             hash: '0xd1c741261675dbb37affd520f8695f5a'
+            enabled: true
+      touch:
+        enabled: true
+        entries:
+          test_zero_gas_price_and_touching.json:
+            hash: '0xb39ba5001e25f3d66ab9acb49bbbe0cb'
+            enabled: true
+      validation:
+        enabled: true
+        entries:
+          test_gas_limit_below_minimum.json:
+            hash: '0x11d73f6f85046ffe62c71192f6551abe'
+            enabled: false
+            comment: 'TODO: we do not enforce this limitation'
+          test_sender_balance.json:
+            hash: '0xdd28119d81e8477ef1efaa75c7245a64'
+            enabled: true
+          test_tx_gas_limit.json:
+            hash: '0xb6471720464e62fad29452844b629c0b'
+            enabled: true
+          test_tx_nonce.json:
+            hash: '0x5839713245c43a8b600fd80f2e778505'
             enabled: true
   homestead:
     enabled: true
@@ -542,6 +594,22 @@ entries:
           test_blake2b_large_gas_limit.json:
             hash: '0x1287545630bc5b0d411af58d0af49e98'
             enabled: true
+  london:
+    enabled: true
+    entries:
+      eip1559_fee_market_change:
+        enabled: true
+        entries:
+          test_eip1559_tx_validity.json:
+            hash: '0x333a3d91a1ba2ba980f6a2932b9e902a'
+            enabled: true
+      validation:
+        enabled: true
+        entries:
+          test_invalid_header.json:
+            hash: '0x077fe68c11e119778e95cb63ef3aaaba'
+            enabled: false
+            comment: 'TODO: we do not enforce this limitation'
   osaka:
     enabled: true
     entries:
@@ -592,12 +660,12 @@ entries:
         entries:
           test_init_collision_create_opcode.json:
             hash: '0xe8c4801222670b71997ea3ffd1d9ec73'
-            comment: "We do not check the storage"
             enabled: false
+            comment: We do not check the storage
           test_init_collision_create_tx.json:
             hash: '0x07a9903200c668dd3fa8d2fcdadecc19'
-            comment: "We do not check the storage"
             enabled: false
+            comment: We do not check the storage
       security:
         enabled: true
         entries:
@@ -1132,6 +1200,9 @@ entries:
             enabled: true
           test_use_value_in_tx.json:
             hash: '0x64ac61077041f2c51dc29fa9c5ba60ce'
+            enabled: true
+          test_withdrawals_root.json:
+            hash: '0xbd4d7934ce30cc9ed528f96bfee66704'
             enabled: true
           test_withdrawing_to_precompiles.json:
             hash: '0x3a865963822c25586297c70e0eadd9fb'
@@ -2951,9 +3022,6 @@ entries:
               transactionIntinsicBug_Paris.json:
                 hash: '0x3def72fcb3aa24538874ee8682191ead'
                 enabled: true
-              typeTwoBerlin.json:
-                hash: '0xea913e0c1dad3d9acd435b6179c11646'
-                enabled: true
               valCausesOOF.json:
                 hash: '0xc92c71e47fd4e07ff380b8a21bfbb1b6'
                 enabled: true
@@ -3029,9 +3097,6 @@ entries:
           stExample:
             enabled: true
             entries:
-              accessListExample.json:
-                hash: '0x935299ef9992eab22b0d74e18073d0cf'
-                enabled: true
               add11.json:
                 hash: '0xc0098f7d54c65b09aab501b865a6d81a'
                 enabled: true
@@ -4008,9 +4073,6 @@ entries:
                 enabled: true
               CallEcrecover_Overflow.json:
                 hash: '0x1213ded1494f9262ab91a3369e55ccfe'
-                enabled: true
-              CallRipemd160_0.json:
-                hash: '0x5201999f0cd99dcb4c078f1e35efe452'
                 enabled: true
               CallRipemd160_1.json:
                 hash: '0xd4dac14d14c8c6f2c1b550fa9649a684'
