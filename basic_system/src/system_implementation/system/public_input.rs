@@ -59,6 +59,8 @@ impl ChainStateCommitment {
 pub struct BlocksOutput {
     /// Chain id used in the blocks.
     pub chain_id: U256,
+    /// The code size limit used to execute the blocks.
+    pub code_size_limit: u32,
     /// Timestamp of the first block in the range
     pub first_block_timestamp: u64,
     /// Timestamp of the last block in the range
@@ -84,6 +86,7 @@ impl BlocksOutput {
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = crypto::blake2s::Blake2s256::new();
         hasher.update(&self.chain_id.to_be_bytes::<32>());
+        hasher.update(&self.code_size_limit.to_be_bytes());
         hasher.update(&self.first_block_timestamp.to_be_bytes());
         hasher.update(&self.last_block_timestamp.to_be_bytes());
         hasher.update(self.pubdata_hash.as_u8_ref());
@@ -133,6 +136,8 @@ impl BlocksPublicInput {
 pub struct BatchOutput {
     /// Chain id used during execution of the blocks.
     pub chain_id: U256,
+    /// The code size limit used to execute the batch.
+    pub code_size_limit: u32,
     /// First block timestamp.
     pub first_block_timestamp: u64,
     /// Last block timestamp.
@@ -163,6 +168,7 @@ impl BatchOutput {
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Keccak256::new();
         hasher.update(self.chain_id.to_be_bytes::<32>());
+        hasher.update(&self.code_size_limit.to_be_bytes());
         hasher.update(&self.first_block_timestamp.to_be_bytes());
         hasher.update(&self.last_block_timestamp.to_be_bytes());
         // Encode DA commitment scheme as U256 BE
@@ -212,6 +218,7 @@ pub struct BatchPublicInputBuilder<A: alloc::alloc::Allocator, O: IOOracle> {
     first_block_timestamp: Option<u64>,
     current_block_timestamp: Option<u64>,
     chain_id: Option<U256>,
+    code_size_limit: Option<u32>,
     pub da_commitment_scheme: Option<DACommitmentScheme>,
     pub da_commitment_generator: Option<alloc::boxed::Box<dyn DACommitmentGenerator<O>, A>>,
     pub logs_storage: ArrayVec<Bytes32, 16384>,
@@ -229,6 +236,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             first_block_timestamp: None,
             current_block_timestamp: None,
             chain_id: None,
+            code_size_limit: None,
             da_commitment_generator: None,
             da_commitment_scheme: None,
             logs_storage: ArrayVec::new(),
@@ -253,6 +261,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
         state_commitment_after: Bytes32,
         block_timestamp: u64,
         chain_id: U256,
+        code_size_limit: u32,
         upgrade_tx_hash: Bytes32,
     ) {
         if self.is_first_block {
@@ -261,6 +270,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             self.first_block_timestamp = Some(block_timestamp);
             self.current_block_timestamp = Some(block_timestamp);
             self.chain_id = Some(chain_id);
+            self.code_size_limit = Some(code_size_limit);
             self.upgrade_tx_hash = Some(upgrade_tx_hash);
             self.is_first_block = false;
         } else {
@@ -271,6 +281,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             self.current_state_commitment = Some(state_commitment_after);
             self.current_block_timestamp = Some(block_timestamp);
             assert_eq!(self.chain_id.unwrap(), chain_id);
+            assert_eq!(self.code_size_limit.unwrap(), code_size_limit);
             assert!(upgrade_tx_hash.is_zero());
         }
     }
@@ -288,6 +299,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
 
         let batch_output = public_input::BatchOutput {
             chain_id: self.chain_id.unwrap(),
+            code_size_limit: self.code_size_limit.unwrap(),
             first_block_timestamp: self.first_block_timestamp.unwrap(),
             last_block_timestamp: self.current_block_timestamp.unwrap(),
             da_commitment_scheme: self.da_commitment_scheme.unwrap(),

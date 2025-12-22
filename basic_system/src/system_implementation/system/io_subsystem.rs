@@ -574,6 +574,7 @@ impl<
         // other outputs to be opened on the settlement layer/aggregation program
         let block_output = BlocksOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
+            code_size_limit: block_metadata.code_size_limit,
             first_block_timestamp: block_metadata.timestamp,
             last_block_timestamp: block_metadata.timestamp,
             pubdata_hash: da_commitment_generator.finalize(&mut self.oracle),
@@ -706,6 +707,7 @@ impl<
         ));
         let batch_output = public_input::BatchOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
+            code_size_limit: block_metadata.code_size_limit,
             first_block_timestamp: block_metadata.timestamp,
             last_block_timestamp: block_metadata.timestamp,
             da_commitment_scheme: self.da_commitment_scheme.unwrap(),
@@ -889,6 +891,7 @@ where
             chain_state_commitment_after.hash().into(),
             block_metadata.timestamp,
             U256::try_from(block_metadata.chain_id).unwrap(),
+            block_metadata.code_size_limit,
             upgrade_tx_hash,
         );
 
