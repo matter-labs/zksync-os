@@ -109,7 +109,6 @@ where
                     properties,
                     v,
                     &mut self.records_memory_pool,
-                    self.state.alloc.clone(),
                 ))
             }
         };
