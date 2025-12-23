@@ -471,27 +471,12 @@ impl<
             )
     }
 
-    fn get_refund_counter(&self) -> u32 {
-        *self
-            .storage_cache
-            .0
-            .evm_refunds_counter
-            .value()
-            .unwrap_or(&0)
+    fn get_refund_counter(&'_ self) -> &'_ Self::Resources {
+        self.storage_cache.0.get_refund_counter_impl()
     }
 
-    // Add EVM refund to counter
-    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError> {
-        let mut gas_refunds = self
-            .storage_cache
-            .0
-            .evm_refunds_counter
-            .value()
-            .copied()
-            .unwrap_or_default();
-        gas_refunds += refund;
-        self.storage_cache.0.evm_refunds_counter.update(gas_refunds);
-        Ok(())
+    fn add_to_refund_counter(&mut self, refund: Self::Resources) -> Result<(), SystemError> {
+        self.storage_cache.0.add_to_refund_counter_impl(refund)
     }
 }
 
