@@ -33,7 +33,7 @@ use crate::call_hooks::l1_messenger::l1_messenger_hook;
 use crate::call_hooks::mint_base_token::mint_base_token_hook;
 use crate::call_hooks::set_bytecode_on_address::set_bytecode_on_address_hook;
 use crate::event_hooks::interop_root_reporter::interop_root_reporter_event_hook;
-use crate::event_hooks::new_sl_chain_id_reporter::system_context_event_hook;
+use crate::event_hooks::system_context::system_context_event_hook;
 use call_hooks::precompiles::{
     pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors,
 };
