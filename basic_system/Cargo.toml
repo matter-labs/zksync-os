@@ -21,6 +21,7 @@ modexp = { path = "../supporting_crates/modexp" }
 cycle_marker = { path = "../cycle_marker" }
 num-bigint = { version =  "0.4", optional = true}
 num-traits = { version =  "*", optional = true}
+system_hooks = { path = "../system_hooks", default-features = false }
 
 cfg-if = "1.0.0"
 const_for = "0.1.5"

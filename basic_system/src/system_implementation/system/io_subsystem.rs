@@ -27,6 +27,7 @@ use interop_roots::per_root_computational_native_cost;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
+use system_hooks::addresses_constants::SYSTEM_CONTEXT_ADDRESS;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
@@ -702,6 +703,8 @@ impl<
             "PI calculation: state commitment before {chain_state_commitment_before:?}\n",
         );
 
+        let settlement_layer_chain_id = self.read_settlement_layer_chain_id();
+
         // finishing IO, applying changes
         let mut da_commitment_generator =
             da_commitment_generator_from_scheme(self.da_commitment_scheme.unwrap(), A::default())
@@ -772,7 +775,14 @@ impl<
             self.interop_root_storage.iter(),
             &mut crypto::sha3::Keccak256::new(),
         );
-        let new_settlement_layer_chain_id = self.new_settlement_layer_chain_id_storage.value();
+
+        if let Some(new_settlement_layer_chain_id) =
+            self.new_settlement_layer_chain_id_storage.value()
+        {
+            // If the SL chain id was updated, make sure the updated one matches
+            // the one read from storage
+            assert_eq!(new_settlement_layer_chain_id, &settlement_layer_chain_id)
+        }
 
         let batch_output = public_input::BatchOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
@@ -785,7 +795,7 @@ impl<
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash,
             interop_roots_rolling_hash,
-            new_settlement_layer_chain_id,
+            settlement_layer_chain_id,
         };
         logger_log!(logger, "PI calculation: batch output {batch_output:?}\n",);
 
@@ -916,6 +926,7 @@ where
             .write(&block_metadata.timestamp.to_be_bytes());
 
         let mut result_keeper: zk_ee::system::NopResultKeeper<()> = NopResultKeeper::default();
+        let settlement_layer_chain_id = self.read_settlement_layer_chain_id();
 
         self.storage
             .finish(
@@ -957,7 +968,14 @@ where
         };
 
         let interop_roots_iter = self.interop_root_storage.iter();
-        let new_settlement_layer_chain_id = self.new_settlement_layer_chain_id_storage.value();
+
+        if let Some(new_settlement_layer_chain_id) =
+            self.new_settlement_layer_chain_id_storage.value()
+        {
+            // If the SL chain id was updated, make sure the updated one matches
+            // the one read from storage
+            assert_eq!(new_settlement_layer_chain_id, &settlement_layer_chain_id)
+        }
 
         builder.apply_block(
             chain_state_commitment_before.hash().into(),
@@ -966,7 +984,7 @@ where
             U256::try_from(block_metadata.chain_id).unwrap(),
             upgrade_tx_hash,
             interop_roots_iter,
-            new_settlement_layer_chain_id,
+            settlement_layer_chain_id,
         );
 
         self.oracle
@@ -1271,4 +1289,31 @@ impl<
         const PROOF_ENV: bool,
     > EthereumLikeIOSubsystem for FullIO<A, R, P, SF, M, O, PROOF_ENV>
 {
+}
+
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+        SF: StackFactory<M>,
+        const M: usize,
+        O: IOOracle,
+    > FullIO<A, R, P, SF, M, O, true>
+{
+    ///
+    /// Reads SL chain id from the SystemContext(0x800b) contract.
+    ///
+    fn read_settlement_layer_chain_id(&mut self) -> U256 {
+        const SL_CHAIN_ID_STORAGE_SLOT: Bytes32 = Bytes32::ZERO;
+        let mut inf_resources = R::FORMAL_INFINITE;
+        let chain_id = self
+            .storage_read::<false>(
+                ExecutionEnvironmentType::NoEE,
+                &mut inf_resources,
+                &SYSTEM_CONTEXT_ADDRESS,
+                &SL_CHAIN_ID_STORAGE_SLOT,
+            )
+            .expect("must read SystemContext SL chain id");
+        U256::from_be_bytes(chain_id.as_u8_array())
+    }
 }

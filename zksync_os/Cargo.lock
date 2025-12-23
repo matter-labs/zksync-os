@@ -208,6 +208,7 @@ dependencies = [
  "ruint",
  "storage_models",
  "strum_macros",
+ "system_hooks",
  "zerocopy",
  "zk_ee",
 ]

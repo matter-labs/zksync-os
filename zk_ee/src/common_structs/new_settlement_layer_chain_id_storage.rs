@@ -39,7 +39,7 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone>
     }
 
     pub fn update(&mut self, new_sl_chain_id: U256) -> Result<(), SystemError> {
-        if !self.value().is_zero() {
+        if self.value().is_some() {
             return Err(internal_error!(
                 "Tried to update settlement layer chain id more than once in a block"
             )
@@ -50,9 +50,8 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone>
         Ok(())
     }
 
-    pub fn value(&self) -> U256 {
-        // Zero indicates no updates
-        self.history.value().cloned().unwrap_or(U256::ZERO)
+    pub fn value(&self) -> Option<&U256> {
+        self.history.value()
     }
 
     #[track_caller]

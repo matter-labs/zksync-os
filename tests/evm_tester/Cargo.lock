@@ -1713,6 +1713,7 @@ dependencies = [
  "serde",
  "storage_models",
  "strum_macros 0.27.2",
+ "system_hooks",
  "zerocopy",
  "zk_ee",
 ]
