@@ -268,7 +268,7 @@ where
 
     fn before_execute_transaction_payload(
         system: &mut System<S>,
-        transaction: &Transaction<<S as SystemTypes>::Allocator>,
+        _transaction: &Transaction<<S as SystemTypes>::Allocator>,
         context: &mut Self::TransactionContext,
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
