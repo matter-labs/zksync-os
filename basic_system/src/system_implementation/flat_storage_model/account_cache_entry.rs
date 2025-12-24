@@ -108,27 +108,6 @@ pub const DEFAULT_ADDRESS_SPECIFIC_IMMUTABLE_DATA_VERSION: u8 = 1;
 // Used as deployment_status for accounts with code delegation (EIP-7702)
 pub const DEFAULT_DELEGATED_VERSION: u8 = 2;
 
-#[derive(Default, Clone)]
-pub struct AccountPropertiesMetadata {
-    /// None if the account hasn't been deployed in the current block.
-    pub deployed_in_tx: Option<u32>,
-    /// Transaction where this account was last accessed.
-    /// Considered warm if equal to Some(current_tx)
-    pub last_touched_in_tx: Option<u32>,
-    /// Special flag that allows avoiding publishing bytecode for deployed account.
-    /// In practice, it can be set to `true` only during special protocol upgrade txs.
-    /// For protocol upgrades it's ensured by governance that bytecodes are already published separately.
-    pub not_publish_bytecode: bool,
-    /// Marks if account is marked for deconstruction is transaction
-    pub is_marked_for_deconstruction: bool,
-}
-
-impl AccountPropertiesMetadata {
-    pub fn considered_warm(&self, current_tx_number: u32) -> bool {
-        self.last_touched_in_tx == Some(current_tx_number)
-    }
-}
-
 ///
 /// Encoding layout:
 /// versioningData:               u64, BE @ [0..8] (see above)
