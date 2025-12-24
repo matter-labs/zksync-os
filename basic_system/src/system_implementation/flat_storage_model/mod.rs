@@ -46,6 +46,9 @@ use zk_ee::{
     utils::Bytes32,
 };
 
+use super::caches::generic_pubdata_aware_plain_storage::GenericPubdataAwarePlainStorage;
+use super::caches::generic_pubdata_aware_plain_storage::StorageSnapshotId;
+
 pub fn address_into_special_storage_key(address: &B160) -> Bytes32 {
     let mut key = Bytes32::zero();
     key.as_u8_array_mut()[12..].copy_from_slice(&address.to_be_bytes::<{ B160::BYTES }>());
