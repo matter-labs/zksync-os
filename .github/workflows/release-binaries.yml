@@ -2,10 +2,12 @@ name: Release Binaries
 
 on:
   release:
-    types: [published]
+    types: [ published ]
   push:
-    tags:
-      - '*'
+    branches: [ main ]
+    # trigger on dev tags, ignore official release tags to avoid double-triggers
+    tags-ignore:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
 
 permissions:
   contents: write
@@ -17,8 +19,12 @@ defaults:
     shell: bash -ex {0}
 
 jobs:
-  build_binaries:
+
+  build-binaries:
     runs-on: ubuntu-latest
+    env:
+      LATEST_RELEASE: "latest"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -30,7 +36,6 @@ jobs:
         run: |
           mkdir -p release-artifacts
           cd zksync_os
-
           # Copy all generated binaries
           FILES=(
             for_tests.bin
@@ -40,7 +45,6 @@ jobs:
             multiblock_batch.bin
             multiblock_batch_logging_enabled.bin
           )
-
           for FILE in "${FILES[@]}"; do
             if [ -f "$FILE" ]; then
               cp "$FILE" ../release-artifacts/
@@ -49,22 +53,77 @@ jobs:
               echo "⚠️  $FILE not found"
             fi
           done
-
           cd ../release-artifacts
-
           # Create checksums
           sha256sum *.bin > checksums.txt
-
           # List all files
           echo "Release artifacts:"
           ls -la
 
+      # Support the following release types:
+      ## 1. Official releases created from GitHub UI - stable releases
+      ## 2. Custom tagged releases made with git tags - dev releases
+      ## 3. Latest default branch release (pushes to main) - latest dev release
+      - name: Release metadata
+        id: meta
+        run: |
+          RELEASE_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "tag_name=${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
+            echo "release_name=${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
+            echo "prerelease=false" >> "${GITHUB_OUTPUT}"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag_name=${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
+            echo "release_name=[dev] ${GITHUB_REF_NAME} ${RELEASE_DATE}" >> "${GITHUB_OUTPUT}"
+            echo "prerelease=true" >> "${GITHUB_OUTPUT}"
+          elif [[ "${{ github.ref_type }}" == "branch" ]]; then
+            echo "tag_name=${LATEST_RELEASE}" >> "${GITHUB_OUTPUT}"
+            echo "release_name=[dev] latest main ${RELEASE_DATE}" >> "${GITHUB_OUTPUT}"
+            echo "prerelease=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      # Ensure latest release is always updated
+      # Also, catch the case if a custom tag is re-used
+      - name: Delete previous release with the same tag if exists
+        if: github.event_name != 'release'
+        run: |
+          if gh release view "${{ steps.meta.outputs.tag_name }}" &>/dev/null; then
+            gh release delete "${{ steps.meta.outputs.tag_name }}" --cleanup-tag --yes
+          fi
+
       - name: Upload binaries to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           files: |
             release-artifacts/*.bin
             release-artifacts/checksums.txt
           fail_on_unmatched_files: true
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: ${{ steps.meta.outputs.release_name }}
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          target_commitish: ${{ github.sha }}
+
+      - name: Delete old custom pre-releases
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLEANUP_WINDOW_MONTHS: 3 # Pre-releases older than this will be deleted, defaults to 3 months now
+          RELEASES_LIMIT: 200      # Max number of releases to fetch
+        run: |
+          set -euo pipefail
+          cutoff_epoch=$(date -d "${CLEANUP_WINDOW_MONTHS} months ago" +%s)
+          gh release list \
+            --limit "${RELEASES_LIMIT}" \
+            --json name,tagName,isPrerelease,publishedAt,createdAt \
+          | jq -c '.[] | select(.isPrerelease == true)' \
+          | while read -r rel; do
+              tag=$(jq -r '.tagName' <<<"${rel}")
+              # Skip protected tags
+              if [[ "$tag" == "${LATEST_RELEASE}" ]]; then
+                continue
+              fi
+              published=$(jq -r '.publishedAt // .createdAt' <<<"${rel}")
+              published_epoch=$(date -d "${published}" +%s)
+              if [ "${published_epoch}" -lt "${cutoff_epoch}" ]; then
+                echo "Deleting outdated prerelease: ${tag} (${published})"
+                gh release delete "${tag}" --cleanup-tag --yes
+              fi
+          done
