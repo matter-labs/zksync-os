@@ -164,16 +164,6 @@ where
     let observable_bytecode_hash =
         Bytes32::from_array(calldata[96..128].try_into().expect("Always valid"));
 
-    let observable_bytecode_length: u32 = match U256::from_be_slice(&calldata[128..160]).try_into()
-    {
-        Ok(length) => length,
-        Err(_) => {
-            return Ok(Err(
-                "Set bytecode on address failure: called with invalid calldata",
-            ))
-        }
-    };
-
     // Although this can be called as a part of protocol upgrade,
     // we are checking the next invariants, just in case
     // EIP-158: reject code of length > 24576.
@@ -196,7 +186,7 @@ where
         bytecode_length,
         0,
         observable_bytecode_hash,
-        observable_bytecode_length,
+        bytecode_length, // observable_bytecode_length is equal to bytecode_length here
     )?;
 
     Ok(Ok(&[]))
