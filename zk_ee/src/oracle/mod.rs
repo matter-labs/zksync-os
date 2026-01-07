@@ -24,6 +24,8 @@ use crate::internal_error;
 use crate::oracle::query_ids::NEXT_TX_SIZE_QUERY_ID;
 use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::internal::InternalError;
+use crate::utils::UsizeAlignedByteBox;
+use core::alloc::Allocator;
 use core::num::NonZeroU32;
 
 /// Core trait for querying external, non-deterministic data during ZKsync OS execution. This is
@@ -111,6 +113,40 @@ pub trait IOOracle: 'static + Sized {
         let size = self.query_with_empty_input::<u32>(NEXT_TX_SIZE_QUERY_ID)?;
 
         Ok(NonZeroU32::new(size))
+    }
+
+    ///
+    /// Helper to perform a dynamic query, based on two queries
+    /// (one for length and the next one for the actual data).
+    ///
+    fn get_bytes_from_query<A: Allocator, I: UsizeSerializable + UsizeDeserializable>(
+        &mut self,
+        length_query_id: u32, // must return number of bytes
+        body_query_id: u32,   // must return
+        input: &I,
+        allocator: A,
+    ) -> Result<Option<UsizeAlignedByteBox<A>>, InternalError> {
+        use crate::internal_error;
+        use crate::utils::USIZE_SIZE;
+
+        let size = self.query_serializable::<I, u32>(length_query_id, input)?;
+        if size == 0 {
+            return Ok(None);
+        }
+        let num_bytes = size as usize;
+        let num_words = num_bytes.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
+        // NOTE: we leave some slack for 64/32 bit arch mismatches
+        let num_words = num_words.next_multiple_of(2);
+        let body_query_it = self.raw_query(body_query_id, input)?;
+        let body_it_len = body_query_it.len();
+        if body_it_len > num_words {
+            return Err(internal_error!("iterator len is inconsistent"));
+        }
+        // create buffer
+        let mut buffer = UsizeAlignedByteBox::from_usize_iterator_in(body_query_it, allocator);
+        buffer.truncated_to_byte_length(num_bytes);
+
+        Ok(Some(buffer))
     }
 }
 
