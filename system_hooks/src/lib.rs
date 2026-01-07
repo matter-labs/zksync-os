@@ -29,10 +29,9 @@
 extern crate alloc;
 
 use crate::addresses_constants::*;
-use crate::call_hooks::contract_deployer::contract_deployer_hook;
 use crate::call_hooks::l1_messenger::l1_messenger_hook;
-use crate::call_hooks::l2_base_token::l2_base_token_hook;
 use crate::call_hooks::mint_base_token::mint_base_token_hook;
+use crate::call_hooks::set_bytecode_on_address::set_bytecode_on_address_hook;
 use crate::event_hooks::interop_root_reporter::interop_root_reporter_event_hook;
 use call_hooks::precompiles::{
     pure_system_function_hook_impl, IdentityPrecompile, IdentityPrecompileErrors,
@@ -211,32 +210,20 @@ pub fn add_l1_messenger<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks: &mut HooksStorage<S, A>,
 ) -> Result<(), InternalError> {
     hooks.add_call_hook(
-        L1_MESSENGER_ADDRESS_LOW,
+        L1_MESSENGER_ADDRESS_HOOK_LOW,
         SystemCallHook::new(l1_messenger_hook),
     )
 }
 
-pub fn add_l2_base_token<S: EthereumLikeTypes, A: Allocator + Clone>(
+pub fn add_set_bytecode_on_address_hook<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks: &mut HooksStorage<S, A>,
 ) -> Result<(), InternalError>
 where
     S::IO: IOSubsystemExt,
 {
     hooks.add_call_hook(
-        L2_BASE_TOKEN_ADDRESS_LOW,
-        SystemCallHook::new(l2_base_token_hook),
-    )
-}
-
-pub fn add_contract_deployer<S: EthereumLikeTypes, A: Allocator + Clone>(
-    hooks: &mut HooksStorage<S, A>,
-) -> Result<(), InternalError>
-where
-    S::IO: IOSubsystemExt,
-{
-    hooks.add_call_hook(
-        CONTRACT_DEPLOYER_ADDRESS_LOW,
-        SystemCallHook::new(contract_deployer_hook),
+        SET_BYTECODE_ON_ADDRESS_HOOK_LOW,
+        SystemCallHook::new(set_bytecode_on_address_hook),
     )
 }
 

@@ -7210,6 +7210,7 @@ dependencies = [
  "futures",
  "hex",
  "log",
+ "once_cell",
  "oracle_provider",
  "risc_v_simulator 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?tag=v0.4.3)",
  "ruint",

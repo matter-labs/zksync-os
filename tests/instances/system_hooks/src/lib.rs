@@ -1,5 +1,5 @@
 //!
-//! These tests are focused on different tx types.
+//! These tests are focused on system hooks functionality.
 //!
 #![cfg(test)]
 
@@ -8,7 +8,9 @@ use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
 use rig::ruint::aliases::B160;
+use rig::ruint::aliases::U256;
 use rig::testing_utils::call_address_and_measure_gas_cost;
+use rig::testing_utils::install_system_contracts;
 use rig::utils::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
@@ -20,9 +22,9 @@ use rig::{alloy, Chain};
 fn test_set_bytecode_details_evm() {
     let mut chain = Chain::empty(None);
 
-    let complex_upgrader_address = address!("000000000000000000000000000000000000800f");
     let contract_deployer_address = address!("0000000000000000000000000000000000008006");
-    // setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
+    let contract_deployer_hook_address = address!("0000000000000000000000000000000000007002");
+
     let bytecode = hex::decode("0123456789").unwrap();
     let code_hash = Bytes32::from_array(
         hex::decode("1c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7")
@@ -32,14 +34,19 @@ fn test_set_bytecode_details_evm() {
     );
     chain.set_preimage(code_hash, &bytecode);
     let calldata =
-        hex::decode("f6eca0b000000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
+        hex::decode("00000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
             .unwrap();
+
+    chain.set_balance(
+        B160::from_be_bytes(contract_deployer_address.into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
 
     let encoded_tx = {
         let tx = TransactionRequest {
             chain_id: Some(37),
-            from: Some(complex_upgrader_address),
-            to: Some(TxKind::Call(contract_deployer_address)),
+            from: Some(contract_deployer_address),
+            to: Some(TxKind::Call(contract_deployer_hook_address)),
             input: calldata.into(),
             gas: Some(200_000),
             max_fee_per_gas: Some(1000),
@@ -85,11 +92,21 @@ fn test_set_bytecode_details_evm() {
 #[test]
 fn test_set_deployed_bytecode_evm_unauthorized() {
     let mut chain = Chain::empty(None);
+    install_system_contracts(&mut chain, false, false, true);
+
+    let bytecode = hex::decode("0123456789").unwrap();
+    let code_hash = Bytes32::from_array(
+        hex::decode("1c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7")
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    );
+    chain.set_preimage(code_hash, &bytecode);
 
     let from = address!("000000000000000000000000000000000000800e");
     let contract_deployer_address = address!("0000000000000000000000000000000000008006");
     let calldata =
-        hex::decode("f6eca0b000000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
+        hex::decode("231b395700000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b9440000000000000000000000000000000000000000000000000000000000000005")
             .unwrap();
 
     let encoded_tx = {
@@ -111,21 +128,164 @@ fn test_set_deployed_bytecode_evm_unauthorized() {
 
     let output = chain.run_block(transactions, None, None, None);
 
-    if let ExecutionResult::Success(_) = output
+    let result = &output
         .tx_results
         .first()
         .unwrap()
         .as_ref()
         .unwrap()
-        .execution_result
-    {
-        panic!("force deploy from unauthorized sender haven't failed")
+        .execution_result;
+
+    assert!(matches!(result, ExecutionResult::Revert(_)));
+}
+
+#[test]
+fn test_l1_messenger_hook_succeeds() {
+    let mut chain = Chain::empty(None);
+    // making sure hooks are installed
+    install_system_contracts(&mut chain, false, false, true);
+
+    let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
+
+    let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
+
+    // Calldata that the hook *expects*:
+    // abi.encode(msg.sender, _message)
+    let hook_calldata = hex::decode(
+        "000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    .unwrap();
+
+    let tx = TransactionRequest {
+        chain_id: Some(37),
+        from: Some(l1_messenger_contract),
+        to: Some(TxKind::Call(l1_messenger_hook)),
+        input: hook_calldata.into(),
+        gas: Some(200_000),
+        max_fee_per_gas: Some(1000),
+        max_priority_fee_per_gas: Some(1000),
+        value: Some(alloy::primitives::U256::from(0)),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    };
+
+    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let transactions = vec![encoded_tx];
+
+    let output = chain.run_block(transactions, None, None, None);
+
+    let tx_result = &output
+        .tx_results
+        .first()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .execution_result;
+
+    match tx_result {
+        ExecutionResult::Success(_) => {
+            // ok
+        }
+        _ => {
+            panic!("L1 messenger hook call from authorized sender did not succeed: {tx_result:?}");
+        }
     }
+}
+
+#[test]
+fn test_l1_messenger_hook_fails_with_invalid_calldata() {
+    let mut chain = Chain::empty(None);
+    // making sure hooks are installed
+    install_system_contracts(&mut chain, false, false, true);
+
+    let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
+
+    let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
+
+    // Invalid calldata
+    let hook_calldata = hex::decode("00000000000000000000000011111111").unwrap();
+
+    let tx = TransactionRequest {
+        chain_id: Some(37),
+        from: Some(l1_messenger_contract),
+        to: Some(TxKind::Call(l1_messenger_hook)),
+        input: hook_calldata.into(),
+        gas: Some(200_000),
+        max_fee_per_gas: Some(1000),
+        max_priority_fee_per_gas: Some(1000),
+        value: Some(alloy::primitives::U256::from(0)),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    };
+
+    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let transactions = vec![encoded_tx];
+
+    let output = chain.run_block(transactions, None, None, None);
+
+    let tx_result = &output
+        .tx_results
+        .first()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .execution_result;
+
+    assert!(matches!(tx_result, ExecutionResult::Revert { .. }));
+}
+
+#[test]
+fn test_l1_messenger_hook_unauthorized_sender_ignored() {
+    let mut chain = Chain::empty(None);
+    // making sure hooks are installed
+    install_system_contracts(&mut chain, false, false, true);
+
+    // ❌ this should NOT be the L1Messenger system contract address
+    let unauthorized_from = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+    let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
+
+    // Calldata that the hook *expects*:
+    // abi.encode(msg.sender, _message)
+    // For the unauthorized test we don't care about the message contents,
+    // we just want msg.sender (on the hook side) to be wrong (EOA instead of system contract).
+    let hook_calldata = hex::decode(
+    "000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    )
+    .unwrap();
+
+    let tx = TransactionRequest {
+        chain_id: Some(37),
+        from: Some(unauthorized_from),
+        to: Some(TxKind::Call(l1_messenger_hook)),
+        input: hook_calldata.into(),
+        gas: Some(200_000),
+        max_fee_per_gas: Some(1000),
+        max_priority_fee_per_gas: Some(1000),
+        value: Some(alloy::primitives::U256::from(0)),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    };
+
+    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let transactions = vec![encoded_tx];
+
+    let output = chain.run_block(transactions, None, None, None);
+
+    let tx_result = &output
+        .tx_results
+        .first()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .execution_result;
+
+    assert!(matches!(tx_result, ExecutionResult::Success { .. }));
 }
 
 #[test]
 fn test_l2_base_token_withdraw_events() {
     let mut chain = Chain::empty(None);
+    install_system_contracts(&mut chain, true, true, false);
 
     // L2 base token address is 0x800a
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
@@ -198,6 +358,7 @@ fn test_l2_base_token_withdraw_events() {
 #[test]
 fn test_l2_base_token_withdraw_with_message_events() {
     let mut chain = Chain::empty(None);
+    install_system_contracts(&mut chain, true, true, false);
 
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
     let sender = address!("1234567890123456789012345678901234567890");
@@ -291,6 +452,7 @@ fn test_l2_base_token_withdraw_with_message_events() {
 #[test]
 fn test_l2_base_token_withdraw_with_dirty_address() {
     let mut chain = Chain::empty(None);
+    install_system_contracts(&mut chain, true, true, false);
 
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
     let sender = address!("1234567890123456789012345678901234567890");
@@ -341,6 +503,7 @@ fn test_l2_base_token_withdraw_with_dirty_address() {
 #[test]
 fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
     let mut chain = Chain::empty(None);
+    install_system_contracts(&mut chain, true, true, false);
 
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
     let sender = address!("1234567890123456789012345678901234567890");
@@ -467,10 +630,9 @@ fn test_l2_base_token_no_mint_event_regression() {
 
 #[test]
 fn test_contract_deployer_gas_charging() {
-    let complex_upgrader_address = address!("000000000000000000000000000000000000800f");
     let contract_deployer_address = address!("0000000000000000000000000000000000008006");
+    let contract_deployer_hook_address = address!("0000000000000000000000000000000000007002");
 
-    // setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
     let bytecode = hex::decode("0123456789").unwrap();
     let code_hash = Bytes32::from_array(
         hex::decode("1c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7")
@@ -479,12 +641,12 @@ fn test_contract_deployer_gas_charging() {
             .unwrap(),
     );
     let calldata =
-        hex::decode("f6eca0b000000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
+        hex::decode("00000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
             .unwrap();
 
     let gas_used = call_address_and_measure_gas_cost(
+        contract_deployer_hook_address,
         contract_deployer_address,
-        complex_upgrader_address,
         0,
         calldata,
         vec![(code_hash, bytecode)],
@@ -518,8 +680,8 @@ fn test_l1_messenger_gas_charging() {
         call_address_and_measure_gas_cost(l1_messenger_address, sender, 0, calldata, vec![]);
 
     // Verify that gas was charged - this should include the hook gas cost + keccak + LOG costs
-    // The hook should charge HOOK_BASE_ERGS_COST (100 gas) + keccak256 costs + LOG costs
-    assert_eq!(gas_used, 3133);
+    // The hook should charge keccak256 costs + LOG costs
+    assert_eq!(gas_used, 9238);
 }
 
 #[test]
@@ -542,7 +704,7 @@ fn test_l2_base_token_withdraw_gas_charging() {
         vec![],
     );
 
-    assert_eq!(gas_used, 5561);
+    assert_eq!(gas_used, 52401);
 }
 
 #[test]
@@ -582,8 +744,8 @@ fn test_l2_base_token_withdraw_with_message_gas_charging() {
     );
 
     // Verify that gas was charged - this should include hook gas cost + memory copy costs + L1 message costs + event costs
-    // The hook should charge HOOK_BASE_ERGS_COST (100 gas) + copy costs + L1 message costs + event emission costs
-    assert_eq!(gas_used, 6893);
+    // The hook should charge copy costs + L1 message costs + event emission costs
+    assert_eq!(gas_used, 54440);
 }
 
 #[test]

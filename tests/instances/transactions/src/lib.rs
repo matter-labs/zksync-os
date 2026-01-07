@@ -11,11 +11,13 @@ use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_system::system_implementation::system::pubdata::PUBDATA_ENCODING_VERSION;
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
+use rig::testing_utils::install_system_contracts;
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::{alloy, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
+
 mod native_charging;
 
 fn run_config() -> Option<rig::chain::RunConfig> {
@@ -45,7 +47,6 @@ fn run_base_system() {
         "a226d3a5c8c408741c3446c762aee8dff742f21e381a0e5ab85a96c5c00100be",
     )
     .unwrap();
-    let eoa_wallet_ethers = LocalWallet::from_bytes(eoa_wallet.to_bytes().as_slice()).unwrap();
 
     let from = wallet_ethers.address();
     let to = address!("0000000000000000000000000000000000010002");
@@ -209,6 +210,7 @@ fn test_gas_price_zero() {
 #[test]
 fn test_withdrawal() {
     let mut chain = Chain::empty(None);
+    install_system_contracts(&mut chain, true, false, false);
 
     let wallet = PrivateKeySigner::from_str(
         "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
@@ -270,6 +272,8 @@ fn test_withdrawal() {
         B160::from_be_bytes(from.0),
         U256::from(1_000_000_000_000_000_u64),
     );
+
+    install_system_contracts(&mut chain, false, true, false);
 
     let output = chain.run_block(transactions, None, None, run_config());
 
@@ -590,6 +594,8 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
     let to = address!("0000000000000000000000000000000000010002");
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
+    let mut chain = Chain::empty(None);
+
     // Invalid tx first
     let encoded_mint1_tx = {
         let mint_tx = TxLegacy {
@@ -604,31 +610,47 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
         rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
     };
     let withdrawal_tx = {
-        let to = address!("000000000000000000000000000000000000800a");
+        let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
+        let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
+
+        chain.set_balance(
+            B160::from_be_bytes(l1_messenger_contract.into_array()),
+            U256::from(1_000_000_000_000_000_u64),
+        );
 
         let withdrawal_calldata =
             hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
                 .unwrap();
 
-        let mint_tx = TxLegacy {
-            chain_id: 37u64.into(),
-            nonce: 0,
-            gas_price: 1000,
-            gas_limit: 500_000,
-            to: TxKind::Call(to),
-            value: U256::from(10),
+        let tx = TransactionRequest {
+            chain_id: Some(37),
+            from: Some(l1_messenger_contract),
+            to: Some(TxKind::Call(l1_messenger_hook)),
             input: withdrawal_calldata.into(),
+            gas: Some(500_000),
+            max_fee_per_gas: Some(1000),
+            max_priority_fee_per_gas: Some(1000),
+            value: Some(alloy::primitives::U256::from(0)),
+            nonce: Some(0),
+            gas_price: Some(1000),
+            max_fee_per_blob_gas: Some(0),
+            access_list: None,
+            transaction_type: None,
+            blob_versioned_hashes: None,
+            sidecar: None,
+            authorization_list: None,
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+
+        rig::utils::encode_l1_tx(tx)
     };
 
-    let mut chain = Chain::empty(None);
     let transactions = vec![encoded_mint1_tx, withdrawal_tx];
     chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
     chain.set_balance(
         B160::from_be_bytes(from.0),
         U256::from(1_000_000_000_000_000_u64),
     );
+
     let output = chain.run_block(transactions, None, None, None);
 
     // Assert tx succeeded/failed
@@ -637,15 +659,15 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
 
     assert!(result0.as_ref().is_err());
     assert!(result1.as_ref().is_ok_and(|o| o.is_success()));
-    assert!(
+    assert_eq!(
         result1
             .unwrap()
             .l2_to_l1_logs
             .first()
             .unwrap()
             .log
-            .tx_number_in_block
-            == 0
+            .tx_number_in_block,
+        0
     );
 }
 

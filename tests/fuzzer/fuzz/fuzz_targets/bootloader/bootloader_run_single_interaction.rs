@@ -16,13 +16,7 @@ use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{
     CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
-};
-use system_hooks::call_hooks::contract_deployer::{
-    L2_COMPLEX_UPGRADER_ADDRESS, SET_EVM_BYTECODE_DETAILS,
-};
-use system_hooks::call_hooks::l1_messenger::SEND_TO_L1_SELECTOR;
-use system_hooks::call_hooks::l2_base_token::{
-    FINALIZE_ETH_WITHDRAWAL_SELECTOR, WITHDRAW_SELECTOR, WITHDRAW_WITH_MESSAGE_SELECTOR,
+    SET_BYTECODE_ON_ADDRESS_HOOK,
 };
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
@@ -30,6 +24,12 @@ use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::{Resource, System};
 
 mod common;
+
+// sendToL1(bytes) - 62f84b24
+const SEND_TO_L1_SELECTOR: &[u8] = &[0x62, 0xf8, 0x4b, 0x24];
+
+// setBytecodeDetailsEVM(address,bytes32,uint32,bytes32,uint32)
+const SET_EVM_BYTECODE_DETAILS: &[u8] = &[0x23, 0x1b, 0x39, 0x57];
 
 #[derive(Debug)]
 struct CallDataFuzz {
@@ -53,58 +53,12 @@ struct FuzzInput<'a> {
     calldata2: CallDataFuzz,
 }
 
-fn cd_withdraw(addr: [u8; 20]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(4 + 32);
-    out.extend_from_slice(WITHDRAW_SELECTOR);
-    out.extend_from_slice(&enc_addr(addr));
-    out
-}
-
-fn cd_withdraw_with_message(addr: [u8; 20], msg: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.extend_from_slice(WITHDRAW_WITH_MESSAGE_SELECTOR);
-
-    let mut head: Vec<[u8; 32]> = vec![enc_addr(addr)]; // arg0
-    let mut tail = Vec::new();
-    abi_push_bytes(&mut head, &mut tail, msg, 32 * 2); // arg1 offset
-
-    for w in head {
-        out.extend_from_slice(&w);
-    }
-    out.extend_from_slice(&tail);
-    out
-}
-
-fn cd_finalize_eth_withdrawal(
-    a0: U256,
-    a1: U256,
-    a2: u16,
-    data: &[u8],
-    arr: &[[u8; 32]],
-) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.extend_from_slice(FINALIZE_ETH_WITHDRAWAL_SELECTOR);
-
-    let mut head: Vec<[u8; 32]> = Vec::with_capacity(5);
-    let mut tail = Vec::new();
-    head.push(enc_u256(a0)); // uint256
-    head.push(enc_u256(a1)); // uint256
-    head.push(enc_u16(a2)); // uint16 (ABI-padded to 32)
-    abi_push_bytes(&mut head, &mut tail, data, 32 * 5); // bytes
-    abi_push_bytes32_array(&mut head, &mut tail, arr, 32 * 5); // bytes32[]
-
-    for w in head {
-        out.extend_from_slice(&w);
-    }
-    out.extend_from_slice(&tail);
-    out
-}
-
 fn cd_set_bytecode_details_evm(
     addr: [u8; 20],
     bytecode_hash: [u8; 32],
     bytecode_len: u32,
     observable_bytecode_hash: [u8; 32],
+    observable_bytecode_len: u32,
 ) -> Vec<u8> {
     let mut out = Vec::with_capacity(4 + 32 * 4);
     out.extend_from_slice(SET_EVM_BYTECODE_DETAILS);
@@ -112,6 +66,7 @@ fn cd_set_bytecode_details_evm(
     out.extend_from_slice(&bytecode_hash);
     out.extend_from_slice(&enc_u32(bytecode_len));
     out.extend_from_slice(&observable_bytecode_hash);
+    out.extend_from_slice(&enc_u32(observable_bytecode_len));
     out
 }
 
@@ -130,62 +85,29 @@ impl<'a> Arbitrary<'a> for FuzzInput<'a> {
         let calldata1: &'a [u8] = Arbitrary::arbitrary(u)?;
 
         // For deployer: 90% of the time use the upgrader address as `from`, 10% random
-        if selector == 4 {
+        if selector == 3 {
             let bias: u8 = Arbitrary::arbitrary(u)?; // 0..=255
             if (bias as usize) < (u8::MAX as usize * 9) / 10 {
-                from = L2_COMPLEX_UPGRADER_ADDRESS.to_be_bytes();
+                from = CONTRACT_DEPLOYER_ADDRESS.to_be_bytes();
             }
         }
 
         // Build calldata2 for the chosen branch
         let calldata2_raw: Vec<u8> = match selector {
             3 => {
-                // L2 base token
-                match u.int_in_range(0..=2)? {
-                    0 => {
-                        // withdraw(address)
-                        let a: [u8; 20] = Arbitrary::arbitrary(u)?;
-                        cd_withdraw(a)
-                    }
-                    1 => {
-                        // withdrawWithMessage(address,bytes)
-                        let a: [u8; 20] = Arbitrary::arbitrary(u)?;
-                        // cap message length to keep runs quick
-                        let mut m: Vec<u8> = Arbitrary::arbitrary(u)?;
-                        if m.len() > 512 {
-                            m.truncate(512);
-                        }
-                        cd_withdraw_with_message(a, &m)
-                    }
-                    _ => {
-                        // finalizeEthWithdrawal(uint256,uint256,uint16,bytes,bytes32[])
-                        let a0 = U256::from_be_bytes(<[u8; 32]>::arbitrary(u)?);
-                        let a1 = U256::from_be_bytes(<[u8; 32]>::arbitrary(u)?);
-                        let a2: u16 = Arbitrary::arbitrary(u)?;
-                        let mut data: Vec<u8> = Arbitrary::arbitrary(u)?;
-                        if data.len() > 512 {
-                            data.truncate(512);
-                        }
-                        let n: usize = (u8::arbitrary(u)? % 4) as usize; // up to 3 elements
-                        let mut arr = Vec::with_capacity(n);
-                        for _ in 0..n {
-                            arr.push(<[u8; 32]>::arbitrary(u)?);
-                        }
-                        cd_finalize_eth_withdrawal(a0, a1, a2, &data, &arr)
-                    }
-                }
-            }
-            4 => {
-                // contract_deployer: setBytecodeDetailsEVM(address,bytes32,uint32,bytes32)
+                // contract_deployer: setBytecodeDetailsEVM(address,bytes32,uint32,bytes32,uint32)
+                // function extended by the following parameter: observable_bytecode_len
                 let addr: [u8; 20] = Arbitrary::arbitrary(u)?;
                 let bytecode_hash: [u8; 32] = Arbitrary::arbitrary(u)?;
                 let bytecode_len: u32 = Arbitrary::arbitrary(u)?;
                 let observable_bytecode_hash: [u8; 32] = Arbitrary::arbitrary(u)?;
+                let observable_bytecode_len: u32 = Arbitrary::arbitrary(u)?;
                 cd_set_bytecode_details_evm(
                     addr,
                     bytecode_hash,
                     bytecode_len,
                     observable_bytecode_hash,
+                    observable_bytecode_len,
                 )
             }
             2 => {
@@ -232,6 +154,13 @@ fn fuzz(input: FuzzInput) {
     let mut system_functions = HooksStorage::new_in(system.get_allocator());
 
     system_hooks::add_precompiles(&mut system_functions).expect("Should add precompiles");
+
+    system_hooks::add_l1_messenger(&mut system_functions)
+        .expect("Should add l1_messenger");
+    system_hooks::add_set_bytecode_on_address_hook(&mut system_functions)
+        .expect("Should add set_bytecode_on_address_hook");
+    system_hooks::add_interop_root_reporter(&mut system_functions)
+        .expect("Should add interop_root_reporter");
 
     let mut inf_resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
     pub const MAX_HEAP_BUFFER_SIZE: usize = 1 << 27; // 128 MB
@@ -289,7 +218,6 @@ fn fuzz(input: FuzzInput) {
             );
         }
         3 => {
-            // Fuzz-test l2_base_token hook
 
             let amount = U256::from_be_bytes([0; 32]);
 

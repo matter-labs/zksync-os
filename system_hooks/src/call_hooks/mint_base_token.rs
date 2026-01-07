@@ -2,9 +2,9 @@ use super::super::*;
 use core::fmt::Write;
 use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::internal_error;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
+use zk_ee::{internal_error, system_log};
 
 /// System hook that allows the L2 base token contract to mint tokens
 ///
@@ -101,15 +101,11 @@ where
             ))
         }
         Ok(Err(e)) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Revert: {e:?}\n"));
+            system_log!(system, "Revert: {e:?}\n");
             Ok((make_error_return_state(resources), return_memory))
         }
         Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Out of gas during system hook\n"));
+            system_log!(system, "Out of gas during system hook\n");
             Ok((make_error_return_state(resources), return_memory))
         }
         Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => Err(e),
