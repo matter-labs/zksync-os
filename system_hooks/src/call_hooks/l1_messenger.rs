@@ -43,9 +43,10 @@ where
 
     // Can be used only by L1 messenger system contract
     if caller != L1_MESSENGER_ADDRESS {
-        let _ = system.get_logger().write_fmt(format_args!(
+        system_log!(
+            system,
             "L1 messenger hook: invalid caller (caller={caller:?})\n"
-        ));
+        );
         // Pretend to be an empty account
         return Ok((
             make_return_state_from_returndata_region(available_resources, &[]),

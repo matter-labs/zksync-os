@@ -11,7 +11,7 @@ use ruint::aliases::{B160, U256};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::utils::Bytes32;
-use zk_ee::{internal_error, out_of_return_memory};
+use zk_ee::{internal_error, out_of_return_memory, system_log};
 
 pub fn set_bytecode_on_address_hook<'a, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
@@ -38,9 +38,10 @@ where
 
     // Can be used only by Contract Deployer system contract
     if caller != CONTRACT_DEPLOYER_ADDRESS {
-        let _ = system.get_logger().write_fmt(format_args!(
+        system_log!(
+            system,
             "Set bytecode hook: invalid caller (caller={caller:?})\n"
-        ));
+        );
         // Pretend to be an empty account
         return Ok((
             make_return_state_from_returndata_region(available_resources, &[]),
@@ -95,15 +96,11 @@ where
             ))
         }
         Ok(Err(e)) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Revert: {e:?}\n"));
+            system_log!(system, "Revert: {e:?}\n");
             Ok((make_error_return_state(resources), return_memory))
         }
         Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Out of gas during system hook\n"));
+            system_log!(system, "Out of gas during system hook\n");
             Ok((make_error_return_state(resources), return_memory))
         }
         Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => Err(e),
