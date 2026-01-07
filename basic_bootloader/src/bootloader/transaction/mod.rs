@@ -13,7 +13,6 @@ use crate::bootloader::BootloaderSubsystemError;
 use crate::bootloader::InvalidTransaction;
 use core::alloc::Allocator;
 use rlp_encoded::AccessListForAddress;
-#[cfg(feature = "eip-7702")]
 use rlp_encoded::AuthorizationList;
 use rlp_encoded::RlpEncodedTransaction;
 use ruint::aliases::B160;
@@ -38,10 +37,11 @@ pub mod abi_encoded;
 pub mod rlp_encoded;
 use self::abi_encoded::AbiEncodedTransaction;
 
-#[cfg(feature = "eip-7702")]
 pub mod authorization_list;
 
 pub mod access_list;
+
+pub mod blobs;
 
 /// Unified transaction wrapper over RLP and ABI formats.
 /// RLP transactions are used for regular Ethereum transactions,
@@ -241,7 +241,6 @@ impl<A: Allocator> Transaction<A> {
     }
 
     /// Returns the authorization list if present.
-    #[cfg(feature = "eip-7702")]
     pub fn authorization_list(&self) -> Option<AuthorizationList<'_>> {
         match self {
             Self::Abi(_) => None,

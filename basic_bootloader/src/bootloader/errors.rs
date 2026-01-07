@@ -119,6 +119,8 @@ pub enum InvalidTransaction {
     BlobListTooLong,
     /// Transactions with blobs must have at least one.
     EmptyBlobList,
+    /// Gas limit for tx is more than per-tx max limit
+    CallerGasLimitMoreThanTxLimit,
 }
 
 ///

@@ -16,6 +16,7 @@ use zk_ee::utils::Bytes32;
 use super::transaction::abi_encoded::AbiEncodedTransaction;
 use super::transaction::Transaction;
 
+pub mod ethereum;
 pub(crate) mod gas_helpers;
 pub mod process_transaction;
 pub(crate) mod refund_calculation;

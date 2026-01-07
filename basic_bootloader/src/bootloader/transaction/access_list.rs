@@ -1,7 +1,6 @@
 use super::Transaction;
 use crate::bootloader::errors::TxError;
 use evm_interpreter::ERGS_PER_GAS;
-use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
 use zk_ee::system::{Ergs, Resource, Resources};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
@@ -22,7 +21,6 @@ pub fn parse_and_warm_up_access_list<S: EthereumLikeTypes>(
 ) -> Result<(), TxError>
 where
     S::IO: IOSubsystemExt,
-    S::Metadata: ZkSpecificPricingMetadata,
 {
     use crate::bootloader::transaction::rlp_encoded::AccessListForAddress;
     if let Some(iter) = transaction.access_list_iter() {

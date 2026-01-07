@@ -2,7 +2,7 @@ use super::TxContextForPreAndPostProcessing;
 use crate::bootloader::constants::*;
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::access_list::parse_and_warm_up_access_list;
-use crate::bootloader::transaction::rlp_encoded::BlobHashesList;
+use crate::bootloader::transaction::blobs::parse_blobs_list;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
 use crate::bootloader::transaction_flow::gas_helpers::{create_resources_for_tx, get_gas_price};
 use crate::bootloader::BasicBootloaderExecutionConfig;
@@ -23,7 +23,7 @@ use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::resources::Computational;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, EthereumLikeTypes, System};
-use zk_ee::system::{AccountDataRequest, SystemFunctions, VERSIONED_HASH_VERSION_KZG};
+use zk_ee::system::{AccountDataRequest, SystemFunctions};
 use zk_ee::system::{Ergs, IOSubsystemExt, Resources};
 use zk_ee::system::{IOSubsystem, NonceError};
 use zk_ee::system::{Resource, SystemTypes};
@@ -454,35 +454,4 @@ pub(crate) fn compute_calldata_tokens(calldata: &[u8]) -> (u64, u64) {
     {
         (num_tokens, L2_TX_INTRINSIC_GAS)
     }
-}
-
-pub fn parse_blobs_list<const MAX_BLOBS_IN_TX: usize>(
-    blobs_list: BlobHashesList<'_>,
-) -> Result<arrayvec::ArrayVec<Bytes32, MAX_BLOBS_IN_TX>, TxError> {
-    let mut result = arrayvec::ArrayVec::<_, MAX_BLOBS_IN_TX>::new();
-    if blobs_list.count > MAX_BLOBS_IN_TX {
-        return Err(TxError::Validation(InvalidTransaction::BlobListTooLong));
-    }
-
-    for blob_hash in blobs_list.iter() {
-        let blob_hash = blob_hash?;
-
-        if blob_hash[0] != VERSIONED_HASH_VERSION_KZG {
-            return Err(TxError::Validation(
-                InvalidTransaction::BlobElementIsNotSupported,
-            ));
-        }
-
-        // NOTE: we do NOT check that this blob hash is meaningful - we are not worried about block validity
-        // from consensus perspective. And KZG blob precompile requires explicit preimage anyway
-        let blob_hash = Bytes32::from_array(*blob_hash);
-        result.push(blob_hash);
-    }
-
-    if result.is_empty() {
-        // transactions that allow blobs should have at least one
-        return Err(TxError::Validation(InvalidTransaction::EmptyBlobList));
-    }
-
-    Ok(result)
 }

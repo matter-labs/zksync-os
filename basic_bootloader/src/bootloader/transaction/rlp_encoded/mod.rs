@@ -20,18 +20,18 @@ use crate::bootloader::transaction::rlp_encoded::{
 use zk_ee::utils::Bytes32;
 
 mod eip_2718_tx_envelope;
-mod rlp;
+pub mod rlp;
 mod transaction;
 pub mod transaction_types;
 
 pub use self::transaction::RlpEncodedTransaction;
 pub use transaction_types::eip_2930_tx::AccessListForAddress;
 pub use transaction_types::eip_4844_tx::BlobHashesList;
-#[cfg(feature = "eip-7702")]
 pub use transaction_types::eip_7702_tx::{AuthorizationEntry, AuthorizationList};
 
 use super::TxError;
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RlpEncodedTxInner<'a> {
     Legacy(LegacyTXInner<'a>, LegacySignatureData<'a>),
@@ -88,6 +88,7 @@ impl<'a> RlpEncodedTxInner<'a> {
                     }
                     Ok((Self::EIP4844(tx, sig_data), sig_hash))
                 }
+                #[cfg(feature = "eip-7702")]
                 EIP7702Tx::TX_TYPE => {
                     let (tx, sig_data, sig_hash) =
                         EIP2718PayloadParser::<EIP7702Tx<'a>>::try_parse_and_hash_for_signature_verification(

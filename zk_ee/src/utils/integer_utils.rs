@@ -143,6 +143,13 @@ pub fn u256_try_to_b160(src: U256) -> Option<B160> {
     Some(result)
 }
 
+pub fn u256_mul_by_word(input: &U256, word: u64) -> (U256, u64) {
+    let mut result = *input;
+    let of = unsafe { ruint::algorithms::mul_nx1(result.as_limbs_mut(), word) };
+
+    (result, of)
+}
+
 #[cfg(test)]
 mod tests {
 

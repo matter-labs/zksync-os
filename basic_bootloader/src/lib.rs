@@ -8,6 +8,7 @@
 #![feature(vec_push_within_capacity)]
 #![feature(ptr_alignment_type)]
 #![feature(btreemap_alloc)]
+#![feature(unsafe_cell_access)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(ptr_metadata)]
 #![feature(alloc_layout_extra)]

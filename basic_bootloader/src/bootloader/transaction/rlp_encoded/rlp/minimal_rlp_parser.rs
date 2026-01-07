@@ -101,6 +101,14 @@ impl<'a> Rlp<'a> {
         }
     }
 
+    // Decode an RLP string and enforce it to be of a given length
+    pub fn bytes_exact<const N: usize>(&mut self) -> Result<&'a [u8; N], InvalidTransaction> {
+        let bytes = self.bytes()?;
+        bytes
+            .try_into()
+            .map_err(|_| InvalidTransaction::InvalidStructure)
+    }
+
     /// Enter a list and return a sub-cursor limited to the list payload bytes.
     pub fn list(&mut self) -> Result<Rlp<'a>, InvalidTransaction> {
         let m = self.take1()?;
