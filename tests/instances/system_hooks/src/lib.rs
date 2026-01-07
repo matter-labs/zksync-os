@@ -7,8 +7,8 @@ use alloy::primitives::TxKind;
 use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
-use rig::chain::RunConfig;
 use rig::ruint::aliases::B160;
+use rig::ruint::aliases::U256;
 use rig::testing_utils::call_address_and_measure_gas_cost;
 use rig::testing_utils::install_system_contracts;
 use rig::utils::{
@@ -21,11 +21,10 @@ use rig::{alloy, Chain};
 #[test]
 fn test_set_bytecode_details_evm() {
     let mut chain = Chain::empty(None);
-    install_system_contracts(&mut chain, false, false, true);
 
-    let complex_upgrader_address = address!("000000000000000000000000000000000000800f");
     let contract_deployer_address = address!("0000000000000000000000000000000000008006");
-    // setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
+    let contract_deployer_hook_address = address!("0000000000000000000000000000000000007002");
+
     let bytecode = hex::decode("0123456789").unwrap();
     let code_hash = Bytes32::from_array(
         hex::decode("1c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7")
@@ -35,14 +34,19 @@ fn test_set_bytecode_details_evm() {
     );
     chain.set_preimage(code_hash, &bytecode);
     let calldata =
-        hex::decode("231b395700000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b9440000000000000000000000000000000000000000000000000000000000000005")
+        hex::decode("00000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
             .unwrap();
+
+    chain.set_balance(
+        B160::from_be_bytes(contract_deployer_address.into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
 
     let encoded_tx = {
         let tx = TransactionRequest {
             chain_id: Some(37),
-            from: Some(complex_upgrader_address),
-            to: Some(TxKind::Call(contract_deployer_address)),
+            from: Some(contract_deployer_address),
+            to: Some(TxKind::Call(contract_deployer_hook_address)),
             input: calldata.into(),
             gas: Some(200_000),
             max_fee_per_gas: Some(1000),
@@ -626,10 +630,9 @@ fn test_l2_base_token_no_mint_event_regression() {
 
 #[test]
 fn test_contract_deployer_gas_charging() {
-    let complex_upgrader_address = address!("000000000000000000000000000000000000800f");
     let contract_deployer_address = address!("0000000000000000000000000000000000008006");
+    let contract_deployer_hook_address = address!("0000000000000000000000000000000000007002");
 
-    // setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
     let bytecode = hex::decode("0123456789").unwrap();
     let code_hash = Bytes32::from_array(
         hex::decode("1c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7")
@@ -638,12 +641,12 @@ fn test_contract_deployer_gas_charging() {
             .unwrap(),
     );
     let calldata =
-        hex::decode("231b395700000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b9440000000000000000000000000000000000000000000000000000000000000005")
+        hex::decode("00000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
             .unwrap();
 
     let gas_used = call_address_and_measure_gas_cost(
+        contract_deployer_hook_address,
         contract_deployer_address,
-        complex_upgrader_address,
         0,
         calldata,
         vec![(code_hash, bytecode)],
