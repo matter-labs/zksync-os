@@ -48,7 +48,6 @@ pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
         &self,
         ee_type: ExecutionEnvironmentType,
         resources: &mut R,
-        is_access_list: bool,
     ) -> Result<(), SystemError>;
 
     /// Charge the extra cost of reading a key
@@ -182,9 +181,8 @@ impl<
         address: &StorageAddress<EthereumIOTypesConfig>,
         key: &'a K,
         oracle: &mut impl IOOracle,
-        is_access_list: bool,
     ) -> Result<(AddressItem<'a, K, V, A>, IsWarmRead), SystemError> {
-        resources_policy.charge_warm_storage_read(ee_type, resources, is_access_list)?;
+        resources_policy.charge_warm_storage_read(ee_type, resources)?;
 
         let mut initialized_element = false;
 
@@ -251,7 +249,6 @@ impl<
         key: &K,
         resources: &mut R,
         oracle: &mut impl IOOracle,
-        is_access_list: bool,
     ) -> Result<V, SystemError>
 where {
         let (addr_data, _) = Self::materialize_element(
@@ -263,7 +260,6 @@ where {
             address,
             key,
             oracle,
-            is_access_list,
         )?;
 
         Ok(addr_data.current().value().clone())
@@ -288,7 +284,6 @@ where {
             address,
             key,
             oracle,
-            false,
         )?;
 
         let val_current = addr_data.current().value();
@@ -386,7 +381,7 @@ impl<
         };
 
         self.0
-            .apply_read_impl(ee_type, &sa, &key, resources, oracle, false)
+            .apply_read_impl(ee_type, &sa, &key, resources, oracle)
     }
 
     fn touch(
@@ -396,7 +391,6 @@ impl<
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
-        is_access_list: bool,
     ) -> Result<(), SystemError> {
         // TODO(EVM-1076): use a different low-level function to avoid creating pubdata
         // and merkle proof obligations until we actually read the value
@@ -411,7 +405,7 @@ impl<
         };
 
         self.0
-            .apply_read_impl(ee_type, &sa, &key, resources, oracle, is_access_list)?;
+            .apply_read_impl(ee_type, &sa, &key, resources, oracle)?;
         Ok(())
     }
 
@@ -506,7 +500,7 @@ impl<
 
         let raw_value = self
             .0
-            .apply_read_impl(ee_type, &sa, &key, resources, oracle, false)?;
+            .apply_read_impl(ee_type, &sa, &key, resources, oracle)?;
 
         let value = unsafe {
             // we checked TypeId above, so we reinterpret. No drop/forget needed

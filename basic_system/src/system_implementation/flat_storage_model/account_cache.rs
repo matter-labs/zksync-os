@@ -135,7 +135,7 @@ impl<
         // 1. Charging for special access
         resources.with_infinite_ergs(|res: &mut R| {
             // Access list only matters for ergs, we set it to false
-            policy.charge_warm_storage_read(ee_type, res, false)
+            policy.charge_warm_storage_read(ee_type, res)
         })?;
         resources.with_infinite_ergs(|res| {
             // We determine if it's a new slot by proxy of empty_account.
@@ -163,19 +163,10 @@ impl<
         preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
-        is_access_list: bool,
         observe: bool,
     ) -> Result<AddressItem<A>, SystemError> {
         let ergs = match ee_type {
-            ExecutionEnvironmentType::NoEE => {
-                if is_access_list {
-                    // For access lists, EVM charges the full cost as many
-                    // times as an account is in the list.
-                    Ergs(2400 * ERGS_PER_GAS)
-                } else {
-                    Ergs::empty()
-                }
-            }
+            ExecutionEnvironmentType::NoEE => Ergs::empty(),
             ExecutionEnvironmentType::EVM =>
             // For selfdestruct, there's no warm access cost
             {
@@ -301,7 +292,6 @@ impl<
             preimages_cache,
             oracle,
             is_selfdestruct,
-            false,
             true,
         )?;
 
@@ -502,7 +492,6 @@ impl<
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
-        is_access_list: bool,
     ) -> Result<(), SystemError> {
         self.materialize_element::<PROOF_ENV>(
             ee_type,
@@ -512,7 +501,6 @@ impl<
             preimages_cache,
             oracle,
             false,
-            is_access_list,
             false,
         )?;
         Ok(())
@@ -577,7 +565,6 @@ impl<
             storage,
             preimages_cache,
             oracle,
-            false,
             false,
             true,
         )?;
@@ -661,7 +648,6 @@ impl<
             storage,
             preimages_cache,
             oracle,
-            false,
             false,
             true,
         )?;
@@ -795,7 +781,6 @@ impl<
                 preimages_cache,
                 oracle,
                 false,
-                false,
                 true,
             )
         })?;
@@ -912,7 +897,6 @@ impl<
             preimages_cache,
             oracle,
             false,
-            false,
             true,
         )?;
 
@@ -1007,7 +991,6 @@ impl<
                 storage,
                 preimages_cache,
                 oracle,
-                false,
                 false,
                 true,
             )
@@ -1128,7 +1111,6 @@ impl<
             preimages_cache,
             oracle,
             true,
-            false,
             false,
         )?;
         resources.charge(&R::from_native(R::Native::from_computational(

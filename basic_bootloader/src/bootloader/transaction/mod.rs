@@ -40,6 +40,8 @@ use self::abi_encoded::AbiEncodedTransaction;
 #[cfg(feature = "eip-7702")]
 pub mod authorization_list;
 
+pub mod access_list;
+
 /// Unified transaction wrapper over RLP and ABI formats.
 /// RLP transactions are used for regular Ethereum transactions,
 /// while ABI transactions are used for ZKsync-specific transactions.
@@ -52,12 +54,7 @@ pub enum Transaction<A: Allocator> {
 
 impl<A: Allocator> Transaction<A> {
     /// Parse a transaction from a raw buffer using the system IO oracle.
-    pub fn try_from_buffer<
-        S: EthereumLikeTypes<
-            Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata,
-            Allocator = A,
-        >,
-    >(
+    pub fn try_from_buffer<S: EthereumLikeTypes<Allocator = A>>(
         buffer: UsizeAlignedByteBox<A>,
         system: &mut System<S>,
     ) -> Result<Self, TxError>

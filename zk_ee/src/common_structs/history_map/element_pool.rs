@@ -1,8 +1,10 @@
+use crate::{common_structs::skip_list_quasi_vec::ListVec, memory::stack_trait::Stack};
+
 use super::{
     element_with_history::{HistoryRecord, HistoryRecordLink},
     CacheSnapshotId,
 };
-use alloc::boxed::Box;
+use core::mem::MaybeUninit;
 use core::{alloc::Allocator, ptr::NonNull};
 
 /// Manages memory allocations for history records, reuses old allocations for optimization
@@ -11,21 +13,7 @@ pub struct ElementPool<V, A: Allocator + Clone> {
     head: Option<HistoryRecordLink<V>>,
     /// Tail of `recycled` sub-list
     last: Option<HistoryRecordLink<V>>,
-    alloc: A,
-}
-
-impl<V, A: Allocator + Clone> Drop for ElementPool<V, A> {
-    fn drop(&mut self) {
-        if let Some(head) = self.head {
-            let mut elem = unsafe { Box::from_raw_in(head.as_ptr(), self.alloc.clone()) };
-
-            while let Some(n) = elem.previous.take() {
-                let n = unsafe { Box::from_raw_in(n.as_ptr(), self.alloc.clone()) };
-
-                elem = n;
-            } // `n` is dropped here.
-        } // Last elem is dropped here.
-    }
+    buffer: ListVec<MaybeUninit<HistoryRecord<V>>, 50, A>,
 }
 
 impl<V, A: Allocator + Clone> ElementPool<V, A> {
@@ -33,7 +21,7 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
         Self {
             head: Default::default(),
             last: Default::default(),
-            alloc,
+            buffer: ListVec::new_in(alloc.clone()),
         }
     }
 
@@ -46,18 +34,16 @@ impl<V, A: Allocator + Clone> ElementPool<V, A> {
     ) -> HistoryRecordLink<V> {
         match self.head {
             None => {
-                // Allocate
-                let (raw, _) = Box::into_raw_with_allocator(Box::new_in(
-                    HistoryRecord {
-                        touch_ss_id: snapshot_id,
-                        value,
-                        previous,
-                    },
-                    self.alloc.clone(),
-                ));
-                // Safety: `Box::into_raw` pinky swears that the ptr is non null and properly
-                // aligned.
-                unsafe { NonNull::new_unchecked(raw) }
+                self.buffer.push(MaybeUninit::uninit());
+                let new_element = self.buffer.top_mut().unwrap();
+
+                new_element.write(HistoryRecord {
+                    touch_ss_id: snapshot_id,
+                    value,
+                    previous,
+                });
+
+                unsafe { NonNull::from_ref(new_element.assume_init_ref()) }
             }
             Some(mut elem) => {
                 // Reuse old allocation

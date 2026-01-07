@@ -235,15 +235,21 @@ pub struct AccountData<
     pub is_delegated: IsDelegated,
 }
 
-impl<A, B, C, D, E, F, G, H> AccountData<A, B, C, D, E, Just<u32>, Just<u32>, F, G, H, Just<bool>> {
-    pub fn is_contract(&self) -> bool {
-        !self.is_delegated.0 && self.unpadded_code_len.0 > 0
+impl<A, B, D, E, F, G, H, I, J, K> AccountData<A, B, Just<u32>, D, E, F, G, H, I, J, K> {
+    pub fn has_bytecode(&self) -> bool {
+        self.observable_bytecode_len.0 > 0
     }
 }
 
-impl<A, B, C, D, E, F, G, H> AccountData<A, B, C, Just<u64>, D, Just<u32>, Just<u32>, E, F, G, H> {
+impl<A, B, D, E, F, G, H, I, J> AccountData<A, B, Just<u32>, D, E, F, G, H, I, J, Just<bool>> {
+    pub fn is_contract(&self) -> bool {
+        self.has_bytecode() && self.is_delegated.0 == false
+    }
+}
+
+impl<A, B, D, E, F, G, H, I, J> AccountData<A, B, Just<u32>, Just<u64>, D, E, F, G, H, I, J> {
     pub fn can_deploy_into(&self) -> bool {
-        self.unpadded_code_len.0 == 0 && self.artifacts_len.0 == 0 && self.nonce.0 == 0
+        self.nonce.0 == 0 && self.has_bytecode() == false
     }
 }
 
@@ -339,6 +345,13 @@ impl<A, B, C, D, E, F, G, H, I, J, K>
     ) -> AccountDataRequest<AccountData<A, B, C, D, E, F, G, H, I, J, Just<bool>>> {
         AccountDataRequest(PhantomData)
     }
+
+    // Helper: just queries observable bytecode len
+    pub fn with_has_bytecode(
+        self,
+    ) -> AccountDataRequest<AccountData<A, B, Just<u32>, D, E, F, G, H, I, J, K>> {
+        AccountDataRequest(PhantomData)
+    }
 }
 
 ///
@@ -366,7 +379,6 @@ pub trait IOSubsystemExt: IOSubsystem {
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
-        is_access_list: bool,
     ) -> Result<(), SystemError>;
 
     /// Perform a transfer of token balance.
@@ -385,7 +397,6 @@ pub trait IOSubsystemExt: IOSubsystem {
         ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-        is_access_list: bool,
     ) -> Result<(), SystemError>;
 
     /// Generic function to read some of an account's properties

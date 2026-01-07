@@ -32,6 +32,7 @@ use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
 use zk_ee::common_structs::ProofData;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
 use zk_ee::interface_error;
+use zk_ee::logger_log;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::out_of_ergs_error;
@@ -673,9 +674,10 @@ impl<
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
             last_block_timestamp,
         };
-        let _ = logger.write_fmt(format_args!(
+        logger_log!(
+            logger,
             "PI calculation: state commitment before {chain_state_commitment_before:?}\n",
-        ));
+        );
 
         // finishing IO, applying changes
         let mut da_commitment_generator =
@@ -737,9 +739,10 @@ impl<
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
             last_block_timestamp: block_metadata.timestamp,
         };
-        let _ = logger.write_fmt(format_args!(
+        logger_log!(
+            logger,
             "PI calculation: state commitment after {chain_state_commitment_after:?}\n",
-        ));
+        );
 
         let interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
             Bytes32::zero(),
@@ -759,22 +762,22 @@ impl<
             upgrade_tx_hash,
             interop_roots_rolling_hash,
         };
-        let _ = logger.write_fmt(format_args!(
-            "PI calculation: batch output {batch_output:?}\n",
-        ));
+        logger_log!(logger, "PI calculation: batch output {batch_output:?}\n",);
 
         let public_input = public_input::BatchPublicInput {
             state_before: chain_state_commitment_before.hash().into(),
             state_after: chain_state_commitment_after.hash().into(),
             batch_output: batch_output.hash().into(),
         };
-        let _ = logger.write_fmt(format_args!(
+        logger_log!(
+            logger,
             "PI calculation: final batch public input {public_input:?}\n",
-        ));
+        );
         let public_input_hash: Bytes32 = public_input.hash().into();
-        let _ = logger.write_fmt(format_args!(
+        logger_log!(
+            logger,
             "PI calculation: final batch public input hash {public_input_hash:?}\n",
-        ));
+        );
 
         if cfg!(feature = "state-diffs-pi") {
             (self.oracle, state_diffs_hash)
@@ -1017,16 +1020,9 @@ where
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
-        is_access_list: bool,
     ) -> Result<(), SystemError> {
-        self.storage.storage_touch(
-            ee_type,
-            resources,
-            address,
-            key,
-            &mut self.oracle,
-            is_access_list,
-        )
+        self.storage
+            .storage_touch(ee_type, resources, address, key, &mut self.oracle)
     }
 
     fn touch_account(
@@ -1034,15 +1030,9 @@ where
         ee_type: ExecutionEnvironmentType,
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
-        is_access_list: bool,
     ) -> Result<(), SystemError> {
-        self.storage.touch_account(
-            ee_type,
-            resources,
-            address,
-            &mut self.oracle,
-            is_access_list,
-        )
+        self.storage
+            .touch_account(ee_type, resources, address, &mut self.oracle)
     }
 
     fn read_account_properties<

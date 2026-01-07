@@ -5,6 +5,7 @@
 
 use arbitrary::{Arbitrary, Result, Unstructured};
 use basic_bootloader::bootloader::runner::RunnerMemoryBuffers;
+use basic_bootloader::bootloader::transaction_flow::zk::process_l1_transaction::mint_token;
 use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
 use basic_bootloader::bootloader::BasicBootloader;
 use common::mock_oracle_balance;
@@ -175,18 +176,14 @@ fn fuzz(input: FuzzInput) {
 
     match selector {
         0 => {
-            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::mint_token(
-                &mut system,
-                &amount,
-                &from,
-                &mut inf_resources,
-            );
+            let _ =
+                mint_token::<ForwardRunningSystem>(&mut system, &amount, &from, &mut inf_resources);
         }
         1 => {
             // Fuzz-test run_single_interaction
             let calldata = input.calldata1;
 
-            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::run_single_interaction(
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>::run_single_interaction(
                 &mut system,
                 &mut system_functions,
                 memories,
@@ -206,7 +203,7 @@ fn fuzz(input: FuzzInput) {
 
             let calldata = &input.calldata2.raw;
 
-            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::run_single_interaction(
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>::run_single_interaction(
                 &mut system,
                 &mut system_functions,
                 memories,
@@ -225,7 +222,7 @@ fn fuzz(input: FuzzInput) {
 
             let calldata = &input.calldata2.raw;
 
-            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::run_single_interaction(
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>::run_single_interaction(
                 &mut system,
                 &mut system_functions,
                 memories,

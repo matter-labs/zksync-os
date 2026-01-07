@@ -9,6 +9,7 @@ use super::super::*;
 use crate::addresses_constants::{L1_MESSENGER_ADDRESS, L1_MESSENGER_ADDRESS_HOOK};
 use core::fmt::Write;
 use ruint::aliases::{B160, U256};
+use zk_ee::system_log;
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     internal_error,
@@ -91,15 +92,11 @@ where
             return_memory,
         )),
         Ok(Err(e)) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Revert: {e:?}\n"));
+            system_log!(system, "Revert: {e:?}\n");
             Ok((make_error_return_state(resources), return_memory))
         }
         Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Out of gas during system hook\n"));
+            system_log!(system, "Out of gas during system hook\n");
             Ok((make_error_return_state(resources), return_memory))
         }
         Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => Err(e),

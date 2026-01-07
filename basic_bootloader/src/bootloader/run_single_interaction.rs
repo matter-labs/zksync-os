@@ -1,12 +1,14 @@
-use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::runner::{run_till_completion, RunnerMemoryBuffers};
 use errors::BootloaderSubsystemError;
 use zk_ee::common_structs::system_hooks::HooksStorage;
-use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::internal_error;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
-use zk_ee::system::CallModifier;
+use zk_ee::system::Resources;
+use zk_ee::system::{
+    AccountDataRequest, CallModifier, CompletedExecution, ExternalCallRequest, IOSubsystemExt,
+};
 use zk_ee::system::{EthereumLikeTypes, System};
-use zk_ee::{interface_error, internal_error, wrap_error};
+use zk_ee::system_log;
 
 use super::*;
 
@@ -14,48 +16,6 @@ impl<S: EthereumLikeTypes, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
 where
     S::IO: IOSubsystemExt,
 {
-    ///
-    /// Mints [value] to address [to].
-    ///
-    pub fn mint_token(
-        system: &mut System<S>,
-        nominal_token_value: &U256,
-        to: &B160,
-        resources: &mut S::Resources,
-    ) -> Result<(), BootloaderSubsystemError>
-    where
-        S::IO: IOSubsystemExt,
-    {
-        // TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
-        #[cfg(not(target_arch = "riscv32"))]
-        let _ = system.get_logger().write_fmt(format_args!(
-            "Minting {nominal_token_value:?} tokens to {to:?}\n"
-        ));
-
-        let _old_balance = system
-            .io
-            .update_account_nominal_token_balance(
-                ExecutionEnvironmentType::EVM,
-                resources,
-                to,
-                nominal_token_value,
-                false,
-            )
-            .map_err(|e| -> BootloaderSubsystemError {
-                match e {
-                    SubsystemError::LeafUsage(balance_error) => {
-                        let _ = system
-                            .get_logger()
-                            .write_fmt(format_args!("Error while minting: {balance_error:?}"));
-                        interface_error!(BootloaderInterfaceError::MintingBalanceOverflow)
-                    }
-                    _ => wrap_error!(e),
-                }
-            })?;
-
-        Ok(())
-    }
-
     ///
     /// Pre-condition: if [nominal_token_value] is not 0, this function
     /// assumes the caller's balance has been validated. It returns an
@@ -77,12 +37,8 @@ where
         S::IO: IOSubsystemExt,
     {
         if DEBUG_OUTPUT {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("`caller` = {caller:?}\n"));
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("`callee` = {callee:?}\n"));
+            system_log!(system, "`caller` = {caller:?}\n");
+            system_log!(system, "`callee` = {callee:?}\n");
         }
 
         let ee_version = {

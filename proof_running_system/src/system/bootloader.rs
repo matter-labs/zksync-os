@@ -4,6 +4,7 @@ use alloc::alloc::{GlobalAlloc, Layout};
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
+use zk_ee::logger_log;
 use zk_ee::memory::ZSTAllocator;
 use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
 use zk_ee::oracle::IOOracle;
@@ -150,7 +151,7 @@ pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default
     heap_start: *mut usize,
     heap_end: *mut usize,
 ) -> [u32; 8] {
-    let _ = L::default().write_fmt(format_args!("Enter proving bootloader"));
+    logger_log!(L::default(), "Enter proving bootloader");
 
     // init allocator
     // allocator is a global singleton object, that can be later accessed by ProxyAllocator
@@ -158,12 +159,12 @@ pub fn run_proving<I: NonDeterminismCSRSourceImplementation, L: Logger + Default
         init_allocator(heap_start, heap_end);
     }
 
-    let _ = L::default().write_fmt(format_args!("Allocator init is complete"));
+    logger_log!(L::default(), "Allocator init is complete");
 
     // oracle is just a thin proxy
     let oracle = CsrBasedIOOracle::<I>::init();
 
-    let _ = L::default().write_fmt(format_args!("Oracle init is complete"));
+    logger_log!(L::default(), "Oracle init is complete");
 
     run_proving_inner::<_, I, L>(oracle)
 }
@@ -176,7 +177,7 @@ pub fn run_proving_inner<
 >(
     oracle: O,
 ) -> [u32; 8] {
-    let _ = L::default().write_fmt(format_args!("IO implementer init is complete"));
+    logger_log!(L::default(), "IO implementer init is complete");
 
     // Load all transactions from oracle and apply them.
     let (mut oracle, public_input) =
@@ -205,7 +206,7 @@ pub fn run_proving_inner<
 >(
     mut oracle: O,
 ) -> [u32; 8] {
-    let _ = L::default().write_fmt(format_args!("IO implementer init is complete"));
+    logger_log!(L::default(), "IO implementer init is complete");
 
     // simulating query, just in case
     I::csr_write_impl(0xdeadbeef);

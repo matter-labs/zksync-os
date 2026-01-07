@@ -68,8 +68,8 @@ pub enum InvalidTransaction {
     InvalidChainId,
     /// Access list is not supported for blocks before the Berlin hardfork.
     AccessListNotSupported,
-    /// Unacceptable gas per pubdata price.
-    GasPerPubdataTooHigh,
+    /// Unacceptable pubdata price.
+    PubdataPriceTooHigh,
     /// Block gas limit is too high.
     BlockGasLimitTooHigh,
     /// Protocol upgrade tx should be first in the block.
@@ -103,6 +103,12 @@ pub enum InvalidTransaction {
     AuthListIsEmpty,
     /// 7702 has a null destination address
     EIP7702HasNullDestination,
+    /// EIP-7623 calldata cost is not paid
+    EIP7623IntrinsicGasIsTooLow,
+    /// Native resources cost is too high
+    NativeResourcesAreTooExpensive,
+    /// The call's gas limit is too high for the system to process.
+    CallerGasLimitTooHigh,
 }
 
 ///
@@ -186,10 +192,7 @@ macro_rules! require {
         if $b {
             Ok(())
         } else {
-            $system
-                .get_logger()
-                .write_fmt(format_args!("Check failed: {:?}\n", $err))
-                .expect("Failed to write log");
+            system_log!($system, "Check failed: {:?}\n", $err);
             Err($err)
         }
     };
@@ -201,10 +204,7 @@ macro_rules! unless {
         if !$b {
             Ok(())
         } else {
-            $system
-                .get_logger()
-                .write_fmt(format_args!("Check failed: {:?}\n", $err))
-                .expect("Failed to write log");
+            system_log!($system, "Check failed: {:?}\n", $err);
             Err($err)
         }
     };
@@ -216,10 +216,7 @@ macro_rules! require_internal {
         if $b {
             Ok(())
         } else {
-            $system
-                .get_logger()
-                .write_fmt(format_args!("Check failed: {}\n", $s))
-                .expect("Failed to write log");
+            system_log!($system, "Check failed: {}\n", $s);
             Err(zk_ee::internal_error!($s))
         }
     };

@@ -76,6 +76,7 @@ pub trait SystemTypes {
     type Allocator: Allocator + Clone + Default;
     type Metadata: BasicMetadata<Self::IOTypes>;
 }
+
 pub trait EthereumLikeTypes: SystemTypes<IOTypes = EthereumIOTypesConfig> {}
 
 pub struct System<S: SystemTypes> {
@@ -416,3 +417,29 @@ define_subsystem!(NextTx,
     TxWriteIteratorTooBig,
   }
 );
+
+/// Logging macros for the system.
+/// TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
+#[cfg(any(not(target_arch = "riscv32"), feature = "global-alloc"))]
+#[macro_export]
+macro_rules! logger_log {
+    ($logger:expr, $($arg:tt)*) => {{
+        let _ = ($logger).write_fmt(format_args!($($arg)*));
+    }};
+}
+
+// No-op only if riscv32 AND no allocator feature
+#[cfg(all(target_arch = "riscv32", not(feature = "global-alloc")))]
+#[macro_export]
+macro_rules! logger_log {
+    ($logger:expr, $($arg:tt)*) => {{
+        // intentionally empty
+    }};
+}
+
+#[macro_export]
+macro_rules! system_log {
+    ($system:expr, $($arg:tt)*) => {{
+        $crate::logger_log!(($system).get_logger(), $($arg)*);
+    }};
+}

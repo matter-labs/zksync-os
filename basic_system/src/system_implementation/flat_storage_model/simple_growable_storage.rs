@@ -27,10 +27,10 @@ use either::Either;
 use zk_ee::common_structs::derive_flat_storage_key_with_hasher;
 use zk_ee::common_structs::state_root_view::StateRootView;
 use zk_ee::common_structs::{WarmStorageKey, WarmStorageValue};
-use zk_ee::internal_error;
 use zk_ee::oracle::query_ids::STATE_AND_MERKLE_PATHS_SUBSPACE_MASK;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::utils::exact_size_chain::{ExactSizeChain, ExactSizeChainN};
+use zk_ee::{internal_error, logger_log};
 use zk_ee::{
     memory::stack_trait::Stack,
     oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
@@ -250,10 +250,12 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                 );
                 num_nonexisting_reads += 1;
 
-                let _ = logger.write_fmt(format_args!(
+                logger_log!(
+                    logger,
                     "checking empty read for address = {:?}, key = {:?}\n",
-                    &key.address, &key.key,
-                ));
+                    &key.address,
+                    &key.key,
+                );
 
                 let previous_idx = get_prev_index::<O>(oracle, &flat_key);
                 assert!(previous_idx < saved_next_free_slot);
@@ -311,10 +313,13 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                 }
                 // now we will need to check merkle paths for that indexes
             } else {
-                let _ = logger.write_fmt(format_args!(
+                logger_log!(
+                    logger,
                     "checking existing read for address = {:?}, key = {:?}, value = {:?}\n",
-                    &key.address, &key.key, value.current_value,
-                ));
+                    &key.address,
+                    &key.key,
+                    value.current_value,
+                );
 
                 let index = get_index::<O>(oracle, &flat_key);
 
@@ -354,10 +359,14 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
             // writes
             let expect_new = value.is_new_storage_slot;
             if expect_new {
-                let _ = logger.write_fmt(format_args!(
+                logger_log!(
+                    logger,
                     "applying initial write for address = {:?}, key = {:?}, value {:?} -> {:?}\n",
-                    &key.address, &key.key, &value.initial_value, &value.current_value
-                ));
+                    &key.address,
+                    &key.key,
+                    &value.initial_value,
+                    &value.current_value
+                );
 
                 // since it's new, we always ask for neighbours
                 let previous_idx = get_prev_index::<O>(oracle, &flat_key);
@@ -431,10 +440,14 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
                     },
                 ));
             } else {
-                let _ = logger.write_fmt(format_args!(
+                logger_log!(
+                    logger,
                     "applying repeated write for address = {:?}, key = {:?}, value {:?} -> {:?}\n",
-                    &key.address, &key.key, &value.initial_value, &value.current_value
-                ));
+                    &key.address,
+                    &key.key,
+                    &value.initial_value,
+                    &value.current_value
+                );
                 // here we branch because we COULD have requested this one as a read witness
 
                 if let Some(existing_index) = key_to_index_cache.get(&flat_key).copied() {

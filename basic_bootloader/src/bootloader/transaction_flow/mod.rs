@@ -1,58 +1,67 @@
-//!
-//! This module contains account models implementations.
-//!
-
-pub mod zk;
-
-use crate::bootloader::errors::TxError;
-use crate::bootloader::runner::RunnerMemoryBuffers;
-use crate::bootloader::transaction::Transaction;
-use ruint::aliases::{B160, U256};
+use crate::bootloader::BasicBootloaderExecutionConfig;
+use crate::bootloader::BootloaderSubsystemError;
+use crate::bootloader::RunnerMemoryBuffers;
+use crate::bootloader::TxError;
+use crate::bootloader::TxProcessingOutput;
 use zk_ee::common_structs::system_hooks::HooksStorage;
-use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::EthereumLikeTypes;
+use zk_ee::system::IOSubsystemExt;
+use zk_ee::system::ReturnValues;
 use zk_ee::system::System;
-use zk_ee::system::*;
-
-use crate::bootloader::config::BasicBootloaderExecutionConfig;
+use zk_ee::system::SystemTypes;
+use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::Bytes32;
 
-use super::errors::BootloaderSubsystemError;
+use super::transaction::abi_encoded::AbiEncodedTransaction;
+use super::transaction::Transaction;
+
+pub(crate) mod gas_helpers;
+pub mod process_transaction;
+pub(crate) mod refund_calculation;
+pub mod zk;
 
 // Address deployed, or reason for the lack thereof.
-enum DeployedAddress {
+pub enum DeployedAddress<IOTypes: SystemIOTypesConfig> {
     CallNoAddress,
     RevertedNoAddress,
-    Address(B160),
+    Address(IOTypes::Address),
 }
 
-struct TxExecutionResult<'a, S: SystemTypes> {
-    return_values: ReturnValues<'a, S>,
-    resources_returned: S::Resources,
-    reverted: bool,
-    deployed_address: DeployedAddress,
+pub struct TxExecutionResult<'a, S: SystemTypes> {
+    pub return_values: ReturnValues<'a, S>,
+    pub reverted: bool,
+    pub deployed_address: DeployedAddress<S::IOTypes>,
+}
+
+pub trait MinimalTransactionOutput<'a> {
+    fn is_success(&self) -> bool;
+    fn returndata(&self) -> &[u8];
+    fn transaction_hash(&self) -> Bytes32;
+    fn into_bookkeeper_output(self) -> TxProcessingOutput<'a>;
 }
 
 /// The execution step output
 #[derive(Debug)]
-pub enum ExecutionOutput<'a> {
+pub enum ExecutionOutput<'a, IOTypes: SystemIOTypesConfig> {
     /// return data
     Call(&'a [u8]),
     /// return data, deployed contract address
-    Create(&'a [u8], B160),
+    Create(&'a [u8], IOTypes::Address),
 }
 
 /// The execution step result
 #[derive(Debug)]
-pub enum ExecutionResult<'a> {
+pub enum ExecutionResult<'a, IOTypes: SystemIOTypesConfig> {
     /// Transaction executed successfully
-    Success { output: ExecutionOutput<'a> },
+    Success {
+        output: ExecutionOutput<'a, IOTypes>,
+    },
     /// Transaction reverted
     Revert { output: &'a [u8] },
 }
 
-impl<'a> ExecutionResult<'a> {
+impl<'a, IOTypes: SystemIOTypesConfig> ExecutionResult<'a, IOTypes> {
     pub fn reverted(self) -> Self {
         match self {
             Self::Success {
@@ -66,89 +75,125 @@ impl<'a> ExecutionResult<'a> {
     }
 }
 
-#[derive(Debug)]
-pub struct TxProcessingResult<'a> {
-    pub result: ExecutionResult<'a>,
-    pub tx_hash: Bytes32,
-    pub is_l1_tx: bool,
-    pub is_upgrade_tx: bool,
-    pub is_service_tx: bool,
-    pub gas_used: u64,
-    pub gas_refunded: u64,
-    pub computational_native_used: u64,
-    pub native_used: u64,
-    pub pubdata_used: u64,
-}
-
-pub trait BasicTransactionFlow<S: EthereumLikeTypes>
+///
+/// Trait describing basic steps in the transaction processing.
+/// Note that these are used for processing L2 transactions.
+/// For now, L1 transaction processing is implemented
+/// by each transaction flow as a single step.
+///
+pub trait BasicTransactionFlow<S: SystemTypes>: Sized
 where
     S::IO: IOSubsystemExt,
 {
-    /// Validate transaction
-    fn validate<Config: BasicBootloaderExecutionConfig>(
+    /// Context in which the transaction is executed.
+    type TransactionContext: core::fmt::Debug;
+
+    /// Extra output from the execution of the transaction's body.
+    /// Mostly used for refund information.
+    type ExecutionBodyExtraData: core::fmt::Debug;
+
+    /// Result of the execution.
+    type ExecutionResult<'a>: MinimalTransactionOutput<'a>;
+
+    /// Initial step before the validation of the transaction.
+    /// Mostly used for logging metadata.
+    fn before_validation(
         system: &mut System<S>,
-        system_functions: &mut HooksStorage<S, S::Allocator>,
-        memories: RunnerMemoryBuffers,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
         transaction: &Transaction<S::Allocator>,
-        caller_ee_type: ExecutionEnvironmentType,
-        caller_is_code: bool,
-        caller_nonce: u64,
-        resources: &mut S::Resources,
         tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError>;
 
-    /// Execute transaction
-    fn execute<'a>(
+    /// Validation of the transaction.
+    fn validate_and_prepare_context<Config: BasicBootloaderExecutionConfig>(
+        system: &mut System<S>,
+        transaction: &mut Transaction<S::Allocator>,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<Self::TransactionContext, TxError>;
+
+    /// Step between validation and fee collection,
+    /// mostly used for logging fee information.
+    fn before_fee_collection(
+        system: &mut System<S>,
+        transaction: &Transaction<S::Allocator>,
+        context: &Self::TransactionContext,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<(), TxError>;
+
+    /// Charge fee from sender
+    fn precharge_fee<Config: BasicBootloaderExecutionConfig>(
+        system: &mut System<S>,
+        transaction: &Transaction<S::Allocator>,
+        context: &mut Self::TransactionContext,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<(), TxError>;
+
+    /// Step between fee charging and transaction execution.
+    fn before_execute_transaction_payload(
+        system: &mut System<S>,
+        transaction: &Transaction<S::Allocator>,
+        context: &mut Self::TransactionContext,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<(), TxError>;
+
+    /// Main transaction execution step.
+    fn create_frame_and_execute_transaction_payload<'a, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
         transaction: &Transaction<S::Allocator>,
-        current_tx_nonce: u64,
-        resources: &mut S::Resources,
+        context: &mut Self::TransactionContext,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError>;
+    ) -> Result<
+        (
+            ExecutionResult<'a, S::IOTypes>,
+            Self::ExecutionBodyExtraData,
+        ),
+        BootloaderSubsystemError,
+    >
+    where
+        S: 'a;
 
-    ///
-    /// Charge any additional intrinsic gas.
-    ///
-    fn charge_additional_intrinsic_gas(
-        resources: &mut S::Resources,
-        transaction: &Transaction<S::Allocator>,
-    ) -> Result<(), TxError>;
-
-    ///
-    /// Checks that the tx's nonce hasn't been used yet.
-    ///
-    fn check_nonce_is_not_used(account_data_nonce: u64, tx_nonce: u64) -> Result<(), TxError>;
-
-    ///
-    /// Check that the tx's nonce has been used.
-    ///
-    fn check_nonce_is_used_after_validation(
+    /// Step between transaction execution and refund.
+    /// Responsible of computing the refund based on "extra data"
+    /// returned after execution.
+    fn before_refund<'a, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
-        caller_ee_type: ExecutionEnvironmentType,
-        resources: &mut S::Resources,
-        tx_nonce: u64,
-        from: B160,
-    ) -> Result<(), TxError>;
+        transaction: &Transaction<S::Allocator>,
+        context: &mut Self::TransactionContext,
+        result: &ExecutionResult<'a, S::IOTypes>,
+        extra_data: Self::ExecutionBodyExtraData,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<(), InternalError>;
 
-    ///
-    /// Pay for the transaction's fees
-    ///
-    fn pay_for_transaction(
+    /// Refund the sender for unused resources and
+    /// pay the coinbase the fee.
+    fn refund_and_commit_fee<Config: BasicBootloaderExecutionConfig>(
+        system: &mut System<S>,
+        transaction: &Transaction<S::Allocator>,
+        context: &mut Self::TransactionContext,
+        tracer: &mut impl Tracer<S>,
+    ) -> Result<(), BootloaderSubsystemError>;
+
+    /// Final step in the processing of a transaction.
+    /// Mostly used for adapting the generic ExecutionResult to the
+    /// trait-specific one.
+    fn after_execution<'a, Config: BasicBootloaderExecutionConfig>(
+        system: &mut System<S>,
+        transaction: &Transaction<S::Allocator>,
+        context: Self::TransactionContext,
+        result: ExecutionResult<'a, S::IOTypes>,
+        tracer: &mut impl Tracer<S>,
+    ) -> Self::ExecutionResult<'a>;
+
+    /// Special method to run an L1 transaction, as they don't necessarily follow the same flow as L2 transactions
+    fn process_l1_transaction<'a, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
-        tx_hash: Bytes32,
-        suggested_signed_hash: Bytes32,
-        transaction: &Transaction<S::Allocator>,
-        gas_price: U256,
-        from: B160,
-        caller_ee_type: ExecutionEnvironmentType,
-        resources: &mut S::Resources,
+        memories: RunnerMemoryBuffers<'a>,
+        transaction: &AbiEncodedTransaction<S::Allocator>,
+        is_priority_op: bool,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<(), TxError>;
+    ) -> Result<Self::ExecutionResult<'a>, TxError>
+    where
+        S: 'a;
 }

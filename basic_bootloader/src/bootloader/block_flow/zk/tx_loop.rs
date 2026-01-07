@@ -1,7 +1,10 @@
+use zk_ee::{system::AccountDataRequest, utils::UsizeAlignedByteBox};
+
 use super::*;
 use crate::bootloader::{
     block_flow::tx_loop::TxLoopOp, transaction_flow::zk::ZkTransactionFlowOnlyEOA,
 };
+use zk_ee::system::Resource;
 
 impl<S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>> TxLoopOp<S>
     for ZKHeaderStructureTxLoop
@@ -37,9 +40,10 @@ where
         } {
             match r {
                 Err(err) => {
-                    let _ = system.get_logger().write_fmt(format_args!(
+                    system_log!(
+                        system,
                         "Failure while reading tx from oracle: decoding error = {err:?}\n",
-                    ));
+                    );
                     result_keeper.tx_processed(Err(InvalidTransaction::InvalidEncoding));
                 }
                 Ok((_next_tx_len_bytes, initial_calldata_buffer)) => {
@@ -57,10 +61,8 @@ where
                             .expect("must heat coinbase");
                     }
 
-                    let mut logger: <S as SystemTypes>::Logger = system.get_logger();
-                    let _ =
-                        logger.write_fmt(format_args!("====================================\n"));
-                    let _ = logger.write_fmt(format_args!("TX execution begins\n",));
+                    system_log!(system, "====================================\n",);
+                    system_log!(system, "TX execution begins\n");
 
                     tracer.begin_tx(initial_calldata_buffer.as_slice());
 
@@ -74,7 +76,9 @@ where
                     cycle_marker::start!("process_transaction");
 
                     let tx_result =
-                        BasicBootloader::<S, ZkTransactionFlowOnlyEOA>::process_transaction::<Config>(
+                        BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::process_transaction::<
+                            Config,
+                        >(
                             initial_calldata_buffer,
                             system,
                             system_functions,
@@ -89,26 +93,26 @@ where
 
                     match tx_result {
                         Err(TxError::Internal(err)) => {
-                            let _ = system.get_logger().write_fmt(format_args!(
-                                "Tx execution result: Internal error = {err:?}\n",
-                            ));
+                            system_log!(system, "Tx execution result: Internal error = {err:?}\n",);
                             // Finish the frame opened before processing the tx
                             system.finish_global_frame(None)?; // TODO should we use pre_tx_rollback_handle here?
                             return Err(err);
                         }
                         Err(TxError::Validation(err)) => {
-                            let _ = system.get_logger().write_fmt(format_args!(
+                            system_log!(
+                                system,
                                 "Tx execution result: Validation error = {err:?}\n",
-                            ));
+                            );
                             // Revert to state before transaction
                             system.finish_global_frame(Some(&pre_tx_rollback_handle))?;
                             result_keeper.tx_processed(Err(err));
                         }
                         Ok(tx_processing_result) => {
-                            let _ = system.get_logger().write_fmt(format_args!(
+                            system_log!(
+                                system,
                                 "Tx execution result = {:?}\n",
                                 &tx_processing_result,
-                            ));
+                            );
 
                             // Check for service block invariants
                             check_for_service_block_invariants(
@@ -193,10 +197,8 @@ where
                         }
                     }
 
-                    let mut logger = system.get_logger();
-                    let _ = logger.write_fmt(format_args!("TX execution ends\n"));
-                    let _ =
-                        logger.write_fmt(format_args!("====================================\n"));
+                    system_log!(system, "TX execution ends\n");
+                    system_log!(system, "====================================\n");
                 }
             }
         }

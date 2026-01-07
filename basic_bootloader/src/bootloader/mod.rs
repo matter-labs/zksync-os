@@ -1,19 +1,18 @@
 use errors::{BootloaderSubsystemError, InvalidTransaction};
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::{EthereumLikeTypes, System, SystemTypes};
+use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System, SystemTypes};
 
 pub mod block_flow;
 pub mod run_single_interaction;
 pub mod runner;
 pub mod supported_ees;
 
-mod gas_helpers;
-mod process_transaction;
 pub mod transaction;
 pub mod transaction_flow;
 
@@ -34,13 +33,7 @@ use crate::bootloader::errors::TxError;
 use crate::bootloader::result_keeper::*;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::stf::EthereumLikeBasicSTF;
-use crate::bootloader::transaction_flow::{
-    BasicTransactionFlow, ExecutionOutput, ExecutionResult, TxProcessingResult,
-};
-use zk_ee::common_structs::system_hooks::HooksStorage;
-use zk_ee::utils::*;
-use zk_ee::{internal_error, system::*};
-
+use crate::bootloader::transaction_flow::{BasicTransactionFlow, ExecutionOutput, ExecutionResult};
 use alloc::boxed::Box;
 use core::fmt::Write;
 
@@ -62,11 +55,7 @@ where
     _marker: core::marker::PhantomData<(S, F)>,
 }
 
-// TODO: type of Metadata is hardcoded for now, will be cleaned in future PRs
-impl<
-        S: EthereumLikeBasicSTF<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
-        F: BasicTransactionFlow<S>,
-    > BasicBootloader<S, F>
+impl<S: EthereumLikeBasicSTF, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
 where
     S::IO: IOSubsystemExt,
 {

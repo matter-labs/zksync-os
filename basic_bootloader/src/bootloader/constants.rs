@@ -47,8 +47,7 @@ const COINBASE_BALANCE_INTRINSIC_PUBDATA: u64 = 32 + 34;
 // Needed to publish the l1 tx log and coinbase balance.
 pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88 + COINBASE_BALANCE_INTRINSIC_PUBDATA;
 
-/// Does not include signature verification.
-pub const L2_TX_INTRINSIC_GAS: u64 = 18_000;
+pub const L2_TX_INTRINSIC_GAS: u64 = 21_000;
 
 /// Extra cost for deployment transactions.
 pub const DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS: u64 = 32_000;
@@ -62,11 +61,26 @@ pub const L2_TX_INTRINSIC_PUBDATA: u64 = COINBASE_BALANCE_INTRINSIC_PUBDATA;
 //  - Hashing of tx hash into rolling hash.
 pub const L2_TX_INTRINSIC_NATIVE_COST: u64 = 30_000;
 
-/// Cost in gas to store one zero byte of calldata
-pub const CALLDATA_ZERO_BYTE_GAS_COST: u64 = 4;
+/// Cost to convert zero byte of calldata into "token"
+pub const CALLDATA_ZERO_BYTE_TOKEN_FACTOR: u64 = 1;
 
-/// Cost in gas to store one non-zero byte of calldata
-pub const CALLDATA_NON_ZERO_BYTE_GAS_COST: u64 = 16;
+/// Cost to convert non-zero byte of calldata into "token"
+pub const CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR: u64 = 4;
+
+/// Cost in gas per "token" of calldata
+pub const CALLDATA_TOKEN_GAS_COST: u64 = 4;
+
+/// EIP-7623 minimal "token" cost
+pub const TOTAL_COST_FLOOR_PER_TOKEN: u64 = 10;
+
+/// Computational cost of 7702 auth
+pub const PER_AUTH_NATIVE_COST: u64 = 2000;
+
+/// Computational cost of 2930 access list per address
+pub const PER_ADDRESS_ACCESS_LIST_NATIVE_COST: u64 = 2000;
+
+/// Computational cost of 2930 access list per slot
+pub const PER_SLOT_ACCESS_LIST_NATIVE_COST: u64 = 2000;
 
 /// EVM tester requires a high native_per_gas, but it hard-codes
 /// low gas prices. We need to bypass the usual way to compute this
@@ -76,7 +90,7 @@ pub const TESTER_NATIVE_PER_GAS: u64 = 25_000;
 /// native_per_gas value to use for simulation. Should be in line with
 /// the value of basefee / native_price provided by operator.
 /// Needed because simulation is done with basefee = 0.
-pub const SIMULATION_NATIVE_PER_GAS: U256 = U256::from_limbs([100, 0, 0, 0]);
+pub const SIMULATION_NATIVE_PER_GAS: u64 = 100;
 
 // Default native price for L1->L2 transactions.
 // TODO (EVM-1157): find a reasonable value for it.
@@ -84,4 +98,4 @@ pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
 
 // Upgrade transactions are expected to have ~72 million gas. We will use enough
 // gas to ensure that multiplied by the 72 million they exceed the native computational limit.
-pub const UPGRADE_TX_NATIVE_PER_GAS: U256 = U256::from_limbs([10000, 0, 0, 0]);
+pub const UPGRADE_TX_NATIVE_PER_GAS: u64 = 10000;

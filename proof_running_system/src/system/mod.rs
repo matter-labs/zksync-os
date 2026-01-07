@@ -70,5 +70,7 @@ impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L
 
 impl<O: IOOracle, L: Logger + Default> EthereumLikeBasicSTF for ProofRunningSystemTypes<O, L> {}
 
-pub type ProvingBootloader<O, L> =
-    BasicBootloader<ProofRunningSystemTypes<O, L>, ZkTransactionFlowOnlyEOA>;
+pub type ProvingBootloader<O, L> = BasicBootloader<
+    ProofRunningSystemTypes<O, L>,
+    ZkTransactionFlowOnlyEOA<ProofRunningSystemTypes<O, L>>,
+>;

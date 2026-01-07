@@ -29,6 +29,7 @@ serde = ["dep:serde", "ruint/serde"]
 testing = ["serde"]
 default = ["serde", "error_origins", "detailed_errors"]
 cycle_marker = ["cycle_marker/log_to_file"]
+global-alloc = []
 # Adds location (file, line number) where an error is raised
 error_origins = []
 detailed_errors = []

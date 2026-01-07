@@ -1,6 +1,6 @@
 use super::*;
 
-use zk_ee::internal_error;
+use zk_ee::{internal_error, utils::Bytes32};
 
 impl<
         S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
@@ -54,14 +54,11 @@ where
         let block_hash = Bytes32::from(block_header.hash());
         result_keeper.block_sealed(block_header);
 
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Bootloader completed\n"));
-
-        let mut logger = system.get_logger();
-        let _ = logger.write_fmt(format_args!(
+        system_log!(system, "Bootloader completed\n");
+        system_log!(
+            system,
             "Bootloader execution is complete, will proceed with applying changes\n"
-        ));
+        );
 
         let r = system.finish(block_hash, l1_to_l2_tx_hash, upgrade_tx_hash, result_keeper);
         #[allow(clippy::let_and_return)]
