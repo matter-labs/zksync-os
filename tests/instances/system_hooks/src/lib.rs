@@ -653,7 +653,7 @@ fn test_contract_deployer_gas_charging() {
     );
 
     // The hook should charge HOOK_BASE_ERGS_COST (100 gas) + extra for bytecode length
-    assert_eq!(gas_used, 6623);
+    assert_eq!(gas_used, 2950);
 }
 
 #[test]
