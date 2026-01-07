@@ -1,5 +1,5 @@
 //!
-//! These tests are focused on different tx types.
+//! These tests are focused on system hooks functionality.
 //!
 #![cfg(test)]
 

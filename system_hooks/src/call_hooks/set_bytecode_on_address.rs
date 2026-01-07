@@ -1,7 +1,7 @@
 //!
 //! Set bytecode on address system hook implementation.
-//! It implements a `setDeployedCodeEVM` method, similar to Era.
-//! It's needed for protocol upgrades.
+//! This hook allows setting deployed EVM bytecode to any address.
+//! It's used exclusively for protocol upgrades approved by governance.
 //!
 use super::super::*;
 use crate::addresses_constants::{CONTRACT_DEPLOYER_ADDRESS, SET_BYTECODE_ON_ADDRESS_HOOK};

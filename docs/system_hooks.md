@@ -13,32 +13,38 @@ System hooks have two distinct use cases:
   - ecadd
   - ecmul
   - ecpairing
-- Implementing system contracts: formal contracts that implement some system functionality, like Era's nonce holder. Needed to support EraVM.
+- Implementing system functionality needed for ZKsync operations:
   - L1 messenger system hook
-  - L2 Base token system hook
-  - Contract deployer system hook
+  - Set bytecode on address system hook
+  - Mint base token system hook (temporary, to be replaced)
 
 ## L1 messenger system hook
 
-The L1 messenger system hook is responsible for sending messages to L1.
-Users can call it using the special interface, input should be encoded as calldata for the `sendToL1(bytes)` method following Solidity ABI.
+The L1 messenger system hook (at address `0x7001`) is responsible for sending messages to L1.
+It can only be called by the L1 messenger system contract at address `0x8008`.
+The input should be the ABI-encoded parameters: sender address and message bytes.
 
-Implementation of the L1 messenger system hook does 2 things: decodes the input and records the message using the system method.
+Implementation of the L1 messenger system hook decodes the input and records the message using the system method.
 
-## L2 base token system hook
+## Set bytecode on address system hook
 
-The L2 base token system implements only 2 methods: `withdraw(address)`, `withdrawWithMessage(address,bytes)`.
+The set bytecode on address system hook (at address `0x7002`) allows setting deployed EVM bytecode to any address.
+It can only be called by the Contract Deployer system contract at address `0x8006`.
 
-They are needed to support Era VM like base token withdrawals.
+The hook accepts the following ABI-encoded parameters:
+- `address` - target address to set bytecode on (32 bytes, ABI padded)
+- `bytes32` - bytecode hash
+- `uint256` - bytecode length
+- `bytes32` - observable bytecode hash
 
-## Contract deployer system hook
+Key features:
+- Enforces EIP-158 by rejecting bytecode longer than 24576 bytes
+- Used exclusively for protocol upgrades approved by governance
+- Does not publish full bytecode in pubdata to fit within gas/calldata limits
+- Bytecodes are published separately via Ethereum calldata
 
-The contract deployer system hook implements only 1 method: `setBytecodeDetailsEVM(address,bytes32,uint32,bytes32)`.
-It allows setting any deployed EVM bytecode to any address but can be called only by the special system address.
+## Mint base token system hook
 
-It accepts bytecode hash, bytecode length, and observable bytecode hash.
-Please note that full bytecode will not be published in the pubdata.
-We want to be able to perform upgrade with 1 tx, so we designed this method this way (by hashes + without pubdata) to fit into gas/calldata/pubdata limits.
-
-It will be used only by protocol upgrade transactions, which are approved by governance.
-Bytecodes will be published separately with Ethereum calldata.
+The mint base token system hook (at address `0x7100`) allows minting base tokens.
+It can only be called by the L2 base token contract at address `0x800a`.
+The calldata must be exactly 32 bytes containing the amount to mint (as uint256).
