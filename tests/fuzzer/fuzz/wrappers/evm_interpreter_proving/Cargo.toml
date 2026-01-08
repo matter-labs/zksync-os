@@ -27,8 +27,10 @@ paste = "1.0.15"
 zksync_os_evm_errors = { version = "0.0.8", default-features =  false }
 
 [features]
+point_eval_precompile = []
+mock-unsupported-precompiles = []
+p256_precompile = []
 eip-7645 = []
-evm_refunds = []
 default = []
 testing = ["zk_ee/testing"]
 cycle_marker = ["cycle_marker/log_to_file"]

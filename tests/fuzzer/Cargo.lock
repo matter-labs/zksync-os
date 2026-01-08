@@ -1869,6 +1869,7 @@ dependencies = [
  "serde",
  "storage_models",
  "strum_macros 0.27.2",
+ "system_hooks",
  "zerocopy",
  "zk_ee",
 ]
@@ -1905,6 +1906,7 @@ dependencies = [
  "serde_json",
  "storage_models_forward",
  "strum_macros 0.27.2",
+ "system_hooks_forward",
  "zk_ee_forward",
 ]
 
@@ -1940,6 +1942,7 @@ dependencies = [
  "serde_json",
  "storage_models_proving",
  "strum_macros 0.27.2",
+ "system_hooks_proving",
  "zk_ee_proving",
 ]
 
@@ -8411,6 +8414,32 @@ dependencies = [
  "ruint",
  "strum_macros 0.27.2",
  "zk_ee",
+]
+
+[[package]]
+name = "system_hooks_forward"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "cycle_marker",
+ "evm_interpreter_forward",
+ "paste",
+ "ruint",
+ "strum_macros 0.27.2",
+ "zk_ee_forward",
+]
+
+[[package]]
+name = "system_hooks_proving"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "cycle_marker",
+ "evm_interpreter_proving",
+ "paste",
+ "ruint",
+ "strum_macros 0.27.2",
+ "zk_ee_proving",
 ]
 
 [[package]]

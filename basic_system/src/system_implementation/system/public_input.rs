@@ -76,6 +76,8 @@ pub struct BlocksOutput {
     pub upgrade_tx_hash: Bytes32,
     /// Linear keccak256 hash of interop roots
     pub interop_roots_rolling_hash: Bytes32,
+    /// Settlement layer chain id.
+    pub settlement_layer_chain_id: U256,
 }
 
 #[cfg(feature = "aggregation")]
@@ -96,6 +98,7 @@ impl BlocksOutput {
         hasher.update(self.l2_to_l1_logs_hashes_hash.as_u8_ref());
         hasher.update(self.upgrade_tx_hash.as_u8_ref());
         hasher.update(self.interop_roots_rolling_hash.as_u8_ref());
+        hasher.update(self.settlement_layer_chain_id.to_be_bytes::<32>());
         hasher.finalize()
     }
 }
@@ -160,6 +163,8 @@ pub struct BatchOutput {
     pub upgrade_tx_hash: Bytes32,
     /// Linear keccak256 hash of interop roots
     pub interop_roots_rolling_hash: Bytes32,
+    /// Settlement layer chain id.
+    pub settlement_layer_chain_id: U256,
 }
 
 impl BatchOutput {
@@ -180,6 +185,7 @@ impl BatchOutput {
         hasher.update(self.l2_logs_tree_root.as_u8_ref());
         hasher.update(self.upgrade_tx_hash.as_u8_ref());
         hasher.update(self.interop_roots_rolling_hash.as_u8_ref());
+        hasher.update(self.settlement_layer_chain_id.to_be_bytes::<32>());
         hasher.finalize()
     }
 }
@@ -225,6 +231,7 @@ pub struct BatchPublicInputBuilder<A: alloc::alloc::Allocator, O: IOOracle> {
     pub l1_txs_rolling_hash: Bytes32,
     upgrade_tx_hash: Option<Bytes32>,
     interop_roots_rolling_hash: Bytes32,
+    settlement_layer_chain_id: Option<U256>,
 }
 
 impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
@@ -248,6 +255,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             ]),
             upgrade_tx_hash: None,
             interop_roots_rolling_hash: Bytes32::ZERO,
+            settlement_layer_chain_id: None,
         }
     }
 
@@ -263,6 +271,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
         chain_id: U256,
         upgrade_tx_hash: Bytes32,
         interop_roots: impl Iterator<Item = &'a InteropRoot>,
+        settlement_layer_chain_id: U256,
     ) {
         if self.is_first_block {
             self.initial_state_commitment = Some(state_commitment_before);
@@ -271,6 +280,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             self.current_block_timestamp = Some(block_timestamp);
             self.chain_id = Some(chain_id);
             self.upgrade_tx_hash = Some(upgrade_tx_hash);
+            self.settlement_layer_chain_id = Some(settlement_layer_chain_id);
             self.is_first_block = false;
         } else {
             assert_eq!(
@@ -281,6 +291,10 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             self.current_block_timestamp = Some(block_timestamp);
             assert_eq!(self.chain_id.unwrap(), chain_id);
             assert!(upgrade_tx_hash.is_zero());
+            assert_eq!(
+                self.settlement_layer_chain_id,
+                Some(settlement_layer_chain_id)
+            );
         }
 
         self.interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
@@ -312,6 +326,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash: self.upgrade_tx_hash.unwrap(),
             interop_roots_rolling_hash: self.interop_roots_rolling_hash,
+            settlement_layer_chain_id: self.settlement_layer_chain_id.unwrap(),
         };
         let public_input = BatchPublicInput {
             state_before: self.initial_state_commitment.unwrap(),

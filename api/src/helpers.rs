@@ -338,3 +338,20 @@ pub fn encode_interop_root_import_calldata(interop_roots: Vec<StoredInteropRoot>
     }
     .abi_encode()
 }
+
+///
+/// Calldata used by service transactions that update the settlement layer chain id.
+///
+/// Constructs the calldata for:
+///
+/// function setSettlementLayerChainId(uint256 _newSettlementLayerChainId);
+///
+pub fn encode_set_settlement_layer_chain_id_calldata(new_sl_chain_id: U256) -> Vec<u8> {
+    // Declare sol interface
+    sol! {
+       function setSettlementLayerChainId(uint256);
+    }
+
+    // Construct calldata
+    setSettlementLayerChainIdCall(new_sl_chain_id).abi_encode()
+}

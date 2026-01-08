@@ -12,6 +12,7 @@ use cost_constants::EVENT_DATA_PER_BYTE_COST;
 use cost_constants::EVENT_STORAGE_BASE_NATIVE_COST;
 use cost_constants::EVENT_TOPIC_NATIVE_COST;
 use cost_constants::INTEROP_ROOT_STORAGE_NATIVE_COST;
+use cost_constants::NEW_SL_CHAIN_ID_STORAGE_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_READ_NATIVE_COST;
 use cost_constants::WARM_TSTORAGE_WRITE_NATIVE_COST;
 use crypto::blake2s::Blake2s256;
@@ -26,9 +27,11 @@ use interop_roots::per_root_computational_native_cost;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageModel;
+use system_hooks::addresses_constants::SYSTEM_CONTEXT_ADDRESS;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
+use zk_ee::common_structs::new_settlement_layer_chain_id_storage::NewSettlementLayerChainIdStorage;
 use zk_ee::common_structs::ProofData;
 use zk_ee::common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE;
 use zk_ee::interface_error;
@@ -62,6 +65,7 @@ pub struct FullIO<
     pub(crate) logs_storage: LogsStorage<SF, M, A>,
     pub(crate) events_storage: EventsStorage<MAX_EVENT_TOPICS, SF, M, A>,
     pub(crate) interop_root_storage: InteropRootStorage<SF, M, A>,
+    pub(crate) new_settlement_layer_chain_id_storage: NewSettlementLayerChainIdStorage<SF, M, A>,
     pub(crate) allocator: A,
     pub(crate) oracle: O,
     pub(crate) tx_number: u32,
@@ -250,6 +254,24 @@ impl<
         resources.charge(&to_charge)?;
 
         self.interop_root_storage.push_root(interop_root)
+    }
+
+    fn update_settlement_layer_chain_id(
+        &mut self,
+        _ee_type: ExecutionEnvironmentType,
+        resources: &mut Self::Resources,
+        new_sl_chain_id: U256,
+    ) -> Result<(), SystemError> {
+        // For native we charge just for the storage
+        let native = <Self::Resources as Resources>::Native::from_computational(
+            NEW_SL_CHAIN_ID_STORAGE_NATIVE_COST,
+        );
+
+        let to_charge = Self::Resources::from_native(native);
+        resources.charge(&to_charge)?;
+
+        self.new_settlement_layer_chain_id_storage
+            .update(new_sl_chain_id)
     }
 
     fn get_nominal_token_balance(
@@ -605,6 +627,7 @@ impl<
             self.interop_root_storage.iter(),
             &mut crypto::sha3::Keccak256::new(),
         );
+        let new_settlement_layer_chain_id = self.new_settlement_layer_chain_id_storage.value();
 
         // other outputs to be opened on the settlement layer/aggregation program
         let block_output = BlocksOutput {
@@ -616,6 +639,7 @@ impl<
             l2_to_l1_logs_hashes_hash: l2_to_l1_logs_hashes_hash.into(),
             upgrade_tx_hash,
             interop_roots_rolling_hash,
+            new_settlement_layer_chain_id,
         };
 
         let public_input = BlocksPublicInput {
@@ -677,6 +701,8 @@ impl<
             logger,
             "PI calculation: state commitment before {chain_state_commitment_before:?}\n",
         );
+
+        let settlement_layer_chain_id = self.read_settlement_layer_chain_id();
 
         // finishing IO, applying changes
         let mut da_commitment_generator =
@@ -749,6 +775,14 @@ impl<
             &mut crypto::sha3::Keccak256::new(),
         );
 
+        if let Some(new_settlement_layer_chain_id) =
+            self.new_settlement_layer_chain_id_storage.value()
+        {
+            // If the SL chain id was updated, make sure the updated one matches
+            // the one read from storage
+            assert_eq!(new_settlement_layer_chain_id, &settlement_layer_chain_id)
+        }
+
         let batch_output = public_input::BatchOutput {
             chain_id: U256::try_from(block_metadata.chain_id).unwrap(),
             first_block_timestamp: block_metadata.timestamp,
@@ -760,6 +794,7 @@ impl<
             l2_logs_tree_root: full_l2_to_l1_logs_root.into(),
             upgrade_tx_hash,
             interop_roots_rolling_hash,
+            settlement_layer_chain_id,
         };
         logger_log!(logger, "PI calculation: batch output {batch_output:?}\n",);
 
@@ -890,6 +925,7 @@ where
             .write(&block_metadata.timestamp.to_be_bytes());
 
         let mut result_keeper: zk_ee::system::NopResultKeeper<()> = NopResultKeeper::default();
+        let settlement_layer_chain_id = self.read_settlement_layer_chain_id();
 
         self.storage
             .finish(
@@ -932,6 +968,14 @@ where
 
         let interop_roots_iter = self.interop_root_storage.iter();
 
+        if let Some(new_settlement_layer_chain_id) =
+            self.new_settlement_layer_chain_id_storage.value()
+        {
+            // If the SL chain id was updated, make sure the updated one matches
+            // the one read from storage
+            assert_eq!(new_settlement_layer_chain_id, &settlement_layer_chain_id)
+        }
+
         builder.apply_block(
             chain_state_commitment_before.hash().into(),
             chain_state_commitment_after.hash().into(),
@@ -939,6 +983,7 @@ where
             U256::try_from(block_metadata.chain_id).unwrap(),
             upgrade_tx_hash,
             interop_roots_iter,
+            settlement_layer_chain_id,
         );
 
         self.oracle
@@ -975,6 +1020,8 @@ where
             EventsStorage::<MAX_EVENT_TOPICS, SF, M, A>::new_from_parts(allocator.clone());
         let interop_root_storage =
             InteropRootStorage::<SF, M, A>::new_from_parts(allocator.clone());
+        let new_settlement_layer_chain_id_storage =
+            NewSettlementLayerChainIdStorage::<SF, M, A>::new_from_parts(allocator.clone());
 
         let da_commitment_scheme = if PROOF_ENV {
             Some(DACommitmentScheme::try_from_oracle(&mut oracle)?)
@@ -991,6 +1038,7 @@ where
             oracle,
             tx_number: 0u32,
             da_commitment_scheme,
+            new_settlement_layer_chain_id_storage,
         };
 
         Ok(new)
@@ -1239,4 +1287,31 @@ impl<
         const PROOF_ENV: bool,
     > EthereumLikeIOSubsystem for FullIO<A, R, P, SF, M, O, PROOF_ENV>
 {
+}
+
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+        SF: StackFactory<M>,
+        const M: usize,
+        O: IOOracle,
+    > FullIO<A, R, P, SF, M, O, true>
+{
+    ///
+    /// Reads SL chain id from the SystemContext(0x800b) contract.
+    ///
+    fn read_settlement_layer_chain_id(&mut self) -> U256 {
+        const SL_CHAIN_ID_STORAGE_SLOT: Bytes32 = Bytes32::ZERO;
+        let mut inf_resources = R::FORMAL_INFINITE;
+        let chain_id = self
+            .storage_read::<false>(
+                ExecutionEnvironmentType::NoEE,
+                &mut inf_resources,
+                &SYSTEM_CONTEXT_ADDRESS,
+                &SL_CHAIN_ID_STORAGE_SLOT,
+            )
+            .expect("must read SystemContext SL chain id");
+        U256::from_be_bytes(chain_id.as_u8_array())
+    }
 }
