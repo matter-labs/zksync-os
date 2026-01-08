@@ -203,17 +203,22 @@ pub(crate) fn get_gas_price<S: EthereumLikeTypes>(
     max_priority_fee_per_gas: Option<&U256>,
 ) -> Result<U256, TxError> {
     let base_fee = system.get_eip1559_basefee();
-    let max_priority_fee_per_gas = max_priority_fee_per_gas.unwrap_or(max_fee_per_gas);
-    require!(
-        max_priority_fee_per_gas <= max_fee_per_gas,
-        TxError::Validation(InvalidTransaction::PriorityFeeGreaterThanMaxFee,),
-        system
-    )?;
-    require!(
-        &base_fee <= max_fee_per_gas,
-        TxError::Validation(InvalidTransaction::BaseFeeGreaterThanMaxFee,),
-        system
-    )?;
-    let priority_fee_per_gas = (*max_priority_fee_per_gas).min(max_fee_per_gas - base_fee);
-    Ok(base_fee + priority_fee_per_gas)
+    // If base fee is zero, then we ignore priority fee
+    if base_fee.is_zero() {
+        Ok(U256::ZERO)
+    } else {
+        let max_priority_fee_per_gas = max_priority_fee_per_gas.unwrap_or(max_fee_per_gas);
+        require!(
+            max_priority_fee_per_gas <= max_fee_per_gas,
+            TxError::Validation(InvalidTransaction::PriorityFeeGreaterThanMaxFee,),
+            system
+        )?;
+        require!(
+            &base_fee <= max_fee_per_gas,
+            TxError::Validation(InvalidTransaction::BaseFeeGreaterThanMaxFee,),
+            system
+        )?;
+        let priority_fee_per_gas = (*max_priority_fee_per_gas).min(max_fee_per_gas - base_fee);
+        Ok(base_fee + priority_fee_per_gas)
+    }
 }
