@@ -16,6 +16,7 @@ pub use self::account_cache_entry::*;
 pub use self::preimage_cache::*;
 pub use self::simple_growable_storage::*;
 pub use self::storage_cache::*;
+use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::B160;
@@ -44,6 +45,9 @@ use zk_ee::{
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
     utils::Bytes32,
 };
+
+use super::caches::generic_pubdata_aware_plain_storage::GenericPubdataAwarePlainStorage;
+use super::caches::generic_pubdata_aware_plain_storage::StorageSnapshotId;
 
 pub fn address_into_special_storage_key(address: &B160) -> Bytes32 {
     let mut key = Bytes32::zero();

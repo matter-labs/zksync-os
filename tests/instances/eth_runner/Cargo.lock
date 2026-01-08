@@ -6002,6 +6002,7 @@ dependencies = [
  "futures",
  "hex",
  "log",
+ "once_cell",
  "oracle_provider",
  "risc_v_simulator",
  "ruint",
