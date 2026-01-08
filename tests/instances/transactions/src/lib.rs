@@ -198,13 +198,23 @@ fn test_block_of_erc20() {
 }
 
 #[test]
-fn test_gas_price_zero() {
+fn test_gas_price_zero_fee_zero() {
     let mut chain = Chain::empty_randomized(None);
     let block_context = BlockContext {
         eip1559_basefee: U256::ZERO,
         ..BlockContext::default()
     };
-    run_block_of_erc20(&mut chain, 10, Some(block_context));
+    run_block_of_erc20_with_fee(&mut chain, 10, Some(block_context), 0);
+}
+
+#[test]
+fn test_gas_price_zero_fee_one() {
+    let mut chain = Chain::empty_randomized(None);
+    let block_context = BlockContext {
+        eip1559_basefee: U256::ZERO,
+        ..BlockContext::default()
+    };
+    run_block_of_erc20_with_fee(&mut chain, 10, Some(block_context), 1);
 }
 
 #[test]

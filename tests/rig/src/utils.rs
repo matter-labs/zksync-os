@@ -189,6 +189,15 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
     n: usize,
     block_context: Option<BlockContext>,
 ) -> BlockOutput {
+    run_block_of_erc20_with_fee(chain, n, block_context, 1000)
+}
+
+pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
+    chain: &mut Chain<RANDOMIZED>,
+    n: usize,
+    block_context: Option<BlockContext>,
+    fee: u128,
+) -> BlockOutput {
     let wallets: Vec<_> = (1..=n).map(|_| PrivateKeySigner::random()).collect();
     let dsts: Vec<_> = (1..=n)
         .map(|i| {
@@ -199,15 +208,8 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
         })
         .collect();
 
-    // If base fee is zero, we can avoid paying priority fee.
-    let max_priority_fee_per_gas = if block_context
-        .as_ref()
-        .is_some_and(|bc| bc.eip1559_basefee.is_zero())
-    {
-        0
-    } else {
-        1000
-    };
+    let max_fee_per_gas = fee;
+    let max_priority_fee_per_gas = fee;
 
     let transactions: Vec<_> = wallets
         .iter()
@@ -216,7 +218,7 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
             let transfer_tx = TxEip1559 {
                 chain_id: 37u64,
                 nonce: 0,
-                max_fee_per_gas: 1000,
+                max_fee_per_gas,
                 max_priority_fee_per_gas,
                 gas_limit: 60_000,
                 to: TxKind::Call(to),
