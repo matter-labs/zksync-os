@@ -326,16 +326,16 @@ where {
         })?;
 
         // Add refund for storage
-        let mut refund_counter = self.evm_refunds_counter.value().clone();
+        let mut refund_counter_value = self.evm_refunds_counter.value().clone();
         self.resources_policy.refund_for_storage_write(
             ee_type,
             &val_at_tx_start,
             &old_value,
             new_value,
             resources,
-            &mut refund_counter,
+            &mut refund_counter_value,
         )?;
-        self.evm_refunds_counter.update(refund_counter);
+        self.evm_refunds_counter.update(refund_counter_value);
 
         Ok((old_value, val_at_tx_start))
     }
