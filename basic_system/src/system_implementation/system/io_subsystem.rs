@@ -450,8 +450,7 @@ impl<
             )
             .map(|account_data| account_data.nonce.0)
     }
-
-    fn get_refund_counter(&self) -> u32 {
+    fn get_refund_counter(&'_ self) -> &'_ Self::Resources {
         self.storage.get_refund_counter()
     }
 }
@@ -1225,9 +1224,8 @@ where
         self.logs_storage.len()
     }
 
-    // Add EVM refund to counter
-    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError> {
-        self.storage.add_evm_refund(refund)
+    fn add_to_refund_counter(&mut self, refund: Self::Resources) -> Result<(), SystemError> {
+        self.storage.add_to_refund_counter(refund)
     }
 }
 

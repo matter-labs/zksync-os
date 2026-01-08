@@ -242,9 +242,9 @@ pub trait StorageModel: Sized + SnapshottableIo {
         logger: &mut impl Logger,
     ) -> Result<(), InternalError>;
 
-    /// Get current gas refund counter
-    fn get_refund_counter(&self) -> u32;
+    /// Get current counter of refunds
+    fn get_refund_counter(&'_ self) -> &'_ Self::Resources;
 
-    // Add EVM refund to counter
-    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError>;
+    /// Add resources to refund at the end of transaction
+    fn add_to_refund_counter(&mut self, refund: Self::Resources) -> Result<(), SystemError>;
 }

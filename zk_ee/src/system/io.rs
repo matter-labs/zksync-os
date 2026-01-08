@@ -166,7 +166,7 @@ pub trait IOSubsystem: Sized {
     ) -> Result<u64, NonceSubsystemError>;
 
     /// Get current gas refund counter
-    fn get_refund_counter(&self) -> u32;
+    fn get_refund_counter(&'_ self) -> &'_ Self::Resources;
 }
 
 pub trait Maybe<T> {
@@ -522,8 +522,8 @@ pub trait IOSubsystemExt: IOSubsystem {
     // Get number of logs emitted so far.
     fn logs_len(&self) -> u64;
 
-    // Add EVM refund to counter
-    fn add_evm_refund(&mut self, refund: u32) -> Result<(), SystemError>;
+    /// Adds some resources to refund at the end of transaction
+    fn add_to_refund_counter(&mut self, refund: Self::Resources) -> Result<(), SystemError>;
 }
 
 pub trait EthereumLikeIOSubsystem: IOSubsystem<IOTypes = EthereumIOTypesConfig> {}

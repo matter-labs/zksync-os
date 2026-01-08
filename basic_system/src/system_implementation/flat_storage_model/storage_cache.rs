@@ -8,8 +8,8 @@ use ruint::aliases::B160;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::{AccountAggregateDataHash, StorageCacheModel};
 use zk_ee::common_structs::cache_record::CacheRecord;
-use zk_ee::common_structs::history_counter::HistoryCounter;
 use zk_ee::common_structs::history_counter::HistoryCounterSnapshotId;
+use zk_ee::common_structs::history_counter::NonEmptyHistoryCounter;
 use zk_ee::common_traits::key_like_with_bounds::{KeyLikeWithBounds, TyEq};
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
@@ -74,6 +74,17 @@ pub trait StorageAccessPolicy<R: Resources, V>: 'static + Sized {
         is_warm_write: bool,
         is_new_slot: bool,
     ) -> Result<(), SystemError>;
+
+    /// Refund some resources if needed
+    fn refund_for_storage_write(
+        &self,
+        ee_type: ExecutionEnvironmentType,
+        value_at_tx_start: &V,
+        current_value: &V,
+        new_value: &V,
+        resources: &mut R,
+        refund_counter: &mut R,
+    ) -> Result<(), SystemError>;
 }
 
 #[derive(Default, Clone)]
@@ -103,7 +114,7 @@ pub struct GenericPubdataAwarePlainStorage<
     pub(crate) resources_policy: P,
     // Note: this doesn't need to be equal to the actual tx number in the block, it just needs to be able to differentiate between transactions.
     pub(crate) current_tx_id: TransactionId,
-    pub(crate) evm_refunds_counter: HistoryCounter<u32, SF, M, A>, // Used to keep track of EVM gas refunds
+    pub(crate) evm_refunds_counter: NonEmptyHistoryCounter<R, SF, M, A>, // Used to keep track of EVM gas refunds
     alloc: A,
     pub(crate) _marker: core::marker::PhantomData<(R, SF)>,
 }
@@ -129,7 +140,10 @@ impl<
             cache: HistoryMap::new(allocator.clone()),
             current_tx_id: TransactionId(0),
             resources_policy,
-            evm_refunds_counter: HistoryCounter::new(allocator.clone()),
+            evm_refunds_counter: NonEmptyHistoryCounter::new_with_initial(
+                allocator.clone(),
+                R::empty(),
+            ),
             alloc: allocator.clone(),
             _marker: core::marker::PhantomData,
         }
@@ -137,7 +151,8 @@ impl<
 
     pub fn begin_new_tx(&mut self) {
         self.cache.commit();
-        self.evm_refunds_counter = HistoryCounter::new(self.alloc.clone());
+        self.evm_refunds_counter =
+            NonEmptyHistoryCounter::new_with_initial(self.alloc.clone(), R::empty());
     }
 
     pub fn finish_tx(&mut self) {
@@ -310,6 +325,18 @@ where {
             })
         })?;
 
+        // Add refund for storage
+        let mut refund_counter_value = self.evm_refunds_counter.value().clone();
+        self.resources_policy.refund_for_storage_write(
+            ee_type,
+            &val_at_tx_start,
+            &old_value,
+            new_value,
+            resources,
+            &mut refund_counter_value,
+        )?;
+        self.evm_refunds_counter.update(refund_counter_value);
+
         Ok((old_value, val_at_tx_start))
     }
 
@@ -331,6 +358,17 @@ where {
                 })
             })?;
 
+        Ok(())
+    }
+
+    pub fn get_refund_counter_impl(&'_ self) -> &'_ R {
+        self.evm_refunds_counter.value()
+    }
+
+    pub fn add_to_refund_counter_impl(&mut self, refund: R) -> Result<(), SystemError> {
+        let mut t = self.get_refund_counter_impl().clone();
+        t.add_ergs(refund.ergs());
+        self.evm_refunds_counter.update(t);
         Ok(())
     }
 }
@@ -432,41 +470,6 @@ impl<
         let (old_value, val_at_tx_start) = self
             .0
             .apply_write_impl(ee_type, &sa, &key, new_value, oracle, resources)?;
-
-        if ee_type == ExecutionEnvironmentType::EVM {
-            // EVM specific refunds calculation
-            if old_value != *new_value {
-                let mut gas_refunds = self
-                    .0
-                    .evm_refunds_counter
-                    .value()
-                    .copied()
-                    .unwrap_or_default();
-
-                if old_value == val_at_tx_start {
-                    if !val_at_tx_start.is_zero() && new_value.is_zero() {
-                        gas_refunds += 4800
-                    }
-                } else {
-                    if !val_at_tx_start.is_zero() {
-                        if old_value.is_zero() {
-                            gas_refunds -= 4800
-                        } else if new_value.is_zero() {
-                            gas_refunds += 4800
-                        }
-                    }
-                    if *new_value == val_at_tx_start {
-                        if val_at_tx_start.is_zero() {
-                            gas_refunds += 20000 - 100
-                        } else {
-                            gas_refunds += 5000 - 2100 - 100
-                        }
-                    }
-                }
-
-                self.0.evm_refunds_counter.update(gas_refunds);
-            }
-        }
 
         Ok(old_value)
     }

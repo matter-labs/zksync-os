@@ -120,4 +120,48 @@ impl<R: Resources> StorageAccessPolicy<R, Bytes32> for EthereumLikeStorageAccess
         };
         resources.charge(&R::from_ergs_and_native(ergs, native))
     }
+
+    /// Refund some resources if needed
+    #[allow(unused_variables)]
+    fn refund_for_storage_write(
+        &self,
+        ee_type: ExecutionEnvironmentType,
+        value_at_tx_start: &Bytes32,
+        current_value: &Bytes32,
+        new_value: &Bytes32,
+        resources: &mut R,
+        refund_counter: &mut R,
+    ) -> Result<(), SystemError> {
+        if ee_type == ExecutionEnvironmentType::EVM {
+            // EVM specific refunds calculation
+            {
+                if current_value != new_value {
+                    if current_value == value_at_tx_start {
+                        if !value_at_tx_start.is_zero() && new_value.is_zero() {
+                            refund_counter.add_ergs(Ergs(4800 * ERGS_PER_GAS));
+                        }
+                    } else {
+                        if !value_at_tx_start.is_zero() {
+                            if current_value.is_zero() {
+                                refund_counter.charge(&R::from_ergs(Ergs(4800 * ERGS_PER_GAS)))?;
+                            } else if new_value.is_zero() {
+                                refund_counter.add_ergs(Ergs(4800 * ERGS_PER_GAS));
+                            }
+                        }
+                        if new_value == value_at_tx_start {
+                            if value_at_tx_start.is_zero() {
+                                refund_counter.add_ergs(Ergs((20000 - 100) * ERGS_PER_GAS));
+                            } else {
+                                refund_counter.add_ergs(Ergs((5000 - 2100 - 100) * ERGS_PER_GAS));
+                            }
+                        }
+                    }
+                }
+
+                Ok(())
+            }
+        } else {
+            Ok(())
+        }
+    }
 }

@@ -179,7 +179,8 @@ impl<'ee, S: EthereumLikeTypes> EvmFrameInterface<S> for InterpreterExternal<'ee
 
     fn refund_counter(&self) -> u32 {
         use zk_ee::system::IOSubsystem;
-        self.system.io.get_refund_counter()
+        let refund = self.system.io.get_refund_counter();
+        refund.ergs().0.div_ceil(ERGS_PER_GAS) as u32
     }
 }
 

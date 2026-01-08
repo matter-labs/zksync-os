@@ -37,9 +37,10 @@ pub(crate) fn compute_gas_refund<S: EthereumLikeTypes>(
 
     // Following EIP-3529, refunds are capped to 1/5 of the gas used
     let evm_refund = {
-        let full_refund = system.io.get_refund_counter() as u64;
+        let full_refund_ergs = system.io.get_refund_counter().ergs();
+        let full_refund_gas = full_refund_ergs.0.div_floor(ERGS_PER_GAS);
         let max_refund = gas_used / 5;
-        core::cmp::min(full_refund, max_refund)
+        core::cmp::min(full_refund_gas, max_refund)
     };
 
     system_log!(system, "Gas refund from refund counters = {evm_refund}\n");
