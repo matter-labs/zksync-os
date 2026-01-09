@@ -130,7 +130,7 @@ impl<TR: TxResultCallback> From<ForwardRunningResultKeeper<TR>> for BlockOutput 
             account_diffs,
             published_preimages,
             pubdata,
-            computaional_native_used: block_computaional_native_used,
+            computational_native_used: block_computaional_native_used,
         }
     }
 }
