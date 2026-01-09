@@ -373,10 +373,11 @@ where
     // NOTE: it's a special resource - not transaction gas. Will be used to charge fee only
     let blob_gas_used = num_blobs as u64 * GAS_PER_BLOB;
     let fee_for_blob_gas = if blob_gas_used > 0 {
-        let _ = system.get_logger().write_fmt(format_args!(
+        system_log!(
+            system,
             "Blob gas price = {}\n",
             &system.get_blob_base_fee_per_gas()
-        ));
+        );
 
         let Some(value) = system
             .get_blob_base_fee_per_gas()
