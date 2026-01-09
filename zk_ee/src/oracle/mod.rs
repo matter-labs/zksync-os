@@ -24,8 +24,9 @@ use crate::internal_error;
 use crate::oracle::query_ids::NEXT_TX_SIZE_QUERY_ID;
 use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use crate::system::errors::internal::InternalError;
-use crate::utils::UsizeAlignedByteBox;
+use crate::utils::{Bytes32, UsizeAlignedByteBox};
 use core::alloc::Allocator;
+use core::mem::MaybeUninit;
 use core::num::NonZeroU32;
 
 /// Core trait for querying external, non-deterministic data during ZKsync OS execution. This is
@@ -113,6 +114,34 @@ pub trait IOOracle: 'static + Sized {
         let size = self.query_with_empty_input::<u32>(NEXT_TX_SIZE_QUERY_ID)?;
 
         Ok(NonZeroU32::new(size))
+    }
+
+    ///
+    /// Convenience to expose preimage into the preallocated buffer of bounded size.
+    ///
+    fn expose_preimage(
+        &mut self,
+        query_type: u32,
+        hash: &Bytes32,
+        destination: &mut [MaybeUninit<usize>],
+    ) -> Result<usize, InternalError> {
+        let mut it = self
+            .raw_query(query_type, hash)
+            .expect("must make an iterator for preimage");
+        if it.len() > destination.len() {
+            return Err(internal_error!(
+                "preimage from oracle is longer than destination buffer"
+            ));
+        }
+        let words_written = it.len();
+        for word in destination.iter_mut().take(words_written) {
+            unsafe {
+                // Contract of ExactSizeIterator
+                word.write(it.next().unwrap_unchecked());
+            }
+        }
+
+        Ok(words_written)
     }
 
     ///
