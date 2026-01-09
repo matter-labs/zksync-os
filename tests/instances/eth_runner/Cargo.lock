@@ -1709,6 +1709,7 @@ name = "basic_system"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "cc-traits",
  "cfg-if",
  "const-hex",
  "const_for",
@@ -2081,6 +2082,10 @@ dependencies = [
  "libc",
  "shlex",
 ]
+
+[[package]]
+name = "cc-traits"
+version = "0.1.0"
 
 [[package]]
 name = "cfg-if"
