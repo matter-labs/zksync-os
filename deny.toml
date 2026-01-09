@@ -1,7 +1,8 @@
 [advisories]
 #TODO(EVM-1050): replace unmaintained ethers dependency in rig
 ignore = [
-    { id = "RUSTSEC-2025-0009", reason = "We do not rely on impacted functionality. Affected crate is used only in tests" }
+    { id = "RUSTSEC-2025-0009", reason = "We do not rely on impacted functionality. Affected crate is used only in tests" },
+    { id = "RUSTSEC-2026-0002", reason = "Unsoundness in lru <0.16.3. Waiting for alloy-provider to upgrade (https://github.com/alloy-rs/alloy/pull/3460)" }
 ]
 
 [bans]
@@ -44,6 +45,7 @@ exceptions = [
     { allow = ["CC0-1.0"], name = "secp256k1-sys" },
     { allow = ["CC0-1.0"], name = "secp256k1" },
     { allow = ["OpenSSL"], crate = "ring" },
+    { allow = ["OpenSSL"], crate = "aws-lc-sys" },
 ]
 
 # Sigh
