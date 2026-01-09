@@ -55,7 +55,12 @@ impl SimulateTx for RunBlockForward {
     type Config = ();
     type Error = ForwardSubsystemError;
 
-    fn simulate_tx<Storage: ReadStorage, PreimgSrc: PreimageSource, Tracer: AnyTracer, Validator: AnyTxValidator>(
+    fn simulate_tx<
+        Storage: ReadStorage,
+        PreimgSrc: PreimageSource,
+        Tracer: AnyTracer,
+        Validator: AnyTxValidator,
+    >(
         &self,
         _config: (),
         transaction: EncodedTx,
