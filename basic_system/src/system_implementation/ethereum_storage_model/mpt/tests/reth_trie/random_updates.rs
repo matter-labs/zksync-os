@@ -39,7 +39,7 @@ fn test_versus_randmomized_reth_trie_ordered(size: usize) {
         let mut interner = BoxInterner::with_capacity_in(1 << 26, Global);
         use crypto::MiniDigest;
         let mut hasher = crypto::sha3::Keccak256::new();
-        let mut trie =
+        let mut trie: EthereumMPT<'_, Global, VecCtor> =
             EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_array(), &mut interner, Global).unwrap();
         let mut preimages_oracle = BTreeMap::new();
 
@@ -59,7 +59,8 @@ fn test_versus_randmomized_reth_trie_ordered(size: usize) {
 
             trie.ensure_linked();
         }
-        trie.recompute(&mut interner, &mut hasher).unwrap();
+        trie.recompute(&mut preimages_oracle, &mut interner, &mut hasher)
+            .unwrap();
 
         trie.root(&mut hasher)
     };
@@ -69,7 +70,7 @@ fn test_versus_randmomized_reth_trie_ordered(size: usize) {
         let mut interner = BoxInterner::with_capacity_in(1 << 26, Global);
         use crypto::MiniDigest;
         let mut hasher = crypto::sha3::Keccak256::new();
-        let mut trie =
+        let mut trie: EthereumMPT<'_, Global, VecCtor> =
             EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_array(), &mut interner, Global).unwrap();
         let mut preimages_oracle = BTreeMap::new();
 
@@ -89,7 +90,8 @@ fn test_versus_randmomized_reth_trie_ordered(size: usize) {
 
             trie.ensure_linked();
         }
-        trie.recompute(&mut interner, &mut hasher).unwrap();
+        trie.recompute(&mut preimages_oracle, &mut interner, &mut hasher)
+            .unwrap();
 
         trie.root(&mut hasher)
     };
@@ -99,7 +101,7 @@ fn test_versus_randmomized_reth_trie_ordered(size: usize) {
     let mut interner = BoxInterner::with_capacity_in(1 << 26, Global);
     use crypto::MiniDigest;
     let mut hasher = crypto::sha3::Keccak256::new();
-    let mut trie =
+    let mut trie: EthereumMPT<'_, Global, VecCtor> =
         EthereumMPT::new_in(EMPTY_ROOT_HASH.as_u8_array(), &mut interner, Global).unwrap();
     let mut preimages_oracle = BTreeMap::new();
 
@@ -121,7 +123,8 @@ fn test_versus_randmomized_reth_trie_ordered(size: usize) {
             trie.ensure_linked();
         }
     }
-    trie.recompute(&mut interner, &mut hasher).unwrap();
+    trie.recompute(&mut preimages_oracle, &mut interner, &mut hasher)
+        .unwrap();
 
     let mut hb = HashBuilder::default();
 
@@ -143,32 +146,30 @@ fn test_versus_randmomized_reth_trie_ordered(size: usize) {
             // we inserted before, so let's update or delete
             if v_f.is_zero() {
                 // println!("Delete {}", hex::encode(k_i));
-                trie.delete(path, &mut preimages_oracle, &mut interner, &mut hasher)
-                    .unwrap();
+                trie.delete(path).unwrap();
             } else if v_i != v_f {
                 // println!("Update {}", hex::encode(k_i));
-                trie.update(path, &pre_encoded_value, &mut interner, &mut hasher)
+                trie.update(path, &pre_encoded_value, &mut interner)
                     .unwrap();
             }
-        } else {
-            if v_f.is_zero() == false {
-                // println!("Insert {}", hex::encode(k_i));
-                trie.insert(
-                    path,
-                    &pre_encoded_value,
-                    &mut preimages_oracle,
-                    &mut interner,
-                    &mut hasher,
-                )
-                .unwrap();
-            }
+        } else if v_f.is_zero() == false {
+            // println!("Insert {}", hex::encode(k_i));
+            trie.insert(
+                path,
+                &pre_encoded_value,
+                &mut preimages_oracle,
+                &mut interner,
+                &mut hasher,
+            )
+            .unwrap();
         }
 
         trie.ensure_linked();
     }
 
     let expected_root = hb.root();
-    trie.recompute(&mut interner, &mut hasher).unwrap();
+    trie.recompute(&mut preimages_oracle, &mut interner, &mut hasher)
+        .unwrap();
     let our_root = trie.root(&mut hasher);
 
     assert_eq!(our_root, expected_root);
@@ -207,9 +208,9 @@ fn generate_test_data(size: usize) -> (BTreeMap<B256, U256>, BTreeMap<B256, U256
             }
         }
     }
-    let initial_storage = BTreeMap::from_iter(initial_state.into_iter());
+    let initial_storage = BTreeMap::from_iter(initial_state);
 
-    let final_storage = BTreeMap::from_iter(final_state.into_iter());
+    let final_storage = BTreeMap::from_iter(final_state);
 
     (initial_storage, final_storage)
 }

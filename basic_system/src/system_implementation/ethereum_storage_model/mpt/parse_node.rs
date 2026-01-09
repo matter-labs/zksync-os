@@ -1,13 +1,16 @@
 use super::*;
 
+// NOTE: we can consider this slice as potentially "lazy" for storage purposes, so it's possible to avoid
+// asking caller to make RLP slice envelope on top of whatever is encoded inside (opaque bytes)
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct RLPSlice<'a> {
+pub struct RLPSlice<'a> {
     full_encoding: &'a [u8],
     raw_data_offset: usize,
 }
 
 impl<'a> RLPSlice<'a> {
-    pub(crate) const fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             full_encoding: EMPTY_SLICE_ENCODING,
             raw_data_offset: 1,
@@ -17,17 +20,27 @@ impl<'a> RLPSlice<'a> {
         self.full_encoding
     }
 
-    pub(crate) fn data(&self) -> &'a [u8] {
+    pub fn data(&self) -> &'a [u8] {
         // we pre-validated
         unsafe { self.full_encoding.get_unchecked(self.raw_data_offset..) }
     }
 
-    pub(crate) const fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.raw_data_offset == self.full_encoding.len()
     }
 
     #[track_caller]
-    pub(crate) fn parse(data: &mut &'a [u8]) -> Result<Self, ()> {
+    pub fn from_slice(mut data: &'a [u8]) -> Result<Self, ()> {
+        let new = Self::parse(&mut data)?;
+        if data.is_empty() == false {
+            Err(())
+        } else {
+            Ok(new)
+        }
+    }
+
+    #[track_caller]
+    pub fn parse(data: &mut &'a [u8]) -> Result<Self, ()> {
         let data_start = data.as_ptr();
         let b0 = consume(data, 1)?;
         let bb0 = b0[0];
@@ -67,12 +80,49 @@ impl<'a> RLPSlice<'a> {
 pub(crate) enum ParsedNode<'a> {
     Leaf(LeafNode<'a>),
     Extension(ExtensionNode<'a>),
-    Branch(BranchNode<'a>),
+    BranchHint { num_occupied: usize },
+}
+
+fn parse_node_piece<'a>(data: &mut &'a [u8]) -> Result<&'a [u8], ()> {
+    let data_start = data.as_ptr();
+    let b0 = consume(data, 1)?;
+    let bb0 = b0[0];
+    if bb0 >= 0xc0 {
+        // in very rare cases the piece can be the list itself. Then we will return it in full after
+        // small validity check. It can not be too long anyway
+        let expected_len = (bb0 - 0xc0) as usize;
+        let _ = consume(data, expected_len)?;
+
+        return Ok(unsafe { core::slice::from_ptr_range(data_start..data.as_ptr()) });
+    }
+    if bb0 < 0x80 {
+        Ok(unsafe { core::slice::from_ptr_range(data_start..data.as_ptr()) })
+    } else if bb0 == 0x80 {
+        Ok(&[])
+    } else if bb0 < 0xb8 {
+        let expected_len = (bb0 - 0x80) as usize;
+        let _ = consume(data, expected_len)?;
+
+        Ok(unsafe { core::slice::from_ptr_range(data_start..data.as_ptr()) })
+    } else if bb0 < 0xc0 {
+        let length_encoding_length = (bb0 - 0xb7) as usize;
+        let length_encoding_bytes = consume(data, length_encoding_length)?;
+        if length_encoding_bytes.len() > 2 {
+            return Err(());
+        }
+        let mut be_bytes = [0u8; 4];
+        be_bytes[(4 - length_encoding_bytes.len())..].copy_from_slice(length_encoding_bytes);
+        let length = u32::from_be_bytes(be_bytes) as usize;
+        let _ = consume(data, length)?;
+
+        Ok(unsafe { core::slice::from_ptr_range(data_start..data.as_ptr()) })
+    } else {
+        Err(())
+    }
 }
 
 #[inline]
-fn parse_initial<'a>(raw_encoding: &'a [u8]) -> Result<(usize, [RLPSlice<'a>; 17], usize), ()> {
-    // we try to insert node encoding and see if it exists
+fn parse_initial<'a>(raw_encoding: &'a [u8]) -> Result<(usize, [&'a [u8]; 17], usize), ()> {
     if raw_encoding.len() < 3 {
         return Err(());
     }
@@ -92,12 +142,12 @@ fn parse_initial<'a>(raw_encoding: &'a [u8]) -> Result<(usize, [RLPSlice<'a>; 17
             return Err(());
         }
         // either it's a leaf/extension that is a list of two, or branch
-        let mut pieces = [RLPSlice::empty(); 17];
+        let mut pieces = [&[][..]; 17];
         let mut filled = 0;
         let mut num_non_empty_branches = 0;
         for dst in pieces.iter_mut() {
-            // and itself it must be a string, not a list
-            *dst = RLPSlice::parse(&mut data)?;
+            let piece = parse_node_piece(&mut data)?;
+            *dst = piece;
             if dst.is_empty() == false {
                 num_non_empty_branches += 1;
             }
@@ -124,12 +174,12 @@ fn parse_initial<'a>(raw_encoding: &'a [u8]) -> Result<(usize, [RLPSlice<'a>; 17
         if data.len() != length {
             return Err(());
         }
-        let mut pieces = [RLPSlice::empty(); 17];
+        let mut pieces = [&[][..]; 17];
         let mut filled = 0;
         let mut num_non_empty_branches = 0;
         for dst in pieces.iter_mut() {
-            // and itself it must be a string, not a list, and can not be longer than 32 bytes
-            *dst = RLPSlice::parse(&mut data)?;
+            let piece = parse_node_piece(&mut data)?;
+            *dst = piece;
             if dst.is_empty() == false {
                 num_non_empty_branches += 1;
             }
@@ -146,41 +196,45 @@ fn parse_initial<'a>(raw_encoding: &'a [u8]) -> Result<(usize, [RLPSlice<'a>; 17
     }
 }
 
+// returns note type hints, list pieces, and
 pub(crate) fn parse_node_from_bytes<'a>(
+    key: &'a [u8],
     raw_encoding: &'a [u8],
     interner: &'_ mut (impl Interner<'a> + 'a),
-) -> Result<(ParsedNode<'a>, [RLPSlice<'a>; 17]), ()> {
+) -> Result<(ParsedNode<'a>, [&'a [u8]; 17], &'a [u8]), ()> {
     let (num_filled, pieces, num_non_empty_branches) = parse_initial(raw_encoding)?;
 
     if num_filled == 2 {
         // leaf or extension
         // nibbles bytes(!) have to be re-interpreted at hex-chars(!), and then matched against the path
-        let nibbles_encoding = pieces[0];
+        // we reparse a little
+        let nibbles_encoding = RLPSlice::from_slice(pieces[0])?;
         let nibbles = nibbles_encoding.data();
         let (path_segment, is_leaf) = interner.intern_nibbles(nibbles)?;
         if is_leaf == false {
             // extension
             let extension_node = ExtensionNode {
+                cached_key: key,
                 path_segment,
                 parent_node: NodeType::unlinked(), // will be re-linked
                 child_node: NodeType::unlinked(),  // will be re-linked
-                raw_nibbles_encoding: nibbles_encoding.full_encoding(),
-                next_node_key: pieces[1],
             };
 
-            Ok((ParsedNode::Extension(extension_node), pieces))
+            Ok((
+                ParsedNode::Extension(extension_node),
+                pieces,
+                pieces[1], // will parse later on if we will descend
+            ))
         } else {
+            let value = RLPSlice::from_slice(pieces[1])?;
             let leaf_node = LeafNode {
-                // key: key,
-                // prefix,
+                cached_key: key,
                 path_segment,
-                raw_nibbles_encoding: nibbles_encoding.full_encoding(),
                 parent_node: NodeType::unlinked(),
-                // raw_encoding,
-                value: pieces[1],
+                value: LeafValue::RLPEnveloped { envelope: value },
             };
 
-            Ok((ParsedNode::Leaf(leaf_node), pieces))
+            Ok((ParsedNode::Leaf(leaf_node), pieces, &[]))
         }
     } else if num_filled == 17 {
         // branch
@@ -195,34 +249,17 @@ pub(crate) fn parse_node_from_bytes<'a>(
         // it is a branch, and we must parse it in full, but only take a single path that we are interested in. We do not need to
         // verify well-formedness of branches too much, just to the extend that they are short enough
 
-        let child_nodes = [NodeType::unlinked(); 16];
-        // let mut child_encoding_lengths = [0u8; 16];
         for branch_value in pieces[..16].iter() {
-            if branch_value.data().len() > 32 {
+            if branch_value.len() > 33 {
                 return Err(());
             }
         }
-        // for (idx, branch_value) in pieces[..16].iter().enumerate() {
-        //     if branch_value.data().len() > 32 {
-        //         return Err(());
-        //     }
-        //     child_encoding_lengths[idx] = branch_value.full_encoding().len() as u8;
-        //     if branch_value.is_empty() {
-        //         child_nodes[idx] = NodeType::empty();
-        //     }
-        // }
-        let branch_node = BranchNode {
-            // key,
-            // prefix: branch_prefix_as_path,
-            parent_node: NodeType::unlinked(),
-            child_nodes,
-            // branches_encodings_concatenation,
-            // child_encoding_lengths,
-            // raw_encoding,
-            _marker: core::marker::PhantomData,
+
+        let parsed = ParsedNode::BranchHint {
+            num_occupied: num_non_empty_branches,
         };
 
-        Ok((ParsedNode::Branch(branch_node), pieces))
+        Ok((parsed, pieces, &[]))
     } else {
         return Err(());
     }
