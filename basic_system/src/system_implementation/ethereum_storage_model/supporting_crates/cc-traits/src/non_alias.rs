@@ -27,7 +27,7 @@ pub trait StackMut<T>: Stack<T> + BackMut + PushBack + PopBack {}
 
 impl<T, C: Stack<T> + BackMut + PushBack + PopBack> StackMut<T> for C {}
 
-/// Immutable array data structure (conventionally nammed "Vec").
+/// Immutable array data structure (conventionally named "Vec").
 ///
 /// A Vec is essentially a [`Stack`] indexable by a `usize`.
 pub trait Vec<T>: Stack<T> + Index<usize, Output = T> {}

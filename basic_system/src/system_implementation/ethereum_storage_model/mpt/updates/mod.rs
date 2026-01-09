@@ -425,7 +425,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
         interner: &mut (impl Interner<'a> + 'a),
         hasher: &mut impl MiniDigest<HashOutput = [u8; 32]>,
     ) -> Result<(bool, &'a [u8]), ()> {
-        // Leafs are easy - they do not have children
+        // Leaves are easy - they do not have children
         let leaf = &mut self.capacities.leaf_nodes[leaf_node.index()];
         if leaf.cached_key.is_empty() == false {
             return Ok((false, leaf.cached_key));

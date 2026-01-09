@@ -37,6 +37,7 @@ pub(crate) fn compare_bytes32_and_mpt_integer(a: &Bytes32, b: &[u8]) -> bool {
     // NOTE: `b` is RLP encoding of slice itself, so we will strip some prefix potentially
     debug_assert!(b.len() <= 33);
     let expected_b_len_from_a = a.num_trailing_nonzero_bytes();
+    #[allow(clippy::collapsible_else_if)]
     if expected_b_len_from_a == 0 {
         b.is_empty() || b == EMPTY_SLICE_ENCODING
     } else {
