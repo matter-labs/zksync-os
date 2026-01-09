@@ -94,6 +94,8 @@ pub enum InvalidTransaction {
     NonceNotIncreased,
     /// Transaction makes the block reach the gas limit
     BlockGasLimitReached,
+    /// Transaction makes the block reach the blob gas limit
+    BlockBlobGasLimitReached,
     /// Transaction makes the block reach the native resource limit
     BlockNativeLimitReached,
     /// Transaction makes the block reach the pubdata limit

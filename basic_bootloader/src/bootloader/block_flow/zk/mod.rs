@@ -30,34 +30,42 @@ fn check_for_block_limits<S: EthereumLikeTypes>(
     computational_native_used: u64,
     pubdata_used: u64,
     logs_used: u64,
+    blob_gas_used: u64,
 ) -> Result<(), InvalidTransaction>
 where
     S::IO: IOSubsystemExt,
     <S as SystemTypes>::Metadata: ZkSpecificPricingMetadata,
 {
-    if cfg!(feature = "resources_for_tester") {
-        // EVM tester uses some really high gas limits,
-        // so we don't limit the block's native resource.
-        Ok(())
-    } else if gas_used > system.get_gas_limit() {
+    if gas_used > system.get_gas_limit() {
         system_log!(
             system,
             "Block gas limit reached, invalidating transaction\n"
         );
         Err(InvalidTransaction::BlockGasLimitReached)
-    } else if computational_native_used > MAX_NATIVE_COMPUTATIONAL {
+    } else if blob_gas_used > system.get_blob_gas_limit() {
+        system_log!(
+            system,
+            "Block blob gas limit reached, invalidating transaction\n"
+        );
+        Err(InvalidTransaction::BlockBlobGasLimitReached)
+    } else if !cfg!(feature = "resources_for_tester")
+        && computational_native_used > MAX_NATIVE_COMPUTATIONAL
+    {
+        // ZKsync OS-specific resources are not checked for evm tester
         system_log!(
             system,
             "Block native limit reached, invalidating transaction\n"
         );
         Err(InvalidTransaction::BlockNativeLimitReached)
-    } else if pubdata_used > system.get_pubdata_limit() {
+    } else if !cfg!(feature = "resources_for_tester") && pubdata_used > system.get_pubdata_limit() {
+        // ZKsync OS-specific resources are not checked for evm tester
         system_log!(
             system,
             "Block pubdata limit reached, invalidating transaction\n"
         );
         Err(InvalidTransaction::BlockPubdataLimitReached)
-    } else if logs_used > MAX_NUMBER_OF_LOGS {
+    } else if !cfg!(feature = "resources_for_tester") && logs_used > MAX_NUMBER_OF_LOGS {
+        // ZKsync OS-specific resources are not checked for evm tester
         system_log!(
             system,
             "Block logs limit reached, invalidating transaction\n"

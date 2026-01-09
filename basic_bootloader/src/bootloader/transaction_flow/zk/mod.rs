@@ -28,6 +28,7 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::subsystem::SubsystemError;
+use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
 use zk_ee::system::{
@@ -59,6 +60,7 @@ pub struct ZkTxResult<'a> {
     pub computational_native_used: u64,
     pub native_used: u64,
     pub pubdata_used: u64,
+    pub blob_gas_used: u64,
 }
 
 impl<'a> MinimalTransactionOutput<'a> for ZkTxResult<'a> {
@@ -361,7 +363,7 @@ where
 
     fn before_execute_transaction_payload(
         system: &mut System<S>,
-        transaction: &Transaction<<S as SystemTypes>::Allocator>,
+        _transaction: &Transaction<<S as SystemTypes>::Allocator>,
         context: &mut Self::TransactionContext,
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
@@ -377,11 +379,6 @@ where
         // Save resources to be able to calculate computational native consumption after everything
         let initial_resources = context.resources.main_resources.clone();
         context.initial_resources = initial_resources;
-
-        system.set_tx_context(TxLevelMetadata {
-            tx_origin: *transaction.from(),
-            tx_gas_price: context.gas_price,
-        });
 
         Ok(())
     }
@@ -610,7 +607,7 @@ where
     }
 
     fn after_execution<'a, Config: BasicBootloaderExecutionConfig>(
-        _system: &mut System<S>,
+        system: &mut System<S>,
         transaction: &Transaction<<S as SystemTypes>::Allocator>,
         context: Self::TransactionContext,
         result: ExecutionResult<'a, <S as SystemTypes>::IOTypes>,
@@ -641,6 +638,9 @@ where
 
         use crate::bootloader::constants::L2_TX_INTRINSIC_PUBDATA;
 
+        let num_blobs = system.metadata.num_blobs();
+        let blob_gas_used = num_blobs as u64 * GAS_PER_BLOB;
+
         ZkTxResult {
             result,
             tx_hash: context.tx_hash,
@@ -652,6 +652,7 @@ where
             native_used: context.native_used,
             computational_native_used,
             pubdata_used: context.total_pubdata + L2_TX_INTRINSIC_PUBDATA,
+            blob_gas_used,
         }
     }
 

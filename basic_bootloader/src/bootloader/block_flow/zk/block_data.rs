@@ -18,6 +18,8 @@ pub struct ZKBasicBlockDataKeeper {
     pub block_pubdata_used: u64,
     /// Total native computational resources used by all transactions
     pub block_computational_native_used: u64,
+    /// Amount of blob gas used in the block
+    pub block_blob_gas_used: u64,
 }
 
 impl ZKBasicBlockDataKeeper {
@@ -37,6 +39,7 @@ impl ZKBasicBlockDataKeeper {
             block_gas_used: 0,
             block_pubdata_used: 0,
             block_computational_native_used: 0,
+            block_blob_gas_used: 0,
         }
     }
 }
