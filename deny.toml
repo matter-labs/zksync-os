@@ -45,6 +45,7 @@ exceptions = [
     { allow = ["CC0-1.0"], name = "secp256k1-sys" },
     { allow = ["CC0-1.0"], name = "secp256k1" },
     { allow = ["OpenSSL"], crate = "ring" },
+    { allow = ["OpenSSL"], crate = "aws-lc-sys" },
 ]
 
 # Sigh
