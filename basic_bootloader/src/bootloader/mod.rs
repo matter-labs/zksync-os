@@ -7,7 +7,7 @@ use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, System, SystemTypes};
+use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, IOTeardown, System, SystemTypes};
 
 pub mod block_flow;
 pub mod run_single_interaction;
@@ -58,7 +58,7 @@ where
 
 impl<S: EthereumLikeBasicSTF, F: BasicTransactionFlow<S>> BasicBootloader<S, F>
 where
-    S::IO: IOSubsystemExt,
+    S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
 {
     /// Runs the transactions that it loads from the oracle.
     /// This code runs both in sequencer (then it uses ForwardOracle - that stores data in local variables)

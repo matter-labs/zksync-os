@@ -1,4 +1,5 @@
 use super::*;
+use zk_ee::system::IOTeardown;
 
 /// Trait for finalization operations after all transactions have been processed.
 ///
@@ -6,7 +7,7 @@ use super::*;
 /// commit all state changes.
 pub trait PostTxLoopOp<S: SystemTypes>
 where
-    S::IO: IOSubsystemExt,
+    S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
 {
     /// Type, which post op returns
     type PostTxLoopOpResult;
