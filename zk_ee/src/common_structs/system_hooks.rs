@@ -175,4 +175,11 @@ impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
     pub fn has_hook_for(&mut self, address_low: u16) -> bool {
         self.call_hooks.contains_key(&address_low)
     }
+
+    ///
+    /// Iterate over all addresses with a call hook.
+    ///
+    pub fn all_call_hooked_addresses_iter(&'_ self) -> impl Iterator<Item = u16> + '_ {
+        self.call_hooks.keys().copied()
+    }
 }

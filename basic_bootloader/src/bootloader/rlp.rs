@@ -29,6 +29,17 @@ pub fn estimate_number_encoding_len(value: &[u8]) -> usize {
 }
 
 ///
+/// Estimates extra length of encoding length of some payload
+///
+pub const fn estimate_encoding_len_for_payload_length(payload_encoding_len: usize) -> usize {
+    if payload_encoding_len <= 55 {
+        1
+    } else {
+        1 + core::mem::size_of::<usize>() - (payload_encoding_len.leading_zeros() / 8) as usize
+    }
+}
+
+///
 /// Estimates length of the bytes rlp encoding.
 ///
 pub fn estimate_bytes_encoding_len(value: &[u8]) -> usize {

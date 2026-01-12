@@ -53,6 +53,15 @@ pub enum Transaction<A: Allocator> {
     Abi(AbiEncodedTransaction<A>),
 }
 
+impl<A: Allocator> core::fmt::Debug for Transaction<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Transaction::Rlp(tx) => f.debug_tuple("Rlp").field(tx).finish(),
+            Transaction::Abi(tx) => f.debug_tuple("Abi").field(tx).finish(),
+        }
+    }
+}
+
 impl<A: Allocator> Transaction<A> {
     /// Parse a transaction from a raw buffer using the system IO oracle.
     pub fn try_from_buffer<S: EthereumLikeTypes<Allocator = A>>(
@@ -270,6 +279,24 @@ impl<A: Allocator> Transaction<A> {
         match self {
             Self::Abi(_) => None,
             Self::Rlp(tx) => tx.blobs_list(),
+        }
+    }
+
+    /// Returns a transaction's type
+    pub fn tx_type(&self) -> u8 {
+        match self {
+            Self::Abi(tx) => tx.tx_type.value,
+            Self::Rlp(tx) => tx.tx_type(),
+        }
+    }
+
+    /// Returns a transactions encoding, only supported for RLP transactions
+    pub fn tx_encoding(&self) -> Result<&[u8], InternalError> {
+        match self {
+            Self::Abi(_tx) => Err(internal_error!(
+                "shouldn't inspect encoding for ABI encoded txs"
+            )),
+            Self::Rlp(tx) => Ok(tx.tx_encoding()),
         }
     }
 }

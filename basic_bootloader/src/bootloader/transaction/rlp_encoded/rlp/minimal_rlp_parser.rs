@@ -176,6 +176,17 @@ impl<'a> Rlp<'a> {
         Ok(u64::from_be_bytes(buf))
     }
 
+    /// Decode B160 from a big-endian byte string.
+    pub fn b160(&mut self) -> Result<B160, InvalidTransaction> {
+        let s = self.bytes()?;
+        if s.len() != 20 {
+            return Err(InvalidTransaction::InvalidStructure);
+        }
+        Ok(B160::from_be_bytes::<{ B160::BYTES }>(
+            s.try_into().unwrap(),
+        ))
+    }
+
     /// Decode U256 from a big-endian byte string.
     pub fn u256(&mut self) -> Result<U256, InvalidTransaction> {
         let s = self.bytes()?;
@@ -270,13 +281,7 @@ impl<'a> RlpFixedItem<'a> for &'a [u8; 32] {
 
 impl<'a> RlpItemDecode<'a> for B160 {
     fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
-        let s = r.bytes()?;
-        if s.len() != 20 {
-            return Err(InvalidTransaction::InvalidStructure);
-        }
-        Ok(B160::from_be_bytes::<{ B160::BYTES }>(
-            s.try_into().unwrap(),
-        ))
+        r.b160()
     }
 }
 impl<'a> RlpFixedItem<'a> for B160 {

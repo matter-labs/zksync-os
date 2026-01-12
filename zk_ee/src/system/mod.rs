@@ -3,6 +3,7 @@ use common_structs::system_hooks::HooksStorage;
 use types_config::TryIntoLowAddress;
 use utils::num_usize_words_for_u8_capacity;
 use utils::usize_rw::AsUsizeWritable;
+use utils::UsizeAlignedByteBox;
 
 use super::*;
 pub mod base_system_functions;
@@ -346,6 +347,17 @@ where
         self.io.begin_next_tx();
 
         Some(Ok((next_tx_len_bytes, buffer)))
+    }
+
+    pub fn get_bytes_from_query(
+        &mut self,
+        length_query_id: u32, // must return number of bytes
+        body_query_id: u32,   // must return
+    ) -> Result<Option<UsizeAlignedByteBox<S::Allocator>>, InternalError> {
+        let allocator = self.get_allocator();
+        self.io
+            .oracle()
+            .get_bytes_from_query(length_query_id, body_query_id, &(), allocator)
     }
 
     pub fn deploy_bytecode(

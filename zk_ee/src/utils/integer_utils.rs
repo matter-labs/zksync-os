@@ -92,6 +92,11 @@ pub fn u256_try_to_usize(src: &U256) -> Option<usize> {
 }
 
 #[inline(always)]
+pub fn u256_to_usize_saturated(src: &U256) -> usize {
+    u256_to_u64_saturated(src) as usize
+}
+
+#[inline(always)]
 pub fn u256_to_b160(src: &U256) -> B160 {
     let mut result = B160::ZERO;
     unsafe {

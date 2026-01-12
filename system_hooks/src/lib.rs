@@ -258,7 +258,7 @@ pub fn add_system_context_reporter<S: EthereumLikeTypes, A: Allocator + Clone>(
     )
 }
 
-fn add_precompile<S: EthereumLikeTypes, A: Allocator + Clone, P, E>(
+pub fn add_precompile<S: EthereumLikeTypes, A: Allocator + Clone, P, E>(
     hooks: &mut HooksStorage<S, A>,
     address_low: u16,
 ) -> Result<(), InternalError>
