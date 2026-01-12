@@ -49,14 +49,14 @@ pub struct FullIO<
     const PROOF_ENV: bool,
 > {
     pub storage: M,
-    pub(crate) transient_storage: GenericTransientStorage<WarmStorageKey, Bytes32, SF, N, A>,
+    pub transient_storage: GenericTransientStorage<WarmStorageKey, Bytes32, SF, N, A>,
     pub logs_storage: LogsStorage<SF, N, A>,
     pub events_storage: EventsStorage<MAX_EVENT_TOPICS, SF, N, A>,
     pub interop_root_storage: InteropRootStorage<SF, N, A>,
     pub new_settlement_layer_chain_id_storage: NewSettlementLayerChainIdStorage<SF, N, A>,
-    pub(crate) allocator: A,
+    pub allocator: A,
     pub oracle: O,
-    pub(crate) tx_number: u32,
+    pub tx_number: u32,
     pub da_commitment_scheme: Option<DACommitmentScheme>,
 }
 
