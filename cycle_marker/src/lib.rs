@@ -48,7 +48,7 @@ pub fn log_marker(_msg: &str) {}
 pub fn log_marker(msg: &str) {
     use std::io::Write;
     MARKER_FILE.with(|f| {
-        writeln!(f.borrow_mut(), "{}", msg).unwrap();
+        writeln!(f.borrow_mut(), "{msg}").unwrap();
     });
 }
 
@@ -191,13 +191,13 @@ pub fn print_cycle_markers() -> Option<u64> {
                 if let Some(start_count) = start_counts.remove(&(name, *nonce)) {
                     marker_map.insert((name, *nonce), (start_count, mark));
                 } else {
-                    eprintln!("Warning: end label '{}', {} has no start", name, nonce);
+                    eprintln!("Warning: end label '{name}', {nonce} has no start");
                 }
             }
         }
     }
     for ((name, _), _) in start_counts {
-        eprintln!("Warning: start label '{}' has no end", name);
+        eprintln!("Warning: start label '{name}' has no end");
     }
     let mut markers: Vec<(&'static str, (Mark, Mark))> = marker_map
         .into_iter()
