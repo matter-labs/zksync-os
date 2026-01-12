@@ -1,7 +1,6 @@
 use zk_ee::system::validator::{TxValidationError, TxValidationResult};
 use zk_ee::system::{EthereumLikeTypes, SystemTypes};
 
-/// Wrapper around interface `TxValidator` to make it compatible with `zk_ee` validator API.
 pub(crate) struct ValidatorWrapped<'a, V: zksync_os_interface::tracing::TxValidator>(pub &'a mut V);
 
 fn map_iface_err(e: zksync_os_interface::error::InvalidTransaction) -> TxValidationError {
