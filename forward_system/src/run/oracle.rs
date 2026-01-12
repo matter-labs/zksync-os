@@ -1,6 +1,7 @@
 use crate::run::{NextTxResponse, PreimageSource, ReadStorageTree, TxSource};
 use basic_system::system_implementation::flat_storage_model::*;
 use serde::{Deserialize, Serialize};
+use zksync_os_interface::traits::EncodedTx;
 use zk_ee::common_structs::derive_flat_storage_key;
 use zk_ee::common_structs::ProofData;
 use zk_ee::internal_error;
@@ -12,7 +13,6 @@ use zk_ee::system_io_oracle::dyn_usize_iterator::DynUsizeIterator;
 use zk_ee::system_io_oracle::*;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::*;
-use zksync_os_interface::traits::EncodedTx;
 
 use super::ReadStorage;
 
