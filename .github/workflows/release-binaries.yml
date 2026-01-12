@@ -3,6 +3,9 @@ name: Release Binaries
 on:
   release:
     types: [published]
+  push:
+    tags:
+      - '*'
 
 permissions:
   contents: write
@@ -18,9 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          ref: ${{ github.event.release.tag_name }}
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Build binaries using reproducible script
         run: zksync_os/reproduce/reproduce.sh
