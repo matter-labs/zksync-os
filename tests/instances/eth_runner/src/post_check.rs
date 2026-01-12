@@ -338,7 +338,11 @@ fn zksync_os_output_into_account_state(
 fn compute_tx_rolling_hash_for_receipts(receipts: &Vec<TransactionReceipt>) -> [u8; 32] {
     let mut hasher = rig::crypto::sha3::Keccak256::new();
     let mut tx_rolling_hash = [0u8; 32];
-    for receipt in receipts {
+    for (index, receipt) in receipts.iter().enumerate() {
+        if index == 0 {
+            tx_rolling_hash = *receipt.transaction_hash;
+            continue;
+        }
         hasher.update(tx_rolling_hash);
         hasher.update(receipt.transaction_hash);
         tx_rolling_hash = hasher.finalize_reset();
