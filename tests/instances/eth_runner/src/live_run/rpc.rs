@@ -116,6 +116,26 @@ pub fn get_calltrace(endpoint: &str, block_number: u64) -> Result<CallTrace> {
     Ok(calltrace)
 }
 
+pub fn get_chain_id(endpoint: &str) -> Result<u64> {
+    debug!("RPC: eth_chainId()");
+    use serde::Deserialize;
+    use serde_json::Deserializer;
+
+    let body = json!({
+        "method": "eth_chainId",
+        "params": [],
+        "id": 1,
+        "jsonrpc": "2.0"
+    });
+    let res = send(endpoint, body)?;
+    let res: serde_json::Value = serde_json::from_str(&res)?;
+    let s = res["result"].as_str().unwrap();
+    let hex = s.trim_start_matches("0x");
+    let hex = if hex.is_empty() { "0" } else { hex };
+    let id = u64::from_str_radix(hex, 16)?;
+    Ok(id)
+}
+
 fn send(endpoint: &str, body: serde_json::Value) -> Result<String> {
     let response = ureq::post(endpoint)
         .set("Content-Type", "application/json")

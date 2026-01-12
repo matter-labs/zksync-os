@@ -24,8 +24,10 @@ crypto = { path = "../../crypto" }
 cycle_marker = { path = "../../cycle_marker", optional = true }
 zksync_os_api = { path = "../../api" }
 zksync_os_interface = { workspace = true, default-features = false }
+cli = { workspace =  true, optional = true }
+prover_examples = { workspace = true, optional = true}
+gpu_prover = { workspace = true, optional = true }
 
-prover_examples = { workspace = true, optional=true}
 
 ethers = "2.0.0" # ethers 2.0.0 is required due to dependency conflict TODO: replace with alloy
 futures = "0.3.30"
@@ -45,11 +47,13 @@ once_cell = "1.20.3"
 default = ["testing", "risc_v_simulator/delegation"]
 opcode_stats = ["risc_v_simulator/opcode_stats"]
 testing = []
+airbender_cli = ["cli"]
 e2e_proving = ["prover_examples", "risc_v_simulator/delegation"]
 no_print = ["forward_system/no_print"]
 cycle_marker = ["dep:cycle_marker", "zksync_os_runner/cycle_marker", "zk_ee/cycle_marker", "evm_interpreter/cycle_marker", "basic_system/cycle_marker", "basic_bootloader/cycle_marker"]
 simulate_witness_gen = []
 unlimited_native = ["forward_system/unlimited_native"]
+gpu = ["cli/gpu", "gpu_prover"]
 production = ["forward_system/production"]
 # Features for test instances
 for_tests = ["forward_system/for_tests"]
@@ -60,4 +64,5 @@ evm_tester = ["forward_system/evm_tester"]
 # Features used for legacy evm_tester. Only defined in forward system,
 # as the legacy evm_tester does not perform a proof run.
 evm_tester_legacy = ["forward_system/evm_tester_legacy"]
+
 

@@ -65,6 +65,9 @@ blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "
 prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
 execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3"}
 prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
+cli = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
+gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
+
 
 # zerocopy 0.8.29 introduced a compilation issue, remove this
 # when the compilation issue is resolved
