@@ -81,6 +81,9 @@ where
                     // We will give the full buffer here, and internally we will use parts of it to give forward to EEs
                     cycle_marker::start!("process_transaction");
 
+                    // TODO: consider actually using block_data here
+                    let mut nop_keeper = NopTransactionDataKeeper;
+
                     let tx_result =
                         BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::process_transaction::<
                             Config,
@@ -90,6 +93,7 @@ where
                             system_functions,
                             memories.reborrow(),
                             is_first_tx,
+                            &mut nop_keeper,
                             tracer,
                         );
 

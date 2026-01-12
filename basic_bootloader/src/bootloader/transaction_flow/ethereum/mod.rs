@@ -655,19 +655,14 @@ where
     type ExecutionResult<'a> = EthereumTxResult<'a>;
 
     fn after_execution<'a, Config: BasicBootloaderExecutionConfig>(
-        _system: &mut System<S>,
-        _transaction: &Transaction<S::Allocator>,
+        system: &mut System<S>,
+        transaction: Transaction<S::Allocator>,
         context: Self::TransactionContext,
         result: ExecutionResult<'a, <S as SystemTypes>::IOTypes>,
-        // transaction_data_collector: &mut impl BlockTransactionsDataCollector<S, Self>,
+        transaction_data_keeper: &mut impl BlockTransactionsDataKeeper<S, Self>,
         _tracer: &mut impl Tracer<S>,
     ) -> Self::ExecutionResult<'a> {
-        // transaction_data_collector.record_transaction_results(
-        //     &*system,
-        //     transaction,
-        //     &context,
-        //     &result,
-        // );
+        transaction_data_keeper.record_transaction_results(system, transaction, &context, &result);
 
         EthereumTxResult {
             result,

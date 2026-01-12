@@ -1,4 +1,5 @@
 use crate::alloc::string::ToString;
+use crate::bootloader::block_flow::BlockTransactionsDataKeeper;
 use crate::bootloader::errors::{BootloaderInterfaceError, BootloaderSubsystemError};
 use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::runner::RunnerMemoryBuffers;
@@ -521,9 +522,10 @@ where
 
     fn after_execution<'a, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
-        transaction: &Transaction<<S as SystemTypes>::Allocator>,
+        transaction: Transaction<<S as SystemTypes>::Allocator>,
         context: Self::TransactionContext,
         result: ExecutionResult<'a, <S as SystemTypes>::IOTypes>,
+        _transaction_data_keeper: &mut impl BlockTransactionsDataKeeper<S, Self>,
         _tracer: &mut impl Tracer<S>,
     ) -> Self::ExecutionResult<'a> {
         // Add back the intrinsic native charged in get_resources_for_tx,
