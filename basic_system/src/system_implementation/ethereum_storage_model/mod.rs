@@ -8,7 +8,8 @@ pub(crate) mod cost_constants;
 mod mpt;
 mod persist_changes;
 mod storage_model;
-mod vec_trait;
+// Only used by Ethereum STF
+pub mod vec_trait;
 
 use crate::system_implementation::ethereum_storage_model::mpt::EMPTY_SLICE_ENCODING;
 
