@@ -177,7 +177,6 @@ pub fn run_proving_inner<
 >(
     oracle: O,
 ) -> [u32; 8] {
-    
     let _ = L::default().write_fmt(format_args!("IO implementer init is complete"));
 
     // Load all transactions from oracle and apply them.
