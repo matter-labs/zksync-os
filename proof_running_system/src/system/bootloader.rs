@@ -8,6 +8,7 @@ use zk_ee::memory::ZSTAllocator;
 use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::tracer::NopTracer;
+use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -176,8 +177,7 @@ pub fn run_proving_inner<
 >(
     oracle: O,
 ) -> [u32; 8] {
-    use zk_ee::system::validator::NopTxValidator;
-
+    
     let _ = L::default().write_fmt(format_args!("IO implementer init is complete"));
 
     // Load all transactions from oracle and apply them.
@@ -186,7 +186,7 @@ pub fn run_proving_inner<
             oracle,
             &mut NopResultKeeper,
             &mut NopTracer::default(),
-            &mut NopTxValidator::default(),
+            &mut NopTxValidator,
         )
         .expect("Tried to prove a failing batch");
 

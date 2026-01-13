@@ -261,7 +261,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         };
 
         let mut nop_tracer = NopTracer::default();
-        let mut nop_validator = NopTxValidator::default();
+        let mut nop_validator = NopTxValidator;
 
         let block_output: BlockOutput = forward_system::run::run_block_with_oracle_dump_ext::<
             _,
@@ -310,7 +310,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             da_commitment_scheme,
             run_config,
             &mut NopTracer::default(),
-            &mut NopTxValidator::default(),
+            &mut NopTxValidator,
         )
         .unwrap()
         .0
@@ -336,7 +336,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             da_commitment_scheme,
             run_config,
             &mut NopTracer::default(),
-            &mut NopTxValidator::default(),
+            &mut NopTxValidator,
             oracle_factory,
         )
         .unwrap()
@@ -359,7 +359,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             run_config.unwrap_or_default(),
             &factory,
             &mut NopTracer::default(),
-            &mut NopTxValidator::default(),
+            &mut NopTxValidator,
         )
         .map(|r| r.0)
     }
