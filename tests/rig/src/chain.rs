@@ -387,6 +387,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     #[allow(clippy::result_large_err)]
+    #[allow(clippy::too_many_arguments)]
     pub fn run_block_with_extra_stats_with_oracle_factory<
         OF: TestingOracleFactory<RANDOMIZED_TREE>,
     >(
@@ -411,6 +412,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     #[allow(clippy::result_large_err)]
+    #[allow(clippy::too_many_arguments)]
     fn run_inner<OF: TestingOracleFactory<RANDOMIZED_TREE>>(
         &mut self,
         transactions: Vec<EncodedTx>,
