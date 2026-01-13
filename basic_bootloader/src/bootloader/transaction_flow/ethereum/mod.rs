@@ -235,23 +235,21 @@ where
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         if let Some(to) = transaction.to() {
-            let _ = system.get_logger().write_fmt(
-                format_args!(
-                    "Will try to process transaction to 0x{:040x} with gas limit of {} and value of {:?} and {} bytes of calldata\n",
-                    to.as_uint(),
-                    transaction.gas_limit(),
-                    transaction.value(),
-                    transaction.calldata().len(),
-                )
+            system_log!(
+                system,
+                "Will try to process transaction to 0x{:040x} with gas limit of {} and value of {:?} and {} bytes of calldata\n",
+                to.as_uint(),
+                transaction.gas_limit(),
+                transaction.value(),
+                transaction.calldata().len(),
             );
         } else {
-            let _ = system.get_logger().write_fmt(
-                format_args!(
-                    "Will try to process deployment with gas limit of {} and value of {:?} and {} bytes of calldata\n",
-                    transaction.gas_limit(),
-                    transaction.value(),
-                    transaction.calldata().len(),
-                )
+            system_log!(
+                system,
+                "Will try to process deployment with gas limit of {} and value of {:?} and {} bytes of calldata\n",
+                transaction.gas_limit(),
+                transaction.value(),
+                transaction.calldata().len(),
             );
         }
 
@@ -277,26 +275,24 @@ where
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         if let Some(to) = transaction.to() {
-            let _ = system.get_logger().write_fmt(
-                format_args!(
-                    "Will process transaction:\nCall from 0x{:040x} to 0x{:040x} with gas limit of {} and value of {:?} and {} bytes of calldata\n",
-                    transaction.from().as_uint(),
-                    to.as_uint(),
-                    transaction.gas_limit(),
-                    transaction.value(),
-                    transaction.calldata().len(),
-                )
+            system_log!(
+                system,
+                "Will process transaction:\nCall from 0x{:040x} to 0x{:040x} with gas limit of {} and value of {:?} and {} bytes of calldata\n",
+                transaction.from().as_uint(),
+                to.as_uint(),
+                transaction.gas_limit(),
+                transaction.value(),
+                transaction.calldata().len(),
             );
         } else {
-            let _ = system.get_logger().write_fmt(
-                format_args!(
-                    "Will process transaction:\nDeployment from 0x{:040x} at nonce {} with gas limit of {} and value of {:?} and {} bytes of calldata\n",
-                    transaction.from().as_uint(),
-                    context.originator_nonce_to_use,
-                    transaction.gas_limit(),
-                    transaction.value(),
-                    transaction.calldata().len(),
-                )
+            system_log!(
+                system,
+                "Will process transaction:\nDeployment from 0x{:040x} at nonce {} with gas limit of {} and value of {:?} and {} bytes of calldata\n",
+                transaction.from().as_uint(),
+                context.originator_nonce_to_use,
+                transaction.gas_limit(),
+                transaction.value(),
+                transaction.calldata().len(),
             );
         }
 
@@ -312,11 +308,12 @@ where
         let from = transaction.from();
         let value = context.fee_to_prepay;
 
-        let _ = system.get_logger().write_fmt(format_args!(
+        system_log!(
+            system,
             "Will precharge 0x{:040x} with {:?} native tokens for transaction\n",
             from.as_uint(),
             &value
-        ));
+        );
 
         // let _ = system.get_logger().write_fmt(format_args!(
         //     "Balance of 0x{:040x} before transaction is {}\n",
@@ -425,15 +422,11 @@ where
                 match r {
                     ExecutionResult::Success { .. } => {
                         system.finish_global_frame(None)?;
-                        let _ = system
-                            .get_logger()
-                            .write_fmt(format_args!("Transaction main payload was processed\n"));
+                        system_log!(system, "Transaction main payload was processed\n");
                     }
                     ExecutionResult::Revert { .. } => {
                         system.finish_global_frame(Some(&main_body_rollback_handle))?;
-                        let _ = system
-                            .get_logger()
-                            .write_fmt(format_args!("Transaction main payload was reverted\n"));
+                        system_log!(system, "Transaction main payload was reverted\n");
                     }
                 };
 
@@ -443,9 +436,10 @@ where
             // gas is exhausted.
             Err(e) => match e.root_cause() {
                 RootCause::Runtime(e @ RuntimeError::FatalRuntimeError(_)) => {
-                    let _ = system.get_logger().write_fmt(format_args!(
+                    system_log!(
+                        system,
                         "Transaction ran out of native resources or memory: {e:?}\n"
-                    ));
+                    );
                     context.resources.main_resources.exhaust_ergs();
                     system.finish_global_frame(Some(&main_body_rollback_handle))?;
 
@@ -467,10 +461,11 @@ where
         _extra_data: Self::ExecutionBodyExtraData,
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), InternalError> {
-        let _ = system.get_logger().write_fmt(format_args!(
+        system_log!(
+            system,
             "Have {:?} resources available before refund\n",
             &context.resources.main_resources,
-        ));
+        );
 
         let min_gas_used = context.minimal_gas_to_charge;
         // Compute gas used following the same logic as in normal execution
@@ -507,21 +502,23 @@ where
         );
 
         if context.tx_gas_limit > context.gas_used {
-            let _ = system.get_logger().write_fmt(format_args!(
+            system_log!(
+                system,
                 "Gas price for refund is {:?}\n",
                 &context.tx_level_metadata.tx_gas_price
-            ));
+            );
 
             // refund
             let receiver = transaction.from();
             let refund = context.tx_level_metadata.tx_gas_price
                 * U256::from(context.tx_gas_limit - context.gas_used); // can not overflow
 
-            let _ = system.get_logger().write_fmt(format_args!(
+            system_log!(
+                system,
                 "Will refund 0x{:040x} with {:?} native tokens\n",
                 receiver.as_uint(),
                 &refund
-            ));
+            );
 
             // let _ = system.get_logger().write_fmt(format_args!(
             //     "Balance of 0x{:040x} before refund is {}\n",
@@ -582,17 +579,16 @@ where
         assert!(context.gas_used > 0);
 
         if context.priority_fee_per_gas.is_zero() == false {
-            let _ = system.get_logger().write_fmt(format_args!(
+            system_log!(
+                system,
                 "Gas price for coinbase fee is {:?}\n",
                 &context.priority_fee_per_gas
-            ));
+            );
 
             let fee = context.priority_fee_per_gas * U256::from(context.gas_used); // can not overflow
             let coinbase = system.get_coinbase();
 
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Coinbase's share of fee is {:?}\n", &fee));
+            system_log!(system, "Coinbase's share of fee is {:?}\n", &fee);
 
             // let _ = system.get_logger().write_fmt(format_args!(
             //     "Balance of coinbase 0x{:040x} before fee collection is {}\n",
@@ -712,9 +708,7 @@ where
             result,
         } = final_state;
 
-        let _ = system.get_logger().write_fmt(format_args!(
-            "Resources to refund = {resources_returned:?}\n",
-        ));
+        system_log!(system, "Resources to refund = {resources_returned:?}\n");
         context.resources.main_resources.reclaim(resources_returned);
 
         let reverted = result.failed();
@@ -855,9 +849,7 @@ where
     where
         S: 'a,
     {
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Start of execution\n"));
+        system_log!(system, "Start of execution\n");
 
         let TxExecutionResult {
             return_values,
@@ -890,9 +882,7 @@ where
             .get_logger()
             .log_data(returndata_region.iter().copied());
 
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Main TX body successful = {}\n", !reverted));
+        system_log!(system, "Main TX body successful = {}\n", !reverted);
 
         let execution_result = match reverted {
             true => ExecutionResult::Revert {
@@ -911,9 +901,7 @@ where
             }
         };
 
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Transaction execution completed\n"));
+        system_log!(system, "Transaction execution completed\n");
 
         Ok(execution_result)
     }

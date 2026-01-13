@@ -7,7 +7,6 @@ use crate::bootloader::transaction::authorization_list::parse_authorization_list
 use crate::bootloader::transaction::blobs::parse_blobs_list;
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
-use core::fmt::Write;
 use crypto::secp256k1::SECP256K1N_HALF;
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use ruint::aliases::{B160, U256};
@@ -169,10 +168,12 @@ where
         transaction.max_priority_fee_per_gas(),
     )?;
 
-    let _ = system.get_logger().write_fmt(format_args!(
+    system_log!(
+        system,
         "Effective gas price for transaction is {}, priority fee = {}\n",
-        &effective_gas_price, &priority_fee_per_gas,
-    ));
+        &effective_gas_price,
+        &priority_fee_per_gas,
+    );
 
     let is_deployment = transaction.is_deployment().is_some();
 
@@ -184,10 +185,11 @@ where
         calldata_tokens,
     )?;
 
-    let _ = system.get_logger().write_fmt(format_args!(
+    system_log!(
+        system,
         "Prepared resources for transaction: {:?}\n",
         &tx_resources
-    ));
+    );
 
     let suggested_signed_hash: Bytes32 = transaction.signed_hash()?;
     let from = *transaction.from();
@@ -360,10 +362,11 @@ where
     };
 
     let fee_for_blob_gas = if blob_gas_used > 0 {
-        let _ = system.get_logger().write_fmt(format_args!(
+        system_log!(
+            system,
             "Blob gas price = {}\n",
             &system.metadata.blob_base_fee_per_gas()
-        ));
+        );
 
         let (value, of) = u256_mul_by_word(&system.metadata.blob_base_fee_per_gas(), blob_gas_used);
         if of > 0 {
