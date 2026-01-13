@@ -78,7 +78,7 @@ impl SimulateTx for RunBlockForward {
         let evm_tracer = tracer.as_evm().expect("only EVM tracers are supported");
         let evm_tx_validator = validator
             .as_evm()
-            .expect("only EVM validator are supported");
+            .expect("only EVM validators are supported");
         simulate_tx(
             transaction,
             BlockMetadataFromOracle::from_interface(block_context),
