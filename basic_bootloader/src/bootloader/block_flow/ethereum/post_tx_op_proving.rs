@@ -16,10 +16,12 @@ use basic_system::system_implementation::ethereum_storage_model::EMPTY_ROOT_HASH
 use basic_system::system_implementation::system::FullIO;
 use chain_check::ChainChecker;
 use core::alloc::Allocator;
+use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::Resources;
+use zk_ee::system_log;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
 
@@ -107,10 +109,7 @@ where
         // Events
         result_keeper.events(io.events_iterator());
 
-        let _ = logger.write_fmt(format_args!(
-            "Initial state commitment is {:?}\n",
-            &initial_state_commitment
-        ));
+        logger_log!(logger, "Initial state commitment is {:?}\n", &initial_state_commitment);
 
         // // 3. Verify/apply reads and writes
         let mut updated_state_commitment = initial_state_commitment;
@@ -122,20 +121,14 @@ where
             );
         });
 
-        let _ = logger.write_fmt(format_args!(
-            "Updated state commitment is {:?}\n",
-            &updated_state_commitment
-        ));
+        logger_log!(logger, "Updated state commitment is {:?}\n", &updated_state_commitment);
 
         assert_eq!(
             metadata.block_level.header.state_root, updated_state_commitment,
             "state root diverged",
         );
 
-        let _ = logger.write_fmt(format_args!(
-            "Finished processing block hash {:?}\n",
-            &metadata.block_level.computed_header_hash,
-        ));
+        logger_log!(logger, "Finished processing block hash {:?}\n", &metadata.block_level.computed_header_hash);
 
         Ok((io.oracle, metadata.block_level.computed_header_hash))
     }
@@ -192,9 +185,7 @@ impl<VC: VecLikeCtor> EthereumPostOp<VC, true> {
             withdrawals_root
         };
 
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Withdrawals root = {:?}\n", &withdrawals_root,));
+        system_log!(system, "Withdrawals root = {:?}\n", &withdrawals_root);
 
         use crypto::sha256::Digest;
         let mut requests_hasher = crypto::sha256::Sha256::new();
@@ -203,36 +194,25 @@ impl<VC: VecLikeCtor> EthereumPostOp<VC, true> {
             .expect("must filter EIP-6110 deposit requests")
         {
             let requests_hash = intermediate_hasher.finalize_reset();
-            let _ = system.get_logger().write_fmt(format_args!(
-                "EIP-6110 ops hash = {:?}\n",
-                Bytes32::from_array(requests_hash.into()),
-            ));
+            system_log!(system, "EIP-6110 ops hash = {:?}\n", Bytes32::from_array(requests_hash.into()));
             requests_hasher.update(requests_hash);
         }
         if eip7002_system_part(system, &mut intermediate_hasher)
             .expect("withdrawal requests must be processed")
         {
             let requests_hash = intermediate_hasher.finalize_reset();
-            let _ = system.get_logger().write_fmt(format_args!(
-                "EIP-7002 ops hash = {:?}\n",
-                Bytes32::from_array(requests_hash.into()),
-            ));
+            system_log!(system, "EIP-7002 ops hash = {:?}\n", Bytes32::from_array(requests_hash.into()));
             requests_hasher.update(requests_hash);
         }
         if eip7251_system_part(system, &mut intermediate_hasher)
             .expect("consolidation requests must be processed")
         {
             let requests_hash = intermediate_hasher.finalize_reset();
-            let _ = system.get_logger().write_fmt(format_args!(
-                "EIP-7251 ops hash = {:?}\n",
-                Bytes32::from_array(requests_hash.into()),
-            ));
+            system_log!(system, "EIP-7251 ops hash = {:?}\n", Bytes32::from_array(requests_hash.into()));
             requests_hasher.update(requests_hash);
         }
         let requests_hash = Bytes32::from_array(requests_hasher.finalize().into());
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Requests hash = {:?}\n", &requests_hash,));
+        system_log!(system, "Requests hash = {:?}\n", &requests_hash);
 
         let block_data_results = block_data.compute_header_values::<S, VC>(&system);
 

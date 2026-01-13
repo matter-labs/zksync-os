@@ -1,5 +1,6 @@
 use ruint::aliases::B160;
 use zk_ee::common_structs::GenericEventContentWithTxRef;
+use zk_ee::logger_log;
 use zk_ee::storage_types::MAX_EVENT_TOPICS;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::logger::Logger;
@@ -86,35 +87,29 @@ fn validate_and_write_event_data(
     validate_u16_at_most(data[384..416].try_into().unwrap(), 96)?;
     validate_u16_at_most(data[512..544].try_into().unwrap(), 8)?;
 
-    let _ = logger.write_fmt(format_args!("Processing EIP-6110 deposit event with:"));
+    logger_log!(logger, "Processing EIP-6110 deposit event with:");
 
-    let _ = logger.write_fmt(format_args!("\nPubkey = "));
+    logger_log!(logger, "\nPubkey = ");
     let pubkey = &data[192..][..48];
     let _ = logger.log_data(pubkey.iter().copied());
     requests_hasher.update(pubkey);
 
-    let _ = logger.write_fmt(format_args!("\nWithdrawal credentials = "));
+    logger_log!(logger, "\nWithdrawal credentials = ");
     let withdrawal_credentials = &data[288..][..32];
     let _ = logger.log_data(withdrawal_credentials.iter().copied());
     requests_hasher.update(withdrawal_credentials);
 
     let amount = &data[352..][..8];
-    let _ = logger.write_fmt(format_args!(
-        "\nAmount = {}",
-        u64::from_le_bytes(amount.try_into().unwrap())
-    ));
+    logger_log!(logger, "\nAmount = {}", u64::from_le_bytes(amount.try_into().unwrap()));
     requests_hasher.update(amount);
 
-    let _ = logger.write_fmt(format_args!("\nSignature = "));
+    logger_log!(logger, "\nSignature = ");
     let signature = &data[416..][..96];
     let _ = logger.log_data(signature.iter().copied());
     requests_hasher.update(signature);
 
     let index = &data[544..][..8];
-    let _ = logger.write_fmt(format_args!(
-        "\nIndex = {}\n",
-        u64::from_le_bytes(index.try_into().unwrap())
-    ));
+    logger_log!(logger, "\nIndex = {}\n", u64::from_le_bytes(index.try_into().unwrap()));
     requests_hasher.update(index);
 
     Ok(())

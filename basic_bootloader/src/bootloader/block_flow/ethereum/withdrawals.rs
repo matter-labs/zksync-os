@@ -14,6 +14,7 @@ use zk_ee::system::EthereumLikeTypes;
 use zk_ee::system::IOSubsystemExt;
 use zk_ee::system::Resources;
 use zk_ee::system::System;
+use zk_ee::system_log;
 use zk_ee::utils::Bytes32;
 
 use crate::bootloader::block_flow::ethereum::rlp_ordering_and_key_for_index;
@@ -92,13 +93,7 @@ where
     for (index, el) in list.iter().enumerate() {
         // meaningful work
         {
-            let _ = system.get_logger().write_fmt(format_args!(
-                "Applying withdrawal towards 0x{:040x} for {} GWei, at index {} and validator index {}\n",
-                el.address.as_uint(),
-                el.value_in_gwei,
-                el.index,
-                el.validator_index,
-            ));
+            system_log!(system, "Applying withdrawal towards 0x{:040x} for {} GWei, at index {} and validator index {}\n", el.address.as_uint(), el.value_in_gwei, el.index, el.validator_index);
 
             let amount = U256::from(1_000_000_000u64) * U256::from(el.value_in_gwei);
 

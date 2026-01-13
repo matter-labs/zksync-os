@@ -18,6 +18,7 @@ use core::alloc::Allocator;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::Resources;
+use zk_ee::system_log;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::utils::Bytes32;
 
@@ -78,9 +79,7 @@ where
             withdrawals_root
         };
 
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Withdrawals root = {:?}\n", &withdrawals_root,));
+        system_log!(system, "Withdrawals root = {:?}\n", &withdrawals_root);
 
         use crypto::sha256::Digest;
         let mut requests_hasher = crypto::sha256::Sha256::new();
@@ -91,9 +90,7 @@ where
         let _ = eip7251_system_part(&mut system, &mut requests_hasher);
 
         let requests_hash = Bytes32::from_array(requests_hasher.finalize().into());
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Requests hash = {:?}\n", &requests_hash,));
+        system_log!(system, "Requests hash = {:?}\n", &requests_hash);
 
         // Here we have to cascade everything
 

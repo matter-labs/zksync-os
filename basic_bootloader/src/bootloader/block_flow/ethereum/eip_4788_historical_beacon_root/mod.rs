@@ -14,6 +14,7 @@ use zk_ee::system::IOSubsystemExt;
 use zk_ee::system::Resources;
 use zk_ee::system::System;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystem};
+use zk_ee::system_log;
 use zk_ee::utils::Bytes32;
 
 pub const BEACON_ROOTS_ADDRESS: B160 =
@@ -52,10 +53,7 @@ where
     let timestamp = system.get_timestamp();
     let timestamp_idx = timestamp % HISTORY_BUFFER_LENGTH;
 
-    let _ = system.get_logger().write_fmt(format_args!(
-        "EIP-4788 timestamp = {}, beacon root = {:?}\n",
-        timestamp, &beacon_root,
-    ));
+    system_log!(system, "EIP-4788 timestamp = {}, beacon root = {:?}\n", timestamp, &beacon_root);
 
     let mut timestamp_slot = Bytes32::ZERO;
     timestamp_slot.as_u8_array_mut()[24..32].copy_from_slice(&timestamp_idx.to_be_bytes());

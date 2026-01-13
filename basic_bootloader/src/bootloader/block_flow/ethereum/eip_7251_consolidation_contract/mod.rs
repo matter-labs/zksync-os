@@ -3,6 +3,7 @@ use ruint::aliases::B160;
 use ruint::aliases::U256;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
+use zk_ee::logger_log;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::AccountDataRequest;
@@ -146,11 +147,9 @@ where
             )
         })?;
 
-        let _ = logger.write_fmt(format_args!(
-            "Processing EIP-7251 consolidation queue element with:"
-        ));
+        logger_log!(logger, "Processing EIP-7251 consolidation queue element with:");
 
-        let _ = logger.write_fmt(format_args!("\nAddress = "));
+        logger_log!(logger, "\nAddress = ");
         let address = &slot_0.as_u8_array_ref()[12..];
         let _ = logger.log_data(address.iter().copied());
         requests_hasher.update(address);
@@ -160,7 +159,7 @@ where
 
         requests_hasher.update(source_pubkey_part_0);
         requests_hasher.update(source_pubkey_part_1);
-        let _ = logger.write_fmt(format_args!("\nSource pubkey = "));
+        logger_log!(logger, "\nSource pubkey = ");
         let _ = logger.log_data(ExactSizeChain::new(
             source_pubkey_part_0.iter().copied(),
             source_pubkey_part_1.iter().copied(),
@@ -171,18 +170,18 @@ where
 
         requests_hasher.update(target_pubkey_part_0);
         requests_hasher.update(target_pubkey_part_1);
-        let _ = logger.write_fmt(format_args!("\nTarget pubkey = "));
+        logger_log!(logger, "\nTarget pubkey = ");
         let _ = logger.log_data(ExactSizeChain::new(
             target_pubkey_part_0.iter().copied(),
             target_pubkey_part_1.iter().copied(),
         ));
 
-        let _ = logger.write_fmt(format_args!("\n"));
+        logger_log!(logger, "\n");
     }
 
     let new_queue_head_index = queue_head_index + U256::from(num_dequeued as u64);
     if new_queue_head_index == queue_tail_index {
-        let _ = logger.write_fmt(format_args!("EIP-7251 consolidation queue is now empty\n"));
+        logger_log!(logger, "EIP-7251 consolidation queue is now empty\n");
 
         resources.with_infinite_ergs(|resources| {
             system.io.storage_write::<false>(

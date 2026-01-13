@@ -22,6 +22,7 @@ use zk_ee::common_structs::skip_list_quasi_vec::ListVec;
 use zk_ee::common_structs::GenericEventContentRef;
 use zk_ee::system::logger::Logger;
 use zk_ee::system::*;
+use zk_ee::system_log;
 use zk_ee::utils::Bytes32;
 
 use super::transaction::Transaction;
@@ -223,24 +224,13 @@ impl<A: Allocator + Clone, B: Allocator> EthereumBasicTransactionDataKeeper<A, B
             .expect("must compute transactions root");
         let transactions_root = Bytes32::from_array(transactions_mpt.root(&mut hasher));
 
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Receipts root = {:?}\n", &receipts_root,));
-
-        let _ = system.get_logger().write_fmt(format_args!(
-            "Transactions root = {:?}\n",
-            &transactions_root,
-        ));
-
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Block bloom =\n",));
-
+        system_log!(system, "Receipts root = {:?}\n", &receipts_root);
+        system_log!(system, "Transactions root = {:?}\n", &transactions_root);
+        system_log!(system, "Block bloom =\n");
         let _ = system
             .get_logger()
             .log_data(block_bloom.as_bytes().iter().copied());
-
-        let _ = system.get_logger().write_fmt(format_args!("\n",));
+        system_log!(system, "\n");
 
         EthereumBasicTransactionDataKeeperHeaderValues {
             block_gas_used,

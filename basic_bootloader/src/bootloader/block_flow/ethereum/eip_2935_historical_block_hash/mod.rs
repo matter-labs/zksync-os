@@ -14,6 +14,7 @@ use zk_ee::system::IOSubsystemExt;
 use zk_ee::system::Resources;
 use zk_ee::system::System;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystem};
+use zk_ee::system_log;
 use zk_ee::utils::Bytes32;
 
 pub const HISTORY_STORAGE_ADDRESS: B160 =
@@ -49,9 +50,7 @@ where
     let block_number = system.get_block_number();
     let parent_hash = system.get_blockhash(block_number - 1)?;
 
-    let _ = system
-        .get_logger()
-        .write_fmt(format_args!("EIP-2935 parent hash = {:?}\n", &parent_hash,));
+    system_log!(system, "EIP-2935 parent hash = {:?}\n", &parent_hash);
 
     let slot_idx = (block_number - 1) % HISTORY_SERVE_WINDOW;
     let mut slot = Bytes32::ZERO;

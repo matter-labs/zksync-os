@@ -84,11 +84,8 @@ where
                         .expect("must heat coinbase");
                 }
 
-                let mut logger: <S as SystemTypes>::Logger = system.get_logger();
-                let _ = logger.write_fmt(format_args!("====================================\n"));
-                let _ = logger.write_fmt(format_args!(
-                    "TX execution begins for transaction {tx_counter}\n",
-                ));
+                system_log!(system, "====================================\n");
+                system_log!(system, "TX execution begins for transaction {tx_counter}\n");
                 // all precompiles must be formally warm
                 {
                     for address_low in system_functions.all_call_hooked_addresses_iter() {
@@ -126,48 +123,32 @@ where
 
                 match tx_result {
                     Err(TxError::Internal(err)) => {
-                        let _ = system.get_logger().write_fmt(format_args!(
-                            "Tx execution result: Internal error = {err:?}\n",
-                        ));
+                        system_log!(system, "Tx execution result: Internal error = {err:?}\n");
                         return Err(err);
                     }
                     Err(TxError::Validation(err)) => {
-                        let _ = system.get_logger().write_fmt(format_args!(
-                            "Tx execution result: Validation error = {err:?}\n",
-                        ));
+                        system_log!(system, "Tx execution result: Validation error = {err:?}\n");
                         result_keeper.tx_processed(Err(err));
                     }
                     Ok(result) => {
                         let tx_processing_result = result.into_bookkeeper_output();
-                        let _ = system.get_logger().write_fmt(format_args!(
-                            "Tx execution result = {:?}\n",
-                            &tx_processing_result,
-                        ));
+                        system_log!(system, "Tx execution result = {:?}\n", &tx_processing_result);
                         // anything that is not related to actual validity
                         result_keeper.tx_processed(Ok(tx_processing_result));
                         system.finish_valid_tx()?;
                     }
                 }
 
-                let mut logger = system.get_logger();
-                let _ = logger.write_fmt(format_args!(
-                    "TX execution ends for transaction {tx_counter}\n",
-                ));
-                let _ = logger.write_fmt(format_args!("====================================\n"));
+                system_log!(system, "TX execution ends for transaction {tx_counter}\n");
+                system_log!(system, "====================================\n");
 
                 tx_counter += 1;
             }
         }
     }
 
-    let _ = system
-        .get_logger()
-        .write_fmt(format_args!("Bootloader completed\n"));
-
-    let mut logger = system.get_logger();
-    let _ = logger.write_fmt(format_args!(
-        "Bootloader execution is complete, will proceed with applying changes\n"
-    ));
+    system_log!(system, "Bootloader completed\n");
+    system_log!(system, "Bootloader execution is complete, will proceed with applying changes\n");
 
     cycle_marker::end!("run_tx_loop");
 
