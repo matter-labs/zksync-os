@@ -173,9 +173,6 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
         };
 
         // Resources are checked and spent, so we continue with actual transition of control flow to the callee
-        let _ = self.system.get_logger().write_fmt(format_args!(
-            "HEEREEEEEEEEEEEE before on_new_execution_frame",
-        ));
         tracer.on_new_execution_frame(&external_call_launch_params);
 
         let callee_frame_execution_result = self.execute_call(
