@@ -253,22 +253,19 @@ pub fn sign_and_encode_transaction_request(
 }
 
 /// Helper wrapper representing the RLP *body* of a service tx:
-/// [gas_limit, to, data]
+/// [to, data]
 struct ServiceTxBody<'a> {
-    gas_limit: u64,
     to: &'a [u8; 20],
     data: &'a [u8],
 }
 
 enum ServiceTxField<'b> {
-    U64(u64),
     Bytes(&'b [u8]),
 }
 
 impl<'b> Encodable for ServiceTxField<'b> {
     fn encode(&self, out: &mut dyn BufMut) {
         match self {
-            ServiceTxField::U64(v) => v.encode(out),
             ServiceTxField::Bytes(b) => (*b).encode(out),
         }
     }
@@ -277,7 +274,6 @@ impl<'b> Encodable for ServiceTxField<'b> {
 impl<'a> Encodable for ServiceTxBody<'a> {
     fn encode(&self, out: &mut dyn BufMut) {
         let fields = vec![
-            ServiceTxField::U64(self.gas_limit),
             ServiceTxField::Bytes(self.to.as_slice()),
             ServiceTxField::Bytes(self.data),
         ];
@@ -289,12 +285,8 @@ impl<'a> Encodable for ServiceTxBody<'a> {
 ///
 /// Encode a service transaction
 ///
-pub fn encode_service_tx(gas_limit: u64, to: &[u8; 20], data: &[u8]) -> EncodedTx {
-    let body = ServiceTxBody {
-        gas_limit,
-        to,
-        data,
-    };
+pub fn encode_service_tx(to: &[u8; 20], data: &[u8]) -> EncodedTx {
+    let body = ServiceTxBody { to, data };
     let rlp_body = encode(&body);
     let mut out = Vec::with_capacity(1 + rlp_body.len());
     out.push(SERVICE_TX_TYPE);
