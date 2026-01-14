@@ -3,6 +3,7 @@
 
 mod context;
 mod field;
+pub mod hooks;
 mod points;
 mod recover;
 mod scalars;
@@ -14,7 +15,11 @@ use core::fmt::Debug;
 use core::fmt::Display;
 
 pub use context::ECMultContext;
+pub use field::FieldElement;
+pub use points::Affine;
+pub use recover::ecmult;
 pub use recover::recover_with_context;
+pub use scalars::Scalar;
 
 #[cfg(feature = "secp256k1-static-context")]
 pub use recover::recover;
@@ -53,6 +58,8 @@ impl Display for Secp256k1Err {
 
 #[cfg(feature = "secp256k1-static-context")]
 pub fn ecrecover_test() {
+    use hooks::DefaultSecp256k1Hooks;
+
     use crate::k256::{
         ecdsa::{hazmat::bits2field, SigningKey},
         elliptic_curve::{group::GroupEncoding, ops::Reduce},
@@ -87,7 +94,8 @@ pub fn ecrecover_test() {
             .unwrap(),
     );
 
-    let recovered_key = recover(&msg, &signature, &recovery_id).unwrap();
+    let recovered_key =
+        recover(&msg, &signature, &recovery_id, &mut DefaultSecp256k1Hooks).unwrap();
 
     assert_eq!(recovered_key.to_bytes(), public_key.to_bytes());
 }

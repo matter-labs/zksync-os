@@ -1,3 +1,4 @@
+use crypto::secp256k1::hooks::DefaultSecp256k1Hooks;
 use crypto::secp256k1::recover;
 use crypto::{
     k256::elliptic_curve::{ops::Reduce, rand_core::OsRng},
@@ -64,7 +65,7 @@ fn selftest() {
                 .unwrap(),
         );
 
-        let recovered_key = recover(&msg, &signature, &recovery_id).unwrap();
+        let recovered_key = recover(&msg, &signature, &recovery_id, &mut DefaultSecp256k1Hooks).unwrap();
 
         prop_assert_eq!(recovered_key.to_bytes(), public_key.to_bytes());
     })

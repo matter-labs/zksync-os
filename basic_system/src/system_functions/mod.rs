@@ -6,6 +6,7 @@ pub mod bn254_ecadd;
 pub mod bn254_ecmul;
 pub mod bn254_pairing_check;
 pub mod ecrecover;
+pub mod field_ops;
 pub mod keccak256;
 pub mod modexp;
 pub mod p256_verify;
@@ -34,7 +35,6 @@ pub struct NoStdSystemFunctions;
 impl<R: Resources> SystemFunctions<R> for NoStdSystemFunctions {
     type Keccak256 = keccak256::Keccak256Impl;
     type Sha256 = sha256::Sha256Impl;
-    type Secp256k1ECRecover = ecrecover::EcRecoverImpl;
     type Secp256k1AddProjective = MissingSystemFunction;
     type Secp256k1MulProjective = MissingSystemFunction;
     type Secp256r1AddProjective = MissingSystemFunction;
@@ -48,5 +48,6 @@ impl<R: Resources> SystemFunctions<R> for NoStdSystemFunctions {
 }
 
 impl<R: Resources> SystemFunctionsExt<R> for NoStdSystemFunctions {
+    type Secp256k1ECRecover = ecrecover::EcRecoverImpl;
     type ModExp = modexp::ModExpImpl;
 }

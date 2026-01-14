@@ -25,7 +25,7 @@ use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::resources::Computational;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{errors::system::SystemError, EthereumLikeTypes, System};
-use zk_ee::system::{AccountDataRequest, SystemFunctions};
+use zk_ee::system::{AccountDataRequest, SystemFunctionsExt};
 use zk_ee::system::{Ergs, IOSubsystemExt, Resources};
 use zk_ee::system::{IOSubsystem, NonceError};
 use zk_ee::system::{Resource, SystemTypes};
@@ -201,14 +201,18 @@ where
 
             let mut ecrecover_output = ArrayBuilder::default();
             // We already charged gas for ecrecover in intrinsic cost, so we only need to charge native resources here.
+            let mut logger = system.get_logger();
+            let allocator = system.get_allocator();
             tx_resources
                 .main_resources
                 .with_infinite_ergs(|resources| {
-                    S::SystemFunctions::secp256k1_ec_recover(
+                    S::SystemFunctionsExt::secp256k1_ec_recover(
                         ecrecover_input.as_slice(),
                         &mut ecrecover_output,
                         resources,
-                        system.get_allocator(),
+                        system.io.oracle(),
+                        &mut logger,
+                        allocator,
                     )
                     .map_err(SystemError::from)
                 })?;

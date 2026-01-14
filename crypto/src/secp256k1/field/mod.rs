@@ -227,6 +227,7 @@ impl FieldElement {
 
         is_root.normalizes_to_zero()
     }
+
     pub fn negate_in_place(&mut self, magnitude: u32) {
         self.0.negate_in_place(magnitude);
     }

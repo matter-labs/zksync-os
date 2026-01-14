@@ -128,10 +128,10 @@ pub fn add_precompiles<S: EthereumLikeTypes, A: Allocator + Clone>(
 where
     S::IO: IOSubsystemExt,
 {
-    add_precompile::<
+    add_precompile_ext::<
         _,
         _,
-        <S::SystemFunctions as SystemFunctions<_>>::Secp256k1ECRecover,
+        <S::SystemFunctionsExt as SystemFunctionsExt<_>>::Secp256k1ECRecover,
         Secp256k1ECRecoverErrors,
     >(hooks, ECRECOVER_HOOK_ADDRESS_LOW)?;
     add_precompile::<_, _, <S::SystemFunctions as SystemFunctions<_>>::Sha256, Sha256Errors>(

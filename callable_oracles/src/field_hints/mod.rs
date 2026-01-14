@@ -1,3 +1,9 @@
+//! Oracle query processors for secp256k1 field operations (sqrt, inverse).
+//!
+//! Provides two implementations:
+//! - [`FieldOpsQuery`]: Reads operands from simulated RISC-V memory.
+//! - [`NativeFieldOpsQuery`]: Reads operands directly from native memory (for host execution).
+
 use basic_system::system_functions::field_ops::{FieldHintOp, FieldOpsHint};
 use basic_system::system_functions::field_ops::{FieldOpsHint64, FIELD_OPS_ADVISE_QUERY_ID};
 use oracle_provider::OracleQueryProcessor;

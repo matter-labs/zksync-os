@@ -19,6 +19,7 @@
 
 pub mod arithmetic;
 pub mod blob_kzg_commitment;
+pub mod field_hints;
 pub mod utils;
 
 use zk_ee::{
@@ -57,4 +58,14 @@ impl UsizeDeserializable for MemoryRegionDescriptionParams {
 
         Ok(new)
     }
+}
+
+#[inline(always)]
+unsafe fn read_u64_words(ptr_u64: u64, len_words_u64: u64) -> Vec<u64> {
+    if ptr_u64 == 0 || len_words_u64 == 0 {
+        return vec![];
+    }
+    let addr = ptr_u64 as usize;
+    let len_words = len_words_u64 as usize;
+    core::slice::from_raw_parts(addr as *const u64, len_words).to_vec()
 }

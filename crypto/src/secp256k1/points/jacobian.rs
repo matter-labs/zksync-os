@@ -1,4 +1,7 @@
-use crate::secp256k1::field::{FieldElement, FieldElementConst};
+use crate::secp256k1::{
+    field::{FieldElement, FieldElementConst},
+    hooks::Secp256k1Hooks,
+};
 
 use super::{affine::AffineConst, Affine, AffineStorage};
 
@@ -174,7 +177,7 @@ impl JacobianConst {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Jacobian {
+pub struct Jacobian {
     pub(crate) x: FieldElement,
     pub(crate) y: FieldElement,
     pub(crate) z: FieldElement,
@@ -206,7 +209,7 @@ impl Jacobian {
         self.z.normalizes_to_zero()
     }
 
-    pub(crate) fn to_affine(self) -> Affine {
+    pub(crate) fn to_affine<H: Secp256k1Hooks>(self, hooks: &mut H) -> Affine {
         self.assert_verify();
 
         if self.is_infinity() {
@@ -214,7 +217,7 @@ impl Jacobian {
         }
 
         let mut zi = self.z;
-        zi.invert_in_place();
+        hooks.fe_invert_and_assign(&mut zi);
 
         let mut ret = Affine {
             x: zi,
@@ -474,6 +477,7 @@ mod tests {
 
     use crate::secp256k1::{
         field::{FieldElement, FieldElementConst},
+        hooks::DefaultSecp256k1Hooks,
         points::{affine::AffineConst, Affine, Jacobian},
         test_vectors::ADD_TEST_VECTORS,
     };
@@ -522,21 +526,24 @@ mod tests {
         let g = Affine::GENERATOR;
         let mut a = Jacobian::INFINITY;
         a.add_ge_in_place(Affine::INFINITY, None);
-        assert_eq!(a.to_affine(), Affine::INFINITY);
+        assert_eq!(a.to_affine(&mut DefaultSecp256k1Hooks), Affine::INFINITY);
 
         a.add_ge_in_place(g, None);
-        assert_eq!(a.to_affine(), g);
+        assert_eq!(a.to_affine(&mut DefaultSecp256k1Hooks), g);
 
         let mut g2 = g.to_jacobian();
         g2.add_ge_in_place(g, None);
         let mut g4 = g2;
-        g4.add_ge_in_place(g2.to_affine(), None);
+        g4.add_ge_in_place(g2.to_affine(&mut DefaultSecp256k1Hooks), None);
 
         let mut g4_double = g.to_jacobian();
         g4_double.double_in_place(None);
         g4_double.double_in_place(None);
 
-        assert_eq!(g4.to_affine(), g4_double.to_affine());
+        assert_eq!(
+            g4.to_affine(&mut DefaultSecp256k1Hooks),
+            g4_double.to_affine(&mut DefaultSecp256k1Hooks)
+        );
     }
 
     #[test]
@@ -562,7 +569,7 @@ mod tests {
         let mut p = g.to_jacobian();
 
         for i in 0..ADD_TEST_VECTORS.len() {
-            let a = p.to_affine();
+            let a = p.to_affine(&mut DefaultSecp256k1Hooks);
 
             let expected = Affine {
                 x: FieldElement::from_bytes(&ADD_TEST_VECTORS[i].0).unwrap(),
@@ -608,13 +615,13 @@ mod tests {
         tt.double_in_place(None);
         tt.double_in_place(None);
 
-        let tt = tt.to_affine();
+        let tt = tt.to_affine(&mut DefaultSecp256k1Hooks);
 
         // t = 5G + 3G
         let mut t = ECRECOVER_CONTEXT.pre_g[2].to_affine().to_jacobian();
         t.add_ge_in_place(ECRECOVER_CONTEXT.pre_g[1].to_affine(), None);
 
-        let t = t.to_affine();
+        let t = t.to_affine(&mut DefaultSecp256k1Hooks);
         assert_eq!(t, tt);
     }
 
@@ -625,14 +632,14 @@ mod tests {
             t.add_zinv_in_place(Affine { x: b.x, y: b.y, infinity: false}, &b.z);
 
             let mut tt = a;
-            tt.add_ge_in_place(b.to_affine(), None);
+            tt.add_ge_in_place(b.to_affine(&mut DefaultSecp256k1Hooks), None);
 
-            prop_assert_eq!(t.to_affine(), tt.to_affine());
+            prop_assert_eq!(t.to_affine(&mut DefaultSecp256k1Hooks), tt.to_affine(&mut DefaultSecp256k1Hooks));
 
             let mut t = Jacobian::INFINITY;
-            let a = a.to_affine();
+            let a = a.to_affine(&mut DefaultSecp256k1Hooks);
             t.add_zinv_in_place(a, &FieldElement::ONE);
-            assert_eq!(t.to_affine(), a);
+            assert_eq!(t.to_affine(&mut DefaultSecp256k1Hooks), a);
         })
     }
 }
