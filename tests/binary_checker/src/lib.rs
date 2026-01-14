@@ -1,5 +1,3 @@
-#![feature(array_chunks)]
-
 #[cfg(test)]
 mod tests {
     use std::{io::Read, path::PathBuf, str::FromStr};
@@ -17,7 +15,9 @@ mod tests {
         assert!(binary.len() % 4 == 0);
 
         binary
-            .array_chunks()
+            .as_chunks()
+            .0
+            .iter()
             .map(|el| u32::from_le_bytes(*el))
             .collect()
     }

@@ -1,7 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
-#![feature(array_chunks)]
 #![feature(allocator_api)]
 #![allow(clippy::result_unit_err)]
 #![allow(clippy::needless_lifetimes)]

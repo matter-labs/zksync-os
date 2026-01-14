@@ -52,7 +52,7 @@ fn ecrecover_as_system_function_inner<
 
     // follow https://github.com/ethereum/go-ethereum/blob/aadcb886753079d419f966a3bc990f708f8d1c3b/core/vm/contracts.go#L188
 
-    let mut it = buffer.array_chunks::<32>();
+    let mut it = buffer.as_chunks::<32>().0.iter();
     let recovered_pubkey_bytes = unsafe {
         let digest = it.next().unwrap_unchecked();
         let v = it.next().unwrap_unchecked();

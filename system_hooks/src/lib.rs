@@ -1,6 +1,5 @@
 #![cfg_attr(target_arch = "riscv32", no_std)]
 #![feature(allocator_api)]
-#![feature(array_chunks)]
 #![feature(get_mut_unchecked)]
 #![feature(const_type_id)]
 #![feature(vec_push_within_capacity)]
