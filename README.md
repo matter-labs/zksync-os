@@ -147,4 +147,4 @@ at your option.
 - [Twitter for Developers](https://twitter.com/zkSyncDevs)
 - [Discord](https://join.zksync.dev/)
 - [Mirror](https://zksync.mirror.xyz/)
-- [Youtube](https://www.youtube.com/@zkSync-era)
+- [Youtube](https://youtube.com/@zksync-io)
