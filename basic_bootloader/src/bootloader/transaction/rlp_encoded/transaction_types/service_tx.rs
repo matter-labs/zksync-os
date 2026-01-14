@@ -12,7 +12,6 @@ use system_hooks::addresses_constants::{L2_INTEROP_ROOT_STORAGE_ADDRESS, SYSTEM_
 ///
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ServiceTx<'a> {
-    pub(crate) gas_limit: u64,
     pub(crate) to: &'a [u8; 20], // NOTE: has to be one of the addresses in SERVICE_DESTINATION_WHITELIST
     pub(crate) data: &'a [u8],
 }
@@ -27,11 +26,9 @@ impl<'a> EthereumTxType for ServiceTx<'a> {
 }
 
 impl<'a> RlpListDecode<'a> for ServiceTx<'a> {
-    /// Decode the 3-field list body:
-    /// [gas_limit, destination, data]
+    /// Decode the 2-field list body:
+    /// [destination, data]
     fn decode_list_body(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
-        let gas_limit = r.u64()?;
-
         let to_slice = r.bytes()?;
         if to_slice.len() != 20 {
             return Err(InvalidTransaction::InvalidStructure);
@@ -48,11 +45,7 @@ impl<'a> RlpListDecode<'a> for ServiceTx<'a> {
         }
 
         let data = r.bytes()?;
-        Ok(Self {
-            gas_limit,
-            to,
-            data,
-        })
+        Ok(Self { to, data })
     }
 }
 
@@ -63,8 +56,8 @@ mod tests {
     use alloy_rlp::Encodable;
 
     /// Helper to RLP-encode the 3-field ServiceTx body:
-    /// [gas_limit, destination, data]
-    fn encode_service_tx(gas_limit: u64, to: &[u8], data: &[u8]) -> Vec<u8> {
+    /// [destination, data]
+    fn encode_service_tx(to: &[u8], data: &[u8]) -> Vec<u8> {
         let mut buf = Vec::new();
 
         // Temporary placeholder for the list header; we’ll fix it once we know the payload length.
@@ -72,7 +65,6 @@ mod tests {
 
         let start = buf.len();
 
-        gas_limit.encode(&mut buf);
         to.encode(&mut buf);
         data.encode(&mut buf);
 
@@ -86,11 +78,10 @@ mod tests {
 
     #[test]
     fn empty_to_fails() {
-        let gas_limit = 21_000;
         let to: &[u8] = &[]; // RLP empty string -> len() == 0
         let data: &[u8] = &[0x01, 0x02];
 
-        let bytes = encode_service_tx(gas_limit, to, data);
+        let bytes = encode_service_tx(to, data);
 
         let res = ServiceTx::decode_list_full(&bytes);
         assert!(matches!(res, Err(InvalidTransaction::InvalidStructure)));
@@ -98,14 +89,12 @@ mod tests {
 
     #[test]
     fn to_outside_whitelist_fails() {
-        let gas_limit = 50_000;
-
         // Some arbitrary 20-byte address that is not in the whitelist.
         let to_bytes: [u8; 20] = [0x11u8; 20];
 
         let data: &[u8] = &[];
 
-        let bytes = encode_service_tx(gas_limit, &to_bytes, data);
+        let bytes = encode_service_tx(&to_bytes, data);
 
         let res = ServiceTx::decode_list_full(&bytes);
         assert!(matches!(res, Err(InvalidTransaction::InvalidStructure)));
@@ -113,17 +102,14 @@ mod tests {
 
     #[test]
     fn to_in_whitelist_parses() {
-        let gas_limit = 42_000;
-
         let to_bytes: [u8; 20] = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes();
         let data: Vec<u8> = vec![0xde, 0xad, 0xbe, 0xef];
 
-        let bytes = encode_service_tx(gas_limit, &to_bytes, &data);
+        let bytes = encode_service_tx(&to_bytes, &data);
 
         let tx: ServiceTx<'_> =
             ServiceTx::decode_list_full(&bytes).expect("whitelisted address must decode");
 
-        assert_eq!(tx.gas_limit, gas_limit);
         assert_eq!(tx.to, to_bytes.as_slice());
         assert_eq!(tx.data, data.as_slice());
     }

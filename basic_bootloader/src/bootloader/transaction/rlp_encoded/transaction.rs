@@ -11,6 +11,7 @@ use core::alloc::Allocator;
 use super::*;
 use ruint::aliases::{B160, U256};
 use transaction_types::eip_4844_tx::BlobHashesList;
+use zk_ee::system::MAX_TX_GAS_LIMIT;
 use zk_ee::system::{Resources, GAS_PER_BLOB};
 use zk_ee::utils::UsizeAlignedByteBox;
 
@@ -248,7 +249,7 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
             RlpEncodedTxInner::EIP1559(tx, _) => tx.gas_limit,
             RlpEncodedTxInner::EIP4844(tx, _) => tx.gas_limit,
             RlpEncodedTxInner::EIP7702(tx, _) => tx.gas_limit,
-            RlpEncodedTxInner::Service(tx) => tx.gas_limit,
+            RlpEncodedTxInner::Service(_) => MAX_TX_GAS_LIMIT,
         }
     }
 
