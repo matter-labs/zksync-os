@@ -55,7 +55,7 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
         query_id: u32,
         _query: Vec<usize>,
         _memory: &M,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         match query_id {

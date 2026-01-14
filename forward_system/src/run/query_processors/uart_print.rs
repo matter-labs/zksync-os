@@ -30,7 +30,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for UARTPrintResponder {
         query_id: u32,
         query: Vec<usize>,
         _memory: &M,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         let u32_vec: Vec<u32> = query

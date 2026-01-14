@@ -32,7 +32,7 @@ impl<PS: PreimageSource, M: MemorySource> OracleQueryProcessor<M> for GenericPre
         query_id: u32,
         query: Vec<usize>,
         _memory: &M,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
         let hash = Bytes32::from_iter(&mut query.into_iter()).expect("must deserialize hash value");

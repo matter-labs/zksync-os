@@ -36,7 +36,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BlobCommitmentAndProofQuery<M>
         query_id: u32,
         query: Vec<usize>,
         memory: &M,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
         // this query processor supposed to work only on "host" architecture, which is always 64 bit
