@@ -963,6 +963,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
         );
         oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
+        oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
         oracle.add_external_processor(UARTPrintResponder);
 
         oracle

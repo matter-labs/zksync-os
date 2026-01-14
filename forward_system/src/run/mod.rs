@@ -163,6 +163,7 @@ pub fn generate_proof_input_from_bytes<T: ReadStorageTree, PS: PreimageSource, T
     oracle.add_external_processor(
         callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
     );
+    oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
     oracle.add_external_processor(UARTPrintResponder);
 
     // We'll wrap the source, to collect all the reads.
@@ -308,6 +309,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     oracle.add_external_processor(
         callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
     );
+    oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
 
     if add_uart {
         let uart_responder = UARTPrintResponder;
@@ -405,6 +407,7 @@ pub fn run_block_with_oracle_dump_ext<
     oracle.add_external_processor(
         callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
     );
+    oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
     oracle.add_external_processor(UARTPrintResponder);
 
     let mut result_keeper = ForwardRunningResultKeeper::new(tx_result_callback);
@@ -454,6 +457,7 @@ pub fn run_block_from_oracle_dump<
     oracle.add_external_processor(
         callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
     );
+    oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
