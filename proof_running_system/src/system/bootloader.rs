@@ -221,6 +221,7 @@ pub fn run_proving_inner<
                 oracle,
                 &mut NopResultKeeper,
                 &mut NopTracer::default(),
+                &mut NopTxValidator,
             )
             .expect("Tried to prove a failing batch");
         oracle = io.apply_to_batch(
