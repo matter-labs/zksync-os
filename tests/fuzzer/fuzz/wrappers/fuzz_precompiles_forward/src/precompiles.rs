@@ -14,6 +14,21 @@ use zk_ee::reference_implementations::DecreasingNative;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::base_system_functions::{Bn254AddErrors,Sha256Errors,RipeMd160Errors,Keccak256Errors,
 Bn254MulErrors,P256VerifyErrors,Secp256k1ECRecoverErrors,Bn254PairingCheckErrors,PointEvaluationErrors};
+use zk_ee::system::logger::NullLogger;
+
+struct DummyOracle;
+
+impl zk_ee::oracle::IOOracle for DummyOracle {
+    type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+
+    fn raw_query<'a, I: zk_ee::oracle::usize_serialization::UsizeSerializable + zk_ee::oracle::usize_serialization::UsizeDeserializable>(
+        &'a mut self,
+        _query_type: u32,
+        _input: &I,
+    ) -> Result<Self::RawIterator<'a>, zk_ee::system::errors::internal::InternalError> {
+        unreachable!("oracle should not be consulted on native targets");
+    }
+}
 
 pub fn ecadd(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Bn254AddErrors>> {
     let allocator = std::alloc::Global;
@@ -54,7 +69,7 @@ pub fn p256_verify(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<P
 pub fn ecrecover(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Secp256k1ECRecoverErrors>> {
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
-    EcRecoverImpl::execute(&src, dst, &mut resource, allocator)
+    EcRecoverImpl::execute(&src, dst, &mut resource, &mut DummyOracle, &mut NullLogger, allocator)
 }
 
 pub fn pairing(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Bn254PairingCheckErrors>> {
