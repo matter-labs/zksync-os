@@ -290,4 +290,372 @@ mod tests {
             prop_assert_eq!(scalar_default.to_repr(), scalar_oracle.to_repr(), "scalar inverse values should match");
         });
     }
+
+    /// Tests that verify the validation logic catches lying oracles.
+    /// These tests ensure that incorrect oracle responses are rejected.
+    mod malicious_oracle_tests {
+        use super::*;
+        use oracle_provider::{MemorySource, OracleQueryProcessor};
+        use proptest::prop_assert;
+
+        /// Ways to corrupt oracle responses
+        enum Corruption {
+            /// Return all zeros
+            ReturnZero,
+            /// Flip the least significant bit of the result
+            FlipLsb,
+            /// Add 1 to the result (wrapping)
+            AddOne,
+            /// Return a fixed arbitrary value
+            ReturnArbitrary([u8; 32]),
+        }
+
+        impl Corruption {
+            fn apply(&self, data: &mut [u8]) {
+                match self {
+                    Corruption::ReturnZero => data.fill(0),
+                    Corruption::FlipLsb => {
+                        if !data.is_empty() {
+                            data[data.len() - 1] ^= 1;
+                        }
+                    }
+                    Corruption::AddOne => {
+                        // Add 1 with carry propagation (big-endian)
+                        let mut carry = 1u16;
+                        for byte in data.iter_mut().rev() {
+                            let sum = *byte as u16 + carry;
+                            *byte = sum as u8;
+                            carry = sum >> 8;
+                        }
+                    }
+                    Corruption::ReturnArbitrary(val) => {
+                        data.copy_from_slice(val);
+                    }
+                }
+            }
+        }
+
+        /// A malicious oracle processor that wraps a correct one and corrupts its output
+        struct LyingFieldOpsQuery<M: MemorySource> {
+            inner: callable_oracles::field_hints::NativeFieldOpsQuery<M>,
+            corruption: Corruption,
+            /// If set, lie about sqrt existence (flip the boolean)
+            lie_about_sqrt_existence: bool,
+        }
+
+        impl<M: MemorySource> LyingFieldOpsQuery<M> {
+            fn new(corruption: Corruption) -> Self {
+                Self {
+                    inner: callable_oracles::field_hints::NativeFieldOpsQuery::default(),
+                    corruption,
+                    lie_about_sqrt_existence: false,
+                }
+            }
+
+            fn with_sqrt_existence_lie(mut self) -> Self {
+                self.lie_about_sqrt_existence = true;
+                self
+            }
+        }
+
+        impl<M: MemorySource> OracleQueryProcessor<M> for LyingFieldOpsQuery<M> {
+            fn supported_query_ids(&self) -> Vec<u32> {
+                self.inner.supported_query_ids()
+            }
+
+            fn process_buffered_query(
+                &mut self,
+                query_id: u32,
+                query: Vec<usize>,
+                memory: &M,
+            ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+                // Get the correct response
+                let correct_iter = self.inner.process_buffered_query(query_id, query, memory);
+                let correct_response: Vec<usize> = correct_iter.collect();
+
+                // Determine if this is a sqrt query (returns Bytes32 + bool) or inverse query (returns Bytes32)
+                // sqrt response: 4 usize for Bytes32 + 1 usize for bool = 5 usize
+                // inverse response: 4 usize for Bytes32 = 4 usize
+                let is_sqrt_query = correct_response.len() == 5;
+
+                let mut corrupted = correct_response.clone();
+
+                if is_sqrt_query && self.lie_about_sqrt_existence {
+                    // Flip the boolean (last element)
+                    corrupted[4] ^= 1;
+                } else {
+                    // Corrupt the Bytes32 result (first 4 usize = 32 bytes)
+                    let mut bytes = [0u8; 32];
+                    for (i, &word) in corrupted[..4].iter().enumerate() {
+                        bytes[i * 8..(i + 1) * 8].copy_from_slice(&word.to_le_bytes());
+                    }
+                    self.corruption.apply(&mut bytes);
+                    for (i, chunk) in bytes.chunks(8).enumerate() {
+                        corrupted[i] = usize::from_le_bytes(chunk.try_into().unwrap());
+                    }
+                }
+
+                Box::new(corrupted.into_iter())
+            }
+        }
+
+        fn create_lying_oracle(
+            corruption: Corruption,
+        ) -> ZkEENonDeterminismSource<DummyMemorySource> {
+            let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
+            oracle.add_external_processor(LyingFieldOpsQuery::<DummyMemorySource>::new(corruption));
+            oracle
+        }
+
+        fn create_sqrt_existence_lying_oracle() -> ZkEENonDeterminismSource<DummyMemorySource> {
+            let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
+            oracle.add_external_processor(
+                LyingFieldOpsQuery::<DummyMemorySource>::new(Corruption::ReturnZero)
+                    .with_sqrt_existence_lie(),
+            );
+            oracle
+        }
+
+        // A known valid field element for testing (small value, definitely in field)
+        fn test_field_element() -> FieldElement {
+            let mut bytes = [0u8; 32];
+            bytes[31] = 7; // Small non-zero value
+            FieldElement::from_bytes(&bytes).unwrap()
+        }
+
+        fn test_scalar() -> Scalar {
+            use crypto::k256::elliptic_curve::scalar::FromUintUnchecked;
+            let mut bytes = [0u8; 32];
+            bytes[31] = 7;
+            Scalar::from_k256_scalar(crypto::k256::Scalar::from_uint_unchecked(
+                crypto::k256::U256::from_be_slice(&bytes),
+            ))
+        }
+
+        // ============ fe_invert tests ============
+
+        #[test]
+        #[should_panic]
+        fn test_fe_invert_rejects_zero_answer() {
+            let mut oracle = create_lying_oracle(Corruption::ReturnZero);
+            let mut fe = test_field_element();
+            Secp256k1HooksWithOracle::new(&mut oracle).fe_invert_and_assign(&mut fe);
+        }
+
+        #[test]
+        #[should_panic]
+        fn test_fe_invert_rejects_flipped_bit() {
+            let mut oracle = create_lying_oracle(Corruption::FlipLsb);
+            let mut fe = test_field_element();
+            Secp256k1HooksWithOracle::new(&mut oracle).fe_invert_and_assign(&mut fe);
+        }
+
+        #[test]
+        #[should_panic]
+        fn test_fe_invert_rejects_off_by_one() {
+            let mut oracle = create_lying_oracle(Corruption::AddOne);
+            let mut fe = test_field_element();
+            Secp256k1HooksWithOracle::new(&mut oracle).fe_invert_and_assign(&mut fe);
+        }
+
+        #[test]
+        #[should_panic]
+        fn test_fe_invert_rejects_arbitrary_value() {
+            let arbitrary = [0x42u8; 32];
+            let mut oracle = create_lying_oracle(Corruption::ReturnArbitrary(arbitrary));
+            let mut fe = test_field_element();
+            Secp256k1HooksWithOracle::new(&mut oracle).fe_invert_and_assign(&mut fe);
+        }
+
+        // ============ fe_sqrt tests ============
+
+        #[test]
+        #[should_panic]
+        fn test_fe_sqrt_rejects_wrong_sqrt_value() {
+            let mut oracle = create_lying_oracle(Corruption::FlipLsb);
+            let mut fe = test_field_element();
+            Secp256k1HooksWithOracle::new(&mut oracle).fe_sqrt_and_assign(&mut fe);
+        }
+
+        #[test]
+        #[should_panic]
+        fn test_fe_sqrt_rejects_zero_answer() {
+            let mut oracle = create_lying_oracle(Corruption::ReturnZero);
+            let mut fe = test_field_element();
+            Secp256k1HooksWithOracle::new(&mut oracle).fe_sqrt_and_assign(&mut fe);
+        }
+
+        #[test]
+        #[should_panic]
+        fn test_fe_sqrt_rejects_lie_about_existence() {
+            // This test uses an oracle that returns the correct sqrt value but lies
+            // about whether a sqrt exists (flips the boolean)
+            let mut oracle = create_sqrt_existence_lying_oracle();
+            let mut fe = test_field_element();
+            Secp256k1HooksWithOracle::new(&mut oracle).fe_sqrt_and_assign(&mut fe);
+        }
+
+        // ============ scalar_invert tests ============
+
+        #[test]
+        #[should_panic]
+        fn test_scalar_invert_rejects_zero_answer() {
+            let mut oracle = create_lying_oracle(Corruption::ReturnZero);
+            let mut scalar = test_scalar();
+            Secp256k1HooksWithOracle::new(&mut oracle).scalar_invert_and_assign(&mut scalar);
+        }
+
+        #[test]
+        #[should_panic]
+        fn test_scalar_invert_rejects_flipped_bit() {
+            let mut oracle = create_lying_oracle(Corruption::FlipLsb);
+            let mut scalar = test_scalar();
+            Secp256k1HooksWithOracle::new(&mut oracle).scalar_invert_and_assign(&mut scalar);
+        }
+
+        #[test]
+        #[should_panic]
+        fn test_scalar_invert_rejects_off_by_one() {
+            let mut oracle = create_lying_oracle(Corruption::AddOne);
+            let mut scalar = test_scalar();
+            Secp256k1HooksWithOracle::new(&mut oracle).scalar_invert_and_assign(&mut scalar);
+        }
+
+        #[test]
+        #[should_panic]
+        fn test_scalar_invert_rejects_arbitrary_value() {
+            let arbitrary = [0x42u8; 32];
+            let mut oracle = create_lying_oracle(Corruption::ReturnArbitrary(arbitrary));
+            let mut scalar = test_scalar();
+            Secp256k1HooksWithOracle::new(&mut oracle).scalar_invert_and_assign(&mut scalar);
+        }
+
+        // ============ Proptest: random corruptions should be rejected ============
+
+        #[test]
+        fn test_fe_invert_rejects_random_corruptions() {
+            proptest!(|(bytes: [u8; 32], corruption_bytes: [u8; 32])| {
+                let Some(fe) = FieldElement::from_bytes(&bytes) else {
+                    return Ok(());
+                };
+                if fe.normalizes_to_zero() {
+                    return Ok(());
+                }
+
+                // Get the correct inverse first
+                let mut correct_fe = fe;
+                let mut correct_oracle = create_oracle_with_field_ops();
+                Secp256k1HooksWithOracle::new(&mut correct_oracle).fe_invert_and_assign(&mut correct_fe);
+                let correct_inverse = correct_fe.to_bytes();
+
+                // Skip if random corruption happens to equal the correct answer
+                if corruption_bytes == *correct_inverse {
+                    return Ok(());
+                }
+
+                // Now try with the corrupted oracle
+                let mut lying_oracle = create_lying_oracle(Corruption::ReturnArbitrary(corruption_bytes));
+                let mut test_fe = fe;
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    Secp256k1HooksWithOracle::new(&mut lying_oracle).fe_invert_and_assign(&mut test_fe);
+                }));
+
+                // The validation should have caught the lie (panicked)
+                prop_assert!(result.is_err(), "Oracle lie was not detected for input {:?}", bytes);
+            });
+        }
+
+        #[test]
+        fn test_scalar_invert_rejects_random_corruptions() {
+            proptest!(|(bytes: [u8; 32], corruption_bytes: [u8; 32])| {
+                use crypto::k256::elliptic_curve::scalar::FromUintUnchecked;
+                use crypto::k256::elliptic_curve::Curve;
+                use crypto::k256::U256;
+
+                let val = U256::from_be_slice(&bytes);
+                if val >= crypto::k256::Secp256k1::ORDER || val == U256::ZERO {
+                    return Ok(());
+                }
+
+                let scalar = Scalar::from_k256_scalar(
+                    crypto::k256::Scalar::from_uint_unchecked(val)
+                );
+
+                // Get the correct inverse first
+                let mut correct_scalar = scalar;
+                let mut correct_oracle = create_oracle_with_field_ops();
+                Secp256k1HooksWithOracle::new(&mut correct_oracle).scalar_invert_and_assign(&mut correct_scalar);
+                let correct_inverse = correct_scalar.to_repr();
+
+                // Skip if random corruption happens to equal the correct answer
+                if corruption_bytes == *correct_inverse {
+                    return Ok(());
+                }
+
+                // Also skip if corruption_bytes >= ORDER (would fail earlier validation)
+                let corruption_val = U256::from_be_slice(&corruption_bytes);
+                if corruption_val >= crypto::k256::Secp256k1::ORDER {
+                    return Ok(());
+                }
+
+                // Now try with the corrupted oracle
+                let mut lying_oracle = create_lying_oracle(Corruption::ReturnArbitrary(corruption_bytes));
+                let mut test_scalar = scalar;
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    Secp256k1HooksWithOracle::new(&mut lying_oracle).scalar_invert_and_assign(&mut test_scalar);
+                }));
+
+                // The validation should have caught the lie (panicked)
+                prop_assert!(result.is_err(), "Oracle lie was not detected for input {:?}", bytes);
+            });
+        }
+
+        #[test]
+        fn test_fe_sqrt_rejects_random_corruptions() {
+            proptest!(|(bytes: [u8; 32], corruption_bytes: [u8; 32], flip_bool: bool)| {
+                let Some(fe) = FieldElement::from_bytes(&bytes) else {
+                    return Ok(());
+                };
+                if fe.normalizes_to_zero() {
+                    return Ok(());
+                }
+
+                // Get the correct result first
+                let mut correct_fe = fe;
+                let mut correct_oracle = create_oracle_with_field_ops();
+                let correct_exists = Secp256k1HooksWithOracle::new(&mut correct_oracle)
+                    .fe_sqrt_and_assign(&mut correct_fe);
+                let correct_sqrt = correct_fe.to_bytes();
+
+                // Test 1: Corrupt the sqrt candidate value
+                // Skip if random corruption happens to equal the correct answer
+                if corruption_bytes != *correct_sqrt {
+                    let mut lying_oracle = create_lying_oracle(Corruption::ReturnArbitrary(corruption_bytes));
+                    let mut test_fe = fe;
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        Secp256k1HooksWithOracle::new(&mut lying_oracle).fe_sqrt_and_assign(&mut test_fe);
+                    }));
+
+                    // The validation should have caught the lie (panicked)
+                    prop_assert!(result.is_err(),
+                        "Oracle lie about sqrt candidate was not detected for input {:?}", bytes);
+                }
+
+                // Test 2: Lie about sqrt existence (flip the boolean)
+                // Only test if flip_bool is true to reduce test cases
+                if flip_bool {
+                    let mut lying_oracle = create_sqrt_existence_lying_oracle();
+                    let mut test_fe = fe;
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        Secp256k1HooksWithOracle::new(&mut lying_oracle).fe_sqrt_and_assign(&mut test_fe);
+                    }));
+
+                    // The validation should have caught the lie about existence (panicked)
+                    prop_assert!(result.is_err(),
+                        "Oracle lie about sqrt existence was not detected for input {:?} (is_qr={})",
+                        bytes, correct_exists);
+                }
+            });
+        }
+    }
 }
