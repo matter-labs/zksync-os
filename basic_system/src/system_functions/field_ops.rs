@@ -205,3 +205,89 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
         *x = inverse;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use callable_oracles::field_hints::NativeFieldOpsQuery;
+    use crypto::secp256k1::hooks::{DefaultSecp256k1Hooks, Secp256k1Hooks};
+    use oracle_provider::{DummyMemorySource, ZkEENonDeterminismSource};
+    use proptest::{prop_assert_eq, proptest};
+
+    fn create_oracle_with_field_ops() -> ZkEENonDeterminismSource<DummyMemorySource> {
+        let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
+        oracle.add_external_processor(NativeFieldOpsQuery::<DummyMemorySource>::default());
+        oracle
+    }
+
+    #[test]
+    fn test_fe_sqrt_oracle_matches_default() {
+        proptest!(|(bytes: [u8; 32])| {
+            let Some(fe) = FieldElement::from_bytes(&bytes) else {
+                return Ok(());
+            };
+            if fe.normalizes_to_zero() {
+                return Ok(());
+            }
+
+            let mut fe_default = fe;
+            let result_default = DefaultSecp256k1Hooks.fe_sqrt_and_assign(&mut fe_default);
+
+            let mut oracle = create_oracle_with_field_ops();
+            let mut fe_oracle = fe;
+            let result_oracle = Secp256k1HooksWithOracle::new(&mut oracle)
+                .fe_sqrt_and_assign(&mut fe_oracle);
+
+            prop_assert_eq!(result_default, result_oracle, "sqrt existence should match");
+            prop_assert_eq!(fe_default.to_bytes(), fe_oracle.to_bytes(), "sqrt values should match");
+        });
+    }
+
+    #[test]
+    fn test_fe_invert_oracle_matches_default() {
+        proptest!(|(bytes: [u8; 32])| {
+            let Some(fe) = FieldElement::from_bytes(&bytes) else {
+                return Ok(());
+            };
+            if fe.normalizes_to_zero() {
+                return Ok(());
+            }
+
+            let mut fe_default = fe;
+            DefaultSecp256k1Hooks.fe_invert_and_assign(&mut fe_default);
+
+            let mut oracle = create_oracle_with_field_ops();
+            let mut fe_oracle = fe;
+            Secp256k1HooksWithOracle::new(&mut oracle).fe_invert_and_assign(&mut fe_oracle);
+
+            prop_assert_eq!(fe_default.to_bytes(), fe_oracle.to_bytes(), "inverse values should match");
+        });
+    }
+
+    #[test]
+    fn test_scalar_invert_oracle_matches_default() {
+        proptest!(|(bytes: [u8; 32])| {
+            use crypto::k256::elliptic_curve::scalar::FromUintUnchecked;
+            use crypto::k256::elliptic_curve::Curve;
+            use crypto::k256::U256;
+
+            let val = U256::from_be_slice(&bytes);
+            if val >= crypto::k256::Secp256k1::ORDER || val == U256::ZERO {
+                return Ok(());
+            }
+
+            let scalar = Scalar::from_k256_scalar(
+                crypto::k256::Scalar::from_uint_unchecked(val)
+            );
+
+            let mut scalar_default = scalar;
+            DefaultSecp256k1Hooks.scalar_invert_and_assign(&mut scalar_default);
+
+            let mut oracle = create_oracle_with_field_ops();
+            let mut scalar_oracle = scalar;
+            Secp256k1HooksWithOracle::new(&mut oracle).scalar_invert_and_assign(&mut scalar_oracle);
+
+            prop_assert_eq!(scalar_default.to_repr(), scalar_oracle.to_repr(), "scalar inverse values should match");
+        });
+    }
+}
