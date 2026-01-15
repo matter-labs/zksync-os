@@ -55,8 +55,9 @@ pub(crate) fn compute_gas_refund<S: EthereumLikeTypes>(
     #[allow(unused_mut)]
     let mut gas_used = core::cmp::max(gas_used, minimal_gas_used);
 
-    let full_native_limit = if cfg!(feature = "unlimited_native") {
-        u64::MAX
+    // Note: for zero gas price, we use "unlimited native"
+    let full_native_limit = if cfg!(feature = "unlimited_native") || native_per_gas == 0 {
+        u64::MAX - 1
     } else {
         gas_limit.saturating_mul(native_per_gas)
     };

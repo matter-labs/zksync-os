@@ -204,7 +204,19 @@ fn test_gas_price_zero_fee_zero() {
         eip1559_basefee: U256::ZERO,
         ..BlockContext::default()
     };
-    run_block_of_erc20_with_fee(&mut chain, 10, Some(block_context), 0);
+    let output = run_block_of_erc20_with_fee(&mut chain, 10, Some(block_context), 0);
+    let res_0 = output
+        .tx_results
+        .first()
+        .cloned()
+        .expect("Must have first result")
+        .expect("Must be valid");
+
+    // Regression check, at some point txs with 0 gas price were returning 0 native used.
+    assert!(
+        res_0.native_used > 0,
+        "Native used must be greater than zero"
+    );
 }
 
 #[test]
