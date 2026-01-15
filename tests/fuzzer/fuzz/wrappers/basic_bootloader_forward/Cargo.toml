@@ -1,0 +1,37 @@
+[package]
+name = "basic_bootloader_forward"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "../../../../../basic_bootloader/src/lib.rs"
+
+[dependencies]
+zk_ee = { package = "zk_ee_forward", path = "../zk_ee_forward", default-features = false }
+cycle_marker = { path = "../../../../../cycle_marker" }
+evm_interpreter = { package = "evm_interpreter_forward", path = "../evm_interpreter_forward", default-features = false }
+system_hooks = { package = "system_hooks_forward", path = "../system_hooks_forward", default-features = false }
+basic_system = { package = "basic_system_forward", path = "../basic_system_forward", default-features = false }
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+arrayvec = { version = "0.7.4", default-features = false }
+serde = { version = "1.0", default-features = false, features = ["derive"], optional = true }
+crypto = { package = "crypto_forward", path = "../crypto_forward", default-features = false }
+hex = {version = "*", optional = true}
+strum_macros = "0.27.1"
+paste = "1.0.15"
+cfg-if = "*"
+serde-big-array = "0.5"
+
+[features]
+serde = ["dep:serde", "ruint/serde"]
+testing = ["zk_ee/testing", "evm_interpreter/testing", "hex", "serde"]
+default = ["testing"]
+eip-7702 = []
+eip_7623 = []
+eip-4844 = ["system_hooks/point_eval_precompile"]
+burn_base_fee = []
+cycle_marker = ["system_hooks/cycle_marker", "cycle_marker/log_to_file"]
+resources_for_tester = []
+unlimited_native = []
+disable_system_contracts = []
+error_origins = ["zk_ee/error_origins"]

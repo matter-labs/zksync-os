@@ -12,7 +12,7 @@ ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 crypto = { package = "crypto_forward", path = "../crypto_forward", default-features = false }
 oracle_provider = { package = "oracle_provider_forward", path = "../oracle_provider_forward" }
 basic_system = { package = "basic_system_forward", path = "../basic_system_forward" }
-basic_bootloader = { path = "../../../../../basic_bootloader", default-features = false }
+basic_bootloader = { package = "basic_bootloader_forward", path = "../basic_bootloader_forward", default-features = false }
 
 
 risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3", optional = true }

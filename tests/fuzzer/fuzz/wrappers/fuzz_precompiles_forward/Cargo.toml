@@ -7,3 +7,5 @@ edition = "2021"
 [dependencies]
 basic_system = { package = "basic_system_forward", path = "../basic_system_forward"}
 zk_ee = { package = "zk_ee_forward", path = "../zk_ee_forward" }
+callable_oracles = { package = "callable_oracles_forward", path = "../callable_oracles_forward" }
+oracle_provider = { package = "oracle_provider_forward", path = "../oracle_provider_forward" }
