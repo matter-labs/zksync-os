@@ -281,22 +281,25 @@ where
         0
     };
 
-    // Nonce validation - skipped for service transactions
-    if let Some(originator_expected_nonce) = transaction.nonce().as_ref().map(u256_to_u64_saturated)
-    {
-        let err = if old_nonce > originator_expected_nonce {
-            TxError::Validation(InvalidTransaction::NonceTooLow {
-                tx: originator_expected_nonce,
-                state: old_nonce,
-            })
-        } else {
-            TxError::Validation(InvalidTransaction::NonceTooHigh {
-                tx: originator_expected_nonce,
-                state: old_nonce,
-            })
-        };
+    if !Config::SIMULATION {
+        // Nonce validation - skipped for service transactions
+        if let Some(originator_expected_nonce) =
+            transaction.nonce().as_ref().map(u256_to_u64_saturated)
+        {
+            let err = if old_nonce > originator_expected_nonce {
+                TxError::Validation(InvalidTransaction::NonceTooLow {
+                    tx: originator_expected_nonce,
+                    state: old_nonce,
+                })
+            } else {
+                TxError::Validation(InvalidTransaction::NonceTooHigh {
+                    tx: originator_expected_nonce,
+                    state: old_nonce,
+                })
+            };
 
-        require!(old_nonce == originator_expected_nonce, err, system)?;
+            require!(old_nonce == originator_expected_nonce, err, system)?;
+        }
     }
 
     // Access list
@@ -318,7 +321,7 @@ where
             system
         )?;
 
-        if &block_base_fee_per_blob_gas > tx_max_fee_per_blob_gas {
+        if &block_base_fee_per_blob_gas > tx_max_fee_per_blob_gas && !Config::SIMULATION {
             return Err(TxError::Validation(
                 InvalidTransaction::BlobBaseFeeGreaterThanMaxFeePerBlobGas,
             ));
@@ -353,7 +356,9 @@ where
             InvalidTransaction::OverflowPaymentInTransaction,
         ));
     };
-    if total_required_balance > originator_account_data.nominal_token_balance.0 {
+    if total_required_balance > originator_account_data.nominal_token_balance.0
+        && !Config::SIMULATION
+    {
         return Err(TxError::Validation(
             InvalidTransaction::LackOfFundForMaxFee {
                 fee: total_required_balance,
