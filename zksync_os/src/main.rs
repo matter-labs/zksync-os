@@ -203,8 +203,10 @@ unsafe fn workload() -> ! {
 
     use core::fmt::Write;
     use proof_running_system::zk_ee::logger_log;
-    logger_log!(LoggerTy::default(), "Entry routine is done, moving into payload\n");
-
+    logger_log!(
+        LoggerTy::default(),
+        "Entry routine is done, moving into payload\n"
+    );
 
     // and crunch
     let output = proof_running_system::system::bootloader::run_proving::<

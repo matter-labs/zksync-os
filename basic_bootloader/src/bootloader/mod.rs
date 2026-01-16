@@ -1,6 +1,7 @@
 use errors::{BootloaderSubsystemError, InvalidTransaction};
 use result_keeper::ResultKeeperExt;
 use ruint::aliases::*;
+use stf::BasicSTF;
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -64,9 +65,13 @@ where
     /// and in prover (where oracle uses CRS registers to communicate).
     pub fn run_prepared<Config: BasicBootloaderExecutionConfig>(
         mut oracle: <S::IO as IOSubsystemExt>::IOOracle,
+        batch_data_keeper: &mut S::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<S::IOTypes, BlockHeader = S::BlockHeader>,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<<S::IO as IOSubsystemExt>::FinalData, BootloaderSubsystemError>
+    ) -> Result<
+        <<S as BasicSTF>::PostTxLoopOp as PostTxLoopOp<S>>::PostTxLoopOpResult,
+        BootloaderSubsystemError,
+    >
     where
         S::IO: IOSubsystemExt,
     {
@@ -109,6 +114,7 @@ where
             &mut system_functions,
             memories,
             &mut block_data_keeper,
+            batch_data_keeper,
             result_keeper,
             tracer,
         )?;
@@ -118,7 +124,7 @@ where
         // Post-op
 
         let res =
-            <S::PostTxLoopOp as PostTxLoopOp<S>>::post_op(system, block_data_keeper, result_keeper);
+            <S::PostTxLoopOp as PostTxLoopOp<S>>::post_op(system, block_data_keeper, batch_data_keeper, result_keeper);
         cycle_marker::end!("process_block");
         #[allow(clippy::let_and_return)]
         res

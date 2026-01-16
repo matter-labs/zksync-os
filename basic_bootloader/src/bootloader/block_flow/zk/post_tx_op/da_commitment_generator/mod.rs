@@ -3,12 +3,10 @@ use alloc::boxed::Box;
 use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::utils::Bytes32;
 
-#[cfg(feature = "aggregation")]
 mod blake2s_commitment_generator;
 pub mod blob_commitment_generator;
 mod keccak256_commitment_generator;
 
-#[cfg(feature = "aggregation")]
 pub use blake2s_commitment_generator::Blake2sCommitmentGenerator;
 pub use blob_commitment_generator::commitment_and_proof_advice::KZGCommitmentAndProof;
 pub use blob_commitment_generator::commitment_and_proof_advice::BLOB_COMMITMENT_AND_PROOF_QUERY_ID;

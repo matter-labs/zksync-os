@@ -48,7 +48,6 @@ use self::{
     metadata::basic_metadata::{
         BasicBlockMetadata, BasicMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
     },
-    metadata::zk_metadata::ZkMetadata,
 };
 
 use crate::oracle::query_ids::TX_DATA_WORDS_QUERY_ID;
@@ -392,32 +391,6 @@ where
             artifacts_len,
             observable_bytecode_hash,
             observable_bytecode_len,
-        )
-    }
-}
-
-// Note: this will be modified soon with other V2 changes
-// For now, we hard-code metadata and io type config types
-impl<S: SystemTypes<Metadata = ZkMetadata>> System<S>
-where
-    S::IO: IOSubsystemExt,
-{
-    /// Finish system execution.
-    pub fn finish(
-        self,
-        block_hash: Bytes32,
-        l1_to_l2_txs_hash: Bytes32,
-        upgrade_tx_hash: Bytes32,
-        result_keeper: &mut impl IOResultKeeper<S::IOTypes>,
-    ) -> <S::IO as IOSubsystemExt>::FinalData {
-        let logger = self.get_logger();
-        self.io.finish(
-            self.metadata.block_level,
-            block_hash,
-            l1_to_l2_txs_hash,
-            upgrade_tx_hash,
-            result_keeper,
-            logger,
         )
     }
 }

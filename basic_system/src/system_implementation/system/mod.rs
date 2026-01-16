@@ -2,7 +2,6 @@
 use crate::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use crate::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
 use crate::system_implementation::flat_storage_model::*;
-use crate::system_implementation::system::public_input::ChainStateCommitment;
 use core::alloc::Allocator;
 use errors::system::SystemError;
 use evm_interpreter::gas_constants::COLD_SLOAD_COST;
@@ -23,16 +22,10 @@ use zk_ee::{
     system::{errors::internal::InternalError, logger::Logger, Resources, *},
 };
 
-pub mod da_commitment_generator;
 pub mod interop_roots;
 mod io_subsystem;
-pub mod pubdata;
-mod public_input;
 
 pub use self::io_subsystem::*;
-pub use self::public_input::BatchOutput;
-pub use self::public_input::BatchPublicInput;
-pub use self::public_input::BatchPublicInputBuilder;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EthereumLikeStorageAccessCostModel;

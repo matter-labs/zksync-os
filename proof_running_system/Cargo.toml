@@ -41,9 +41,9 @@ unlimited_native = ["basic_bootloader/unlimited_native"]
 benchmarking = ["cycle_marker"]
 global-alloc = ["zk_ee/global-alloc"]
 error_origins = ["zk_ee/error_origins"]
-multiblock-batch = ["basic_system/multiblock-batch"]
-state-diffs-pi = ["basic_system/state-diffs-pi"]
-aggregation = ["basic_system/aggregation"]
+multiblock-batch = []
+aggregation = []
+state-diffs-pi = []
 
 # A feature for every specific use case
 

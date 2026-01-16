@@ -1,6 +1,6 @@
 use std::alloc::Global;
 
-use basic_bootloader::bootloader::block_flow::ZKBasicBlockDataKeeper;
+use basic_bootloader::bootloader::block_flow::{NopTxHashesAccumulator, ZKBasicBlockDataKeeper, ZKHeaderStructurePostTxOpSequencing};
 use basic_bootloader::bootloader::block_flow::ZKHeaderPostInitOp;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePostTxOp;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePreTxOp;
@@ -70,7 +70,7 @@ impl<O: IOOracle> EthereumLikeTypes for ForwardSystemTypes<O> {}
 /// STF implementation for forward execution systems
 impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O> {
     /// ZKsync transaction data tracker with hash accumulators and resource counts
-    type BlockDataKeeper = ZKBasicBlockDataKeeper;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator>;
     /// Standard ZKsync block header format
     type BlockHeader = basic_bootloader::bootloader::block_header::BlockHeader;
     /// Post-initialization setup: precompiles and system contracts
@@ -82,7 +82,7 @@ impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O> {
     /// Main transaction loop: ZK-specific processing with resource limits
     type TxLoopOp = ZKHeaderStructureTxLoop;
     /// Post-transaction finalization: build header and commit (false = sequencing mode)
-    type PostTxLoopOp = ZKHeaderStructurePostTxOp<false>;
+    type PostTxLoopOp = ZKHeaderStructurePostTxOpSequencing;
 }
 
 /// Marker implementation for Ethereum-compatible STF

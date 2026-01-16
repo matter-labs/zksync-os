@@ -4,6 +4,7 @@ use alloc::alloc::{GlobalAlloc, Layout};
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
+use basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper;
 use zk_ee::logger_log;
 use zk_ee::memory::ZSTAllocator;
 use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
@@ -183,6 +184,7 @@ pub fn run_proving_inner<
     let (mut oracle, public_input) =
         ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
             oracle,
+            &mut (),
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
         )
@@ -212,22 +214,15 @@ pub fn run_proving_inner<
     I::csr_write_impl(0xdeadbeef);
     I::csr_write_impl(0);
     let count = I::csr_read_impl();
-    let mut batch_pi_builder =
-        basic_system::system_implementation::system::BatchPublicInputBuilder::new();
+    let mut batch_data = ZKBatchDataKeeper::new();
     for _ in 0..count {
-        let (io, block_metadata, current_block_hash, upgrade_tx_hash) =
-            ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
-                oracle,
-                &mut NopResultKeeper::default(),
-                &mut NopTracer::default(),
-            )
-            .expect("Tried to prove a failing batch");
-        oracle = io.apply_to_batch(
-            block_metadata,
-            current_block_hash,
-            upgrade_tx_hash,
-            &mut batch_pi_builder,
-        );
+        oracle = ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
+            oracle,
+            &mut batch_data,
+            &mut NopResultKeeper::default(),
+            &mut NopTracer::default(),
+        )
+        .expect("Tried to prove a failing batch");
         // we do this query for consistency with block based input generation(there is empty iterator as response to this query)
         // but during proving this request shouldn't have the effect with "u32 array based" oracle
         #[allow(unused_must_use)]
@@ -236,11 +231,8 @@ pub fn run_proving_inner<
             .expect("must disconnect an oracle before performing arbitrary CSR access");
     }
 
-    unsafe {
-        core::mem::transmute(zk_ee::utils::Bytes32::from_array(
-            batch_pi_builder
-                .into_public_input(L::default(), &mut oracle)
-                .hash(),
-        ))
-    }
+    let public_input =
+        zk_ee::utils::Bytes32::from_array(batch_data.into_public_input(L::default(), &mut oracle).hash());
+
+    unsafe { core::mem::transmute(public_input) }
 }

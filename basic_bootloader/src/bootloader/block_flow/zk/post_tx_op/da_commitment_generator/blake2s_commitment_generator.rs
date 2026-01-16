@@ -1,4 +1,4 @@
-use crate::system_implementation::system::da_commitment_generator::DACommitmentGenerator;
+use super::DACommitmentGenerator;
 use crypto::blake2s::Blake2s256;
 use crypto::MiniDigest;
 use zk_ee::oracle::IOOracle;
