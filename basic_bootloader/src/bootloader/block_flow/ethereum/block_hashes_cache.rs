@@ -16,9 +16,10 @@ impl MetadataRequest for BlockHashMetadataRequest {
     type Output = Bytes32;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlockHashesCache {
-    #[serde(with = "serde_big_array::BigArray")]
+    #[cfg_attr(feature = "serde", serde(with = "serde_big_array::BigArray"))]
     cache: [Bytes32; 256],
     deepest_accessed: u32,
 }
