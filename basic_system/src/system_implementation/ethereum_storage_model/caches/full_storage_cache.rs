@@ -136,7 +136,8 @@ impl<
     }
 
     fn finish_tx(&mut self) -> Result<(), InternalError> {
-        self.slot_values.finish_tx()
+        self.slot_values.finish_tx();
+        Ok(())
     }
 
     fn start_frame(&mut self) -> Self::StateSnapshot {

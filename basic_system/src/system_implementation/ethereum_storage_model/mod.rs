@@ -58,7 +58,7 @@ pub(crate) fn compare_bytes32_and_mpt_integer(a: &Bytes32, b: &[u8]) -> bool {
             if b.len() < expected_b_len_from_a + 1 {
                 return false;
             }
-            &a.as_u8_array_ref()[(32 - expected_b_len_from_a)..] == &b[1..]
+            a.as_u8_array_ref()[(32 - expected_b_len_from_a)..] == b[1..]
         }
     }
 }
