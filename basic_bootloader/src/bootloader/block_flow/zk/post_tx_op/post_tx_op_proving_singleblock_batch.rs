@@ -108,7 +108,7 @@ where
             io.interop_root_storage.iter(),
             &mut crypto::sha3::Keccak256::new(),
         );
-        let settlement_layer_chain_id = io.read_settlement_layer_chain_id();
+        let settlement_layer_chain_id = read_settlement_layer_chain_id(&mut io);
         if let Some(new_settlement_layer_chain_id) =
             io.new_settlement_layer_chain_id_storage.value()
         {

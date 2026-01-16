@@ -5,6 +5,7 @@ use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::U256;
+use system_hooks::addresses_constants::SYSTEM_CONTEXT_ADDRESS;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
@@ -124,4 +125,41 @@ pub fn calculate_interop_roots_rolling_hash<'a>(
     }
 
     rolling_hash
+}
+
+///
+/// Reads SL chain id from the SystemContext(0x800b) contract.
+///
+pub fn read_settlement_layer_chain_id<
+    A: Allocator + Clone + Default,
+    R: Resources,
+    P: StorageAccessPolicy<R, Bytes32> + Default,
+    SF: StackFactory<N>,
+    const N: usize,
+    O: IOOracle,
+    const PROOF_ENV: bool,
+>(
+    io: &mut FullIO<
+        A,
+        R,
+        P,
+        SF,
+        N,
+        O,
+        FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>,
+        PROOF_ENV,
+    >,
+) -> U256 {
+    use zk_ee::system::IOSubsystem;
+    const SL_CHAIN_ID_STORAGE_SLOT: Bytes32 = Bytes32::ZERO;
+    let mut inf_resources = R::FORMAL_INFINITE;
+    let chain_id = io
+        .storage_read::<false>(
+            ExecutionEnvironmentType::NoEE,
+            &mut inf_resources,
+            &SYSTEM_CONTEXT_ADDRESS,
+            &SL_CHAIN_ID_STORAGE_SLOT,
+        )
+        .expect("must read SystemContext SL chain id");
+    U256::from_be_bytes(chain_id.as_u8_array())
 }

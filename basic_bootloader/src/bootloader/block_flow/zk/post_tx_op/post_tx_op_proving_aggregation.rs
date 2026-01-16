@@ -109,7 +109,7 @@ where
             interop_roots_hasher.update(root.root.as_u8_ref());
         }
         let interop_roots_hash = interop_roots_hasher.finalize().into();
-        let settlement_layer_chain_id = io.read_settlement_layer_chain_id();
+        let settlement_layer_chain_id = read_settlement_layer_chain_id(&mut io);
         if let Some(new_settlement_layer_chain_id) =
             io.new_settlement_layer_chain_id_storage.value()
         {
@@ -125,7 +125,11 @@ where
             (proof_data.state_root_view, proof_data.last_block_timestamp)
         };
 
-        logger_log!(logger, "Initial state commitment is {:?}\n", &state_commitment);
+        logger_log!(
+            logger,
+            "Initial state commitment is {:?}\n",
+            &state_commitment
+        );
         // validate that timestamp didn't decrease
         assert!(metadata.block_timestamp() >= last_block_timestamp);
 

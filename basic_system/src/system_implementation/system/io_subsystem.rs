@@ -17,7 +17,6 @@ use evm_interpreter::gas_constants::TSTORE;
 use interop_roots::per_root_computational_native_cost;
 use storage_models::common_structs::generic_transient_storage::GenericTransientStorage;
 use storage_models::common_structs::StorageModel;
-use system_hooks::addresses_constants::SYSTEM_CONTEXT_ADDRESS;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
@@ -743,34 +742,6 @@ impl<
         const PROOF_ENV: bool,
     > EthereumLikeIOSubsystem for FullIO<A, R, P, SF, N, O, M, PROOF_ENV>
 {
-}
-
-impl<
-        A: Allocator + Clone + Default,
-        R: Resources,
-        P: StorageAccessPolicy<R, Bytes32>,
-        SF: StackFactory<N>,
-        const N: usize,
-        O: IOOracle,
-        M: StorageModel<IOTypes = EthereumIOTypesConfig, Resources = R, InitData = P, Allocator = A>,
-    > FullIO<A, R, P, SF, N, O, M, true>
-{
-    ///
-    /// Reads SL chain id from the SystemContext(0x800b) contract.
-    ///
-    pub fn read_settlement_layer_chain_id(&mut self) -> U256 {
-        const SL_CHAIN_ID_STORAGE_SLOT: Bytes32 = Bytes32::ZERO;
-        let mut inf_resources = R::FORMAL_INFINITE;
-        let chain_id = self
-            .storage_read::<false>(
-                ExecutionEnvironmentType::NoEE,
-                &mut inf_resources,
-                &SYSTEM_CONTEXT_ADDRESS,
-                &SL_CHAIN_ID_STORAGE_SLOT,
-            )
-            .expect("must read SystemContext SL chain id");
-        U256::from_be_bytes(chain_id.as_u8_array())
-    }
 }
 
 impl<
