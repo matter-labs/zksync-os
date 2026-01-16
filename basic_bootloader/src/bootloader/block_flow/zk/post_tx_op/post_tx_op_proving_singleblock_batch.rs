@@ -93,7 +93,6 @@ where
             metadata.block_timestamp(),
             &mut io,
         );
-        let da_commitment = da_commitment_generator.finalize(io.oracle());
 
         let mut full_root_hasher = crypto::sha3::Keccak256::new();
         full_root_hasher.update(io.logs_storage.tree_root().as_u8_ref());
@@ -178,6 +177,9 @@ where
             "PI calculation: state commitment after {:?}\n",
             chain_state_commitment_after
         );
+        // We need to do this after the tree finalization, as we need to preserve
+        // the order of oracle queries.
+        let da_commitment = da_commitment_generator.finalize(io.oracle());
 
         let batch_output = BatchOutput {
             chain_id: U256::from(metadata.chain_id()),
