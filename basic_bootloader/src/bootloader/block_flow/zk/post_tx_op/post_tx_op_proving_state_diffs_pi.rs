@@ -1,7 +1,5 @@
 use super::*;
-use crate::bootloader::block_flow::zk::post_tx_op::da_commitment_generator::{
-    da_commitment_generator_from_scheme, Blake2sCommitmentGenerator,
-};
+use crate::bootloader::block_flow::zk::post_tx_op::da_commitment_generator::da_commitment_generator_from_scheme;
 use crate::bootloader::block_flow::zk::post_tx_op::public_input::{
     BatchOutput, BatchPublicInput, ChainStateCommitment,
 };
@@ -19,8 +17,7 @@ use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 use zk_ee::system::metadata::zk_metadata::ZkMetadata;
-use zk_ee::system::{metadata, IOTeardown, Resources};
-use zk_ee::utils::write_bytes::WriteBytes;
+use zk_ee::system::{IOTeardown, Resources};
 
 impl<
         A: Allocator + Clone + Default,

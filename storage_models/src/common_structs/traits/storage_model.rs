@@ -3,13 +3,11 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::{BalanceSubsystemError, DeconstructionSubsystemError, NonceSubsystemError};
-use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::utils::Bytes32;
 use zk_ee::{
     system::{
-        errors::{internal::InternalError, system::SystemError},
-        logger::Logger,
-        AccountData, AccountDataRequest, IOResultKeeper, Maybe, Resources,
+        errors::system::SystemError, logger::Logger, AccountData, AccountDataRequest,
+        IOResultKeeper, Maybe, Resources,
     },
     types_config::SystemIOTypesConfig,
 };

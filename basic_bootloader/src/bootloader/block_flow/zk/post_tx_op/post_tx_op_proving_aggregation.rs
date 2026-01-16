@@ -1,6 +1,6 @@
 use super::*;
 use crate::bootloader::block_flow::zk::post_tx_op::da_commitment_generator::{
-    Blake2sCommitmentGenerator, DACommitmentGenerator, NopCommitmentGenerator,
+    Blake2sCommitmentGenerator, DACommitmentGenerator,
 };
 use crate::bootloader::block_flow::zk::post_tx_op::public_input::{
     BlocksOutput, BlocksPublicInput, ChainStateCommitment,
@@ -12,7 +12,6 @@ use basic_system::system_implementation::flat_storage_model::{
 use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::blake2s::Blake2s256;
-use ruint::Uint;
 use zk_ee::common_structs::{ProofData, WarmStorageKey};
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
@@ -21,7 +20,6 @@ use zk_ee::oracle::IOOracle;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 use zk_ee::system::metadata::zk_metadata::ZkMetadata;
 use zk_ee::system::{IOTeardown, Resources};
-use zk_ee::utils::write_bytes::WriteBytes;
 
 impl<
         A: Allocator + Clone + Default,

@@ -455,6 +455,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
 
     CallSimulationBootloader::run_prepared::<BasicBootloaderCallSimulationConfig>(
         oracle,
+        &mut (),
         &mut result_keeper,
         tracer,
     )

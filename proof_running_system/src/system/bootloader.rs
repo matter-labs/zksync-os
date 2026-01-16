@@ -1,7 +1,6 @@
 use super::*;
 use crate::io_oracle::NonDeterminismCSRSourceImplementation;
 use alloc::alloc::{GlobalAlloc, Layout};
-use basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper;
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;

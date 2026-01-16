@@ -13,11 +13,11 @@ use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::utils::Bytes32;
 
 pub mod da_commitment_generator;
-pub mod post_tx_op_proving_aggregation;
-pub mod post_tx_op_proving_multiblock_batch;
-pub mod post_tx_op_proving_singleblock_batch;
-pub mod post_tx_op_proving_state_diffs_pi;
-pub mod post_tx_op_sequencing;
+mod post_tx_op_proving_aggregation;
+mod post_tx_op_proving_multiblock_batch;
+mod post_tx_op_proving_singleblock_batch;
+mod post_tx_op_proving_state_diffs_pi;
+mod post_tx_op_sequencing;
 pub mod public_input;
 
 /// Version byte for pubdata encoding format.

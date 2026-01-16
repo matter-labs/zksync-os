@@ -1,12 +1,7 @@
-use arrayvec::ArrayVec;
 use crypto::sha3::Keccak256;
 use crypto::MiniDigest;
 use ruint::aliases::U256;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
-use zk_ee::common_structs::interop_root_storage::InteropRoot;
-use zk_ee::logger_log;
-use zk_ee::oracle::IOOracle;
-use zk_ee::system::logger::Logger;
 use zk_ee::utils::Bytes32;
 
 ///

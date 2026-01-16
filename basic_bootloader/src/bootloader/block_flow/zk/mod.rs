@@ -14,6 +14,7 @@ mod tx_loop;
 
 pub use self::batch_data::*;
 pub use self::block_data::*;
+pub use self::post_tx_op::*;
 
 pub struct ZKHeaderPostInitOp;
 

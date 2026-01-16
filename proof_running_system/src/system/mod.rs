@@ -5,11 +5,8 @@ use basic_bootloader::bootloader::block_flow::ZKHeaderPostInitOp;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePreTxOp;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructureTxLoop;
 use basic_bootloader::bootloader::block_flow::{
-    AccumulatingBlake2sTransactionsHasher, NopTxHashesAccumulator, TransactionsRollingKeccakHasher,
-    ZKBasicBlockDataKeeper, ZKBatchDataKeeper, ZKHeaderStructurePostTxOpProvingAggregation,
-    ZKHeaderStructurePostTxOpProvingMultiblockBatch,
+    TransactionsRollingKeccakHasher, ZKBasicBlockDataKeeper,
     ZKHeaderStructurePostTxOpProvingSingleblockBatch,
-    ZKHeaderStructurePostTxOpProvingStateDiffsHash,
 };
 use basic_bootloader::bootloader::stf::BasicSTF;
 use basic_bootloader::bootloader::stf::EthereumLikeBasicSTF;
