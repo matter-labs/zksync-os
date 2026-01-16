@@ -419,6 +419,7 @@ impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
 }
 
 impl<'a, T: RlpItemDecode<'a>> HomList<'a, T, true> {
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         // Safe to unwrap, always set for VALIDATE = true
         self.count.unwrap()
