@@ -469,25 +469,18 @@ impl<
         Self: 'a;
     fn get_storage_diff<'a>(&'a self, key: Self::StorageKey<'a>) -> Option<Self::StorageDiff<'a>> {
         self.storage_cache.0.cache.get(key).map(|item| {
-            todo!()
-            // let is_new_storage_slot =
-            //     item.key_properties().initial_appearance() == StorageInitialAppearance::Empty;
-            // let initial_value_used = matches!(
-            //     item.key_properties().current_appearance(),
-            //     StorageCurrentAppearance::Observed
-            //         | StorageCurrentAppearance::Updated
-            //         | StorageCurrentAppearance::Deleted
-            // );
-            // let current_record = item.current();
-            // let initial_record = item.initial();
+            let is_new_storage_slot = item.key_properties().is_new_element();
+            let initial_value_used = item.key_properties().is_value_known();
+            let current_record = item.current();
+            let initial_record = item.initial();
 
-            // // TODO: so far we copy, but can try to remove it eventually
-            // StorageDiff {
-            //     initial_value: *initial_record.value(),
-            //     current_value: *current_record.value(),
-            //     is_new_storage_slot,
-            //     initial_value_used,
-            // }
+            // TODO: so far we copy, but can try to remove it eventually
+            StorageDiff {
+                initial_value: *initial_record.value(),
+                current_value: *current_record.value(),
+                is_new_storage_slot,
+                initial_value_used,
+            }
         })
     }
 
@@ -495,27 +488,20 @@ impl<
         &'a self,
     ) -> impl ExactSizeIterator<Item = (Self::StorageKey<'a>, Self::StorageDiff<'a>)> + Clone {
         self.storage_cache.0.cache.iter().map(|item| {
-            todo!()
-            // let is_new_storage_slot =
-            //     item.key_properties().initial_appearance() == StorageInitialAppearance::Empty;
-            // let initial_value_used = matches!(
-            //     item.key_properties().current_appearance(),
-            //     StorageCurrentAppearance::Observed
-            //         | StorageCurrentAppearance::Updated
-            //         | StorageCurrentAppearance::Deleted
-            // );
-            // let current_record = item.current();
-            // let initial_record = item.initial();
-            // (
-            //     item.key(),
-            //     // TODO: so far we copy, but can try to remove it eventually
-            //     StorageDiff {
-            //         initial_value: *initial_record.value(),
-            //         current_value: *current_record.value(),
-            //         is_new_storage_slot,
-            //         initial_value_used,
-            //     },
-            // )
+            let is_new_storage_slot = item.key_properties().is_new_element();
+            let initial_value_used = item.key_properties().is_value_known();
+            let current_record = item.current();
+            let initial_record = item.initial();
+            (
+                item.key(),
+                // TODO: so far we copy, but can try to remove it eventually
+                StorageDiff {
+                    initial_value: *initial_record.value(),
+                    current_value: *current_record.value(),
+                    is_new_storage_slot,
+                    initial_value_used,
+                },
+            )
         })
     }
 

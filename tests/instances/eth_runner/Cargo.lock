@@ -2025,6 +2025,7 @@ name = "callable_oracles"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
+ "basic_bootloader",
  "basic_system",
  "c-kzg",
  "crypto",
