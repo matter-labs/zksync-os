@@ -8,7 +8,7 @@ use alloy::signers::local::PrivateKeySigner;
 use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
-use rig::basic_system::system_implementation::system::pubdata::PUBDATA_ENCODING_VERSION;
+use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::testing_utils::install_system_contracts;

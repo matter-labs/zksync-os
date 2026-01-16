@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use rig::{basic_system::system_implementation::system::da_commitment_generator::blob_commitment_generator::{ENCODABLE_BYTES_PER_BLOB, blob_versioned_hash_with_advisor, commitment_and_proof_advice::BlobCommitmentAndProofAdvisor}, callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof, utils::{encode_pubdata_for_4844_blobs, get_alloy_4844_blob_versioned_hash}};
+use rig::{basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::blob_commitment_generator::{ENCODABLE_BYTES_PER_BLOB, blob_versioned_hash_with_advisor, commitment_and_proof_advice::BlobCommitmentAndProofAdvisor}, callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof, utils::{encode_pubdata_for_4844_blobs, get_alloy_4844_blob_versioned_hash}};
 
 struct BlobCommitmentAndProofAdvisorImplementation;
 
@@ -8,7 +8,7 @@ impl BlobCommitmentAndProofAdvisor for BlobCommitmentAndProofAdvisorImplementati
     fn get_blob_commitment_and_proof_advice(
         &mut self,
         data: &[u8],
-    ) -> rig::basic_system::system_implementation::system::da_commitment_generator::KZGCommitmentAndProof{
+    ) -> rig::basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::KZGCommitmentAndProof{
         blob_kzg_commitment_and_proof(data)
     }
 }
