@@ -52,7 +52,7 @@ pub struct PectraForkHeader {
     pub gas_limit: u64,
     pub gas_used: u64,
     pub timestamp: u64,
-    // 32 bytes or less, but variable lenth
+    // 32 bytes or less, but variable length
     pub extra_data: (Bytes32, usize),
     pub mix_hash: Bytes32,
     // fixed length
@@ -279,7 +279,7 @@ impl<'a> RlpListDecode<'a> for PectraForkHeaderReflection<'a> {
         let gas_limit = r.u64()?;
         let gas_used = r.u64()?;
         let timestamp = r.u64()?;
-        // 32 bytes or less, but variable lenth
+        // 32 bytes or less, but variable length
         let extra_data: &'a [u8] = r.bytes()?;
         if extra_data.len() > 32 {
             return Err(crate::bootloader::errors::InvalidTransaction::InvalidStructure);
