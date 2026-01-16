@@ -13,12 +13,14 @@ where
     S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
 {
     type BlockDataKeeper = EthereumBasicTransactionDataKeeper<S::Allocator, S::Allocator>;
+    type BatchDataKeeper = ();
 
     fn loop_op<'a, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
         block_data: &mut Self::BlockDataKeeper,
+        _batch_data: &mut Self::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig>,
         tracer: &mut impl Tracer<S>,
     ) -> Result<(), BootloaderSubsystemError> {
@@ -132,7 +134,11 @@ where
                     }
                     Ok(result) => {
                         let tx_processing_result = result.into_bookkeeper_output();
-                        system_log!(system, "Tx execution result = {:?}\n", &tx_processing_result);
+                        system_log!(
+                            system,
+                            "Tx execution result = {:?}\n",
+                            &tx_processing_result
+                        );
                         // anything that is not related to actual validity
                         result_keeper.tx_processed(Ok(tx_processing_result));
                         system.finish_valid_tx()?;
@@ -148,7 +154,10 @@ where
     }
 
     system_log!(system, "Bootloader completed\n");
-    system_log!(system, "Bootloader execution is complete, will proceed with applying changes\n");
+    system_log!(
+        system,
+        "Bootloader execution is complete, will proceed with applying changes\n"
+    );
 
     cycle_marker::end!("run_tx_loop");
 

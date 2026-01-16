@@ -39,12 +39,14 @@ where
     S::IO: IOSubsystemExt + IOTeardown<S::IOTypes, IOStateCommitment = Bytes32>,
 {
     type BlockDataKeeper = EthereumBasicTransactionDataKeeper<S::Allocator, S::Allocator>;
+    type BatchDataKeeper = ();
     type PostTxLoopOpResult = ();
     type BlockHeader = PectraForkHeader;
 
     fn post_op(
         mut system: System<S>,
         _block_data: Self::BlockDataKeeper,
+        _batch_data: &mut Self::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig, BlockHeader = Self::BlockHeader>,
     ) -> Result<Self::PostTxLoopOpResult, BootloaderSubsystemError> {
         // apply withdrawals

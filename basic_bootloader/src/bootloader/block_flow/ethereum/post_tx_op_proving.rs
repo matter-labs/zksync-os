@@ -42,12 +42,14 @@ where
     S::IO: IOSubsystemExt + IOTeardown<S::IOTypes, IOStateCommitment = Bytes32>,
 {
     type BlockDataKeeper = EthereumBasicTransactionDataKeeper<S::Allocator, S::Allocator>;
+    type BatchDataKeeper = ();
     type PostTxLoopOpResult = (O, Bytes32);
     type BlockHeader = PectraForkHeader;
 
     fn post_op(
         mut system: System<S>,
         block_data: Self::BlockDataKeeper,
+        _batch_data: &mut Self::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig, BlockHeader = Self::BlockHeader>,
     ) -> Result<Self::PostTxLoopOpResult, BootloaderSubsystemError> {
         let _handle = system
@@ -109,7 +111,11 @@ where
         // Events
         result_keeper.events(io.events_iterator());
 
-        logger_log!(logger, "Initial state commitment is {:?}\n", &initial_state_commitment);
+        logger_log!(
+            logger,
+            "Initial state commitment is {:?}\n",
+            &initial_state_commitment
+        );
 
         // // 3. Verify/apply reads and writes
         let mut updated_state_commitment = initial_state_commitment;
@@ -121,14 +127,22 @@ where
             );
         });
 
-        logger_log!(logger, "Updated state commitment is {:?}\n", &updated_state_commitment);
+        logger_log!(
+            logger,
+            "Updated state commitment is {:?}\n",
+            &updated_state_commitment
+        );
 
         assert_eq!(
             metadata.block_level.header.state_root, updated_state_commitment,
             "state root diverged",
         );
 
-        logger_log!(logger, "Finished processing block hash {:?}\n", &metadata.block_level.computed_header_hash);
+        logger_log!(
+            logger,
+            "Finished processing block hash {:?}\n",
+            &metadata.block_level.computed_header_hash
+        );
 
         Ok((io.oracle, metadata.block_level.computed_header_hash))
     }
@@ -194,21 +208,33 @@ impl<VC: VecLikeCtor> EthereumPostOp<VC, true> {
             .expect("must filter EIP-6110 deposit requests")
         {
             let requests_hash = intermediate_hasher.finalize_reset();
-            system_log!(system, "EIP-6110 ops hash = {:?}\n", Bytes32::from_array(requests_hash.into()));
+            system_log!(
+                system,
+                "EIP-6110 ops hash = {:?}\n",
+                Bytes32::from_array(requests_hash.into())
+            );
             requests_hasher.update(requests_hash);
         }
         if eip7002_system_part(system, &mut intermediate_hasher)
             .expect("withdrawal requests must be processed")
         {
             let requests_hash = intermediate_hasher.finalize_reset();
-            system_log!(system, "EIP-7002 ops hash = {:?}\n", Bytes32::from_array(requests_hash.into()));
+            system_log!(
+                system,
+                "EIP-7002 ops hash = {:?}\n",
+                Bytes32::from_array(requests_hash.into())
+            );
             requests_hasher.update(requests_hash);
         }
         if eip7251_system_part(system, &mut intermediate_hasher)
             .expect("consolidation requests must be processed")
         {
             let requests_hash = intermediate_hasher.finalize_reset();
-            system_log!(system, "EIP-7251 ops hash = {:?}\n", Bytes32::from_array(requests_hash.into()));
+            system_log!(
+                system,
+                "EIP-7251 ops hash = {:?}\n",
+                Bytes32::from_array(requests_hash.into())
+            );
             requests_hasher.update(requests_hash);
         }
         let requests_hash = Bytes32::from_array(requests_hasher.finalize().into());
