@@ -33,8 +33,7 @@ impl<
         >,
     > PostTxLoopOp<S> for ZKHeaderStructurePostTxOpSequencing
 where
-    S::IO: IOSubsystemExt
-        + IOTeardown<S::IOTypes>
+    S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
 {
     type PostTxLoopOpResult = ();
     type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator>;

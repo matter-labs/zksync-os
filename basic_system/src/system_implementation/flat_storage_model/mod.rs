@@ -32,9 +32,7 @@ use zk_ee::system::Resources;
 use zk_ee::system::StorageDiff;
 use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::{
-    common_structs::{
-        history_map::CacheSnapshotId, state_root_view::StateRootView, WarmStorageKey,
-    },
+    common_structs::{history_map::CacheSnapshotId, WarmStorageKey},
     execution_environment_type::ExecutionEnvironmentType,
     memory::stack_trait::StackFactory,
     oracle::IOOracle,

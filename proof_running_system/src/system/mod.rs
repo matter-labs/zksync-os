@@ -1,13 +1,12 @@
 use crate::io_oracle::CsrBasedIOOracle;
 use crate::system::bootloader::BootloaderAllocator;
 use alloc::alloc::Allocator;
+use basic_bootloader::bootloader::block_flow;
+use basic_bootloader::bootloader::block_flow::ZKBasicBlockDataKeeper;
 use basic_bootloader::bootloader::block_flow::ZKHeaderPostInitOp;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePreTxOp;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructureTxLoop;
-use basic_bootloader::bootloader::block_flow::{
-    TransactionsRollingKeccakHasher, ZKBasicBlockDataKeeper,
-    ZKHeaderStructurePostTxOpProvingSingleblockBatch,
-};
+use basic_bootloader::bootloader::block_header::BlockHeader;
 use basic_bootloader::bootloader::stf::BasicSTF;
 use basic_bootloader::bootloader::stf::EthereumLikeBasicSTF;
 use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
@@ -21,6 +20,7 @@ use zk_ee::common_structs::skip_list_quasi_vec::ListVec;
 use zk_ee::memory::*;
 use zk_ee::oracle::IOOracle;
 use zk_ee::reference_implementations::BaseResources;
+use zk_ee::system::metadata::zk_metadata::ZkMetadata;
 use zk_ee::system::{logger::Logger, EthereumLikeTypes, SystemTypes};
 use zk_ee::types_config::EthereumIOTypesConfig;
 
@@ -64,7 +64,7 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for ProofRunningSystemTypes<O
     type SystemFunctionsExt = NoStdSystemFunctions;
     type Allocator = BootloaderAllocator;
     type Logger = L;
-    type Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata;
+    type Metadata = ZkMetadata;
 }
 
 impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes for ProofRunningSystemTypes<O, L> {}
@@ -75,51 +75,54 @@ impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes for ProofRunningSystemT
     feature = "state-diffs-pi"
 )))]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<TransactionsRollingKeccakHasher>;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<block_flow::TransactionsRollingKeccakHasher>;
     type BatchDataKeeper = ();
-    type BlockHeader = basic_bootloader::bootloader::block_header::BlockHeader;
-    type MetadataOp = zk_ee::system::metadata::zk_metadata::ZkMetadata;
+    type BlockHeader = BlockHeader;
+    type MetadataOp = ZkMetadata;
     type PostSystemInitOp = ZKHeaderPostInitOp;
-    type PreTxLoopOp = ZKHeaderStructurePreTxOp<TransactionsRollingKeccakHasher>;
-    type TxLoopOp = ZKHeaderStructureTxLoop<TransactionsRollingKeccakHasher, ()>;
-    type PostTxLoopOp = ZKHeaderStructurePostTxOpProvingSingleblockBatch;
+    type PreTxLoopOp = ZKHeaderStructurePreTxOp<block_flow::TransactionsRollingKeccakHasher>;
+    type TxLoopOp = ZKHeaderStructureTxLoop<block_flow::TransactionsRollingKeccakHasher, ()>;
+    type PostTxLoopOp = block_flow::ZKHeaderStructurePostTxOpProvingSingleblockBatch<false>;
 }
 
 #[cfg(feature = "multiblock-batch")]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator>;
-    type BatchDataKeeper = ZKBatchDataKeeper<Self::Allocator, O>;
-    type BlockHeader = basic_bootloader::bootloader::block_header::BlockHeader;
-    type MetadataOp = zk_ee::system::metadata::zk_metadata::ZkMetadata;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<block_flow::NopTxHashesAccumulator>;
+    type BatchDataKeeper = block_flow::ZKBatchDataKeeper<Self::Allocator, O>;
+    type BlockHeader = BlockHeader;
+    type MetadataOp = ZkMetadata;
     type PostSystemInitOp = ZKHeaderPostInitOp;
-    type PreTxLoopOp = ZKHeaderStructurePreTxOp<NopTxHashesAccumulator>;
-    type TxLoopOp =
-        ZKHeaderStructureTxLoop<NopTxHashesAccumulator, ZKBatchDataKeeper<Self::Allocator, O>>;
-    type PostTxLoopOp = ZKHeaderStructurePostTxOpProvingMultiblockBatch;
+    type PreTxLoopOp = ZKHeaderStructurePreTxOp<block_flow::NopTxHashesAccumulator>;
+    type TxLoopOp = ZKHeaderStructureTxLoop<
+        block_flow::NopTxHashesAccumulator,
+        block_flow::ZKBatchDataKeeper<Self::Allocator, O>,
+    >;
+    type PostTxLoopOp = block_flow::ZKHeaderStructurePostTxOpProvingMultiblockBatch;
 }
 
 #[cfg(feature = "aggregation")]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<AccumulatingBlake2sTransactionsHasher>;
+    type BlockDataKeeper =
+        ZKBasicBlockDataKeeper<block_flow::AccumulatingBlake2sTransactionsHasher>;
     type BatchDataKeeper = ();
-    type BlockHeader = basic_bootloader::bootloader::block_header::BlockHeader;
-    type MetadataOp = zk_ee::system::metadata::zk_metadata::ZkMetadata;
+    type BlockHeader = BlockHeader;
+    type MetadataOp = ZkMetadata;
     type PostSystemInitOp = ZKHeaderPostInitOp;
-    type PreTxLoopOp = ZKHeaderStructurePreTxOp<AccumulatingBlake2sTransactionsHasher>;
-    type TxLoopOp = ZKHeaderStructureTxLoop<AccumulatingBlake2sTransactionsHasher, ()>;
-    type PostTxLoopOp = ZKHeaderStructurePostTxOpProvingAggregation;
+    type PreTxLoopOp = ZKHeaderStructurePreTxOp<block_flow::AccumulatingBlake2sTransactionsHasher>;
+    type TxLoopOp = ZKHeaderStructureTxLoop<block_flow::AccumulatingBlake2sTransactionsHasher, ()>;
+    type PostTxLoopOp = block_flow::ZKHeaderStructurePostTxOpProvingAggregation;
 }
 
 #[cfg(feature = "state-diffs-pi")]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper = ZKBasicBlockDataKeeper<TransactionsRollingKeccakHasher>;
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<block_flow::TransactionsRollingKeccakHasher>;
     type BatchDataKeeper = ();
-    type BlockHeader = basic_bootloader::bootloader::block_header::BlockHeader;
-    type MetadataOp = zk_ee::system::metadata::zk_metadata::ZkMetadata;
+    type BlockHeader = BlockHeader;
+    type MetadataOp = ZkMetadata;
     type PostSystemInitOp = ZKHeaderPostInitOp;
-    type PreTxLoopOp = ZKHeaderStructurePreTxOp<TransactionsRollingKeccakHasher>;
-    type TxLoopOp = ZKHeaderStructureTxLoop<TransactionsRollingKeccakHasher, ()>;
-    type PostTxLoopOp = ZKHeaderStructurePostTxOpProvingStateDiffsHash;
+    type PreTxLoopOp = ZKHeaderStructurePreTxOp<block_flow::TransactionsRollingKeccakHasher>;
+    type TxLoopOp = ZKHeaderStructureTxLoop<block_flow::TransactionsRollingKeccakHasher, ()>;
+    type PostTxLoopOp = block_flow::ZKHeaderStructurePostTxOpProvingSingleblockBatch<true>;
 }
 
 impl<O: IOOracle, L: Logger + Default> EthereumLikeBasicSTF for ProofRunningSystemTypes<O, L> {}

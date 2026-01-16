@@ -1,7 +1,5 @@
 use super::*;
-use crate::bootloader::block_flow::zk::post_tx_op::da_commitment_generator::{
-    da_commitment_generator_from_scheme, DACommitmentGenerator,
-};
+use crate::bootloader::block_flow::zk::post_tx_op::da_commitment_generator::da_commitment_generator_from_scheme;
 use crate::bootloader::block_flow::zk::post_tx_op::public_input::{
     BatchOutput, BatchPublicInput, ChainStateCommitment,
 };
@@ -12,7 +10,7 @@ use basic_system::system_implementation::flat_storage_model::{
 use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::blake2s::Blake2s256;
-use zk_ee::common_structs::{ProofData, WarmStorageKey};
+use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ProofData, WarmStorageKey};
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
@@ -41,7 +39,8 @@ impl<
             >,
             Metadata = ZkMetadata,
         >,
-    > PostTxLoopOp<S> for ZKHeaderStructurePostTxOpProvingSingleblockBatch
+        const STATE_DIFFS_HASH: bool,
+    > PostTxLoopOp<S> for ZKHeaderStructurePostTxOpProvingSingleblockBatch<STATE_DIFFS_HASH>
 where
     S::IO: IOSubsystemExt
         + IOTeardown<S::IOTypes, IOStateCommitment = FlatStorageCommitment<TREE_HEIGHT>>, // IOStateCommitment bound is trivial, most likely needed due to missing associated types equality feature in the current state of the compiler
@@ -209,6 +208,32 @@ where
             public_input_hash,
         ));
 
-        Ok((io.oracle, public_input_hash))
+        if STATE_DIFFS_HASH {
+            let mut hasher = crypto::blake2s::Blake2s256::new();
+            let mut state_diffs_hasher = crypto::blake2s::Blake2s256::new();
+
+            // Iterate through all modified storage entries and hash them deterministically
+            io.storage
+                .storage_cache
+                .net_diffs_iter()
+                .for_each(|(key, value)| {
+                    let derived_key =
+                        derive_flat_storage_key_with_hasher(&key.address, &key.key, &mut hasher);
+                    logger
+                        .write_fmt(format_args!(
+                            "State diffs hash - key: {:?}, new value: {:?}\n",
+                            derived_key, value.current_value
+                        ))
+                        .ok();
+
+                    // Hash the derived key and new value together to create deterministic state diff hash
+                    state_diffs_hasher.update(derived_key.as_u8_ref());
+                    state_diffs_hasher.update(value.current_value.as_u8_ref());
+                });
+            let state_diffs_hash = state_diffs_hasher.finalize().into();
+            Ok((io.oracle, state_diffs_hash))
+        } else {
+            Ok((io.oracle, public_input_hash))
+        }
     }
 }
