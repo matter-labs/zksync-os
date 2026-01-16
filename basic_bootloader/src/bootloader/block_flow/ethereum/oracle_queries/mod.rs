@@ -1,12 +1,8 @@
 use basic_system::system_implementation::ethereum_storage_model::ETHEREUM_QUERIES_SUBSPACE_MASK;
 use zk_ee::oracle::query_ids::GENERIC_SUBSPACE_MASK;
 
-// To be used in a future PR
-#[allow(dead_code)]
 pub const ETHEREUM_WITHDRAWALS_BUFFER_LEN_QUERY_ID: u32 =
     GENERIC_SUBSPACE_MASK | ETHEREUM_QUERIES_SUBSPACE_MASK | 1;
-// To be used in a future PR
-#[allow(dead_code)]
 pub const ETHEREUM_WITHDRAWALS_BUFFER_DATA_QUERY_ID: u32 =
     GENERIC_SUBSPACE_MASK | ETHEREUM_QUERIES_SUBSPACE_MASK | 2;
 

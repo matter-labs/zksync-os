@@ -10,8 +10,6 @@ pub trait ChainChecker {
     type ExtraData;
     type Output;
 
-    // To be used in a future PR
-    #[allow(dead_code)]
     fn verify_chain<A: Allocator + Clone>(
         &self,
         current_block_number: u64,
