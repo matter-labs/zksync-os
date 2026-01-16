@@ -3,7 +3,7 @@ use zk_ee::utils::Bytes32;
 
 /// ZKsync-specific block data keeper.
 #[derive(Debug)]
-pub struct ZKBasicBlockDataKeeper<EA: TxHashesAccumulator>  {
+pub struct ZKBasicBlockDataKeeper<EA: TxHashesAccumulator> {
     /// Current transaction number within the block
     pub current_transaction_number: u32,
     /// Rolling Keccak hash of all transaction hashes in execution order
@@ -127,7 +127,6 @@ impl TxHashesAccumulator for AccumulatingBlake2sTransactionsHasher {
 }
 
 impl AccumulatingBlake2sTransactionsHasher {
-
     /// Finalizes the Blake2s hash of all accumulated enforced transactions.
     pub fn finish(self) -> Bytes32 {
         Bytes32::from_array(self.hasher.finalize())

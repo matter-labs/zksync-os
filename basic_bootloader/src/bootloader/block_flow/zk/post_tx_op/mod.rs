@@ -1,24 +1,24 @@
-use core::alloc::Allocator;
-use ruint::aliases::U256;
+use super::*;
 use basic_system::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
 use basic_system::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
 use basic_system::system_implementation::system::FullIO;
+use core::alloc::Allocator;
 use crypto::MiniDigest;
+use ruint::aliases::U256;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::Resources;
-use zk_ee::utils::Bytes32;
 use zk_ee::utils::write_bytes::WriteBytes;
-use super::*;
+use zk_ee::utils::Bytes32;
 
 pub mod da_commitment_generator;
-pub mod public_input;
-pub mod post_tx_op_sequencing;
 pub mod post_tx_op_proving_aggregation;
-pub mod post_tx_op_proving_singleblock_batch;
 pub mod post_tx_op_proving_multiblock_batch;
+pub mod post_tx_op_proving_singleblock_batch;
 pub mod post_tx_op_proving_state_diffs_pi;
+pub mod post_tx_op_sequencing;
+pub mod public_input;
 
 /// Version byte for pubdata encoding format.
 /// Version 1: Initial versioned pubdata format
@@ -48,7 +48,7 @@ fn write_pubdata<
         O,
         FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>,
         PROOF_ENV,
-    >
+    >,
 ) {
     // Write version byte first to enable future pubdata format upgrades
     pubdata_dst.write(&[PUBDATA_ENCODING_VERSION]);
@@ -62,14 +62,15 @@ fn write_pubdata<
     io.storage
         .apply_storage_diffs_pubdata(result_keeper, pubdata_dst, &mut io.oracle);
 
-    io.logs_storage.apply_pubdata(
-        pubdata_dst,
-        result_keeper,
-    );
+    io.logs_storage.apply_pubdata(pubdata_dst, result_keeper);
 }
 
 /// Helper method to create block header.
-fn form_block_header<S: EthereumLikeTypes>(system: &System<S>, tx_rolling_hash: Bytes32, block_gas_used: u64) -> Result<BlockHeader, BootloaderSubsystemError> {
+fn form_block_header<S: EthereumLikeTypes>(
+    system: &System<S>,
+    tx_rolling_hash: Bytes32,
+    block_gas_used: u64,
+) -> Result<BlockHeader, BootloaderSubsystemError> {
     let block_number = system.get_block_number();
     let previous_block_hash = if block_number == 0 {
         Bytes32::ZERO

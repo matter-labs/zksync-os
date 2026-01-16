@@ -24,7 +24,10 @@ use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::common_structs::interop_root_storage::InteropRootStorage;
 use zk_ee::common_structs::new_settlement_layer_chain_id_storage::NewSettlementLayerChainIdStorage;
-use zk_ee::common_structs::{GenericEventContentRef, GenericEventContentWithTxRef, GenericLogContentWithTxRef, L2_TO_L1_LOG_SERIALIZE_SIZE};
+use zk_ee::common_structs::{
+    GenericEventContentRef, GenericEventContentWithTxRef, GenericLogContentWithTxRef,
+    L2_TO_L1_LOG_SERIALIZE_SIZE,
+};
 use zk_ee::interface_error;
 use zk_ee::out_of_ergs_error;
 use zk_ee::{
@@ -772,17 +775,16 @@ impl<
     }
 }
 
-
 impl<
-    A: Allocator + Clone + Default,
-    R: Resources,
-    P: StorageAccessPolicy<R, Bytes32> + Default,
-    SF: StackFactory<N>,
-    const N: usize,
-    O: IOOracle,
-    M: StorageModel<IOTypes = EthereumIOTypesConfig, Resources = R, InitData = P, Allocator = A>,
-    const PROOF_ENV: bool,
-> IOTeardown<EthereumIOTypesConfig> for FullIO<A, R, P, SF, N, O, M, PROOF_ENV>
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32> + Default,
+        SF: StackFactory<N>,
+        const N: usize,
+        O: IOOracle,
+        M: StorageModel<IOTypes = EthereumIOTypesConfig, Resources = R, InitData = P, Allocator = A>,
+        const PROOF_ENV: bool,
+    > IOTeardown<EthereumIOTypesConfig> for FullIO<A, R, P, SF, N, O, M, PROOF_ENV>
 {
     type IOStateCommitment = M::StorageCommitment;
 

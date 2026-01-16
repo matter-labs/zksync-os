@@ -206,4 +206,3 @@ impl BatchPublicInput {
         hasher.finalize()
     }
 }
-

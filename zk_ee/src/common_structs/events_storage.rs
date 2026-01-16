@@ -116,7 +116,7 @@ impl<const N: usize, SF: StackFactory<M>, const M: usize, A: Allocator + Clone>
     pub fn events_ref_iter(
         &'_ self,
     ) -> impl ExactSizeIterator<Item = GenericEventContentWithTxRef<'_, { N }, EthereumIOTypesConfig>>
-    + Clone {
+           + Clone {
         self.list.iter().map(|event| GenericEventContentWithTxRef {
             tx_number: event.tx_number,
             address: &event.address,

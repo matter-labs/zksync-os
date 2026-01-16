@@ -14,7 +14,6 @@ where
     /// Batch-level data structure for tracking accumulated state
     type BatchDataKeeper;
 
-
     /// Executes the transaction processing loop for the entire block
     ///
     /// Reads transactions from oracle, validates, executes, and handles rollback

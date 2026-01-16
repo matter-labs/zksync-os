@@ -7,11 +7,10 @@ use crate::bootloader::{
 use zk_ee::system::Resource;
 
 impl<
-    S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
-    BlockEA: TxHashesAccumulator,
-    BatchEA: TxHashesAccumulator,
-> TxLoopOp<S>
-    for ZKHeaderStructureTxLoop<BlockEA, BatchEA>
+        S: EthereumLikeTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>,
+        BlockEA: TxHashesAccumulator,
+        BatchEA: TxHashesAccumulator,
+    > TxLoopOp<S> for ZKHeaderStructureTxLoop<BlockEA, BatchEA>
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata,
@@ -183,8 +182,7 @@ where
                                     block_data
                                         .enforced_transaction_hashes_accumulator
                                         .add_tx_hash(&tx_processing_result.tx_hash);
-                                    batch_data
-                                        .add_tx_hash(&tx_processing_result.tx_hash);
+                                    batch_data.add_tx_hash(&tx_processing_result.tx_hash);
                                 }
                                 if tx_processing_result.is_upgrade_tx {
                                     block_data

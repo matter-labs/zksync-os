@@ -591,13 +591,13 @@ impl<
 }
 
 impl<
-    A: Allocator + Clone + Default,
-    R: Resources,
-    P: StorageAccessPolicy<R, Bytes32>,
-    SF: StackFactory<N>,
-    const N: usize,
-    const PROOF_ENV: bool,
-> FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+        SF: StackFactory<N>,
+        const N: usize,
+        const PROOF_ENV: bool,
+    > FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>
 {
     pub fn apply_storage_diffs_pubdata<T: WriteBytes + ?Sized>(
         &mut self,
@@ -651,7 +651,7 @@ impl<
                         &mut self.preimages_cache,
                         oracle,
                     )
-                        .map_err(|_| ())?;
+                    .map_err(|_| ())?;
                 } else {
                     ValueDiffCompressionStrategy::optimal_compression(
                         l.value(),

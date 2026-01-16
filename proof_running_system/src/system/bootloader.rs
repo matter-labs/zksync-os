@@ -1,10 +1,10 @@
 use super::*;
 use crate::io_oracle::NonDeterminismCSRSourceImplementation;
 use alloc::alloc::{GlobalAlloc, Layout};
+use basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper;
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
-use basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper;
 use zk_ee::logger_log;
 use zk_ee::memory::ZSTAllocator;
 use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
@@ -231,8 +231,11 @@ pub fn run_proving_inner<
             .expect("must disconnect an oracle before performing arbitrary CSR access");
     }
 
-    let public_input =
-        zk_ee::utils::Bytes32::from_array(batch_data.into_public_input(L::default(), &mut oracle).hash());
+    let public_input = zk_ee::utils::Bytes32::from_array(
+        batch_data
+            .into_public_input(L::default(), &mut oracle)
+            .hash(),
+    );
 
     unsafe { core::mem::transmute(public_input) }
 }

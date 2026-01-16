@@ -534,7 +534,7 @@ pub trait EthereumLikeIOSubsystem: IOSubsystem<IOTypes = EthereumIOTypesConfig> 
 
 #[allow(type_alias_bounds)]
 pub type BasicAccountDiff<IOTypes: SystemIOTypesConfig> =
-(u64, IOTypes::NominalTokenValue, IOTypes::BytecodeHashValue);
+    (u64, IOTypes::NominalTokenValue, IOTypes::BytecodeHashValue);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub struct StorageDiff<IOTypes: SystemIOTypesConfig> {
@@ -605,7 +605,7 @@ pub trait IOTeardown<IOTypes: SystemIOTypesConfig>: IOSubsystemExt<IOTypes = IOT
     fn events_iterator<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<Item = GenericEventContentWithTxRef<'a, { MAX_EVENT_TOPICS }, IOTypes>>
-    + Clone;
+           + Clone;
 
     fn signals_iterator<'a>(
         &'a self,
@@ -618,7 +618,6 @@ pub trait IOTeardown<IOTypes: SystemIOTypesConfig>: IOSubsystemExt<IOTypes = IOT
         result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
     );
 }
-
 
 define_subsystem!(Nonce,
 interface NonceError {

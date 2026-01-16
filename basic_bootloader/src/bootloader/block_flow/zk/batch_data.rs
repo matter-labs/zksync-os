@@ -1,16 +1,16 @@
+use super::post_tx_op::da_commitment_generator::DACommitmentGenerator;
+use crate::bootloader::block_flow::zk::post_tx_op::calculate_interop_roots_rolling_hash;
+use crate::bootloader::block_flow::zk::post_tx_op::public_input::{BatchOutput, BatchPublicInput};
+use crate::bootloader::block_flow::{TransactionsRollingKeccakHasher, TxHashesAccumulator};
 use arrayvec::ArrayVec;
-use ruint::aliases::U256;
 use crypto::MiniDigest;
-use zk_ee::common_structs::DACommitmentScheme;
+use ruint::aliases::U256;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
+use zk_ee::common_structs::DACommitmentScheme;
 use zk_ee::logger_log;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::logger::Logger;
 use zk_ee::utils::Bytes32;
-use crate::bootloader::block_flow::{TransactionsRollingKeccakHasher, TxHashesAccumulator};
-use crate::bootloader::block_flow::zk::post_tx_op::calculate_interop_roots_rolling_hash;
-use crate::bootloader::block_flow::zk::post_tx_op::public_input::{BatchOutput, BatchPublicInput};
-use super::post_tx_op::da_commitment_generator::DACommitmentGenerator;
 
 ///
 /// Batch data keeper, it allows applying blocks info one by one to persist data needed for the batch PI.
@@ -107,7 +107,8 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         full_root_hasher.update([0u8; 32]); // aggregated root 0 for now
         let full_l2_to_l1_logs_root = full_root_hasher.finalize();
 
-        let (priority_operations_hash, number_of_layer_1_txs) = self.enforced_txs_accumulator.finish();
+        let (priority_operations_hash, number_of_layer_1_txs) =
+            self.enforced_txs_accumulator.finish();
         let batch_output = BatchOutput {
             chain_id: self.chain_id.unwrap(),
             first_block_timestamp: self.first_block_timestamp.unwrap(),

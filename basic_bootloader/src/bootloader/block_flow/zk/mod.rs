@@ -1,19 +1,19 @@
-use core::marker::PhantomData;
 use super::*;
+use core::marker::PhantomData;
 use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
 use zk_ee::system::MAX_NATIVE_COMPUTATIONAL;
 use zk_ee::{internal_error, system_log, types_config::*};
 
-mod block_data;
 mod batch_data;
+mod block_data;
 mod metadata_op;
 mod post_init_op;
+mod post_tx_op;
 mod pre_tx_loop;
 mod tx_loop;
-mod post_tx_op;
 
-pub use self::block_data::*;
 pub use self::batch_data::*;
+pub use self::block_data::*;
 
 pub struct ZKHeaderPostInitOp;
 
@@ -21,10 +21,7 @@ pub struct ZKHeaderStructurePreTxOp<EA: TxHashesAccumulator> {
     _marker: PhantomData<EA>,
 }
 
-pub struct ZKHeaderStructureTxLoop<
-    BlockEA: TxHashesAccumulator,
-    BatchEA: TxHashesAccumulator,
-> {
+pub struct ZKHeaderStructureTxLoop<BlockEA: TxHashesAccumulator, BatchEA: TxHashesAccumulator> {
     _marker: PhantomData<BlockEA>,
     _marker2: PhantomData<BatchEA>,
 }

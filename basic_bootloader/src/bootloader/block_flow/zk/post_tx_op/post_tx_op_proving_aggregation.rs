@@ -1,46 +1,52 @@
-use core::alloc::Allocator;
-use ruint::Uint;
+use super::*;
+use crate::bootloader::block_flow::zk::post_tx_op::da_commitment_generator::{
+    Blake2sCommitmentGenerator, DACommitmentGenerator, NopCommitmentGenerator,
+};
+use crate::bootloader::block_flow::zk::post_tx_op::public_input::{
+    BlocksOutput, BlocksPublicInput, ChainStateCommitment,
+};
 use basic_system::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
-use basic_system::system_implementation::flat_storage_model::{FlatStorageCommitment, FlatTreeWithAccountsUnderHashesStorageModel, TREE_HEIGHT};
+use basic_system::system_implementation::flat_storage_model::{
+    FlatStorageCommitment, FlatTreeWithAccountsUnderHashesStorageModel, TREE_HEIGHT,
+};
 use basic_system::system_implementation::system::FullIO;
+use core::alloc::Allocator;
 use crypto::blake2s::Blake2s256;
+use ruint::Uint;
 use zk_ee::common_structs::{ProofData, WarmStorageKey};
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
-use super::*;
-use zk_ee::oracle::IOOracle;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use zk_ee::system::{IOTeardown, Resources};
+use zk_ee::oracle::IOOracle;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 use zk_ee::system::metadata::zk_metadata::ZkMetadata;
+use zk_ee::system::{IOTeardown, Resources};
 use zk_ee::utils::write_bytes::WriteBytes;
-use crate::bootloader::block_flow::zk::post_tx_op::da_commitment_generator::{Blake2sCommitmentGenerator, DACommitmentGenerator, NopCommitmentGenerator};
-use crate::bootloader::block_flow::zk::post_tx_op::public_input::{BlocksOutput, BlocksPublicInput, ChainStateCommitment};
 
 impl<
-    A: Allocator + Clone + Default,
-    R: Resources,
-    P: StorageAccessPolicy<R, Bytes32> + Default,
-    SF: StackFactory<N>,
-    const N: usize,
-    O: IOOracle,
-    S: EthereumLikeTypes<
-        IO = FullIO<
-            A,
-            R,
-            P,
-            SF,
-            N,
-            O,
-            FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, true>,
-            true,
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32> + Default,
+        SF: StackFactory<N>,
+        const N: usize,
+        O: IOOracle,
+        S: EthereumLikeTypes<
+            IO = FullIO<
+                A,
+                R,
+                P,
+                SF,
+                N,
+                O,
+                FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, true>,
+                true,
+            >,
+            Metadata = ZkMetadata,
         >,
-        Metadata = ZkMetadata
-    >,
-> PostTxLoopOp<S> for ZKHeaderStructurePostTxOpProvingAggregation
+    > PostTxLoopOp<S> for ZKHeaderStructurePostTxOpProvingAggregation
 where
     S::IO: IOSubsystemExt
-    + IOTeardown<S::IOTypes, IOStateCommitment = FlatStorageCommitment<TREE_HEIGHT>>, // IOStateCommitment bound is trivial, most likely needed due to missing associated types equality feature in the current state of the compiler
+        + IOTeardown<S::IOTypes, IOStateCommitment = FlatStorageCommitment<TREE_HEIGHT>>, // IOStateCommitment bound is trivial, most likely needed due to missing associated types equality feature in the current state of the compiler
 {
     type PostTxLoopOpResult = (O, Bytes32);
     type BlockDataKeeper = ZKBasicBlockDataKeeper<AccumulatingBlake2sTransactionsHasher>;
@@ -53,7 +59,11 @@ where
         _batch_data: &mut Self::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig, BlockHeader = Self::BlockHeader>,
     ) -> Result<Self::PostTxLoopOpResult, BootloaderSubsystemError> {
-        let block_header = form_block_header(&system, block_data.transaction_hashes_accumulator.finish().0, block_data.block_gas_used)?;
+        let block_header = form_block_header(
+            &system,
+            block_data.transaction_hashes_accumulator.finish().0,
+            block_data.block_gas_used,
+        )?;
         let block_hash = Bytes32::from(block_header.hash());
         result_keeper.block_sealed(block_header);
 
@@ -76,11 +86,18 @@ where
         result_keeper.events(io.events_storage.events_ref_iter());
 
         let mut da_commitment_generator = Blake2sCommitmentGenerator::new();
-        write_pubdata(&mut da_commitment_generator, result_keeper, block_hash, metadata.block_timestamp(), &mut io);
+        write_pubdata(
+            &mut da_commitment_generator,
+            result_keeper,
+            block_hash,
+            metadata.block_timestamp(),
+            &mut io,
+        );
         let da_commitment = da_commitment_generator.finalize(io.oracle());
 
         let mut l2_to_l1_logs_hasher = crypto::blake2s::Blake2s256::new();
-        io.logs_storage.apply_l2_to_l1_logs_hashes_to_hasher(&mut l2_to_l1_logs_hasher);
+        io.logs_storage
+            .apply_l2_to_l1_logs_hashes_to_hasher(&mut l2_to_l1_logs_hasher);
         let l2_to_l1_logs_hashes_hash = Bytes32::from(l2_to_l1_logs_hasher.finalize());
 
         let l1_to_l2_tx_hash = block_data.enforced_transaction_hashes_accumulator.finish();
@@ -88,7 +105,8 @@ where
         let mut interop_roots_hasher = Blake2s256::new();
         for root in io.interop_root_storage.iter() {
             interop_roots_hasher.update(&root.chain_id.to_be_bytes::<{ U256::BYTES }>());
-            interop_roots_hasher.update(&root.block_or_batch_number.to_be_bytes::<{ U256::BYTES }>());
+            interop_roots_hasher
+                .update(&root.block_or_batch_number.to_be_bytes::<{ U256::BYTES }>());
             interop_roots_hasher.update(root.root.as_u8_ref());
         }
         let interop_roots_hash = interop_roots_hasher.finalize().into();

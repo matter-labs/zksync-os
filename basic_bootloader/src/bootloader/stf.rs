@@ -22,7 +22,11 @@ where
     /// Implementation for pre-transaction-loop setup
     type PreTxLoopOp: PreTxLoopOp<Self, PreTxLoopResult = Self::BlockDataKeeper>;
     /// Implementation for the main transaction processing loop
-    type TxLoopOp: TxLoopOp<Self, BlockDataKeeper = Self::BlockDataKeeper, BatchDataKeeper = Self::BatchDataKeeper>;
+    type TxLoopOp: TxLoopOp<
+        Self,
+        BlockDataKeeper = Self::BlockDataKeeper,
+        BatchDataKeeper = Self::BatchDataKeeper,
+    >;
     /// Implementation for post-transaction loop operations
     type PostTxLoopOp: PostTxLoopOp<
         Self,
