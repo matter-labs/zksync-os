@@ -839,14 +839,16 @@ impl<
         self.storage.storage_diffs_iterator()
     }
 
+    #[allow(refining_impl_trait_reachable)]
     fn events_in_this_tx_iterator<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<
-        Item = GenericEventContentRef<'a, { MAX_EVENT_TOPICS }, EthereumIOTypesConfig>,
+        Item = GenericEventContentRef<'a, MAX_EVENT_TOPICS, EthereumIOTypesConfig>,
     > + Clone {
         self.events_storage.events_in_transaction_ref_iter()
     }
 
+    #[allow(refining_impl_trait_reachable)]
     fn events_iterator<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<

@@ -1,12 +1,11 @@
 use super::*;
 use crate::bootloader::block_flow::zk::post_tx_op::da_commitment_generator::NopCommitmentGenerator;
 use basic_system::system_implementation::caches::storage_access_policy::StorageAccessPolicy;
-use basic_system::system_implementation::flat_storage_model::{
-    FlatStorageCommitment, FlatTreeWithAccountsUnderHashesStorageModel, TREE_HEIGHT,
-};
+use basic_system::system_implementation::flat_storage_model::FlatTreeWithAccountsUnderHashesStorageModel;
 use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use zk_ee::common_structs::WarmStorageKey;
+use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
@@ -55,7 +54,7 @@ where
         result_keeper.block_sealed(block_header);
 
         let mut logger = system.get_logger();
-        let _ = logger.write_fmt(format_args!("Basic header information was created\n"));
+        logger_log!(logger, "Basic header information was created\n");
 
         let System {
             mut io, metadata, ..

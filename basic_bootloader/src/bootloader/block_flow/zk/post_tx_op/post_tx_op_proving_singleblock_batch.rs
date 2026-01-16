@@ -11,6 +11,7 @@ use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::blake2s::Blake2s256;
 use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ProofData, WarmStorageKey};
+use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
@@ -65,7 +66,7 @@ where
         result_keeper.block_sealed(block_header);
 
         let mut logger = system.get_logger();
-        let _ = logger.write_fmt(format_args!("Basic header information was created\n"));
+        logger_log!(logger, "Basic header information was created\n");
 
         let System {
             mut io, metadata, ..
@@ -123,10 +124,11 @@ where
             (proof_data.state_root_view, proof_data.last_block_timestamp)
         };
 
-        let _ = logger.write_fmt(format_args!(
+        logger_log!(
+            logger,
             "Initial state commitment is {:?}\n",
             &state_commitment
-        ));
+        );
         // validate that timestamp didn't decrease
         assert!(metadata.block_timestamp() >= last_block_timestamp);
 
@@ -142,10 +144,11 @@ where
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
             last_block_timestamp,
         };
-        let _ = logger.write_fmt(format_args!(
+        logger_log!(
+            logger,
             "PI calculation: state commitment before {:?}\n",
             chain_state_commitment_before
-        ));
+        );
 
         // update state commitment
         cycle_marker::wrap!("verify_and_apply_batch", {
@@ -170,10 +173,11 @@ where
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
             last_block_timestamp: metadata.block_timestamp(),
         };
-        let _ = logger.write_fmt(format_args!(
+        logger_log!(
+            logger,
             "PI calculation: state commitment after {:?}\n",
             chain_state_commitment_after
-        ));
+        );
 
         let batch_output = BatchOutput {
             chain_id: U256::from(metadata.chain_id()),
@@ -188,25 +192,24 @@ where
             interop_roots_rolling_hash,
             settlement_layer_chain_id,
         };
-        let _ = logger.write_fmt(format_args!(
-            "PI calculation: batch output {:?}\n",
-            batch_output,
-        ));
+        logger_log!(logger, "PI calculation: batch output {:?}\n", batch_output,);
 
         let public_input = BatchPublicInput {
             state_before: chain_state_commitment_before.hash().into(),
             state_after: chain_state_commitment_after.hash().into(),
             batch_output: batch_output.hash().into(),
         };
-        let _ = logger.write_fmt(format_args!(
+        logger_log!(
+            logger,
             "PI calculation: final batch public input {:?}\n",
             public_input,
-        ));
+        );
         let public_input_hash = public_input.hash().into();
-        let _ = logger.write_fmt(format_args!(
+        logger_log!(
+            logger,
             "PI calculation: final batch public input hash {:?}\n",
             public_input_hash,
-        ));
+        );
 
         if STATE_DIFFS_HASH {
             let mut hasher = crypto::blake2s::Blake2s256::new();
@@ -219,13 +222,12 @@ where
                 .for_each(|(key, value)| {
                     let derived_key =
                         derive_flat_storage_key_with_hasher(&key.address, &key.key, &mut hasher);
-                    logger
-                        .write_fmt(format_args!(
-                            "State diffs hash - key: {:?}, new value: {:?}\n",
-                            derived_key, value.current_value
-                        ))
-                        .ok();
-
+                    logger_log!(
+                        logger,
+                        "State diffs hash - key: {:?}, new value: {:?}\n",
+                        derived_key,
+                        value.current_value
+                    );
                     // Hash the derived key and new value together to create deterministic state diff hash
                     state_diffs_hasher.update(derived_key.as_u8_ref());
                     state_diffs_hasher.update(value.current_value.as_u8_ref());

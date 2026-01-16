@@ -552,17 +552,18 @@ pub struct StorageDiffRef<'a, IOTypes: SystemIOTypesConfig> {
     pub initial_value_used: bool,
 }
 
-// TODO: improve docs
-// Proxy trait that allows one to get dumps of the final IO state. Largely it provides iterator-based accesses
-// to various elements of the IO:
-// - account and storages diffs
-// - logs
-// - l2 to l1 logs (if any)
+/// Proxy trait that allows one to get dumps of the final IO state. Largely it provides iterator-based accesses
+/// to various elements of the IO:
+/// - account and storages diffs
+/// - logs
+/// - l2 to l1 logs (if any)
 pub trait IOTeardown<IOTypes: SystemIOTypesConfig>: IOSubsystemExt<IOTypes = IOTypes> {
     type IOStateCommitment: Clone + UsizeDeserializable + UsizeSerializable + core::fmt::Debug;
 
+    /// Writes pending cached state changes to the result keeper.
     fn flush_caches(&mut self, result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>);
 
+    /// Reports any new preimages (e.g., bytecode hashes) discovered during execution.
     fn report_new_preimages(
         &mut self,
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
@@ -576,10 +577,13 @@ pub trait IOTeardown<IOTypes: SystemIOTypesConfig>: IOSubsystemExt<IOTypes = IOT
     where
         Self: 'a;
 
+    /// Returns the account diff for a specific address, if any changes occurred.
     fn get_account_diff<'a>(
         &'a self,
         address: Self::AccountAddress<'a>,
     ) -> Option<Self::AccountDiff<'a>>;
+
+    /// Returns an iterator over all account state changes (nonce, balance, code).
     fn accounts_diffs_iterator<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<Item = (Self::AccountAddress<'a>, Self::AccountDiff<'a>)> + Clone;
@@ -592,25 +596,31 @@ pub trait IOTeardown<IOTypes: SystemIOTypesConfig>: IOSubsystemExt<IOTypes = IOT
     where
         Self: 'a;
 
+    /// Returns the storage diff for a specific key, if the slot was modified.
     fn get_storage_diff<'a>(&'a self, key: Self::StorageKey<'a>) -> Option<Self::StorageDiff<'a>>;
 
+    /// Returns an iterator over all storage slot changes.
     fn storage_diffs_iterator<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<Item = (Self::StorageKey<'a>, Self::StorageDiff<'a>)> + Clone;
 
+    /// Returns an iterator over events emitted in the current transaction only.
     fn events_in_this_tx_iterator<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<Item = GenericEventContentRef<'a, { MAX_EVENT_TOPICS }, IOTypes>> + Clone;
 
+    /// Returns an iterator over all events emitted in the block, with tx metadata.
     fn events_iterator<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<Item = GenericEventContentWithTxRef<'a, { MAX_EVENT_TOPICS }, IOTypes>>
            + Clone;
 
+    /// Returns an iterator over L2-to-L1 signals (system logs).
     fn signals_iterator<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<Item = GenericLogContentWithTxRef<'a, IOTypes>> + Clone;
 
+    /// Finalizes state changes and updates the state commitment (e.g., Merkle root).
     fn update_commitment(
         &mut self,
         state_commitment: Option<&mut Self::IOStateCommitment>,

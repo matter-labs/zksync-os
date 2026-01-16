@@ -10,6 +10,7 @@ use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::blake2s::Blake2s256;
 use zk_ee::common_structs::{ProofData, WarmStorageKey};
+use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
@@ -63,7 +64,7 @@ where
         result_keeper.block_sealed(block_header);
 
         let mut logger = system.get_logger();
-        let _ = logger.write_fmt(format_args!("Basic header information was created\n"));
+        logger_log!(logger, "Basic header information was created\n");
 
         let System {
             mut io, metadata, ..
@@ -125,10 +126,7 @@ where
             (proof_data.state_root_view, proof_data.last_block_timestamp)
         };
 
-        let _ = logger.write_fmt(format_args!(
-            "Initial state commitment is {:?}\n",
-            &state_commitment
-        ));
+        logger_log!(logger, "Initial state commitment is {:?}\n", &state_commitment);
         // validate that timestamp didn't decrease
         assert!(metadata.block_timestamp() >= last_block_timestamp);
 
@@ -168,10 +166,11 @@ where
             last_256_block_hashes_blake: blocks_hasher.finalize().into(),
             last_block_timestamp: metadata.block_timestamp(),
         };
-        let _ = logger.write_fmt(format_args!(
-            "PI calculation: state commitment after {:?}\n",
+        logger_log!(
+            logger,
+            "PI calculation: state commitment after {:?}",
             chain_state_commitment_after
-        ));
+        );
 
         batch_data.apply_block(
             chain_state_commitment_before.hash().into(),

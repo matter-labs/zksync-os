@@ -60,9 +60,7 @@ impl TxHashesAccumulator for NopTxHashesAccumulator {
 }
 
 impl TxHashesAccumulator for () {
-    fn empty() -> Self {
-        ()
-    }
+    fn empty() -> Self {}
 
     fn add_tx_hash(&mut self, _tx_hash: &Bytes32) {}
 }
