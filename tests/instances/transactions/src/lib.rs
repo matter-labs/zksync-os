@@ -1524,3 +1524,94 @@ fn test_service_block_invariants() {
         )
         .expect_err("Service block with non service tx should fail");
 }
+
+/// Regression test for: Skip balance check on simulation
+#[test]
+fn test_simulation_skips_balance_check() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    let tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 21_000,
+            to: TxKind::Call(target_address),
+            value: U256::from(100), // Trying to send 100 wei without any balance
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    // In simulation mode, the transaction should succeed (balance check skipped)
+    let result_simulation = chain.simulate_block(vec![tx.clone()], None);
+    assert!(
+        result_simulation.tx_results[0].is_ok(),
+        "Transaction should pass validation in simulation mode"
+    );
+
+    // In normal execution mode, the transaction should fail with LackOfFundForMaxFee
+    let result_normal = chain.run_block(vec![tx], None, None, run_config());
+    assert!(
+        matches!(
+            result_normal.tx_results[0],
+            Err(InvalidTransaction::LackOfFundForMaxFee { .. })
+        ),
+        "Transaction should fail with LackOfFundForMaxFee in normal mode, got: {:?}",
+        result_normal.tx_results[0]
+    );
+}
+
+/// Regression test for: Skip nonce check on simulation
+#[test]
+fn test_simulation_skips_nonce_check() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    // Set balance so the tx can pay for gas
+    chain.set_balance(
+        B160::from_be_bytes(from.into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    // Create a transaction with nonce 100, but the account's nonce is 0
+    let tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 100, // Wrong nonce - account nonce is 0
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 21_000,
+            to: TxKind::Call(target_address),
+            value: Default::default(),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    // In simulation mode, the transaction should succeed (nonce check skipped)
+    let result_simulation = chain.simulate_block(vec![tx.clone()], None);
+    assert!(
+        result_simulation.tx_results[0].is_ok(),
+        "Transaction should pass validation in simulation mode, got: {:?}",
+        result_simulation.tx_results[0]
+    );
+
+    // In normal execution mode, the transaction should fail with NonceTooHigh
+    let result_normal = chain.run_block(vec![tx], None, None, run_config());
+    assert!(
+        matches!(
+            result_normal.tx_results[0],
+            Err(InvalidTransaction::NonceTooHigh { .. })
+        ),
+        "Transaction should fail with NonceTooHigh in normal mode, got: {:?}",
+        result_normal.tx_results[0]
+    );
+}
