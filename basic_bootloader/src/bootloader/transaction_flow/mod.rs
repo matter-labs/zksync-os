@@ -118,6 +118,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &Self::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<(), TxError>;
 
     /// Charge fee from sender

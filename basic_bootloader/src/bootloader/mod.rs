@@ -113,6 +113,7 @@ where
             &mut block_data_keeper,
             result_keeper,
             tracer,
+            validator,
         )?;
 
         // whatever the non-persistent data was there, it's now gone

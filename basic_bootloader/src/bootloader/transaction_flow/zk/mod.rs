@@ -314,6 +314,7 @@ where
         transaction: &Transaction<<S as SystemTypes>::Allocator>,
         context: &mut Self::TransactionContext,
         _tracer: &mut impl Tracer<S>,
+        _validator: &mut impl TxValidator<S>,
     ) -> Result<(), TxError> {
         let from = transaction.from();
         let fee = if Config::SIMULATION {
@@ -699,6 +700,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
     where
         S: 'a,
@@ -722,6 +724,7 @@ where
             &nominal_token_value,
             true,
             tracer,
+            validator,
         )?;
 
         let CompletedExecution {
@@ -750,6 +753,7 @@ where
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         to_ee_type: ExecutionEnvironmentType,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
     where
         S: 'a,
@@ -806,6 +810,7 @@ where
             to_ee_type,
             deployment_request,
             tracer,
+            validator,
         )?;
 
         let CompletedExecution {
