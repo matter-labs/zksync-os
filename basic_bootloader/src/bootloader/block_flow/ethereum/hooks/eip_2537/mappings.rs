@@ -34,7 +34,10 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1Mappin
             ));
         }
 
-        let field_element = parse_fq(input.try_into().unwrap())?;
+        let field_element = crypto::bls12_381::eip2537::parse_fq_bytes(input.try_into().unwrap())
+            .ok_or_else(|| {
+            interface_error!(Bls12PrecompileInterfaceError::InvalidFieldElement)
+        })?;
         use crypto::ark_ec::hashing::map_to_curve_hasher::MapToCurve;
         let Ok(result) =
             crypto::ark_ec::hashing::curve_maps::wb::WBMap::map_to_curve(field_element)
@@ -81,7 +84,8 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2Mappin
             ));
         }
 
-        let field_element = parse_fq2(input.try_into().unwrap())?;
+        let field_element = crypto::bls12_381::eip2537::parse_fq2_bytes(input.try_into().unwrap())
+            .ok_or_else(|| interface_error!(Bls12PrecompileInterfaceError::InvalidFieldElement))?;
 
         use crypto::ark_ec::hashing::map_to_curve_hasher::MapToCurve;
         let Ok(result) =

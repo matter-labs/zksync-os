@@ -31,7 +31,7 @@ pub type Fq = Fp512<MontBackend<FqConfig, NUM_LIMBS>>;
 
 use crate::ark_ff_delegation::{BigInt, BigIntMacro, Fp, Fp512, MontBackend, MontConfig};
 use crate::bigint_delegation::{u512, DelegatedModParams, DelegatedMontParams};
-use ark_ff::{AdditiveGroup, Field, Zero};
+use ark_ff::{AdditiveGroup, Field, PrimeField, Zero};
 
 type B = BigInt<NUM_LIMBS>;
 type F = Fp<MontBackend<FqConfig, NUM_LIMBS>, NUM_LIMBS>;
@@ -438,4 +438,47 @@ mod test {
             assert!(gt.cyclotomic_exp(r).is_one());
         }
     }
+}
+
+// Helper functions for EIP-2537 precompile serialization
+// These are defined here to avoid ICE when calling into_bigint from external crates
+#[inline(never)]
+pub fn fq_to_eip2537_bytes(el: Fq) -> [u8; 48] {
+    let mut result = [0u8; 48];
+    let bigint = el.into_bigint();
+    let words = bigint.as_ref();
+    // Take only the first 6 words (48 bytes total) in big-endian
+    for (i, word) in words.iter().take(6).enumerate() {
+        let bytes = word.to_be_bytes();
+        let start = (5 - i) * 8; // Reverse order for big-endian
+        result[start..start + 8].copy_from_slice(&bytes);
+    }
+    result
+}
+
+#[inline(never)]
+pub fn fq_from_eip2537_bytes(input: &[u8; 64]) -> Option<Fq> {
+    if input[..16].iter().all(|el| *el == 0) == false {
+        return None;
+    }
+    // account for potentially variable representations
+    let mut repr = <Fq as ark_ff::PrimeField>::BigInt::zero();
+    let repr_slice = repr.as_mut();
+    for (dst, src) in repr_slice
+        .iter_mut()
+        .zip(input[16..].as_rchunks::<8>().1.iter().rev())
+    {
+        *dst = u64::from_be_bytes(*src);
+    }
+    // from_bigint returns None if repr >= MODULUS
+    Fq::from_bigint(repr)
+}
+
+#[inline(never)]
+pub fn write_fq_to_buffer(el: Fq, buffer: &mut [u8]) {
+    // First 16 bytes are padding
+    buffer[..16].fill(0);
+    // Next 48 bytes are the field element
+    let fq_bytes = fq_to_eip2537_bytes(el);
+    buffer[16..64].copy_from_slice(&fq_bytes);
 }
