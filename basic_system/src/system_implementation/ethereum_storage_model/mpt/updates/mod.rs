@@ -370,7 +370,7 @@ impl<'a, A: Allocator + Clone, VC: VecLikeCtor, const COMPARE_HASHES: bool>
             true
         });
 
-        if self.root.is_empty() {
+        if self.root.is_empty() || self.root.is_opaque_nontrivial_root() {
             return Ok(());
         }
 
