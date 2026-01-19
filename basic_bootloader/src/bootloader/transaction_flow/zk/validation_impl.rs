@@ -321,7 +321,7 @@ where
             system
         )?;
 
-        if &block_base_fee_per_blob_gas > tx_max_fee_per_blob_gas && !Config::SIMULATION {
+        if &block_base_fee_per_blob_gas > tx_max_fee_per_blob_gas {
             return Err(TxError::Validation(
                 InvalidTransaction::BlobBaseFeeGreaterThanMaxFeePerBlobGas,
             ));
@@ -356,9 +356,7 @@ where
             InvalidTransaction::OverflowPaymentInTransaction,
         ));
     };
-    if total_required_balance > originator_account_data.nominal_token_balance.0
-        && !Config::SIMULATION
-    {
+    if total_required_balance > originator_account_data.nominal_token_balance.0 {
         return Err(TxError::Validation(
             InvalidTransaction::LackOfFundForMaxFee {
                 fee: total_required_balance,

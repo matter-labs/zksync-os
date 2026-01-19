@@ -221,13 +221,7 @@ where
         _tracer: &mut impl Tracer<S>,
     ) -> Result<(), TxError> {
         let from = transaction.from();
-        let fee = if Config::SIMULATION {
-            // In simulation mode, we do not precharge any fee.
-            // We keep the logic the same to keep native charge calculations correct.
-            U256::ZERO
-        } else {
-            context.fee_to_prepay
-        };
+        let fee = context.fee_to_prepay;
 
         system_log!(
             system,
