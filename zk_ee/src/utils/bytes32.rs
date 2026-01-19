@@ -319,7 +319,7 @@ impl UsizeDeserializable for Bytes32 {
         src: &mut impl ExactSizeIterator<Item = usize>,
     ) -> Result<(), InternalError> {
         if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
-            return Err(internal_error!("b160 deserialization failed: too short"));
+            return Err(internal_error!("Bytes32 deserialization failed: too short"));
         }
         // Initialize
         let value: &mut Self = this.write(Self::ZERO);

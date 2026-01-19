@@ -122,10 +122,12 @@ impl<A: Allocator> RlpEncodedTransaction<A> {
 
     pub fn tx_type(&self) -> u8 {
         match &self.inner {
-            RlpEncodedTxInner::Legacy(_, _) | RlpEncodedTxInner::LegacyWithEIP155(_, _) => 0,
-            RlpEncodedTxInner::EIP2930(_, _) => 1,
-            RlpEncodedTxInner::EIP1559(_, _) => 2,
-            RlpEncodedTxInner::EIP7702(_, _) => 4,
+            RlpEncodedTxInner::Legacy(_, _) | RlpEncodedTxInner::LegacyWithEIP155(_, _) => {
+                LegacyTXInner::TX_TYPE
+            }
+            RlpEncodedTxInner::EIP2930(_, _) => EIP2930Tx::TX_TYPE,
+            RlpEncodedTxInner::EIP1559(_, _) => EIP1559Tx::TX_TYPE,
+            RlpEncodedTxInner::EIP7702(_, _) => EIP7702Tx::TX_TYPE,
         }
     }
 

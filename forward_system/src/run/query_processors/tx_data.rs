@@ -71,6 +71,7 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
                                 assert_ne!(next_tx_len, 0);
                                 self.next_tx = Some(next_tx);
                                 self.next_tx_format = Some(TxEncodingFormat::Abi);
+                                self.next_tx_from = None;
                                 next_tx_len
                             }
                             NextTxResponse::Tx(EncodedTx::Rlp(next_tx, from)) => {

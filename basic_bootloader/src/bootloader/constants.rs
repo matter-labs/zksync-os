@@ -37,9 +37,9 @@ pub const L1_TX_INTRINSIC_NATIVE_COST: u64 = 130_000;
 
 // Pubdata needed for the diff in balance as a result of
 // the fee payment to the coinbase.
-// We take a worst-case value of 32 byte for the key and 33 for
+// We take a worst-case value of 32 byte for the key and 34 for
 // the uncompressed update.
-const COINBASE_BALANCE_INTRINSIC_PUBDATA: u64 = 32 + 33;
+const COINBASE_BALANCE_INTRINSIC_PUBDATA: u64 = 32 + 34;
 
 // Needed to publish the l1 tx log and coinbase balance.
 pub const L1_TX_INTRINSIC_PUBDATA: u64 = 88 + COINBASE_BALANCE_INTRINSIC_PUBDATA;
