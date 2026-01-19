@@ -3567,6 +3567,7 @@ dependencies = [
  "basic_system",
  "bincode 1.3.3",
  "callable_oracles",
+ "crypto",
  "evm_interpreter",
  "hex",
  "oracle_provider",
@@ -6183,6 +6184,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "alloy-rlp",
+ "alloy-rpc-types-debug",
  "alloy-sol-types",
  "basic_bootloader",
  "basic_system",

@@ -1,25 +1,43 @@
 use crate::{colors, init_logger};
+use alloy::consensus::Header;
 use alloy::signers::local::PrivateKeySigner;
+use alloy_rlp::{Decodable, Encodable};
+use basic_bootloader::bootloader::block_flow::ethereum::PectraForkHeader;
 use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
+use basic_bootloader::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
+use basic_bootloader::bootloader::BasicBootloader;
+use basic_system::system_implementation::ethereum_storage_model::caches::account_properties::EthereumAccountProperties;
+use basic_system::system_implementation::ethereum_storage_model::vec_trait::VecCtor;
+use basic_system::system_implementation::ethereum_storage_model::EthereumMPT;
 use basic_system::system_implementation::flat_storage_model::FlatStorageCommitment;
 use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
     TREE_HEIGHT,
 };
 use ethers::signers::LocalWallet;
+use forward_system::run::query_processors::EthereumCLResponder;
+use forward_system::run::query_processors::EthereumTargetBlockHeaderResponder;
+use forward_system::run::query_processors::GenericPreimageResponder;
+use forward_system::run::query_processors::InMemoryEthereumInitialAccountStateResponder;
+use forward_system::run::query_processors::InMemoryEthereumInitialStorageSlotValueResponder;
+use forward_system::run::query_processors::TxDataResponder;
+use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
+use forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
 use forward_system::system::system_types::ForwardRunningSystem;
+use log::warn;
 use log::{debug, info, trace};
 use oracle_provider::MemorySource;
 use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
 use risc_v_simulator::abstractions::memory::VectorMemoryImpl;
 use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
 use ruint::aliases::{B160, B256, U256};
+use std::alloc::Global;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -642,6 +660,198 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             vec![]
         };
         Ok((block_output, stats, proof_input))
+    }
+
+    pub fn make_eth_block_oracle<M: MemorySource + 'static>(
+        transactions: Vec<EncodedTx>,
+        witness: alloy_rpc_types_debug::ExecutionWitness,
+        block_header: Header,
+        withdrawals: Vec<u8>,
+    ) -> ZkEENonDeterminismSource<M> {
+        use crypto::MiniDigest;
+        use std::collections::BTreeMap;
+
+        let mut headers: Vec<Header> = witness
+            .headers
+            .iter()
+            .map(|el| {
+                let mut slice: &[u8] = &el.0;
+                Header::decode(&mut slice).unwrap()
+            })
+            .collect();
+
+        assert!(!headers.is_empty());
+        assert!(headers.is_sorted_by(|a, b| a.number < b.number));
+        headers.reverse();
+        assert_eq!(headers.len(), witness.headers.len());
+
+        let block_number = headers[0].number + 1;
+        assert_eq!(block_number, block_header.number);
+
+        let mut headers_encodings: Vec<_> =
+            witness.headers.iter().map(|el| el.0.to_vec()).collect();
+        headers_encodings.reverse();
+
+        let initial_root = headers[0].state_root;
+
+        let mut preimage_source = InMemoryPreimageSource::default();
+        let mut oracle: BTreeMap<Bytes32, Vec<u8>> = BTreeMap::new();
+
+        let mut hasher = crypto::sha3::Keccak256::new();
+
+        // make an oracle
+        for el in witness.state.iter() {
+            hasher.update(el);
+            let hash = hasher.finalize_reset();
+            oracle.insert(Bytes32::from_array(hash), el.to_vec());
+            preimage_source
+                .inner
+                .insert(Bytes32::from_array(hash), el.to_vec());
+        }
+
+        for el in witness.codes.iter() {
+            hasher.update(el);
+            let hash = hasher.finalize_reset();
+            oracle.insert(Bytes32::from_array(hash), el.to_vec());
+            preimage_source
+                .inner
+                .insert(Bytes32::from_array(hash), el.to_vec());
+        }
+
+        // we will do some really bad heuristics here
+        use basic_system::system_implementation::ethereum_storage_model::digits_from_key;
+        use basic_system::system_implementation::ethereum_storage_model::BoxInterner;
+        use basic_system::system_implementation::ethereum_storage_model::Path;
+
+        let mut interner = BoxInterner::with_capacity_in(1 << 26, Global);
+        let mut accounts_mpt: EthereumMPT<'_, Global, VecCtor, false> =
+            EthereumMPT::new_in(initial_root.0, &mut interner, Global).unwrap();
+        let mut account_properties = HashMap::<B160, EthereumAccountProperties>::new();
+        for el in witness.keys.iter() {
+            if el.len() == 20 {
+                hasher.update(el);
+                let hash = hasher.finalize_reset();
+                let digits = digits_from_key(&hash);
+                let path = Path::new(&digits);
+                if let Ok(props) = accounts_mpt.get(path, &mut oracle, &mut interner, &mut hasher) {
+                    let props = EthereumAccountProperties::parse_from_rlp_bytes(props)
+                        .expect("must parse account data");
+                    let key = B160::from_be_bytes::<20>(el[..].try_into().unwrap());
+                    account_properties.insert(key, props);
+                } else {
+                    warn!("Account 0x{} is in preimages list, but there is no MTP witness to get it's properties", hex::encode(el));
+                }
+            }
+        }
+
+        info!("Will try to run {} transactions", transactions.len());
+
+        let tx_source = TxListSource {
+            transactions: transactions.into(),
+        };
+
+        let mut target_header_encoding = vec![];
+        block_header.encode(&mut target_header_encoding);
+
+        let target_header_responder = EthereumTargetBlockHeaderResponder {
+            target_header: block_header,
+            target_header_encoding,
+        };
+        let tx_data_responder = TxDataResponder {
+            tx_source,
+            next_tx: None,
+            next_tx_format: None,
+            next_tx_from: None,
+        };
+        let preimage_responder = GenericPreimageResponder { preimage_source };
+        let initial_account_state_responder = InMemoryEthereumInitialAccountStateResponder::new(
+            initial_root.0,
+            account_properties.clone(),
+            oracle.clone(),
+        );
+        let initial_values_responder =
+            InMemoryEthereumInitialStorageSlotValueResponder::new(account_properties, oracle);
+
+        let cl_responder = EthereumCLResponder {
+            withdrawals_list: withdrawals,
+            parent_headers_list: headers,
+            parent_headers_encodings_list: headers_encodings,
+        };
+
+        let mut oracle = ZkEENonDeterminismSource::default();
+        oracle.add_external_processor(target_header_responder.clone());
+        oracle.add_external_processor(tx_data_responder.clone());
+        oracle.add_external_processor(preimage_responder.clone());
+        oracle.add_external_processor(initial_account_state_responder.clone());
+        oracle.add_external_processor(initial_values_responder.clone());
+        oracle.add_external_processor(cl_responder.clone());
+        oracle.add_external_processor(
+            callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
+        );
+        oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
+        oracle.add_external_processor(UARTPrintResponder);
+
+        oracle
+    }
+
+    pub fn run_eth_block<const PROOF_ENV: bool>(
+        &mut self,
+        transactions: Vec<EncodedTx>,
+        witness: alloy_rpc_types_debug::ExecutionWitness,
+        block_header: Header,
+        withdrawals: Vec<u8>,
+        witness_output_file: Option<PathBuf>,
+        app: Option<String>,
+    ) -> ForwardRunningResultKeeper<NoopTxCallback, PectraForkHeader> {
+        let (result_keeper, _witness) = self.run_eth_block_with_options::<PROOF_ENV>(
+            transactions,
+            witness,
+            block_header,
+            withdrawals,
+            witness_output_file,
+            app,
+            true,
+            true,
+        );
+        result_keeper.unwrap()
+    }
+
+    #[allow(clippy::too_many_arguments, unused_variables)]
+    pub fn run_eth_block_with_options<const PROOF_ENV: bool>(
+        &mut self,
+        transactions: Vec<EncodedTx>,
+        witness: alloy_rpc_types_debug::ExecutionWitness,
+        block_header: Header,
+        withdrawals: Vec<u8>,
+        witness_output_file: Option<PathBuf>,
+        app: Option<String>,
+        compute_result_keeper: bool,
+        compute_witness: bool,
+    ) -> (
+        Option<ForwardRunningResultKeeper<NoopTxCallback, PectraForkHeader>>,
+        Option<Vec<u32>>,
+    ) {
+        use basic_bootloader::bootloader::config::BasicBootloaderForwardETHLikeConfig;
+        use forward_system::run::result_keeper::ForwardRunningResultKeeper;
+
+        let oracle = Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
+
+        // Forward run:
+        let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
+        let mut nop_tracer = NopTracer::default();
+
+        BasicBootloader::<
+            EthereumStorageSystemTypesWithPostOps<_>,
+            EthereumTransactionFlow<EthereumStorageSystemTypesWithPostOps<_>>,
+        >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
+            oracle,
+            &mut (),
+            &mut result_keeper,
+            &mut nop_tracer,
+        )
+        .expect("must succeed");
+        // TODO: proof run
+        (Some(result_keeper), None)
     }
 
     pub fn get_account_properties(&mut self, address: &B160) -> AccountProperties {
