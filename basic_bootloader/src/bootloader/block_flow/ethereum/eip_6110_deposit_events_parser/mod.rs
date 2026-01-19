@@ -100,7 +100,11 @@ fn validate_and_write_event_data(
     requests_hasher.update(withdrawal_credentials);
 
     let amount = &data[352..][..8];
-    logger_log!(logger, "\nAmount = {}", u64::from_le_bytes(amount.try_into().unwrap()));
+    logger_log!(
+        logger,
+        "\nAmount = {}",
+        u64::from_le_bytes(amount.try_into().unwrap())
+    );
     requests_hasher.update(amount);
 
     logger_log!(logger, "\nSignature = ");
@@ -109,7 +113,11 @@ fn validate_and_write_event_data(
     requests_hasher.update(signature);
 
     let index = &data[544..][..8];
-    logger_log!(logger, "\nIndex = {}\n", u64::from_le_bytes(index.try_into().unwrap()));
+    logger_log!(
+        logger,
+        "\nIndex = {}\n",
+        u64::from_le_bytes(index.try_into().unwrap())
+    );
     requests_hasher.update(index);
 
     Ok(())

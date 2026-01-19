@@ -53,7 +53,12 @@ where
     let timestamp = system.get_timestamp();
     let timestamp_idx = timestamp % HISTORY_BUFFER_LENGTH;
 
-    system_log!(system, "EIP-4788 timestamp = {}, beacon root = {:?}\n", timestamp, &beacon_root);
+    system_log!(
+        system,
+        "EIP-4788 timestamp = {}, beacon root = {:?}\n",
+        timestamp,
+        &beacon_root
+    );
 
     let mut timestamp_slot = Bytes32::ZERO;
     timestamp_slot.as_u8_array_mut()[24..32].copy_from_slice(&timestamp_idx.to_be_bytes());
