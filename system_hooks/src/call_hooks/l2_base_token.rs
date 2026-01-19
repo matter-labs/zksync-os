@@ -21,6 +21,7 @@ use zk_ee::storage_types::MAX_EVENT_TOPICS;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::errors::{runtime::RuntimeError, system::SystemError};
 use zk_ee::system::logger::Logger;
+use zk_ee::system_log;
 use zk_ee::utils::{b160_to_u256, Bytes32};
 use zk_ee::{internal_error, out_of_return_memory};
 
@@ -96,15 +97,11 @@ where
             ))
         }
         Ok(Err(e)) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Revert: {e:?}\n"));
+            system_log!(system, "Revert: {e:?}\n");
             Ok((make_error_return_state(resources), return_memory))
         }
         Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Out of gas during system hook\n"));
+            system_log!(system, "Out of gas during system hook\n");
             Ok((make_error_return_state(resources), return_memory))
         }
         Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => Err(e),
@@ -158,9 +155,7 @@ where
     }
     let mut selector = [0u8; 4];
     selector.copy_from_slice(&calldata[..4]);
-    let _ = system
-        .get_logger()
-        .write_fmt(format_args!("Selector for l2 base token:"));
+    system_log!(system, "Selector for l2 base token:");
     let _ = system.get_logger().log_data(selector.iter().copied());
     // Calldata length shouldn't be able to overflow u32, due to gas
     // limitations.

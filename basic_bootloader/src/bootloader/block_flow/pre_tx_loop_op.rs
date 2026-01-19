@@ -1,4 +1,5 @@
 use super::*;
+use zk_ee::system::IOResultKeeper;
 
 /// Trait for operations performed before the transaction processing loop begins.
 pub trait PreTxLoopOp<S: SystemTypes>

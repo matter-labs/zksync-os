@@ -6,7 +6,7 @@ use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
 use zk_ee::system::metadata::zk_metadata::{BlockMetadataFromOracle, TxLevelMetadata, ZkMetadata};
-use zk_ee::system::SystemTypes;
+use zk_ee::system::{SystemTypes, MAX_TX_GAS_LIMIT};
 
 impl<S: SystemTypes<Metadata = zk_ee::system::metadata::zk_metadata::ZkMetadata>> MetadataInitOp<S>
     for zk_ee::system::metadata::zk_metadata::ZkMetadata

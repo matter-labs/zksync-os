@@ -22,9 +22,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!(" offset: {index}, read value: 0x{value:0x}"));
+            use zk_ee::system_log;
+            system_log!(system, " offset: {index}, read value: 0x{value:0x}");
         }
 
         *stack_top = value;
@@ -49,9 +48,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
-            let _ = system.get_logger().write_fmt(format_args!(
-                " offset: {index}, stored value: 0x{le_value:0x}"
-            ));
+            use zk_ee::system_log;
+            system_log!(system, " offset: {index}, stored value: 0x{le_value:0x}");
         }
 
         Ok(())
@@ -69,9 +67,8 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!(" offset: {index}, stored byte: 0x{value:0x}"));
+            use zk_ee::system_log;
+            system_log!(system, " offset: {index}, stored byte: 0x{value:0x}");
         }
 
         Ok(())

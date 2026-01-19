@@ -203,10 +203,9 @@ impl<
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
-        is_access_list: bool,
     ) -> Result<(), SystemError> {
         self.storage_cache
-            .touch(ee_type, resources, address, key, oracle, is_access_list)
+            .touch(ee_type, resources, address, key, oracle)
     }
 
     fn storage_write(
@@ -289,7 +288,6 @@ impl<
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
-        is_access_list: bool,
     ) -> Result<(), SystemError> {
         self.account_data_cache.touch_account::<PROOF_ENV>(
             ee_type,
@@ -298,7 +296,6 @@ impl<
             &mut self.storage_cache,
             &mut self.preimages_cache,
             oracle,
-            is_access_list,
         )
     }
 

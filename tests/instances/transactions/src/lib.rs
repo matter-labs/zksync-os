@@ -822,7 +822,7 @@ fn test_balance_overflow_protection() {
         let tx = TxEip1559 {
             chain_id: 37u64,
             nonce: 0,
-            gas_limit: u64::MAX, // Will cause overflow when multiplied with max_fee_per_gas
+            gas_limit: (u64::MAX / 300), // Will cause overflow when multiplied with max_fee_per_gas
             max_fee_per_gas: u128::MAX,
             max_priority_fee_per_gas: 0,
             to: TxKind::Call(to),

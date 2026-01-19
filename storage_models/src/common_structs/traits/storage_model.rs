@@ -40,7 +40,6 @@ pub trait StorageModel: Sized + SnapshottableIo {
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
-        is_access_list: bool,
     ) -> Result<(), SystemError>;
 
     // returns old value
@@ -110,7 +109,6 @@ pub trait StorageModel: Sized + SnapshottableIo {
         resources: &mut Self::Resources,
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         oracle: &mut impl IOOracle,
-        is_access_list: bool,
     ) -> Result<(), SystemError>;
 
     fn increment_nonce(

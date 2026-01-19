@@ -6,6 +6,7 @@ use crate::STACK_SIZE;
 use alloc::boxed::Box;
 use core::{alloc::Allocator, mem::MaybeUninit};
 use ruint::aliases::U256;
+use zk_ee::logger_log;
 use zk_ee::system::evm::EvmStackInterface;
 use zk_ee::system::logger::Logger;
 use zksync_os_evm_errors::EvmError;
@@ -31,7 +32,7 @@ impl<A: Allocator> EvmStack<A> {
             if let Some(el) =
                 core::slice::from_raw_parts(self.buffer.as_ptr().cast::<U256>(), self.len).last()
             {
-                let _ = logger.write_fmt(format_args!("Stack top = 0x{el:x}\n"));
+                logger_log!(logger, "Stack top = 0x{el:x}\n");
             } else {
                 let _ = logger.write_str("Stack top = empty\n");
             }
@@ -41,14 +42,14 @@ impl<A: Allocator> EvmStack<A> {
     #[allow(dead_code)]
     pub(crate) fn print_stack_content(&self, logger: &mut impl Logger) {
         unsafe {
-            let _ = logger.write_fmt(format_args!("DEPTH MAX\n"));
+            logger_log!(logger, "DEPTH MAX\n");
             for el in core::slice::from_raw_parts(self.buffer.as_ptr().cast::<U256>(), self.len)
                 .iter()
                 .rev()
             {
-                let _ = logger.write_fmt(format_args!("{el:x}\n"));
+                logger_log!(logger, "{el:x}\n");
             }
-            let _ = logger.write_fmt(format_args!("DEPTH 0\n"));
+            logger_log!(logger, "DEPTH 0\n");
         }
     }
 

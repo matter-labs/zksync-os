@@ -5,6 +5,7 @@
 
 use arbitrary::{Arbitrary, Result, Unstructured};
 use basic_bootloader::bootloader::runner::RunnerMemoryBuffers;
+use basic_bootloader::bootloader::transaction_flow::zk::process_l1_transaction::mint_token;
 use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
 use basic_bootloader::bootloader::BasicBootloader;
 use common::mock_oracle_balance;
@@ -16,7 +17,9 @@ use rig::ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{
     CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
 };
-use system_hooks::call_hooks::contract_deployer::{L2_COMPLEX_UPGRADER_ADDRESS, SET_EVM_BYTECODE_DETAILS};
+use system_hooks::call_hooks::contract_deployer::{
+    L2_COMPLEX_UPGRADER_ADDRESS, SET_EVM_BYTECODE_DETAILS,
+};
 use system_hooks::call_hooks::l1_messenger::SEND_TO_L1_SELECTOR;
 use system_hooks::call_hooks::l2_base_token::{
     FINALIZE_ETH_WITHDRAWAL_SELECTOR, WITHDRAW_SELECTOR, WITHDRAW_WITH_MESSAGE_SELECTOR,
@@ -244,18 +247,14 @@ fn fuzz(input: FuzzInput) {
 
     match selector {
         0 => {
-            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::mint_token(
-                &mut system,
-                &amount,
-                &from,
-                &mut inf_resources,
-            );
+            let _ =
+                mint_token::<ForwardRunningSystem>(&mut system, &amount, &from, &mut inf_resources);
         }
         1 => {
             // Fuzz-test run_single_interaction
             let calldata = input.calldata1;
 
-            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::run_single_interaction(
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>::run_single_interaction(
                 &mut system,
                 &mut system_functions,
                 memories,
@@ -276,7 +275,7 @@ fn fuzz(input: FuzzInput) {
 
             let calldata = &input.calldata2.raw;
 
-            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::run_single_interaction(
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>::run_single_interaction(
                 &mut system,
                 &mut system_functions,
                 memories,
@@ -296,7 +295,7 @@ fn fuzz(input: FuzzInput) {
 
             let calldata = &input.calldata2.raw;
 
-            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::run_single_interaction(
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>::run_single_interaction(
                 &mut system,
                 &mut system_functions,
                 memories,
@@ -317,7 +316,7 @@ fn fuzz(input: FuzzInput) {
 
             let calldata = &input.calldata2.raw;
 
-            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::run_single_interaction(
+            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>::run_single_interaction(
                 &mut system,
                 &mut system_functions,
                 memories,

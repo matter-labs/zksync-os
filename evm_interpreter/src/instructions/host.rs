@@ -91,9 +91,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
-            let _ = system.get_logger().write_fmt(format_args!(
+            use zk_ee::system_log;
+            system_log!(
+                system,
                 " len {len}, source offset: {source_offset:?}, dest offset {memory_offset}"
-            ));
+            );
         }
 
         Ok(())
@@ -172,10 +174,14 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // This is an example of what would need to be done with tracing
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
-            let _ = system.get_logger().write_fmt(format_args!(
+            use zk_ee::system_log;
+            system_log!(
+                system,
                 " address {:?}, key {:?}, value {:?}",
-                &self.address, &index, &value
-            ));
+                &self.address,
+                &index,
+                &value
+            );
         }
 
         Ok(())

@@ -1,3 +1,5 @@
+use zk_ee::system::IOResultKeeper;
+
 use super::*;
 use crate::bootloader::block_flow::pre_tx_loop_op::PreTxLoopOp;
 

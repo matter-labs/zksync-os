@@ -96,7 +96,9 @@ pub type ForwardRunningSystem = ForwardSystemTypes<ZkEENonDeterminismSource<Dumm
 pub type CallSimulationSystem = ForwardSystemTypes<ZkEENonDeterminismSource<DummyMemorySource>>;
 
 /// Bootloader for forward execution using ZK transaction flow (EOA only)
-pub type ForwardBootloader = BasicBootloader<ForwardRunningSystem, ZkTransactionFlowOnlyEOA>;
+pub type ForwardBootloader =
+    BasicBootloader<ForwardRunningSystem, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>;
 
 /// Bootloader for call simulation using ZK transaction flow (EOA only)
-pub type CallSimulationBootloader = BasicBootloader<CallSimulationSystem, ZkTransactionFlowOnlyEOA>;
+pub type CallSimulationBootloader =
+    BasicBootloader<CallSimulationSystem, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>;

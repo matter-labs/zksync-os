@@ -41,13 +41,14 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
             if Self::PRINT_OPCODES {
                 use core::fmt::Write;
+                use zk_ee::logger_log;
                 use zk_ee::system::logger::Logger;
                 let mut logger = system.get_logger();
                 let input = &self.heap()[memory_offset..(memory_offset + len)];
                 let input_iter = input.iter().copied();
-                let _ = logger.write_fmt(format_args!(" input: ",));
+                logger_log!(logger, " input: ",);
                 let _ = logger.log_data(input_iter);
-                let _ = logger.write_fmt(format_args!(" -> 0x{hash:0x}"));
+                logger_log!(logger, " -> 0x{hash:0x}");
             }
 
             hash
@@ -99,9 +100,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
-            let _ = system.get_logger().write_fmt(format_args!(
+            use zk_ee::system_log;
+            system_log!(
+                system,
                 " len {len}, source offset: {source_offset:?}, dest offset {memory_offset}"
-            ));
+            );
         }
 
         Ok(())
@@ -137,10 +140,13 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
-            let _ = system.get_logger().write_fmt(format_args!(
+            use zk_ee::system_log;
+            system_log!(
+                system,
                 " offset: {}, read value: 0x{:0x}",
-                *stack_top, value
-            ));
+                *stack_top,
+                value
+            );
         }
 
         *stack_top = value;
@@ -182,9 +188,11 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
 
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
-            let _ = system.get_logger().write_fmt(format_args!(
+            use zk_ee::system_log;
+            system_log!(
+                system,
                 " len {len}, source offset: {source_offset:?}, dest offset {memory_offset}"
-            ));
+            );
         }
 
         Ok(())

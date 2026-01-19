@@ -1,11 +1,15 @@
-use constants::{CALLDATA_NON_ZERO_BYTE_GAS_COST, CALLDATA_ZERO_BYTE_GAS_COST};
-use evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST;
-use evm_interpreter::ERGS_PER_GAS;
+use crate::require;
+use constants::{CALLDATA_TOKEN_GAS_COST, DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS};
+use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
 use zk_ee::internal_error;
 use zk_ee::system::errors::internal::InternalError;
-use zk_ee::system::{Computational, Resources};
+use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
+use zk_ee::system::{Computational, Ergs, Resources};
+#[allow(unused_imports)]
+use zk_ee::system::{Resource, MAX_NATIVE_COMPUTATIONAL};
+use zk_ee::system_log;
 
-use super::*;
+use super::super::*;
 
 pub struct ResourcesForTx<S: EthereumLikeTypes> {
     // Resources to run the transaction.
@@ -19,18 +23,39 @@ pub struct ResourcesForTx<S: EthereumLikeTypes> {
     pub intrinsic_computational_native_charged: u64,
 }
 
-pub fn get_resources_for_tx<S: EthereumLikeTypes>(
+impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForTx<S> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ResourcesForTx")
+            .field("gas", &(self.main_resources.ergs().0 / ERGS_PER_GAS))
+            .field("main_resources", &self.main_resources)
+            .field("withheld", &self.withheld)
+            .field(
+                "intrinsic_computational_native_charged",
+                &self.intrinsic_computational_native_charged,
+            )
+            .finish()
+    }
+}
+
+///
+/// Create initial resources for a transaction.
+///
+pub fn create_resources_for_tx<S: EthereumLikeTypes>(
     gas_limit: u64,
-    native_per_pubdata: U256,
-    native_per_gas: U256,
-    calldata: &[u8],
+    zero_gas_price: bool,
+    native_prepaid_from_gas: u64,
+    native_per_pubdata_byte: u64,
+    is_deployment: bool,
+    calldata_len: u64,
+    calldata_tokens: u64,
     intrinsic_gas: u64,
     intrinsic_pubdata: u64,
     intrinsic_native: u64,
     is_l1_tx: bool,
-) -> Result<ResourcesForTx<S>, TxError> {
-    // TODO: operator trusted gas limit?
-
+) -> Result<ResourcesForTx<S>, TxError>
+where
+    S::Metadata: ZkSpecificPricingMetadata,
+{
     // This is the real limit, which we later use to compute native_used.
     // From it, we discount intrinsic pubdata and then take the min
     // with the MAX_NATIVE_COMPUTATIONAL.
@@ -38,24 +63,20 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     // isn't computational.
     // We can consider in the future to keep two limits, so that pubdata
     // is not charged from computational resource.
-    // Note: if native_per_gas is 0, we treat it as unlimited_native.
-    // This can only happen when gas_price is 0, which means that fees
-    // aren't charged.
-    let native_limit = if cfg!(feature = "unlimited_native") || native_per_gas.is_zero() {
-        u64::MAX
+    // Note: for zero gas price, we use "unlimited native"
+    let native_limit = if cfg!(feature = "unlimited_native") || zero_gas_price {
+        u64::MAX - 1 // So any saturation below can not be subtracted from it
     } else {
-        gas_limit.saturating_mul(u256_to_u64_saturated(&native_per_gas))
+        native_prepaid_from_gas
     };
 
     // Charge pubdata overhead
-    let intrinsic_pubdata_overhead = u256_to_u64_saturated(&native_per_pubdata)
-        .checked_mul(intrinsic_pubdata)
-        .ok_or(internal_error!("npp*ip"))?;
+    let intrinsic_pubdata_overhead = native_per_pubdata_byte.saturating_mul(intrinsic_pubdata);
     let native_limit = native_limit
         .checked_sub(intrinsic_pubdata_overhead)
         .or(if is_l1_tx { Some(0) } else { None })
         .ok_or(TxError::Validation(
-            errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
+            InvalidTransaction::OutOfNativeResourcesDuringValidation,
         ))?;
 
     // EVM tester requires high native limits, so for it we never hold off resources.
@@ -80,19 +101,15 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
     };
 
     // Charge for calldata and intrinsic native
-    let (calldata_gas, calldata_native) = cost_for_calldata(calldata)?;
-
-    let intrinsic_computational_native_charged = calldata_native
-        .checked_add(intrinsic_native)
-        .ok_or(TxError::Validation(
-            errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
-        ))?;
+    let calldata_native = calldata_len
+        .saturating_mul(evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST);
+    let intrinsic_computational_native_charged = calldata_native.saturating_add(intrinsic_native);
 
     let native_limit = native_limit
         .checked_sub(intrinsic_computational_native_charged)
         .or(if is_l1_tx { Some(0) } else { None })
         .ok_or(TxError::Validation(
-            errors::InvalidTransaction::OutOfNativeResourcesDuringValidation,
+            InvalidTransaction::OutOfNativeResourcesDuringValidation,
         ))?;
 
     let native_limit =
@@ -100,49 +117,38 @@ pub fn get_resources_for_tx<S: EthereumLikeTypes>(
             native_limit,
         );
 
-    // Intrinsic overhead
-    let intrinsic_overhead = intrinsic_gas;
+    // Intrinsic overhead - he can quickly check deployment cost and calldata tokens cost
+    let mut intrinsic_overhead = intrinsic_gas;
 
-    let total_gas_to_charge = calldata_gas
-        .checked_add(intrinsic_overhead)
-        .ok_or(internal_error!("tuo+io"))?;
+    if is_deployment {
+        if calldata_len > MAX_INITCODE_SIZE as u64 {
+            return Err(TxError::Validation(
+                InvalidTransaction::CreateInitCodeSizeLimit,
+            ));
+        }
+        intrinsic_overhead = intrinsic_overhead.saturating_add(DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS);
+        let initcode_gas_cost = evm_interpreter::gas_constants::INITCODE_WORD_COST
+            * (calldata_len.next_multiple_of(32) / 32);
+        intrinsic_overhead = intrinsic_overhead.saturating_add(initcode_gas_cost);
+    }
+    intrinsic_overhead =
+        intrinsic_overhead.saturating_add(calldata_tokens.saturating_mul(CALLDATA_TOKEN_GAS_COST));
 
-    if total_gas_to_charge > gas_limit && !is_l1_tx {
+    if intrinsic_overhead > gas_limit && !is_l1_tx {
         Err(TxError::Validation(
-            errors::InvalidTransaction::OutOfGasDuringValidation,
+            InvalidTransaction::OutOfGasDuringValidation,
         ))
     } else {
-        let gas_limit_for_tx = gas_limit.saturating_sub(total_gas_to_charge);
-        let ergs = gas_limit_for_tx
-            .checked_mul(ERGS_PER_GAS)
-            .ok_or(internal_error!("glft*EPF"))?;
+        let gas_limit_for_tx = gas_limit - intrinsic_overhead;
+        let ergs = gas_limit_for_tx.saturating_mul(ERGS_PER_GAS); // we checked at the very start that gas_limit * ERGS_PER_GAS doesn't overflow
         let main_resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
+
         Ok(ResourcesForTx {
             main_resources,
             withheld,
             intrinsic_computational_native_charged,
         })
     }
-}
-///
-/// Computes the (gas, native) cost for the transaction's calldata.
-///
-pub fn cost_for_calldata(calldata: &[u8]) -> Result<(u64, u64), InternalError> {
-    let zero_bytes = calldata.iter().filter(|byte| **byte == 0).count() as u64;
-    let non_zero_bytes = calldata.len() as u64 - zero_bytes;
-    let zero_cost = zero_bytes
-        .checked_mul(CALLDATA_ZERO_BYTE_GAS_COST)
-        .ok_or(internal_error!("zb*CZBGC"))?;
-    let non_zero_cost = non_zero_bytes
-        .checked_mul(CALLDATA_NON_ZERO_BYTE_GAS_COST)
-        .ok_or(internal_error!("nzb*CNZBGC"))?;
-    let gas_cost = zero_cost
-        .checked_add(non_zero_cost)
-        .ok_or(internal_error!("zc+nzc"))?;
-    let native_cost = (calldata.len() as u64)
-        .checked_mul(COPY_BYTE_NATIVE_COST)
-        .ok_or(internal_error!("cl*CBNC"))?;
-    Ok((gas_cost, native_cost))
 }
 
 ///
@@ -154,13 +160,12 @@ pub fn cost_for_calldata(calldata: &[u8]) -> Result<(u64, u64), InternalError> {
 ///
 pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
     system: &mut System<S>,
-    native_per_pubdata: U256,
+    native_per_pubdata: u64,
     base_pubdata: Option<u64>,
 ) -> Result<(u64, S::Resources), InternalError> {
     let current_pubdata_spent = system
         .net_pubdata_used()?
         .saturating_sub(base_pubdata.unwrap_or(0));
-    let native_per_pubdata = u256_to_u64_saturated(&native_per_pubdata);
     let native = current_pubdata_spent
         .checked_mul(native_per_pubdata)
         .ok_or(internal_error!("cps*epp"))?;
@@ -178,15 +183,37 @@ pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
 ///
 pub fn check_enough_resources_for_pubdata<S: EthereumLikeTypes>(
     system: &mut System<S>,
-    native_per_pubdata: U256,
+    native_per_pubdata: u64,
     resources: &S::Resources,
     base_pubdata: Option<u64>,
 ) -> Result<(bool, S::Resources, u64), InternalError> {
     let (pubdata_used, resources_for_pubdata) =
         get_resources_to_charge_for_pubdata(system, native_per_pubdata, base_pubdata)?;
-    let _ = system.get_logger().write_fmt(format_args!(
-        "Checking gas for pubdata, resources_for_pubdata: {resources_for_pubdata:?}, resources: {resources:?}\n"
-    ));
+    system_log!(system, "Checking gas for pubdata, resources_for_pubdata: {resources_for_pubdata:?}, resources: {resources:?}\n");
     let enough = resources.has_enough(&resources_for_pubdata);
     Ok((enough, resources_for_pubdata, pubdata_used))
+}
+
+///
+/// Get the gas price for a transaction.
+///
+pub(crate) fn get_gas_price<S: EthereumLikeTypes>(
+    system: &mut System<S>,
+    max_fee_per_gas: &U256,
+    max_priority_fee_per_gas: Option<&U256>,
+) -> Result<U256, TxError> {
+    let base_fee = system.get_eip1559_basefee();
+    let max_priority_fee_per_gas = max_priority_fee_per_gas.unwrap_or(max_fee_per_gas);
+    require!(
+        max_priority_fee_per_gas <= max_fee_per_gas,
+        TxError::Validation(InvalidTransaction::PriorityFeeGreaterThanMaxFee,),
+        system
+    )?;
+    require!(
+        &base_fee <= max_fee_per_gas,
+        TxError::Validation(InvalidTransaction::BaseFeeGreaterThanMaxFee,),
+        system
+    )?;
+    let priority_fee_per_gas = (*max_priority_fee_per_gas).min(max_fee_per_gas - base_fee);
+    Ok(base_fee + priority_fee_per_gas)
 }

@@ -14,6 +14,7 @@ use zk_ee::system::{
     ExecutionEnvironmentPreemptionPoint, ExternalCallRequest, ReturnValues,
 };
 use zk_ee::system::{CallResult, IOSubsystemExt, SystemFunctions};
+use zk_ee::system_log;
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::cheap_clone::CheapCloneRiscV;
 
@@ -125,15 +126,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             match crate::opcodes::OpCode::try_from_u8(opcode) {
                 Some(op) => {
                     if Self::PRINT_OPCODES {
-                        let _ = system
-                            .get_logger()
-                            .write_fmt(format_args!("Executing {op}"));
+                        system_log!(system, "Executing {op}");
                     }
                 }
                 None => {
-                    let _ = system
-                        .get_logger()
-                        .write_fmt(format_args!("Unknown opcode = 0x{opcode:02x}\n"));
+                    system_log!(system, "Unknown opcode = 0x{opcode:02x}\n");
                 }
             }
 
@@ -317,10 +314,12 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             }
         };
 
-        let _ = system.get_logger().write_fmt(format_args!(
+        system_log!(
+            system,
             "Instructions executed = {}\nFinal instruction result = {:?}\n",
-            cycles, &result
-        ));
+            cycles,
+            &result
+        );
 
         Ok(result)
     }
@@ -385,12 +384,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                         internal_bytecode_hash,
                         observable_bytecode_len,
                     )) => {
-                        // TODO: debug implementation for Bits uses global alloc, which panics in ZKsync OS
-                        #[cfg(not(target_arch = "riscv32"))]
-                        let _ = system.get_logger().write_fmt(format_args!(
+                        system_log!(
+                            system,
                             "Successfully deployed contract at {:?} \n",
                             self.address
-                        ));
+                        );
 
                         tracer.on_bytecode_change(
                             THIS_EE_TYPE,

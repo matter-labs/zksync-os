@@ -10,6 +10,7 @@ use evm_interpreter::{
     keccak256_ergs_cost,
 };
 use ruint::aliases::{B160, U256};
+use zk_ee::system_log;
 use zk_ee::{
     common_structs::L2_TO_L1_LOG_SERIALIZE_SIZE,
     execution_environment_type::ExecutionEnvironmentType,
@@ -96,15 +97,11 @@ where
             ))
         }
         Ok(Err(e)) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Revert: {e:?}\n"));
+            system_log!(system, "Revert: {e:?}\n");
             Ok((make_error_return_state(resources), return_memory))
         }
         Err(SystemError::LeafRuntime(RuntimeError::OutOfErgs(_))) => {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Out of gas during system hook\n"));
+            system_log!(system, "Out of gas during system hook\n");
             Ok((make_error_return_state(resources), return_memory))
         }
         Err(e @ SystemError::LeafRuntime(RuntimeError::FatalRuntimeError(_))) => Err(e),
@@ -142,9 +139,7 @@ where
     }
     let mut selector = [0u8; 4];
     selector.copy_from_slice(&calldata[..4]);
-    let _ = system
-        .get_logger()
-        .write_fmt(format_args!("Selector for l1 messenger:"));
+    system_log!(system, "Selector for l1 messenger:");
     let _ = system.get_logger().log_data(selector.iter().copied());
 
     match selector {

@@ -15,6 +15,7 @@
 use super::super::*;
 use core::fmt::Write;
 use evm_interpreter::ERGS_PER_GAS;
+use zk_ee::system_log;
 use zk_ee::{
     define_subsystem, internal_error, out_of_return_memory,
     system::{
@@ -86,9 +87,7 @@ where
         Err(e) => match e.root_cause() {
             // Following EVM precompiles, we burn all gas on out-of-gas or invalid inputs
             RootCause::Runtime(RuntimeError::OutOfErgs(_)) | RootCause::Usage(_) => {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Out of gas during system hook\nError:{e:?}"));
+                system_log!(system, "Out of gas during system hook\nError:{e:?}");
                 resources.exhaust_ergs();
                 let (_, rest) = return_vec.destruct();
                 Ok((make_error_return_state(resources), rest))

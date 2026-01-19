@@ -7,6 +7,7 @@ use crypto::MiniDigest;
 use ruint::aliases::U256;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
+use zk_ee::logger_log;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::logger::Logger;
 use zk_ee::utils::Bytes32;
@@ -318,20 +319,21 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> BatchPublicInputBuilder<A, O> {
             batch_output: batch_output.hash().into(),
         };
 
-        let _ = logger.write_fmt(format_args!(
+        logger_log!(
+            logger,
             "PI calculation: state commitment before {:?}\n",
             self.initial_state_commitment.unwrap()
-        ));
-        let _ = logger.write_fmt(format_args!(
+        );
+        logger_log!(
+            logger,
             "PI calculation: state commitment after {:?}\n",
             self.current_state_commitment.unwrap()
-        ));
-        let _ = logger.write_fmt(format_args!(
-            "PI calculation: batch output {batch_output:?}\n",
-        ));
-        let _ = logger.write_fmt(format_args!(
+        );
+        logger_log!(logger, "PI calculation: batch output {batch_output:?}\n",);
+        logger_log!(
+            logger,
             "PI calculation: final batch public input {public_input:?}\n",
-        ));
+        );
 
         public_input
     }

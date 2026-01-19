@@ -12,6 +12,7 @@ use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::*;
+use zk_ee::system_log;
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::b160_to_u256;
 use zk_ee::{interface_error, internal_error, wrap_error};
@@ -235,9 +236,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
         match call_request_result {
             CallResult::PreparationStepFailed => {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Call failed, out of gas\n"));
+                system_log!(system, "Call failed, out of gas\n");
                 // we fail because it's caller's failure
                 let exit_code = EvmError::OutOfGas.into();
                 return self.create_immediate_return_state(system, exit_code, tracer);
@@ -352,9 +351,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         S::IO: IOSubsystemExt,
     {
         if frame_state.environment_parameters.callstack_depth > 1024 {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Callstack is too deep\n",));
+            system_log!(system, "Callstack is too deep\n",);
 
             tracer.evm_tracer().on_call_error(&EvmError::CallTooDeep);
             return Ok(false);
@@ -379,9 +376,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 .0;
 
             if caller_balance < frame_state.external_call.nominal_token_value {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Not enough balance for transfer\n",));
+                system_log!(system, "Not enough balance for transfer\n",);
                 tracer
                     .evm_tracer()
                     .on_call_error(&EvmError::InsufficientBalance);
@@ -430,9 +425,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             // We need to check this here (not when we actually deploy the code)
             // because if this check fails the constructor shouldn't be executed.
             if deployee_code_len != 0 || deployee_nonce != 0 {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Deployment on existing account\n",));
+                system_log!(system, "Deployment on existing account\n",);
                 frame_state
                     .external_call
                     .available_resources
