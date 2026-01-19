@@ -18,6 +18,7 @@ use basic_system::system_implementation::flat_storage_model::{
     TREE_HEIGHT,
 };
 use ethers::signers::LocalWallet;
+use forward_system::run::query_processors::DACommitmentSchemeResponder;
 use forward_system::run::query_processors::EthereumCLResponder;
 use forward_system::run::query_processors::EthereumTargetBlockHeaderResponder;
 use forward_system::run::query_processors::GenericPreimageResponder;
@@ -763,6 +764,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             next_tx_format: None,
             next_tx_from: None,
         };
+        let da_commitment_scheme_responder = DACommitmentSchemeResponder {
+            da_commitment_scheme: Some(DACommitmentScheme::None),
+        };
         let preimage_responder = GenericPreimageResponder { preimage_source };
         let initial_account_state_responder = InMemoryEthereumInitialAccountStateResponder::new(
             initial_root.0,
@@ -785,6 +789,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         oracle.add_external_processor(initial_account_state_responder.clone());
         oracle.add_external_processor(initial_values_responder.clone());
         oracle.add_external_processor(cl_responder.clone());
+        oracle.add_external_processor(da_commitment_scheme_responder);
         oracle.add_external_processor(
             callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
         );
@@ -794,7 +799,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         oracle
     }
 
-    pub fn run_eth_block<const PROOF_ENV: bool>(
+    pub fn run_eth_block(
         &mut self,
         transactions: Vec<EncodedTx>,
         witness: alloy_rpc_types_debug::ExecutionWitness,
@@ -803,7 +808,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         witness_output_file: Option<PathBuf>,
         app: Option<String>,
     ) -> ForwardRunningResultKeeper<NoopTxCallback, PectraForkHeader> {
-        let (result_keeper, _witness) = self.run_eth_block_with_options::<PROOF_ENV>(
+        let (result_keeper, _witness) = self.run_eth_block_with_options(
             transactions,
             witness,
             block_header,
@@ -817,7 +822,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     }
 
     #[allow(clippy::too_many_arguments, unused_variables)]
-    pub fn run_eth_block_with_options<const PROOF_ENV: bool>(
+    pub fn run_eth_block_with_options(
         &mut self,
         transactions: Vec<EncodedTx>,
         witness: alloy_rpc_types_debug::ExecutionWitness,

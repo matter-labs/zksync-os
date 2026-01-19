@@ -83,6 +83,12 @@ enum Command {
         #[arg(long)]
         db: String,
     },
+    // Run a single block using eth_run
+    EthRun {
+        /// Path to the block directory
+        #[arg(long)]
+        block_dir: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -131,5 +137,6 @@ fn main() -> anyhow::Result<()> {
         ),
         Command::ExportRatios { db, path } => live_run::export_block_ratios(db, path),
         Command::ShowStatus { db } => live_run::show_status(db),
+        Command::EthRun { block_dir } => crate::single_run::eth_run(block_dir),
     }
 }
