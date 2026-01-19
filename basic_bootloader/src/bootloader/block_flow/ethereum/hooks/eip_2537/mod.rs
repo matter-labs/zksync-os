@@ -77,7 +77,7 @@ const FIELD_EXT_ELEMENT_SERIALIZATION_LEN: usize = FIELD_ELEMENT_SERIALIZATION_L
 const G1_SERIALIZATION_LEN: usize = FIELD_ELEMENT_SERIALIZATION_LEN * 2;
 const G2_SERIALIZATION_LEN: usize = FIELD_EXT_ELEMENT_SERIALIZATION_LEN * 2;
 
-// infalliable, as scalars are no required to be canonical
+// infallible, as scalars are no required to be canonical
 fn parse_integer(input: &[u8; SCALAR_SERIALIZATION_LEN]) -> <Fr as PrimeField>::BigInt {
     let mut repr = [0u64; 4];
     for (dst, src) in repr.iter_mut().zip(input.as_rchunks::<8>().1.iter().rev()) {

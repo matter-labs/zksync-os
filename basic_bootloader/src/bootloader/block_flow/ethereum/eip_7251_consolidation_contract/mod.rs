@@ -37,7 +37,7 @@ const MAX_CONSOLIDATION_REQUESTS_PER_BLOCK: usize = 2;
 #[allow(dead_code)]
 const CONSOLIDATION_REQUEST_SSZ_SERIALIZATION_LEN: usize = 20 + 48 + 48;
 
-// NOTE: even though the spec says SSZ.encode (that is NOT a concatenation of element for the list), it actually appends nothing if there are no intercations
+// NOTE: even though the spec says SSZ.encode (that is NOT a concatenation of element for the list), it actually appends nothing if there are no interactions
 pub fn eip7251_system_part<S: EthereumLikeTypes>(
     system: &mut System<S>,
     requests_hasher: &mut impl crypto::sha256::Digest,
@@ -95,7 +95,7 @@ where
     );
 
     if num_dequeued == 0 {
-        // we do not even need to reset the queue poitners as it's a hard invariant
+        // we do not even need to reset the queue pointers as it's a hard invariant
         assert!(queue_head_index.is_zero());
         assert!(queue_tail_index.is_zero());
         update_excess_consolidation_requests_and_reset_count(system)?;
@@ -147,7 +147,10 @@ where
             )
         })?;
 
-        logger_log!(logger, "Processing EIP-7251 consolidation queue element with:");
+        logger_log!(
+            logger,
+            "Processing EIP-7251 consolidation queue element with:"
+        );
 
         logger_log!(logger, "\nAddress = ");
         let address = &slot_0.as_u8_array_ref()[12..];

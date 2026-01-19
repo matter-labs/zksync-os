@@ -45,7 +45,7 @@ const MAX_WITHDRAWAL_REQUESTS_PER_BLOCK: usize = 16;
 #[allow(dead_code)]
 const WITHDRAWAL_REQUEST_SSZ_SERIALIZATION_LEN: usize = 20 + 48 + 8;
 
-// NOTE: even though the spec says SSZ.encode (that is NOT a concatenation of element for the list), it actually appends nothing if there are no intercations
+// NOTE: even though the spec says SSZ.encode (that is NOT a concatenation of element for the list), it actually appends nothing if there are no interactions
 pub fn eip7002_system_part<S: EthereumLikeTypes>(
     system: &mut System<S>,
     requests_hasher: &mut impl crypto::sha256::Digest,
@@ -167,7 +167,7 @@ where
     );
 
     if num_dequeued == 0 {
-        // we do not even need to reset the queue poitners as it's a hard invariant
+        // we do not even need to reset the queue pointers as it's a hard invariant
         assert!(queue_head_index.is_zero());
         assert!(queue_tail_index.is_zero());
         update_excess_withdrawal_requests_and_reset_count(system)?;
