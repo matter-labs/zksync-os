@@ -263,6 +263,7 @@ fn fuzz(input: FuzzInput) {
                 &amount,
                 true,
                 &mut NopTracer::default(),
+                &mut NopTxValidator::default(),
             );
         }
         2 => {
@@ -305,6 +306,7 @@ fn fuzz(input: FuzzInput) {
                 &amount,
                 true,
                 &mut NopTracer::default(),
+                &mut NopTxValidator::default(),
             );
         }
         4 => {
