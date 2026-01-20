@@ -42,7 +42,6 @@ proving = ["crypto/proving"]
 # Used for proving multi block batch within 1 run
 multiblock-batch = []
 state-diffs-pi = []
-aggregation = []
 
 [dev-dependencies]
 hex = {version = "0.4.3"}
