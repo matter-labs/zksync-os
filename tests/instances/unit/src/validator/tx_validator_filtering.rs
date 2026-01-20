@@ -7,13 +7,12 @@
 
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy::primitives::{address, TxKind};
+use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
 use rig::zk_ee::system::tracer::NopTracer;
 use rig::zk_ee::system::validator::{TxValidationError, TxValidator};
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::Chain;
-
-use rig::forward_system::system::system::ForwardRunningSystem;
 
 #[derive(Default)]
 struct LoggingTxValidator {

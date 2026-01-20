@@ -53,6 +53,7 @@ fn run<const RANDOMIZED: bool>(
             None,
             Some(run_config),
             &mut NopTracer::default(),
+            &mut NopTxValidator::default(),
         )
         .unwrap();
 
