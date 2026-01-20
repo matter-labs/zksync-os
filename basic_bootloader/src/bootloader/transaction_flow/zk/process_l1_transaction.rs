@@ -28,6 +28,7 @@ use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
 use zk_ee::system::metadata::zk_metadata::TxLevelMetadata;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::system::validator::TxValidator;
 use zk_ee::system::Resource;
 use zk_ee::system::System;
 use zk_ee::system::{CompletedExecution, Computational};
@@ -52,6 +53,7 @@ pub(crate) fn process_l1_transaction<
     transaction: &AbiEncodedTransaction<S::Allocator>,
     is_priority_op: bool,
     tracer: &mut impl Tracer<S>,
+    validator: &mut impl TxValidator<S>,
 ) -> Result<ZkTxResult<'a>, TxError>
 where
     S::IO: IOSubsystemExt,
@@ -186,6 +188,7 @@ where
             &mut resources,
             withheld_resources,
             tracer,
+            validator,
         ) {
             Ok((r, pubdata_used, to_charge_for_pubdata, resources_before_refund)) => {
                 let pubdata_info = match r {
@@ -366,6 +369,7 @@ fn execute_l1_transaction_and_notify_result<'a, S: EthereumLikeTypes + 'a>(
     resources: &mut S::Resources,
     withheld_resources: S::Resources,
     tracer: &mut impl Tracer<S>,
+    validator: &mut impl TxValidator<S>,
 ) -> Result<
     (
         ExecutionResult<'a, S::IOTypes>,
@@ -434,6 +438,7 @@ where
         &value,
         false,
         tracer,
+        validator,
     )?;
     let reverted = result.failed();
     let return_values = result.return_values();

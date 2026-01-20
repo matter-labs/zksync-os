@@ -18,6 +18,7 @@ where
         memories: RunnerMemoryBuffers<'a>,
         is_first_tx: bool,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<F::ExecutionResult<'a>, TxError> {
         let transaction = Transaction::try_from_buffer(initial_calldata_buffer, system)?;
 
@@ -34,6 +35,7 @@ where
                             zk_tx,
                             false,
                             tracer,
+                            validator,
                         )
                     }
                 } else if transaction.is_l1_l2() {
@@ -44,6 +46,7 @@ where
                         zk_tx,
                         true,
                         tracer,
+                        validator,
                     )
                 } else {
                     Self::process_l2_transaction::<Config>(
@@ -52,6 +55,7 @@ where
                         memories,
                         transaction,
                         tracer,
+                        validator,
                     )
                 }
             }
@@ -61,6 +65,7 @@ where
                 memories,
                 transaction,
                 tracer,
+                validator,
             ),
         }
     }
@@ -73,6 +78,7 @@ where
         memories: RunnerMemoryBuffers<'a>,
         mut transaction: Transaction<S::Allocator>,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<F::ExecutionResult<'a>, TxError>
     where
         S::IO: IOSubsystemExt,
@@ -123,6 +129,7 @@ where
                 &transaction,
                 &mut tx_context,
                 tracer,
+                validator,
             )?;
 
         F::before_refund::<Config>(

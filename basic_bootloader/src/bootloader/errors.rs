@@ -107,6 +107,20 @@ pub enum InvalidTransaction {
     /// 7702 has a null destination address
     EIP7702HasNullDestination,
     FilteredByValidator,
+    /// EIP-7623 calldata cost is not paid
+    EIP7623IntrinsicGasIsTooLow,
+    /// Native resources cost is too high
+    NativeResourcesAreTooExpensive,
+    /// The call's gas limit is too high for the system to process.
+    CallerGasLimitTooHigh,
+    /// Invalid blob hash
+    BlobElementIsNotSupported,
+    /// Blob base fee per gas greater than max fee per blob gas
+    BlobBaseFeeGreaterThanMaxFeePerBlobGas,
+    /// Blob list is longer than the maximum allowed
+    BlobListTooLong,
+    /// Transactions with blobs must have at least one.
+    EmptyBlobList,
 }
 
 ///

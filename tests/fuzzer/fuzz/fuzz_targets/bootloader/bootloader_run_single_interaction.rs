@@ -229,32 +229,13 @@ fn fuzz(input: FuzzInput) {
                 memories,
                 calldata,
                 &from,
-                &L2_BASE_TOKEN_ADDRESS,
+                &SET_BYTECODE_ON_ADDRESS_HOOK,
                 inf_resources,
                 &amount,
                 true,
                 &mut NopTracer::default(),
                 &mut NopTxValidator::default(),
             );
-        }
-        4 => {
-            // Fuzz-test contract_deployer hook
-
-            let amount = U256::from_be_bytes([0; 32]);
-
-            let calldata = &input.calldata2.raw;
-
-            let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>::run_single_interaction(
-                &mut system,
-                &mut system_functions,
-                memories,
-                calldata,
-                &from,
-                &CONTRACT_DEPLOYER_ADDRESS,
-                inf_resources,
-                &amount,
-                true,
-                &mut NopTracer::default(),
             );
         }
         _ => (),

@@ -179,7 +179,6 @@ where
         system: &mut System<S>,
         transaction: &Transaction<S::Allocator>,
         _tracer: &mut impl Tracer<S>,
-        _validator: &mut impl TxValidator<S>,
     ) -> Result<(), TxError> {
         system_log!(system, "Will process transaction from 0x{:040x} to {} with gas limit of {} and value of {:?} and {} bytes of calldata\n",
                 transaction.from().as_uint(),
@@ -198,105 +197,13 @@ where
         system: &mut System<S>,
         transaction: &mut Transaction<<S as SystemTypes>::Allocator>,
         tracer: &mut impl Tracer<S>,
-        validator: &mut impl TxValidator<S>,
-    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError> {
-        // panic is not reachable, validated by the structure
-        let from = transaction.from();
-
-        let main_calldata = transaction.calldata();
-
-        // panic is not reachable, to is validated
-        let to = transaction.to().unwrap_or_default();
-
-        let nominal_token_value = transaction.value();
-
-        let to_ee_type = transaction.is_deployment();
-
-        let TxExecutionResult {
-            return_values,
-            resources_returned,
-            reverted,
-            deployed_address,
-        } = match to_ee_type {
-            Some(to_ee_type) => process_deployment(
-                system,
-                system_functions,
-                memories,
-                resources,
-                to_ee_type,
-                main_calldata,
-                from,
-                nominal_token_value,
-                current_tx_nonce,
-                tracer,
-                validator,
-            )?,
-            None => {
-                let final_state = BasicBootloader::<S, Self>::run_single_interaction(
-                    system,
-                    system_functions,
-                    memories,
-                    main_calldata,
-                    &from,
-                    &to,
-                    resources.clone(),
-                    &nominal_token_value,
-                    true,
-                    tracer,
-                    validator,
-                )?;
-
-                let CompletedExecution {
-                    resources_returned,
-                    result,
-                } = final_state;
-
-                let reverted = result.failed();
-                let return_values = result.return_values();
-
-                TxExecutionResult {
-                    return_values,
-                    resources_returned,
-                    reverted,
-                    deployed_address: DeployedAddress::CallNoAddress,
-                }
-            }
-        };
-
-        let resources_after_main_tx = resources_returned;
-
-        let returndata_region = return_values.returndata;
-
-        let _ = system
-            .get_logger()
-            .log_data(returndata_region.iter().copied());
-
-        let _ = system
-            .get_logger()
-            .write_fmt(format_args!("Main TX body successful = {}\n", !reverted));
-
-        let _ = system.get_logger().write_fmt(format_args!(
-            "Resources to refund = {resources_after_main_tx:?}\n"
-        ));
-        *resources = resources_after_main_tx;
-
-        let result = match reverted {
-            true => ExecutionResult::Revert {
-                output: returndata_region,
-            },
-            false => {
-                // Safe to do so by construction.
-                match deployed_address {
-                    DeployedAddress::Address(at) => ExecutionResult::Success {
-                        output: ExecutionOutput::Create(returndata_region, at),
-                    },
-                    _ => ExecutionResult::Success {
-                        output: ExecutionOutput::Call(returndata_region),
-                    },
-                }
-            }
-        };
-        Ok(result)
+    ) -> Result<Self::TransactionContext, TxError> {
+        let context = self::validation_impl::validate_and_compute_fee_for_transaction::<S, Config>(
+            system,
+            transaction,
+            tracer,
+        )?;
+        Ok(context)
     }
 
     fn before_fee_collection(
@@ -304,7 +211,6 @@ where
         _transaction: &Transaction<<S as SystemTypes>::Allocator>,
         _context: &Self::TransactionContext,
         _tracer: &mut impl Tracer<S>,
-        _validator: &mut impl TxValidator<S>,
     ) -> Result<(), TxError> {
         Ok(())
     }
@@ -314,7 +220,6 @@ where
         transaction: &Transaction<<S as SystemTypes>::Allocator>,
         context: &mut Self::TransactionContext,
         _tracer: &mut impl Tracer<S>,
-        _validator: &mut impl TxValidator<S>,
     ) -> Result<(), TxError> {
         let from = transaction.from();
         let fee = if Config::SIMULATION {
@@ -390,32 +295,73 @@ where
         Ok(())
     }
 
-/// Run the deployment part of a contract creation tx
-/// The boolean in the return
-fn process_deployment<'a, S: EthereumLikeTypes>(
-    system: &mut System<S>,
-    system_functions: &mut HooksStorage<S, S::Allocator>,
-    memories: RunnerMemoryBuffers<'a>,
-    resources: &mut S::Resources,
-    to_ee_type: ExecutionEnvironmentType,
-    main_calldata: &[u8],
-    from: &B160,
-    nominal_token_value: &U256,
-    existing_nonce: u64,
-    tracer: &mut impl Tracer<S>,
-    validator: &mut impl TxValidator<S>,
-) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
-where
-    S::IO: IOSubsystemExt,
-{
-    // Next check max initcode size
-    if main_calldata.len() > MAX_INITCODE_SIZE {
-        return Ok(TxExecutionResult {
-            return_values: ReturnValues::empty(),
-            resources_returned: resources.clone(),
-            reverted: true,
-            deployed_address: DeployedAddress::RevertedNoAddress,
-        });
+    fn create_frame_and_execute_transaction_payload<'a, Config: BasicBootloaderExecutionConfig>(
+        system: &mut System<S>,
+        system_functions: &mut HooksStorage<S, <S as SystemTypes>::Allocator>,
+        memories: RunnerMemoryBuffers<'a>,
+        transaction: &Transaction<<S as SystemTypes>::Allocator>,
+        context: &mut Self::TransactionContext,
+        tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
+    ) -> Result<
+        (
+            ExecutionResult<'a, <S as SystemTypes>::IOTypes>,
+            Self::ExecutionBodyExtraData,
+        ),
+        BootloaderSubsystemError,
+    >
+    where
+        S: 'a,
+    {
+        // Take a snapshot in case we need to revert due to out of native.
+        let main_body_rollback_handle = system.start_global_frame()?;
+
+        // pubdata_info = (pubdata_used, to_charge_for_pubdata) can be cached
+        // to used in the refund step only if the execution succeeded.
+        // Otherwise, this value needs to be recomputed after reverting
+        // state changes.
+        let (execution_result, pubdata_info) = match Self::execute_or_deploy_inner(
+            system,
+            system_functions,
+            memories,
+            &transaction,
+            context,
+            tracer,
+            validator,
+        ) {
+            Ok((r, cached_pubdata_info)) => {
+                let pubdata_info = match r {
+                    ExecutionResult::Success { .. } => {
+                        system.finish_global_frame(None)?;
+                        system_log!(system, "Transaction main payload was processed\n");
+                        Some(cached_pubdata_info)
+                    }
+                    ExecutionResult::Revert { .. } => {
+                        system.finish_global_frame(Some(&main_body_rollback_handle))?;
+                        system_log!(system, "Transaction main payload was reverted\n");
+                        None
+                    }
+                };
+                (r, pubdata_info)
+            }
+            // Out of native is converted to a top-level revert and
+            // gas is exhausted.
+            Err(e) => match e.root_cause() {
+                RootCause::Runtime(e @ RuntimeError::FatalRuntimeError(_)) => {
+                    system_log!(
+                        system,
+                        "Transaction ran out of native resources or memory: {e:?}\n"
+                    );
+                    context.resources.main_resources.exhaust_ergs();
+                    system.finish_global_frame(Some(&main_body_rollback_handle))?;
+                    (ExecutionResult::Revert { output: &[] }, None)
+                }
+                _ => return Err(e),
+            },
+        };
+        drop(main_body_rollback_handle);
+
+        Ok((execution_result, pubdata_info))
     }
 
     fn before_refund<'a, Config: BasicBootloaderExecutionConfig>(
@@ -565,49 +511,18 @@ where
                 &token_to_pay_operator,
                 false,
             )
-            .map_err(|e| {
-                let ee_error: EESubsystemError = wrap_error!(e);
-                wrap_error!(ee_error)
-            })?
-        }
-    };
-
-    let deployment_request = ExternalCallRequest {
-        available_resources: resources.clone(),
-        ergs_to_pass: resources.ergs(),
-        caller: *from,
-        callee: deployed_address,
-        callers_caller: Default::default(), // Fine to use placeholder, should not be used
-        modifier: CallModifier::Constructor,
-        input: main_calldata,
-        nominal_token_value: *nominal_token_value,
-        call_scratch_space: None,
-    };
-
-    let rollback_handle = system.start_global_frame()?;
-
-    let final_state = run_till_completion(
-        memories,
-        system,
-        system_functions,
-        to_ee_type,
-        deployment_request,
-        tracer,
-        validator,
-    )?;
-
-    let CompletedExecution {
-        mut resources_returned,
-        result: deployment_result,
-    } = final_state;
-
-    let (deployment_success, reverted, return_values, at) = match deployment_result {
-        CallResult::Successful { mut return_values } => {
-            // In commonly used Ethereum clients it is expected that top-level deployment returns deployed bytecode as the returndata
-            let deployed_bytecode = resources_returned.with_infinite_ergs(|inf_resources| {
-                system
-                    .io
-                    .get_observable_bytecode(to_ee_type, inf_resources, &deployed_address)
+            .map_err(|e| match e {
+                // Balance errors can not be cascaded
+                SubsystemError::Cascaded(CascadedError(inner, _)) => match inner {},
+                SubsystemError::LeafUsage(InterfaceError(ie, _)) => match ie {
+                    BalanceError::InsufficientBalance => {
+                        unreachable!("Cannot be insufficient when incrementing balance")
+                    }
+                    BalanceError::Overflow => {
+                        interface_error!(BootloaderInterfaceError::CantPayOperatorOverflow)
+                    }
+                },
+                other => wrap_error!(other),
             })?;
 
         Ok(())
@@ -672,6 +587,7 @@ where
         >,
         is_priority_op: bool,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<Self::ExecutionResult<'a>, TxError>
     where
         S: 'a,
@@ -683,6 +599,7 @@ where
             transaction,
             is_priority_op,
             tracer,
+            validator,
         )
     }
 }
@@ -814,27 +731,18 @@ where
         )?;
 
         let CompletedExecution {
-            resources_returned,
+            mut resources_returned,
             result: deployment_result,
         } = final_state;
-
-        system_log!(system, "Resources to refund = {resources_returned:?}\n",);
-        context.resources.main_resources.reclaim(resources_returned);
 
         let (deployment_success, reverted, return_values, at) = match deployment_result {
             CallResult::Successful { mut return_values } => {
                 // In commonly used Ethereum clients it is expected that top-level deployment returns deployed bytecode as the returndata
-                let deployed_bytecode =
-                    context
-                        .resources
-                        .main_resources
-                        .with_infinite_ergs(|inf_resources| {
-                            system.io.get_observable_bytecode(
-                                to_ee_type,
-                                inf_resources,
-                                &deployed_address,
-                            )
-                        })?;
+                let deployed_bytecode = resources_returned.with_infinite_ergs(|inf_resources| {
+                    system
+                        .io
+                        .get_observable_bytecode(to_ee_type, inf_resources, &deployed_address)
+                })?;
                 return_values.returndata = deployed_bytecode;
 
                 (true, false, return_values, Some(deployed_address))
@@ -871,6 +779,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<(ExecutionResult<'a, S::IOTypes>, CachedPubdataInfo<S>), BootloaderSubsystemError>
     where
         S: 'a,
@@ -892,6 +801,7 @@ where
                 context,
                 to_ee_type,
                 tracer,
+                validator,
             )?,
             None => Self::execute_call(
                 system,
@@ -900,6 +810,7 @@ where
                 transaction,
                 context,
                 tracer,
+                validator,
             )?,
         };
 

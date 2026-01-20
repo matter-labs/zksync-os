@@ -21,6 +21,7 @@ where
         block_data: &mut Self::BlockDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig>,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<(), BootloaderSubsystemError> {
         cycle_marker::start!("run_tx_loop");
 
@@ -85,11 +86,20 @@ where
                             memories.reborrow(),
                             is_first_tx,
                             tracer,
+                            validator,
                         );
 
                     cycle_marker::end!("process_transaction");
 
                     tracer.finish_tx();
+                    let post_validation = validator.finish_tx();
+
+                    let tx_result = match tx_result {
+                        Ok(ok) => post_validation
+                            .map(|_| ok)
+                            .map_err(|e| TxError::Validation(e.into())),
+                        Err(err) => Err(err),
+                    };
 
                     match tx_result {
                         Err(TxError::Internal(err)) => {

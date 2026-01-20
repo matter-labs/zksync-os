@@ -11,7 +11,6 @@ use zk_ee::oracle::IOOracle;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
-use zk_ee::system::validator::NopTxValidator;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ProxyAllocator;
@@ -185,7 +184,7 @@ pub fn run_proving_inner<
     let (mut oracle, public_input) =
         ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
             oracle,
-            &mut NopResultKeeper,
+            &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
             &mut NopTxValidator,
         )

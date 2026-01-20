@@ -4,7 +4,6 @@
 
 use crate::chain::BlockContext;
 use crate::Chain;
-use alloy::consensus::BlobTransactionSidecar;
 use alloy::consensus::SidecarBuilder;
 use alloy::consensus::SimpleCoder;
 use alloy::consensus::TxEip1559;
@@ -322,9 +321,11 @@ pub fn calldata_for_forwarder(target: alloy::primitives::Address, input: &[u8]) 
 /// # Returns
 /// * `[u8; 32]` - The versioned hash of the blob
 pub fn get_alloy_4844_blob_versioned_hash(data: &[u8]) -> [u8; 32] {
-    let blob_sidecar: BlobTransactionSidecar = SidecarBuilder::<SimpleCoder>::from_slice(data)
-        .build()
-        .unwrap();
+    // Create a blob sidecar using Alloy's SimpleCoder (handles encoding internally)
+    let blob_sidecar: alloy::consensus::BlobTransactionSidecar =
+        SidecarBuilder::<SimpleCoder>::from_slice(data)
+            .build()
+            .unwrap();
 
     // Extract the versioned hash - there should be exactly one for single blob
     let mut alloy_hashes_iter = blob_sidecar.versioned_hashes();

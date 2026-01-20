@@ -7,7 +7,8 @@ use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
-use zk_ee::system::EthereumLikeTypes;
+use zk_ee::system::IOSubsystemExt;
+use zk_ee::system::ReturnValues;
 use zk_ee::system::System;
 use zk_ee::system::SystemTypes;
 use zk_ee::types_config::SystemIOTypesConfig;
@@ -101,7 +102,6 @@ where
         system: &mut System<S>,
         transaction: &Transaction<S::Allocator>,
         tracer: &mut impl Tracer<S>,
-        validator: &mut impl TxValidator<S>,
     ) -> Result<(), TxError>;
 
     /// Validation of the transaction.
@@ -118,7 +118,6 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &Self::TransactionContext,
         tracer: &mut impl Tracer<S>,
-        validator: &mut impl TxValidator<S>,
     ) -> Result<(), TxError>;
 
     /// Charge fee from sender
@@ -146,7 +145,15 @@ where
         context: &mut Self::TransactionContext,
         tracer: &mut impl Tracer<S>,
         validator: &mut impl TxValidator<S>,
-    ) -> Result<ExecutionResult<'a>, BootloaderSubsystemError>;
+    ) -> Result<
+        (
+            ExecutionResult<'a, S::IOTypes>,
+            Self::ExecutionBodyExtraData,
+        ),
+        BootloaderSubsystemError,
+    >
+    where
+        S: 'a;
 
     /// Step between transaction execution and refund.
     /// Responsible of computing the refund based on "extra data"
@@ -189,5 +196,7 @@ where
         is_priority_op: bool,
         tracer: &mut impl Tracer<S>,
         validator: &mut impl TxValidator<S>,
-    ) -> Result<(), TxError>;
+    ) -> Result<Self::ExecutionResult<'a>, TxError>
+    where
+        S: 'a;
 }

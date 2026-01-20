@@ -34,12 +34,13 @@ use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
 use zk_ee::common_structs::ProofData;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::system::validator::TxValidator;
 
 pub use interface_impl::RunBlockForward;
 pub use tree::LeafProof;
 pub use tree::ReadStorage;
 pub use tree::ReadStorageTree;
+#[cfg(feature = "testing")]
+use zk_ee::system::validator::TxValidator;
 pub use zk_ee::types_config::EthereumIOTypesConfig;
 
 pub use preimage_source::PreimageSource;

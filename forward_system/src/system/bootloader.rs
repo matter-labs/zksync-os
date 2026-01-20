@@ -6,6 +6,10 @@ use oracle_provider::DummyMemorySource;
 use oracle_provider::ZkEENonDeterminismSource;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
+use zk_ee::types_config::EthereumIOTypesConfig;
+
+use crate::system::system_types::ForwardBootloader;
+use crate::system::system_types::ForwardRunningSystem;
 
 ///
 /// Run bootloader with forward system with a given `oracle`.
