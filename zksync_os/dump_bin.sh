@@ -67,6 +67,12 @@ case "$TYPE" in
     ELF_NAME="evm_replay.elf"
     TEXT_NAME="evm_replay.text"
     ;;
+  eth-stf)
+    FEATURES="$FEATURES,eth_runner,eth_stf"
+    BIN_NAME="eth_stf.bin"
+    ELF_NAME="eth_stf.elf"
+    TEXT_NAME="eth_stf.text"
+    ;;
   evm-replay-benchmarking)
     FEATURES="$FEATURES,eth_runner,benchmarking"
     BIN_NAME="evm_replay.bin"

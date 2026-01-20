@@ -805,18 +805,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         witness: alloy_rpc_types_debug::ExecutionWitness,
         block_header: Header,
         withdrawals: Vec<u8>,
-        witness_output_file: Option<PathBuf>,
-        app: Option<String>,
     ) -> ForwardRunningResultKeeper<NoopTxCallback, PectraForkHeader> {
         let (result_keeper, _witness) = self.run_eth_block_with_options(
             transactions,
             witness,
             block_header,
             withdrawals,
-            witness_output_file,
-            app,
-            true,
-            true,
+            Some("eth_stf".to_string()),
+            false,
         );
         result_keeper.unwrap()
     }
@@ -828,10 +824,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         witness: alloy_rpc_types_debug::ExecutionWitness,
         block_header: Header,
         withdrawals: Vec<u8>,
-        witness_output_file: Option<PathBuf>,
         app: Option<String>,
-        compute_result_keeper: bool,
-        compute_witness: bool,
+        only_forward: bool,
     ) -> (
         Option<ForwardRunningResultKeeper<NoopTxCallback, PectraForkHeader>>,
         Option<Vec<u32>>,
@@ -839,7 +833,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         use basic_bootloader::bootloader::config::BasicBootloaderForwardETHLikeConfig;
         use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 
-        let oracle = Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
+        let oracle = Self::make_eth_block_oracle(
+            transactions.clone(),
+            witness.clone(),
+            block_header.clone(),
+            withdrawals.clone(),
+        );
 
         // Forward run:
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
@@ -855,8 +854,25 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             &mut nop_tracer,
         )
         .expect("must succeed");
-        // TODO: proof run
-        (Some(result_keeper), None)
+        let oracle = Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
+
+        let copy_source = ReadWitnessSource::new(oracle);
+        let items = copy_source.get_read_items();
+
+        let proof_input = if only_forward {
+            None
+        } else {
+            let (proof_output, block_effective) = {
+                zksync_os_runner::run_and_get_effective_cycles(
+                    get_zksync_os_img_path(&app),
+                    None,
+                    1 << 36,
+                    copy_source,
+                )
+            };
+            Some(items.borrow().iter().copied().collect::<Vec<u32>>())
+        };
+        (Some(result_keeper), proof_input)
     }
 
     pub fn get_account_properties(&mut self, address: &B160) -> AccountProperties {

@@ -210,13 +210,6 @@ pub fn eth_run(block_dir: String) -> anyhow::Result<()> {
         Vec::new()
     };
 
-    let _ = chain.run_eth_block(
-        transactions,
-        witness,
-        header,
-        withdrawals_encoding,
-        None,
-        None,
-    );
+    let _ = chain.run_eth_block(transactions, witness, header, withdrawals_encoding);
     Ok(())
 }
