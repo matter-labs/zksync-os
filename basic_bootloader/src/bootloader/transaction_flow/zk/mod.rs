@@ -731,9 +731,12 @@ where
         )?;
 
         let CompletedExecution {
-            mut resources_returned,
+            resources_returned,
             result: deployment_result,
         } = final_state;
+
+        system_log!(system, "Resources to refund = {resources_returned:?}\n",);
+        context.resources.main_resources.reclaim(resources_returned);
 
         let (deployment_success, reverted, return_values, at) = match deployment_result {
             CallResult::Successful { mut return_values } => {
