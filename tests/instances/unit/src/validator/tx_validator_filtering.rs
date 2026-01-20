@@ -5,7 +5,6 @@
 //! that tx must NOT be included in the block
 //! while other txs must still be included.
 
-
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy::primitives::{address, TxKind};
 use rig::forward_system::system::system_types::ForwardRunningSystem;
