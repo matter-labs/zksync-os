@@ -146,6 +146,9 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for HeaderAndHistory {
         self.header.number
     }
     fn block_historical_hash(&self, depth: u64) -> Option<Bytes32> {
+        // depth = 1 means parent block, so we subtract 1 for the
+        // history cache indexing
+        let depth = depth - 1;
         if depth < 256 {
             unsafe {
                 Some(
@@ -343,7 +346,7 @@ impl ChainChecker for PectraForkHeader {
         let history_cache = extra_data;
         assert!(verification_depth > 0);
         assert_eq!(self.number, current_block_number);
-        assert!(current_block_number >= verification_depth as u64); // Do not want underflows anywhere beloe
+        assert!(current_block_number >= verification_depth as u64); // Do not want underflows anywhere below
 
         let mut block_headers_hasher = <crypto::sha3::Keccak256 as crypto::MiniDigest>::new();
         let mut initial_state_commitment = Bytes32::ZERO;
