@@ -30,9 +30,6 @@ pub struct ZKHeaderStructureTxLoop<BlockEA: TxHashesAccumulator, BatchEA: TxHash
 /// ZK header sequencing post tx op (generates block header, returns outputs)
 pub struct ZKHeaderStructurePostTxOpSequencing;
 
-/// ZK header proving post tx op for aggregation (generates intermediate aggregation friendly PI, to be wrapped in a batch later)
-pub struct ZKHeaderStructurePostTxOpProvingAggregation;
-
 /// ZK header proving post tx op for aggregation (generates single block batch, return public input hash)
 /// If `STATE_DIFFS_HASH` is true - returns state diffs hash instead of PI hash, used only for testing to compare state diffs with forward run.
 pub struct ZKHeaderStructurePostTxOpProvingSingleblockBatch<const STATE_DIFFS_HASH: bool>;

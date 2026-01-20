@@ -42,7 +42,6 @@ benchmarking = ["cycle_marker"]
 global-alloc = ["zk_ee/global-alloc"]
 error_origins = ["zk_ee/error_origins"]
 multiblock-batch = []
-aggregation = []
 state-diffs-pi = []
 
 # A feature for every specific use case

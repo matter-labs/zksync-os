@@ -69,11 +69,7 @@ impl<O: IOOracle, L: Logger + Default> SystemTypes for ProofRunningSystemTypes<O
 
 impl<O: IOOracle, L: Logger + Default> EthereumLikeTypes for ProofRunningSystemTypes<O, L> {}
 
-#[cfg(not(any(
-    feature = "multiblock-batch",
-    feature = "aggregation",
-    feature = "state-diffs-pi"
-)))]
+#[cfg(not(any(feature = "multiblock-batch", feature = "state-diffs-pi")))]
 impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
     type BlockDataKeeper = ZKBasicBlockDataKeeper<block_flow::TransactionsRollingKeccakHasher>;
     type BatchDataKeeper = ();
@@ -98,19 +94,6 @@ impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L
         block_flow::ZKBatchDataKeeper<Self::Allocator, O>,
     >;
     type PostTxLoopOp = block_flow::ZKHeaderStructurePostTxOpProvingMultiblockBatch;
-}
-
-#[cfg(feature = "aggregation")]
-impl<O: IOOracle, L: Logger + Default> BasicSTF for ProofRunningSystemTypes<O, L> {
-    type BlockDataKeeper =
-        ZKBasicBlockDataKeeper<block_flow::AccumulatingBlake2sTransactionsHasher>;
-    type BatchDataKeeper = ();
-    type BlockHeader = BlockHeader;
-    type MetadataOp = ZkMetadata;
-    type PostSystemInitOp = ZKHeaderPostInitOp;
-    type PreTxLoopOp = ZKHeaderStructurePreTxOp<block_flow::AccumulatingBlake2sTransactionsHasher>;
-    type TxLoopOp = ZKHeaderStructureTxLoop<block_flow::AccumulatingBlake2sTransactionsHasher, ()>;
-    type PostTxLoopOp = block_flow::ZKHeaderStructurePostTxOpProvingAggregation;
 }
 
 #[cfg(feature = "state-diffs-pi")]
