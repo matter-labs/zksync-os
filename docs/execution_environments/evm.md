@@ -13,4 +13,3 @@ The EVM version we support currently is Cancun.
 - When the block base fee is 0, then priority fee from transactions is ignored. That is, the gas price will also be 0 for every transaction.
 - DIFFICULTY is mocked (returns 1), we don’t plan to support it
 - Blake2F precompile is not supported
-
