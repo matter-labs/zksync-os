@@ -738,11 +738,17 @@ where
         let (deployment_success, reverted, return_values, at) = match deployment_result {
             CallResult::Successful { mut return_values } => {
                 // In commonly used Ethereum clients it is expected that top-level deployment returns deployed bytecode as the returndata
-                let deployed_bytecode = resources_returned.with_infinite_ergs(|inf_resources| {
-                    system
-                        .io
-                        .get_observable_bytecode(to_ee_type, inf_resources, &deployed_address)
-                })?;
+                let deployed_bytecode =
+                    context
+                        .resources
+                        .main_resources
+                        .with_infinite_ergs(|inf_resources| {
+                            system.io.get_observable_bytecode(
+                                to_ee_type,
+                                inf_resources,
+                                &deployed_address,
+                            )
+                        })?;
                 return_values.returndata = deployed_bytecode;
 
                 (true, false, return_values, Some(deployed_address))
