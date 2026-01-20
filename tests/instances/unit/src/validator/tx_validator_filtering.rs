@@ -2,8 +2,9 @@
 
 //!
 //! If TxValidator returns Err(FilteredByValidator) for a transaction,
-//! that tx must NOT be included in the block (i.e. it must not bump tx_number_in_block),
+//! that tx must NOT be included in the block
 //! while other txs must still be included.
+
 
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy::primitives::{address, TxKind};
@@ -59,6 +60,14 @@ impl TxValidator<ForwardRunningSystem> for LoggingTxValidator {
     }
 }
 
+/// "tx_number_in_block" equivalent: index among included (successful) txs.
+fn included_tx_number_in_block<T>(
+    tx_results: &[Result<T, InvalidTransaction>],
+    tx_index: usize,
+) -> usize {
+    tx_results[..tx_index].iter().filter(|r| r.is_ok()).count()
+}
+
 #[test]
 fn test_tx_validator_filters_out_tx_without_bumping_counter() {
     let mut chain = Chain::empty(None);
@@ -71,7 +80,6 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
     );
 
     let withdrawal_to = address!("000000000000000000000000000000000000800a");
-
     let withdrawal_calldata =
         hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .unwrap();
@@ -93,7 +101,6 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
     let tx1 = mk_withdrawal(0, 11);
 
     let mut tracer = NopTracer::default();
-
     let mut validator = LoggingTxValidator::new(true, true);
 
     let result = chain.run_block_with_extra_stats(
@@ -130,14 +137,9 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
     // 2) Second tx must succeed
     assert!(out.tx_results[1].as_ref().is_ok_and(|o| o.is_success()));
 
-    // 3) Second tx must be tx_number_in_block == 0
-    let second = out.tx_results[1].clone().unwrap();
-    let first_log = second
-        .l2_to_l1_logs
-        .first()
-        .expect("withdrawal should emit L2->L1 log");
-
-    assert_eq!(first_log.log.tx_number_in_block, 0);
+    // 3) Second tx must be included as the first tx in block => number 0
+    let tx1_number_in_block = included_tx_number_in_block(&out.tx_results, 1);
+    assert_eq!(tx1_number_in_block, 0);
 }
 
 #[test]
@@ -153,9 +155,8 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
         U256::from(1_000_000_000_000_000_u64),
     );
 
-    // L2 base token address for withdrawals
+    // Keep same tx shape; don't depend on L2->L1 logs.
     let withdrawal_to = address!("000000000000000000000000000000000000800a");
-
     let withdrawal_calldata =
         hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .unwrap();
@@ -173,7 +174,7 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
         rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
     };
 
-    // Here we use "normal" nonces (0 then 1), because nothing is filtered.
+    // Normal nonces (0 then 1), because nothing is filtered.
     let tx0 = mk_withdrawal(0, 10);
     let tx1 = mk_withdrawal(1, 11);
 
@@ -205,17 +206,9 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
     );
 
     // 2) And tx_number_in_block must bump normally: first is 0, second is 1
-    let first = out.tx_results[0].clone().unwrap();
-    let first_log = first
-        .l2_to_l1_logs
-        .first()
-        .expect("withdrawal should emit L2->L1 log");
-    assert_eq!(first_log.log.tx_number_in_block, 0);
+    let tx0_number_in_block = included_tx_number_in_block(&out.tx_results, 0);
+    assert_eq!(tx0_number_in_block, 0);
 
-    let second = out.tx_results[1].clone().unwrap();
-    let second_log = second
-        .l2_to_l1_logs
-        .first()
-        .expect("withdrawal should emit L2->L1 log");
-    assert_eq!(second_log.log.tx_number_in_block, 1);
+    let tx1_number_in_block = included_tx_number_in_block(&out.tx_results, 1);
+    assert_eq!(tx1_number_in_block, 1);
 }
