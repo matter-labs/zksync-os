@@ -88,7 +88,8 @@ where
     }
 
     // EIP-7623
-    let (calldata_tokens, minimal_gas_used) = compute_calldata_tokens(calldata);
+    let (calldata_tokens, minimal_gas_used) =
+        compute_calldata_tokens(system, tx_gas_limit, calldata)?;
 
     let pubdata_price = system.get_pubdata_price();
     let native_price = system.get_native_price();
@@ -429,7 +430,12 @@ where
 /// Compute number of calldata tokens and intrinsic gas,
 /// following EIP-7623 if enabled.
 ///
-pub(crate) fn compute_calldata_tokens(calldata: &[u8]) -> (u64, u64) {
+#[allow(unused_variables)]
+pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
+    system: &mut System<S>,
+    tx_gas_limit: u64,
+    calldata: &[u8],
+) -> Result<(u64, u64), TxError> {
     let zero_bytes = calldata.iter().filter(|byte| **byte == 0).count() as u64;
     let non_zero_bytes = (calldata.len() as u64) - zero_bytes;
     let zero_bytes_factor = zero_bytes.saturating_mul(CALLDATA_ZERO_BYTE_TOKEN_FACTOR);
@@ -447,11 +453,11 @@ pub(crate) fn compute_calldata_tokens(calldata: &[u8]) -> (u64, u64) {
             system
         )?;
 
-        (num_tokens, intrinsic_gas)
+        Ok((num_tokens, intrinsic_gas))
     }
 
     #[cfg(not(feature = "eip_7623"))]
     {
-        (num_tokens, L2_TX_INTRINSIC_GAS)
+        Ok((num_tokens, L2_TX_INTRINSIC_GAS))
     }
 }

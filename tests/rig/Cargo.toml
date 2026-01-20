@@ -60,6 +60,7 @@ production = ["forward_system/production"]
 for_tests = ["forward_system/for_tests"]
 # Features used for eth_runner
 eth_runner = ["forward_system/eth_runner"]
+eth_stf = ["forward_system/eth_stf"]
 # Features used for evm_tester
 evm_tester = ["forward_system/evm_tester"]
 # Features used for legacy evm_tester. Only defined in forward system,
