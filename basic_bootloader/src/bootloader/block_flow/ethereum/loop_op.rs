@@ -2,7 +2,7 @@ use super::*;
 use crate::bootloader::block_flow::tx_loop::TxLoopOp;
 use crate::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
 use crate::bootloader::transaction_flow::MinimalTransactionOutput;
-use zk_ee::system::Resource;
+use zk_ee::system::{Resource};
 use zk_ee::system::{AccountDataRequest, IOTeardown};
 use zk_ee::system_log;
 use zk_ee::types_config::EthereumIOTypesConfig;
@@ -23,6 +23,7 @@ where
         _batch_data: &mut Self::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig>,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<(), BootloaderSubsystemError> {
         generic_loop_op::<S, Config, EthereumTransactionFlow<S>>(
             system,
@@ -31,6 +32,7 @@ where
             block_data,
             result_keeper,
             tracer,
+            validator,
         )
     }
 }
@@ -48,6 +50,7 @@ pub fn generic_loop_op<
     block_data_keeper: &mut impl BlockTransactionsDataKeeper<S, F>,
     result_keeper: &mut impl ResultKeeperExt<S::IOTypes>,
     tracer: &mut impl Tracer<S>,
+    validator: &mut impl TxValidator<S>,
 ) -> Result<(), BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt + IOTeardown<S::IOTypes>,
@@ -117,6 +120,7 @@ where
                     tx_counter == 0,
                     block_data_keeper,
                     tracer,
+                    validator,
                 );
 
                 cycle_marker::end!("process_transaction");

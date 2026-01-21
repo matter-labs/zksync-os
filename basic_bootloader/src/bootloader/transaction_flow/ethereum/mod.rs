@@ -222,6 +222,7 @@ where
         _transaction: &AbiEncodedTransaction<<S as SystemTypes>::Allocator>,
         _is_priority_op: bool,
         _tracer: &mut impl Tracer<S>,
+        _validator: &mut impl TxValidator<S>,
     ) -> Result<Self::ExecutionResult<'a>, TxError>
     where
         S: 'a,
@@ -397,6 +398,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &mut Self::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<
         (
             ExecutionResult<'a, <S as SystemTypes>::IOTypes>,
@@ -417,6 +419,7 @@ where
             &transaction,
             context,
             tracer,
+            validator,
         ) {
             Ok(r) => {
                 match r {
@@ -679,6 +682,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
     where
         S: 'a,
@@ -701,6 +705,7 @@ where
             nominal_token_value,
             true,
             tracer,
+            validator,
         )?;
 
         let CompletedExecution {
@@ -729,6 +734,7 @@ where
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         to_ee_type: ExecutionEnvironmentType,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
     where
         S: 'a,
@@ -785,6 +791,7 @@ where
             to_ee_type,
             deployment_request,
             tracer,
+            validator,
         )?;
 
         let CompletedExecution {
@@ -845,6 +852,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<ExecutionResult<'a, S::IOTypes>, BootloaderSubsystemError>
     where
         S: 'a,
@@ -863,6 +871,7 @@ where
                 transaction,
                 context,
                 tracer,
+                validator,
             )?
         } else {
             // deployment
@@ -874,6 +883,7 @@ where
                 context,
                 ExecutionEnvironmentType::EVM,
                 tracer,
+                validator,
             )?
         };
 
