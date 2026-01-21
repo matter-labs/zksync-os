@@ -107,67 +107,77 @@ pub(crate) fn bigint_op_delegation_with_carry_bit(
     unsafe {
         use ruint::aliases::{U256 as rU256, U512 as rU512};
 
-        use core::ptr::addr_of;
+        use core::ptr::{addr_of, addr_of_mut};
 
-        let (a, b) = (
-            rU256::from_limbs(addr_of!((*_a_ptr).0).read()),
-            rU256::from_limbs(addr_of!((*_b_ptr).0).read()),
-        );
-
-        let carry_or_borrow = rU256::from(_carry as u64);
-
-        let result;
-        let of = match _op {
-            BigIntOps::Add => {
-                let (t, of0) = a.overflowing_add(b);
-                let (t, of1) = t.overflowing_add(carry_or_borrow);
-                result = t;
-
-                of0 || of1
-            }
-            BigIntOps::Sub => {
-                let (t, of0) = a.overflowing_sub(b);
-                let (t, of1) = t.overflowing_sub(carry_or_borrow);
-                result = t;
-
-                of0 || of1
-            }
-            BigIntOps::SubAndNegate => {
-                let (t, of0) = b.overflowing_sub(a);
-                let (t, of1) = t.overflowing_sub(carry_or_borrow);
-                result = t;
-
-                of0 || of1
-            }
-            BigIntOps::MulLow => {
-                let t: rU512 = a.widening_mul(b);
-                result = rU256::from_limbs(t.as_limbs()[..4].try_into().unwrap());
-
-                t.as_limbs()[4..].iter().any(|el| *el != 0)
-            }
-            BigIntOps::MulHigh => {
-                let t: rU512 = a.widening_mul(b);
-                result = rU256::from_limbs(t.as_limbs()[4..8].try_into().unwrap());
-
-                false
-            }
-            BigIntOps::Eq => {
-                result = a;
-
-                a == b
-            }
-            BigIntOps::MemCpy => {
-                let (t, of) = b.overflowing_add(carry_or_borrow);
-                result = t;
-
-                of
-            }
+        let read = |ptr: *const U256| rU256::from_limbs(addr_of!((*ptr).0).read());
+        let write = |ptr: *mut U256, value: rU256| {
+            addr_of_mut!((*ptr).0).write(*value.as_limbs());
         };
 
-        use core::ptr::addr_of_mut;
-        addr_of_mut!((*_a_ptr).0).write(*result.as_limbs());
+        let carry_or_borrow = rU256::from(_carry as u64);
+        match _op {
+            BigIntOps::Add => {
+                let a = read(_a_ptr);
+                let b = read(_b_ptr);
+                let (t, of0) = a.overflowing_add(b);
+                let (t, of1) = t.overflowing_add(carry_or_borrow);
+                write(_a_ptr, t);
 
-        of as u32
+                (of0 || of1) as u32
+            }
+            BigIntOps::Sub => {
+                let a = read(_a_ptr);
+                let b = read(_b_ptr);
+                let (t, of0) = a.overflowing_sub(b);
+                let (t, of1) = t.overflowing_sub(carry_or_borrow);
+                write(_a_ptr, t);
+
+                (of0 || of1) as u32
+            }
+            BigIntOps::SubAndNegate => {
+                let a = read(_a_ptr);
+                let b = read(_b_ptr);
+                let (t, of0) = b.overflowing_sub(a);
+                let (t, of1) = t.overflowing_sub(carry_or_borrow);
+                write(_a_ptr, t);
+
+                (of0 || of1) as u32
+            }
+            BigIntOps::MulLow => {
+                let a = read(_a_ptr);
+                let b = read(_b_ptr);
+                let t: rU512 = a.widening_mul(b);
+                write(
+                    _a_ptr,
+                    rU256::from_limbs(t.as_limbs()[..4].try_into().unwrap()),
+                );
+
+                t.as_limbs()[4..].iter().any(|el| *el != 0) as u32
+            }
+            BigIntOps::MulHigh => {
+                let a = read(_a_ptr);
+                let b = read(_b_ptr);
+                let t: rU512 = a.widening_mul(b);
+                write(
+                    _a_ptr,
+                    rU256::from_limbs(t.as_limbs()[4..8].try_into().unwrap()),
+                );
+
+                0
+            }
+            BigIntOps::MemCpy => {
+                let b = read(_b_ptr);
+                let (t, of) = b.overflowing_add(carry_or_borrow);
+                write(_a_ptr, t);
+
+                of as u32
+            }
+            BigIntOps::Eq => {
+                let a = read(_a_ptr);
+                let b = read(_b_ptr);
+                (a == b) as u32
+            }
+        }
     }
 
     #[cfg(not(any(feature = "testing", test)))]

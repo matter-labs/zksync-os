@@ -538,6 +538,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         let dst_scratch_capacity = dst_scratch.clear_as_capacity_mut();
         assert!(dst_scratch_capacity.len() >= max_product_digits);
         if max_product_digits == 0 {
+            assert!(a.digits == 0 || b.digits == 0);
             if let Some(c) = c {
                 assert_eq!(c.digits, 0);
             }
@@ -669,7 +670,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                 if dst_digit >= max_product_digits {
                     // abort propagation - we apriori expect that in well-formed case
                     // those digits can not exist
-                    debug_assert!((*carry_scratch).is_zero());
+                    assert!((*carry_scratch).is_zero());
                 } else {
                     assert!(next_to_init_digit >= dst_digit);
                     if dst_digit == next_to_init_digit {
@@ -689,7 +690,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                         let mut current_digit = dst_digit;
                         while of > 0 {
                             current_digit += 1;
-                            debug_assert!(current_digit < max_product_digits);
+                            assert!(current_digit < max_product_digits);
                             carry_propagation_scratch.as_limbs_mut()[0] = of as u64;
 
                             if current_digit == next_to_init_digit {

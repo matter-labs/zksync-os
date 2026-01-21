@@ -357,6 +357,12 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: sets account nonce for the provided address.
+    pub fn with_nonce(mut self, address: alloy::primitives::Address, nonce: u64) -> Self {
+        self.set_nonce(address, nonce);
+        self
+    }
+
     /// Builder: funds account with a fixed default testing balance.
     pub fn with_prefunded_account(mut self, address: alloy::primitives::Address) -> Self {
         self.set_balance(
@@ -440,6 +446,13 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     ) -> &mut Self {
         self.chain
             .set_balance(ruint::aliases::B160::from_alloy(address), balance);
+        self
+    }
+
+    /// Setter: sets account nonce in chain state.
+    pub fn set_nonce(&mut self, address: alloy::primitives::Address, nonce: u64) -> &mut Self {
+        self.chain
+            .set_nonce(ruint::aliases::B160::from_alloy(address), nonce);
         self
     }
 
