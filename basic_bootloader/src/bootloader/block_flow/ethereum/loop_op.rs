@@ -2,7 +2,7 @@ use super::*;
 use crate::bootloader::block_flow::tx_loop::TxLoopOp;
 use crate::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
 use crate::bootloader::transaction_flow::MinimalTransactionOutput;
-use zk_ee::system::{Resource};
+use zk_ee::system::Resource;
 use zk_ee::system::{AccountDataRequest, IOTeardown};
 use zk_ee::system_log;
 use zk_ee::types_config::EthereumIOTypesConfig;

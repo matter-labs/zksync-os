@@ -25,9 +25,7 @@ pub fn run_forward<Config: BasicBootloaderExecutionConfig>(
     validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) {
     if let Err(err) =
-       
         ForwardBootloader::run_prepared::<Config>(oracle, &mut (), result_keeper, tracer, validator)
-   
     {
         panic!("Forward run failed with: {err}")
     };
@@ -42,5 +40,6 @@ pub fn run_forward_no_panic<Config: BasicBootloaderExecutionConfig>(
     tracer: &mut impl Tracer<ForwardRunningSystem>,
     validator: &mut impl TxValidator<ForwardRunningSystem>,
 ) -> Result<(), BootloaderSubsystemError> {
-    ForwardBootloader::run_prepared::<Config>(oracle, &mut (), result_keeper, tracer, validator).map(|_| ())
+    ForwardBootloader::run_prepared::<Config>(oracle, &mut (), result_keeper, tracer, validator)
+        .map(|_| ())
 }
