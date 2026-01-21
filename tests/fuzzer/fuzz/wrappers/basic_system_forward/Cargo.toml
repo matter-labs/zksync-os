@@ -26,7 +26,7 @@ cycle_marker = { path = "../../../../../cycle_marker" }
 num-bigint = { version =  "*", optional = true}
 num-traits = { version =  "*", optional = true}
 system_hooks = { package = "system_hooks_forward", path = "../system_hooks_forward" }
-
+cc-traits = { path = "../../../../../basic_system/src/system_implementation/ethereum_storage_model/supporting_crates/cc-traits" }
 
 
 cfg-if = "1.0.0"

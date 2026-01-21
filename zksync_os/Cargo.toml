@@ -53,7 +53,7 @@ debug = true
 
 [features]
 scalloc = ["proof_running_system/scalloc"]
-print_debug_info = ["proof_running_system/error_origins"]
+print_debug_info = ["proof_running_system/error_origins", "proof_running_system/global-alloc"]
 proving = ["crypto/proving", "proof_running_system/proving"]
 benchmarking = ["proof_running_system/benchmarking"]
 production = ["proof_running_system/production"]
@@ -62,7 +62,6 @@ eth_runner = ["proof_running_system/eth_runner"]
 evm_tester = ["proof_running_system/evm_tester"]
 multiblock-batch = ["proof_running_system/multiblock-batch"]
 state-diffs-pi = ["proof_running_system/state-diffs-pi"]
-aggregation = ["proof_running_system/aggregation"]
 
 
 # [patch."https://github.com/matter-labs/zksync-airbender"]

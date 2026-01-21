@@ -19,6 +19,7 @@ members = [
     "supporting_crates/keccak",
     "supporting_crates/solidity_abi",
     "supporting_crates/solidity_abi_derive",
+    "basic_system/src/system_implementation/ethereum_storage_model/supporting_crates/cc-traits",
     "tests/rig",
     "tests/instances/transactions",
     "tests/instances/erc20",

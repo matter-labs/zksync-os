@@ -186,6 +186,7 @@ dependencies = [
  "evm_interpreter",
  "paste",
  "ruint",
+ "serde-big-array",
  "strum_macros",
  "system_hooks",
  "zk_ee",
@@ -196,6 +197,7 @@ name = "basic_system"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "cc-traits 0.1.0",
  "cfg-if",
  "const-hex",
  "const_for",
@@ -250,6 +252,10 @@ name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
+name = "cc-traits"
+version = "0.1.0"
 
 [[package]]
 name = "cc-traits"
@@ -697,7 +703,7 @@ dependencies = [
  "arrayvec",
  "basic_bootloader",
  "basic_system",
- "cc-traits",
+ "cc-traits 2.0.0",
  "cfg-if",
  "crypto",
  "evm_interpreter",
@@ -877,6 +883,24 @@ name = "seq-macro"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bc711410fbe7399f390ca1c3b60ad0f53f80e95c5eb935e52268a0e2cd49acc"
+
+[[package]]
+name = "serde"
+version = "1.0.228"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
+name = "serde-big-array"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11fc7cc2c76d73e0f27ee52abbd64eec84d46f370c88371120433196934e4b7f"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "serde_core"

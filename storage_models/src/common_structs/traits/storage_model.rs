@@ -1,14 +1,13 @@
 use super::snapshottable_io::SnapshottableIo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
+use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::{BalanceSubsystemError, DeconstructionSubsystemError, NonceSubsystemError};
-use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::utils::Bytes32;
 use zk_ee::{
     system::{
-        errors::{internal::InternalError, system::SystemError},
-        logger::Logger,
-        AccountData, AccountDataRequest, IOResultKeeper, Maybe, Resources,
+        errors::system::SystemError, logger::Logger, AccountData, AccountDataRequest,
+        IOResultKeeper, Maybe, Resources,
     },
     types_config::SystemIOTypesConfig,
 };
@@ -22,8 +21,9 @@ use zk_ee::{
 pub trait StorageModel: Sized + SnapshottableIo {
     type IOTypes: SystemIOTypesConfig;
     type Resources: Resources;
-    type StorageCommitment;
+    type StorageCommitment: Clone + UsizeDeserializable + UsizeSerializable + core::fmt::Debug; // easier to have it here than propagate
 
+    /// Reads a value from contract storage at the given address and key.
     fn storage_read(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -33,6 +33,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError>;
 
+    /// Touches a storage slot without reading its value, used for warming up storage.
     fn storage_touch(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -42,7 +43,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError>;
 
-    // returns old value
+    /// Writes a value to contract storage. Returns the old value.
     fn storage_write(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -53,6 +54,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError>;
 
+    /// Reads requested account properties for the given address.
     fn read_account_properties<
         EEVersion: Maybe<u8>,
         ObservableBytecodeHash: Maybe<<Self::IOTypes as SystemIOTypesConfig>::BytecodeHashValue>,
@@ -103,6 +105,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         SystemError,
     >;
 
+    /// Touches an account without reading its data, used for warming up accounts.
     fn touch_account(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -111,6 +114,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError>;
 
+    /// Increments the nonce for the given address. Returns the old nonce value.
     fn increment_nonce(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -120,6 +124,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl zk_ee::oracle::IOOracle,
     ) -> Result<u64, NonceSubsystemError>;
 
+    /// Updates the nominal token balance for an address using the provided update function.
     fn update_nominal_token_value(
         &mut self,
         from_ee: ExecutionEnvironmentType,
@@ -137,6 +142,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         BalanceSubsystemError,
     >;
 
+    /// Returns the nominal token balance for the given address.
     fn get_selfbalance(
         &mut self,
         ee_type: ExecutionEnvironmentType,
@@ -147,6 +153,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         SystemError,
     >;
 
+    /// Transfers nominal token value from one address to another.
     fn transfer_nominal_token_value(
         &mut self,
         from_ee: ExecutionEnvironmentType,
@@ -157,6 +164,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl IOOracle,
     ) -> Result<(), BalanceSubsystemError>;
 
+    /// Deploys bytecode at the given address. Returns the bytecode slice, its hash, and length.
     fn deploy_code(
         &mut self,
         from_ee: ExecutionEnvironmentType,
@@ -173,6 +181,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         SystemError,
     >;
 
+    /// Sets bytecode metadata for an account (hash, length, artifacts length, etc.).
     fn set_bytecode_details(
         &mut self,
         resources: &mut Self::Resources,
@@ -186,6 +195,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError>;
 
+    /// Sets a delegation from one address to another (EIP-7702 style delegation).
     fn set_delegation(
         &mut self,
         resources: &mut Self::Resources,
@@ -194,6 +204,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
         oracle: &mut impl IOOracle,
     ) -> Result<(), SystemError>;
 
+    /// Marks an account for deconstruction (self-destruct). Returns the transferred balance.
     fn mark_for_deconstruction(
         &mut self,
         from_ee: ExecutionEnvironmentType,
@@ -210,41 +221,68 @@ pub trait StorageModel: Sized + SnapshottableIo {
     type Allocator: core::alloc::Allocator + Clone;
     type InitData;
 
+    /// Constructs a new storage model instance from initialization data and an allocator.
     fn construct(init_data: Self::InitData, allocator: Self::Allocator) -> Self;
 
     /// Get amount of pubdata needed to encode current tx diff in bytes.
     fn pubdata_used_by_tx(&self) -> u32;
-
-    /// Used for testing to compare state diffs between forwards and proving runs.
-    fn finish_and_calculate_state_diffs_hash<T: WriteBytes + ?Sized>(
-        self,
-        oracle: &mut impl IOOracle,
-        state_commitment: Option<&mut Self::StorageCommitment>,
-        pubdata_dst: &mut T,
-        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
-        logger: &mut impl Logger,
-    ) -> Result<Bytes32, InternalError>;
-
-    ///
-    /// Finish work, there are 3 outputs:
-    /// - state changes: uncompressed state diffs(including new preimages), writes to `results_keeper`
-    /// - pubdata - compressed state diffs(including preimages) that should be posted on the DA layer, writes to `results_keeper` and `pubdata_dst`.
-    /// - new state commitment: if `state_commitment` is `Some` - verifies all the reads, applies writes and updates state commitment
-    ///
-    // Currently, result_keeper accepts storage diffs and preimages.
-    // However, future storage models may require different format, so we'll need to generalize it.
-    fn finish<T: WriteBytes + ?Sized>(
-        self,
-        oracle: &mut impl IOOracle, // oracle is needed here to prove tree
-        state_commitment: Option<&mut Self::StorageCommitment>,
-        pubdata_dst: &mut T,
-        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
-        logger: &mut impl Logger,
-    ) -> Result<(), InternalError>;
 
     /// Get current counter of refunds
     fn get_refund_counter(&'_ self) -> &'_ Self::Resources;
 
     /// Add resources to refund at the end of transaction
     fn add_to_refund_counter(&mut self, refund: Self::Resources) -> Result<(), SystemError>;
+
+    /// Persists internal caches to the oracle and result keeper.
+    fn persist_caches(
+        &mut self,
+        oracle: &mut impl IOOracle,
+        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
+    );
+
+    /// Reports any new preimages (e.g., bytecode) to the result keeper.
+    fn report_new_preimages(&mut self, result_keeper: &mut impl IOResultKeeper<Self::IOTypes>);
+
+    type AccountAddress<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
+    where
+        Self: 'a;
+    type AccountDiff<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
+    where
+        Self: 'a;
+
+    /// Returns the diff for a specific account address, if any changes were made.
+    fn get_account_diff<'a>(
+        &'a self,
+        address: Self::AccountAddress<'a>,
+    ) -> Option<Self::AccountDiff<'a>>;
+
+    /// Returns an iterator over all account diffs (address, diff pairs).
+    fn accounts_diffs_iterator<'a>(
+        &'a self,
+    ) -> impl ExactSizeIterator<Item = (Self::AccountAddress<'a>, Self::AccountDiff<'a>)> + Clone;
+
+    type StorageKey<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
+    where
+        Self: 'a;
+
+    type StorageDiff<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
+    where
+        Self: 'a;
+
+    /// Returns the diff for a specific storage key, if any changes were made.
+    fn get_storage_diff<'a>(&'a self, key: Self::StorageKey<'a>) -> Option<Self::StorageDiff<'a>>;
+
+    /// Returns an iterator over all storage diffs (key, diff pairs).
+    fn storage_diffs_iterator<'a>(
+        &'a self,
+    ) -> impl ExactSizeIterator<Item = (Self::StorageKey<'a>, Self::StorageDiff<'a>)> + Clone;
+
+    /// Updates the storage commitment based on current diffs and reports results.
+    fn update_commitment(
+        &mut self,
+        state_commitment: Option<&mut Self::StorageCommitment>,
+        oracle: &mut impl IOOracle,
+        logger: &mut impl Logger,
+        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
+    );
 }

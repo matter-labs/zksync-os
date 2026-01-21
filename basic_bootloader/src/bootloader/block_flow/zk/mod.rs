@@ -1,8 +1,10 @@
 use super::*;
+use core::marker::PhantomData;
 use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
 use zk_ee::system::MAX_NATIVE_COMPUTATIONAL;
 use zk_ee::{internal_error, system_log, types_config::*};
 
+mod batch_data;
 mod block_data;
 mod metadata_op;
 mod post_init_op;
@@ -10,15 +12,30 @@ mod post_tx_op;
 mod pre_tx_loop;
 mod tx_loop;
 
+pub use self::batch_data::*;
 pub use self::block_data::*;
+pub use self::post_tx_op::*;
 
 pub struct ZKHeaderPostInitOp;
 
-pub struct ZKHeaderStructurePreTxOp;
+pub struct ZKHeaderStructurePreTxOp<EA: TxHashesAccumulator> {
+    _marker: PhantomData<EA>,
+}
 
-pub struct ZKHeaderStructureTxLoop;
+pub struct ZKHeaderStructureTxLoop<BlockEA: TxHashesAccumulator, BatchEA: TxHashesAccumulator> {
+    _marker: PhantomData<BlockEA>,
+    _marker2: PhantomData<BatchEA>,
+}
 
-pub struct ZKHeaderStructurePostTxOp<const PROOF_ENV: bool>;
+/// ZK header sequencing post tx op (generates block header, returns outputs)
+pub struct ZKHeaderStructurePostTxOpSequencing;
+
+/// ZK header proving post tx op for aggregation (generates single block batch, return public input hash)
+/// If `STATE_DIFFS_HASH` is true - returns state diffs hash instead of PI hash, used only for testing to compare state diffs with forward run.
+pub struct ZKHeaderStructurePostTxOpProvingSingleblockBatch<const STATE_DIFFS_HASH: bool>;
+
+/// ZK header proving post tx op for aggregation (applies block data into accumulator passed from outside, to later form multiblock batch)
+pub struct ZKHeaderStructurePostTxOpProvingMultiblockBatch;
 
 /// Check if the transaction made the block reach any of the limits
 /// for gas, native, pubdata or logs.

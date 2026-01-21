@@ -15,6 +15,7 @@ pub mod utils;
 pub use alloy;
 pub use alloy_rlp;
 pub use alloy_sol_types;
+pub use basic_bootloader;
 pub use basic_system;
 pub use callable_oracles;
 pub use chain::BlockContext;

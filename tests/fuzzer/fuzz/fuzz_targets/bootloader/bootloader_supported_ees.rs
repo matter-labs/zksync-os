@@ -223,11 +223,11 @@ fn fuzz(input: FuzzInput) {
             let mut hooks = zk_ee::common_structs::system_hooks::HooksStorage::<
                 ForwardRunningSystem,
                 _,
-                >::new_in(system.get_allocator());
-                
+            >::new_in(system.get_allocator());
+
             let _ = vm_state.continue_after_preemption(
                 &mut system,
-                &mut hooks, 
+                &mut hooks,
                 inf_resources,
                 call_result,
                 &mut NopTracer::default(),
@@ -239,14 +239,6 @@ fn fuzz(input: FuzzInput) {
     let Ok(_) = system.finish_global_frame(None) else {
         return;
     };
-
-    let mut result_keeper: NopResultKeeper<()> = NopResultKeeper::default();
-    system.finish(
-        Bytes32::default(),
-        Bytes32::default(),
-        Bytes32::default(),
-        &mut result_keeper,
-    );
 }
 
 fuzz_target!(|input: FuzzInput| {

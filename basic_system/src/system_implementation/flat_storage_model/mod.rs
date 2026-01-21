@@ -23,18 +23,16 @@ use ruint::aliases::B160;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageCacheModel;
 use storage_models::common_structs::StorageModel;
-use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ValueDiffCompressionStrategy};
-use zk_ee::internal_error;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::BalanceSubsystemError;
+use zk_ee::system::BasicAccountDiff;
 use zk_ee::system::DeconstructionSubsystemError;
 use zk_ee::system::NonceSubsystemError;
 use zk_ee::system::Resources;
+use zk_ee::system::StorageDiff;
 use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::{
-    common_structs::{
-        history_map::CacheSnapshotId, state_root_view::StateRootView, WarmStorageKey,
-    },
+    common_structs::{history_map::CacheSnapshotId, WarmStorageKey},
     execution_environment_type::ExecutionEnvironmentType,
     memory::stack_trait::StackFactory,
     oracle::IOOracle,
@@ -72,7 +70,7 @@ pub struct FlatTreeWithAccountsUnderHashesStorageModel<
     const M: usize,
     const PROOF_ENV: bool,
 > {
-    pub(crate) storage_cache: NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
+    pub storage_cache: NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
     pub(crate) preimages_cache: BytecodeAndAccountDataPreimagesStorage<R, A>,
     pub(crate) account_data_cache: NewModelAccountCache<A, R, P, SF, M>,
     pub(crate) allocator: A,
@@ -121,71 +119,6 @@ impl<
     fn pubdata_used_by_tx(&self) -> u32 {
         self.account_data_cache.calculate_pubdata_used_by_tx()
             + self.storage_cache.calculate_pubdata_used_by_tx()
-    }
-
-    /// Standard finish method that completes storage model processing.
-    fn finish<T: WriteBytes + ?Sized>(
-        self,
-        oracle: &mut impl IOOracle,
-        state_commitment: Option<&mut Self::StorageCommitment>,
-        pubdata_dst: &mut T,
-        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
-        logger: &mut impl Logger,
-    ) -> Result<(), InternalError> {
-        // Complete the finalization but discard the returned storage cache
-        let _ =
-            self.finish_internal(oracle, state_commitment, pubdata_dst, result_keeper, logger)?;
-
-        Ok(())
-    }
-
-    /// This method extracts the final state changes after finishing the storage model
-    /// and computes a deterministic hash over all storage key-value pairs that were modified.
-    /// Can be used to validate that forward execution and RISC-V
-    /// proof execution produce identical state changes.
-    fn finish_and_calculate_state_diffs_hash<T: WriteBytes + ?Sized>(
-        self,
-        oracle: &mut impl IOOracle,
-        state_commitment: Option<&mut Self::StorageCommitment>,
-        pubdata_dst: &mut T,
-        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
-        logger: &mut impl Logger,
-    ) -> Result<Bytes32, InternalError> {
-        // First complete the normal storage finalization process
-        let storage_cache =
-            self.finish_internal(oracle, state_commitment, pubdata_dst, result_keeper, logger)?;
-
-        let mut hasher = crypto::blake2s::Blake2s256::new();
-        let mut state_diffs_hasher = crypto::blake2s::Blake2s256::new();
-
-        // Iterate through all modified storage entries and hash them deterministically
-        storage_cache
-            .0
-            .cache
-            .apply_to_all_updated_elements::<_, ()>(|l, r, k| {
-                // Skip entries where the value didn't actually change
-                if l.value() == r.value() {
-                    return Ok(());
-                }
-                let derived_key =
-                    derive_flat_storage_key_with_hasher(&k.address, &k.key, &mut hasher);
-
-                logger
-                    .write_fmt(format_args!(
-                        "State diffs hash - key: {:?}, new value: {:?}\n",
-                        derived_key,
-                        r.value()
-                    ))
-                    .ok();
-
-                // Hash the derived key and new value together to create deterministic state diff hash
-                state_diffs_hasher.update(derived_key.as_u8_ref());
-                state_diffs_hasher.update(r.value().as_u8_ref());
-                Ok(())
-            })
-            .map_err(|_| internal_error!("Failed to compute state diffs hash"))?;
-
-        Ok(state_diffs_hasher.finalize().into())
     }
 
     fn storage_read(
@@ -482,119 +415,110 @@ impl<
     fn add_to_refund_counter(&mut self, refund: Self::Resources) -> Result<(), SystemError> {
         self.storage_cache.0.add_to_refund_counter_impl(refund)
     }
-}
 
-impl<
-        A: Allocator + Clone + Default,
-        R: Resources,
-        P: StorageAccessPolicy<R, Bytes32>,
-        SF: StackFactory<M>,
-        const M: usize,
-        const PROOF_ENV: bool,
-    > FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, M, PROOF_ENV>
-{
-    /// Internal implementation shared by both `finish` and `finish_state_diffs_hash`.
-    ///
-    /// This method performs the complete storage finalization process:
-    /// 1. Persists account changes to storage cache
-    /// 2. Returns uncompressed state diffs to the result keeper
-    /// 3. Computes and commits compressed pubdata
-    /// 4. Verifies and applies all storage reads/writes to the state commitment
-    ///
-    /// Returns the final storage cache for further processing by the caller.
-    fn finish_internal<T: WriteBytes + ?Sized>(
-        self,
+    fn persist_caches(
+        &mut self,
         oracle: &mut impl IOOracle,
-        state_commitment: Option<&mut <Self as StorageModel>::StorageCommitment>,
-        pubdata_dst: &mut T,
-        result_keeper: &mut impl IOResultKeeper<<Self as StorageModel>::IOTypes>,
-        logger: &mut impl Logger,
-    ) -> Result<NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>, InternalError> {
-        let Self {
-            mut storage_cache,
-            mut preimages_cache,
-            account_data_cache,
-            allocator,
-        } = self;
-        // flush accounts into storage
-        account_data_cache
+        result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
+    ) {
+        self.account_data_cache
             .persist_changes(
-                &mut storage_cache,
-                &mut preimages_cache,
+                &mut self.storage_cache,
+                &mut self.preimages_cache,
                 oracle,
                 result_keeper,
             )
-            .expect("must persist changes from account cache");
+            .expect("must persist caches");
+    }
 
-        // 1. Return uncompressed state diffs for sequencer
-        result_keeper.storage_diffs(storage_cache.net_diffs_iter().map(|(k, v)| {
-            let WarmStorageKey { address, key } = k;
-            let value = v.current_value;
-            (address, key, value)
-        }));
-        preimages_cache.report_new_preimages(result_keeper)?;
+    fn report_new_preimages(&mut self, result_keeper: &mut impl IOResultKeeper<Self::IOTypes>) {
+        self.preimages_cache
+            .report_new_preimages(result_keeper)
+            .expect("must report preimages");
+    }
 
-        // 2. Commit to/return compressed pubdata
-        let encdoded_state_diffs_count =
-            (storage_cache.net_diffs_iter().count() as u32).to_be_bytes();
-        pubdata_dst.write(&encdoded_state_diffs_count);
-        result_keeper.pubdata(&encdoded_state_diffs_count);
+    type AccountAddress<'a>
+        = &'a B160
+    where
+        Self: 'a;
+    type AccountDiff<'a>
+        = BasicAccountDiff<Self::IOTypes>
+    where
+        Self: 'a;
 
-        let mut hasher = crypto::blake2s::Blake2s256::new();
-        storage_cache
-            .0
-            .cache
-            .apply_to_all_updated_elements::<_, ()>(|l, r, k| {
-                // Skip on empty diff
-                if l.value() == r.value() {
-                    return Ok(());
-                }
-                // TODO(EVM-1074): use tree index instead of key for repeated writes
-                let derived_key =
-                    derive_flat_storage_key_with_hasher(&k.address, &k.key, &mut hasher);
-                pubdata_dst.write(derived_key.as_u8_ref());
-                result_keeper.pubdata(derived_key.as_u8_ref());
+    fn get_account_diff<'a>(
+        &'a self,
+        _address: Self::AccountAddress<'a>,
+    ) -> Option<Self::AccountDiff<'a>> {
+        None
+    }
+    fn accounts_diffs_iterator<'a>(
+        &'a self,
+    ) -> impl ExactSizeIterator<Item = (Self::AccountAddress<'a>, Self::AccountDiff<'a>)> + Clone
+    {
+        [].into_iter()
+    }
 
-                // we publish preimages for account details
-                if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
-                    let account_address = B160::try_from_be_slice(&k.key.as_u8_ref()[12..])
-                        .unwrap()
-                        .into();
-                    let cache_item = account_data_cache.cache.get(&account_address).ok_or(())?;
-                    let (l, r) = cache_item.get_initial_and_last_values().ok_or(())?;
-                    AccountProperties::diff_compression::<PROOF_ENV, _, _, _>(
-                        l.value(),
-                        r.value(),
-                        r.metadata().not_publish_bytecode,
-                        pubdata_dst,
-                        result_keeper,
-                        &mut preimages_cache,
-                        oracle,
-                    )
-                    .map_err(|_| ())?;
-                } else {
-                    ValueDiffCompressionStrategy::optimal_compression(
-                        l.value(),
-                        r.value(),
-                        pubdata_dst,
-                        result_keeper,
-                    );
-                }
-                Ok(())
-            })
-            .map_err(|_| internal_error!("Failed to compute pubdata"))?;
+    type StorageKey<'a>
+        = &'a WarmStorageKey
+    where
+        Self: 'a;
+    type StorageDiff<'a>
+        = StorageDiff<Self::IOTypes>
+    where
+        Self: 'a;
+    fn get_storage_diff<'a>(&'a self, key: Self::StorageKey<'a>) -> Option<Self::StorageDiff<'a>> {
+        self.storage_cache.0.cache.get(key).map(|item| {
+            let is_new_storage_slot = item.key_properties().is_new_element();
+            let initial_value_used = item.key_properties().is_value_known();
+            let current_record = item.current();
+            let initial_record = item.initial();
 
-        // 3. Verify/apply reads and writes
-        cycle_marker::wrap!("verify_and_apply_batch", {
-            if let Some(state_commitment) = state_commitment {
-                let it = storage_cache.net_accesses_iter();
-                state_commitment.verify_and_apply_batch(oracle, it, allocator, logger)
-            } else {
-                Ok(())
+            // TODO: so far we copy, but can try to remove it eventually
+            StorageDiff {
+                initial_value: *initial_record.value(),
+                current_value: *current_record.value(),
+                is_new_storage_slot,
+                initial_value_used,
             }
-        })?;
+        })
+    }
 
-        Ok(storage_cache)
+    fn storage_diffs_iterator<'a>(
+        &'a self,
+    ) -> impl ExactSizeIterator<Item = (Self::StorageKey<'a>, Self::StorageDiff<'a>)> + Clone {
+        self.storage_cache.0.cache.iter().map(|item| {
+            let is_new_storage_slot = item.key_properties().is_new_element();
+            let initial_value_used = item.key_properties().is_value_known();
+            let current_record = item.current();
+            let initial_record = item.initial();
+            (
+                item.key(),
+                // TODO: so far we copy, but can try to remove it eventually
+                StorageDiff {
+                    initial_value: *initial_record.value(),
+                    current_value: *current_record.value(),
+                    is_new_storage_slot,
+                    initial_value_used,
+                },
+            )
+        })
+    }
+
+    fn update_commitment(
+        &mut self,
+        state_commitment: Option<&mut Self::StorageCommitment>,
+        oracle: &mut impl IOOracle,
+        logger: &mut impl Logger,
+        _result_keeper: &mut impl IOResultKeeper<Self::IOTypes>,
+    ) {
+        if let Some(state_commitment) = state_commitment {
+            use zk_ee::common_structs::state_root_view::StateRootView;
+            let it = self.storage_cache.net_accesses_iter();
+            state_commitment
+                .verify_and_apply_batch(oracle, it, self.allocator.clone(), logger)
+                .expect("must persist changes to state");
+        }
     }
 }
 
@@ -645,5 +569,81 @@ impl<
             .finish_frame(rollback_handle.map(|x| &x.account_data))?;
 
         Ok(())
+    }
+}
+
+impl<
+        A: Allocator + Clone + Default,
+        R: Resources,
+        P: StorageAccessPolicy<R, Bytes32>,
+        SF: StackFactory<N>,
+        const N: usize,
+        const PROOF_ENV: bool,
+    > FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>
+{
+    pub fn apply_storage_diffs_pubdata<T: WriteBytes + ?Sized>(
+        &mut self,
+        result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
+        pubdata_dst: &mut T,
+        oracle: &mut impl IOOracle,
+    ) {
+        use zk_ee::common_structs::*;
+
+        let mut flat_storage_key_hasher = crypto::blake2s::Blake2s256::new();
+
+        let encoded_state_diffs_count =
+            (self.storage_cache.net_diffs_iter().count() as u32).to_be_bytes();
+        pubdata_dst.write(&encoded_state_diffs_count);
+        result_keeper.pubdata(&encoded_state_diffs_count);
+
+        self.storage_cache
+            .0
+            .cache
+            .apply_to_all_updated_elements::<_, ()>(|l, r, k| {
+                // Skip on empty diff
+                if l.value() == r.value() {
+                    return Ok(());
+                }
+                // TODO(EVM-1074): use tree index instead of key for repeated writes
+                let derived_key = derive_flat_storage_key_with_hasher(
+                    &k.address,
+                    &k.key,
+                    &mut flat_storage_key_hasher,
+                );
+                pubdata_dst.write(derived_key.as_u8_ref());
+                result_keeper.pubdata(derived_key.as_u8_ref());
+
+                // we publish preimages for account details
+                if k.address == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
+                    let account_address = B160::try_from_be_slice(&k.key.as_u8_ref()[12..])
+                        .unwrap()
+                        .into();
+                    let cache_item = self
+                        .account_data_cache
+                        .cache
+                        .get(&account_address)
+                        .ok_or(())?;
+                    let (l, r) = cache_item.get_initial_and_last_values().ok_or(())?;
+                    AccountProperties::diff_compression::<PROOF_ENV, _, _, _>(
+                        l.value(),
+                        r.value(),
+                        r.metadata().not_publish_bytecode,
+                        pubdata_dst,
+                        result_keeper,
+                        &mut self.preimages_cache,
+                        oracle,
+                    )
+                    .map_err(|_| ())?;
+                } else {
+                    ValueDiffCompressionStrategy::optimal_compression(
+                        l.value(),
+                        r.value(),
+                        pubdata_dst,
+                        result_keeper,
+                    );
+                }
+                Ok(())
+            })
+            .expect("must compute pubdata");
     }
 }

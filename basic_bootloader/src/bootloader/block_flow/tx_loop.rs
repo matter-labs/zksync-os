@@ -11,6 +11,8 @@ where
 {
     /// Block-level data structure for tracking accumulated state
     type BlockDataKeeper;
+    /// Batch-level data structure for tracking accumulated state
+    type BatchDataKeeper;
 
     /// Executes the transaction processing loop for the entire block
     ///
@@ -21,6 +23,7 @@ where
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
         block_data: &mut Self::BlockDataKeeper,
+        batch_data: &mut Self::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<S::IOTypes>,
         tracer: &mut impl Tracer<S>,
         validator: &mut impl TxValidator<S>,

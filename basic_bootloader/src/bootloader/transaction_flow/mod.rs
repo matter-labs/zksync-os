@@ -14,9 +14,11 @@ use zk_ee::system::SystemTypes;
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::Bytes32;
 
+use super::block_flow::BlockTransactionsDataKeeper;
 use super::transaction::abi_encoded::AbiEncodedTransaction;
 use super::transaction::Transaction;
 
+pub mod ethereum;
 pub(crate) mod gas_helpers;
 pub mod process_transaction;
 pub(crate) mod refund_calculation;
@@ -181,9 +183,10 @@ where
     /// trait-specific one.
     fn after_execution<'a, Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
-        transaction: &Transaction<S::Allocator>,
+        transaction: Transaction<S::Allocator>,
         context: Self::TransactionContext,
         result: ExecutionResult<'a, S::IOTypes>,
+        transaction_data_keeper: &mut impl BlockTransactionsDataKeeper<S, Self>,
         tracer: &mut impl Tracer<S>,
     ) -> Self::ExecutionResult<'a>;
 

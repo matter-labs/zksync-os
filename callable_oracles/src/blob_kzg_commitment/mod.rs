@@ -1,8 +1,8 @@
 use crate::utils::evaluate::read_memory_as_u8;
 use crate::utils::usize_slice_iterator::UsizeSliceIteratorOwned;
+use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::KZGCommitmentAndProof;
+use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::BLOB_COMMITMENT_AND_PROOF_QUERY_ID;
 use basic_system::system_functions::point_evaluation::versioned_hash_for_kzg;
-use basic_system::system_implementation::system::da_commitment_generator::KZGCommitmentAndProof;
-use basic_system::system_implementation::system::da_commitment_generator::BLOB_COMMITMENT_AND_PROOF_QUERY_ID;
 use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
 use risc_v_simulator::abstractions::memory::MemorySource;

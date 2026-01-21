@@ -184,6 +184,7 @@ pub fn run_proving_inner<
     let (mut oracle, public_input) =
         ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
             oracle,
+            &mut (),
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
             &mut NopTxValidator,
@@ -214,8 +215,7 @@ pub fn run_proving_inner<
     I::csr_write_impl(0xdeadbeef);
     I::csr_write_impl(0);
     let count = I::csr_read_impl();
-    let mut batch_pi_builder =
-        basic_system::system_implementation::system::BatchPublicInputBuilder::new();
+    let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
     for _ in 0..count {
         let (io, block_metadata, current_block_hash, upgrade_tx_hash) =
             ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
@@ -239,11 +239,11 @@ pub fn run_proving_inner<
             .expect("must disconnect an oracle before performing arbitrary CSR access");
     }
 
-    unsafe {
-        core::mem::transmute(zk_ee::utils::Bytes32::from_array(
-            batch_pi_builder
-                .into_public_input(L::default(), &mut oracle)
-                .hash(),
-        ))
-    }
+    let public_input = zk_ee::utils::Bytes32::from_array(
+        batch_data
+            .into_public_input(L::default(), &mut oracle)
+            .hash(),
+    );
+
+    unsafe { core::mem::transmute(public_input) }
 }

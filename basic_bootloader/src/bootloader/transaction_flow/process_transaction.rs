@@ -17,6 +17,7 @@ where
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
         is_first_tx: bool,
+        block_data_keeper: &mut impl BlockTransactionsDataKeeper<S, F>,
         tracer: &mut impl Tracer<S>,
         validator: &mut impl TxValidator<S>,
     ) -> Result<F::ExecutionResult<'a>, TxError> {
@@ -54,6 +55,7 @@ where
                         system_functions,
                         memories,
                         transaction,
+                        block_data_keeper,
                         tracer,
                         validator,
                     )
@@ -64,6 +66,7 @@ where
                 system_functions,
                 memories,
                 transaction,
+                block_data_keeper,
                 tracer,
                 validator,
             ),
@@ -77,6 +80,7 @@ where
         system_functions: &mut HooksStorage<S, S::Allocator>,
         memories: RunnerMemoryBuffers<'a>,
         mut transaction: Transaction<S::Allocator>,
+        block_data_keeper: &mut impl BlockTransactionsDataKeeper<S, F>,
         tracer: &mut impl Tracer<S>,
         validator: &mut impl TxValidator<S>,
     ) -> Result<F::ExecutionResult<'a>, TxError>
@@ -160,9 +164,10 @@ where
 
         let execution_result = F::after_execution::<Config>(
             system,
-            &transaction,
+            transaction,
             tx_context,
             execution_result,
+            block_data_keeper,
             tracer,
         );
 

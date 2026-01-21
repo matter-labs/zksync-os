@@ -93,6 +93,25 @@ pub struct AbiEncodedTransaction<A: Allocator> {
     pub reserved_dynamic: ParsedValue<()>,
 }
 
+impl<A: Allocator> core::fmt::Debug for AbiEncodedTransaction<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AbiEncodedTransaction")
+            .field("tx_type", &self.tx_type.value)
+            .field("from", &self.from.value)
+            .field("to", &self.to.value)
+            .field("gas_limit", &self.gas_limit.value)
+            .field("gas_per_pubdata_limit", &self.gas_per_pubdata_limit.value)
+            .field("max_fee_per_gas", &self.max_fee_per_gas.value)
+            .field(
+                "max_priority_fee_per_gas",
+                &self.max_priority_fee_per_gas.value,
+            )
+            .field("nonce", &self.nonce.value)
+            .field("value", &self.value.value)
+            .finish()
+    }
+}
+
 #[allow(dead_code)]
 impl<A: Allocator> AbiEncodedTransaction<A> {
     /// The type id of protocol upgrade transactions.

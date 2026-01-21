@@ -92,6 +92,11 @@ pub fn u256_try_to_usize(src: &U256) -> Option<usize> {
 }
 
 #[inline(always)]
+pub fn u256_to_usize_saturated(src: &U256) -> usize {
+    u256_to_u64_saturated(src) as usize
+}
+
+#[inline(always)]
 pub fn u256_to_b160(src: &U256) -> B160 {
     let mut result = B160::ZERO;
     unsafe {
@@ -141,6 +146,13 @@ pub fn u256_try_to_b160(src: U256) -> Option<B160> {
     }
 
     Some(result)
+}
+
+pub fn u256_mul_by_word(input: &U256, word: u64) -> (U256, u64) {
+    let mut result = *input;
+    let of = unsafe { ruint::algorithms::mul_nx1(result.as_limbs_mut(), word) };
+
+    (result, of)
 }
 
 #[cfg(test)]

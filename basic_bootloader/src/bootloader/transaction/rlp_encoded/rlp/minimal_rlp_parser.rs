@@ -101,6 +101,14 @@ impl<'a> Rlp<'a> {
         }
     }
 
+    // Decode an RLP string and enforce it to be of a given length
+    pub fn bytes_exact<const N: usize>(&mut self) -> Result<&'a [u8; N], InvalidTransaction> {
+        let bytes = self.bytes()?;
+        bytes
+            .try_into()
+            .map_err(|_| InvalidTransaction::InvalidStructure)
+    }
+
     /// Enter a list and return a sub-cursor limited to the list payload bytes.
     pub fn list(&mut self) -> Result<Rlp<'a>, InvalidTransaction> {
         let m = self.take1()?;
@@ -166,6 +174,17 @@ impl<'a> Rlp<'a> {
         let mut buf = [0u8; 8];
         buf[8 - s.len()..].copy_from_slice(s);
         Ok(u64::from_be_bytes(buf))
+    }
+
+    /// Decode B160 from a big-endian byte string.
+    pub fn b160(&mut self) -> Result<B160, InvalidTransaction> {
+        let s = self.bytes()?;
+        if s.len() != 20 {
+            return Err(InvalidTransaction::InvalidStructure);
+        }
+        Ok(B160::from_be_bytes::<{ B160::BYTES }>(
+            s.try_into().unwrap(),
+        ))
     }
 
     /// Decode U256 from a big-endian byte string.
@@ -262,13 +281,7 @@ impl<'a> RlpFixedItem<'a> for &'a [u8; 32] {
 
 impl<'a> RlpItemDecode<'a> for B160 {
     fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
-        let s = r.bytes()?;
-        if s.len() != 20 {
-            return Err(InvalidTransaction::InvalidStructure);
-        }
-        Ok(B160::from_be_bytes::<{ B160::BYTES }>(
-            s.try_into().unwrap(),
-        ))
+        r.b160()
     }
 }
 impl<'a> RlpFixedItem<'a> for B160 {
@@ -411,6 +424,7 @@ impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
 }
 
 impl<'a, T: RlpItemDecode<'a>> HomList<'a, T, true> {
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         // Safe to unwrap, always set for VALIDATE = true
         self.count.unwrap()

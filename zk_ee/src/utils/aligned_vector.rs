@@ -3,7 +3,7 @@ use super::{
     usize_rw::{AsUsizeWritable, SafeUsizeWritable, UsizeWriteable},
     USIZE_SIZE,
 };
-use core::alloc::Allocator;
+use core::{alloc::Allocator, mem::MaybeUninit};
 
 pub const fn num_usize_words_for_u8_capacity(u8_capacity: usize) -> usize {
     let num_words = u8_capacity.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
@@ -108,6 +108,23 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
 
         Self {
             inner,
+            byte_capacity,
+        }
+    }
+
+    pub fn from_init_fn_in(
+        buffer_size: usize,
+        init_fn: impl FnOnce(&mut [MaybeUninit<usize>]) -> usize,
+        allocator: A,
+    ) -> Self {
+        let mut inner: alloc::boxed::Box<[MaybeUninit<usize>], A> =
+            alloc::boxed::Box::new_uninit_slice_in(buffer_size, allocator);
+        let written_words = init_fn(&mut inner);
+        assert!(written_words <= buffer_size); // we do not want to truncate or realloc, but we will expose only written part below
+        let byte_capacity = written_words * USIZE_SIZE; // we only count initialized words for capacity purposes
+
+        Self {
+            inner: unsafe { inner.assume_init() },
             byte_capacity,
         }
     }
