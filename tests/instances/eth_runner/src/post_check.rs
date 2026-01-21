@@ -1,6 +1,5 @@
 use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
-use alloy::consensus::error;
 use alloy::hex;
 use rig::crypto::MiniDigest;
 use rig::log::{error, info};
@@ -337,12 +336,12 @@ fn zksync_os_output_into_account_state(
 
 fn compute_tx_rolling_hash_for_receipts(receipts: &Vec<TransactionReceipt>) -> [u8; 32] {
     let mut hasher = rig::crypto::sha3::Keccak256::new();
-    let mut tx_rolling_hash = [0u8; 32];
-    for (index, receipt) in receipts.iter().enumerate() {
-        if index == 0 {
-            tx_rolling_hash = *receipt.transaction_hash;
-            continue;
-        }
+    let mut tx_rolling_hash = [
+        0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c, 0x92, 0x7e, 0x7d, 0xb2, 0xdc, 0xc7, 0x03,
+        0xc0, 0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b, 0x7b, 0xfa, 0xd8, 0x04, 0x5d, 0x85,
+        0xa4, 0x70,
+    ];
+    for receipt in receipts.iter() {
         hasher.update(tx_rolling_hash);
         hasher.update(receipt.transaction_hash);
         tx_rolling_hash = hasher.finalize_reset();
