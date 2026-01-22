@@ -118,13 +118,19 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
         "[TxValidator] totals: begin_calls={}, finish_calls={}",
         validator.begin_calls, validator.finish_calls
     );
-    
+
     // begin_tx is called for both transactions (1st is filtered, 2nd proceeds)
-    assert_eq!(validator.begin_calls, 2, "begin_tx should be called for each tx");
-    
+    assert_eq!(
+        validator.begin_calls, 2,
+        "begin_tx should be called for each tx"
+    );
+
     // finish_tx is only called for the 2nd tx since the 1st was filtered by begin_tx
     // and never reaches process_l2_transaction where finish_tx is invoked
-    assert_eq!(validator.finish_calls, 1, "finish_tx should only be called for txs that pass begin_tx");
+    assert_eq!(
+        validator.finish_calls, 1,
+        "finish_tx should only be called for txs that pass begin_tx"
+    );
 
     // 1) First tx must be rejected
     assert!(
@@ -217,7 +223,6 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
 
 #[test]
 fn test_l1_transactions_are_not_filtered_by_validator() {
-
     let mut chain = Chain::empty(None);
     let wallet = chain.random_signer();
     let from = wallet.address();
@@ -252,14 +257,8 @@ fn test_l1_transactions_are_not_filtered_by_validator() {
     // Validator that filters ALL transactions (both begin and finish)
     let mut validator = LoggingTxValidator::new(true, true);
 
-    let result = chain.run_block_with_extra_stats(
-        vec![tx0],
-        None,
-        None,
-        None,
-        &mut tracer,
-        &mut validator,
-    );
+    let result =
+        chain.run_block_with_extra_stats(vec![tx0], None, None, None, &mut tracer, &mut validator);
 
     assert!(result.is_ok());
     let (out, _, _) = result.unwrap();
@@ -348,4 +347,3 @@ fn test_tx_validator_filters_out_tx_on_begin_tx() {
     let tx1_number_in_block = included_tx_number_in_block(&out.tx_results, 1);
     assert_eq!(tx1_number_in_block, 0);
 }
-
