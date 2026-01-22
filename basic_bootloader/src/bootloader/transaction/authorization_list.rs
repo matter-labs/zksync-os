@@ -164,8 +164,9 @@ where
 
     if !is_empty {
         let ergs = Ergs(
-            evm_interpreter::gas_constants::NEWACCOUNT
-                - evm_interpreter::gas_constants::PER_AUTH_BASE_COST,
+            (evm_interpreter::gas_constants::NEWACCOUNT
+                - evm_interpreter::gas_constants::PER_AUTH_BASE_COST)
+                * ERGS_PER_GAS,
         );
         system
             .io

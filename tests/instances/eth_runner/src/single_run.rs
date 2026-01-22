@@ -168,3 +168,49 @@ pub fn single_run(
         )
     }
 }
+
+pub fn eth_run(block_dir: String) -> anyhow::Result<()> {
+    use crate::single_run::utils::encode_alloy_rpc_tx;
+    use rig::alloy_rlp::Encodable;
+    use std::path::Path;
+
+    let dir = Path::new(&block_dir);
+    let block = fs::read_to_string(dir.join("block.json"))?;
+    let witness_file = File::open(dir.join("witness.json"))?;
+    let witness_reader = BufReader::new(witness_file);
+
+    let block: Block = serde_json::from_str(&block)?;
+
+    // Parse witness JSON - it has a "result" wrapper
+    #[derive(serde::Deserialize)]
+    struct WitnessWrapper {
+        result: alloy_rpc_types_debug::ExecutionWitness,
+    }
+    let witness_wrapper: WitnessWrapper = serde_json::from_reader(witness_reader)?;
+    let witness = witness_wrapper.result;
+
+    let transactions: Vec<EncodedTx> = block
+        .result
+        .transactions
+        .clone()
+        .into_transactions()
+        .map(encode_alloy_rpc_tx)
+        .collect();
+
+    let mut chain = Chain::empty(Some(1));
+
+    chain.set_last_block_number(block.result.number() - 1);
+
+    let header = block.result.header.clone().into();
+    let withdrawals_encoding = if let Some(withdrawals) = block.result.withdrawals.clone() {
+        let mut buff = vec![];
+        withdrawals.encode(&mut buff);
+
+        buff
+    } else {
+        Vec::new()
+    };
+
+    let _ = chain.run_eth_block(transactions, witness, header, withdrawals_encoding);
+    Ok(())
+}

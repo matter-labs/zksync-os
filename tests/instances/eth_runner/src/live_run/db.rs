@@ -148,7 +148,7 @@ impl Database {
     pub fn set_block_hash(&self, block_number: u64, hash: U256) -> Result<()> {
         self.block_hashes
             .insert(block_number.to_be_bytes(), hash.to_le_bytes_vec())?;
-        self.block_hashes.flush()?;
+        // Don't flush here - batch writes for better performance
         Ok(())
     }
 
@@ -173,7 +173,7 @@ impl Database {
         let bytes = encode_to_vec(traces, standard()).context("Failed to encode block traces")?;
         self.block_traces
             .insert(block_number.to_be_bytes(), bytes)?;
-        self.block_traces.flush()?;
+        // Don't flush here - batch writes for better performance
         Ok(())
     }
 
@@ -191,7 +191,7 @@ impl Database {
         let bytes = encode_to_vec(&status, standard()).context("Failed to encode block status")?;
         self.block_status
             .insert(block_number.to_be_bytes(), bytes)?;
-        self.block_status.flush()?;
+        // Don't flush here - batch writes for better performance
         Ok(())
     }
 
@@ -199,7 +199,7 @@ impl Database {
         let bytes = encode_to_vec(ratio, standard()).context("Failed to encode block ratio")?;
         self.block_ratios
             .insert(block_number.to_be_bytes(), bytes)?;
-        self.block_ratios.flush()?;
+        // Don't flush here - batch writes for better performance
         Ok(())
     }
 
@@ -247,7 +247,7 @@ impl Database {
         };
         let id_bytes = encode_to_vec(&tx_id, standard()).context("Failed to encode tx id")?;
         self.block_resource_info.insert(id_bytes, bytes)?;
-        self.block_resource_info.flush()?;
+        // Don't flush here - batch writes for better performance
         Ok(())
     }
 
@@ -292,6 +292,16 @@ impl Database {
         }
 
         writer.flush()?;
+        Ok(())
+    }
+
+    /// Flush all pending writes to disk. Call this after batching multiple writes.
+    pub fn flush(&self) -> Result<()> {
+        self.block_hashes.flush()?;
+        self.block_traces.flush()?;
+        self.block_status.flush()?;
+        self.block_ratios.flush()?;
+        self.block_resource_info.flush()?;
         Ok(())
     }
 }

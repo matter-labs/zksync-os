@@ -22,6 +22,8 @@ use zk_ee::reference_implementations::BaseResources;
 use zk_ee::system::{EthereumLikeTypes, SystemTypes};
 use zk_ee::types_config::EthereumIOTypesConfig;
 
+pub mod ethereum;
+
 /// Logger implementation selected based on compilation features
 #[cfg(not(feature = "no_print"))]
 type Logger = crate::system::logger::StdIOLogger;

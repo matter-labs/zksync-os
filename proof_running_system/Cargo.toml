@@ -55,6 +55,9 @@ for_tests = ["production", "state-diffs-pi", "cycle_marker", "basic_bootloader/e
 # Features used for eth_runner
 eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "unlimited_native", "basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
 
+# Additional features used for eth_stf in eth_runner
+eth_stf = ["basic_bootloader/eip-7702","basic_bootloader/eip_7623", "evm_interpreter/eip-2537", "evm_interpreter/eip-152"]
+
 # Features used for evm_tester
 evm_tester = ["basic_bootloader/resources_for_tester", "basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "state-diffs-pi", "basic_bootloader/eip-7702", "system_hooks/p256_precompile", "basic_bootloader/burn_base_fee", "system_hooks/mock-unsupported-precompiles", "unlimited_native", "basic_bootloader/eip-4844"]
 

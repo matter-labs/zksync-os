@@ -29,7 +29,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
         query_id: u32,
         query: Vec<usize>,
         memory: &M,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
         let mut it = query.into_iter();

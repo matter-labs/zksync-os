@@ -9,6 +9,10 @@ use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable}
 
 mod block_metadata;
 mod da_commitment_scheme;
+mod ethereum_cl;
+mod ethereum_header;
+mod ethereum_initial_account_state;
+mod ethereum_initial_storage_slot_value;
 mod generic_preimage;
 mod read_storage;
 mod read_tree;
@@ -18,6 +22,10 @@ mod zk_proof_data;
 
 pub use self::block_metadata::BlockMetadataResponder;
 pub use self::da_commitment_scheme::DACommitmentSchemeResponder;
+pub use self::ethereum_cl::EthereumCLResponder;
+pub use self::ethereum_header::EthereumTargetBlockHeaderResponder;
+pub use self::ethereum_initial_account_state::InMemoryEthereumInitialAccountStateResponder;
+pub use self::ethereum_initial_storage_slot_value::InMemoryEthereumInitialStorageSlotValueResponder;
 pub use self::generic_preimage::GenericPreimageResponder;
 pub use self::read_storage::ReadStorageResponder;
 pub use self::read_tree::ReadTreeResponder;

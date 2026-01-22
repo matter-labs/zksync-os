@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use zk_ee::utils::Bytes32;
 
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct InMemoryPreimageSource {
     pub inner: HashMap<Bytes32, Vec<u8>>,
 }
