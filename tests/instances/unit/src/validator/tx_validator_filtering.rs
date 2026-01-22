@@ -100,7 +100,7 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
     let tx1 = mk_withdrawal(0, 11);
 
     let mut tracer = NopTracer::default();
-    let mut validator = LoggingTxValidator::new(true, true);
+    let mut validator = LoggingTxValidator::new(true, false);
 
     let result = chain.run_block_with_extra_stats(
         vec![tx0, tx1],
@@ -118,10 +118,13 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
         "[TxValidator] totals: begin_calls={}, finish_calls={}",
         validator.begin_calls, validator.finish_calls
     );
-    assert!(
-        validator.finish_calls >= 2,
-        "finish_tx should be called per tx"
-    );
+    
+    // begin_tx is called for both transactions (1st is filtered, 2nd proceeds)
+    assert_eq!(validator.begin_calls, 2, "begin_tx should be called for each tx");
+    
+    // finish_tx is only called for the 2nd tx since the 1st was filtered by begin_tx
+    // and never reaches process_l2_transaction where finish_tx is invoked
+    assert_eq!(validator.finish_calls, 1, "finish_tx should only be called for txs that pass begin_tx");
 
     // 1) First tx must be rejected
     assert!(
@@ -270,3 +273,79 @@ fn test_l1_transactions_are_not_filtered_by_validator() {
         out.tx_results[0]
     );
 }
+
+#[test]
+fn test_tx_validator_filters_out_tx_on_begin_tx() {
+    //! If a transaction is filtered by validator.begin_tx(),
+    //! it should be rejected before execution and should not affect nonce counts.
+
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+
+    chain.set_balance(
+        B160::from_be_bytes(from.into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    let withdrawal_to = address!("000000000000000000000000000000000000800a");
+    let withdrawal_calldata =
+        hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .unwrap();
+
+    let mk_withdrawal = |nonce: u64, value: u64| {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce,
+            gas_price: 1000,
+            gas_limit: 500_000,
+            to: TxKind::Call(withdrawal_to),
+            value: U256::from(value),
+            input: withdrawal_calldata.clone().into(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    // Both txs with nonce 0 (first will be filtered, second should succeed with same nonce)
+    let tx0 = mk_withdrawal(0, 10);
+    let tx1 = mk_withdrawal(0, 11);
+
+    let mut tracer = NopTracer::default();
+    // Validator that filters on begin_tx only (first tx)
+    let mut validator = LoggingTxValidator::new(true, false);
+
+    let result = chain.run_block_with_extra_stats(
+        vec![tx0, tx1],
+        None,
+        None,
+        None,
+        &mut tracer,
+        &mut validator,
+    );
+
+    assert!(result.is_ok());
+    let (out, _, _) = result.unwrap();
+
+    println!(
+        "[TxValidator] totals: begin_calls={}, finish_calls={}",
+        validator.begin_calls, validator.finish_calls
+    );
+
+    // 1) First tx must be rejected by begin_tx
+    assert!(
+        matches!(
+            out.tx_results[0],
+            Err(InvalidTransaction::FilteredByValidator)
+        ),
+        "expected FilteredByValidator from begin_tx, got {:?}",
+        out.tx_results[0]
+    );
+
+    // 2) Second tx must succeed even though both had nonce 0
+    assert!(out.tx_results[1].as_ref().is_ok_and(|o| o.is_success()));
+
+    // 3) Second tx must be included as the first tx in block => number 0
+    let tx1_number_in_block = included_tx_number_in_block(&out.tx_results, 1);
+    assert_eq!(tx1_number_in_block, 0);
+}
+

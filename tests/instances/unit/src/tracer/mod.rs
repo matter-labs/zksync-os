@@ -45,7 +45,7 @@ pub(crate) fn run_chain_with_tracer(
         rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
     };
 
-    chain.run_block_with_extra_stats(
+    let _ = chain.run_block_with_extra_stats(
         vec![encoded_tx],
         block_context,
         None,
