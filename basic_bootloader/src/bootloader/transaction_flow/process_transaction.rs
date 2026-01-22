@@ -171,6 +171,10 @@ where
             tracer,
         );
 
+        // Validate after L2 transaction execution
+        validator.finish_tx()
+            .map_err(|e| TxError::Validation(e.into()))?;
+
         Ok(execution_result)
     }
 }
