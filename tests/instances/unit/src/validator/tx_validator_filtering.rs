@@ -211,3 +211,62 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
     let tx1_number_in_block = included_tx_number_in_block(&out.tx_results, 1);
     assert_eq!(tx1_number_in_block, 1);
 }
+
+#[test]
+fn test_l1_transactions_are_not_filtered_by_validator() {
+
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+
+    chain.set_balance(
+        B160::from_be_bytes(from.into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    // Create a simple transaction
+    let withdrawal_to = address!("000000000000000000000000000000000000800a");
+    let withdrawal_calldata =
+        hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .unwrap();
+
+    let mk_withdrawal = |nonce: u64, value: u64| {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce,
+            gas_price: 1000,
+            gas_limit: 500_000,
+            to: TxKind::Call(withdrawal_to),
+            value: U256::from(value),
+            input: withdrawal_calldata.clone().into(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    let tx0 = mk_withdrawal(0, 10);
+
+    let mut tracer = NopTracer::default();
+    // Validator that filters ALL transactions (both begin and finish)
+    let mut validator = LoggingTxValidator::new(true, true);
+
+    let result = chain.run_block_with_extra_stats(
+        vec![tx0],
+        None,
+        None,
+        None,
+        &mut tracer,
+        &mut validator,
+    );
+
+    assert!(result.is_ok());
+    let (out, _, _) = result.unwrap();
+
+    assert!(
+        matches!(
+            out.tx_results[0],
+            Err(InvalidTransaction::FilteredByValidator)
+        ),
+        "L2 tx should be filtered by validator finish_tx, got {:?}",
+        out.tx_results[0]
+    );
+}
