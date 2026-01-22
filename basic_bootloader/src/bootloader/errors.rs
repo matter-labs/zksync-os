@@ -106,6 +106,7 @@ pub enum InvalidTransaction {
     AuthListIsEmpty,
     /// 7702 has a null destination address
     EIP7702HasNullDestination,
+    /// Transaction was rejected by the validator
     FilteredByValidator,
     /// EIP-7623 calldata cost is not paid
     EIP7623IntrinsicGasIsTooLow,
