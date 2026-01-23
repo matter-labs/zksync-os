@@ -69,6 +69,10 @@ prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.
 cli = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2" }
 gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2" }
 
+ruint = { version = "1.16", default-features = false }
+arrayvec = { version = "0.7", default-features = false }
+serde = { version = "1", default-features = false }
+
 
 # zerocopy 0.8.29 introduced a compilation issue, remove this
 # when the compilation issue is resolved
