@@ -1,6 +1,5 @@
 #![cfg_attr(all(not(feature = "testing"), not(test)), no_std)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 #![feature(allocator_api)]
 #![feature(get_mut_unchecked)]
 #![feature(vec_push_within_capacity)]

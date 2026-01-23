@@ -1,7 +1,7 @@
 #![no_main]
 #![feature(allocator_api)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
+
 
 use arbitrary::{Arbitrary, Result, Unstructured};
 use basic_bootloader::bootloader::runner::RunnerMemoryBuffers;

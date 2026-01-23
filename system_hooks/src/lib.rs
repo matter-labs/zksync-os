@@ -7,7 +7,6 @@
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(ptr_metadata)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 #![allow(clippy::needless_borrow)]
 #![allow(clippy::needless_borrows_for_generic_args)]
 #![allow(clippy::result_unit_err)]

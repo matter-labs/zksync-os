@@ -1,6 +1,6 @@
 #![no_main]
 #![feature(allocator_api)]
-#![feature(generic_const_exprs)]
+
 
 use basic_bootloader::bootloader::transaction::AbiEncodedTransaction;
 use common::mutate_transaction;

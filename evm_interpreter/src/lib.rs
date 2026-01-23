@@ -2,7 +2,6 @@
 #![feature(allocator_api)]
 #![feature(iter_advance_by)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 #![feature(vec_push_within_capacity)]
 #![feature(slice_swap_unchecked)]
 #![feature(ptr_as_ref_unchecked)]

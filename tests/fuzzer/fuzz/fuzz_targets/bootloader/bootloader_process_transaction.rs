@@ -1,7 +1,7 @@
 #![no_main]
 #![feature(allocator_api)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
+
 
 use basic_bootloader::bootloader::config::BasicBootloaderForwardSimulationConfig;
 use basic_bootloader::bootloader::constants::TX_OFFSET;

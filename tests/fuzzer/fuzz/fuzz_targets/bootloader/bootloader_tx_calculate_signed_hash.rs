@@ -1,6 +1,6 @@
 #![no_main]
 #![feature(allocator_api)]
-#![feature(generic_const_exprs)]
+
 
 use basic_bootloader::bootloader::transaction::AbiEncodedTransaction;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
