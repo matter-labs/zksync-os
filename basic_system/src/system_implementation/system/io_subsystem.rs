@@ -1,5 +1,4 @@
 //! Implementation of the IO subsystem.
-
 use super::*;
 use crate::system_functions::keccak256::keccak256_native_cost;
 use crate::system_functions::keccak256::Keccak256Impl;
