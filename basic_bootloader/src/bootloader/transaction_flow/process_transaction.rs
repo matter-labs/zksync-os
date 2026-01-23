@@ -87,6 +87,19 @@ where
     where
         S::IO: IOSubsystemExt,
     {
+        // Pre-execution validation hook for L2 transactions only
+        let calldata = transaction.calldata();
+        let pre_validation = validator.begin_tx(calldata);
+
+        if let Err(validation_err) = pre_validation {
+            system_log!(
+                system,
+                "Tx rejected by validator during begin_tx: {:?}\n",
+                validation_err
+            );
+            return Err(TxError::Validation(validation_err.into()));
+        }
+
         F::before_validation(system, &transaction, tracer)?;
 
         let validation_rollback_handle = system.start_global_frame()?;

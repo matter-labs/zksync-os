@@ -73,21 +73,6 @@ where
 
                     tracer.begin_tx(initial_calldata_buffer.as_slice());
 
-                    // Pre-execution validation hook
-                    let pre_validation = validator.begin_tx(initial_calldata_buffer.as_slice());
-
-                    if let Err(validation_err) = pre_validation {
-                        system_log!(
-                            system,
-                            "Tx rejected by validator during begin_tx: {:?}\n",
-                            validation_err
-                        );
-                        result_keeper.tx_processed(Err(validation_err.into()));
-                        system_log!(system, "TX execution ends\n");
-                        system_log!(system, "====================================\n");
-                        continue;
-                    }
-
                     // Take a snapshot in case we need to invalidate the
                     // transaction to seal the block.
                     // This can happen if any of the block limits (native, gas, pubdata
