@@ -48,7 +48,9 @@ impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesCon
 {
     fn events<'a>(
         &mut self,
-        iter: impl Iterator<Item = GenericEventContentWithTxRef<'a, 4, EthereumIOTypesConfig>>,
+        iter: impl Iterator<
+            Item = GenericEventContentWithTxRef<'a, MAX_EVENT_TOPICS, EthereumIOTypesConfig>,
+        >,
     ) {
         self.events = iter
             .map(|e| GenericEventContent {

@@ -1,6 +1,5 @@
 #![cfg_attr(not(feature = "serde"), no_std)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 #![feature(const_type_id)]
 #![feature(allocator_api)]
 #![feature(associated_type_defaults)]

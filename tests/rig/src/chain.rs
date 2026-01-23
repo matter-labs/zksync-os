@@ -63,7 +63,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
-        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
     ) -> ZkEENonDeterminismSource<M>;
@@ -81,7 +81,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
         preimage_source: InMemoryPreimageSource,
         tx_source: TxListSource,
-        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
     ) -> ZkEENonDeterminismSource<M> {
