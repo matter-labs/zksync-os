@@ -44,7 +44,7 @@ impl<T, A: Allocator + Clone> StackLinkedList<T, A> {
         &self.head
     }
 
-    pub fn iter(&self) -> StackLinkedListIter<T, A> {
+    pub fn iter(&self) -> StackLinkedListIter<'_, T, A> {
         StackLinkedListIter { next: &self.head }
     }
 }

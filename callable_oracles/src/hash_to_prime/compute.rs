@@ -8,7 +8,7 @@ pub fn compute_from_entropy(entropy: &[u8; 64]) -> HashToPrimeData {
     let mut entropy_it = entropy.iter().copied();
     let (step_0_prime, initial_n) = 'outer: {
         let (entropy_bits, low_bits) = GENERATION_STEPS[0];
-        let take_bytes = entropy_bits.next_multiple_of(8) / 8;
+        let take_bytes = entropy_bits.div_ceil(8);
         let mut repr = [0u8; 4];
         write_entropy_le(
             &mut repr[..take_bytes as usize],
@@ -71,7 +71,7 @@ where
             .copy_from_slice(previous_prime.as_limbs());
     }
     let (entropy_bits, low_bits) = GENERATION_STEPS[step_index];
-    let take_bytes = entropy_bits.next_multiple_of(8) / 8;
+    let take_bytes = entropy_bits.div_ceil(8);
     let mut repr = [0u8; LIMBS * 8];
     write_entropy_le(&mut repr[..take_bytes as usize], entropy_it, entropy_bits);
     let high_part: Uint<BITS, LIMBS> = bigint_from_le_bytes(&repr);

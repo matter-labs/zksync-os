@@ -11,7 +11,7 @@ pub const MAX_TX_LEN_BYTES: usize = 1 << 23;
 pub const MAX_TX_LEN_WORDS: usize = MAX_TX_LEN_BYTES / core::mem::size_of::<u32>();
 
 const _: () = const {
-    assert!(MAX_TX_LEN_BYTES % core::mem::size_of::<usize>() == 0);
+    assert!(MAX_TX_LEN_BYTES.is_multiple_of(core::mem::size_of::<usize>()));
 };
 
 // 1024 for EVM equivalence

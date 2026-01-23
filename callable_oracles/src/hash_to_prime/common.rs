@@ -214,7 +214,7 @@ pub fn create_entropy(source: &[u8]) -> [u8; 64] {
 }
 
 pub fn write_entropy_le(dst: &mut [u8], src: &mut impl Iterator<Item = u8>, entropy_bits: u32) {
-    let take_bytes = entropy_bits.next_multiple_of(8) / 8;
+    let take_bytes = entropy_bits.div_ceil(8);
     debug_assert_eq!(dst.len(), take_bytes as usize);
     let mut entropy_bits = entropy_bits;
     for (dst, src) in dst.iter_mut().zip(src) {

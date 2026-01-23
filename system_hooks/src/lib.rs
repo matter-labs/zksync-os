@@ -320,7 +320,7 @@ fn make_error_return_state<'a, S: SystemTypes>(
 fn make_return_state_from_returndata_region<S: SystemTypes>(
     remaining_resources: S::Resources,
     returndata: &[u8],
-) -> CompletedExecution<S> {
+) -> CompletedExecution<'_, S> {
     let return_values = ReturnValues {
         returndata,
         return_scratch_space: None,

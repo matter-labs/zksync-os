@@ -76,7 +76,7 @@ impl<I: ExactSizeIterator<Item = u8>> Iterator for ReadIterWrapper<u8, I> {
 
 impl<I: ExactSizeIterator<Item = u8>> ExactSizeIterator for ReadIterWrapper<u8, I> {
     fn len(&self) -> usize {
-        self.inner.len().next_multiple_of(USIZE_SIZE) / USIZE_SIZE
+        self.inner.len().div_ceil(USIZE_SIZE)
     }
 }
 
@@ -168,7 +168,7 @@ impl<'a, T: 'static + Clone + Copy, I: ExactSizeIterator<Item = &'a mut T>>
     WriteIterWrapper<'a, T, I>
 {
     pub fn usize_len(&self) -> usize {
-        self.inner.len().next_multiple_of(USIZE_SIZE) / USIZE_SIZE
+        self.inner.len().div_ceil(USIZE_SIZE)
     }
 }
 

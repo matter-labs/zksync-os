@@ -163,7 +163,7 @@ pub trait IOOracle: 'static + Sized {
             return Ok(None);
         }
         let num_bytes = size as usize;
-        let num_words = num_bytes.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
+        let num_words = num_bytes.div_ceil(USIZE_SIZE);
         // NOTE: we leave some slack for 64/32 bit arch mismatches
         let num_words = num_words.next_multiple_of(2);
         let body_query_it = self.raw_query(body_query_id, input)?;

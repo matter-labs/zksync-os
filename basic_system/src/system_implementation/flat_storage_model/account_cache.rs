@@ -175,7 +175,7 @@ impl<
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
         observe: bool,
-    ) -> Result<AddressItem<A>, SystemError> {
+    ) -> Result<AddressItem<'_, A>, SystemError> {
         let ergs = match ee_type {
             ExecutionEnvironmentType::NoEE => Ergs::empty(),
             ExecutionEnvironmentType::EVM =>
