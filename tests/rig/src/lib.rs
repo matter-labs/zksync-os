@@ -1,7 +1,6 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 #![feature(allocator_api)]
-#![feature(array_chunks)]
 //!
 //! This crate contains infrastructure to write ZKsync OS integration tests.
 //! It contains `Chain` - in memory chain state structure with methods to run blocks, change state
