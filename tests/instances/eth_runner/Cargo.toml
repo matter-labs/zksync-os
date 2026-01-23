@@ -10,8 +10,8 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [dependencies]
-serde = { workspace = true, features = ["derive"] }
-ruint = { workspace = true, default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+ruint = { version = "1.16", default-features = false }
 
 alloy = { version = "1", features = ["full", "ssz"]}
 alloy-rpc-types-eth = { version = "*", features = ["serde"] }
