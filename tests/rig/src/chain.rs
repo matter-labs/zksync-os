@@ -858,7 +858,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         // Forward run:
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
         let mut nop_tracer = NopTracer::default();
-        let mut nop_validator = NopTxValidator::default();
+        let mut nop_validator = NopTxValidator;
 
         BasicBootloader::<
             EthereumStorageSystemTypesWithPostOps<_>,

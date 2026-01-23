@@ -103,8 +103,6 @@ where
 
                     tracer.finish_tx();
 
-                    let tx_result = tx_result;
-
                     match tx_result {
                         Err(TxError::Internal(err)) => {
                             system_log!(system, "Tx execution result: Internal error = {err:?}\n",);
