@@ -217,20 +217,14 @@ pub fn run_proving_inner<
     let count = I::csr_read_impl();
     let mut batch_data = basic_bootloader::bootloader::block_flow::ZKBatchDataKeeper::new();
     for _ in 0..count {
-        let (io, block_metadata, current_block_hash, upgrade_tx_hash) =
-            ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
-                oracle,
-                &mut NopResultKeeper::default(),
-                &mut NopTracer::default(),
-                &mut NopTxValidator,
-            )
-            .expect("Tried to prove a failing batch");
-        oracle = io.apply_to_batch(
-            block_metadata,
-            current_block_hash,
-            upgrade_tx_hash,
-            &mut batch_pi_builder,
-        );
+        oracle = ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
+            oracle,
+            &mut batch_data,
+            &mut NopResultKeeper::default(),
+            &mut NopTracer::default(),
+            &mut NopTxValidator,
+        )
+        .expect("Tried to prove a failing batch");
         // we do this query for consistency with block based input generation(there is empty iterator as response to this query)
         // but during proving this request shouldn't have the effect with "u32 array based" oracle
         #[allow(unused_must_use)]
