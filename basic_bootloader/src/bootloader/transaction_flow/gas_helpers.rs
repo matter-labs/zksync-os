@@ -127,8 +127,8 @@ where
             ));
         }
         intrinsic_overhead = intrinsic_overhead.saturating_add(DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS);
-        let initcode_gas_cost = evm_interpreter::gas_constants::INITCODE_WORD_COST
-            * calldata_len.div_ceil(32);
+        let initcode_gas_cost =
+            evm_interpreter::gas_constants::INITCODE_WORD_COST * calldata_len.div_ceil(32);
         intrinsic_overhead = intrinsic_overhead.saturating_add(initcode_gas_cost);
     }
     intrinsic_overhead =
