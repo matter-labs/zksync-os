@@ -261,25 +261,34 @@ impl UsizeDeserializable for U256 {
         this: &mut MaybeUninit<Self>,
         src: &mut impl ExactSizeIterator<Item = usize>,
     ) -> Result<(), InternalError> {
-        cfg_if::cfg_if!(
+        // Initialize
+        let value: &mut U256 = this.write(U256::ZERO);
+
+        cfg_if::cfg_if! {
             if #[cfg(target_endian = "big")] {
                 compile_error!("unsupported architecture: big endian arch is not supported")
             } else if #[cfg(target_pointer_width = "32")] {
-                for dst in this.assume_init_mut().as_limbs_mut() {
-                    let low = src.next().ok_or(internal_error!("u256 limb low deserialization failed"))?;
-                    let high = src.next().ok_or(internal_error!("u256 limb high deserialization failed"))?;
+                for dst in value.as_limbs_mut() {
+                    let low = src
+                        .next()
+                        .ok_or(internal_error!("u256 limb low deserialization failed"))?;
+                    let high = src
+                        .next()
+                        .ok_or(internal_error!("u256 limb high deserialization failed"))?;
                     *dst = ((high as u64) << 32) | (low as u64);
                 }
-                return Ok(())
+                Ok(())
             } else if #[cfg(target_pointer_width = "64")] {
-                for dst in this.assume_init_mut().as_limbs_mut() {
-                    *dst = src.next().ok_or(internal_error!("u256 limb deserialization failed"))? as u64;
+                for dst in value.as_limbs_mut() {
+                    *dst = src
+                        .next()
+                        .ok_or(internal_error!("u256 limb deserialization failed"))? as u64;
                 }
-                return Ok(())
+                Ok(())
             } else {
                 compile_error!("unsupported architecture")
             }
-        );
+        }
     }
 }
 
@@ -324,12 +333,11 @@ impl UsizeDeserializable for B160 {
         if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
             return Err(internal_error!("b160 deserialization failed: too short"));
         }
-        let mut new = B160::ZERO;
-        unsafe {
-            for dst in new.as_limbs_mut().iter_mut() {
-                *dst = <u64 as UsizeDeserializable>::from_iter(src).unwrap_unchecked();
-            }
+        let mut limbs = [0u64; B160::LIMBS];
+        for limb in &mut limbs {
+            *limb = unsafe { <u64 as UsizeDeserializable>::from_iter(src).unwrap_unchecked() };
         }
+        let new = B160::from_limbs(limbs);
 
         Ok(new)
     }
@@ -341,9 +349,12 @@ impl UsizeDeserializable for B160 {
         if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
             return Err(internal_error!("b160 deserialization failed: too short"));
         }
-        for dst in this.assume_init_mut().as_limbs_mut().iter_mut() {
-            *dst = <u64 as UsizeDeserializable>::from_iter(src).unwrap_unchecked();
+        let mut limbs = [0u64; B160::LIMBS];
+        for limb in &mut limbs {
+            *limb = unsafe { <u64 as UsizeDeserializable>::from_iter(src).unwrap_unchecked() };
         }
+        // Initialize
+        this.write(B160::from_limbs(limbs));
 
         Ok(())
     }

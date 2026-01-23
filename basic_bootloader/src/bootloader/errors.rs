@@ -68,8 +68,8 @@ pub enum InvalidTransaction {
     InvalidChainId,
     /// Access list is not supported for blocks before the Berlin hardfork.
     AccessListNotSupported,
-    /// Unacceptable gas per pubdata price.
-    GasPerPubdataTooHigh,
+    /// Unacceptable pubdata price.
+    PubdataPriceTooHigh,
     /// Block gas limit is too high.
     BlockGasLimitTooHigh,
     /// Protocol upgrade tx should be first in the block.
@@ -93,6 +93,8 @@ pub enum InvalidTransaction {
     NonceNotIncreased,
     /// Transaction makes the block reach the gas limit
     BlockGasLimitReached,
+    /// Transaction makes the block reach the blob gas limit
+    BlockBlobGasLimitReached,
     /// Transaction makes the block reach the native resource limit
     BlockNativeLimitReached,
     /// Transaction makes the block reach the pubdata limit
@@ -103,6 +105,22 @@ pub enum InvalidTransaction {
     AuthListIsEmpty,
     /// 7702 has a null destination address
     EIP7702HasNullDestination,
+    /// EIP-7623 calldata cost is not paid
+    EIP7623IntrinsicGasIsTooLow,
+    /// Native resources cost is too high
+    NativeResourcesAreTooExpensive,
+    /// The call's gas limit is too high for the system to process.
+    CallerGasLimitTooHigh,
+    /// Invalid blob hash
+    BlobElementIsNotSupported,
+    /// Blob base fee per gas greater than max fee per blob gas
+    BlobBaseFeeGreaterThanMaxFeePerBlobGas,
+    /// Blob list is longer than the maximum allowed
+    BlobListTooLong,
+    /// Transactions with blobs must have at least one.
+    EmptyBlobList,
+    /// Gas limit for tx is more than per-tx max limit
+    CallerGasLimitMoreThanTxLimit,
 }
 
 ///
@@ -186,10 +204,7 @@ macro_rules! require {
         if $b {
             Ok(())
         } else {
-            $system
-                .get_logger()
-                .write_fmt(format_args!("Check failed: {:?}\n", $err))
-                .expect("Failed to write log");
+            system_log!($system, "Check failed: {:?}\n", $err);
             Err($err)
         }
     };
@@ -201,10 +216,7 @@ macro_rules! unless {
         if !$b {
             Ok(())
         } else {
-            $system
-                .get_logger()
-                .write_fmt(format_args!("Check failed: {:?}\n", $err))
-                .expect("Failed to write log");
+            system_log!($system, "Check failed: {:?}\n", $err);
             Err($err)
         }
     };
@@ -216,10 +228,7 @@ macro_rules! require_internal {
         if $b {
             Ok(())
         } else {
-            $system
-                .get_logger()
-                .write_fmt(format_args!("Check failed: {}\n", $s))
-                .expect("Failed to write log");
+            system_log!($system, "Check failed: {}\n", $s);
             Err(zk_ee::internal_error!($s))
         }
     };

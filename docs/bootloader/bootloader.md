@@ -53,3 +53,42 @@ Currently it misses `gas_per_pubdata` and `native_price`, but we already working
 | mix_hash            | beacon chain provided random, prevrandao (post merge)                            | 0                                                                  | after consensus will be provided random |
 | nonce               | 0 (post merge)                                                                   | 0                                                                  |                                         |
 | base_fee_per_gas    | base_fee_per_gas                                                                 | base_fee_per_gas                                                   |                                         |
+
+## Block and Batch Finalization
+
+After processing all transactions in a block, the bootloader performs finalization through specialized post-transaction operations. The specific finalization behavior depends on the execution mode:
+
+### Post-Transaction Operations
+
+The bootloader uses different post-tx operations for different execution scenarios:
+
+#### Sequencing Mode
+- **Implementation**: [`PostTxOpSequencing`](../../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/post_tx_op_sequencing.rs)
+- **Purpose**: Forward execution (sequencer mode)
+- **Output**: Returns IO outputs (state diffs, events, messages) and pubdata to the caller via result keeper
+- **Block Header**: Generates standard block header for the executed block
+
+#### Proving Mode - Single Block Batch
+- **Implementation**: [`PostTxOpProvingSingleblockBatch`](../../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/post_tx_op_proving_singleblock_batch.rs)
+- **Purpose**: Proving execution for single-block batches
+- **Process**:
+  - Validates oracle-provided reads
+  - Applies writes to state commitment
+  - Calculates pubdata commitment using configured DA scheme
+  - Generates public input hash for the batch
+- **Output**: Public input hash and finalized oracle state
+
+#### Proving Mode - Multiblock Batch
+- **Implementation**: [`PostTxOpProvingMultiblockBatch`](../../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/post_tx_op_proving_multiblock_batch.rs)
+- **Purpose**: Accumulates multiple blocks into a single batch
+- **Process**: Applies block data to an external batch accumulator
+- **Output**: Updated batch state for later finalization
+
+### Data Availability Integration
+
+All proving modes integrate with the [Data Availability commitment schemes](../da_commitment_schemes.md) to:
+- Generate appropriate DA commitments based on the configured scheme
+- Write versioned pubdata with proper format encoding
+- Include pubdata in the final outputs or public inputs
+
+This separation of finalization logic allows the system to support different deployment scenarios while maintaining consistency in the core transaction processing pipeline.

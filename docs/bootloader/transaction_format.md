@@ -3,7 +3,7 @@
 ZKsyncOS transactions have two encoding formats:
 
 1. ABI-encoded: used for L1->L2 transactions and upgrade transactions. This format is defined in the next section.
-2. RLP-encoded: used for L2 transactions. These follow the standard Ethereum RLP encoding for legacy, EIP-2930, EIP-1559 and EIP-7702 transactions.
+2. RLP-encoded: used for L2 transactions. These follow the standard Ethereum RLP encoding for legacy, EIP-2930, EIP-1559 and EIP-7702 transactions. In addition, we include a custom "service transaction", used for system work. These service transactions aren't signed and have whitelist of allowed destinations. The encoding for these is `0x7D || rlp([nonce, gas_limit, destination, data])`.
 
 ## ABI-encoded ZKsync-specific transactions
 
@@ -28,10 +28,11 @@ ZKsyncOS transactions have two encoding formats:
 
 ### Transaction Types
 
-Note that transaction types 0,1,2 and 4 are used for RLP-encoded L2 transactions, representing legacy, EIP-2930, EIP-1559 and EIP-7702 transactions.s
+Note that transaction types 0,1,2 and 4 are used for RLP-encoded L2 transactions, representing legacy, EIP-2930, EIP-1559 and EIP-7702 transactions.
 
 | Value   | Description                                                                                       |
 |---------|---------------------------------------------------------------------------------------------------|
+| `0x7D`  | Service transaction.
 | `0x7E`  | Upgrade transaction.                                                                             |
 | `0x7F`  | L1 -> L2 transaction.                                                                            |
 

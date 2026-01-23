@@ -12,7 +12,7 @@ use basic_bootloader::bootloader::BasicBootloader;
 use common::{mock_oracle_balance, mutate_transaction};
 use libfuzzer_sys::{fuzz_mutator, fuzz_target};
 use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, TxListSource};
-use rig::forward_system::system::system::ForwardRunningSystem;
+use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::U256;
 use system_hooks::HooksStorage;
 use zk_ee::system::tracer::NopTracer;
@@ -57,16 +57,17 @@ fn fuzz(data: &[u8]) {
 
     let data_mut_ref: &'static mut [u8] = unsafe { core::mem::transmute(data.as_mut_slice()) };
 
-    let _ = BasicBootloader::<_, ZkTransactionFlowOnlyEOA>::process_transaction::<
-        BasicBootloaderForwardSimulationConfig,
-    >(
-        data_mut_ref,
-        &mut system,
-        &mut system_functions,
-        memories,
-        true,
-        &mut NopTracer::default(),
-    );
+    let _ =
+        BasicBootloader::<_, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>::process_transaction::<
+            BasicBootloaderForwardSimulationConfig,
+        >(
+            data_mut_ref,
+            &mut system,
+            &mut system_functions,
+            memories,
+            true,
+            &mut NopTracer::default(),
+        );
 }
 
 fuzz_target!(|data: &[u8]| {

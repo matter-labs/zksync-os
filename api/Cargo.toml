@@ -19,10 +19,13 @@ risc_v_simulator = { workspace = true }
 zk_ee = { path = "../zk_ee", default-features = false }
 crypto = { path = "../crypto", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
+basic_bootloader = { path = "../basic_bootloader", default-features = false }
 evm_interpreter = { path = "../evm_interpreter", default-features = false }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 alloy = { version = "=1", default-features = false, features = ["eip712", "consensus", "rpc-types", "signer-local", "dyn-abi", "network"] }
 zksync_os_interface = { workspace = true }
+alloy-sol-types = "1"
+
 
 [features]
 # By default, use the risc_v_simulator with delegation (which is faster).

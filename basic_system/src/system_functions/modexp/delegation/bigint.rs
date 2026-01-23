@@ -689,11 +689,7 @@ impl<A: Allocator + Clone> BigintRepr<A> {
                         let mut current_digit = dst_digit;
                         while of > 0 {
                             current_digit += 1;
-                            if current_digit >= max_product_digits {
-                                debug_assert!(of == 0);
-                                break;
-                            }
-
+                            debug_assert!(current_digit < max_product_digits);
                             carry_propagation_scratch.as_limbs_mut()[0] = of as u64;
 
                             if current_digit == next_to_init_digit {

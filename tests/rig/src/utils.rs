@@ -189,6 +189,15 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
     n: usize,
     block_context: Option<BlockContext>,
 ) -> BlockOutput {
+    run_block_of_erc20_with_fee(chain, n, block_context, 1000)
+}
+
+pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
+    chain: &mut Chain<RANDOMIZED>,
+    n: usize,
+    block_context: Option<BlockContext>,
+    fee: u128,
+) -> BlockOutput {
     let wallets: Vec<_> = (1..=n).map(|_| PrivateKeySigner::random()).collect();
     let dsts: Vec<_> = (1..=n)
         .map(|i| {
@@ -199,15 +208,8 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
         })
         .collect();
 
-    // If base fee is zero, we can avoid paying priority fee.
-    let max_priority_fee_per_gas = if block_context
-        .as_ref()
-        .is_some_and(|bc| bc.eip1559_basefee.is_zero())
-    {
-        0
-    } else {
-        1000
-    };
+    let max_fee_per_gas = fee;
+    let max_priority_fee_per_gas = fee;
 
     let transactions: Vec<_> = wallets
         .iter()
@@ -216,7 +218,7 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
             let transfer_tx = TxEip1559 {
                 chain_id: 37u64,
                 nonce: 0,
-                max_fee_per_gas: 1000,
+                max_fee_per_gas,
                 max_priority_fee_per_gas,
                 gas_limit: 60_000,
                 to: TxKind::Call(to),
@@ -320,9 +322,10 @@ pub fn calldata_for_forwarder(target: alloy::primitives::Address, input: &[u8]) 
 /// * `[u8; 32]` - The versioned hash of the blob
 pub fn get_alloy_4844_blob_versioned_hash(data: &[u8]) -> [u8; 32] {
     // Create a blob sidecar using Alloy's SimpleCoder (handles encoding internally)
-    let blob_sidecar = SidecarBuilder::<SimpleCoder>::from_slice(data)
-        .build()
-        .unwrap();
+    let blob_sidecar: alloy::consensus::BlobTransactionSidecar =
+        SidecarBuilder::<SimpleCoder>::from_slice(data)
+            .build()
+            .unwrap();
 
     // Extract the versioned hash - there should be exactly one for single blob
     let mut alloy_hashes_iter = blob_sidecar.versioned_hashes();

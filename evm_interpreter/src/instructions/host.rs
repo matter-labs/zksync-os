@@ -4,6 +4,7 @@ use core::hint::unreachable_unchecked;
 use gas_constants::{CALL_STIPEND, INITCODE_WORD_COST, SHA3WORD};
 
 use native_resource_constants::*;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::storage_types::MAX_EVENT_TOPICS;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
@@ -90,9 +91,11 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
-            let _ = system.get_logger().write_fmt(format_args!(
+            use zk_ee::system_log;
+            system_log!(
+                system,
                 " len {len}, source offset: {source_offset:?}, dest offset {memory_offset}"
-            ));
+            );
         }
 
         Ok(())
@@ -171,10 +174,14 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         // This is an example of what would need to be done with tracing
         if Self::PRINT_OPCODES {
             use core::fmt::Write;
-            let _ = system.get_logger().write_fmt(format_args!(
+            use zk_ee::system_log;
+            system_log!(
+                system,
                 " address {:?}, key {:?}, value {:?}",
-                &self.address, &index, &value
-            ));
+                &self.address,
+                &index,
+                &value
+            );
         }
 
         Ok(())
@@ -208,6 +215,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     pub fn log<const N: usize>(
         &mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         tracer: &mut impl Tracer<S>,
     ) -> InstructionResult {
         assert!(N <= MAX_EVENT_TOPICS);
@@ -231,7 +239,8 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
 
         tracer.on_event(THIS_EE_TYPE, &self.address, &topics, data);
 
-        system.io.emit_event(
+        system.emit_event(
+            hooks,
             ExecutionEnvironmentType::EVM,
             self.gas.resources_mut(),
             &self.address,

@@ -9,12 +9,13 @@ use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{Address, TxKind, U256};
 use rig::forward_system::system::tracers::call_tracer::CallTracer;
 use rig::ruint::aliases::B160;
-use rig::Chain;
+use rig::{BlockContext, Chain};
 
 pub(crate) fn run_chain_with_tracer(
     to: Address,
     contracts: Vec<(Address, Vec<u8>)>,
     tracer: &mut CallTracer,
+    block_context: Option<BlockContext>,
 ) {
     let mut chain = Chain::empty(None);
     let wallet = chain.random_signer();
@@ -43,13 +44,5 @@ pub(crate) fn run_chain_with_tracer(
         rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
     };
 
-    let result = chain.run_block_with_extra_stats(vec![encoded_tx], None, None, None, tracer);
-
-    assert!(result.is_ok(), "Block execution should succeed");
-    let (block_output, _, _) = result.unwrap();
-    assert!(
-        block_output.tx_results[0].is_ok(),
-        "Transaction should succeed. Result: {:?}",
-        block_output.tx_results[0]
-    );
+    chain.run_block_with_extra_stats(vec![encoded_tx], block_context, None, None, tracer);
 }

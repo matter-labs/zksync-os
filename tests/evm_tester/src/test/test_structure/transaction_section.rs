@@ -73,4 +73,5 @@ pub struct TransactionSection {
     pub r: Option<U256>,
     pub s: Option<U256>,
     pub max_fee_per_blob_gas: Option<U256>,
+    pub blob_versioned_hashes: Option<Vec<B256>>,
 }

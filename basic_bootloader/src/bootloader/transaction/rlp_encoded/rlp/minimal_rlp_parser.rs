@@ -101,6 +101,14 @@ impl<'a> Rlp<'a> {
         }
     }
 
+    // Decode an RLP string and enforce it to be of a given length
+    pub fn bytes_exact<const N: usize>(&mut self) -> Result<&'a [u8; N], InvalidTransaction> {
+        let bytes = self.bytes()?;
+        bytes
+            .try_into()
+            .map_err(|_| InvalidTransaction::InvalidStructure)
+    }
+
     /// Enter a list and return a sub-cursor limited to the list payload bytes.
     pub fn list(&mut self) -> Result<Rlp<'a>, InvalidTransaction> {
         let m = self.take1()?;
@@ -166,6 +174,17 @@ impl<'a> Rlp<'a> {
         let mut buf = [0u8; 8];
         buf[8 - s.len()..].copy_from_slice(s);
         Ok(u64::from_be_bytes(buf))
+    }
+
+    /// Decode B160 from a big-endian byte string.
+    pub fn b160(&mut self) -> Result<B160, InvalidTransaction> {
+        let s = self.bytes()?;
+        if s.len() != 20 {
+            return Err(InvalidTransaction::InvalidStructure);
+        }
+        Ok(B160::from_be_bytes::<{ B160::BYTES }>(
+            s.try_into().unwrap(),
+        ))
     }
 
     /// Decode U256 from a big-endian byte string.
@@ -253,7 +272,7 @@ impl<'a> RlpItemDecode<'a> for &'a [u8; 32] {
 impl<'a> RlpFixedItem<'a> for &'a [u8; 32] {
     const ENCODING_LEN: usize = 1 + 32; // 0xa0 + 32
     fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, InvalidTransaction> {
-        if encoded.len() != 33 || encoded[0] != 0xa0 {
+        if encoded.len() != Self::ENCODING_LEN || encoded[0] != 0xa0 {
             return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(encoded[1..].try_into().unwrap())
@@ -262,19 +281,13 @@ impl<'a> RlpFixedItem<'a> for &'a [u8; 32] {
 
 impl<'a> RlpItemDecode<'a> for B160 {
     fn decode_from_item(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
-        let s = r.bytes()?;
-        if s.len() != 20 {
-            return Err(InvalidTransaction::InvalidStructure);
-        }
-        Ok(B160::from_be_bytes::<{ B160::BYTES }>(
-            s.try_into().unwrap(),
-        ))
+        r.b160()
     }
 }
 impl<'a> RlpFixedItem<'a> for B160 {
     const ENCODING_LEN: usize = 1 + 20; // 0x94 + 20
     fn decode_from_fixed(encoded: &'a [u8]) -> Result<Self, InvalidTransaction> {
-        if encoded.len() != 21 || encoded[0] != 0x94 {
+        if encoded.len() != Self::ENCODING_LEN || encoded[0] != 0x94 {
             return Err(InvalidTransaction::InvalidStructure);
         }
         Ok(B160::from_be_bytes::<{ B160::BYTES }>(
@@ -284,7 +297,6 @@ impl<'a> RlpFixedItem<'a> for B160 {
 }
 
 // Lists of fixed-length items
-// To be used by 4844 txs.
 #[derive(Clone, Copy, Debug)]
 pub struct FixedList<'a, T: RlpFixedItem<'a>> {
     payload: &'a [u8], // concatenation of encoded items
@@ -303,13 +315,12 @@ pub struct FixedListIter<'a, T: RlpFixedItem<'a>> {
 impl<'a, T: RlpFixedItem<'a>> FixedList<'a, T> {
     // Parse a list header and return a fixed-length view
     pub fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
-        let mut inner = r.list()?;
+        let inner = r.list()?;
         let all = inner.remaining();
         if all.len() % T::ENCODING_LEN != 0 {
             return Err(InvalidTransaction::InvalidStructure);
         }
         let count = all.len() / T::ENCODING_LEN;
-        inner.take_exact(all.len())?; // consume to satisfy caller's emptiness check
         Ok(Self {
             payload: all,
             count,
@@ -372,7 +383,7 @@ pub struct HomListIter<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> {
 
 impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
     pub fn decode_list_from(r: &mut Rlp<'a>) -> Result<Self, InvalidTransaction> {
-        let mut inner = r.list()?;
+        let inner = r.list()?;
         let all = inner.remaining();
 
         let count = if VALIDATE {
@@ -387,7 +398,6 @@ impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
             None
         };
 
-        inner.take_exact(all.len())?;
         Ok(Self {
             payload: all,
             count,
@@ -414,6 +424,7 @@ impl<'a, T: RlpItemDecode<'a>, const VALIDATE: bool> HomList<'a, T, VALIDATE> {
 }
 
 impl<'a, T: RlpItemDecode<'a>> HomList<'a, T, true> {
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         // Safe to unwrap, always set for VALIDATE = true
         self.count.unwrap()

@@ -90,7 +90,7 @@ struct Test {
     precompile_id: &'static str,
 }
 
-const TESTS: [Test; 114] = [
+const TESTS: [Test; 115] = [
     // ecrecover test vectors
     Test {
         input: "38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e000000000000000000000000000000000000000000000000000000000000001b38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e789d1dd423d25f0772d2748d60f7e4b81bb14d086eba8e8e8efb6dcff8a4ae02",
@@ -1069,6 +1069,12 @@ const TESTS: [Test; 114] = [
         input: "00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c21800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acdadcd122975b12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa",
         expected: "0000000000000000000000000000000000000000000000000000000000000000",
         name: "alt_bn128_pairing_one_point",
+        precompile_id: "0000000000000000000000000000000000000008",
+    },
+        Test {
+        input: "000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        expected: "0000000000000000000000000000000000000000000000000000000000000001",
+        name: "alt_bn128_pairing_g2_point_at_infinity",
         precompile_id: "0000000000000000000000000000000000000008",
     },
     Test {
@@ -6395,4 +6401,73 @@ fn bench_modexp() {
         .clone()
         .expect("Tx should have succeeded");
     }
+}
+
+#[test]
+fn test_regression_p256_is_warm() {
+    let mut chain = rig::Chain::empty(None);
+    let wallet = chain.random_signer();
+    let target = Address::from_slice(
+        hex::decode("0000000000000000000000000000000000000100")
+            .unwrap()
+            .as_slice(),
+    );
+    let forwarder = address!("0x1000000000000000000000000000000000000000");
+
+    chain.set_balance(
+        B160::from_be_bytes(wallet.address().into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+    chain.set_evm_bytecode(
+        B160::from_be_bytes(forwarder.into_array()),
+        &hex::decode(FORWARDER_BYTECODE).unwrap(),
+    );
+
+    // Just enough for tx to succeed if the address is warm
+    let gas_limit = 54707;
+    let input = hex::decode("d1b3bd13d427f487b786a48d3a515c6fc1b0170ba3936bcd4ea53c960df3ef2f6e1207f671f5fa32eb46850921546ae5b03a4579012c562a62f4fb2d39269257bed27d4909e4f5ca8f543f5042691371b8fcc58f881e1b4daed7fa6f5b1b3898a880e9b88d6a707662aa25325798903d6e34740e832830860ba323d9e14defc75999af8ead7e63566aa8b94b7bb5dfa8e8f114c39ca179016f393363953f979a").unwrap();
+
+    let calldata = calldata_for_forwarder(target, &input);
+    let forwarded_tx = rig::utils::sign_and_encode_alloy_tx(
+        TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 25_000,
+            gas_limit,
+            to: rig::alloy::primitives::TxKind::Call(forwarder),
+            value: Default::default(),
+            input: calldata.into(),
+        },
+        &wallet,
+    );
+
+    // We use a very high native per gas ratio
+    let block_context = BlockContext {
+        native_price: U256::ONE,
+        eip1559_basefee: U256::from(25_000),
+        ..Default::default()
+    };
+
+    let run_config = rig::chain::RunConfig {
+        app: Some("for_tests".to_string()),
+        only_forward: false,
+        check_storage_diff_hashes: true,
+        ..Default::default()
+    };
+    let res = chain.run_block(
+        vec![forwarded_tx],
+        Some(block_context),
+        None,
+        Some(run_config),
+    );
+    let tx_res = res
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("Tx should have succeeded");
+    assert!(matches!(
+        tx_res.execution_result,
+        rig::zksync_os_interface::types::ExecutionResult::Success { .. }
+    ));
 }

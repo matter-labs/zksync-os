@@ -30,6 +30,7 @@ impl FromInterface<BlockContext> for BlockMetadataFromOracle {
             gas_limit: value.gas_limit,
             pubdata_limit: value.pubdata_limit,
             mix_hash: value.mix_hash,
+            blob_fee: value.blob_fee,
         }
     }
 }
@@ -57,7 +58,8 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit => { InvalidTransaction::CreateInitCodeSizeLimit }
             basic_bootloader::bootloader::errors::InvalidTransaction::InvalidChainId => { InvalidTransaction::InvalidChainId }
             basic_bootloader::bootloader::errors::InvalidTransaction::AccessListNotSupported => { InvalidTransaction::AccessListNotSupported }
-            basic_bootloader::bootloader::errors::InvalidTransaction::GasPerPubdataTooHigh => { InvalidTransaction::GasPerPubdataTooHigh }
+            // TODO: fix mapping after updating interface
+            basic_bootloader::bootloader::errors::InvalidTransaction::PubdataPriceTooHigh => { InvalidTransaction::GasPerPubdataTooHigh }
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockGasLimitTooHigh => { InvalidTransaction::BlockGasLimitTooHigh }
             basic_bootloader::bootloader::errors::InvalidTransaction::UpgradeTxNotFirst => { InvalidTransaction::UpgradeTxNotFirst }
             basic_bootloader::bootloader::errors::InvalidTransaction::ReceivedInsufficientFees { received, required } => { InvalidTransaction::ReceivedInsufficientFees { received, required } }
@@ -73,6 +75,13 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockL2ToL1LogsLimitReached => { InvalidTransaction::BlockL2ToL1LogsLimitReached }
             basic_bootloader::bootloader::errors::InvalidTransaction::AuthListIsEmpty => {InvalidTransaction::AuthListIsEmpty}
             basic_bootloader::bootloader::errors::InvalidTransaction::EIP7702HasNullDestination => {InvalidTransaction::EIP7702HasNullDestination}
+            basic_bootloader::bootloader::errors::InvalidTransaction::BlockBlobGasLimitReached => {InvalidTransaction::BlockBlobGasLimitReached}
+            basic_bootloader::bootloader::errors::InvalidTransaction::BlobBaseFeeGreaterThanMaxFeePerBlobGas => {InvalidTransaction::BlobBaseFeeGreaterThanMaxFeePerBlobGas}
+            basic_bootloader::bootloader::errors::InvalidTransaction::BlobListTooLong => {InvalidTransaction::BlobListTooLong}
+            basic_bootloader::bootloader::errors::InvalidTransaction::EmptyBlobList => {InvalidTransaction::EmptyBlobList}
+            basic_bootloader::bootloader::errors::InvalidTransaction::BlobElementIsNotSupported => {InvalidTransaction::BlobElementIsNotSupported}
+            // TODO: add missing errors to interface
+            _ => todo!()
         }
     }
 }

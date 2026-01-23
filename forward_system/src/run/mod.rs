@@ -21,9 +21,9 @@ use crate::run::query_processors::ZKProofDataResponder;
 use crate::run::query_processors::{BlockMetadataResponder, DACommitmentSchemeResponder};
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;
-use crate::system::system::CallSimulationBootloader;
-use crate::system::system::CallSimulationSystem;
-use crate::system::system::ForwardRunningSystem;
+use crate::system::system_types::CallSimulationBootloader;
+use crate::system::system_types::CallSimulationSystem;
+use crate::system::system_types::ForwardRunningSystem;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
 };
@@ -33,7 +33,6 @@ use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
 use zk_ee::common_structs::ProofData;
 use zk_ee::system::tracer::Tracer;
-use zk_ee::utils::Bytes32;
 
 pub use interface_impl::RunBlockForward;
 pub use tree::LeafProof;
@@ -419,9 +418,8 @@ pub fn run_block_from_oracle_dump<
 
 ///
 /// Simulate single transaction on top of given state.
-/// The validation step is skipped, fields that needed for validation can be empty(any).
-/// Note that, as the validation step is skipped, an internal error is returned
-/// if the sender does not have enough balance for the top-level call value transfer.
+/// Some validation steps are skipped (signature check,
+/// nonce check and EIP-3607 check)
 ///
 /// Needed for `eth_call` and `eth_estimateGas`.
 pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
@@ -457,6 +455,7 @@ pub fn simulate_tx<S: ReadStorage, PS: PreimageSource>(
 
     CallSimulationBootloader::run_prepared::<BasicBootloaderCallSimulationConfig>(
         oracle,
+        &mut (),
         &mut result_keeper,
         tracer,
     )

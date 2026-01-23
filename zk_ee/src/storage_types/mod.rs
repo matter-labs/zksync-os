@@ -1,9 +1,7 @@
 //! Serialization and deserialization helpers for keys and values for storage.
 
-use arrayvec::ArrayVec;
-
 use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
-use crate::utils::exact_size_chain::{ExactSizeChain, ExactSizeChainN};
+use crate::utils::exact_size_chain::ExactSizeChain;
 
 use super::system::errors::internal::InternalError;
 use super::types_config::SystemIOTypesConfig;
@@ -110,55 +108,3 @@ impl<IOTypes: SystemIOTypesConfig> UsizeDeserializable for InitialStorageSlotDat
 }
 
 pub const MAX_EVENT_TOPICS: usize = 4;
-
-pub struct EventFullKey<const N: usize, IOTypes: SystemIOTypesConfig> {
-    pub address: IOTypes::Address,
-    pub topics: ArrayVec<IOTypes::EventKey, N>,
-}
-
-impl<const N: usize, IOTypes: SystemIOTypesConfig> UsizeSerializable for EventFullKey<N, IOTypes> {
-    const USIZE_LEN: usize =
-        <IOTypes::Address as UsizeSerializable>::USIZE_LEN + IOTypes::EventKey::USIZE_LEN * N;
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChainN::<_, _, N>::new(
-            ExactSizeChain::new(
-                UsizeSerializable::iter(&self.address),
-                core::iter::once(self.topics.len()),
-            ),
-            core::array::from_fn(|i| {
-                let topic = self
-                    .topics
-                    .get(i)
-                    .unwrap_or(IOTypes::static_default_event_key());
-                Some(UsizeSerializable::iter(topic))
-            }),
-        )
-    }
-}
-
-pub struct SignalFullKey<const N: usize, IOTypes: SystemIOTypesConfig> {
-    pub address: IOTypes::Address,
-    pub topics: ArrayVec<IOTypes::SignalingKey, N>,
-}
-
-impl<const N: usize, IOTypes: SystemIOTypesConfig> UsizeSerializable for SignalFullKey<N, IOTypes> {
-    const USIZE_LEN: usize =
-        <IOTypes::Address as UsizeSerializable>::USIZE_LEN + IOTypes::SignalingKey::USIZE_LEN * N;
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChainN::<_, _, N>::new(
-            ExactSizeChain::new(
-                UsizeSerializable::iter(&self.address),
-                core::iter::once(self.topics.len()),
-            ),
-            core::array::from_fn(|i| {
-                let topic = self
-                    .topics
-                    .get(i)
-                    .unwrap_or(IOTypes::static_default_signaling_key());
-                Some(UsizeSerializable::iter(topic))
-            }),
-        )
-    }
-}

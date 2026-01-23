@@ -57,6 +57,7 @@ pub type AuthorizationList<'a> = HomList<'a, AuthorizationEntry<'a>, true>;
 // Layout:
 // [chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit,
 //  to(20 bytes, not empty), value, data, accessList, authorizationList]
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct EIP7702Tx<'a> {
     pub(crate) chain_id: u64,

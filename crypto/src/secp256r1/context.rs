@@ -17,7 +17,14 @@ impl GeneratorMultiplesTable {
         Self(pre_g)
     }
 
-    pub(super) fn get_ge(&self, n: i32) -> Affine {
+    pub(super) fn get_ge(&self, n: i32, w: usize) -> Affine {
+        debug_assert!(
+            (2..=31).contains(&w)
+                && ((n & 1) == 1)
+                && (n >= -((1 << (w - 1)) - 1))
+                && (n < (1 << (w - 1)))
+        );
+
         if n > 0 {
             self.0[(n - 1) as usize / 2].to_affine()
         } else {

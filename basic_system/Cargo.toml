@@ -21,6 +21,8 @@ modexp = { path = "../supporting_crates/modexp" }
 cycle_marker = { path = "../cycle_marker" }
 num-bigint = { version =  "0.4", optional = true}
 num-traits = { version =  "*", optional = true}
+system_hooks = { path = "../system_hooks", default-features = false }
+cc-traits = { path = "src/system_implementation/ethereum_storage_model/supporting_crates/cc-traits" }
 
 cfg-if = "1.0.0"
 const_for = "0.1.5"
@@ -41,7 +43,6 @@ proving = ["crypto/proving"]
 # Used for proving multi block batch within 1 run
 multiblock-batch = []
 state-diffs-pi = []
-aggregation = []
 
 [dev-dependencies]
 hex = {version = "0.4.3"}

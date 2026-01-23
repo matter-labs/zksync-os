@@ -8,13 +8,16 @@ use alloy::signers::local::PrivateKeySigner;
 use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
-use rig::basic_system::system_implementation::system::pubdata::PUBDATA_ENCODING_VERSION;
+use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
 use rig::ruint::aliases::{B160, U256};
+use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
+use rig::testing_utils::install_system_contracts;
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::{alloy, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
+
 mod native_charging;
 
 fn run_config() -> Option<rig::chain::RunConfig> {
@@ -44,7 +47,6 @@ fn run_base_system() {
         "a226d3a5c8c408741c3446c762aee8dff742f21e381a0e5ab85a96c5c00100be",
     )
     .unwrap();
-    let eoa_wallet_ethers = LocalWallet::from_bytes(eoa_wallet.to_bytes().as_slice()).unwrap();
 
     let from = wallet_ethers.address();
     let to = address!("0000000000000000000000000000000000010002");
@@ -196,18 +198,41 @@ fn test_block_of_erc20() {
 }
 
 #[test]
-fn test_gas_price_zero() {
+fn test_gas_price_zero_fee_zero() {
     let mut chain = Chain::empty_randomized(None);
     let block_context = BlockContext {
         eip1559_basefee: U256::ZERO,
         ..BlockContext::default()
     };
-    run_block_of_erc20(&mut chain, 10, Some(block_context));
+    let output = run_block_of_erc20_with_fee(&mut chain, 10, Some(block_context), 0);
+    let res_0 = output
+        .tx_results
+        .first()
+        .cloned()
+        .expect("Must have first result")
+        .expect("Must be valid");
+
+    // Regression check, at some point txs with 0 gas price were returning 0 native used.
+    assert!(
+        res_0.native_used > 0,
+        "Native used must be greater than zero"
+    );
+}
+
+#[test]
+fn test_gas_price_zero_fee_one() {
+    let mut chain = Chain::empty_randomized(None);
+    let block_context = BlockContext {
+        eip1559_basefee: U256::ZERO,
+        ..BlockContext::default()
+    };
+    run_block_of_erc20_with_fee(&mut chain, 10, Some(block_context), 1);
 }
 
 #[test]
 fn test_withdrawal() {
     let mut chain = Chain::empty(None);
+    install_system_contracts(&mut chain, true, false, false);
 
     let wallet = PrivateKeySigner::from_str(
         "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
@@ -269,6 +294,8 @@ fn test_withdrawal() {
         B160::from_be_bytes(from.0),
         U256::from(1_000_000_000_000_000_u64),
     );
+
+    install_system_contracts(&mut chain, false, true, false);
 
     let output = chain.run_block(transactions, None, None, run_config());
 
@@ -589,6 +616,8 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
     let to = address!("0000000000000000000000000000000000010002");
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
+    let mut chain = Chain::empty(None);
+
     // Invalid tx first
     let encoded_mint1_tx = {
         let mint_tx = TxLegacy {
@@ -603,31 +632,47 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
         rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
     };
     let withdrawal_tx = {
-        let to = address!("000000000000000000000000000000000000800a");
+        let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
+        let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
+
+        chain.set_balance(
+            B160::from_be_bytes(l1_messenger_contract.into_array()),
+            U256::from(1_000_000_000_000_000_u64),
+        );
 
         let withdrawal_calldata =
             hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
                 .unwrap();
 
-        let mint_tx = TxLegacy {
-            chain_id: 37u64.into(),
-            nonce: 0,
-            gas_price: 1000,
-            gas_limit: 500_000,
-            to: TxKind::Call(to),
-            value: U256::from(10),
+        let tx = TransactionRequest {
+            chain_id: Some(37),
+            from: Some(l1_messenger_contract),
+            to: Some(TxKind::Call(l1_messenger_hook)),
             input: withdrawal_calldata.into(),
+            gas: Some(500_000),
+            max_fee_per_gas: Some(1000),
+            max_priority_fee_per_gas: Some(1000),
+            value: Some(alloy::primitives::U256::from(0)),
+            nonce: Some(0),
+            gas_price: Some(1000),
+            max_fee_per_blob_gas: Some(0),
+            access_list: None,
+            transaction_type: None,
+            blob_versioned_hashes: None,
+            sidecar: None,
+            authorization_list: None,
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+
+        rig::utils::encode_l1_tx(tx)
     };
 
-    let mut chain = Chain::empty(None);
     let transactions = vec![encoded_mint1_tx, withdrawal_tx];
     chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
     chain.set_balance(
         B160::from_be_bytes(from.0),
         U256::from(1_000_000_000_000_000_u64),
     );
+
     let output = chain.run_block(transactions, None, None, None);
 
     // Assert tx succeeded/failed
@@ -636,15 +681,15 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
 
     assert!(result0.as_ref().is_err());
     assert!(result1.as_ref().is_ok_and(|o| o.is_success()));
-    assert!(
+    assert_eq!(
         result1
             .unwrap()
             .l2_to_l1_logs
             .first()
             .unwrap()
             .log
-            .tx_number_in_block
-            == 0
+            .tx_number_in_block,
+        0
     );
 }
 
@@ -821,7 +866,7 @@ fn test_balance_overflow_protection() {
         let tx = TxEip1559 {
             chain_id: 37u64,
             nonce: 0,
-            gas_limit: u64::MAX, // Will cause overflow when multiplied with max_fee_per_gas
+            gas_limit: (u64::MAX / 300), // Will cause overflow when multiplied with max_fee_per_gas
             max_fee_per_gas: u128::MAX,
             max_priority_fee_per_gas: 0,
             to: TxKind::Call(to),
@@ -1375,4 +1420,169 @@ fn test_check_pubdata_has_timestamp() {
             .expect("Slice with incorrect length"),
     );
     assert_eq!(timestamp, pubdata_timestamp, "Timestamps do not match");
+}
+
+#[test]
+fn test_simple_service_transaction() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    let target_address = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes::<20>();
+
+    // Set balance for the contract address
+    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+
+    let tx = encode_service_tx(&target_address, &[]);
+
+    let block_context = BlockContext {
+        eip1559_basefee: U256::from(1000),
+        ..Default::default()
+    };
+    // Check tx succeeds
+    let result = chain.run_block(vec![tx], Some(block_context), None, run_config());
+    let res0 = result.tx_results.first().expect("Must have a tx result");
+    assert!(res0.as_ref().is_ok(), "Tx should succeed");
+}
+
+#[test]
+fn test_simple_service_transaction_whitelist() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    // Invalid target
+    let target_address = [0u8; 20];
+
+    // Set balance for the contract address
+    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+
+    let tx = encode_service_tx(&target_address, &[]);
+
+    let block_context = BlockContext {
+        eip1559_basefee: U256::from(1000),
+        ..Default::default()
+    };
+    // Check tx succeeds
+    let result = chain.run_block(vec![tx], Some(block_context), None, run_config());
+    let res0 = result.tx_results.first().expect("Must have a tx result");
+    assert!(res0.as_ref().is_err(), "Tx should fail");
+}
+
+#[test]
+fn test_service_block_invariants() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    let target_address = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes::<20>();
+
+    // Set balance for the contract address
+    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+
+    // Check that a service block with several service txs works
+    let tx1 = encode_service_tx(&target_address, &[]);
+    let tx2 = encode_service_tx(&target_address, &[]);
+    let tx3 = encode_service_tx(&target_address, &[]);
+
+    let block_context = BlockContext {
+        eip1559_basefee: U256::from(1000),
+        ..Default::default()
+    };
+    // Check txs succeed
+    let result = chain.run_block(vec![tx1, tx2, tx3], Some(block_context), None, run_config());
+    assert!(
+        result.tx_results.iter().all(|res| res.is_ok()),
+        "All txs should succeed"
+    );
+
+    // Check that a service block with a non-service tx fails
+    let tx4 = encode_service_tx(&target_address, &[]);
+    let tx_non_service = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 134217728,
+            max_priority_fee_per_gas: 134217728,
+            gas_limit: 75_000,
+            to: TxKind::Call(address!("4242000000000000000000000000000000000000")),
+            value: Default::default(),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let block_context = BlockContext {
+        eip1559_basefee: U256::from(1000),
+        ..Default::default()
+    };
+    chain
+        .run_block_no_panic(
+            vec![tx4.clone(), tx_non_service.clone()],
+            Some(block_context),
+            None,
+            run_config(),
+        )
+        .expect_err("Service block with non service tx should fail");
+
+    // Check that a non-service block with a service tx fails
+    let block_context = BlockContext {
+        eip1559_basefee: U256::ZERO,
+        ..Default::default()
+    };
+    chain
+        .run_block_no_panic(
+            vec![tx_non_service, tx4],
+            Some(block_context),
+            None,
+            run_config(),
+        )
+        .expect_err("Service block with non service tx should fail");
+}
+
+/// Regression test for: Skip nonce check on simulation
+#[test]
+fn test_simulation_skips_nonce_check() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    // Set balance so the tx can pay for gas
+    chain.set_balance(
+        B160::from_be_bytes(from.into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    // Create a transaction with nonce 100, but the account's nonce is 0
+    let tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 100, // Wrong nonce - account nonce is 0
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 21_000,
+            to: TxKind::Call(target_address),
+            value: Default::default(),
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    // In simulation mode, the transaction should succeed (nonce check skipped)
+    let result_simulation = chain.simulate_block(vec![tx.clone()], None);
+    assert!(
+        result_simulation.tx_results[0].is_ok(),
+        "Transaction should pass validation in simulation mode, got: {:?}",
+        result_simulation.tx_results[0]
+    );
+
+    // In normal execution mode, the transaction should fail with NonceTooHigh
+    let result_normal = chain.run_block(vec![tx], None, None, run_config());
+    assert!(
+        matches!(
+            result_normal.tx_results[0],
+            Err(InvalidTransaction::NonceTooHigh { .. })
+        ),
+        "Transaction should fail with NonceTooHigh in normal mode, got: {:?}",
+        result_normal.tx_results[0]
+    );
 }

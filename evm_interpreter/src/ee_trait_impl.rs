@@ -4,6 +4,7 @@ use crate::gas::gas_utils;
 use crate::gas_constants::{CALLVALUE, CALL_STIPEND, NEWACCOUNT};
 use core::fmt::Write;
 use core::mem;
+use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::common_structs::CalleeAccountProperties;
 use zk_ee::system::errors::interface::InterfaceError;
 use zk_ee::system::errors::runtime::RuntimeError;
@@ -11,6 +12,7 @@ use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::*;
+use zk_ee::system_log;
 use zk_ee::types_config::SystemIOTypesConfig;
 use zk_ee::utils::b160_to_u256;
 use zk_ee::{interface_error, internal_error, wrap_error};
@@ -51,6 +53,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
     fn start_executing_frame<'a, 'i: 'ee, 'h: 'ee>(
         &'a mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         frame_state: ExecutionEnvironmentLaunchParams<'i, S>,
         heap: SliceVec<'h, u8>,
         tracer: &mut impl Tracer<S>,
@@ -198,13 +201,14 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         self.heap = heap;
         self.call_value = nominal_token_value;
 
-        self.execute_till_yield_point(system, tracer)
+        self.execute_till_yield_point(system, hooks, tracer)
     }
 
     /// Note: panics if `pending_os_request` is None
     fn continue_after_preemption<'a, 'res: 'ee>(
         &'a mut self,
         system: &mut System<S>,
+        hooks: &mut HooksStorage<S, S::Allocator>,
         returned_resources: S::Resources,
         call_request_result: CallResult<'res, S>,
         tracer: &mut impl Tracer<S>,
@@ -232,9 +236,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
 
         match call_request_result {
             CallResult::PreparationStepFailed => {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Call failed, out of gas\n"));
+                system_log!(system, "Call failed, out of gas\n");
                 // we fail because it's caller's failure
                 let exit_code = EvmError::OutOfGas.into();
                 return self.create_immediate_return_state(system, exit_code, tracer);
@@ -279,7 +281,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             }
         }
 
-        self.execute_till_yield_point(system, tracer)
+        self.execute_till_yield_point(system, hooks, tracer)
     }
 
     fn calculate_resources_passed_in_external_call(
@@ -349,9 +351,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
         S::IO: IOSubsystemExt,
     {
         if frame_state.environment_parameters.callstack_depth > 1024 {
-            let _ = system
-                .get_logger()
-                .write_fmt(format_args!("Callstack is too deep\n",));
+            system_log!(system, "Callstack is too deep\n",);
 
             tracer.evm_tracer().on_call_error(&EvmError::CallTooDeep);
             return Ok(false);
@@ -376,9 +376,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
                 .0;
 
             if caller_balance < frame_state.external_call.nominal_token_value {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Not enough balance for transfer\n",));
+                system_log!(system, "Not enough balance for transfer\n",);
                 tracer
                     .evm_tracer()
                     .on_call_error(&EvmError::InsufficientBalance);
@@ -427,9 +425,7 @@ impl<'ee, S: EthereumLikeTypes> ExecutionEnvironment<'ee, S, EvmErrors> for Inte
             // We need to check this here (not when we actually deploy the code)
             // because if this check fails the constructor shouldn't be executed.
             if deployee_code_len != 0 || deployee_nonce != 0 {
-                let _ = system
-                    .get_logger()
-                    .write_fmt(format_args!("Deployment on existing account\n",));
+                system_log!(system, "Deployment on existing account\n",);
                 frame_state
                     .external_call
                     .available_resources

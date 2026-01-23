@@ -187,34 +187,8 @@ impl FSEntity {
                 new_file.skip_names = old_file.skip_names.clone();
                 new_file.skip_calldatas = old_file.skip_calldatas.clone();
                 new_file.hardfork_override = old_file.hardfork_override.clone();
+                new_file.hash = old_file.hash.clone();
 
-                let new_hash = new_file
-                    .hash
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("Test file hash is None: {:?}", current))?;
-
-                if !old_file
-                    .hash
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("Test file hash is None: {:?}", current))?
-                    .eq(new_hash)
-                {
-                    if old_file.was_changed(current)? {
-                        changes.conflicts.push(current.to_owned());
-                    } else {
-                        changes.updated.push(current.to_owned());
-                    }
-                    if !index_only {
-                        TestFile::write_to_file(
-                            current,
-                            new_file
-                                .data
-                                .as_ref()
-                                .ok_or_else(|| anyhow::anyhow!("Test data is None: {:?}", current))?
-                                .as_bytes(),
-                        )?;
-                    }
-                }
                 return Ok(());
             }
             (

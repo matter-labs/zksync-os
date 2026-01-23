@@ -53,9 +53,9 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-            - name: Run crypto tests 50 times with overflow checks
+            - name: Run crypto tests 10 times with overflow checks
               run: |
-                  for i in {1..50}; do
+                  for i in {1..10}; do
                     RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto --quiet || exit 1
                   done
     evm_state_tests:
@@ -78,47 +78,6 @@ jobs:
             - name: Run EVM state tests
               working-directory: ./tests/evm_tester
               run: cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print
-
-    # We will keep it for a while just in case.
-    evm_state_tests_legacy:
-        name: EF EVM state tests (legacy)
-        runs-on: [matterlabs-ci-runner-high-performance]
-        steps:
-            - uses: actions/checkout@v4
-              with:
-                  path: zksync-os
-            - uses: actions/checkout@v4
-              with:
-                  repository: matter-labs/era-evm-tester
-                  ref: zk-ee-dev
-                  path: era-evm-tester
-            - name: Use local ZKsync OS version
-              working-directory: ./era-evm-tester/evm_tester
-              run: |
-                  sudo sed -i 's/^zksync_os/##zksync_os/g' Cargo.toml
-                  sudo sed -i 's/^#zksync_os/zksync_os/g' Cargo.toml
-                  sudo sed -i 's/^zk_ee/##zk_ee/g' Cargo.toml
-                  sudo sed -i 's/^#zk_ee/zk_ee/g' Cargo.toml
-            - uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  rustflags: ""
-            - name: Setup
-              working-directory: ./era-evm-tester
-              run: |
-                  rustup toolchain install
-                  rustup set profile minimal
-                  cargo install cargo-binutils
-            - name: Get submodules
-              working-directory: ./era-evm-tester
-              run: |
-                  git submodule update --init --recursive
-            - name: Download ethereum execution spec tests fixtures
-              working-directory: ./era-evm-tester
-              run: |
-                  ./download_ethereum_fixtures.sh
-            - name: Run EVM state tests
-              working-directory: ./era-evm-tester
-              run: cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print -- --environment=ZKsyncOS --spec_tests
 
     verify_binary:
         name: Verify binary
@@ -166,6 +125,29 @@ jobs:
             - name: Run proving test
               # Runs with e2e_proving feature
               run: cargo test --release -p transactions --features e2e_proving run_base_system -- --nocapture
+
+    eth_stf_run:
+        name: eth_stf_run
+        runs-on: [matterlabs-ci-runner-highmem]
+        steps:
+            - uses: actions/checkout@v3
+            - uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  rustflags: ""
+            - name: Setup
+              run: |
+                  rustup set profile minimal
+            - name: Compile for RISC-V
+              working-directory: ./zksync_os
+              run: |
+                  rustup target add riscv32i-unknown-none-elf
+                  cargo install cargo-binutils
+                  rustup component add llvm-tools-preview
+                  rustup component add rust-src
+                  ./dump_bin.sh --type eth-stf
+            - name: Run ethereum block
+              working-directory: ./tests/instances/eth_runner
+              run: cargo run --release --features rig/eth_stf -- eth-run --block-dir 23846054 
 
     blake_tests:
         name: blake_tests

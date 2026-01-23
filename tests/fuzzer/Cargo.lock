@@ -1869,6 +1869,8 @@ dependencies = [
  "serde",
  "storage_models",
  "strum_macros 0.27.2",
+ "system_hooks",
+ "zerocopy",
  "zk_ee",
 ]
 
@@ -1904,6 +1906,7 @@ dependencies = [
  "serde_json",
  "storage_models_forward",
  "strum_macros 0.27.2",
+ "system_hooks_forward",
  "zk_ee_forward",
 ]
 
@@ -1939,6 +1942,7 @@ dependencies = [
  "serde_json",
  "storage_models_proving",
  "strum_macros 0.27.2",
+ "system_hooks_proving",
  "zk_ee_proving",
 ]
 
@@ -2207,6 +2211,7 @@ name = "callable_oracles"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
+ "basic_bootloader",
  "basic_system",
  "c-kzg",
  "crypto",
@@ -7209,6 +7214,7 @@ dependencies = [
  "futures",
  "hex",
  "log",
+ "once_cell",
  "oracle_provider",
  "risc_v_simulator 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?tag=v0.4.3)",
  "ruint",
@@ -8409,6 +8415,32 @@ dependencies = [
  "ruint",
  "strum_macros 0.27.2",
  "zk_ee",
+]
+
+[[package]]
+name = "system_hooks_forward"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "cycle_marker",
+ "evm_interpreter_forward",
+ "paste",
+ "ruint",
+ "strum_macros 0.27.2",
+ "zk_ee_forward",
+]
+
+[[package]]
+name = "system_hooks_proving"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "cycle_marker",
+ "evm_interpreter_proving",
+ "paste",
+ "ruint",
+ "strum_macros 0.27.2",
+ "zk_ee_proving",
 ]
 
 [[package]]
@@ -10080,6 +10112,8 @@ name = "zksync_os_api"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "alloy-sol-types",
+ "basic_bootloader",
  "basic_system",
  "callable_oracles",
  "crypto",

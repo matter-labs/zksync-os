@@ -215,9 +215,9 @@ impl Pairing for Bls12_381 {
 impl From<G2Affine> for G2PreparedNoAlloc {
     fn from(q: G2Affine) -> Self {
         if q.infinity {
-            #[allow(invalid_value)]
-            G2PreparedNoAlloc {
-                ell_coeffs: unsafe { core::mem::MaybeUninit::uninit().assume_init() }, // unused/filtered above
+            // coeffs should not be used
+            Self {
+                ell_coeffs: [Default::default(); BLS12_381_NUM_ELL_COEFFS],
                 infinity: true,
             }
         } else {
@@ -225,9 +225,8 @@ impl From<G2Affine> for G2PreparedNoAlloc {
             let two_inv = Fq::one().double().inverse().unwrap();
             let mut i = 0;
             let mut ell_coeffs: [core::mem::MaybeUninit<EllCoeff<Config>>;
-                BLS12_381_NUM_ELL_COEFFS] = unsafe {
-                [const { core::mem::MaybeUninit::uninit().assume_init() }; BLS12_381_NUM_ELL_COEFFS]
-            };
+                BLS12_381_NUM_ELL_COEFFS] =
+                [const { core::mem::MaybeUninit::uninit() }; BLS12_381_NUM_ELL_COEFFS];
 
             let mut r = G2HomProjective {
                 x: q.x,

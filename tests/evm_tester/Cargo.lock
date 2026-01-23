@@ -1687,6 +1687,7 @@ dependencies = [
  "paste",
  "ruint",
  "serde",
+ "serde-big-array",
  "strum_macros 0.27.2",
  "system_hooks",
  "zk_ee",
@@ -1697,6 +1698,7 @@ name = "basic_system"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "cc-traits",
  "cfg-if",
  "const-hex",
  "const_for",
@@ -1713,6 +1715,7 @@ dependencies = [
  "serde",
  "storage_models",
  "strum_macros 0.27.2",
+ "system_hooks",
  "zerocopy",
  "zk_ee",
 ]
@@ -2004,6 +2007,7 @@ name = "callable_oracles"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
+ "basic_bootloader",
  "basic_system",
  "c-kzg",
  "crypto",
@@ -2058,6 +2062,10 @@ dependencies = [
  "libc",
  "shlex",
 ]
+
+[[package]]
+name = "cc-traits"
+version = "0.1.0"
 
 [[package]]
 name = "cfg-if"
@@ -3489,6 +3497,7 @@ dependencies = [
  "basic_system",
  "bincode",
  "callable_oracles",
+ "crypto",
  "evm_interpreter",
  "hex",
  "oracle_provider",
@@ -5975,6 +5984,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "alloy-rlp",
+ "alloy-rpc-types-debug",
  "alloy-sol-types",
  "basic_bootloader",
  "basic_system",
@@ -5988,6 +5998,7 @@ dependencies = [
  "futures",
  "hex",
  "log",
+ "once_cell",
  "oracle_provider",
  "risc_v_simulator 0.1.0 (git+https://github.com/matter-labs/zksync-airbender?tag=v0.4.3)",
  "ruint",
@@ -6601,6 +6612,15 @@ checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
  "serde_derive",
+]
+
+[[package]]
+name = "serde-big-array"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11fc7cc2c76d73e0f27ee52abbd64eec84d46f370c88371120433196934e4b7f"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -8782,6 +8802,8 @@ name = "zksync_os_api"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "alloy-sol-types",
+ "basic_bootloader",
  "basic_system",
  "callable_oracles",
  "crypto",

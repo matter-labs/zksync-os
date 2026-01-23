@@ -1,5 +1,6 @@
 pub mod consts;
 pub mod curves;
+pub mod eip2537;
 pub mod fields;
 
 pub use self::curves::{g1, g2, G1Affine, G1Projective, G2Affine, G2Projective};

@@ -72,6 +72,7 @@ impl Blake2s256 {
                 .cast::<u8>()
                 .add(self.buffer_filled_bytes);
             let end = self.state.input_buffer.as_mut_ptr_range().end.cast::<u8>();
+            debug_assert!(start <= end);
             core::hint::assert_unchecked(start <= end);
             core::ptr::write_bytes(start, 0, end.offset_from_unsigned(start));
             // and run round function
