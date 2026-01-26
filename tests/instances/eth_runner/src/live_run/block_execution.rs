@@ -141,7 +141,7 @@ pub fn run_block(
             None,
             Some(run_config),
             &mut NopTracer::default(),
-            &mut NopTxValidator:default(),
+            &mut NopTxValidator::default(),
         )
     }));
     
