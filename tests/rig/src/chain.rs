@@ -91,6 +91,7 @@ pub struct Chain<const RANDOMIZED_TREE: bool = false> {
 }
 
 /// This is a part of the state, which can be controlled by sequencer, other block context values can be determined from the chain state.
+#[derive(Clone)]
 pub struct BlockContext {
     pub timestamp: u64,
     pub eip1559_basefee: U256,
