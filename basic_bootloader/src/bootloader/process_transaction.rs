@@ -1154,7 +1154,8 @@ where
 
         gas_used -= evm_refund;
 
-        let full_native_limit = if cfg!(feature = "unlimited_native") {
+        // Note: for zero gas price, we use "unlimited native"
+        let full_native_limit = if cfg!(feature = "unlimited_native") || native_per_gas == 0 {
             u64::MAX
         } else {
             gas_limit.saturating_mul(u256_to_u64_saturated(&native_per_gas))
