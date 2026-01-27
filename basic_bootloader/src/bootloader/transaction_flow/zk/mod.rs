@@ -166,7 +166,9 @@ where
             Err(e) => Err(wrap_error!(e)),
         }?;
 
-        assert_eq!(caller_nonce, old_nonce);
+        if !Config::SIMULATION {
+            assert_eq!(caller_nonce, old_nonce);
+        }
 
         Ok(())
     }
