@@ -1586,3 +1586,150 @@ fn test_simulation_skips_nonce_check() {
         result_normal.tx_results[0]
     );
 }
+
+/// Simulation for a transaction with sender without balance:
+/// - gasPrice > 0 && value > 0: fail
+/// - gasPrice > 0 && value == 0: fail
+/// - gasPrice == 0 && value > 0: fail
+/// - gasPrice == 0 && value == 0: ok
+#[test]
+fn test_simulation_balance_check() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    // - gasPrice > 0 && value > 0: fail
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 21_000,
+            to: TxKind::Call(target_address),
+            value: U256::from(1),
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let result_simulation = chain.simulate_block(vec![tx.clone()], None);
+    assert!(
+        result_simulation.tx_results[0].is_err(),
+        "Transaction with fee and value should fail validation in simulation mode"
+    );
+
+    // - gasPrice > 0 && value == 0: fail
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 21_000,
+            to: TxKind::Call(target_address),
+            value: Default::default(),
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let result_simulation = chain.simulate_block(vec![tx.clone()], None);
+    assert!(
+        result_simulation.tx_results[0].is_err(),
+        "Transaction with fee should fail validation in simulation mode"
+    );
+
+    //- gasPrice == 0 && value > 0: fail
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 0,
+            gas_limit: 21_000,
+            to: TxKind::Call(target_address),
+            value: U256::from(1),
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let result_simulation = chain.simulate_block(vec![tx.clone()], None);
+    assert!(
+        result_simulation.tx_results[0].is_err(),
+        "Transaction with value should fail validation in simulation mode"
+    );
+
+    // - gasPrice == 0 && value == 0: ok
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 0,
+            gas_limit: 21_000,
+            to: TxKind::Call(target_address),
+            value: Default::default(),
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let result_simulation = chain.simulate_block(vec![tx.clone()], None);
+    assert!(
+        result_simulation.tx_results[0].is_ok(),
+        "Transaction with no fee/value should pass validation in simulation mode"
+    );
+}
+
+/// Check that gas and native used is the same in simulation and actual execution
+#[test]
+fn test_simulation_gas_and_native_used() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    chain.set_balance(
+        B160::from_be_bytes(wallet.address().0 .0),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    let tx = TxEip1559 {
+        chain_id: 37u64,
+        nonce: 0,
+        max_fee_per_gas: 1000,
+        max_priority_fee_per_gas: 1000,
+        gas_limit: 1_000_000,
+        to: TxKind::Call(target_address),
+        value: U256::from(100),
+        input: Default::default(),
+        access_list: Default::default(),
+    };
+    let encoded_for_simulation = rig::utils::sign_and_encode_alloy_tx(tx.clone(), &wallet);
+
+    // We use a very low native per gas ratio to force the transaction to require extra gas
+    let block_context = BlockContext {
+        eip1559_basefee: U256::from(1000),
+        native_price: U256::from(500),
+        ..Default::default()
+    };
+
+    let result_simulation =
+        chain.simulate_block(vec![encoded_for_simulation], Some(block_context.clone()));
+    let tx_result_simulation = result_simulation.tx_results[0]
+        .clone()
+        .expect("Simulation must succeed");
+
+    let tx = TxEip1559 {
+        gas_limit: tx_result_simulation.gas_used,
+        ..tx
+    };
+    let encoded = rig::utils::sign_and_encode_alloy_tx(tx, &wallet);
+
+    let result_normal = chain.run_block(vec![encoded], Some(block_context), None, run_config());
+    let tx_result_normal = result_normal.tx_results[0]
+        .clone()
+        .expect("Normal execution must succeed");
+
+    assert_eq!(
+        tx_result_simulation.gas_used, tx_result_normal.gas_used,
+        "Mismatch in gas used"
+    );
+    assert_eq!(
+        tx_result_simulation.native_used, tx_result_normal.native_used,
+        "Mismatch in native used"
+    );
+}
