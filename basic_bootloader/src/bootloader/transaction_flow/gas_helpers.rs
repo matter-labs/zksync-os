@@ -42,7 +42,7 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForTx<S> {
 ///
 pub fn create_resources_for_tx<S: EthereumLikeTypes>(
     gas_limit: u64,
-    zero_gas_price: bool,
+    free_native: bool,
     native_prepaid_from_gas: u64,
     native_per_pubdata_byte: u64,
     is_deployment: bool,
@@ -64,7 +64,7 @@ where
     // We can consider in the future to keep two limits, so that pubdata
     // is not charged from computational resource.
     // Note: for zero gas price, we use "unlimited native"
-    let native_limit = if cfg!(feature = "unlimited_native") || zero_gas_price {
+    let native_limit = if cfg!(feature = "unlimited_native") || free_native {
         u64::MAX - 1 // So any saturation below can not be subtracted from it
     } else {
         native_prepaid_from_gas
@@ -197,7 +197,7 @@ pub fn check_enough_resources_for_pubdata<S: EthereumLikeTypes>(
 ///
 /// Get the gas price for a transaction.
 ///
-pub(crate) fn get_gas_price<S: EthereumLikeTypes>(
+pub(crate) fn get_gas_price<S: EthereumLikeTypes, Config: BasicBootloaderExecutionConfig>(
     system: &mut System<S>,
     max_fee_per_gas: &U256,
     max_priority_fee_per_gas: Option<&U256>,
@@ -213,12 +213,20 @@ pub(crate) fn get_gas_price<S: EthereumLikeTypes>(
             TxError::Validation(InvalidTransaction::PriorityFeeGreaterThanMaxFee,),
             system
         )?;
-        require!(
-            &base_fee <= max_fee_per_gas,
-            TxError::Validation(InvalidTransaction::BaseFeeGreaterThanMaxFee,),
-            system
-        )?;
-        let priority_fee_per_gas = (*max_priority_fee_per_gas).min(max_fee_per_gas - base_fee);
-        Ok(base_fee + priority_fee_per_gas)
+        if !Config::SIMULATION {
+            // Skip this check on simulation
+            require!(
+                &base_fee <= max_fee_per_gas,
+                TxError::Validation(InvalidTransaction::BaseFeeGreaterThanMaxFee,),
+                system
+            )?;
+        }
+        let priority_fee_per_gas =
+            (*max_priority_fee_per_gas).min(max_fee_per_gas.saturating_sub(base_fee));
+        // Normally, max_fee_per_gas >= base_fee + priority_fee_per_gas,
+        // but we add this min to make it work in simulation too, where we do not
+        // enforce max_fee_per_gas > base_fee.
+        let gas_price = (base_fee + priority_fee_per_gas).min(*max_fee_per_gas);
+        Ok(gas_price)
     }
 }

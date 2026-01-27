@@ -99,7 +99,7 @@ where
         // their gas price is allowed to be < block base fee.
         U256::ZERO
     } else {
-        get_gas_price(
+        get_gas_price::<S, Config>(
             system,
             transaction.max_fee_per_gas(),
             transaction.max_priority_fee_per_gas(),
@@ -113,8 +113,12 @@ where
 
         if cfg!(feature = "resources_for_tester") {
             crate::bootloader::constants::TESTER_NATIVE_PER_GAS
-        } else if Config::SIMULATION {
-            SIMULATION_NATIVE_PER_GAS
+        } else if Config::SIMULATION && gas_price.is_zero() {
+            // For simulation, if gas price isn't set, we use base fee
+            // for native calculation
+            u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price)).ok_or(
+                TxError::Validation(InvalidTransaction::NativeResourcesAreTooExpensive),
+            )?
         } else {
             u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(TxError::Validation(
                 InvalidTransaction::NativeResourcesAreTooExpensive,
@@ -130,7 +134,7 @@ where
     // Now we will materialize resources, from which we will try to charge intrinsic cost on top
     let mut tx_resources = create_resources_for_tx::<S>(
         tx_gas_limit,
-        gas_price.is_zero(),
+        native_per_gas == 0,
         native_prepaid_from_gas,
         native_per_pubdata,
         transaction.is_deployment().is_some(),

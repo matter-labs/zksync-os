@@ -1,7 +1,7 @@
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::{
     L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_NATIVE_COST, L1_TX_INTRINSIC_PUBDATA,
-    L1_TX_NATIVE_PRICE, SIMULATION_NATIVE_PER_GAS, UPGRADE_TX_NATIVE_PER_GAS,
+    L1_TX_NATIVE_PRICE, UPGRADE_TX_NATIVE_PER_GAS,
 };
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError;
@@ -79,8 +79,12 @@ where
     // For L1->L2 txs, we use a constant native price to avoid censorship.
     let native_price = L1_TX_NATIVE_PRICE;
     let native_per_gas = if is_priority_op {
-        if Config::SIMULATION {
-            SIMULATION_NATIVE_PER_GAS
+        if Config::SIMULATION && gas_price.is_zero() {
+            // For simulation, if gas price isn't set, we use base fee
+            // for native calculation
+            u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price)).ok_or(
+                TxError::Validation(InvalidTransaction::NativeResourcesAreTooExpensive),
+            )?
         } else {
             u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(TxError::Validation(
                 InvalidTransaction::NativeResourcesAreTooExpensive,
@@ -105,7 +109,7 @@ where
         intrinsic_computational_native_charged,
     } = create_resources_for_tx::<S>(
         gas_limit,
-        gas_price.is_zero(),
+        native_per_gas == 0,
         native_prepaid_from_gas,
         native_per_pubdata,
         false, // is_deployment

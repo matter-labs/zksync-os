@@ -87,11 +87,6 @@ pub const PER_SLOT_ACCESS_LIST_NATIVE_COST: u64 = 2000;
 /// value. The value is so high because of modexp tests.
 pub const TESTER_NATIVE_PER_GAS: u64 = 25_000;
 
-/// native_per_gas value to use for simulation. Should be in line with
-/// the value of basefee / native_price provided by operator.
-/// Needed because simulation is done with basefee = 0.
-pub const SIMULATION_NATIVE_PER_GAS: u64 = 100;
-
 // Default native price for L1->L2 transactions.
 // TODO (EVM-1157): find a reasonable value for it.
 pub const L1_TX_NATIVE_PRICE: U256 = U256::from_limbs([10, 0, 0, 0]);
