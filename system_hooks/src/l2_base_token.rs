@@ -488,6 +488,7 @@ where
         &L2_BASE_TOKEN_ADDRESS,
         &nominal_token_value,
         true,
+        false, // fee_payment_in_simulation
     ) {
         Ok(_) => Ok(()),
         // TODO this has to be properly propagated

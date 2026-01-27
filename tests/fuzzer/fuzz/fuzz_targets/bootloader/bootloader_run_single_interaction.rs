@@ -246,6 +246,7 @@ fn fuzz(input: FuzzInput) {
                 &amount,
                 &from,
                 &mut inf_resources,
+                false,
             );
         }
         1 => {

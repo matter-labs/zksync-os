@@ -315,7 +315,7 @@ where
         Ok(())
     }
 
-    fn pay_for_transaction(
+    fn pay_for_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _tx_hash: Bytes32,
@@ -336,7 +336,14 @@ where
         // This ensures sender has sufficient funds before execution begins
         system
             .io
-            .update_account_nominal_token_balance(caller_ee_type, resources, &from, &amount, true)
+            .update_account_nominal_token_balance(
+                caller_ee_type,
+                resources,
+                &from,
+                &amount,
+                true,
+                Config::SIMULATION,
+            )
             .map_err(|e| match e {
                 SubsystemError::LeafUsage(interface_error) => {
                     let _ = system

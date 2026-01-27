@@ -497,6 +497,7 @@ pub trait IOSubsystemExt: IOSubsystem {
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         diff: &<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue,
         should_subtract: bool,
+        fee_payment_in_simulation: bool,
     ) -> Result<U256, BalanceSubsystemError>;
 
     // Get number of logs emitted so far.

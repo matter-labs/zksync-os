@@ -22,6 +22,7 @@ where
         nominal_token_value: &U256,
         to: &B160,
         resources: &mut S::Resources,
+        fee_payment_in_simulation: bool,
     ) -> Result<(), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -40,6 +41,7 @@ where
                 to,
                 nominal_token_value,
                 false,
+                fee_payment_in_simulation,
             )
             .map_err(|e| -> BootloaderSubsystemError {
                 match e {

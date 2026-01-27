@@ -1160,6 +1160,7 @@ where
         address: &<Self::IOTypes as SystemIOTypesConfig>::Address,
         diff: &ruint::aliases::U256,
         should_subtract: bool,
+        fee_payment_in_simulation: bool,
     ) -> Result<ruint::aliases::U256, BalanceSubsystemError> {
         let update_fn = move |old_value: &ruint::aliases::U256| {
             if should_subtract {
@@ -1178,6 +1179,7 @@ where
             address,
             update_fn,
             &mut self.oracle,
+            fee_payment_in_simulation,
         )
     }
 

@@ -286,6 +286,7 @@ impl<
         preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
+        fee_payment_in_simulation: bool,
     ) -> Result<U256, BalanceSubsystemError> {
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             ee_type,
@@ -305,8 +306,11 @@ impl<
         let cur = account_data.current().value().balance;
         let new = update_fn(&cur)?;
         account_data.update(|cache_record| {
-            cache_record.update(|v, _| {
+            cache_record.update(|v, m| {
                 v.balance = new;
+                // Once an account's balance has been affected by fee
+                // payment, we keep this flag set.
+                m.not_compress_balance |= fee_payment_in_simulation;
                 Ok(())
             })
         })?;
@@ -345,6 +349,7 @@ impl<
                 preimages_cache,
                 oracle,
                 is_selfdestruct,
+                false, // fee_payment_in_simulation
             )
         };
 
@@ -438,6 +443,7 @@ impl<
                     at_tx_start.value(),
                     current.value(),
                     current.metadata().not_publish_bytecode,
+                    current.metadata().not_compress_balance,
                 )
                 .unwrap();
             }
@@ -684,6 +690,7 @@ impl<
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
+        fee_payment_in_simulation: bool,
     ) -> Result<U256, BalanceSubsystemError> {
         self.update_nominal_token_value_inner::<PROOF_ENV>(
             ee_type,
@@ -694,6 +701,7 @@ impl<
             preimages_cache,
             oracle,
             false,
+            fee_payment_in_simulation,
         )
     }
 

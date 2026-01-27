@@ -138,7 +138,7 @@ where
     ///
     /// Pay for the transaction's fees
     ///
-    fn pay_for_transaction(
+    fn pay_for_transaction<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         system_functions: &mut HooksStorage<S, S::Allocator>,
         tx_hash: Bytes32,

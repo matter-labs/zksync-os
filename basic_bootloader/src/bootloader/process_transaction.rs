@@ -313,16 +313,21 @@ where
         let mut inf_resources = S::Resources::FORMAL_INFINITE;
 
         let coinbase = system.get_coinbase();
-        Self::mint_token(system, &pay_to_operator, &coinbase, &mut inf_resources).map_err(|e| {
-            match e.root_cause() {
-                RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
-                    internal_error!("Out of ergs on infinite ergs").into()
-                }
-                RootCause::Runtime(RuntimeError::FatalRuntimeError(_)) => {
-                    internal_error!("Out of native on infinite").into()
-                }
-                _ => e,
+        Self::mint_token(
+            system,
+            &pay_to_operator,
+            &coinbase,
+            &mut inf_resources,
+            Config::SIMULATION,
+        )
+        .map_err(|e| match e.root_cause() {
+            RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
+                internal_error!("Out of ergs on infinite ergs").into()
             }
+            RootCause::Runtime(RuntimeError::FatalRuntimeError(_)) => {
+                internal_error!("Out of native on infinite").into()
+            }
+            _ => e,
         })?;
 
         // Refund
@@ -359,6 +364,7 @@ where
                 &to_refund_recipient,
                 &refund_recipient,
                 &mut inf_resources,
+                Config::SIMULATION,
             )
             .map_err(|e| -> BootloaderSubsystemError {
                 match e.root_cause() {
@@ -437,7 +443,14 @@ where
         if value > U256::ZERO {
             resources
                 .with_infinite_ergs(|inf_resources| {
-                    Self::mint_token(system, &value, &from, inf_resources)
+                    Self::mint_token(
+                        system,
+                        &value,
+                        &from,
+                        inf_resources,
+                        // Not a fee-related mint
+                        false,
+                    )
                 })
                 .map_err(|e| match e.root_cause() {
                     RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
@@ -727,7 +740,7 @@ where
                 native_used,
             },
             pubdata_used,
-        ) = Self::refund_transaction_and_pay_operator(
+        ) = Self::refund_transaction_and_pay_operator::<Config>(
             system,
             system_functions,
             tx_hash,
@@ -844,7 +857,7 @@ where
         ));
 
         // Charge fees
-        F::pay_for_transaction(
+        F::pay_for_transaction::<Config>(
             system,
             system_functions,
             tx_hash,
@@ -1009,7 +1022,7 @@ where
 
     // Returns (refund_info, total_pubdata_used)
     #[allow(clippy::too_many_arguments)]
-    fn refund_transaction_and_pay_operator(
+    fn refund_transaction_and_pay_operator<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         _system_functions: &mut HooksStorage<S, S::Allocator>,
         _tx_hash: Bytes32,
@@ -1087,6 +1100,7 @@ where
                 &refund_recipient,
                 &token_to_refund,
                 false,
+                Config::SIMULATION,
             )
             .map_err(|e| match e {
                 // Balance errors can not be cascaded
@@ -1115,6 +1129,7 @@ where
                 &coinbase,
                 &token_to_pay_operator,
                 false,
+                Config::SIMULATION,
             )
             .map_err(|e| match e {
                 // Balance errors can not be cascaded
