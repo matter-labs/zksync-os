@@ -12,7 +12,6 @@ use crate::{require, require_internal};
 use constants::L1_TX_INTRINSIC_NATIVE_COST;
 use constants::L1_TX_NATIVE_PRICE;
 use constants::L2_TX_INTRINSIC_NATIVE_COST;
-use constants::SIMULATION_NATIVE_PER_GAS;
 use constants::{
     L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_PUBDATA, L2_TX_INTRINSIC_GAS, L2_TX_INTRINSIC_PUBDATA,
     MAX_BLOCK_GAS_LIMIT,
@@ -141,8 +140,10 @@ where
         // For L1->L2 txs, we use a constant native price to avoid censorship.
         let native_price = L1_TX_NATIVE_PRICE;
         let native_per_gas = if is_priority_op {
-            if Config::SIMULATION {
-                SIMULATION_NATIVE_PER_GAS
+            if Config::SIMULATION && gas_price.is_zero() {
+                // For simulation, if gas price isn't set, we use base fee
+                // for native calculation
+                system.get_eip1559_basefee().div_ceil(native_price)
             } else {
                 gas_price.div_ceil(native_price)
             }
@@ -552,7 +553,7 @@ where
 
         let pubdata_price = system.get_pubdata_price();
         let native_price = system.get_native_price();
-        let gas_price = Self::get_gas_price(
+        let gas_price = Self::get_gas_price::<Config>(
             system,
             transaction.max_fee_per_gas(),
             transaction.max_priority_fee_per_gas(),
@@ -562,8 +563,10 @@ where
         };
         let native_per_gas = if cfg!(feature = "resources_for_tester") {
             U256::from(crate::bootloader::constants::TESTER_NATIVE_PER_GAS)
-        } else if Config::SIMULATION {
-            SIMULATION_NATIVE_PER_GAS
+        } else if Config::SIMULATION && gas_price.is_zero() {
+            // For simulation, if gas price isn't set, we use base fee
+            // for native calculation
+            system.get_eip1559_basefee().div_ceil(native_price)
         } else {
             U256::from(gas_price).div_ceil(native_price)
         };
@@ -975,7 +978,7 @@ where
         }
     }
 
-    fn get_gas_price(
+    fn get_gas_price<Config: BasicBootloaderExecutionConfig>(
         system: &mut System<S>,
         max_fee_per_gas: &U256,
         max_priority_fee_per_gas: Option<&U256>,
@@ -987,13 +990,21 @@ where
             TxError::Validation(InvalidTransaction::PriorityFeeGreaterThanMaxFee,),
             system
         )?;
-        require!(
-            &base_fee <= max_fee_per_gas,
-            TxError::Validation(InvalidTransaction::BaseFeeGreaterThanMaxFee,),
-            system
-        )?;
-        let priority_fee_per_gas = (*max_priority_fee_per_gas).min(max_fee_per_gas - base_fee);
-        Ok(base_fee + priority_fee_per_gas)
+        if !Config::SIMULATION {
+            // Skip this check on simulation
+            require!(
+                &base_fee <= max_fee_per_gas,
+                TxError::Validation(InvalidTransaction::BaseFeeGreaterThanMaxFee,),
+                system
+            )?;
+        }
+        let priority_fee_per_gas =
+            (*max_priority_fee_per_gas).min(max_fee_per_gas.saturating_sub(base_fee));
+        // Normally, max_fee_per_gas >= base_fee + priority_fee_per_gas,
+        // but we add this min to make it work in simulation too, where we do not
+        // enforce max_fee_per_gas > base_fee.
+        let gas_price = (base_fee + priority_fee_per_gas).min(*max_fee_per_gas);
+        Ok(gas_price)
     }
 
     // Returns (refund_info, total_pubdata_used)
