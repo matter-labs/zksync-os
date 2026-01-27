@@ -1523,3 +1523,61 @@ fn test_simulation_gas_and_native_used() {
         "Mismatch in native used"
     );
 }
+
+/// Check that gas price doesn't affect gas used in simulation.
+/// Regression for an issue where the lack of fee payment during
+/// simulation resulted in underestimated pubdata length, and thus
+/// underestimated gas usage.
+#[test]
+fn test_simulation_gas_used_regression() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let target_address = address!("4242000000000000000000000000000000000000");
+    chain.set_balance(B160::from_be_bytes(wallet.address().0 .0), U256::MAX);
+
+    // First tx, 0 gas price.
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 0,
+            gas_limit: 2_000_000,
+            to: TxKind::Call(target_address),
+            value: U256::ZERO,
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let block_context = BlockContext {
+        eip1559_basefee: U256::from(91161500u64),
+        native_price: U256::from(911615u64),
+        pubdata_price: U256::from(10303657632u64 * 4),
+        ..Default::default()
+    };
+    let result_simulation = chain.simulate_block(vec![tx.clone()], Some(block_context.clone()));
+    let first_tx = result_simulation.tx_results[0]
+        .clone()
+        .expect("Must succeed");
+
+    // Second tx, realistic gas price
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 91161500,
+            gas_limit: 2_000_000,
+            to: TxKind::Call(target_address),
+            value: U256::ZERO,
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    let result_simulation = chain.simulate_block(vec![tx.clone()], Some(block_context));
+    let second_tx = result_simulation.tx_results[0]
+        .clone()
+        .expect("Must succeed");
+    assert_eq!(first_tx.gas_used, second_tx.gas_used);
+    assert_eq!(first_tx.native_used, second_tx.native_used);
+    assert_eq!(first_tx.pubdata_used, second_tx.pubdata_used);
+}
