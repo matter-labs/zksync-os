@@ -503,16 +503,11 @@ where
     ))
 }
 
-/// Transfers [value] from the treasury (0x800a) to address [to].
+/// Transfers [value] from the treasury account to address [to].
 ///
-/// This replaces the previous minting mechanism. Instead of creating new tokens,
-/// tokens are transferred from a pre-funded treasury account at genesis.
-///
-/// # Errors
 /// Returns `TreasuryTransferFailed` if:
 /// - Treasury has insufficient balance
-/// - Balance overflow occurs (recipient balance > U256::MAX)
-///
+/// - Balance overflow occurs
 pub fn transfer_from_treasury<'a, S: EthereumLikeTypes + 'a>(
     system: &mut System<S>,
     nominal_token_value: &U256,
