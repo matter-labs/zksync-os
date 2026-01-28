@@ -69,7 +69,7 @@ where
 
     let mut resources = available_resources;
 
-    // Charge EVM gas for the mint operation. This is a temporary solution, so we don't care about EVM compatibility anyway
+    // Charge EVM gas for the mint operation. This hook should be used during upgrades only, so we don't care about EVM compatibility
     evm_interpreter::charge_native_and_ergs::<S::Resources>(
         &mut resources,
         HOOK_BASE_NATIVE_COST,
@@ -151,7 +151,7 @@ fn mint_nominal_token_value<S: EthereumLikeTypes>(
 where
     S::IO: IOSubsystemExt,
 {
-    // Charge EVM gas for the mint operation. This is a temporary solution, so we don't care about EVM compatibility anyway
+    // Charge EVM gas for the mint operation. This hook should be used during upgrades only, so we don't care about EVM compatibility
     match system.io.update_account_nominal_token_balance(
         ExecutionEnvironmentType::EVM,
         resources,

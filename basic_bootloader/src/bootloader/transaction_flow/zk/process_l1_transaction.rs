@@ -259,7 +259,7 @@ where
         &mut resources,
     )?;
 
-    // Mint fee to bootloader
+    // Transfer fee from treasury to operator
     // We already checked that total_gas_refund <= gas_limit
     let pay_to_operator = U256::from(gas_used)
         .checked_mul(U256::from(gas_price))

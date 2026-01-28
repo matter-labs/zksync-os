@@ -53,4 +53,4 @@ To summarize, the lifecycle of an L2 transaction can be visualized as follows:
 
 ## L1 -> L2 transactions
 
-The main difference in the processing of L1 transactions is that there is no validation step. The value for this transaction is minted, as those funds are now locked in the L1 bridge. For now, deployment transactions from L1 transactions are not supported.
+The main difference in the processing of L1 transactions is that there is no validation step. The value for this transaction is transferred from the treasury ("minted"), as those funds are now locked in the L1 bridge. For now, deployment transactions from L1 transactions are not supported.
