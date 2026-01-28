@@ -19,7 +19,6 @@ fn run_transactions_as_eoa(
     encoded_txs: Vec<EncodedTx>,
 ) -> BlockOutput {
     let mut chain = rig::Chain::empty(None);
-    chain.initialize_treasury();
     chain.set_balance(
         B160::from_be_bytes(eoa_address.0 .0),
         U256::from(1_000_000_000_000_000_u64),

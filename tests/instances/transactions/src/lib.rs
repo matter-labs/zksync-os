@@ -32,7 +32,6 @@ fn run_config() -> Option<rig::chain::RunConfig> {
 #[test]
 fn run_base_system() {
     let mut chain = Chain::empty(None);
-    chain.initialize_treasury();
     // FIXME: this address looks very similar to bridgehub/shared bridge on gateway.
     // Which seems to suggest that it is special.
     // Consider changing this one to be more "random".
