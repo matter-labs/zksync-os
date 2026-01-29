@@ -1003,7 +1003,7 @@ where
         // Normally, max_fee_per_gas >= base_fee + priority_fee_per_gas,
         // but we add this min to make it work in simulation too, where we do not
         // enforce max_fee_per_gas > base_fee.
-        let gas_price = (base_fee + priority_fee_per_gas).min(*max_fee_per_gas);
+        let gas_price = (base_fee.saturating_add(priority_fee_per_gas)).min(*max_fee_per_gas);
         Ok(gas_price)
     }
 
