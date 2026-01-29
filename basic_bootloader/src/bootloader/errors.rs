@@ -249,6 +249,7 @@ zk_ee::define_subsystem!(Bootloader,
 interface BootloaderInterfaceError {
     CantPayRefundOverflow,
     CantPayOperatorOverflow,
+    MintingBalanceOverflow,
     TopLevelInsufficientBalance,
     TreasuryTransferFailed,
 },
