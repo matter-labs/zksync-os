@@ -341,6 +341,7 @@ where
                     from,
                     &value,
                     true,
+                    false,
                 )
             })
             .map_err(|e| match e {
@@ -548,6 +549,7 @@ where
                     &receiver,
                     &refund,
                     false,
+                    Config::SIMULATION,
                 )
                 .map_err(|e| match e {
                     // Balance errors can not be cascaded
@@ -617,6 +619,7 @@ where
                     &coinbase,
                     &fee,
                     false,
+                    Config::SIMULATION,
                 )
                 .map_err(|e| match e {
                     // Balance errors can not be cascaded

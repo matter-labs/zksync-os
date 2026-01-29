@@ -245,6 +245,7 @@ where
                     &from,
                     &fee,
                     true,
+                    Config::SIMULATION,
                 )
             })
             .map_err(|e| match e {
@@ -451,6 +452,7 @@ where
                     &refund_recipient,
                     &token_to_refund,
                     false,
+                    Config::SIMULATION,
                 )
                 .map_err(|e| match e {
                     // Balance errors can not be cascaded
@@ -505,6 +507,7 @@ where
                 &coinbase,
                 &token_to_pay_operator,
                 false,
+                Config::SIMULATION,
             )
             .map_err(|e| match e {
                 // Balance errors can not be cascaded

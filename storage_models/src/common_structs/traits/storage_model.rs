@@ -137,6 +137,7 @@ pub trait StorageModel: Sized + SnapshottableIo {
             BalanceSubsystemError,
         >,
         oracle: &mut impl IOOracle,
+        fee_payment_in_simulation: bool,
     ) -> Result<
         <Self::IOTypes as zk_ee::types_config::SystemIOTypesConfig>::NominalTokenValue,
         BalanceSubsystemError,

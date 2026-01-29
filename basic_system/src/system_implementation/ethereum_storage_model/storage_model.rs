@@ -338,6 +338,7 @@ impl<
             BalanceSubsystemError,
         >,
         oracle: &mut impl IOOracle,
+        _fee_payment_in_simulation: bool,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::NominalTokenValue, BalanceSubsystemError>
     {
         self.account_cache

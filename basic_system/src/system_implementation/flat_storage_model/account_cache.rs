@@ -60,6 +60,10 @@ pub struct AccountPropertiesMetadata {
     /// In practice, it can be set to `true` only during special protocol upgrade txs.
     /// For protocol upgrades it's ensured by governance that bytecodes are already published separately.
     pub not_publish_bytecode: bool,
+    /// Special flag to not compress balance diff for pubdata size estimation.
+    /// It's used to have a conservative approximation of pubdata in simulation,
+    /// when due to the gas price being set to 0 there might not be a diff.
+    pub not_compress_balance: bool,
 }
 
 type AddressItem<'a, A> = HistoryMapItemRefMut<
@@ -298,6 +302,7 @@ impl<
         preimages_cache: &mut impl PreimageCacheModel<Resources = R, PreimageRequest = PreimageRequest>,
         oracle: &mut impl IOOracle,
         is_selfdestruct: bool,
+        fee_payment_in_simulation: bool,
     ) -> Result<U256, BalanceSubsystemError> {
         let mut account_data = self.materialize_element::<PROOF_ENV>(
             ee_type,
@@ -317,8 +322,11 @@ impl<
         let cur = account_data.current().value().balance;
         let new = update_fn(&cur)?;
         account_data.update(|cache_record| {
-            cache_record.update(|v, _| {
+            cache_record.update(|v, m| {
                 v.balance = new;
+                // Once an account's balance has been affected by fee
+                // payment, we keep this flag set.
+                m.not_compress_balance |= fee_payment_in_simulation;
                 Ok(())
             })
         })?;
@@ -357,6 +365,7 @@ impl<
                 preimages_cache,
                 oracle,
                 is_selfdestruct,
+                false, // fee_payment_in_simulation
             )
         };
 
@@ -450,6 +459,7 @@ impl<
                     at_tx_start.value(),
                     current.value(),
                     current.metadata().not_publish_bytecode,
+                    current.metadata().not_compress_balance,
                 )
                 .unwrap();
             }
@@ -695,6 +705,7 @@ impl<
         storage: &mut NewStorageWithAccountPropertiesUnderHash<A, SF, M, R, P>,
         preimages_cache: &mut BytecodeAndAccountDataPreimagesStorage<R, A>,
         oracle: &mut impl IOOracle,
+        fee_payment_in_simulation: bool,
     ) -> Result<U256, BalanceSubsystemError> {
         self.update_nominal_token_value_inner::<PROOF_ENV>(
             ee_type,
@@ -705,6 +716,7 @@ impl<
             preimages_cache,
             oracle,
             false,
+            fee_payment_in_simulation,
         )
     }
 

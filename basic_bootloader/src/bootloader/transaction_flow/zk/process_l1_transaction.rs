@@ -267,17 +267,22 @@ where
     let mut inf_resources = S::Resources::FORMAL_INFINITE;
 
     let coinbase = system.get_coinbase();
-    mint_token::<S>(system, &pay_to_operator, &coinbase, &mut inf_resources).map_err(
-        |e| match e.root_cause() {
-            RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
-                internal_error!("Out of ergs on infinite ergs").into()
-            }
-            RootCause::Runtime(RuntimeError::FatalRuntimeError(_)) => {
-                internal_error!("Out of native on infinite").into()
-            }
-            _ => e,
-        },
-    )?;
+    mint_token::<S>(
+        system,
+        &pay_to_operator,
+        &coinbase,
+        &mut inf_resources,
+        Config::SIMULATION,
+    )
+    .map_err(|e| match e.root_cause() {
+        RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
+            internal_error!("Out of ergs on infinite ergs").into()
+        }
+        RootCause::Runtime(RuntimeError::FatalRuntimeError(_)) => {
+            internal_error!("Out of native on infinite").into()
+        }
+        _ => e,
+    })?;
 
     // Refund
     let to_refund_recipient = match result {
@@ -313,6 +318,7 @@ where
             &to_refund_recipient,
             &refund_recipient,
             &mut inf_resources,
+            Config::SIMULATION,
         )
         .map_err(|e| -> BootloaderSubsystemError {
             match e.root_cause() {
@@ -405,7 +411,13 @@ where
     if value > U256::ZERO {
         resources
             .with_infinite_ergs(|inf_resources| {
-                mint_token::<S>(system, &value, &from, inf_resources)
+                mint_token::<S>(
+                    system,
+                    &value,
+                    &from,
+                    inf_resources,
+                    false, // Not a fee-related mint
+                )
             })
             .map_err(|e| match e.root_cause() {
                 RootCause::Runtime(RuntimeError::OutOfErgs(_)) => {
@@ -499,6 +511,7 @@ pub fn mint_token<'a, S: EthereumLikeTypes + 'a>(
     nominal_token_value: &U256,
     to: &B160,
     resources: &mut S::Resources,
+    fee_payment_in_simulation: bool,
 ) -> Result<(), BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
@@ -513,6 +526,7 @@ where
             to,
             nominal_token_value,
             false,
+            fee_payment_in_simulation,
         )
         .map_err(|e| -> BootloaderSubsystemError {
             match e {

@@ -158,6 +158,7 @@ where
         beneficiary,
         &nominal_token_value,
         false, // false = add to balance, true = subtract from balance
+        false, // only set to true for fee-related operations on simulation mode
     ) {
         Ok(_) => Ok(()),
         Err(SubsystemError::LeafUsage(_)) => Err(SystemError::LeafDefect(internal_error!(

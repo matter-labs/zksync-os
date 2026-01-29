@@ -126,15 +126,25 @@ impl ValueDiffCompressionStrategy {
     }
 
     pub fn optimal_compression_length_u256(initial_value: U256, final_value: U256) -> u8 {
+        Self::optimal_compression_length_u256_optional(initial_value, final_value, false)
+    }
+
+    pub fn optimal_compression_length_u256_optional(
+        initial_value: U256,
+        final_value: U256,
+        no_compression: bool,
+    ) -> u8 {
         // worst case "Nothing" strategy, always possible to encode
         let mut optimal = Self::Nothing
             .compression_length(initial_value, final_value)
             .unwrap();
 
         // so we don't check nothing here
-        for strategy in [Self::Add, Self::Sub, Self::Transform].iter() {
-            if let Some(length) = strategy.compression_length(initial_value, final_value) {
-                optimal = core::cmp::min(optimal, length);
+        if !no_compression {
+            for strategy in [Self::Add, Self::Sub, Self::Transform].iter() {
+                if let Some(length) = strategy.compression_length(initial_value, final_value) {
+                    optimal = core::cmp::min(optimal, length);
+                }
             }
         }
 
