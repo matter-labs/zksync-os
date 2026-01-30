@@ -166,7 +166,7 @@ pub fn encode_tx(
                     U256::ZERO
                 }
             } else if tx_type == 0x7f {
-                U256::from_be_bytes(value).add(U256::from(gas_limit * max_fee_per_gas))
+                U256::from(gas_limit * max_fee_per_gas)
             } else {
                 U256::ZERO
             })

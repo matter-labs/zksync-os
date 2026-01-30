@@ -128,11 +128,8 @@ where
         .ok_or(internal_error!("gp*gl"))?;
     let value = transaction.value.read();
     let total_deposited = transaction.reserved[0].read();
-    let needed_amount = value
-        .checked_add(U256::from(tx_internal_cost))
-        .ok_or(internal_error!("v+tic"))?;
     require_internal!(
-        total_deposited >= needed_amount,
+        total_deposited >= tx_internal_cost,
         "Deposited amount too low",
         system
     )?;
@@ -299,15 +296,15 @@ where
                 .ok_or(internal_error!("td-pto"))
         }
         ExecutionResult::Success { .. } => {
-            // If the transaction succeeds, then it is assumed that msg.value
-            // was transferred correctly.
+            // If the transaction succeeds, then it is assumed that the
+            // mint to `from` address was transferred correctly too.
             // However, the remaining value deposited will be given to
             // the refund recipient.
-            let value_plus_fee = value
-                .checked_add(pay_to_operator)
-                .ok_or(internal_error!("v+pto"))?;
-            total_deposited
-                .checked_sub(value_plus_fee)
+            let tx_internal_cost = gas_price
+                .checked_mul(U256::from(transaction.gas_limit.read()))
+                .ok_or(internal_error!("gp*gl"))?;
+            tx_internal_cost
+                .checked_sub(pay_to_operator)
                 .ok_or(internal_error!("td-vpf"))
         }
     }?;
@@ -407,13 +404,21 @@ where
     // Start a frame, to revert minting of value if execution fails
     let rollback_handle = system.start_global_frame()?;
 
-    // First we transfer value from treasury
-    if value > U256::ZERO {
+    let tx_internal_cost = gas_price
+        .checked_mul(U256::from(transaction.gas_limit.read()))
+        .ok_or(internal_error!("gp*gl"))?;
+    let total_deposited = transaction.reserved[0].read();
+    let to_transfer = total_deposited
+        .checked_sub(tx_internal_cost)
+        .ok_or(internal_error!("v+tic"))?;
+
+    // First we transfer from treasury
+    if to_transfer > U256::ZERO {
         resources
             .with_infinite_ergs(|inf_resources| {
                 transfer_from_treasury::<S>(
                     system,
-                    &value,
+                    &to_transfer,
                     &from,
                     inf_resources,
                     false, // Not a fee-related mint
