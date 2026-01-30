@@ -234,6 +234,8 @@ fn test_l1_transactions_are_not_filtered_by_validator() {
         hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .unwrap();
 
+    chain.set_balance(B160::from_be_bytes(from.0 .0), U256::from(10_000_000));
+
     let mk_l1_tx = |nonce: u64, value: u64| {
         let tx = TransactionRequest {
             from: Some(from),

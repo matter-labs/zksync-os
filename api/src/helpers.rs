@@ -16,7 +16,6 @@ use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use forward_system::run::PreimageSource;
 use ruint::aliases::U256;
 use std::alloc::Global;
-use std::ops::Add;
 use zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoot;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::EIP7702_DELEGATION_MARKER;

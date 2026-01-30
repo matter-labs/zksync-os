@@ -179,6 +179,10 @@ fn run_base_system() {
         .set_balance(
             B160::from_be_bytes(eoa_wallet.address().0 .0),
             U256::from(1_000_000_000_000_000_u64),
+        ) // Set the balance for L1 -> L2 tx msg.value transfer
+        .set_balance(
+            B160::from_be_bytes(address!("1234000000000000000000000000000000000000").into()),
+            alloy::primitives::U256::from(100),
         );
 
     let output = chain.run_block(transactions, None, None, run_config());
