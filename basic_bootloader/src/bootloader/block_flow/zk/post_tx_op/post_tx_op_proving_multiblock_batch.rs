@@ -184,6 +184,7 @@ where
             upgrade_tx_hash,
             io.interop_root_storage.iter(),
             settlement_layer_chain_id,
+            block_data.current_transaction_number,
         );
 
         Ok(io.oracle)
