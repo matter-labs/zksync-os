@@ -9,6 +9,7 @@ use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
+use rig::chain::RunConfig;
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::testing_utils::install_system_contracts;
@@ -1961,8 +1962,13 @@ fn test_treasury_insufficient_balance_failure() {
         rig::utils::encode_l1_tx(tx)
     };
 
+    let config = RunConfig {
+        skip_minting_tokens_to_treasury: true,
+        ..Default::default()
+    };
+
     // This should fail due to insufficient treasury balance
-    let result = chain.run_block_no_panic(vec![l1_tx], None, None, None);
+    let result = chain.run_block_no_panic(vec![l1_tx], None, None, Some(config));
 
     // Verify transaction fails due to treasury insufficient balance
     assert!(
