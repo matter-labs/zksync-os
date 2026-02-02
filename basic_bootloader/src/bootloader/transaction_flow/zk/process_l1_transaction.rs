@@ -100,7 +100,7 @@ where
 
     let native_prepaid_from_gas = native_per_gas.saturating_mul(gas_limit);
 
-    let (calldata_tokens, _minimal_gas_used) =
+    let (calldata_tokens, minimal_gas_used) =
         compute_calldata_tokens(system, gas_limit, transaction.calldata())?;
 
     let ResourcesForTx {
@@ -254,7 +254,7 @@ where
         system,
         to_charge_for_pubdata,
         gas_limit,
-        0, //minimal_gas_used
+        minimal_gas_used,
         native_per_gas,
         &mut resources,
     )?;
