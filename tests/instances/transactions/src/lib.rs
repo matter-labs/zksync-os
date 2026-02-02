@@ -25,6 +25,7 @@ fn run_config() -> Option<rig::chain::RunConfig> {
         app: Some("for_tests".to_string()),
         only_forward: false,
         check_storage_diff_hashes: true,
+        skip_minting_tokens_to_treasury: false,
         ..Default::default()
     })
 }
@@ -1790,4 +1791,190 @@ fn test_simulation_gas_used_regression() {
     assert_eq!(first_tx.gas_used, second_tx.gas_used);
     assert_eq!(first_tx.native_used, second_tx.native_used);
     assert_eq!(first_tx.pubdata_used, second_tx.pubdata_used);
+}
+
+/// Regression test for treasury-based token distribution
+/// Tests that L1→L2 transactions correctly transfer fees and value from the treasury
+/// instead of minting new tokens.
+#[test]
+fn test_treasury_based_token_distribution_regression() {
+    use rig::system_hooks::addresses_constants::L2_BASE_TOKEN_ADDRESS;
+
+    let mut chain = Chain::empty(None);
+
+    // Manually ensure treasury is funded for this test
+    chain.mint_tokens_to_treasury();
+
+    // Create L1 transaction sender
+    let l1_sender = address!("1234000000000000000000000000000000000000");
+    let l1_recipient = address!("5678000000000000000000000000000000000000");
+    let coinbase = address!("1000000000000000000000000000000000000000"); // operator
+    let refund_recipient = address!("0000000000000000000000000000000000000000"); // refund recipient (zero address)
+
+    // Record initial treasury balance
+    let treasury_initial_balance = chain.get_account_properties(&L2_BASE_TOKEN_ADDRESS).balance;
+
+    // Record initial operator balance
+    let operator_initial_balance = chain
+        .get_account_properties(&B160::from_be_bytes(coinbase.into_array()))
+        .balance;
+
+    // Record initial recipient balance
+    let recipient_initial_balance = chain
+        .get_account_properties(&B160::from_be_bytes(l1_recipient.into_array()))
+        .balance;
+
+    // Record initial refund recipient balance
+    let refund_recipient_initial_balance = chain
+        .get_account_properties(&B160::from_be_bytes(refund_recipient.into_array()))
+        .balance;
+
+    // Create L1→L2 transaction with value transfer and fees
+    let gas_price = 1000u64;
+    let gas_limit = 100_000u64;
+    let value_to_transfer = U256::from(1_000_000u64);
+
+    let l1_tx = {
+        let tx = TransactionRequest {
+            chain_id: Some(37),
+            from: Some(l1_sender),
+            to: Some(TxKind::Call(l1_recipient)),
+            gas: Some(gas_limit),
+            max_fee_per_gas: Some(gas_price.into()),
+            max_priority_fee_per_gas: Some(gas_price.into()),
+            value: Some(value_to_transfer),
+            nonce: Some(0),
+            ..TransactionRequest::default()
+        };
+        rig::utils::encode_l1_tx(tx)
+    };
+
+    let block_context = BlockContext {
+        coinbase: B160::from_be_bytes(coinbase.into_array()),
+        ..Default::default()
+    };
+    let output = chain.run_block(vec![l1_tx], Some(block_context), None, None);
+
+    // Verify transaction succeeded
+    assert!(
+        output.tx_results[0].is_ok(),
+        "L1→L2 transaction should succeed, got: {:?}",
+        output.tx_results[0]
+    );
+
+    let tx_result = output.tx_results[0].as_ref().unwrap();
+    assert!(
+        tx_result.is_success(),
+        "L1→L2 transaction should be successful"
+    );
+
+    // Calculate expected fee payments
+    let gas_used = tx_result.gas_used;
+    let fee_paid_to_operator = U256::from(gas_used) * U256::from(gas_price);
+
+    // Get final balances
+    let treasury_final_balance = chain.get_account_properties(&L2_BASE_TOKEN_ADDRESS).balance;
+
+    let operator_final_balance = chain
+        .get_account_properties(&B160::from_be_bytes(coinbase.into_array()))
+        .balance;
+
+    let recipient_final_balance = chain
+        .get_account_properties(&B160::from_be_bytes(l1_recipient.into_array()))
+        .balance;
+
+    let refund_recipient_final_balance = chain
+        .get_account_properties(&B160::from_be_bytes(refund_recipient.into_array()))
+        .balance;
+
+    // Calculate total amount that should go to operator (fee + refund)
+    // Refund recipient is 0 in this test
+    let gas_limit = 100_000u64;
+    let gas_refund = gas_limit - gas_used;
+    let refund_amount = U256::from(gas_refund) * U256::from(gas_price);
+    let total_to_operator = fee_paid_to_operator;
+    let total_to_refund_recipient = refund_amount;
+
+    // Verify treasury balance decreased by total amount (fees + refund + value)
+    let treasury_decrease = treasury_initial_balance - treasury_final_balance;
+    let expected_treasury_decrease =
+        total_to_operator + total_to_refund_recipient + value_to_transfer;
+    assert_eq!(
+        treasury_decrease, expected_treasury_decrease,
+        "Treasury should decrease by total operator payment plus refund and value transferred"
+    );
+
+    // Verify operator received total payment from treasury (fee + refund)
+    let operator_increase = operator_final_balance - operator_initial_balance;
+    assert_eq!(
+        operator_increase, total_to_operator,
+        "Operator should receive fee + refund from treasury"
+    );
+
+    // Verify recipient received value from treasury (not minted)
+    let recipient_increase = recipient_final_balance - recipient_initial_balance;
+    assert_eq!(
+        recipient_increase, value_to_transfer,
+        "Recipient should receive exact value amount from treasury"
+    );
+
+    // Verify refund recipient received value from treasury (not minted)
+    let refund_recipient_increase =
+        refund_recipient_final_balance - refund_recipient_initial_balance;
+    assert_eq!(
+        refund_recipient_increase, total_to_refund_recipient,
+        "Refund recipient should receive correct refund amount from treasury"
+    );
+}
+
+/// Test treasury transfer failure when treasury has insufficient balance
+#[test]
+fn test_treasury_insufficient_balance_failure() {
+    use rig::system_hooks::addresses_constants::L2_BASE_TOKEN_ADDRESS;
+
+    let mut chain = Chain::empty(None);
+
+    // Manually set very low treasury balance instead of using default
+    let low_treasury_balance = U256::from(1000u64);
+    chain.set_balance(L2_BASE_TOKEN_ADDRESS, low_treasury_balance);
+
+    // Create L1→L2 transaction that requires more tokens than treasury has
+    let l1_sender = address!("1234000000000000000000000000000000000000");
+    let l1_recipient = address!("5678000000000000000000000000000000000000");
+
+    let gas_price = 1000u64;
+    let gas_limit = 100_000u64;
+    let value_to_transfer = U256::from(500_000u64); // More than treasury can cover
+
+    let l1_tx = {
+        let tx = TransactionRequest {
+            chain_id: Some(37),
+            from: Some(l1_sender),
+            to: Some(TxKind::Call(l1_recipient)),
+            gas: Some(gas_limit),
+            max_fee_per_gas: Some(gas_price.into()),
+            max_priority_fee_per_gas: Some(gas_price.into()),
+            value: Some(value_to_transfer),
+            nonce: Some(0),
+            ..TransactionRequest::default()
+        };
+        rig::utils::encode_l1_tx(tx)
+    };
+
+    // This should fail due to insufficient treasury balance
+    let result = chain.run_block_no_panic(vec![l1_tx], None, None, None);
+
+    // Verify transaction fails due to treasury insufficient balance
+    assert!(
+        result.is_err(),
+        "L1→L2 transaction should fail when treasury has insufficient balance"
+    );
+
+    // Verify the specific error is treasury transfer failed
+    let error_debug = format!("{:?}", result.unwrap_err());
+    assert!(
+        error_debug.contains("TreasuryTransferFailed"),
+        "Error should indicate treasury transfer failed, got: {}",
+        error_debug
+    );
 }
