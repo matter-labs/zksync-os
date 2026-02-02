@@ -464,7 +464,7 @@ where
         _result: &ExecutionResult<'a, <S as SystemTypes>::IOTypes>,
         _extra_data: Self::ExecutionBodyExtraData,
         _tracer: &mut impl Tracer<S>,
-    ) -> Result<(), InternalError> {
+    ) -> Result<(), BootloaderSubsystemError> {
         system_log!(
             system,
             "Have {:?} resources available before refund\n",

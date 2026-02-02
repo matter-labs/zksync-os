@@ -1,8 +1,8 @@
 use crate::require;
 use constants::{CALLDATA_TOKEN_GAS_COST, DEPLOYMENT_TX_EXTRA_INTRINSIC_GAS};
 use evm_interpreter::{ERGS_PER_GAS, MAX_INITCODE_SIZE};
-use zk_ee::internal_error;
-use zk_ee::system::errors::internal::InternalError;
+use zk_ee::out_of_native_resources;
+use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::metadata::basic_metadata::ZkSpecificPricingMetadata;
 use zk_ee::system::{Computational, Ergs, Resources};
 #[allow(unused_imports)]
@@ -162,13 +162,13 @@ pub fn get_resources_to_charge_for_pubdata<S: EthereumLikeTypes>(
     system: &mut System<S>,
     native_per_pubdata: u64,
     base_pubdata: Option<u64>,
-) -> Result<(u64, S::Resources), InternalError> {
+) -> Result<(u64, S::Resources), SystemError> {
     let current_pubdata_spent = system
         .net_pubdata_used()?
         .saturating_sub(base_pubdata.unwrap_or(0));
     let native = current_pubdata_spent
         .checked_mul(native_per_pubdata)
-        .ok_or(internal_error!("cps*epp"))?;
+        .ok_or(out_of_native_resources!())?;
     let native = <S::Resources as zk_ee::system::Resources>::Native::from_computational(native);
     Ok((current_pubdata_spent, S::Resources::from_native(native)))
 }
@@ -186,7 +186,7 @@ pub fn check_enough_resources_for_pubdata<S: EthereumLikeTypes>(
     native_per_pubdata: u64,
     resources: &S::Resources,
     base_pubdata: Option<u64>,
-) -> Result<(bool, S::Resources, u64), InternalError> {
+) -> Result<(bool, S::Resources, u64), SystemError> {
     let (pubdata_used, resources_for_pubdata) =
         get_resources_to_charge_for_pubdata(system, native_per_pubdata, base_pubdata)?;
     system_log!(system, "Checking gas for pubdata, resources_for_pubdata: {resources_for_pubdata:?}, resources: {resources:?}\n");

@@ -18,7 +18,6 @@ use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::TxProcessingOutput;
 use core::fmt::Write;
 use errors::cascade::CascadedError;
-use errors::internal::InternalError;
 use errors::root_cause::RootCause;
 use errors::system::SystemError;
 use metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
@@ -367,7 +366,7 @@ where
         _result: &ExecutionResult<'a, <S as SystemTypes>::IOTypes>,
         pubdata_info: Self::ExecutionBodyExtraData,
         _tracer: &mut impl Tracer<S>,
-    ) -> Result<(), InternalError> {
+    ) -> Result<(), BootloaderSubsystemError> {
         use evm_interpreter::ERGS_PER_GAS;
 
         // Just used for computing native used
