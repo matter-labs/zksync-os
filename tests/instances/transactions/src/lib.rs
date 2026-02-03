@@ -1799,7 +1799,7 @@ fn test_simulation_gas_used_regression() {
 /// instead of minting new tokens.
 #[test]
 fn test_treasury_based_token_distribution_regression() {
-    use rig::system_hooks::addresses_constants::L2_BASE_TOKEN_ADDRESS;
+    use rig::system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
 
     let mut chain = Chain::empty(None);
 
@@ -1813,7 +1813,9 @@ fn test_treasury_based_token_distribution_regression() {
     let refund_recipient = address!("0000000000000000000000000000000000000000"); // refund recipient (zero address)
 
     // Record initial treasury balance
-    let treasury_initial_balance = chain.get_account_properties(&L2_BASE_TOKEN_ADDRESS).balance;
+    let treasury_initial_balance = chain
+        .get_account_properties(&BASE_TOKEN_HOLDER_ADDRESS)
+        .balance;
 
     // Record initial operator balance
     let operator_initial_balance = chain
@@ -1874,7 +1876,9 @@ fn test_treasury_based_token_distribution_regression() {
     let fee_paid_to_operator = U256::from(gas_used) * U256::from(gas_price);
 
     // Get final balances
-    let treasury_final_balance = chain.get_account_properties(&L2_BASE_TOKEN_ADDRESS).balance;
+    let treasury_final_balance = chain
+        .get_account_properties(&BASE_TOKEN_HOLDER_ADDRESS)
+        .balance;
 
     let operator_final_balance = chain
         .get_account_properties(&B160::from_be_bytes(coinbase.into_array()))
@@ -1931,13 +1935,13 @@ fn test_treasury_based_token_distribution_regression() {
 /// Test treasury transfer failure when treasury has insufficient balance
 #[test]
 fn test_treasury_insufficient_balance_failure() {
-    use rig::system_hooks::addresses_constants::L2_BASE_TOKEN_ADDRESS;
+    use rig::system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
 
     let mut chain = Chain::empty(None);
 
     // Manually set very low treasury balance instead of using default
     let low_treasury_balance = U256::from(1000u64);
-    chain.set_balance(L2_BASE_TOKEN_ADDRESS, low_treasury_balance);
+    chain.set_balance(BASE_TOKEN_HOLDER_ADDRESS, low_treasury_balance);
 
     // Create L1→L2 transaction that requires more tokens than treasury has
     let l1_sender = address!("1234000000000000000000000000000000000000");

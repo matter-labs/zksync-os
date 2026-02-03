@@ -21,7 +21,7 @@ pub const SET_BYTECODE_ON_ADDRESS_HOOK_LOW: u16 = 0x7002;
 pub const SET_BYTECODE_ON_ADDRESS_HOOK: B160 =
     B160::from_limbs([SET_BYTECODE_ON_ADDRESS_HOOK_LOW as u64, 0, 0]);
 
-// L2 base token system contract needed for all envs (base token withdrawals)
+// L2 base token system contract
 pub const L2_BASE_TOKEN_ADDRESS_LOW: u16 = 0x800a;
 pub const L2_BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([L2_BASE_TOKEN_ADDRESS_LOW as u64, 0, 0]);
 
@@ -29,6 +29,11 @@ pub const L2_BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([L2_BASE_TOKEN_ADDRESS_
 // Only callable by L2_BASE_TOKEN_ADDRESS (0x800a) with 32-byte calldata containing mint amount
 pub const MINT_HOOK_ADDRESS_LOW: u16 = 0x7100;
 pub const MINT_HOOK_ADDRESS: B160 = B160::from_limbs([MINT_HOOK_ADDRESS_LOW as u64, 0, 0]);
+
+// Treasury contract used for "minting" base tokens on L2
+pub const BASE_TOKEN_HOLDER_ADDRESS_LOW: u32 = 0x10011;
+pub const BASE_TOKEN_HOLDER_ADDRESS: B160 =
+    B160::from_limbs([BASE_TOKEN_HOLDER_ADDRESS_LOW as u64, 0, 0]);
 
 // L2 interop root storage system contract
 pub const L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW: u32 = 0x10008;

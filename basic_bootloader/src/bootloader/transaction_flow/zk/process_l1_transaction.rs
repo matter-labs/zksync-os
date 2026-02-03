@@ -523,7 +523,7 @@ where
         "Transferring {nominal_token_value:?} tokens from treasury to {to:?}\n"
     );
 
-    let treasury_address = &system_hooks::addresses_constants::L2_BASE_TOKEN_ADDRESS;
+    let treasury_address = &system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
 
     let _ = system
         .io

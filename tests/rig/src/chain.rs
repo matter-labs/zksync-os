@@ -969,16 +969,16 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ///
     /// Initialize the L2 base token treasury with 2^128 - 1 balance.
     ///
-    /// This should be called during chain setup to pre-fund the treasury at address 0x800a.
+    /// This should be called during chain setup to pre-fund the treasury account.
     /// The treasury is used by the system to distribute tokens instead of minting them.
     ///
     pub fn mint_tokens_to_treasury(&mut self) {
-        use system_hooks::addresses_constants::L2_BASE_TOKEN_ADDRESS;
+        use system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
 
         // Set treasury balance to 2^128 - 1
         let treasury_balance = (U256::ONE << 128) - U256::ONE;
 
-        self.set_balance(L2_BASE_TOKEN_ADDRESS, treasury_balance);
+        self.set_balance(BASE_TOKEN_HOLDER_ADDRESS, treasury_balance);
     }
 
     ///
