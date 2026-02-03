@@ -806,8 +806,7 @@ fn test_mint_base_token_hook() {
         .checked_sub(initial_balance)
         .expect("Some tokens should be minted");
     assert_eq!(
-        actually_minted_amount,
-        mint_amount.checked_sub(U256::from(200_000 * 1000)).unwrap(),
-        "Minted amount should match the requested mint amount minus gas costs"
+        actually_minted_amount, mint_amount,
+        "Minted amount should match the requested mint amount"
     );
 }
