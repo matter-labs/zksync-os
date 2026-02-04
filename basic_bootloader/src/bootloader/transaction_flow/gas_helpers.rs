@@ -40,7 +40,11 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForTx<S> {
 ///
 /// Create initial resources for a transaction.
 ///
+/// IMPORTANT: if [is_l1_tx], then this function cannot fail
+/// with a validation error. Instead, saturating arithmetic
+/// should be applied.
 pub fn create_resources_for_tx<S: EthereumLikeTypes>(
+    system: &mut System<S>,
     gas_limit: u64,
     free_native: bool,
     native_prepaid_from_gas: u64,
@@ -139,7 +143,20 @@ where
             InvalidTransaction::OutOfGasDuringValidation,
         ))
     } else {
-        let gas_limit_for_tx = gas_limit - intrinsic_overhead;
+        // If an L1 transaction's gas limit doesn't cover the intrinsic gas,
+        // we just apply saturated arithmetic.
+        // L1 contracts enforce the gas limit to be >= the intrinsic cost, but
+        // if the L1 contracts are outdated and use a wrong constant for intrinsic
+        // gas, it's better to allow L1 transaction to go through rather than fail.
+        let gas_limit_for_tx = gas_limit
+            .checked_sub(intrinsic_overhead)
+            .unwrap_or_else(|| {
+                system_log!(
+                    system,
+                    "Gas limit < intrinsic gas for L1 tx, proceeding anyways"
+                );
+                0
+            });
         let ergs = gas_limit_for_tx.saturating_mul(ERGS_PER_GAS); // we checked at the very start that gas_limit * ERGS_PER_GAS doesn't overflow
         let main_resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
 

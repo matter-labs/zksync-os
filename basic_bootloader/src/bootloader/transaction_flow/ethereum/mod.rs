@@ -223,7 +223,7 @@ where
         _is_priority_op: bool,
         _tracer: &mut impl Tracer<S>,
         _validator: &mut impl TxValidator<S>,
-    ) -> Result<Self::ExecutionResult<'a>, TxError>
+    ) -> Result<Self::ExecutionResult<'a>, BootloaderSubsystemError>
     where
         S: 'a,
     {

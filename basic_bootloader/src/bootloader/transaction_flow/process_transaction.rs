@@ -29,7 +29,7 @@ where
                     if !is_first_tx {
                         Err(TxError::Validation(InvalidTransaction::UpgradeTxNotFirst))
                     } else {
-                        F::process_l1_transaction::<Config>(
+                        let r = F::process_l1_transaction::<Config>(
                             system,
                             system_functions,
                             memories,
@@ -37,10 +37,11 @@ where
                             false,
                             tracer,
                             validator,
-                        )
+                        )?;
+                        Ok(r)
                     }
                 } else if transaction.is_l1_l2() {
-                    F::process_l1_transaction::<Config>(
+                    let r = F::process_l1_transaction::<Config>(
                         system,
                         system_functions,
                         memories,
@@ -48,7 +49,8 @@ where
                         true,
                         tracer,
                         validator,
-                    )
+                    )?;
+                    Ok(r)
                 } else {
                     Self::process_l2_transaction::<Config>(
                         system,

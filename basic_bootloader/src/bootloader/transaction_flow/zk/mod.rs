@@ -586,7 +586,7 @@ where
         is_priority_op: bool,
         tracer: &mut impl Tracer<S>,
         validator: &mut impl TxValidator<S>,
-    ) -> Result<Self::ExecutionResult<'a>, TxError>
+    ) -> Result<Self::ExecutionResult<'a>, BootloaderSubsystemError>
     where
         S: 'a,
     {

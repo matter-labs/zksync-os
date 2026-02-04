@@ -88,8 +88,13 @@ where
     }
 
     // EIP-7623
-    let (calldata_tokens, minimal_gas_used) =
-        compute_calldata_tokens(system, tx_gas_limit, calldata)?;
+    let (calldata_tokens, minimal_gas_used) = compute_calldata_tokens(system, calldata, false);
+    #[cfg(feature = "eip_7623")]
+    require!(
+        minimal_gas_used <= tx_gas_limit,
+        InvalidTransaction::EIP7623IntrinsicGasIsTooLow,
+        system
+    )?;
 
     let pubdata_price = system.get_pubdata_price();
     let native_price = system.get_native_price();
@@ -133,6 +138,7 @@ where
 
     // Now we will materialize resources, from which we will try to charge intrinsic cost on top
     let mut tx_resources = create_resources_for_tx::<S>(
+        system,
         tx_gas_limit,
         native_per_gas == 0,
         native_prepaid_from_gas,
@@ -437,31 +443,30 @@ where
 #[allow(unused_variables)]
 pub(crate) fn compute_calldata_tokens<S: SystemTypes>(
     system: &mut System<S>,
-    tx_gas_limit: u64,
     calldata: &[u8],
-) -> Result<(u64, u64), TxError> {
+    is_l1_tx: bool,
+) -> (u64, u64) {
     let zero_bytes = calldata.iter().filter(|byte| **byte == 0).count() as u64;
     let non_zero_bytes = (calldata.len() as u64) - zero_bytes;
     let zero_bytes_factor = zero_bytes.saturating_mul(CALLDATA_ZERO_BYTE_TOKEN_FACTOR);
     let non_zero_bytes_factor = non_zero_bytes.saturating_mul(CALLDATA_NON_ZERO_BYTE_TOKEN_FACTOR);
     let num_tokens = zero_bytes_factor.saturating_add(non_zero_bytes_factor);
+    let intrinsic_gas = if is_l1_tx {
+        L1_TX_INTRINSIC_L2_GAS
+    } else {
+        L2_TX_INTRINSIC_GAS
+    };
 
     #[cfg(feature = "eip_7623")]
     {
         let floor_tokens_gas_cost = num_tokens.saturating_mul(TOTAL_COST_FLOOR_PER_TOKEN);
-        let intrinsic_gas = (L2_TX_INTRINSIC_GAS).saturating_add(floor_tokens_gas_cost);
+        let intrinsic_gas = intrinsic_gas.saturating_add(floor_tokens_gas_cost);
 
-        require!(
-            intrinsic_gas <= tx_gas_limit,
-            InvalidTransaction::EIP7623IntrinsicGasIsTooLow,
-            system
-        )?;
-
-        Ok((num_tokens, intrinsic_gas))
+        (num_tokens, intrinsic_gas)
     }
 
     #[cfg(not(feature = "eip_7623"))]
     {
-        Ok((num_tokens, L2_TX_INTRINSIC_GAS))
+        (num_tokens, intrinsic_gas)
     }
 }

@@ -1,7 +1,7 @@
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::{
-    L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_NATIVE_COST, L1_TX_INTRINSIC_PUBDATA,
-    L1_TX_NATIVE_PRICE, UPGRADE_TX_NATIVE_PER_GAS,
+    L1_TX_INTRINSIC_NATIVE_COST, L1_TX_INTRINSIC_PUBDATA, L1_TX_NATIVE_PRICE,
+    UPGRADE_TX_NATIVE_PER_GAS,
 };
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError;
@@ -13,7 +13,6 @@ use crate::bootloader::transaction_flow::gas_helpers::{
 };
 use crate::bootloader::transaction_flow::refund_calculation::{compute_gas_refund, RefundInfo};
 use crate::bootloader::transaction_flow::{ExecutionOutput, ExecutionResult};
-use crate::bootloader::InvalidTransaction;
 use crate::bootloader::{BasicBootloader, BootloaderSubsystemError};
 use crate::require_internal;
 use arrayvec::ArrayVec;
@@ -54,7 +53,7 @@ pub(crate) fn process_l1_transaction<
     is_priority_op: bool,
     tracer: &mut impl Tracer<S>,
     validator: &mut impl TxValidator<S>,
-) -> Result<ZkTxResult<'a>, TxError>
+) -> Result<ZkTxResult<'a>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
     S::Metadata: ZkSpecificPricingMetadata
@@ -76,50 +75,30 @@ where
     // will be refunded to the user.
     let gas_per_pubdata = transaction.gas_per_pubdata_limit.read();
 
-    // For L1->L2 txs, we use a constant native price to avoid censorship.
-    let native_price = L1_TX_NATIVE_PRICE;
-    let native_per_gas = if is_priority_op {
-        if Config::SIMULATION && gas_price.is_zero() {
-            // For simulation, if gas price isn't set, we use base fee
-            // for native calculation
-            u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price)).ok_or(
-                TxError::Validation(InvalidTransaction::NativeResourcesAreTooExpensive),
-            )?
-        } else {
-            u256_try_to_u64(&gas_price.div_ceil(native_price)).ok_or(TxError::Validation(
-                InvalidTransaction::NativeResourcesAreTooExpensive,
-            ))?
-        }
-    } else {
-        UPGRADE_TX_NATIVE_PER_GAS
-    };
-
-    let native_per_pubdata = (gas_per_pubdata as u64)
-        .checked_mul(native_per_gas)
-        .ok_or(TxError::Validation(InvalidTransaction::PubdataPriceTooHigh))?;
-
-    let native_prepaid_from_gas = native_per_gas.saturating_mul(gas_limit);
-
-    let (calldata_tokens, minimal_gas_used) =
-        compute_calldata_tokens(system, gas_limit, transaction.calldata())?;
-
-    let ResourcesForTx {
-        main_resources: mut resources,
-        withheld: withheld_resources,
-        intrinsic_computational_native_charged,
-    } = create_resources_for_tx::<S>(
-        gas_limit,
-        native_per_gas == 0,
-        native_prepaid_from_gas,
+    // Compute resource and fee information, making sure we handle
+    // all possible validation errors carefully.
+    // L1 transactions cannot be invalidated. Therefore, the following
+    // function makes sure L1 transactions are processable even when
+    // some checks that should be performed by the L1 don't hold.
+    let ResourceAndFeeInfo {
+        resources:
+            ResourcesForTx {
+                main_resources: mut resources,
+                withheld: withheld_resources,
+                intrinsic_computational_native_charged,
+            },
+        native_per_gas,
         native_per_pubdata,
-        false, // is_deployment
-        transaction.calldata().len() as u64,
-        calldata_tokens,
-        L1_TX_INTRINSIC_L2_GAS,
-        L1_TX_INTRINSIC_PUBDATA,
-        L1_TX_INTRINSIC_NATIVE_COST,
-        true,
+        minimal_gas_used,
+    } = prepare_and_check_resources::<S, Config>(
+        system,
+        transaction,
+        is_priority_op,
+        gas_limit,
+        gas_price,
+        gas_per_pubdata,
     )?;
+
     // Just used for computing native used
     let initial_resources = resources.clone();
 
@@ -364,6 +343,115 @@ where
         native_used,
         pubdata_used: pubdata_used + L1_TX_INTRINSIC_PUBDATA,
         blob_gas_used: 0,
+    })
+}
+
+struct ResourceAndFeeInfo<S: EthereumLikeTypes> {
+    resources: ResourcesForTx<S>,
+    native_per_pubdata: u64,
+    native_per_gas: u64,
+    minimal_gas_used: u64,
+}
+
+///
+/// Compute and perform some checks on fee/resource parameters.
+/// This function handles cases that for L2 transactions would be
+/// validation errors, as "invalidating" an L1 transaction can halt
+/// the chain (due to the priority queue).
+/// Note that the "validation errors" are practically unreachable, as
+/// gas_limit, gas_price and gas_per_pubdata are either checked or set
+/// by the L1 contracts. We decide to handle these cases as a fallback in
+/// case the L1 contracts aren't properly updated to reflect a change in
+/// ZKsync OS.
+/// The approach is to use saturating arithmetic and emit a system
+/// log if this situation ever happens.
+///
+fn prepare_and_check_resources<
+    'a,
+    S: EthereumLikeTypes + 'a,
+    Config: BasicBootloaderExecutionConfig,
+>(
+    system: &mut System<S>,
+    transaction: &AbiEncodedTransaction<S::Allocator>,
+    is_priority_op: bool,
+    gas_limit: u64,
+    gas_price: U256,
+    gas_per_pubdata: u32,
+) -> Result<ResourceAndFeeInfo<S>, BootloaderSubsystemError>
+where
+    S::IO: IOSubsystemExt,
+    S::Metadata: ZkSpecificPricingMetadata
+        + BasicMetadata<S::IOTypes, TransactionMetadata = TxLevelMetadata<S::IOTypes>>,
+{
+    // For L1->L2 txs, we use a constant native price to avoid censorship.
+    let native_price = L1_TX_NATIVE_PRICE;
+    let native_per_gas = if is_priority_op {
+        if Config::SIMULATION && gas_price.is_zero() {
+            // For simulation, if gas price isn't set, we use base fee
+            // for native calculation
+            u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price))
+                .unwrap_or_else(|| {
+                    system_log!(
+                        system,
+                        "Native per gas calculation for L1 tx simulation overflows, using saturated arithmetic instead"
+                    );
+                    u64::MAX
+                })
+        } else {
+            u256_try_to_u64(&gas_price.div_ceil(native_price))
+                .unwrap_or_else(|| {
+                    system_log!(
+                        system,
+                        "Native per gas calculation for L1 tx overflows, using saturated arithmetic instead");
+                        u64::MAX
+                })
+        }
+    } else {
+        UPGRADE_TX_NATIVE_PER_GAS
+    };
+
+    let native_per_pubdata = (gas_per_pubdata as u64)
+        .checked_mul(native_per_gas)
+        .unwrap_or_else(|| {
+            system_log!(
+                system,
+                "Native per pubdata calculation for L1 tx overflows, using saturated arithmetic instead");
+                u64::MAX
+        });
+
+    let native_prepaid_from_gas = native_per_gas.saturating_mul(gas_limit);
+
+    let (calldata_tokens, minimal_gas_used) =
+        compute_calldata_tokens(system, transaction.calldata(), true);
+
+    let resources = match create_resources_for_tx::<S>(
+        system,
+        gas_limit,
+        native_per_gas == 0,
+        native_prepaid_from_gas,
+        native_per_pubdata,
+        false, // is_deployment
+        transaction.calldata().len() as u64,
+        calldata_tokens,
+        minimal_gas_used,
+        L1_TX_INTRINSIC_PUBDATA,
+        L1_TX_INTRINSIC_NATIVE_COST,
+        true,
+    ) {
+        Ok(r) => Ok(r),
+        Err(TxError::Internal(e)) => Err(e),
+        Err(TxError::Validation(e)) => {
+            // As documented in [create_resources_for_tx], this function cannot return
+            // a validation error for L1 transactions.
+            unreachable!("Resource creation cannot fail with a validation error for L1 transactions, but got {e:?}")
+        }
+    }?;
+
+    Ok(ResourceAndFeeInfo {
+        resources,
+        native_per_pubdata,
+        native_per_gas,
+        minimal_gas_used,
     })
 }
 
