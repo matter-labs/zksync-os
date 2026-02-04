@@ -18,7 +18,6 @@ use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::TxProcessingOutput;
 use core::fmt::Write;
 use errors::cascade::CascadedError;
-use errors::internal::InternalError;
 use errors::root_cause::RootCause;
 use errors::system::SystemError;
 use metadata::basic_metadata::{BasicMetadata, ZkSpecificPricingMetadata};
@@ -31,6 +30,7 @@ use zk_ee::system::errors::root_cause::GetRootCause;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::metadata::basic_metadata::BasicTransactionMetadata;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::system::validator::TxValidator;
 use zk_ee::system::{
     errors::runtime::RuntimeError, logger::Logger, EthereumLikeTypes, System, SystemTypes, *,
 };
@@ -244,6 +244,7 @@ where
                     &from,
                     &fee,
                     true,
+                    Config::SIMULATION,
                 )
             })
             .map_err(|e| match e {
@@ -296,6 +297,7 @@ where
         transaction: &Transaction<<S as SystemTypes>::Allocator>,
         context: &mut Self::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<
         (
             ExecutionResult<'a, <S as SystemTypes>::IOTypes>,
@@ -320,6 +322,7 @@ where
             &transaction,
             context,
             tracer,
+            validator,
         ) {
             Ok((r, cached_pubdata_info)) => {
                 let pubdata_info = match r {
@@ -363,7 +366,7 @@ where
         _result: &ExecutionResult<'a, <S as SystemTypes>::IOTypes>,
         pubdata_info: Self::ExecutionBodyExtraData,
         _tracer: &mut impl Tracer<S>,
-    ) -> Result<(), InternalError> {
+    ) -> Result<(), BootloaderSubsystemError> {
         use evm_interpreter::ERGS_PER_GAS;
 
         // Just used for computing native used
@@ -448,6 +451,7 @@ where
                     &refund_recipient,
                     &token_to_refund,
                     false,
+                    Config::SIMULATION,
                 )
                 .map_err(|e| match e {
                     // Balance errors can not be cascaded
@@ -502,6 +506,7 @@ where
                 &coinbase,
                 &token_to_pay_operator,
                 false,
+                Config::SIMULATION,
             )
             .map_err(|e| match e {
                 // Balance errors can not be cascaded
@@ -580,7 +585,8 @@ where
         >,
         is_priority_op: bool,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<Self::ExecutionResult<'a>, TxError>
+        validator: &mut impl TxValidator<S>,
+    ) -> Result<Self::ExecutionResult<'a>, BootloaderSubsystemError>
     where
         S: 'a,
     {
@@ -591,6 +597,7 @@ where
             transaction,
             is_priority_op,
             tracer,
+            validator,
         )
     }
 }
@@ -608,6 +615,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
     where
         S: 'a,
@@ -631,6 +639,7 @@ where
             &nominal_token_value,
             true,
             tracer,
+            validator,
         )?;
 
         let CompletedExecution {
@@ -659,6 +668,7 @@ where
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         to_ee_type: ExecutionEnvironmentType,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
     where
         S: 'a,
@@ -715,6 +725,7 @@ where
             to_ee_type,
             deployment_request,
             tracer,
+            validator,
         )?;
 
         let CompletedExecution {
@@ -775,6 +786,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<(ExecutionResult<'a, S::IOTypes>, CachedPubdataInfo<S>), BootloaderSubsystemError>
     where
         S: 'a,
@@ -796,6 +808,7 @@ where
                 context,
                 to_ee_type,
                 tracer,
+                validator,
             )?,
             None => Self::execute_call(
                 system,
@@ -804,6 +817,7 @@ where
                 transaction,
                 context,
                 tracer,
+                validator,
             )?,
         };
 

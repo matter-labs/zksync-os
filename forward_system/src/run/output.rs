@@ -76,14 +76,13 @@ impl<TR: TxResultCallback>
                 result
                     .map(|output| {
                         let execution_result = if output.status {
-                            ExecutionResult::Success(if output.contract_address.is_some() {
-                                ExecutionOutput::Create(
-                                    output.output,
-                                    output.contract_address.unwrap(),
-                                )
-                            } else {
-                                ExecutionOutput::Call(output.output)
-                            })
+                            ExecutionResult::Success(
+                                if let Some(contract_address) = output.contract_address {
+                                    ExecutionOutput::Create(output.output, contract_address)
+                                } else {
+                                    ExecutionOutput::Call(output.output)
+                                },
+                            )
                         } else {
                             ExecutionResult::Revert(output.output)
                         };
@@ -142,7 +141,7 @@ impl<TR: TxResultCallback>
             account_diffs,
             published_preimages,
             pubdata,
-            computaional_native_used: block_computaional_native_used,
+            computational_native_used: block_computaional_native_used,
         }
     }
 }

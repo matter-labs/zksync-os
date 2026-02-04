@@ -4,8 +4,8 @@ use crate::bootloader::RunnerMemoryBuffers;
 use crate::bootloader::TxError;
 use crate::bootloader::TxProcessingOutput;
 use zk_ee::common_structs::system_hooks::HooksStorage;
-use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::system::validator::TxValidator;
 use zk_ee::system::IOSubsystemExt;
 use zk_ee::system::ReturnValues;
 use zk_ee::system::System;
@@ -145,6 +145,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &mut Self::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<
         (
             ExecutionResult<'a, S::IOTypes>,
@@ -165,7 +166,7 @@ where
         result: &ExecutionResult<'a, S::IOTypes>,
         extra_data: Self::ExecutionBodyExtraData,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<(), InternalError>;
+    ) -> Result<(), BootloaderSubsystemError>;
 
     /// Refund the sender for unused resources and
     /// pay the coinbase the fee.
@@ -196,7 +197,8 @@ where
         transaction: &AbiEncodedTransaction<S::Allocator>,
         is_priority_op: bool,
         tracer: &mut impl Tracer<S>,
-    ) -> Result<Self::ExecutionResult<'a>, TxError>
+        validator: &mut impl TxValidator<S>,
+    ) -> Result<Self::ExecutionResult<'a>, BootloaderSubsystemError>
     where
         S: 'a;
 }

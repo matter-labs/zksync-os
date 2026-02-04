@@ -26,5 +26,6 @@ where
         batch_data: &mut Self::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<S::IOTypes>,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<(), BootloaderSubsystemError>;
 }

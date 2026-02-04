@@ -261,6 +261,6 @@ pub(crate) fn parse_node_from_bytes<'a>(
 
         Ok((parsed, pieces, &[]))
     } else {
-        return Err(());
+        Err(())
     }
 }

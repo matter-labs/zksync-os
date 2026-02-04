@@ -21,14 +21,14 @@ pub enum RootCause<'a> {
 }
 
 pub trait GetRootCause {
-    fn root_cause(&self) -> RootCause;
+    fn root_cause(&self) -> RootCause<'_>;
 }
 
 impl<S> GetRootCause for SubsystemError<S>
 where
     S: Subsystem,
 {
-    fn root_cause(&self) -> RootCause {
+    fn root_cause(&self) -> RootCause<'_> {
         match self {
             SubsystemError::Cascaded(CascadedError(inner, _)) => inner.root_cause(),
             SubsystemError::LeafRuntime(e) => RootCause::Runtime(&e),

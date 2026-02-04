@@ -10,7 +10,7 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [dependencies]
-riscv_common = {git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3" }
+riscv_common = {git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2" }
 crypto = { path = "../crypto", features = ["proving"]}
 
 # [patch."https://github.com/matter-labs/zksync-airbender"]

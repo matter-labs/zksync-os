@@ -7,6 +7,7 @@ use zk_ee::common_structs::MAX_NUMBER_OF_LOGS;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::system::validator::TxValidator;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, IOTeardown, System, SystemTypes};
 
 pub mod block_flow;
@@ -68,6 +69,7 @@ where
         batch_data_keeper: &mut S::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<S::IOTypes, BlockHeader = S::BlockHeader>,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<
         <<S as BasicSTF>::PostTxLoopOp as PostTxLoopOp<S>>::PostTxLoopOpResult,
         BootloaderSubsystemError,
@@ -117,6 +119,7 @@ where
             batch_data_keeper,
             result_keeper,
             tracer,
+            validator,
         )?;
 
         // whatever the non-persistent data was there, it's now gone

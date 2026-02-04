@@ -7,6 +7,7 @@ use alloy::primitives::TxKind;
 use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
+use rig::forward_system::run;
 use rig::ruint::aliases::B160;
 use rig::ruint::aliases::U256;
 use rig::testing_utils::call_address_and_measure_gas_cost;
@@ -752,6 +753,8 @@ fn test_l2_base_token_withdraw_with_message_gas_charging() {
 fn test_mint_base_token_hook() {
     let mut chain = Chain::empty(None);
 
+    chain.mint_tokens_to_treasury(); // to properly reflect the initial balance
+
     // L2 base token address is the only address allowed to call the mint hook
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
     // Mint hook address (0x7100)
@@ -762,7 +765,6 @@ fn test_mint_base_token_hook() {
     let initial_balance = chain
         .get_account_properties(&B160::from_be_bytes(l2_base_token_address.into_array()))
         .balance;
-    assert_eq!(initial_balance, alloy::primitives::U256::ZERO);
 
     // Prepare calldata: 32 bytes containing the mint amount as U256 big-endian
     let calldata = mint_amount.to_be_bytes::<32>().to_vec();
@@ -799,5 +801,12 @@ fn test_mint_base_token_hook() {
     let final_balance = chain
         .get_account_properties(&B160::from_be_bytes(l2_base_token_address.into_array()))
         .balance;
-    assert_eq!(final_balance, mint_amount);
+
+    let actually_minted_amount = final_balance
+        .checked_sub(initial_balance)
+        .expect("Some tokens should be minted");
+    assert_eq!(
+        actually_minted_amount, mint_amount,
+        "Minted amount should match the requested mint amount"
+    );
 }

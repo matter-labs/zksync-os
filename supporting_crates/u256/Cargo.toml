@@ -10,9 +10,9 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-ruint = { version = "1.14", default-features = false }
+ruint = { workspace = true, default-features = false }
+serde = { workspace = true, default-features = false, features = ["derive"] }
 delegated_u256 = { path = "../delegated_u256" }
-serde = { version = "1.0", default-features = false, features = ["derive"] }
 
 [features]
 serde = ["ruint/serde", "delegated_u256/serde"]

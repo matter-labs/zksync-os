@@ -7,7 +7,7 @@ use rig::Chain;
 use std::panic::AssertUnwindSafe;
 use std::time::Instant;
 use zk_ee::system::tracer::NopTracer;
-
+use rig::zk_ee::system::validator::NopTxValidator;
 use crate::calltrace::CallTrace;
 use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
@@ -141,6 +141,7 @@ pub fn run_block(
             None,
             Some(run_config),
             &mut NopTracer::default(),
+            &mut NopTxValidator::default(),
         )
     }));
     

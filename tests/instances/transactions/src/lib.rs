@@ -9,6 +9,7 @@ use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
+use rig::chain::RunConfig;
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::testing_utils::install_system_contracts;
@@ -18,6 +19,7 @@ use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 
+mod l1_tx_resilience;
 mod native_charging;
 
 fn run_config() -> Option<rig::chain::RunConfig> {
@@ -25,6 +27,7 @@ fn run_config() -> Option<rig::chain::RunConfig> {
         app: Some("for_tests".to_string()),
         only_forward: false,
         check_storage_diff_hashes: true,
+        skip_minting_tokens_to_treasury: false,
         ..Default::default()
     })
 }
@@ -1585,4 +1588,470 @@ fn test_simulation_skips_nonce_check() {
         "Transaction should fail with NonceTooHigh in normal mode, got: {:?}",
         result_normal.tx_results[0]
     );
+}
+
+/// Simulation for a transaction with sender without balance:
+/// - gasPrice > 0 && value > 0: fail
+/// - gasPrice > 0 && value == 0: fail
+/// - gasPrice == 0 && value > 0: fail
+/// - gasPrice == 0 && value == 0: ok
+#[test]
+fn test_simulation_balance_check() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    // - gasPrice > 0 && value > 0: fail
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 21_000,
+            to: TxKind::Call(target_address),
+            value: U256::from(1),
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let result_simulation = chain.simulate_block(vec![tx.clone()], None);
+    assert!(
+        result_simulation.tx_results[0].is_err(),
+        "Transaction with fee and value should fail validation in simulation mode"
+    );
+
+    // - gasPrice > 0 && value == 0: fail
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 1000,
+            gas_limit: 21_000,
+            to: TxKind::Call(target_address),
+            value: Default::default(),
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let result_simulation = chain.simulate_block(vec![tx.clone()], None);
+    assert!(
+        result_simulation.tx_results[0].is_err(),
+        "Transaction with fee should fail validation in simulation mode"
+    );
+
+    //- gasPrice == 0 && value > 0: fail
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 0,
+            gas_limit: 21_000,
+            to: TxKind::Call(target_address),
+            value: U256::from(1),
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let result_simulation = chain.simulate_block(vec![tx.clone()], None);
+    assert!(
+        result_simulation.tx_results[0].is_err(),
+        "Transaction with value should fail validation in simulation mode"
+    );
+
+    // - gasPrice == 0 && value == 0: ok
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 0,
+            gas_limit: 21_000,
+            to: TxKind::Call(target_address),
+            value: Default::default(),
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let result_simulation = chain.simulate_block(vec![tx.clone()], None);
+    assert!(
+        result_simulation.tx_results[0].is_ok(),
+        "Transaction with no fee/value should pass validation in simulation mode"
+    );
+}
+
+/// Check that gas and native used is the same in simulation and actual execution
+#[test]
+fn test_simulation_gas_and_native_used() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    chain.set_balance(
+        B160::from_be_bytes(wallet.address().0 .0),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    let tx = TxEip1559 {
+        chain_id: 37u64,
+        nonce: 0,
+        max_fee_per_gas: 1000,
+        max_priority_fee_per_gas: 1000,
+        gas_limit: 1_000_000,
+        to: TxKind::Call(target_address),
+        value: U256::from(100),
+        input: Default::default(),
+        access_list: Default::default(),
+    };
+    let encoded_for_simulation = rig::utils::sign_and_encode_alloy_tx(tx.clone(), &wallet);
+
+    // We use a very low native per gas ratio to force the transaction to require extra gas
+    let block_context = BlockContext {
+        eip1559_basefee: U256::from(1000),
+        native_price: U256::from(500),
+        ..Default::default()
+    };
+
+    let result_simulation =
+        chain.simulate_block(vec![encoded_for_simulation], Some(block_context.clone()));
+    let tx_result_simulation = result_simulation.tx_results[0]
+        .clone()
+        .expect("Simulation must succeed");
+
+    let tx = TxEip1559 {
+        gas_limit: tx_result_simulation.gas_used,
+        ..tx
+    };
+    let encoded = rig::utils::sign_and_encode_alloy_tx(tx, &wallet);
+
+    let result_normal = chain.run_block(vec![encoded], Some(block_context), None, run_config());
+    let tx_result_normal = result_normal.tx_results[0]
+        .clone()
+        .expect("Normal execution must succeed");
+
+    assert_eq!(
+        tx_result_simulation.gas_used, tx_result_normal.gas_used,
+        "Mismatch in gas used"
+    );
+    assert_eq!(
+        tx_result_simulation.native_used, tx_result_normal.native_used,
+        "Mismatch in native used"
+    );
+}
+
+/// Check that gas price doesn't affect gas used in simulation.
+/// Regression for an issue where the lack of fee payment during
+/// simulation resulted in underestimated pubdata length, and thus
+/// underestimated gas usage.
+#[test]
+fn test_simulation_gas_used_regression() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let target_address = address!("4242000000000000000000000000000000000000");
+    chain.set_balance(B160::from_be_bytes(wallet.address().0 .0), U256::MAX);
+
+    // First tx, 0 gas price.
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 0,
+            gas_limit: 2_000_000,
+            to: TxKind::Call(target_address),
+            value: U256::ZERO,
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+    let block_context = BlockContext {
+        eip1559_basefee: U256::from(91161500u64),
+        native_price: U256::from(911615u64),
+        pubdata_price: U256::from(10303657632u64 * 4),
+        ..Default::default()
+    };
+    let result_simulation = chain.simulate_block(vec![tx.clone()], Some(block_context.clone()));
+    let first_tx = result_simulation.tx_results[0]
+        .clone()
+        .expect("Must succeed");
+
+    // Second tx, realistic gas price
+    let tx = {
+        let tx = TxLegacy {
+            chain_id: 37u64.into(),
+            nonce: 0,
+            gas_price: 91161500,
+            gas_limit: 2_000_000,
+            to: TxKind::Call(target_address),
+            value: U256::ZERO,
+            input: Default::default(),
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    let result_simulation = chain.simulate_block(vec![tx.clone()], Some(block_context));
+    let second_tx = result_simulation.tx_results[0]
+        .clone()
+        .expect("Must succeed");
+    assert_eq!(first_tx.gas_used, second_tx.gas_used);
+    assert_eq!(first_tx.native_used, second_tx.native_used);
+    assert_eq!(first_tx.pubdata_used, second_tx.pubdata_used);
+}
+
+/// Regression test for treasury-based token distribution
+/// Tests that L1→L2 transactions correctly transfer fees and value from the treasury
+/// instead of minting new tokens.
+#[test]
+fn test_treasury_based_token_distribution_regression() {
+    use rig::system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
+
+    let mut chain = Chain::empty(None);
+
+    // Manually ensure treasury is funded for this test
+    chain.mint_tokens_to_treasury();
+
+    // Create L1 transaction sender
+    let l1_sender = address!("1234000000000000000000000000000000000000");
+    let l1_recipient = address!("5678000000000000000000000000000000000000");
+    let coinbase = address!("1000000000000000000000000000000000000000"); // operator
+    let refund_recipient = address!("0000000000000000000000000000000000000000"); // refund recipient (zero address)
+
+    // Record initial treasury balance
+    let treasury_initial_balance = chain
+        .get_account_properties(&BASE_TOKEN_HOLDER_ADDRESS)
+        .balance;
+
+    // Record initial operator balance
+    let operator_initial_balance = chain
+        .get_account_properties(&B160::from_be_bytes(coinbase.into_array()))
+        .balance;
+
+    // Record initial recipient balance
+    let recipient_initial_balance = chain
+        .get_account_properties(&B160::from_be_bytes(l1_recipient.into_array()))
+        .balance;
+
+    // Record initial refund recipient balance
+    let refund_recipient_initial_balance = chain
+        .get_account_properties(&B160::from_be_bytes(refund_recipient.into_array()))
+        .balance;
+
+    // Create L1→L2 transaction with value transfer and fees
+    let gas_price = 1000u64;
+    let gas_limit = 100_000u64;
+    let value_to_transfer = U256::from(1_000_000u64);
+
+    let l1_tx = {
+        let tx = TransactionRequest {
+            chain_id: Some(37),
+            from: Some(l1_sender),
+            to: Some(TxKind::Call(l1_recipient)),
+            gas: Some(gas_limit),
+            max_fee_per_gas: Some(gas_price.into()),
+            max_priority_fee_per_gas: Some(gas_price.into()),
+            value: Some(value_to_transfer),
+            nonce: Some(0),
+            ..TransactionRequest::default()
+        };
+        rig::utils::encode_l1_tx(tx)
+    };
+
+    let block_context = BlockContext {
+        coinbase: B160::from_be_bytes(coinbase.into_array()),
+        ..Default::default()
+    };
+    let output = chain.run_block(vec![l1_tx], Some(block_context), None, None);
+
+    // Verify transaction succeeded
+    assert!(
+        output.tx_results[0].is_ok(),
+        "L1→L2 transaction should succeed, got: {:?}",
+        output.tx_results[0]
+    );
+
+    let tx_result = output.tx_results[0].as_ref().unwrap();
+    assert!(
+        tx_result.is_success(),
+        "L1→L2 transaction should be successful"
+    );
+
+    // Calculate expected fee payments
+    let gas_used = tx_result.gas_used;
+    let fee_paid_to_operator = U256::from(gas_used) * U256::from(gas_price);
+
+    // Get final balances
+    let treasury_final_balance = chain
+        .get_account_properties(&BASE_TOKEN_HOLDER_ADDRESS)
+        .balance;
+
+    let operator_final_balance = chain
+        .get_account_properties(&B160::from_be_bytes(coinbase.into_array()))
+        .balance;
+
+    let recipient_final_balance = chain
+        .get_account_properties(&B160::from_be_bytes(l1_recipient.into_array()))
+        .balance;
+
+    let refund_recipient_final_balance = chain
+        .get_account_properties(&B160::from_be_bytes(refund_recipient.into_array()))
+        .balance;
+
+    // Calculate total amount that should go to operator (fee + refund)
+    // Refund recipient is 0 in this test
+    let gas_limit = 100_000u64;
+    let gas_refund = gas_limit - gas_used;
+    let refund_amount = U256::from(gas_refund) * U256::from(gas_price);
+    let total_to_operator = fee_paid_to_operator;
+    let total_to_refund_recipient = refund_amount;
+
+    // Verify treasury balance decreased by total amount (fees + refund + value)
+    let treasury_decrease = treasury_initial_balance - treasury_final_balance;
+    let expected_treasury_decrease =
+        total_to_operator + total_to_refund_recipient + value_to_transfer;
+    assert_eq!(
+        treasury_decrease, expected_treasury_decrease,
+        "Treasury should decrease by total operator payment plus refund and value transferred"
+    );
+
+    // Verify operator received total payment from treasury (fee + refund)
+    let operator_increase = operator_final_balance - operator_initial_balance;
+    assert_eq!(
+        operator_increase, total_to_operator,
+        "Operator should receive fee + refund from treasury"
+    );
+
+    // Verify recipient received value from treasury (not minted)
+    let recipient_increase = recipient_final_balance - recipient_initial_balance;
+    assert_eq!(
+        recipient_increase, value_to_transfer,
+        "Recipient should receive exact value amount from treasury"
+    );
+
+    // Verify refund recipient received value from treasury (not minted)
+    let refund_recipient_increase =
+        refund_recipient_final_balance - refund_recipient_initial_balance;
+    assert_eq!(
+        refund_recipient_increase, total_to_refund_recipient,
+        "Refund recipient should receive correct refund amount from treasury"
+    );
+}
+
+/// Test treasury transfer failure when treasury has insufficient balance
+#[test]
+fn test_treasury_insufficient_balance_failure() {
+    use rig::system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
+
+    let mut chain = Chain::empty(None);
+
+    // Manually set very low treasury balance instead of using default
+    let low_treasury_balance = U256::from(1000u64);
+    chain.set_balance(BASE_TOKEN_HOLDER_ADDRESS, low_treasury_balance);
+
+    // Create L1→L2 transaction that requires more tokens than treasury has
+    let l1_sender = address!("1234000000000000000000000000000000000000");
+    let l1_recipient = address!("5678000000000000000000000000000000000000");
+
+    let gas_price = 1000u64;
+    let gas_limit = 100_000u64;
+    let value_to_transfer = U256::from(500_000u64); // More than treasury can cover
+
+    let l1_tx = {
+        let tx = TransactionRequest {
+            chain_id: Some(37),
+            from: Some(l1_sender),
+            to: Some(TxKind::Call(l1_recipient)),
+            gas: Some(gas_limit),
+            max_fee_per_gas: Some(gas_price.into()),
+            max_priority_fee_per_gas: Some(gas_price.into()),
+            value: Some(value_to_transfer),
+            nonce: Some(0),
+            ..TransactionRequest::default()
+        };
+        rig::utils::encode_l1_tx(tx)
+    };
+
+    let config = RunConfig {
+        skip_minting_tokens_to_treasury: true,
+        ..Default::default()
+    };
+
+    // This should fail due to insufficient treasury balance
+    let result = chain.run_block_no_panic(vec![l1_tx], None, None, Some(config));
+
+    // Verify transaction fails due to treasury insufficient balance
+    assert!(
+        result.is_err(),
+        "L1→L2 transaction should fail when treasury has insufficient balance"
+    );
+
+    // Verify the specific error is treasury transfer failed
+    let error_debug = format!("{:?}", result.unwrap_err());
+    assert!(
+        error_debug.contains("TreasuryTransferFailed"),
+        "Error should indicate treasury transfer failed, got: {}",
+        error_debug
+    );
+}
+
+#[test]
+fn test_pubdata_native_calculation_overflow() {
+    use alloy::consensus::TxEip1559;
+    use rig::alloy::primitives::TxKind;
+
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+
+    // Set initial balance for the wallet
+    chain.set_balance(
+        B160::from_be_bytes(from.into_array()),
+        U256::from_str("100000000000000000000010000").unwrap(),
+    );
+
+    let to = address!("1234567890123456789012345678901234567890");
+    /*
+       contract A {
+           mapping(uint256 => uint256) s;
+
+           fallback() external payable {
+               for (uint256 i = 0; i < 20; i++) {
+                   s[i] = 0xfffffffffffffffffffffffff;
+               }
+           }
+       }
+    */
+    // Spam some pubdata
+    let bytecode = hex::decode("60806040525f5f90505b6014811015603f576c0fffffffffffffffffffffffff5f5f8381526020019081526020015f208190555080806001019150506009565b00fea2646970667358221220d8f4977e359f09d23e2979156755d7e177d43f8a1882a5a178eb98dd8bcb237264736f6c634300081f0033").unwrap();
+    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+
+    // Create a transaction that will generate significant pubdata
+    let tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            gas_limit: 10000000,
+            max_fee_per_gas: 1000000000000000000,
+            max_priority_fee_per_gas: 1000000000000000000,
+            to: TxKind::Call(to),
+            value: U256::from(1000),
+            ..Default::default()
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    // Set extremely high native_per_pubdata to trigger overflow in current_pubdata_spent.checked_mul(native_per_pubdata)
+    let native_price = U256::from(1);
+    let pubdata_price = U256::from(u64::MAX / 150); // Huge pubdata price to trigger overflow
+
+    let block_context = BlockContext {
+        native_price,
+        pubdata_price,
+        eip1559_basefee: U256::from(1),
+        ..Default::default()
+    };
+
+    let result = chain.run_block(vec![tx], Some(block_context), None, None);
+
+    // Verify the specific error is OutOfNativeResources
+    match &result.tx_results[0].as_ref().unwrap().execution_result {
+        rig::zksync_os_interface::types::ExecutionResult::Success(_) => panic!("Should fail"),
+        rig::zksync_os_interface::types::ExecutionResult::Revert(_) => {}
+    }
 }

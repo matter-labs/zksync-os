@@ -16,9 +16,9 @@ pub fn evaluate_blob_polynomial(data: &[u8], x: &crypto::bls12_381::Fr) -> crypt
         [MaybeUninit::uninit(); ELEMENTS_PER_4844_BLOB];
     let mut poly_iter = poly.iter_mut();
 
-    let chunks = data.array_chunks::<BLOB_CHUNK_SIZE>();
-    let remainder = chunks.remainder();
-    for chunk in chunks {
+    let chunks = data.as_chunks::<BLOB_CHUNK_SIZE>();
+    let remainder = chunks.1;
+    for chunk in chunks.0 {
         poly_iter
             .next()
             .unwrap()

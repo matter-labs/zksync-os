@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+ruint = { workspace = true, default-features = false }
 solidity_abi_derive = { path = "../solidity_abi_derive"}
 const_keccak256 = { path = "../keccak"}
 

@@ -31,7 +31,7 @@ impl ValueDiffCompressionStrategy {
             Self::Nothing => Some(33), //full value + metadata byte
             Self::Add => {
                 let (result, of) = final_value.overflowing_sub(initial_value);
-                let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
+                let length = result.bit_len().div_ceil(8) as u8;
                 if of || length == 32 {
                     None
                 } else {
@@ -40,7 +40,7 @@ impl ValueDiffCompressionStrategy {
             }
             Self::Sub => {
                 let (result, of) = initial_value.overflowing_sub(final_value);
-                let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
+                let length = result.bit_len().div_ceil(8) as u8;
                 if of || length == 32 {
                     None
                 } else {
@@ -48,7 +48,7 @@ impl ValueDiffCompressionStrategy {
                 }
             }
             Self::Transform => {
-                let length = (final_value.bit_len().next_multiple_of(8) / 8) as u8;
+                let length = final_value.bit_len().div_ceil(8) as u8;
                 if length == 32 {
                     None
                 } else {
@@ -77,7 +77,7 @@ impl ValueDiffCompressionStrategy {
             }
             Self::Add => {
                 let (result, of) = final_value.overflowing_sub(initial_value);
-                let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
+                let length = result.bit_len().div_ceil(8) as u8;
 
                 if of || length == 32 {
                     Err(())
@@ -93,7 +93,7 @@ impl ValueDiffCompressionStrategy {
             }
             Self::Sub => {
                 let (result, of) = initial_value.overflowing_sub(final_value);
-                let length = (result.bit_len().next_multiple_of(8) / 8) as u8;
+                let length = result.bit_len().div_ceil(8) as u8;
 
                 if of || length == 32 {
                     Err(())
@@ -108,7 +108,7 @@ impl ValueDiffCompressionStrategy {
                 }
             }
             Self::Transform => {
-                let length = (final_value.bit_len().next_multiple_of(8) / 8) as u8;
+                let length = final_value.bit_len().div_ceil(8) as u8;
                 if length == 32 {
                     Err(())
                 } else {
@@ -126,15 +126,25 @@ impl ValueDiffCompressionStrategy {
     }
 
     pub fn optimal_compression_length_u256(initial_value: U256, final_value: U256) -> u8 {
+        Self::optimal_compression_length_u256_optional(initial_value, final_value, false)
+    }
+
+    pub fn optimal_compression_length_u256_optional(
+        initial_value: U256,
+        final_value: U256,
+        no_compression: bool,
+    ) -> u8 {
         // worst case "Nothing" strategy, always possible to encode
         let mut optimal = Self::Nothing
             .compression_length(initial_value, final_value)
             .unwrap();
 
         // so we don't check nothing here
-        for strategy in [Self::Add, Self::Sub, Self::Transform].iter() {
-            if let Some(length) = strategy.compression_length(initial_value, final_value) {
-                optimal = core::cmp::min(optimal, length);
+        if !no_compression {
+            for strategy in [Self::Add, Self::Sub, Self::Transform].iter() {
+                if let Some(length) = strategy.compression_length(initial_value, final_value) {
+                    optimal = core::cmp::min(optimal, length);
+                }
             }
         }
 

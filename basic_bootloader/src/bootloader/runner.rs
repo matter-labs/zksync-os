@@ -19,6 +19,7 @@ use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::tracer::Tracer;
+use zk_ee::system::validator::TxValidator;
 use zk_ee::system::{errors::system::SystemError, logger::Logger, *};
 use zk_ee::system_log;
 use zk_ee::wrap_error;
@@ -36,6 +37,7 @@ pub fn run_till_completion<'a, S: EthereumLikeTypes>(
     initial_ee_version: ExecutionEnvironmentType,
     initial_request: ExternalCallRequest<S>,
     tracer: &mut impl Tracer<S>,
+    validator: &mut impl TxValidator<S>,
 ) -> Result<CompletedExecution<'a, S>, BootloaderSubsystemError>
 where
     S::IO: IOSubsystemExt,
@@ -58,6 +60,7 @@ where
         initial_request,
         heap,
         tracer,
+        validator,
     )
 }
 
@@ -110,6 +113,7 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
         call_request: ExternalCallRequest<S>,
         heap: SliceVec<u8>,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<CompletedExecution<'external, S>, BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -175,6 +179,7 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
             external_call_launch_params,
             heap,
             tracer,
+            validator,
         );
 
         tracer.after_execution_frame_completed(
@@ -201,6 +206,7 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
         mut external_call_launch_params: ExecutionEnvironmentLaunchParams<S>,
         heap: SliceVec<u8>,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -283,6 +289,7 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
                 next_ee_type,
                 rollback_handle,
                 tracer,
+                validator,
             )
         }
     }
@@ -380,6 +387,7 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
         next_ee_type: ExecutionEnvironmentType,
         rollback_handle: SystemFrameSnapshot<S>,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<(S::Resources, CallResult<'external, S>), BootloaderSubsystemError>
     where
         S::IO: IOSubsystemExt,
@@ -441,6 +449,7 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
                         request,
                         heap,
                         tracer,
+                        validator,
                     )?;
 
                     system_log!(

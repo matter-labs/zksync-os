@@ -5,7 +5,7 @@ use alloy::{
 use forward_system::system::tracers::call_tracer::CallTracer;
 use once_cell::sync::Lazy;
 use ruint::aliases::B160;
-use zk_ee::utils::Bytes32;
+use zk_ee::{system::validator, utils::Bytes32};
 
 use crate::{utils, Chain};
 use system_hooks::addresses_constants::{
@@ -96,9 +96,10 @@ pub fn call_address_and_measure_gas_cost(
     let transactions = vec![encoded_tx];
 
     let mut tracer = CallTracer::default();
+    let mut validator = validator::NopTxValidator;
 
     let (output, _, _) = chain
-        .run_block_with_extra_stats(transactions, None, None, None, &mut tracer)
+        .run_block_with_extra_stats(transactions, None, None, None, &mut tracer, &mut validator)
         .expect("Should succeed");
 
     // Assert transaction succeeded

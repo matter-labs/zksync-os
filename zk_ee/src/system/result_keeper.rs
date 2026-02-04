@@ -15,7 +15,7 @@ use crate::types_config::SystemIOTypesConfig;
 pub trait IOResultKeeper<IOTypes: SystemIOTypesConfig> {
     fn events<'a>(
         &mut self,
-        _iter: impl Iterator<Item = GenericEventContentWithTxRef<'a, { MAX_EVENT_TOPICS }, IOTypes>>,
+        _iter: impl Iterator<Item = GenericEventContentWithTxRef<'a, MAX_EVENT_TOPICS, IOTypes>>,
     ) {
     }
 

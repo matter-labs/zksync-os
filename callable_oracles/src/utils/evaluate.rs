@@ -20,7 +20,7 @@ pub fn read_memory_as_u8<M: MemorySource>(
 
     let mut trap = TrapReason::NoTrap;
 
-    if offset % 4 != 0 {
+    if !offset.is_multiple_of(4) {
         let max_take_bytes = 4 - offset;
         let take_bytes = std::cmp::min(max_take_bytes, len);
         let aligned = (offset >> 2) << 2;
@@ -76,7 +76,7 @@ pub fn read_memory_as_u64<M: MemorySource>(
 
     let mut trap = TrapReason::NoTrap;
 
-    if offset % 4 != 0 {
+    if !offset.is_multiple_of(4) {
         return Err(());
     }
 
@@ -106,11 +106,11 @@ pub fn read_memory_as_u64<M: MemorySource>(
 /// # Safety
 /// The data in the memory at offset should actually be T.
 pub unsafe fn read_struct<T, M: MemorySource>(memory: &M, offset: u32) -> Result<T, ()> {
-    if core::mem::size_of::<T>() % 4 != 0 {
+    if !core::mem::size_of::<T>().is_multiple_of(4) {
         todo!()
     }
 
-    if offset as usize % core::mem::align_of::<T>() != 0 {
+    if !(offset as usize).is_multiple_of(core::mem::align_of::<T>()) {
         return Err(());
     }
 

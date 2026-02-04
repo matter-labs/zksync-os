@@ -324,7 +324,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
         } else {
             INITCODE_WORD_COST
         };
-        let initcode_cost = cost_per_word * ((len as u64).next_multiple_of(32) / 32);
+        let initcode_cost = cost_per_word * (len as u64).div_ceil(32);
         self.gas.spend_gas(initcode_cost)?;
         let end = code_offset + len; // can not overflow as we resized heap above using same values
 

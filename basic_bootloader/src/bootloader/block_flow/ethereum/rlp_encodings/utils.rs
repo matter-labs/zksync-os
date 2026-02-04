@@ -10,7 +10,7 @@ pub(crate) fn apply_u64_encoding<B: ?Sized + ByteBuffer>(value: u64, buffer: &mu
         buffer.write_byte(value as u8);
     } else {
         let bits = 64 - value.leading_zeros();
-        let encoding_bytes = (bits.next_multiple_of(8) / 8) as usize;
+        let encoding_bytes = bits.div_ceil(8) as usize;
         let length_bytes = value.to_be_bytes();
         buffer.write_byte(0x80 + encoding_bytes as u8);
         buffer.write_slice(&length_bytes[(8 - encoding_bytes)..]);

@@ -39,7 +39,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381PairingC
             <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
         ))?;
 
-        if input.len() % BLS12_381_PAIR_LEN != 0 {
+        if !input.len().is_multiple_of(BLS12_381_PAIR_LEN) {
             return Err(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidInputSize
             ));

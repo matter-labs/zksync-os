@@ -27,7 +27,7 @@ impl<'a, T> SliceVec<'a, T> {
     }
 
     /// Returns the current contents as a slice and a new empty `SliceVec` that uses the rest of the backing slice.
-    pub fn freeze(&mut self) -> (&mut [T], SliceVec<T>) {
+    pub fn freeze(&mut self) -> (&mut [T], SliceVec<'_, T>) {
         unsafe {
             let (locked, free) = self.memory.split_at_mut_unchecked(self.length);
             let locked = &mut *(locked as *mut [MaybeUninit<T>] as *mut [T]);

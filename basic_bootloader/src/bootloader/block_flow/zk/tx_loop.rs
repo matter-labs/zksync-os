@@ -27,6 +27,7 @@ where
         batch_data: &mut Self::BatchDataKeeper,
         result_keeper: &mut impl ResultKeeperExt<EthereumIOTypesConfig>,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<(), BootloaderSubsystemError> {
         cycle_marker::start!("run_tx_loop");
 
@@ -95,6 +96,7 @@ where
                             is_first_tx,
                             &mut nop_keeper,
                             tracer,
+                            validator,
                         );
 
                     cycle_marker::end!("process_transaction");

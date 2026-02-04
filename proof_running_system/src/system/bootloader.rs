@@ -9,6 +9,7 @@ use zk_ee::memory::ZSTAllocator;
 use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::tracer::NopTracer;
+use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::{logger::Logger, NopResultKeeper};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -186,6 +187,7 @@ pub fn run_proving_inner<
             &mut (),
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
+            &mut NopTxValidator,
         )
         .expect("Tried to prove a failing batch");
 
@@ -220,6 +222,7 @@ pub fn run_proving_inner<
             &mut batch_data,
             &mut NopResultKeeper::default(),
             &mut NopTracer::default(),
+            &mut NopTxValidator,
         )
         .expect("Tried to prove a failing batch");
         // we do this query for consistency with block based input generation(there is empty iterator as response to this query)

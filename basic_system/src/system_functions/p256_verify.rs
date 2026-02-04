@@ -70,7 +70,7 @@ fn p256_verify_as_system_function_inner<
         *dst = *src;
     }
 
-    let mut it = buffer.array_chunks::<32>();
+    let mut it = buffer.as_chunks::<32>().0.iter();
     let is_valid = unsafe {
         let digest = it.next().unwrap_unchecked();
         let r = it.next().unwrap_unchecked();

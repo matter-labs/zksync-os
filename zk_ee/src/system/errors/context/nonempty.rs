@@ -17,7 +17,7 @@ impl IErrorContext for ErrorContext {
     fn get(&self, name: &str) -> Option<&alloc::string::String> {
         self.values
             .iter()
-            .find(|e| (e.name == name))
+            .find(|e| e.name == name)
             .map(|e| &e.value)
     }
 

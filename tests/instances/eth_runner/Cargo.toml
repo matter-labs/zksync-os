@@ -10,9 +10,11 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [dependencies]
+serde = { version = "1.0", features = ["derive"] }
+ruint = { version = "1.16", default-features = false }
+
 alloy = { version = "1", features = ["full", "ssz"]}
 alloy-rpc-types-eth = { version = "*", features = ["serde"] }
-serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rig = { path = "../../rig", features = ["eth_runner"]}
 zk_ee = { path = "../../../zk_ee" }
@@ -20,7 +22,6 @@ basic_system = { path = "../../../basic_system" }
 system_hooks = {path = "../../../system_hooks" }
 clap = { version = "4.4", features = ["derive"] }
 anyhow = "=1.0.89"
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 hex = "*"
 ureq = { version = "3", features = ["json", "gzip"] }
 sled = {version = "0.34" }

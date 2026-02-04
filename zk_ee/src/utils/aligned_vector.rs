@@ -1,12 +1,10 @@
-use super::{
-    copy_bytes_iter_to_usize_slice,
-    usize_rw::{AsUsizeWritable, SafeUsizeWritable, UsizeWriteable},
-    USIZE_SIZE,
-};
+use crate::utils::usize_rw::{AsUsizeWritable, SafeUsizeWritable, UsizeWriteable};
+
+use super::USIZE_SIZE;
 use core::{alloc::Allocator, mem::MaybeUninit};
 
 pub const fn num_usize_words_for_u8_capacity(u8_capacity: usize) -> usize {
-    let num_words = u8_capacity.next_multiple_of(USIZE_SIZE) / USIZE_SIZE;
+    let num_words = u8_capacity.div_ceil(USIZE_SIZE);
     // give it some slack to account for 64/32 bit architectures mismatch
     num_words.next_multiple_of(2)
 }
@@ -34,6 +32,12 @@ pub struct UsizeAlignedByteBox<A: Allocator> {
     byte_capacity: usize,
 }
 
+impl<A: Allocator> AsRef<[u8]> for UsizeAlignedByteBox<A> {
+    fn as_ref(&self) -> &[u8] {
+        Self::as_slice(self)
+    }
+}
+
 impl<A: Allocator> UsizeAlignedByteBox<A> {
     pub fn preallocated_in(byte_capacity: usize, allocator: A) -> Self {
         let num_usize_words = num_usize_words_for_u8_capacity(byte_capacity);
@@ -54,13 +58,6 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
 
     pub fn len(&self) -> usize {
         self.byte_capacity
-    }
-
-    pub fn from_u8_iterator_in(src: impl ExactSizeIterator<Item = u8>, allocator: A) -> Self {
-        let mut result = Self::preallocated_in(src.len(), allocator);
-        copy_bytes_iter_to_usize_slice(src, &mut result.inner);
-
-        result
     }
 
     pub fn from_slice_in(src: &[u8], allocator: A) -> Self {
@@ -94,17 +91,19 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
     }
 
     pub fn from_usize_iterator_in(src: impl ExactSizeIterator<Item = usize>, allocator: A) -> Self {
-        let mut inner: alloc::boxed::Box<[usize], A> =
-            unsafe { alloc::boxed::Box::new_uninit_slice_in(src.len(), allocator).assume_init() };
-        let mut dst = inner.as_mut_ptr();
-        for word in src {
-            unsafe {
-                dst.write(word);
-                dst = dst.add(1);
-            }
+        let word_capacity = src.len();
+        let mut inner: alloc::boxed::Box<[MaybeUninit<usize>], A> =
+            alloc::boxed::Box::new_uninit_slice_in(word_capacity, allocator);
+        // iterators will have same length by the contract
+        unsafe {
+            core::hint::assert_unchecked(src.len() == inner.len());
         }
-
-        let byte_capacity = inner.len() * USIZE_SIZE;
+        for (src, dst) in src.zip(inner.iter_mut()) {
+            dst.write(src);
+        }
+        // everything was initialized
+        let inner = unsafe { inner.assume_init() };
+        let byte_capacity = word_capacity * USIZE_SIZE;
 
         Self {
             inner,
@@ -129,24 +128,15 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
         }
     }
 
+    #[track_caller]
     pub fn truncated_to_byte_length(&mut self, byte_len: usize) {
-        assert!(byte_len <= self.byte_capacity);
+        assert!(
+            byte_len <= self.byte_capacity,
+            "trying to truncate to {} bytes, while capacity is just {} bytes",
+            byte_len,
+            self.byte_capacity
+        );
         self.byte_capacity = byte_len;
-    }
-
-    pub fn into_pinned(self) -> UsizeAlignedPinnedByteBox<A>
-    where
-        A: 'static,
-    {
-        let Self {
-            inner,
-            byte_capacity,
-        } = self;
-
-        UsizeAlignedPinnedByteBox {
-            inner: alloc::boxed::Box::into_pin(inner),
-            byte_capacity,
-        }
     }
 }
 
@@ -195,22 +185,5 @@ impl<'a> SafeUsizeWritable for UsizeSliceWriter<'a> {
 
     fn len(&self) -> usize {
         unsafe { self.end.offset_from_unsigned(self.dst) }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct UsizeAlignedPinnedByteBox<A: Allocator> {
-    inner: core::pin::Pin<alloc::boxed::Box<[usize], A>>,
-    byte_capacity: usize,
-}
-
-impl<A: Allocator> UsizeAlignedPinnedByteBox<A> {
-    pub fn as_slice(&self) -> &[u8] {
-        debug_assert!(self.inner.len() * USIZE_SIZE >= self.byte_capacity);
-        unsafe { core::slice::from_raw_parts(self.inner.as_ptr().cast::<u8>(), self.byte_capacity) }
-    }
-
-    pub fn len(&self) -> usize {
-        self.byte_capacity
     }
 }

@@ -15,13 +15,13 @@ cycle_marker = { path = "../cycle_marker" }
 evm_interpreter = { path = "../evm_interpreter", default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+ruint = { workspace = true, default-features = false }
+arrayvec = { workspace = true, default-features = false }
+serde = { workspace = true, default-features = false, features = ["derive"], optional = true }
 crypto = { path = "../crypto", default-features = false }
 hex = {version = "*", optional = true}
-arrayvec = { version = "0.7.4", default-features = false }
 strum_macros = "0.27.1"
 paste = "1.0.15"
-serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
 cfg-if = "*"
 serde-big-array = "0.5"
 

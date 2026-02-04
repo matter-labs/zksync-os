@@ -13,6 +13,8 @@ use rig::ruint::aliases::{B160, U256};
 use rig::utils::{ERC_20_BYTECODE, ERC_20_MINT_CALLDATA, ERC_20_TRANSFER_CALLDATA};
 use rig::zk_ee::common_structs::DACommitmentScheme;
 use rig::zk_ee::system::tracer::NopTracer;
+use rig::zk_ee::system::validator::NopTxValidator;
+use rig::zksync_os_interface::tracing::NopValidator;
 use rig::{alloy, zksync_web3_rs, Chain};
 use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
 use std::path::PathBuf;
@@ -58,6 +60,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
             Some(da_commitment_scheme),
             None,
             &mut NopTracer::default(),
+            &mut NopTxValidator::default(),
         )
         .unwrap();
     let encoded_transfer_tx = {
@@ -82,6 +85,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
             Some(da_commitment_scheme),
             None,
             &mut NopTracer::default(),
+            &mut NopTxValidator::default(),
         )
         .unwrap();
 

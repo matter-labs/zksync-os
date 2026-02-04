@@ -19,6 +19,7 @@ where
         is_first_tx: bool,
         block_data_keeper: &mut impl BlockTransactionsDataKeeper<S, F>,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<F::ExecutionResult<'a>, TxError> {
         let transaction = Transaction::try_from_buffer(initial_calldata_buffer, system)?;
 
@@ -28,24 +29,28 @@ where
                     if !is_first_tx {
                         Err(TxError::Validation(InvalidTransaction::UpgradeTxNotFirst))
                     } else {
-                        F::process_l1_transaction::<Config>(
+                        let r = F::process_l1_transaction::<Config>(
                             system,
                             system_functions,
                             memories,
                             zk_tx,
                             false,
                             tracer,
-                        )
+                            validator,
+                        )?;
+                        Ok(r)
                     }
                 } else if transaction.is_l1_l2() {
-                    F::process_l1_transaction::<Config>(
+                    let r = F::process_l1_transaction::<Config>(
                         system,
                         system_functions,
                         memories,
                         zk_tx,
                         true,
                         tracer,
-                    )
+                        validator,
+                    )?;
+                    Ok(r)
                 } else {
                     Self::process_l2_transaction::<Config>(
                         system,
@@ -54,6 +59,7 @@ where
                         transaction,
                         block_data_keeper,
                         tracer,
+                        validator,
                     )
                 }
             }
@@ -64,6 +70,7 @@ where
                 transaction,
                 block_data_keeper,
                 tracer,
+                validator,
             ),
         }
     }
@@ -77,10 +84,24 @@ where
         mut transaction: Transaction<S::Allocator>,
         block_data_keeper: &mut impl BlockTransactionsDataKeeper<S, F>,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<F::ExecutionResult<'a>, TxError>
     where
         S::IO: IOSubsystemExt,
     {
+        // Pre-execution validation hook for L2 transactions only
+        let calldata = transaction.calldata();
+        let pre_validation = validator.begin_tx(calldata);
+
+        if let Err(validation_err) = pre_validation {
+            system_log!(
+                system,
+                "Tx rejected by validator during begin_tx: {:?}\n",
+                validation_err
+            );
+            return Err(TxError::Validation(validation_err.into()));
+        }
+
         F::before_validation(system, &transaction, tracer)?;
 
         let validation_rollback_handle = system.start_global_frame()?;
@@ -127,6 +148,7 @@ where
                 &transaction,
                 &mut tx_context,
                 tracer,
+                validator,
             )?;
 
         F::before_refund::<Config>(
@@ -163,6 +185,11 @@ where
             block_data_keeper,
             tracer,
         );
+
+        // Validate after L2 transaction execution
+        validator
+            .finish_tx()
+            .map_err(|e| TxError::Validation(e.into()))?;
 
         Ok(execution_result)
     }

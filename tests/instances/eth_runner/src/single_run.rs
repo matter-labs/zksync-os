@@ -10,6 +10,7 @@ use rig::*;
 use std::fs::{self, File};
 use std::io::BufReader;
 use zk_ee::system::tracer::NopTracer;
+use zk_ee::system::validator::NopTxValidator;
 use zksync_os_interface::traits::EncodedTx;
 
 #[allow(clippy::too_many_arguments)]
@@ -53,6 +54,7 @@ fn run<const RANDOMIZED: bool>(
             None,
             Some(run_config),
             &mut NopTracer::default(),
+            &mut NopTxValidator::default(),
         )
         .unwrap();
 

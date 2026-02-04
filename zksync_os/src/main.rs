@@ -1,7 +1,7 @@
 #![no_std]
 #![allow(incomplete_features)]
 #![feature(allocator_api)]
-#![feature(generic_const_exprs)]
+
 #![no_main]
 
 extern "C" {

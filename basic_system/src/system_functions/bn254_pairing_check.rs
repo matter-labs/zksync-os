@@ -42,7 +42,7 @@ impl<R: Resources> SystemFunction<R, Bn254PairingCheckErrors> for Bn254PairingCh
                 <R::Native as zk_ee::system::Computational>::from_computational(native_cost),
             ))?;
 
-            if src.len() % 192 != 0 {
+            if !src.len().is_multiple_of(192) {
                 return Err(interface_error!(
                     Bn254PairingCheckInterfaceError::InvalidPairingSize
                 ));
@@ -85,7 +85,7 @@ fn bn254_pairing_check_inner<A: Allocator>(
         for (dst, src) in buffer.iter_mut().zip(&mut src_iter) {
             *dst = *src;
         }
-        let mut it = buffer.array_chunks::<32>();
+        let mut it = buffer.as_chunks::<32>().0.iter();
         unsafe {
             let mut g1_x = *it.next().unwrap_unchecked();
             let mut g1_y = *it.next().unwrap_unchecked();

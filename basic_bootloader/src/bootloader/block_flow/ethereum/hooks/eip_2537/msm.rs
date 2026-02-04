@@ -109,7 +109,7 @@ fn msm<G: CurveGroup, A: core::alloc::Allocator + Clone>(
 
     let zero = G::zero();
     let mut window_start = 0;
-    let num_windows = NUM_BITS.next_multiple_of(c) / c;
+    let num_windows = NUM_BITS.div_ceil(c);
 
     let mut reusable_buckets = Vec::with_capacity_in((1 << c) - 1, allocator.clone());
     reusable_buckets.resize((1 << c) - 1, zero);
@@ -201,7 +201,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1MSMPre
             <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
         ))?;
 
-        if input.len() % G1_MSM_PAIR_LEN != 0 {
+        if !input.len().is_multiple_of(G1_MSM_PAIR_LEN) {
             return Err(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidInputSize
             ));
@@ -269,7 +269,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2MSMPre
             <R::Native as zk_ee::system::Computational>::from_computational(cost_native),
         ))?;
 
-        if input.len() % G2_MSM_PAIR_LEN != 0 {
+        if !input.len().is_multiple_of(G2_MSM_PAIR_LEN) {
             return Err(interface_error!(
                 Bls12PrecompileInterfaceError::InvalidInputSize
             ));

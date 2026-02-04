@@ -11,6 +11,7 @@ use rig::alloy::primitives::{address, TxKind, U256};
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::B160;
 use rig::zk_ee::system::tracer::evm_tracer::NopEvmTracer;
+use rig::zk_ee::system::validator::NopTxValidator;
 use rig::zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     system::{
@@ -149,7 +150,14 @@ fn test_event_hook() {
 
     let mut tracer = EventOperationTracer::new();
 
-    let result = chain.run_block_with_extra_stats(vec![encoded_tx], None, None, None, &mut tracer);
+    let result = chain.run_block_with_extra_stats(
+        vec![encoded_tx],
+        None,
+        None,
+        None,
+        &mut tracer,
+        &mut NopTxValidator::default(),
+    );
 
     assert!(result.is_ok(), "Block execution should succeed");
     let (block_output, _, _) = result.unwrap();

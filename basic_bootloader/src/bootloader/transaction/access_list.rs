@@ -35,9 +35,11 @@ where
                     <<S::Resources as Resources>::Native as zk_ee::system::Computational>::from_computational(crate::bootloader::constants::PER_ADDRESS_ACCESS_LIST_NATIVE_COST)
                 )
             )?;
-            system
-                .io
-                .touch_account(ExecutionEnvironmentType::NoEE, resources, &address)?;
+            resources.with_infinite_ergs(|resources| {
+                system
+                    .io
+                    .touch_account(ExecutionEnvironmentType::NoEE, resources, &address)
+            })?;
             for key in slots_list.iter() {
                 // per-slot charge
                 resources.charge(&S::Resources::from_ergs_and_native(
@@ -46,14 +48,14 @@ where
                     )
                 )?;
                 let key = key?;
-                // We charged already, so we use infinite resources
-                let mut inf_resources = S::Resources::FORMAL_INFINITE;
-                system.io.storage_touch(
-                    ExecutionEnvironmentType::NoEE,
-                    &mut inf_resources,
-                    &address,
-                    &Bytes32::from_array(*key),
-                )?;
+                resources.with_infinite_ergs(|resources| {
+                    system.io.storage_touch(
+                        ExecutionEnvironmentType::NoEE,
+                        resources,
+                        &address,
+                        &Bytes32::from_array(*key),
+                    )
+                })?;
             }
         }
     }

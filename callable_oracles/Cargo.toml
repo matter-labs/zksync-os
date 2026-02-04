@@ -11,7 +11,7 @@ categories.workspace = true
 
 [dependencies]
 zk_ee = { path = "../zk_ee", default-features = false }
-ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+ruint = { workspace = true, default-features = false }
 crypto = { path = "../crypto", default-features = false }
 oracle_provider = { path = "../oracle_provider" }
 basic_system = { path = "../basic_system", default-features = false }

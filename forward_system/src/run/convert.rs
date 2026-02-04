@@ -75,6 +75,7 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockL2ToL1LogsLimitReached => { InvalidTransaction::BlockL2ToL1LogsLimitReached }
             basic_bootloader::bootloader::errors::InvalidTransaction::AuthListIsEmpty => {InvalidTransaction::AuthListIsEmpty}
             basic_bootloader::bootloader::errors::InvalidTransaction::EIP7702HasNullDestination => {InvalidTransaction::EIP7702HasNullDestination}
+            basic_bootloader::bootloader::errors::InvalidTransaction::FilteredByValidator  => {InvalidTransaction::FilteredByValidator }
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockBlobGasLimitReached => {InvalidTransaction::BlockBlobGasLimitReached}
             basic_bootloader::bootloader::errors::InvalidTransaction::BlobBaseFeeGreaterThanMaxFeePerBlobGas => {InvalidTransaction::BlobBaseFeeGreaterThanMaxFeePerBlobGas}
             basic_bootloader::bootloader::errors::InvalidTransaction::BlobListTooLong => {InvalidTransaction::BlobListTooLong}

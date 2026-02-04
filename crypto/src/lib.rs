@@ -1,5 +1,4 @@
 #![cfg_attr(not(test), no_std)]
-#![feature(array_chunks)]
 #![allow(static_mut_refs)]
 #![allow(clippy::uninit_assumed_init)]
 #![allow(clippy::new_without_default)]

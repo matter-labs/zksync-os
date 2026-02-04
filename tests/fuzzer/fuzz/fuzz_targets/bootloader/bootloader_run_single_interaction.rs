@@ -1,11 +1,10 @@
 #![no_main]
 #![feature(allocator_api)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 
 use arbitrary::{Arbitrary, Result, Unstructured};
 use basic_bootloader::bootloader::runner::RunnerMemoryBuffers;
-use basic_bootloader::bootloader::transaction_flow::zk::process_l1_transaction::mint_token;
+use basic_bootloader::bootloader::transaction_flow::zk::process_l1_transaction::transfer_from_treasury;
 use basic_bootloader::bootloader::transaction_flow::zk::ZkTransactionFlowOnlyEOA;
 use basic_bootloader::bootloader::BasicBootloader;
 use common::mock_oracle_balance;
@@ -21,8 +20,9 @@ use system_hooks::addresses_constants::{
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
 use zk_ee::system::tracer::NopTracer;
+use zk_ee::system::validator::NopTxValidator;
+use zk_ee::system::validator::TxValidator;
 use zk_ee::system::{Resource, System};
-
 mod common;
 
 // sendToL1(bytes) - 62f84b24
@@ -155,8 +155,7 @@ fn fuzz(input: FuzzInput) {
 
     system_hooks::add_precompiles(&mut system_functions).expect("Should add precompiles");
 
-    system_hooks::add_l1_messenger(&mut system_functions)
-        .expect("Should add l1_messenger");
+    system_hooks::add_l1_messenger(&mut system_functions).expect("Should add l1_messenger");
     system_hooks::add_set_bytecode_on_address_hook(&mut system_functions)
         .expect("Should add set_bytecode_on_address_hook");
     system_hooks::add_interop_root_reporter(&mut system_functions)
@@ -176,8 +175,13 @@ fn fuzz(input: FuzzInput) {
 
     match selector {
         0 => {
-            let _ =
-                mint_token::<ForwardRunningSystem>(&mut system, &amount, &from, &mut inf_resources);
+            let _ = transfer_from_treasury::<ForwardRunningSystem>(
+                &mut system,
+                &amount,
+                &from,
+                &mut inf_resources,
+                false,
+            );
         }
         1 => {
             // Fuzz-test run_single_interaction
@@ -194,6 +198,7 @@ fn fuzz(input: FuzzInput) {
                 &amount,
                 true,
                 &mut NopTracer::default(),
+                &mut NopTxValidator::default(),
             );
         }
         2 => {
@@ -214,10 +219,10 @@ fn fuzz(input: FuzzInput) {
                 &amount,
                 true,
                 &mut NopTracer::default(),
+                &mut NopTxValidator::default(),
             );
         }
         3 => {
-
             let amount = U256::from_be_bytes([0; 32]);
 
             let calldata = &input.calldata2.raw;
@@ -233,6 +238,7 @@ fn fuzz(input: FuzzInput) {
                 &amount,
                 true,
                 &mut NopTracer::default(),
+                &mut NopTxValidator::default(),
             );
         }
         _ => (),

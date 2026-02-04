@@ -228,6 +228,7 @@ impl AccountProperties {
         initial: &Self,
         r#final: &Self,
         not_publish_bytecode: bool,
+        not_compress_balance: bool,
     ) -> Result<u32, InternalError> {
         // if something except nonce and balance changed, we'll encode full diff, for all the fields
         let full_diff = initial.versioning_data != r#final.versioning_data
@@ -241,7 +242,7 @@ impl AccountProperties {
                 1u32 // metadata byte
                     + 8 // versioning data
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?) as u32 // nonce diff
-                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
+                    + ValueDiffCompressionStrategy::optimal_compression_length_u256_optional(initial.balance, r#final.balance, not_compress_balance) as u32 // balance diff
                     + 32 // bytecode hash
                     + 4 // artifacts len
                     + 4 // observable bytecode len
@@ -249,7 +250,8 @@ impl AccountProperties {
                 1u32 // metadata byte
                     + 8 // versioning data
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?) as u32 // nonce diff
-                    + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.balance, r#final.balance) as u32 // balance diff
+                    +
+                    ValueDiffCompressionStrategy::optimal_compression_length_u256_optional(initial.balance, r#final.balance, not_compress_balance) as u32 // balance diff
                     + 4 // unpadded code len
                     + 4 // artifacts len
                     + r#final.full_bytecode_len() // bytecode
@@ -274,10 +276,11 @@ impl AccountProperties {
                         .map_err(|_| internal_error!("u64 into U256"))?,
                 ) as u32; // nonce diff
             }
-            if initial.balance != r#final.balance {
-                length += ValueDiffCompressionStrategy::optimal_compression_length_u256(
+            if initial.balance != r#final.balance || not_compress_balance {
+                length += ValueDiffCompressionStrategy::optimal_compression_length_u256_optional(
                     initial.balance,
                     r#final.balance,
+                    not_compress_balance,
                 ) as u32; // balance diff
             }
             Ok(length)
@@ -490,7 +493,7 @@ mod tests {
         r#final.nonce = 22;
 
         let optimal_length =
-            AccountProperties::diff_compression_length(&initial, &r#final, false).unwrap();
+            AccountProperties::diff_compression_length(&initial, &r#final, false, false).unwrap();
 
         let mut nop_hasher = NopHasher::new();
         let mut result_keeper = TestResultKeeper { pubdata: vec![] };
@@ -542,7 +545,7 @@ mod tests {
         r#final.observable_bytecode_hash = keccak.into();
 
         let optimal_length =
-            AccountProperties::diff_compression_length(&initial, &r#final, false).unwrap();
+            AccountProperties::diff_compression_length(&initial, &r#final, false, false).unwrap();
 
         let mut nop_hasher = NopHasher::new();
         let mut result_keeper = TestResultKeeper { pubdata: vec![] };

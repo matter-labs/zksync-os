@@ -222,7 +222,8 @@ where
         _transaction: &AbiEncodedTransaction<<S as SystemTypes>::Allocator>,
         _is_priority_op: bool,
         _tracer: &mut impl Tracer<S>,
-    ) -> Result<Self::ExecutionResult<'a>, TxError>
+        _validator: &mut impl TxValidator<S>,
+    ) -> Result<Self::ExecutionResult<'a>, BootloaderSubsystemError>
     where
         S: 'a,
     {
@@ -340,6 +341,7 @@ where
                     from,
                     &value,
                     true,
+                    false,
                 )
             })
             .map_err(|e| match e {
@@ -397,6 +399,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &mut Self::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<
         (
             ExecutionResult<'a, <S as SystemTypes>::IOTypes>,
@@ -417,6 +420,7 @@ where
             &transaction,
             context,
             tracer,
+            validator,
         ) {
             Ok(r) => {
                 match r {
@@ -460,7 +464,7 @@ where
         _result: &ExecutionResult<'a, <S as SystemTypes>::IOTypes>,
         _extra_data: Self::ExecutionBodyExtraData,
         _tracer: &mut impl Tracer<S>,
-    ) -> Result<(), InternalError> {
+    ) -> Result<(), BootloaderSubsystemError> {
         system_log!(
             system,
             "Have {:?} resources available before refund\n",
@@ -545,6 +549,7 @@ where
                     &receiver,
                     &refund,
                     false,
+                    Config::SIMULATION,
                 )
                 .map_err(|e| match e {
                     // Balance errors can not be cascaded
@@ -614,6 +619,7 @@ where
                     &coinbase,
                     &fee,
                     false,
+                    Config::SIMULATION,
                 )
                 .map_err(|e| match e {
                     // Balance errors can not be cascaded
@@ -679,6 +685,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
     where
         S: 'a,
@@ -701,6 +708,7 @@ where
             nominal_token_value,
             true,
             tracer,
+            validator,
         )?;
 
         let CompletedExecution {
@@ -729,6 +737,7 @@ where
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         to_ee_type: ExecutionEnvironmentType,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<TxExecutionResult<'a, S>, BootloaderSubsystemError>
     where
         S: 'a,
@@ -785,6 +794,7 @@ where
             to_ee_type,
             deployment_request,
             tracer,
+            validator,
         )?;
 
         let CompletedExecution {
@@ -845,6 +855,7 @@ where
         transaction: &Transaction<S::Allocator>,
         context: &mut <Self as BasicTransactionFlow<S>>::TransactionContext,
         tracer: &mut impl Tracer<S>,
+        validator: &mut impl TxValidator<S>,
     ) -> Result<ExecutionResult<'a, S::IOTypes>, BootloaderSubsystemError>
     where
         S: 'a,
@@ -863,6 +874,7 @@ where
                 transaction,
                 context,
                 tracer,
+                validator,
             )?
         } else {
             // deployment
@@ -874,6 +886,7 @@ where
                 context,
                 ExecutionEnvironmentType::EVM,
                 tracer,
+                validator,
             )?
         };
 
