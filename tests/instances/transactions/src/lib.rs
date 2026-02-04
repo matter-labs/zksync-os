@@ -19,6 +19,7 @@ use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 
+mod l1_tx_resilience;
 mod native_charging;
 
 fn run_config() -> Option<rig::chain::RunConfig> {
