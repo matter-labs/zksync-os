@@ -11,6 +11,157 @@ use zk_ee::system_log;
 
 use super::super::*;
 
+/// Policy trait for handling arithmetic validation errors during resource creation.
+///
+/// This trait allows L1 and L2 transactions to handle errors differently:
+/// - L1: Only returns internal errors (validation errors are logged and saturated)
+/// - L2: Returns both validation and internal errors
+pub trait ResourcesCreationErrorPolicy<S: EthereumLikeTypes> {
+    /// The return error type for create_resources_for_tx.
+    /// For L1: BootloaderSubsystemError (no validation errors possible)
+    /// For L2: TxError (both validation and internal errors)
+    type Error;
+
+    /// The error type that describes arithmetic validation failures.
+    /// For L1: a descriptive enum for logging
+    /// For L2: InvalidTransaction
+    type ArithmeticError;
+
+    /// Create an error for native limit underflow
+    fn native_underflow_error(operation: &'static str) -> Self::ArithmeticError;
+
+    /// Create an error for intrinsic gas exceeding gas limit
+    fn intrinsic_gas_overflow_error(
+        intrinsic_overhead: u64,
+        gas_limit: u64,
+    ) -> Self::ArithmeticError;
+
+    /// Handle an arithmetic validation error.
+    /// For L1: logs the error and returns Ok(saturated_value)
+    /// For L2: returns Err(Self::Error)
+    fn handle_arithmetic_error(
+        system: &mut System<S>,
+        error: Self::ArithmeticError,
+    ) -> Result<u64, Self::Error>;
+
+    /// Convert an internal error to the policy's error type
+    #[allow(dead_code)] // Reserved for future use if internal errors are added
+    fn from_internal_error(error: BootloaderSubsystemError) -> Self::Error;
+
+    /// Convert a validation error to the policy's error type.
+    /// For L1: should never be called (deployment checks don't apply)
+    /// For L2: wraps in TxError::Validation
+    fn from_validation_error(error: InvalidTransaction) -> Self::Error;
+}
+
+/// Arithmetic error descriptor for L1 transactions
+#[derive(Debug)]
+pub enum L1ArithmeticError {
+    /// Native limit underflow during an operation
+    NativeUnderflow { operation: &'static str },
+    /// Gas limit is less than intrinsic gas overhead
+    IntrinsicGasOverflow {
+        intrinsic_overhead: u64,
+        gas_limit: u64,
+    },
+}
+
+/// Resource creation policy for L1 transactions: log and saturate on errors
+pub struct L1ResourcesPolicy;
+
+impl<S: EthereumLikeTypes> ResourcesCreationErrorPolicy<S> for L1ResourcesPolicy {
+    type Error = BootloaderSubsystemError;
+    type ArithmeticError = L1ArithmeticError;
+
+    fn native_underflow_error(operation: &'static str) -> Self::ArithmeticError {
+        L1ArithmeticError::NativeUnderflow { operation }
+    }
+
+    fn intrinsic_gas_overflow_error(
+        intrinsic_overhead: u64,
+        gas_limit: u64,
+    ) -> Self::ArithmeticError {
+        L1ArithmeticError::IntrinsicGasOverflow {
+            intrinsic_overhead,
+            gas_limit,
+        }
+    }
+
+    fn handle_arithmetic_error(
+        system: &mut System<S>,
+        error: Self::ArithmeticError,
+    ) -> Result<u64, Self::Error> {
+        match error {
+            L1ArithmeticError::NativeUnderflow { operation } => {
+                system_log!(
+                    system,
+                    "Native underflow during {}, saturating to 0 for L1 tx",
+                    operation
+                );
+                Ok(0)
+            }
+            L1ArithmeticError::IntrinsicGasOverflow {
+                intrinsic_overhead,
+                gas_limit,
+            } => {
+                system_log!(
+                    system,
+                    "Gas limit {} < intrinsic gas {} for L1 tx, saturating to 0",
+                    gas_limit,
+                    intrinsic_overhead
+                );
+                Ok(0)
+            }
+        }
+    }
+
+    fn from_internal_error(error: BootloaderSubsystemError) -> Self::Error {
+        error
+    }
+
+    fn from_validation_error(error: InvalidTransaction) -> Self::Error {
+        // L1 transactions never have deployment validation, so this should never be called
+        unreachable!(
+            "L1ResourcesPolicy should never encounter validation error: {:?}",
+            error
+        )
+    }
+}
+
+/// Resource creation policy for L2 transactions: fail on arithmetic errors
+pub struct L2ResourcesPolicy;
+
+impl<S: EthereumLikeTypes> ResourcesCreationErrorPolicy<S> for L2ResourcesPolicy {
+    type Error = TxError;
+    type ArithmeticError = InvalidTransaction;
+
+    fn native_underflow_error(_operation: &'static str) -> Self::ArithmeticError {
+        InvalidTransaction::OutOfNativeResourcesDuringValidation
+    }
+
+    fn intrinsic_gas_overflow_error(
+        _intrinsic_overhead: u64,
+        _gas_limit: u64,
+    ) -> Self::ArithmeticError {
+        InvalidTransaction::OutOfGasDuringValidation
+    }
+
+    fn handle_arithmetic_error(
+        _system: &mut System<S>,
+        error: Self::ArithmeticError,
+    ) -> Result<u64, Self::Error> {
+        Err(TxError::Validation(error))
+    }
+
+    fn from_internal_error(error: BootloaderSubsystemError) -> Self::Error {
+        TxError::Internal(error)
+    }
+
+    fn from_validation_error(error: InvalidTransaction) -> Self::Error {
+        TxError::Validation(error)
+    }
+}
+
 pub struct ResourcesForTx<S: EthereumLikeTypes> {
     // Resources to run the transaction.
     // These will be capped to MAX_NATIVE_COMPUTATIONAL, to prevent
@@ -40,10 +191,12 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for ResourcesForTx<S> {
 ///
 /// Create initial resources for a transaction.
 ///
-/// IMPORTANT: if [is_l1_tx], then this function cannot fail
-/// with a validation error. Instead, saturating arithmetic
-/// should be applied.
-pub fn create_resources_for_tx<S: EthereumLikeTypes>(
+/// The `P` parameter controls how arithmetic validation errors are handled:
+/// - Use `L1ResourcesPolicy` for L1 transactions: logs and saturates (never fails validation)
+///   Returns `Result<..., BootloaderSubsystemError>` - validation errors are impossible
+/// - Use `L2ResourcesPolicy` for L2 transactions: returns validation errors
+///   Returns `Result<..., TxError>` - can fail with validation or internal errors
+pub fn create_resources_for_tx<S: EthereumLikeTypes, P: ResourcesCreationErrorPolicy<S>>(
     system: &mut System<S>,
     gas_limit: u64,
     free_native: bool,
@@ -55,8 +208,7 @@ pub fn create_resources_for_tx<S: EthereumLikeTypes>(
     intrinsic_gas: u64,
     intrinsic_pubdata: u64,
     intrinsic_native: u64,
-    is_l1_tx: bool,
-) -> Result<ResourcesForTx<S>, TxError>
+) -> Result<ResourcesForTx<S>, P::Error>
 where
     S::Metadata: ZkSpecificPricingMetadata,
 {
@@ -76,12 +228,13 @@ where
 
     // Charge pubdata overhead
     let intrinsic_pubdata_overhead = native_per_pubdata_byte.saturating_mul(intrinsic_pubdata);
-    let native_limit = native_limit
-        .checked_sub(intrinsic_pubdata_overhead)
-        .or(if is_l1_tx { Some(0) } else { None })
-        .ok_or(TxError::Validation(
-            InvalidTransaction::OutOfNativeResourcesDuringValidation,
-        ))?;
+    let native_limit = match native_limit.checked_sub(intrinsic_pubdata_overhead) {
+        Some(val) => val,
+        None => P::handle_arithmetic_error(
+            system,
+            P::native_underflow_error("subtracting pubdata overhead"),
+        )?,
+    };
 
     // EVM tester requires high native limits, so for it we never hold off resources.
     // But for the real world, we bound the available resources.
@@ -109,12 +262,13 @@ where
         .saturating_mul(evm_interpreter::native_resource_constants::COPY_BYTE_NATIVE_COST);
     let intrinsic_computational_native_charged = calldata_native.saturating_add(intrinsic_native);
 
-    let native_limit = native_limit
-        .checked_sub(intrinsic_computational_native_charged)
-        .or(if is_l1_tx { Some(0) } else { None })
-        .ok_or(TxError::Validation(
-            InvalidTransaction::OutOfNativeResourcesDuringValidation,
-        ))?;
+    let native_limit = match native_limit.checked_sub(intrinsic_computational_native_charged) {
+        Some(val) => val,
+        None => P::handle_arithmetic_error(
+            system,
+            P::native_underflow_error("subtracting intrinsic computational native"),
+        )?,
+    };
 
     let native_limit =
         <<S as zk_ee::system::SystemTypes>::Resources as Resources>::Native::from_computational(
@@ -126,7 +280,7 @@ where
 
     if is_deployment {
         if calldata_len > MAX_INITCODE_SIZE as u64 {
-            return Err(TxError::Validation(
+            return Err(P::from_validation_error(
                 InvalidTransaction::CreateInitCodeSizeLimit,
             ));
         }
@@ -138,34 +292,23 @@ where
     intrinsic_overhead =
         intrinsic_overhead.saturating_add(calldata_tokens.saturating_mul(CALLDATA_TOKEN_GAS_COST));
 
-    if intrinsic_overhead > gas_limit && !is_l1_tx {
-        Err(TxError::Validation(
-            InvalidTransaction::OutOfGasDuringValidation,
-        ))
-    } else {
-        // If an L1 transaction's gas limit doesn't cover the intrinsic gas,
-        // we just apply saturated arithmetic.
-        // L1 contracts enforce the gas limit to be >= the intrinsic cost, but
-        // if the L1 contracts are outdated and use a wrong constant for intrinsic
-        // gas, it's better to allow L1 transaction to go through rather than fail.
-        let gas_limit_for_tx = gas_limit
-            .checked_sub(intrinsic_overhead)
-            .unwrap_or_else(|| {
-                system_log!(
-                    system,
-                    "Gas limit < intrinsic gas for L1 tx, proceeding anyways"
-                );
-                0
-            });
-        let ergs = gas_limit_for_tx.saturating_mul(ERGS_PER_GAS); // we checked at the very start that gas_limit * ERGS_PER_GAS doesn't overflow
-        let main_resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
+    // Check if intrinsic gas exceeds gas limit
+    let gas_limit_for_tx = match gas_limit.checked_sub(intrinsic_overhead) {
+        Some(val) => val,
+        None => P::handle_arithmetic_error(
+            system,
+            P::intrinsic_gas_overflow_error(intrinsic_overhead, gas_limit),
+        )?,
+    };
 
-        Ok(ResourcesForTx {
-            main_resources,
-            withheld,
-            intrinsic_computational_native_charged,
-        })
-    }
+    let ergs = gas_limit_for_tx.saturating_mul(ERGS_PER_GAS); // we checked at the very start that gas_limit * ERGS_PER_GAS doesn't overflow
+    let main_resources = S::Resources::from_ergs_and_native(Ergs(ergs), native_limit);
+
+    Ok(ResourcesForTx {
+        main_resources,
+        withheld,
+        intrinsic_computational_native_charged,
+    })
 }
 
 ///

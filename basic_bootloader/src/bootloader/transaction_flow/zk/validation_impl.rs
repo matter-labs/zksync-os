@@ -4,7 +4,9 @@ use crate::bootloader::errors::{InvalidTransaction, TxError};
 use crate::bootloader::transaction::access_list::parse_and_warm_up_access_list;
 use crate::bootloader::transaction::blobs::parse_blobs_list;
 use crate::bootloader::transaction::{charge_keccak, Transaction};
-use crate::bootloader::transaction_flow::gas_helpers::{create_resources_for_tx, get_gas_price};
+use crate::bootloader::transaction_flow::gas_helpers::{
+    create_resources_for_tx, get_gas_price, L2ResourcesPolicy,
+};
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::require;
 use basic_system::cost_constants::ECRECOVER_NATIVE_COST;
@@ -137,7 +139,7 @@ where
     let native_prepaid_from_gas = native_per_gas.saturating_mul(tx_gas_limit);
 
     // Now we will materialize resources, from which we will try to charge intrinsic cost on top
-    let mut tx_resources = create_resources_for_tx::<S>(
+    let mut tx_resources = create_resources_for_tx::<S, L2ResourcesPolicy>(
         system,
         tx_gas_limit,
         native_per_gas == 0,
@@ -149,7 +151,6 @@ where
         L2_TX_INTRINSIC_GAS,
         L2_TX_INTRINSIC_PUBDATA,
         L2_TX_INTRINSIC_NATIVE_COST,
-        false,
     )?;
 
     system_log!(

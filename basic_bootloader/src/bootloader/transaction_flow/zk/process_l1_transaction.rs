@@ -7,9 +7,9 @@ use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError;
 use crate::bootloader::runner::RunnerMemoryBuffers;
 use crate::bootloader::transaction::abi_encoded::AbiEncodedTransaction;
-use crate::bootloader::transaction_flow::gas_helpers::create_resources_for_tx;
 use crate::bootloader::transaction_flow::gas_helpers::{
-    check_enough_resources_for_pubdata, get_resources_to_charge_for_pubdata, ResourcesForTx,
+    check_enough_resources_for_pubdata, create_resources_for_tx,
+    get_resources_to_charge_for_pubdata, L1ResourcesPolicy, ResourcesForTx,
 };
 use crate::bootloader::transaction_flow::refund_calculation::{compute_gas_refund, RefundInfo};
 use crate::bootloader::transaction_flow::{ExecutionOutput, ExecutionResult};
@@ -124,7 +124,7 @@ where
             Err(e) => {
                 match e {
                     TxError::Internal(e) if !matches!(e.root_cause(), RootCause::Runtime(_)) => {
-                        return Err(e.into());
+                        return Err(e);
                     }
                     // Only way hashing of L1 tx can fail due to Validation or Runtime is
                     // due to running out of native.
@@ -204,7 +204,7 @@ where
                             S::Resources::empty(),
                         )
                     }
-                    _ => return Err(e.into()),
+                    _ => return Err(e),
                 }
             }
         }
@@ -421,10 +421,12 @@ where
 
     let native_prepaid_from_gas = native_per_gas.saturating_mul(gas_limit);
 
-    let (calldata_tokens, minimal_gas_used) =
+    let (calldata_tokens, intrinsic_cost) =
         compute_calldata_tokens(system, transaction.calldata(), true);
 
-    let resources = match create_resources_for_tx::<S>(
+    // With L1ResourcesPolicy, this returns Result<ResourcesForTx<S>, BootloaderSubsystemError>
+    // Validation errors are type-safe impossible - they're logged and saturated instead
+    let resources = create_resources_for_tx::<S, L1ResourcesPolicy>(
         system,
         gas_limit,
         native_per_gas == 0,
@@ -433,19 +435,14 @@ where
         false, // is_deployment
         transaction.calldata().len() as u64,
         calldata_tokens,
-        minimal_gas_used,
+        intrinsic_cost,
         L1_TX_INTRINSIC_PUBDATA,
         L1_TX_INTRINSIC_NATIVE_COST,
-        true,
-    ) {
-        Ok(r) => Ok(r),
-        Err(TxError::Internal(e)) => Err(e),
-        Err(TxError::Validation(e)) => {
-            // As documented in [create_resources_for_tx], this function cannot return
-            // a validation error for L1 transactions.
-            unreachable!("Resource creation cannot fail with a validation error for L1 transactions, but got {e:?}")
-        }
-    }?;
+    )?;
+
+    // L1 transactions might have a gas limit < intrinsic cost,
+    // so we pick the min as minimal_gas_used.
+    let minimal_gas_used = intrinsic_cost.min(gas_limit);
 
     Ok(ResourceAndFeeInfo {
         resources,
