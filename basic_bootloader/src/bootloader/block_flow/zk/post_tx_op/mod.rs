@@ -5,7 +5,7 @@ use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
 use ruint::aliases::U256;
-use system_hooks::addresses_constants::SYSTEM_CONTEXT_ADDRESS;
+use system_hooks::addresses_constants::{MESSAGE_ROOT_ADDRESS, SYSTEM_CONTEXT_ADDRESS};
 use zk_ee::common_structs::interop_root_storage::InteropRoot;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::IOOracle;
@@ -188,7 +188,6 @@ pub fn read_multichain_root<
 ) -> Bytes32 {
     use zk_ee::system::IOSubsystem;
 
-    const MESSAGE_ROOT_ADDRESS: B160 = B160::from_limbs([0x10005, 0, 0]);
     const SHARED_TREE_HEIGHT_STORAGE_SLOT: [u8; 32] = [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 4,

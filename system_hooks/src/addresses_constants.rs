@@ -30,15 +30,18 @@ pub const L2_BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([L2_BASE_TOKEN_ADDRESS_
 pub const MINT_HOOK_ADDRESS_LOW: u16 = 0x7100;
 pub const MINT_HOOK_ADDRESS: B160 = B160::from_limbs([MINT_HOOK_ADDRESS_LOW as u64, 0, 0]);
 
-// Treasury contract used for "minting" base tokens on L2
-pub const BASE_TOKEN_HOLDER_ADDRESS_LOW: u32 = 0x10011;
-pub const BASE_TOKEN_HOLDER_ADDRESS: B160 =
-    B160::from_limbs([BASE_TOKEN_HOLDER_ADDRESS_LOW as u64, 0, 0]);
+// L2 message root storage contract
+pub const MESSAGE_ROOT_ADDRESS: B160 = B160::from_limbs([0x10005, 0, 0]);
 
 // L2 interop root storage system contract
 pub const L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW: u32 = 0x10008;
 pub const L2_INTEROP_ROOT_STORAGE_ADDRESS: B160 =
     B160::from_limbs([L2_INTEROP_ROOT_STORAGE_ADDRESS_LOW as u64, 0, 0]);
+
+// Treasury contract used for "minting" base tokens on L2
+pub const BASE_TOKEN_HOLDER_ADDRESS_LOW: u32 = 0x10011;
+pub const BASE_TOKEN_HOLDER_ADDRESS: B160 =
+    B160::from_limbs([BASE_TOKEN_HOLDER_ADDRESS_LOW as u64, 0, 0]);
 
 // ERA VM system contracts (in fact we need implement only the methods that should be available for user contracts)
 // TODO: may be better to implement as ifs inside EraVM EE
