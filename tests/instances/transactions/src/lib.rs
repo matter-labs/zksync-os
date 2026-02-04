@@ -1988,3 +1988,69 @@ fn test_treasury_insufficient_balance_failure() {
         error_debug
     );
 }
+
+#[test]
+fn test_pubdata_native_calculation_overflow() {
+    use alloy::consensus::TxEip1559;
+    use rig::alloy::primitives::TxKind;
+
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+
+    // Set initial balance for the wallet
+    chain.set_balance(
+        B160::from_be_bytes(from.into_array()),
+        U256::from_str("100000000000000000000010000").unwrap(),
+    );
+
+    let to = address!("1234567890123456789012345678901234567890");
+    /*
+       contract A {
+           mapping(uint256 => uint256) s;
+
+           fallback() external payable {
+               for (uint256 i = 0; i < 20; i++) {
+                   s[i] = 0xfffffffffffffffffffffffff;
+               }
+           }
+       }
+    */
+    // Spam some pubdata
+    let bytecode = hex::decode("60806040525f5f90505b6014811015603f576c0fffffffffffffffffffffffff5f5f8381526020019081526020015f208190555080806001019150506009565b00fea2646970667358221220d8f4977e359f09d23e2979156755d7e177d43f8a1882a5a178eb98dd8bcb237264736f6c634300081f0033").unwrap();
+    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+
+    // Create a transaction that will generate significant pubdata
+    let tx = {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            gas_limit: 10000000,
+            max_fee_per_gas: 1000000000000000000,
+            max_priority_fee_per_gas: 1000000000000000000,
+            to: TxKind::Call(to),
+            value: U256::from(1000),
+            ..Default::default()
+        };
+        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+    };
+
+    // Set extremely high native_per_pubdata to trigger overflow in current_pubdata_spent.checked_mul(native_per_pubdata)
+    let native_price = U256::from(1);
+    let pubdata_price = U256::from(u64::MAX / 150); // Huge pubdata price to trigger overflow
+
+    let block_context = BlockContext {
+        native_price,
+        pubdata_price,
+        eip1559_basefee: U256::from(1),
+        ..Default::default()
+    };
+
+    let result = chain.run_block(vec![tx], Some(block_context), None, None);
+
+    // Verify the specific error is OutOfNativeResources
+    match &result.tx_results[0].as_ref().unwrap().execution_result {
+        rig::zksync_os_interface::types::ExecutionResult::Success(_) => panic!("Should fail"),
+        rig::zksync_os_interface::types::ExecutionResult::Revert(_) => {}
+    }
+}
