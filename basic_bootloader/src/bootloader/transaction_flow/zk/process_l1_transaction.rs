@@ -1,6 +1,7 @@
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::{
-    FREE_L1_TX_NATIVE_PER_GAS, L1_TX_INTRINSIC_NATIVE_COST, L1_TX_INTRINSIC_PUBDATA, L1_TX_NATIVE_PRICE
+    FREE_L1_TX_NATIVE_PER_GAS, L1_TX_INTRINSIC_NATIVE_COST, L1_TX_INTRINSIC_PUBDATA,
+    L1_TX_NATIVE_PRICE,
 };
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError;
@@ -386,7 +387,7 @@ where
     let native_price = L1_TX_NATIVE_PRICE;
     let native_per_gas = if is_priority_op {
         if gas_price.is_zero() {
-            if Config::SIMULATION  {
+            if Config::SIMULATION {
                 // TODO: do we even need a separate flow for L1 tx simulation?
                 // For simulation, if gas price isn't set, we use base fee
                 // for native calculation
