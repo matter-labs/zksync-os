@@ -10,10 +10,12 @@ use system_hooks::addresses_constants::{L2_INTEROP_ROOT_STORAGE_ADDRESS, SYSTEM_
 /// transactions.
 /// They have no signature, as they are added directly by the operator.
 ///
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ServiceTx<'a> {
     pub(crate) to: &'a [u8; 20], // NOTE: has to be one of the addresses in SERVICE_DESTINATION_WHITELIST
     pub(crate) data: &'a [u8],
+    salt: u64, // Some salt used by the server to identify service transactions. Ignored by ZKsync OS.
 }
 
 const SERVICE_DESTINATION_WHITELIST: &[B160] =
@@ -45,7 +47,8 @@ impl<'a> RlpListDecode<'a> for ServiceTx<'a> {
         }
 
         let data = r.bytes()?;
-        Ok(Self { to, data })
+        let salt = r.u64()?;
+        Ok(Self { to, data, salt })
     }
 }
 
@@ -56,8 +59,8 @@ mod tests {
     use alloy_rlp::Encodable;
 
     /// Helper to RLP-encode the 3-field ServiceTx body:
-    /// [destination, data]
-    fn encode_service_tx(to: &[u8], data: &[u8]) -> Vec<u8> {
+    /// [destination, data, salt]
+    fn encode_service_tx(to: &[u8], data: &[u8], salt: u64) -> Vec<u8> {
         let mut buf = Vec::new();
 
         // Temporary placeholder for the list header; we’ll fix it once we know the payload length.
@@ -67,6 +70,7 @@ mod tests {
 
         to.encode(&mut buf);
         data.encode(&mut buf);
+        salt.encode(&mut buf);
 
         let payload_len = buf.len() - start;
 
@@ -81,7 +85,7 @@ mod tests {
         let to: &[u8] = &[]; // RLP empty string -> len() == 0
         let data: &[u8] = &[0x01, 0x02];
 
-        let bytes = encode_service_tx(to, data);
+        let bytes = encode_service_tx(to, data, 0);
 
         let res = ServiceTx::decode_list_full(&bytes);
         assert!(matches!(res, Err(InvalidTransaction::InvalidStructure)));
@@ -94,7 +98,7 @@ mod tests {
 
         let data: &[u8] = &[];
 
-        let bytes = encode_service_tx(&to_bytes, data);
+        let bytes = encode_service_tx(&to_bytes, data, 0);
 
         let res = ServiceTx::decode_list_full(&bytes);
         assert!(matches!(res, Err(InvalidTransaction::InvalidStructure)));
@@ -105,7 +109,7 @@ mod tests {
         let to_bytes: [u8; 20] = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes();
         let data: Vec<u8> = vec![0xde, 0xad, 0xbe, 0xef];
 
-        let bytes = encode_service_tx(&to_bytes, &data);
+        let bytes = encode_service_tx(&to_bytes, &data, 0);
 
         let tx: ServiceTx<'_> =
             ServiceTx::decode_list_full(&bytes).expect("whitelisted address must decode");
