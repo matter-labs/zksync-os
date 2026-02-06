@@ -223,8 +223,8 @@ where
                     &mut ecrecover_output,
                     resources,
                     system.io.oracle(),
-                        &mut logger,
-                        allocator,
+                    &mut logger,
+                    allocator,
                 )
                 .map_err(SystemError::from)
             })?;
