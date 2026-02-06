@@ -166,6 +166,9 @@ pub fn read_settlement_layer_chain_id<
 ///
 /// Reads multichain root from the L2MessageRoot(0x10005) contract.
 ///
+/// Multichain root is the commitment to l2 to l1 logs from the chains that settles on top of current.
+/// It's not zero if the current chain is used as the settlement layer.
+///
 pub fn read_multichain_root<
     A: Allocator + Clone + Default,
     R: Resources,

@@ -387,22 +387,7 @@ where
     let native_price = L1_TX_NATIVE_PRICE;
     let native_per_gas = if is_priority_op {
         if gas_price.is_zero() {
-            if Config::SIMULATION {
-                // TODO: do we even need a separate flow for L1 tx simulation?
-                // For simulation, if gas price isn't set, we use base fee
-                // for native calculation
-                u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price))
-                    .unwrap_or_else(|| {
-                        system_log!(
-                            system,
-                            "Native per gas calculation for L1 tx simulation overflows, using saturated arithmetic instead"
-                        );
-                        u64::MAX
-                    })
-            } else {
-                // Free L1 tx, use fixed native per gas
-                FREE_L1_TX_NATIVE_PER_GAS
-            }
+            FREE_L1_TX_NATIVE_PER_GAS
         } else {
             u256_try_to_u64(&gas_price.div_ceil(native_price))
                 .unwrap_or_else(|| {
