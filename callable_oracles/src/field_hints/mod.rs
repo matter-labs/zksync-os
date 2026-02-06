@@ -50,9 +50,9 @@ impl<M: MemorySource> OracleQueryProcessor<M> for FieldOpsQuery<M> {
             "A single RISC-V ptr should've been passed."
         );
 
-        assert!(arg_ptr % 4 == 0);
+        assert!(arg_ptr.is_multiple_of(4));
         const { assert!(core::mem::align_of::<FieldOpsHint>() == 4) }
-        const { assert!(core::mem::size_of::<FieldOpsHint>() % 4 == 0) }
+        const { assert!(core::mem::size_of::<FieldOpsHint>().is_multiple_of(4)) }
 
         let arg = unsafe { read_struct::<FieldOpsHint, M>(memory, arg_ptr as u32) }.unwrap();
 
