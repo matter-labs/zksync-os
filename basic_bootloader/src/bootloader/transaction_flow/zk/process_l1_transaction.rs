@@ -288,9 +288,9 @@ where
             if !is_priority_op {
                 return Err(internal_error!("Upgrade transaction must succeed").into());
             }
-            // If the transaction reverts, then minting the msg.value to the
-            // user has been reverted as well, so we can simply mint everything
-            // that the user has deposited to the refund recipient
+            // If the transaction reverts, then the minting of the deposit
+            // reverted too. Thus, we need to refund the entire deposit minus
+            // the fee (`pay_to_operator`).
             total_deposited
                 .checked_sub(pay_to_operator)
                 .ok_or(internal_error!("td-pto"))
@@ -298,14 +298,14 @@ where
         ExecutionResult::Success { .. } => {
             // If the transaction succeeds, then it is assumed that the
             // mint to `from` address was transferred correctly too.
-            // However, the remaining value deposited will be given to
-            // the refund recipient.
-            let tx_internal_cost = gas_price
+            // In this case, we just refund the unused gas that the
+            // transaction paid for initially.
+            let prepaid_fee = gas_price
                 .checked_mul(U256::from(transaction.gas_limit.read()))
                 .ok_or(internal_error!("gp*gl"))?;
-            tx_internal_cost
+            prepaid_fee
                 .checked_sub(pay_to_operator)
-                .ok_or(internal_error!("td-vpf"))
+                .ok_or(internal_error!("pf-pto"))
         }
     }?;
     if to_refund_recipient > U256::ZERO {
@@ -404,13 +404,21 @@ where
     // Start a frame, to revert minting of value if execution fails
     let rollback_handle = system.start_global_frame()?;
 
-    let tx_internal_cost = gas_price
+    // Fee payment is done in two steps.
+    // The first step is here, where the max fee (gas limit * gas price)
+    // is committed to.
+    // This fee is deducted from the deposit to be minted (transferred from
+    // the treasury).
+    // After the execution of the transaction, the actual fee
+    // (gas used * gas price) is paid to the operator, while the
+    // rest of the max fee is refunded.
+    let max_fee_commitment = gas_price
         .checked_mul(U256::from(transaction.gas_limit.read()))
         .ok_or(internal_error!("gp*gl"))?;
     let total_deposited = transaction.reserved[0].read();
     let to_transfer = total_deposited
-        .checked_sub(tx_internal_cost)
-        .ok_or(internal_error!("v+tic"))?;
+        .checked_sub(max_fee_commitment)
+        .ok_or(internal_error!("mfc+tic"))?;
 
     // First we transfer from treasury
     if to_transfer > U256::ZERO {

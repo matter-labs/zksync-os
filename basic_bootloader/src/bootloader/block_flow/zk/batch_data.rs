@@ -103,7 +103,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
     }
 
     ///
-    /// Returns if the batch has had an upgrade tx in the first block
+    /// Returns if the batch has had an upgrade tx
     ///
     pub fn has_upgrade_tx(&self) -> bool {
         self.upgrade_tx_hash
