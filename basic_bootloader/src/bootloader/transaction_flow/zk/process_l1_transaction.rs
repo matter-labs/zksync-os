@@ -90,7 +90,7 @@ where
         native_per_gas,
         native_per_pubdata,
         minimal_gas_used,
-    } = prepare_and_check_resources::<S, Config>(
+    } = prepare_and_check_resources::<S>(
         system,
         transaction,
         is_priority_op,
@@ -366,11 +366,7 @@ struct ResourceAndFeeInfo<S: EthereumLikeTypes> {
 /// The approach is to use saturating arithmetic and emit a system
 /// log if this situation ever happens.
 ///
-fn prepare_and_check_resources<
-    'a,
-    S: EthereumLikeTypes + 'a,
-    Config: BasicBootloaderExecutionConfig,
->(
+fn prepare_and_check_resources<'a, S: EthereumLikeTypes + 'a>(
     system: &mut System<S>,
     transaction: &AbiEncodedTransaction<S::Allocator>,
     is_priority_op: bool,
