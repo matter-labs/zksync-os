@@ -177,7 +177,7 @@ pub unsafe fn neg_mod_assign<T: DelegatedModParams<8>>(a: &mut U512) {
     let is_low_zero = delegation::eq(low, &ZERO) != 0;
     let is_high_zero = delegation::eq(high, &ZERO) != 0;
 
-    if !is_low_zero && !is_high_zero {
+    if !is_low_zero || !is_high_zero {
         let borrow = u256::sub_and_negate_assign(low, as_low(T::modulus()));
         u256::sub_and_negate_with_carry(high, as_high(T::modulus()), borrow);
     }
@@ -368,4 +368,107 @@ pub unsafe fn square_assign_montgomery<T: DelegatedMontParams<8>>(a: &mut U512) 
         copy(&mut s.copy_place_0, a);
         mul_assign_montgomery::<T>(a, &s.copy_place_0);
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ark_ff_delegation::BigInt;
+
+    // A simple modulus for testing: use a large prime in U512 form
+    // We use BLS12-381 Fq modulus padded to 8 limbs
+    #[derive(Default, Debug)]
+    struct TestMod;
+
+    static TEST_MODULUS: BigInt<8> = BigInt([
+        13402431016077863595u64,
+        2210141511517208575u64,
+        7435674573564081700u64,
+        7239337960414712511u64,
+        5412103778470702295u64,
+        1873798617647539866u64,
+        0,
+        0,
+    ]);
+
+    impl DelegatedModParams<8> for TestMod {
+        unsafe fn modulus() -> &'static BigInt<8> {
+            &TEST_MODULUS
+        }
+    }
+
+    #[test]
+    fn test_neg_mod_zero() {
+        // Negating zero should give zero
+        let mut a = U512::zero();
+        unsafe {
+            neg_mod_assign::<TestMod>(&mut a);
+        }
+        assert!(a.is_zero(), "neg(0) should be 0");
+    }
+
+    #[test]
+    fn test_neg_mod_with_only_low_nonzero() {
+        // Regression test: when only low part is non-zero, negation should still work
+        let mut a = U512::zero();
+        a.0[0] = 1; // low part is non-zero, high part is zero
+
+        let original = a;
+        unsafe {
+            neg_mod_assign::<TestMod>(&mut a);
+        }
+
+        // Result should NOT be the original (unless original was 0, which it isn't)
+        assert!(!a.is_zero(), "neg(1) should not be 0");
+        assert_ne!(a.0, original.0, "neg(a) should differ from a when a != 0");
+
+        // Verify: neg(a) + a should equal modulus (in non-reduced form) or 0 mod modulus
+        // Actually let's verify by negating twice
+        unsafe {
+            neg_mod_assign::<TestMod>(&mut a);
+        }
+        assert_eq!(a.0, original.0, "neg(neg(a)) should equal a");
+    }
+
+    #[test]
+    fn test_neg_mod_with_only_high_nonzero() {
+        // Regression test: when only high part is non-zero, negation should still work
+        let mut a = U512::zero();
+        a.0[4] = 1; // high part is non-zero (limb index 4 is in the high U256), low part is zero
+
+        let original = a;
+        unsafe {
+            neg_mod_assign::<TestMod>(&mut a);
+        }
+
+        assert!(!a.is_zero(), "neg(a) should not be 0 when a != 0");
+        assert_ne!(a.0, original.0, "neg(a) should differ from a when a != 0");
+
+        // Verify by negating twice
+        unsafe {
+            neg_mod_assign::<TestMod>(&mut a);
+        }
+        assert_eq!(a.0, original.0, "neg(neg(a)) should equal a");
+    }
+
+    #[test]
+    fn test_neg_mod_both_parts_nonzero() {
+        // When both parts are non-zero
+        let mut a = U512::zero();
+        a.0[0] = 42; // low part non-zero
+        a.0[4] = 17; // high part non-zero
+
+        let original = a;
+        unsafe {
+            neg_mod_assign::<TestMod>(&mut a);
+        }
+
+        assert!(!a.is_zero(), "neg(a) should not be 0 when a != 0");
+
+        // Verify by negating twice
+        unsafe {
+            neg_mod_assign::<TestMod>(&mut a);
+        }
+        assert_eq!(a.0, original.0, "neg(neg(a)) should equal a");
+    }
 }
