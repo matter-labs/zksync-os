@@ -24,6 +24,9 @@ pub fn system_context_event_hook<S: EthereumLikeTypes>(
 ) -> Result<(), SystemError>
 where
 {
+    if topics.is_empty() {
+        return Ok(());
+    }
     // For now, we only capture the SettlementLayerChainIdUpdated event
     if topics[0].as_u8_array() == SL_CHAIN_ID_UPDATED_EVENT_SIG {
         new_sl_chain_id_event_hook(topics, data, caller_ee, system, resources)
@@ -45,6 +48,12 @@ where
     if !data.is_empty() {
         return Err(
             internal_error!("New SL chain id reporter event hook received bad data").into(),
+        );
+    }
+    // Same if there's a mismatch in expected topics
+    if topics.len() != 2 {
+        return Err(
+            internal_error!("New SL chain id reporter event hook received bad topics").into(),
         );
     }
 
