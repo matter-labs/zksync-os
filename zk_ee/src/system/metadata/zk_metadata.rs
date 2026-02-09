@@ -97,9 +97,11 @@ impl UsizeDeserializable for BlockHashes {
     const USIZE_LEN: usize = <U256 as UsizeDeserializable>::USIZE_LEN * BLOCK_HASHES_WINDOW_SIZE;
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        Ok(Self(core::array::from_fn(|_| {
-            U256::from_iter(src).unwrap_or_default()
-        })))
+        let mut hashes = [U256::ZERO; BLOCK_HASHES_WINDOW_SIZE];
+        for hash in &mut hashes {
+            *hash = U256::from_iter(src)?;
+        }
+        Ok(Self(hashes))
     }
 }
 
