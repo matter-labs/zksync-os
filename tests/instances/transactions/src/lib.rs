@@ -2,7 +2,7 @@
 //! These tests are focused on different tx types.
 //!
 #![cfg(test)]
-use alloy::consensus::{TxEip1559, TxEip2930, TxLegacy};
+use alloy::consensus::{TxEip1559, TxEip2930, TxEip4844, TxLegacy};
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
 use rig::alloy::consensus::TxEip7702;
@@ -1675,6 +1675,48 @@ fn test_simulation_balance_check() {
     assert!(
         result_simulation.tx_results[0].is_ok(),
         "Transaction with no fee/value should pass validation in simulation mode"
+    );
+}
+
+#[test]
+fn test_simulation_4844_zero_blob_fee_allowed() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    chain.set_balance(
+        B160::from_be_bytes(from.into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    let tx = TxEip4844 {
+        chain_id: 37u64,
+        nonce: 0,
+        max_fee_per_gas: 1_000,
+        max_priority_fee_per_gas: 1_000,
+        gas_limit: 75_000,
+        to: target_address,
+        value: U256::ZERO,
+        input: Default::default(),
+        access_list: Default::default(),
+        blob_versioned_hashes: vec![b256!(
+            "0x011122223333444455556666777788889999aaaabbbbccccddddeeeeffff0000"
+        )],
+        max_fee_per_blob_gas: 0,
+    };
+    let encoded_tx = rig::utils::sign_and_encode_alloy_tx(tx, &wallet);
+
+    let block_context = BlockContext {
+        blob_fee: U256::from(1),
+        ..Default::default()
+    };
+
+    let result_simulation = chain.simulate_block(vec![encoded_tx], Some(block_context));
+    assert!(
+        result_simulation.tx_results[0].is_ok(),
+        "EIP-4844 tx should pass simulation when blob_fee > 0 and max_fee_per_blob_gas = 0, got: {:?}",
+        result_simulation.tx_results[0]
     );
 }
 
