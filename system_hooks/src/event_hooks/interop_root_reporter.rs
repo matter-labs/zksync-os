@@ -26,7 +26,7 @@ pub fn interop_root_reporter_event_hook<S: EthereumLikeTypes>(
 where
 {
     // First, ensure we're capturing the InteropRootAdded event
-    if topics[0].as_u8_array() != INTEROP_ROOT_ADDED_EVENT_SIG {
+    if topics.is_empty() || topics[0].as_u8_array() != INTEROP_ROOT_ADDED_EVENT_SIG {
         return Ok(());
     }
     // Internal error if the data supplied doesn't match the expected value
@@ -59,6 +59,10 @@ where
     // It should have exactly one side
     if len != 1 {
         return Err(internal_error!("Interop root reporter event hook received bad length").into());
+    }
+    // Validate topics length
+    if topics.len() != 3 {
+        return Err(internal_error!("Interop root reporter event hook received bad topics").into());
     }
 
     let root = Bytes32::from_array(data[64..96].try_into().unwrap());
