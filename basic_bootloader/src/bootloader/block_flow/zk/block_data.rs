@@ -93,6 +93,7 @@ impl TxHashesAccumulator for TransactionsRollingKeccakHasher {
             self.hasher.update(tx_hash.as_u8_array_ref());
             self.hasher.finalize_reset()
         });
+        self.count += 1;
     }
 }
 
@@ -156,5 +157,34 @@ impl UpgradeTx {
     /// Returns the upgrade transaction hash, or zero if no upgrade occurred.
     pub fn finish(self) -> Bytes32 {
         self.inner
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rolling_keccak_count_increases_on_add_tx_hash() {
+        let mut hasher = TransactionsRollingKeccakHasher::empty();
+        let tx_hash = Bytes32::from_array([1u8; 32]);
+
+        hasher.add_tx_hash(&tx_hash);
+
+        let (_hash, count) = hasher.finish();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn rolling_keccak_count_tracks_multiple_adds() {
+        let mut hasher = TransactionsRollingKeccakHasher::empty();
+        let tx_hash_a = Bytes32::from_array([2u8; 32]);
+        let tx_hash_b = Bytes32::from_array([3u8; 32]);
+
+        hasher.add_tx_hash(&tx_hash_a);
+        hasher.add_tx_hash(&tx_hash_b);
+
+        let (_hash, count) = hasher.finish();
+        assert_eq!(count, 2);
     }
 }
