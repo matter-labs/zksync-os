@@ -110,20 +110,6 @@ fn copy(dst: &mut U512, src: &U512) {
     delegation::memcpy(high_dst, as_high(src));
 }
 
-#[inline(always)]
-fn is_ge_modulus<T: DelegatedModParams<8>>(a: &U512) -> bool {
-    let m = unsafe { T::modulus() };
-    for i in (0..8).rev() {
-        if a.0[i] > m.0[i] {
-            return true;
-        }
-        if a.0[i] < m.0[i] {
-            return false;
-        }
-    }
-    true // equal
-}
-
 /// Tries to get `self` in the range `[0..modulus)`.
 /// Note: we assume `self < 2*modulus`, otherwise the result might not be in the range
 /// # Safety
