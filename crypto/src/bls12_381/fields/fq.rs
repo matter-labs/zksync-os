@@ -441,8 +441,8 @@ mod test {
 
     #[test]
     fn test_montgomery_mul_requires_final_reduction_fq() {
-        use crate::bigint_delegation::u512;
         use super::FqParams;
+        use crate::bigint_delegation::u512;
         // Montgomery-form inputs chosen to force the raw Montgomery product
         // above the modulus if final reduction is omitted.
         let mut a = BigInt([
