@@ -20,7 +20,7 @@ impl EncodableToEncodedTx for ZKsyncTxRequest {
             ZKsyncTxType::L1 => encode_l1_tx(self.inner.clone()),
             ZKsyncTxType::Upgrade => encode_upgrade_tx(self.inner.clone()),
             ZKsyncTxType::L2 => encode_and_sign_as_legacy_l2(
-                self.inner.clone().into(),
+                self.inner.clone(),
                 self.signer
                     .as_ref()
                     .expect("L2 transactions must have a signer"),
@@ -72,7 +72,7 @@ pub fn encode_and_sign_as_legacy_l2(
 
     // Turn it into a signed tx envelope; then encode as EIP-2718 bytes.
     let signed = tx.into_signed(sig);
-    EncodedTx::Rlp(signed.encoded_2718().into(), signer.address())
+    EncodedTx::Rlp(signed.encoded_2718(), signer.address())
 }
 
 ///

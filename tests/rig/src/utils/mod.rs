@@ -7,10 +7,7 @@ use crate::Chain;
 use alloy::consensus::SidecarBuilder;
 use alloy::consensus::SimpleCoder;
 use alloy::consensus::TxEip1559;
-use alloy::consensus::TxEnvelope;
-use alloy::primitives::Address;
 use alloy::primitives::TxKind;
-use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::sol;
 use ethers::abi::AbiEncode;
@@ -19,7 +16,6 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
 pub use zksync_os_api::helpers::*;
-use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::types::BlockOutput;
 
 pub mod tx_encoding;

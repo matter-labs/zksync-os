@@ -15,14 +15,14 @@ pub struct ChainStateView {
 
 impl PreimageSource for ChainStateView {
     fn get_preimage(&mut self, hash: B256) -> Option<Vec<u8>> {
-        let hash = Bytes32::from_array(hash.as_array().unwrap().clone());
+        let hash = Bytes32::from_array(*hash.as_array().unwrap());
         self.chain.preimage_source.inner.get(&hash).cloned()
     }
 }
 
 impl ReadStorage for ChainStateView {
     fn read(&mut self, key: B256) -> Option<B256> {
-        let key = Bytes32::from_array(key.as_array().unwrap().clone());
+        let key = Bytes32::from_array(*key.as_array().unwrap());
         let value = self.chain.state_tree.read(key);
 
         value.map(|v| B256::from(v.as_u8_array()))
@@ -38,9 +38,6 @@ impl ViewState for ChainStateView {
     fn account_nonce(&mut self, address: Address) -> Option<u64> {
         let account = self.get_account(address);
 
-        match account {
-            Some(account) => Some(account.nonce),
-            None => None,
-        }
+        account.map(|account| account.nonce)
     }
 }

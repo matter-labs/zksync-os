@@ -925,7 +925,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn get_account_properties(&mut self, address: &B160) -> AccountProperties {
         self.get_account_properties_maybe(address)
-            .unwrap_or_else(|| AccountProperties::default())
+            .unwrap_or_else(AccountProperties::default)
     }
 
     ///
