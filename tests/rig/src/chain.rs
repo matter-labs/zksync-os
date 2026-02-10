@@ -102,8 +102,9 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
 ///
 /// In memory chain state, mainly to be used in tests.
 ///
+#[derive(Debug, Clone)]
 pub struct Chain<const RANDOMIZED_TREE: bool = false> {
-    state_tree: InMemoryTree<RANDOMIZED_TREE>,
+    pub(crate) state_tree: InMemoryTree<RANDOMIZED_TREE>,
     pub preimage_source: InMemoryPreimageSource,
     chain_id: u64,
     previous_block_number: Option<u64>,
@@ -900,26 +901,31 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         (Some(result_keeper), proof_input)
     }
 
-    pub fn get_account_properties(&mut self, address: &B160) -> AccountProperties {
+    pub fn get_account_properties_maybe(&mut self, address: &B160) -> Option<AccountProperties> {
         use forward_system::run::PreimageSource;
         let key = address_into_special_storage_key(address);
         let flat_key = derive_flat_storage_key(&ACCOUNT_PROPERTIES_STORAGE_ADDRESS, &key);
         match self.state_tree.cold_storage.get(&flat_key) {
-            None => AccountProperties::default(),
+            None => None,
             Some(account_hash) => {
                 if account_hash.is_zero() {
                     // Empty (default) account
-                    AccountProperties::default()
+                    Some(AccountProperties::default())
                 } else {
                     // Get from preimage:
                     let encoded = self
                         .preimage_source
                         .get_preimage(*account_hash)
                         .unwrap_or_default();
-                    AccountProperties::decode(&encoded.try_into().unwrap())
+                    Some(AccountProperties::decode(&encoded.try_into().unwrap()))
                 }
             }
         }
+    }
+
+    pub fn get_account_properties(&mut self, address: &B160) -> AccountProperties {
+        self.get_account_properties_maybe(address)
+            .unwrap_or_else(|| AccountProperties::default())
     }
 
     ///

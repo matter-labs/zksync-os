@@ -10,12 +10,16 @@ use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
 use rig::chain::RunConfig;
+use rig::crypto::p256::elliptic_curve::rand_core::block;
+use rig::revm_consistency_checker::ChainStateView;
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::testing_utils::install_system_contracts;
+use rig::utils::tx_encoding::{encode_special_tx_type, encode_upgrade_tx};
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::{alloy, zksync_web3_rs, Chain};
+use rig::{alloy, zksync_os_interface, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
+use std::iter::Rev;
 use std::str::FromStr;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 
@@ -141,7 +145,7 @@ fn run_base_system() {
             nonce: Some(0),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(transfer)
+        rig::utils::tx_encoding::encode_l1_tx(transfer)
     };
 
     let encoded_l1_l2_erc_transfer = {
@@ -156,7 +160,7 @@ fn run_base_system() {
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
 
     let transactions = vec![
@@ -666,7 +670,7 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
             authorization_list: None,
         };
 
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
 
     let transactions = vec![encoded_mint1_tx, withdrawal_tx];
@@ -1211,25 +1215,57 @@ fn test_selfdestruct_to_precompile_gas() {
         &bytecode,
     );
 
-    let encoded_tx = {
-        let tx = TxEip2930 {
-            chain_id: 37u64,
-            nonce: 0,
-            gas_price: 1000,
-            gas_limit: 75_000,
-            to: TxKind::Call(contract_address),
-            value: Default::default(),
+    use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
+
+    let tx_request = {
+        let tx_request = TransactionRequest {
+            chain_id: Some(37),
+            from: Some(wallet.address()),
+            to: Some(TxKind::Call(contract_address)),
             input: Default::default(),
-            access_list: Default::default(),
+            value: Some(U256::from(0)),
+            gas: Some(75_000),
+            max_fee_per_gas: Some(1000),
+            max_priority_fee_per_gas: Some(1000),
+            gas_price: Some(1000),
+            nonce: Some(0),
+            ..Default::default()
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+
+        ZKsyncTxRequest::new_l2(tx_request, wallet)
     };
 
-    let result = chain.run_block(vec![encoded_tx], None, None, None);
+    let chain_before = chain.clone();
+
+    use rig::utils::tx_encoding::EncodableToEncodedTx;
+
+    let result = chain.run_block(vec![tx_request.encode()], None, None, None);
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
     let gas_used = res0.clone().unwrap().gas_used;
     assert_eq!(gas_used, 26003);
+
+    use zksync_os_revm_runner::revm_runner::RevmRunner;
+    let chain_state = ChainStateView {
+        chain: chain_before,
+    };
+    let mut revm_runner: RevmRunner<ChainStateView> = RevmRunner::new(chain_state);
+
+    // TODO build BlockContextInterface using chain and BlockContext for rig
+    use zksync_os_interface::types::BlockContext as BlockContextInterface;
+    let mut block_context = BlockContextInterface::default();
+    let default_block_context = BlockContext::default();
+    block_context.native_price = default_block_context.native_price;
+    block_context.pubdata_price = default_block_context.pubdata_price;
+    block_context.eip1559_basefee = default_block_context.eip1559_basefee;
+    block_context.block_number = 0;
+    block_context.timestamp = 42;
+    block_context.gas_limit = default_block_context.gas_limit;
+    block_context.chain_id = 37;
+
+    revm_runner
+        .run(vec![tx_request], block_context, None)
+        .expect("RevmRunner execution failed");
 }
 
 #[test]
@@ -1892,7 +1928,7 @@ fn test_treasury_based_token_distribution_regression() {
             nonce: Some(0),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
 
     let block_context = BlockContext {
@@ -2006,7 +2042,7 @@ fn test_treasury_insufficient_balance_failure() {
             nonce: Some(0),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
 
     let config = RunConfig {

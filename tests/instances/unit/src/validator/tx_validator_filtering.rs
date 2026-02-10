@@ -246,7 +246,7 @@ fn test_l1_transactions_are_not_filtered_by_validator() {
             input: withdrawal_calldata.clone().into(),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
 
     let tx0 = mk_l1_tx(0, 10);

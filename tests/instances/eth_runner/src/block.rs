@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::calltrace::CallTrace;
 use alloy::eips::Typed2718;
-use rig::utils::encode_alloy_rpc_tx;
+use rig::utils::tx_encoding::encode_alloy_rpc_tx;
 use rig::{log::warn, zksync_os_interface::traits::EncodedTx};
 use ruint::aliases::{B160, U256};
 use serde::{Deserialize, Serialize};

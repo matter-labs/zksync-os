@@ -91,7 +91,7 @@ pub fn call_address_and_measure_gas_cost(
             nonce: Some(0),
             ..TransactionRequest::default()
         };
-        utils::encode_l1_tx(tx)
+        utils::tx_encoding::encode_l1_tx(tx)
     };
     let transactions = vec![encoded_tx];
 

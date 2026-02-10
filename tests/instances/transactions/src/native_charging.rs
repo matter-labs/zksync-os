@@ -81,7 +81,7 @@ fn test_l1_tx_low_ratio() {
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
     run_tx(tx, gas_price, native_price, false, false)
 }
@@ -105,7 +105,7 @@ fn test_l1_tx_avg_ratio() {
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
     run_tx(tx, gas_price, native_price, true, false)
 }
@@ -129,7 +129,7 @@ fn test_l1_tx_high_ratio() {
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
     run_tx(tx, gas_price, native_price, true, false)
 }
@@ -239,7 +239,7 @@ fn test_0_gas_limit() {
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
     run_tx(tx.clone(), gas_price, native_price, false, false);
     run_tx(tx, gas_price, native_price, false, true);
@@ -281,7 +281,7 @@ fn test_0_gas_price() {
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
     run_tx(tx.clone(), gas_price, native_price, true, false)
 }

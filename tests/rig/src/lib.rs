@@ -7,6 +7,7 @@
 //!
 use std::sync::Once;
 pub mod chain;
+pub mod revm_consistency_checker;
 pub mod testing_utils;
 pub mod utils;
 

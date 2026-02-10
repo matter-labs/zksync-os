@@ -58,7 +58,7 @@ fn test_set_bytecode_details_evm() {
             nonce: Some(0),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
     let transactions = vec![encoded_tx];
 
@@ -125,7 +125,7 @@ fn test_set_deployed_bytecode_evm_unauthorized() {
             nonce: Some(0),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
     let transactions = vec![encoded_tx];
 
@@ -171,7 +171,7 @@ fn test_l1_messenger_hook_succeeds() {
         ..TransactionRequest::default()
     };
 
-    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let encoded_tx = rig::utils::tx_encoding::encode_l1_tx(tx);
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -220,7 +220,7 @@ fn test_l1_messenger_hook_fails_with_invalid_calldata() {
         ..TransactionRequest::default()
     };
 
-    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let encoded_tx = rig::utils::tx_encoding::encode_l1_tx(tx);
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -269,7 +269,7 @@ fn test_l1_messenger_hook_unauthorized_sender_ignored() {
         ..TransactionRequest::default()
     };
 
-    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let encoded_tx = rig::utils::tx_encoding::encode_l1_tx(tx);
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -318,7 +318,7 @@ fn test_l2_base_token_withdraw_events() {
         ..TransactionRequest::default()
     };
 
-    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let encoded_tx = rig::utils::tx_encoding::encode_l1_tx(tx);
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -407,7 +407,7 @@ fn test_l2_base_token_withdraw_with_message_events() {
         ..TransactionRequest::default()
     };
 
-    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let encoded_tx = rig::utils::tx_encoding::encode_l1_tx(tx);
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -485,7 +485,7 @@ fn test_l2_base_token_withdraw_with_dirty_address() {
         ..TransactionRequest::default()
     };
 
-    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let encoded_tx = rig::utils::tx_encoding::encode_l1_tx(tx);
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -552,7 +552,7 @@ fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
         ..TransactionRequest::default()
     };
 
-    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let encoded_tx = rig::utils::tx_encoding::encode_l1_tx(tx);
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -599,7 +599,7 @@ fn test_l2_base_token_no_mint_event_regression() {
         ..TransactionRequest::default()
     };
 
-    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let encoded_tx = rig::utils::tx_encoding::encode_l1_tx(tx);
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -785,7 +785,7 @@ fn test_mint_base_token_hook() {
         ..TransactionRequest::default()
     };
 
-    let encoded_tx = rig::utils::encode_l1_tx(tx);
+    let encoded_tx = rig::utils::tx_encoding::encode_l1_tx(tx);
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);

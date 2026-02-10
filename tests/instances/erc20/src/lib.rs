@@ -19,7 +19,7 @@ fn get_name_sol() {
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let tx_get_name = rig::utils::sign_and_encode_ethers_legacy_tx(
+    let tx_get_name = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
         TransactionRequest::new()
             .to(erc20_addr)
             .gas(1 << 27)
@@ -56,7 +56,7 @@ fn get_name_sol() {
 //             U256::from(1_000_000_000_000_000_u64),
 //         );
 //
-//     let tx_get_name = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx_get_name = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(erc20_addr)
 //             .gas(1 << 27)
@@ -88,7 +88,7 @@ fn balance_of_sol() {
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let tx_mint = rig::utils::sign_and_encode_ethers_legacy_tx(
+    let tx_mint = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
         TransactionRequest::new()
             .to(erc20_addr)
             .gas(1u64 << 27)
@@ -104,7 +104,7 @@ fn balance_of_sol() {
         &wallet,
     );
 
-    let tx_balance = rig::utils::sign_and_encode_ethers_legacy_tx(
+    let tx_balance = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
         TransactionRequest::new()
             .to(erc20_addr)
             .gas(1u64 << 27)
@@ -145,7 +145,7 @@ fn balance_of_sol() {
 //             U256::from(1_000_000_000_000_000_u64),
 //         );
 //
-//     let tx_mint = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx_mint = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(erc20_addr)
 //             .gas(1u64 << 27)
@@ -161,7 +161,7 @@ fn balance_of_sol() {
 //         &wallet,
 //     );
 //
-//     let tx_balance = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx_balance = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(erc20_addr)
 //             .gas(1u64 << 27)
@@ -197,7 +197,7 @@ fn transfer_sol() {
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let tx_mint = rig::utils::sign_and_encode_ethers_legacy_tx(
+    let tx_mint = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
         TransactionRequest::new()
             .to(erc20_addr)
             .gas(1u64 << 27)
@@ -213,7 +213,7 @@ fn transfer_sol() {
         &wallet_a,
     );
 
-    let tx_transfer = rig::utils::sign_and_encode_ethers_legacy_tx(
+    let tx_transfer = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
         TransactionRequest::new()
             .to(erc20_addr)
             .gas(1u64 << 27)
@@ -258,7 +258,7 @@ fn transfer_sol() {
 //             U256::from(1_000_000_000_000_000_u64),
 //         );
 //
-//     let tx_mint = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx_mint = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(erc20_addr)
 //             .gas(1u64 << 27)
@@ -274,7 +274,7 @@ fn transfer_sol() {
 //         &wallet_a,
 //     );
 //
-//     let tx_transfer = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx_transfer = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(erc20_addr)
 //             .gas(1u64 << 27)

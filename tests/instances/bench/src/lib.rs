@@ -21,7 +21,7 @@ use std::path::PathBuf;
 //             U256::from(1_000_000_000_000_000_u64),
 //         );
 //
-//     let tx = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(c_addr)
 //             .gas(10_000_000)
@@ -58,7 +58,7 @@ use std::path::PathBuf;
 //             U256::from(1_000_000_000_000_000_u64),
 //         );
 //
-//     let tx = rig::utils::sign_and_encode_ethers_legacy_tx(
+//     let tx = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
 //         TransactionRequest::new()
 //             .to(c_addr)
 //             .gas(1 << 27)
@@ -97,7 +97,7 @@ fn fibish_sol() {
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let tx = rig::utils::sign_and_encode_ethers_legacy_tx(
+    let tx = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
         TransactionRequest::new()
             .to(c_addr)
             .gas(1 << 27)

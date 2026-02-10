@@ -15,7 +15,7 @@ use alloy::primitives::TxKind;
 use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
 use rig::ruint::aliases::{B160, U256};
-use rig::utils::encode_l1_tx;
+use rig::utils::tx_encoding::encode_l1_tx;
 use rig::{alloy, Chain};
 
 fn run_config() -> Option<rig::chain::RunConfig> {
@@ -57,7 +57,7 @@ fn test_l1_tx_gas_limit_below_intrinsic() {
             nonce: Some(0),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
 
     // The block should complete without panicking (no internal error)
@@ -122,7 +122,7 @@ fn test_l1_tx_gas_price_overflow_native_per_gas() {
             nonce: Some(0),
             ..TransactionRequest::default()
         };
-        rig::utils::encode_l1_tx(tx)
+        rig::utils::tx_encoding::encode_l1_tx(tx)
     };
 
     // The block should complete without panicking (no internal error)

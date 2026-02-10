@@ -6133,7 +6133,7 @@ fn test_precompile_parses_input_correctly() {
                 U256::from(1_000_000_000_000_000_u64),
             );
 
-            let tx = rig::utils::sign_and_encode_ethers_legacy_tx(
+            let tx = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
                 TransactionRequest::new()
                     .to(addr)
                     .gas(1 << 27)
