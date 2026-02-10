@@ -259,14 +259,14 @@ fn test_call_tracer_create_vs_create2_regression() {
     // This is a regression test for the fix that swapped CREATE and CREATE2 logic
     assert!(
         matches!(
-            tracer.transactions[0].as_ref().unwrap().calls[1].call_type,
+            tracer.transactions[0].as_ref().unwrap().calls[0].call_type,
             CallType::Create
         ),
         "First subcall should be CREATE"
     );
     assert!(
         matches!(
-            tracer2.transactions[0].as_ref().unwrap().calls[1].call_type,
+            tracer2.transactions[0].as_ref().unwrap().calls[0].call_type,
             CallType::Create2
         ),
         "First subcall should be CREATE2"
