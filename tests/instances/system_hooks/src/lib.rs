@@ -6,10 +6,12 @@
 use alloy::primitives::TxKind;
 use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
+use rig::alloy::primitives::Address;
 use rig::alloy::rpc::types::TransactionRequest;
-use rig::forward_system::run;
 use rig::ruint::aliases::B160;
 use rig::ruint::aliases::U256;
+use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
+use rig::system_hooks::addresses_constants::SYSTEM_CONTEXT_ADDRESS;
 use rig::testing_utils::call_address_and_measure_gas_cost;
 use rig::testing_utils::install_system_contracts;
 use rig::utils::{
@@ -809,4 +811,54 @@ fn test_mint_base_token_hook() {
         actually_minted_amount, mint_amount,
         "Minted amount should match the requested mint amount"
     );
+}
+
+#[test]
+fn test_event_hooks_empty_topics() {
+    for test_contract_address in [L2_INTEROP_ROOT_STORAGE_ADDRESS, SYSTEM_CONTEXT_ADDRESS] {
+        let mut chain = Chain::empty(None);
+
+        // Contract that emits a log with empty topics array - this should be handled gracefully
+        // Before the fix, this would cause a panic due to missing bounds check
+        let test_contract = Address::from(test_contract_address.to_be_bytes());
+
+        // Bytecode that emits LOG0 (no topics)
+        // PUSH1 0x00    -> 6000  (data offset)
+        // PUSH1 0x00    -> 6000  (data length)
+        // LOG0          -> a0    (emit log with no topics)
+        // STOP          -> 00
+        let test_contract_bytecode = hex::decode("60006000a000").unwrap();
+
+        let tx = TransactionRequest {
+            chain_id: Some(37),
+            from: Some(address!("1234567890123456789012345678901234567890")),
+            to: Some(TxKind::Call(test_contract)),
+            input: hex::decode("").unwrap().into(),
+            gas: Some(200_000),
+            max_fee_per_gas: Some(1000),
+            max_priority_fee_per_gas: Some(1000),
+            value: Some(alloy::primitives::U256::from(0)),
+            nonce: Some(0),
+            ..TransactionRequest::default()
+        };
+
+        chain.set_evm_bytecode(
+            B160::from_be_bytes(test_contract.clone().into_array()),
+            &test_contract_bytecode,
+        );
+
+        let encoded_tx = rig::utils::encode_l1_tx(tx);
+        let transactions = vec![encoded_tx];
+
+        let output = chain.run_block(transactions, None, None, None);
+
+        // Transaction should succeed - empty topics should be handled gracefully
+        assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
+            let success = r.clone().is_ok_and(|o| o.is_success());
+            if !success {
+                panic!("({}) Transaction {} failed with: {:?}", test_contract, i, r)
+            }
+            success
+        }));
+    }
 }
