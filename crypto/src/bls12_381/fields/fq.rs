@@ -438,6 +438,48 @@ mod test {
             assert!(gt.cyclotomic_exp(r).is_one());
         }
     }
+
+    #[test]
+    fn test_montgomery_mul_requires_final_reduction_fq() {
+        use crate::bigint_delegation::u512;
+        use super::FqParams;
+        // Montgomery-form inputs chosen to force the raw Montgomery product
+        // above the modulus if final reduction is omitted.
+        let mut a = BigInt([
+            13402431016077863594,
+            2210141511517208575,
+            7435674573564081700,
+            7239337960414712511,
+            5412103778470702295,
+            1873798617647539866,
+            0,
+            0,
+        ]); // p - 1 (valid Montgomery residue)
+
+        let b = BigInt([
+            2558544279233641998,
+            15670776001706131633,
+            16499115467214941661,
+            5658596800012892911,
+            5792713988013659675,
+            1672441503323099093,
+            0,
+            0,
+        ]);
+
+        assert!(a < super::MODULUS_CONSTANT);
+        assert!(b < super::MODULUS_CONSTANT);
+
+        unsafe {
+            u512::mul_assign_montgomery::<FqParams>(&mut a, &b);
+        }
+
+        assert!(
+            a < super::MODULUS_CONSTANT,
+            "non-reduced montgomery mul result: {:?}",
+            a
+        );
+    }
 }
 
 // Helper functions for EIP-2537 precompile serialization
