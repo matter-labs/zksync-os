@@ -29,20 +29,20 @@ use std::cell::UnsafeCell;
 
 #[cfg(test)]
 thread_local! {
-    static SCRATCH_SPACE: UnsafeCell<ScratchSpace> = UnsafeCell::new(ScratchSpace {
+    static SCRATCH_SPACE: UnsafeCell<Box<ScratchSpace>> = UnsafeCell::new(Box::new(ScratchSpace {
         copy_place_0: U256::zero(),
         copy_place_1: U256::zero(),
         copy_place_2: U256::zero(),
         copy_place_3: U256::zero(),
         scratch: U256::zero(),
-    })
+    }))
 }
 
 #[cfg(test)]
 macro_rules! with_scratch {
     ($scratch:ident => $($body:tt)*) => {
         SCRATCH_SPACE.with(|cell| unsafe {
-            let $scratch = &mut *cell.get();
+            let $scratch = &mut **cell.get();
             $($body)*
         })
     };
