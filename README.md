@@ -2,7 +2,7 @@
 
 [![Logo](zksync-os-logo.png)](https://zksync.io/)
 
-ZKsync OS is a new state transition function implementation that enables multiple execution environments (EVM, EraVM, Wasm, etc.) to operate within a unified ecosystem. It is implemented in Rust and compiled into a RISC-V binary, which can later be proven using the `zksync-airbender`.
+ZKsync OS is a state transition function implementation that enables multiple execution environments (EVM, EraVM, Wasm, etc.) to operate within a unified ecosystem. It is implemented in Rust and compiled into a RISC-V binary, which can later be proven using [ZKsync Airbender](https://github.com/matter-labs/zksync-airbender).
 
 ## Documentation
 
@@ -13,20 +13,20 @@ The most recent documentation can be found here:
 
 ## How to build
 
-### One-Time Setup
+### One-time setup
 Run the following commands to prepare your environment (only needed once):
 
-```
+```bash
 rustup target add riscv32i-unknown-none-elf
 cargo install cargo-binutils && rustup component add llvm-tools-preview
 ```
 
-ZKsync OS can be built for 2 targets:
-- your platform, this will be used in the sequencer to execute blocks
-- RISC-V, this is a program that will be proved using RISC-V prover
+ZKsync OS is built for two targets:
+- Your host platform, used by the sequencer to execute blocks/batches.
+- RISC-V, used to produce a binary that is later proved by a RISC-V prover (Airbender).
 
 ### Build for host platform
-```
+```bash
 cargo build --workspace
 ```
 
@@ -34,16 +34,16 @@ cargo build --workspace
 
 #### Reproducible build
 
-To build RISC-V binaries in an reproducible way use the following command (requires Docker):
+To build RISC-V binaries in a reproducible way, use the following command (requires Docker):
 
-```
+```bash
 ./zksync_os/reproduce/reproduce.sh
 ```
 
 #### Manual build
 
 Navigate to the `zksync_os` directory and run:
-```
+```bash
 ./dump_bin.sh --type for-tests
 ```
 
@@ -51,7 +51,7 @@ For other build modes, check `zksync_os/dump_bin.sh`.
 
 ## Testing
 
-### Integration tests
+### Integration and unit tests
 
 Build `zksync_os` first for tests that execute the proof-running path:
 ```bash
@@ -68,22 +68,23 @@ Note: `cargo test --workspace` does **not** include directories excluded in root
 Integration tests are mainly organized in `tests/instances/` using the rig in `tests/rig/`.
 
 Examples:
-```
+```bash
 cargo test -p transactions -- --nocapture
 cargo test -p precompiles -- --nocapture
-cargo test -p unit
 ```
 
-### Proving tests execution
+Unit tests are organized in corresponding modules.
 
-You can run proving by enabling the `e2e_proving` feature while running tests, for example:
-```
+#### Proving-enabled test execution
+
+By default, many tests execute the RISC-V simulator to validate the behavior of the RISC-V-compiled ZKsync OS binary, but they do not generate full proofs. You can run proving by enabling the `e2e_proving` feature while running tests, for example:
+```bash
 cargo test --features e2e_proving -p transactions -- --nocapture
 ```
 
-Alternatively tests can be proven manually: [Proving tests with](./docs/proving_tests_with_cli.md).
+Alternatively, you can prove tests manually using this guide: [Proving tests with CLI](./docs/proving_tests_with_cli.md).
 
-### EVM Tester
+### EVM tester
 
 The repository also contains the EVM tester setup in `tests/evm_tester`.
 
@@ -92,7 +93,7 @@ Prepare fixtures once:
 cd tests/evm_tester && ./download_ethereum_fixtures.sh
 ```
 
-Run:
+Run the tester:
 ```bash
 cd tests/evm_tester && cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print
 ```
@@ -120,4 +121,4 @@ at your option.
 - [Twitter for Developers](https://twitter.com/zkSyncDevs)
 - [Discord](https://join.zksync.dev/)
 - [Mirror](https://zksync.mirror.xyz/)
-- [Youtube](https://www.youtube.com/@zkSync-era)
+- [YouTube](https://www.youtube.com/@zkSync-era)
