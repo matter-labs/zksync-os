@@ -356,11 +356,10 @@ pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams<8>>(a: &mut U512, b: 
         // // Final reduction: result is in [0, 2*modulus). Subtract modulus if >= modulus.
         // // For BLS12-381, p ≈ 2^381 and R = 2^512, so the probability of a
         // // non-canonical result is p²/R / p ≈ 2^{-131}
-        // // so we check to avoid unnecessary delegation calls
-        // if carry || !u256::lt(a1, as_high(T::modulus())) {
-        //     sub_mod_with_carry::<T>(a, carry);
-        // }
-        sub_mod_with_carry::<T>(a, carry);
+        // so we check to avoid unnecessary delegation calls
+        if carry || !u256::lt(a1, as_high(T::modulus())) {
+            sub_mod_with_carry::<T>(a, carry);
+        }
 
         debug_assert!(a.0[6..8].iter().all(|&x| x == 0));
     })
