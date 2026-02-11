@@ -1,5 +1,5 @@
 use super::*;
-use crate::run::convert_alloy_ruint::IntoRuint;
+use crate::run::convert_alloy::FromAlloy;
 use crate::run::NextTxResponse;
 use crate::run::TxSource;
 use basic_bootloader::bootloader::transaction::TxEncodingFormat;
@@ -81,7 +81,7 @@ impl<TS: TxSource, M: MemorySource> OracleQueryProcessor<M> for TxDataResponder<
                                 assert_ne!(next_tx_len, 0);
                                 self.next_tx = Some(next_tx);
                                 self.next_tx_format = Some(TxEncodingFormat::Rlp);
-                                self.next_tx_from = Some(from.into_ruint());
+                                self.next_tx_from = Some(from.from_alloy());
                                 next_tx_len
                             }
                         }

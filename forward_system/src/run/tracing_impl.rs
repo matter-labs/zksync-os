@@ -1,4 +1,4 @@
-use crate::run::convert_alloy_ruint::IntoAlloy;
+use crate::run::convert_alloy::IntoAlloy;
 use alloy::primitives::{Address, U256};
 use std::marker::PhantomData;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
@@ -98,8 +98,8 @@ impl<'a, T: zksync_os_interface::tracing::EvmTracer, S: EthereumLikeTypes> Trace
         self.0.on_storage_read(
             is_transient,
             address.into_alloy(),
-            key.as_u8_array().into(),
-            value.as_u8_array().into(),
+            key.into_alloy(),
+            value.into_alloy(),
         )
     }
 
@@ -114,8 +114,8 @@ impl<'a, T: zksync_os_interface::tracing::EvmTracer, S: EthereumLikeTypes> Trace
         self.0.on_storage_write(
             is_transient,
             address.into_alloy(),
-            key.as_u8_array().into(),
-            value.as_u8_array().into(),
+            key.into_alloy(),
+            value.into_alloy(),
         )
     }
 
@@ -130,7 +130,7 @@ impl<'a, T: zksync_os_interface::tracing::EvmTracer, S: EthereumLikeTypes> Trace
         self.0.on_bytecode_change(
             address.into_alloy(),
             new_raw_bytecode,
-            new_internal_bytecode_hash.as_u8_array().into(),
+            new_internal_bytecode_hash.into_alloy(),
             new_observable_bytecode_length,
         )
     }
@@ -144,10 +144,7 @@ impl<'a, T: zksync_os_interface::tracing::EvmTracer, S: EthereumLikeTypes> Trace
     ) {
         self.0.on_event(
             (*address).into_alloy(),
-            topics
-                .iter()
-                .map(|b| b.as_u8_array().into())
-                .collect::<Vec<_>>(),
+            topics.iter().map(|b| b.into_alloy()).collect::<Vec<_>>(),
             data,
         )
     }

@@ -1,7 +1,7 @@
 // Includes code adapted from https://github.com/bluealloy/revm/blob/fb80087996dfbd6c74eaf308538cfa707ecb763c/crates/context/interface/src/result.rs
 
 use crate::run::convert::IntoInterface;
-use crate::run::convert_alloy_ruint::IntoAlloy;
+use crate::run::convert_alloy::IntoAlloy;
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::run::TxResultCallback;
 use alloy::primitives::Address;
@@ -36,10 +36,10 @@ impl StorageWriteExt for StorageWrite {
     fn new(address: B160, key: Bytes32, value: Bytes32) -> StorageWrite {
         let flat_key = derive_flat_storage_key(&address, &key);
         StorageWrite {
-            key: flat_key.as_u8_array().into(),
-            value: value.as_u8_array().into(),
+            key: flat_key.into_alloy(),
+            value: value.into_alloy(),
             account: address.into_alloy(),
-            account_key: key.as_u8_array().into(),
+            account_key: key.into_alloy(),
         }
     }
 }
@@ -132,7 +132,7 @@ impl<TR: TxResultCallback>
             .collect();
         let published_preimages = new_preimages
             .into_iter()
-            .map(|(hash, data, _)| (hash.as_u8_array().into(), data))
+            .map(|(hash, data, _)| (hash.into_alloy(), data))
             .collect();
 
         Self {
@@ -183,7 +183,7 @@ pub fn extract_account_diffs(
                     address: Address::from_slice(&key.as_u8_array_ref()[12..]),
                     nonce: properties.nonce,
                     balance: properties.balance,
-                    bytecode_hash: properties.bytecode_hash.as_u8_array().into(),
+                    bytecode_hash: properties.bytecode_hash.into_alloy(),
                 });
             } else {
                 unreachable!();

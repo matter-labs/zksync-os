@@ -6,7 +6,7 @@ mod tx_result_callback;
 mod tx_source;
 
 pub mod convert;
-pub mod convert_alloy_ruint;
+pub mod convert_alloy;
 mod interface_impl;
 pub mod query_processors;
 pub mod result_keeper;

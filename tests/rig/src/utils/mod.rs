@@ -12,7 +12,7 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::sol;
 use ethers::abi::AbiEncode;
 use ethers::types::U256;
-use forward_system::run::convert_alloy_ruint::{IntoAlloy, IntoRuint};
+use forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -150,18 +150,18 @@ pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
     dsts.iter().for_each(|to| {
-        chain.set_evm_bytecode(to.into_ruint(), &bytecode);
+        chain.set_evm_bytecode(to.from_alloy(), &bytecode);
     });
 
     wallets.iter().zip(dsts.clone()).for_each(|(wallet, to)| {
         chain.set_balance(
-            wallet.address().into_ruint(),
+            wallet.address().from_alloy(),
             ruint::aliases::U256::from(1_000_000_000_000_000_u64),
         );
         let key = compute_erc20_balance_slot(wallet.address());
         let value =
             ruint::aliases::B256::from(ruint::aliases::U256::from(1_000_000_000_000_000_u64));
-        chain.set_storage_slot(to.into_ruint(), key, value)
+        chain.set_storage_slot(to.from_alloy(), key, value)
     });
 
     let output = chain.run_block(

@@ -1,4 +1,4 @@
-use crate::run::convert_alloy_ruint::IntoAlloy;
+use crate::run::convert_alloy::IntoAlloy;
 use crate::run::TxResultCallback;
 use basic_bootloader::bootloader::result_keeper::{ResultKeeperExt, TxProcessingOutput};
 use ruint::aliases::B160;

@@ -2,7 +2,7 @@ use alloy::{
     primitives::{Address, TxKind},
     rpc::types::TransactionRequest,
 };
-use forward_system::run::convert_alloy_ruint::IntoRuint;
+use forward_system::run::convert_alloy::FromAlloy;
 use forward_system::system::tracers::call_tracer::CallTracer;
 use once_cell::sync::Lazy;
 use ruint::aliases::B160;
@@ -48,7 +48,7 @@ pub fn get_first_traced_call_to(
     address: Address,
     tracer: &CallTracer,
 ) -> Option<&forward_system::system::tracers::call_tracer::Call> {
-    let expected_to = address.into_ruint();
+    let expected_to = address.from_alloy();
     for tx in tracer.transactions.iter().flatten() {
         let search_res = get_first_traced_subcall_to(&expected_to, tx);
         if search_res.is_some() {
@@ -71,7 +71,7 @@ pub fn call_address_and_measure_gas_cost(
 
     if value != 0 {
         let value_encoded = alloy::primitives::U256::from(value);
-        chain.set_balance(sender.into_ruint(), value_encoded);
+        chain.set_balance(sender.from_alloy(), value_encoded);
     }
 
     // Needed to test force deploys

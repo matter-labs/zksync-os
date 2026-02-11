@@ -1,6 +1,6 @@
 use alloy::primitives::{Address, B256};
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
-use forward_system::run::convert_alloy_ruint::IntoRuint;
+use forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use forward_system::run::ReadStorage as ForwardSystemReadStorage;
 use zk_ee::utils::Bytes32;
 use zksync_os_interface::traits::{PreimageSource, ReadStorage};
@@ -15,23 +15,23 @@ pub struct ChainStateView {
 
 impl PreimageSource for ChainStateView {
     fn get_preimage(&mut self, hash: B256) -> Option<Vec<u8>> {
-        let hash = Bytes32::from_array(*hash.as_array().unwrap());
+        let hash: Bytes32 = hash.from_alloy();
         self.chain.preimage_source.inner.get(&hash).cloned()
     }
 }
 
 impl ReadStorage for ChainStateView {
     fn read(&mut self, key: B256) -> Option<B256> {
-        let key = Bytes32::from_array(*key.as_array().unwrap());
+        let key: Bytes32 = key.from_alloy();
         let value = self.chain.state_tree.read(key);
 
-        value.map(|v| B256::from(v.as_u8_array()))
+        value.map(|v| v.into_alloy())
     }
 }
 
 impl ViewState for ChainStateView {
     fn get_account(&mut self, address: Address) -> Option<AccountProperties> {
-        let address = address.into_ruint();
+        let address = address.from_alloy();
         self.chain.get_account_properties_maybe(&address)
     }
 

@@ -1,8 +1,9 @@
-use crate::helpers::{fixed_bytes_to_bytes32, get_unpadded_code};
+use crate::helpers::get_unpadded_code;
 use alloy::primitives::{Address, B256, KECCAK256_EMPTY};
 use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
+use forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use reth_revm::{
     db::DBErrorMarker,
     primitives::{StorageKey, StorageValue},
@@ -24,7 +25,7 @@ pub trait ViewState: ReadStorage + PreimageSource + Send + Clone {
             &ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
             &address_into_special_storage_key(&B160::from_be_bytes(address.into_array())),
         );
-        self.read(B256::from(key.as_u8_array())).map(|hash| {
+        self.read(key.into_alloy()).map(|hash| {
             AccountProperties::decode(&self.get_preimage(hash).unwrap().try_into().unwrap())
         })
     }
@@ -91,15 +92,14 @@ where
                     if props.observable_bytecode_hash.is_zero() && !is_acc_empty {
                         KECCAK256_EMPTY
                     } else {
-                        B256::from(props.observable_bytecode_hash.as_u8_array())
+                        props.observable_bytecode_hash.into_alloy()
                     }
                 };
 
                 let code = if props.bytecode_hash.is_zero() {
                     None
                 } else {
-                    let bytecode =
-                        self.code_by_hash_ref(B256::from(props.bytecode_hash.as_u8_array()))?;
+                    let bytecode = self.code_by_hash_ref(props.bytecode_hash.into_alloy())?;
                     Some(get_unpadded_code(bytecode.bytes_slice(), &props))
                 };
 
@@ -129,14 +129,14 @@ where
         address: Address,
         index: StorageKey,
     ) -> Result<StorageValue, Self::Error> {
-        let flat_key = derive_flat_storage_key(
-            &B160::from_be_bytes(address.into_array()),
-            &fixed_bytes_to_bytes32(index.into()),
-        );
+        let storage_key: B256 = index.into();
+        let storage_key = storage_key.from_alloy();
+        let flat_key =
+            derive_flat_storage_key(&B160::from_be_bytes(address.into_array()), &storage_key);
         Ok(self
             .state_view
             .clone()
-            .read(B256::from(flat_key.as_u8_array()))
+            .read(flat_key.into_alloy())
             .unwrap_or_default()
             .into())
     }

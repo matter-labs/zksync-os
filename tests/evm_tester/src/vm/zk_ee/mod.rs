@@ -1,20 +1,20 @@
 use crate::test::case::transaction::encode_transaction;
-use crate::utils::*;
 use alloy::primitives::*;
 use core::panic;
 use std::cmp::min;
 use std::str::FromStr;
-use zk_ee::utils::u256_to_u64_saturated;
 use zk_ee::utils::Bytes32;
+use zk_ee::utils::u256_to_u64_saturated;
 use zksync_os_basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use zksync_os_basic_bootloader::bootloader::errors::BootloaderSubsystemError;
+use zksync_os_forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
+use zksync_os_rig::BlockContext;
+use zksync_os_rig::Chain;
 use zksync_os_rig::chain::RunConfig;
 use zksync_os_rig::zksync_os_api::helpers;
 use zksync_os_rig::zksync_os_interface::error::InvalidTransaction;
 use zksync_os_rig::zksync_os_interface::traits::EncodedTx;
 use zksync_os_rig::zksync_os_interface::types::{BlockOutput, TxOutput};
-use zksync_os_rig::BlockContext;
-use zksync_os_rig::Chain;
 
 use crate::test::case::transaction::Transaction;
 
@@ -173,7 +173,7 @@ impl ZKsyncOS {
     /// Returns the balance of the specified address.
     ///
     pub fn get_balance(&mut self, address: Address) -> U256 {
-        let properties = self.chain.get_account_properties(&address_to_b160(address));
+        let properties = self.chain.get_account_properties(&address.from_alloy());
         helpers::get_balance(&properties)
     }
 
@@ -181,14 +181,14 @@ impl ZKsyncOS {
     /// Changes the balance of the specified address.
     ///
     pub fn set_balance(&mut self, address: Address, value: U256) {
-        self.chain.set_balance(address_to_b160(address), value);
+        self.chain.set_balance(address.from_alloy(), value);
     }
 
     ///
     /// Returns the nonce of the specified address.
     ///
     pub fn get_nonce(&mut self, address: Address) -> U256 {
-        let properties = self.chain.get_account_properties(&address_to_b160(address));
+        let properties = self.chain.get_account_properties(&address.from_alloy());
         U256::from(helpers::get_nonce(&properties))
     }
 
@@ -198,24 +198,24 @@ impl ZKsyncOS {
     pub fn set_nonce(&mut self, address: Address, nonce: U256) {
         let nonce = u256_to_u64_saturated(&nonce);
         self.chain
-            .set_account_properties(address_to_b160(address), None, Some(nonce), None)
+            .set_account_properties(address.from_alloy(), None, Some(nonce), None)
     }
 
     pub fn get_storage_slot(&mut self, address: Address, key: U256) -> Option<B256> {
         self.chain
-            .get_storage_slot(address_to_b160(address), key)
-            .map(|v| bytes32_to_b256(v.clone()))
+            .get_storage_slot(address.from_alloy(), key)
+            .map(IntoAlloy::into_alloy)
     }
 
     pub fn set_storage_slot(&mut self, address: Address, key: U256, value: B256) {
-        let address = address_to_b160(address);
+        let address = address.from_alloy();
         let value = ruint::aliases::B256::from_be_bytes(value.0);
         self.chain.set_storage_slot(address, key, value);
     }
 
     pub fn set_predeployed_evm_contract(&mut self, address: Address, bytecode: Bytes, nonce: U256) {
         self.chain.set_account_properties(
-            address_to_b160(address),
+            address.from_alloy(),
             None,
             Some(u256_to_u64_saturated(&nonce)),
             Some(bytecode.0.to_vec()),
@@ -223,7 +223,7 @@ impl ZKsyncOS {
     }
 
     pub fn get_code(&mut self, address: Address) -> Option<Vec<u8>> {
-        let properties = self.chain.get_account_properties(&address_to_b160(address));
+        let properties = self.chain.get_account_properties(&address.from_alloy());
 
         if properties.bytecode_hash == Bytes32::zero() {
             None
@@ -234,16 +234,4 @@ impl ZKsyncOS {
             ))
         }
     }
-}
-
-pub fn b256_to_bytes32(input: B256) -> Bytes32 {
-    Bytes32::from_array(input.0)
-}
-
-pub fn u256_to_bytes32(input: U256) -> Bytes32 {
-    Bytes32::from_array(input.to_be_bytes())
-}
-
-pub fn bytes32_to_b256(input: Bytes32) -> B256 {
-    B256::from_slice(&input.as_u8_array())
 }

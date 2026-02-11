@@ -10,16 +10,14 @@ use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
 use rig::chain::RunConfig;
-use rig::crypto::p256::elliptic_curve::rand_core::block;
 use rig::revm_consistency_checker::ChainStateView;
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::testing_utils::install_system_contracts;
 use rig::utils::tx_encoding::{encode_special_tx_type, encode_upgrade_tx};
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::{alloy, zksync_os_interface, zksync_web3_rs, Chain};
+use rig::{alloy, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
-use std::iter::Rev;
 use std::str::FromStr;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 
@@ -1250,18 +1248,7 @@ fn test_selfdestruct_to_precompile_gas() {
         chain: chain_before,
     };
     let mut revm_runner: RevmRunner<ChainStateView> = RevmRunner::new(chain_state);
-
-    // TODO build BlockContextInterface using chain and BlockContext for rig
-    use zksync_os_interface::types::BlockContext as BlockContextInterface;
-    let mut block_context = BlockContextInterface::default();
-    let default_block_context = BlockContext::default();
-    block_context.native_price = default_block_context.native_price;
-    block_context.pubdata_price = default_block_context.pubdata_price;
-    block_context.eip1559_basefee = default_block_context.eip1559_basefee;
-    block_context.block_number = 0;
-    block_context.timestamp = 42;
-    block_context.gas_limit = default_block_context.gas_limit;
-    block_context.chain_id = 37;
+    let block_context = generate_block_context_interface(&chain, &BlockContext::default());
 
     revm_runner
         .run(vec![tx_request], block_context, None)

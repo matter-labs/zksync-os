@@ -1,7 +1,6 @@
-use alloy::primitives::{Bytes, TxKind, B256, U256};
+use alloy::primitives::{Bytes, TxKind, U256};
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use reth_revm::{context::TxEnv, state::Bytecode};
-use zk_ee::utils::Bytes32;
 use zksync_os_revm::{transaction::abstraction::ZKsyncTxBuilder, ZKsyncTx};
 use zksync_os_tests_common::zksync_tx::{ZKsyncTxRequest, ZKsyncTxType};
 
@@ -10,11 +9,6 @@ pub fn get_unpadded_code(full_bytecode: &[u8], account: &AccountProperties) -> B
     Bytecode::new_legacy(Bytes::copy_from_slice(
         &full_bytecode[0..account.unpadded_code_len as usize],
     ))
-}
-
-pub fn fixed_bytes_to_bytes32(x: B256) -> Bytes32 {
-    let x: [u8; 32] = x.into();
-    x.into()
 }
 
 /// Convert a ZkTransaction into a revm TxEnv for REVM re-execution
