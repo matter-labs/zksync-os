@@ -12,4 +12,4 @@ This directory contains documentation of ZKsync OS:
 - [Bootloader](./bootloader/)
 - [Execution environments](./execution_environments/)
 - [System](./system/)
-- [Proving Ethereum](./proving_ethereum.md)
+- [Proving Ethereum (legacy / outdated)](./proving_ethereum.md)

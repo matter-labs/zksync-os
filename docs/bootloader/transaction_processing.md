@@ -10,7 +10,7 @@ This section describes how transactions are processed. There are 2 flows of tran
 6. **Execution**: The transaction is executed, either as a call or a deployment.
 7. **Refunding**: Unused resources are refunded, with additional steps for paymasters if applicable.
 
-The module responsible for implementing transaction processing is [`process_transaction`](../../basic_bootloader/src/bootloader/process_transaction.rs).
+The module responsible for implementing transaction processing is [`process_transaction`](../../basic_bootloader/src/bootloader/transaction_flow/process_transaction.rs).
 
 Transaction processing starts with the parsing of the transaction, as described in [Transaction format](transaction_format.md).
 
