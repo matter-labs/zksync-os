@@ -12,6 +12,7 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::sol;
 use ethers::abi::AbiEncode;
 use ethers::types::U256;
+use forward_system::run::convert_alloy_ruint::{IntoAlloy, IntoRuint};
 use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -149,21 +150,18 @@ pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
     dsts.iter().for_each(|to| {
-        chain.set_evm_bytecode(
-            ruint::aliases::B160::from_be_bytes(to.into_array()),
-            &bytecode,
-        );
+        chain.set_evm_bytecode(to.into_ruint(), &bytecode);
     });
 
     wallets.iter().zip(dsts.clone()).for_each(|(wallet, to)| {
         chain.set_balance(
-            ruint::aliases::B160::from_be_bytes(wallet.address().0 .0),
+            wallet.address().into_ruint(),
             ruint::aliases::U256::from(1_000_000_000_000_000_u64),
         );
         let key = compute_erc20_balance_slot(wallet.address());
         let value =
             ruint::aliases::B256::from(ruint::aliases::U256::from(1_000_000_000_000_000_u64));
-        chain.set_storage_slot(ruint::aliases::B160::from_be_bytes(to.0 .0), key, value)
+        chain.set_storage_slot(to.into_ruint(), key, value)
     });
 
     let output = chain.run_block(
@@ -279,4 +277,27 @@ pub fn encode_pubdata_for_4844_blobs(data: &[u8]) -> Vec<u8> {
     vec.extend_from_slice(data);
 
     vec
+}
+
+use zksync_os_interface::types::BlockContext as BlockContextInterface;
+pub fn generate_block_context_interface(
+    chain: &Chain,
+    rig_block_context: &BlockContext,
+) -> BlockContextInterface {
+    BlockContextInterface {
+        block_number: chain.next_block_number(),
+        timestamp: rig_block_context.timestamp,
+        eip1559_basefee: rig_block_context.eip1559_basefee,
+        chain_id: chain.chain_id(),
+        block_hashes: zksync_os_interface::types::BlockHashes(chain.block_hashes()),
+        pubdata_price: rig_block_context.pubdata_price,
+        native_price: rig_block_context.native_price,
+        coinbase: rig_block_context.coinbase.into_alloy(),
+        gas_limit: rig_block_context.gas_limit,
+        pubdata_limit: rig_block_context.pubdata_limit,
+        mix_hash: rig_block_context.mix_hash,
+        execution_version: 0, // TODO meaningless here
+        blob_fee: rig_block_context.blob_fee,
+        code_size_limit: None, // Unused
+    }
 }

@@ -219,6 +219,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         self.previous_block_number.map(|n| n + 1).unwrap_or(0)
     }
 
+    pub fn chain_id(&self) -> u64 {
+        self.chain_id
+    }
+
+    pub fn block_hashes(&self) -> [U256; 256] {
+        self.block_hashes
+    }
+
     pub fn set_block_hashes(&mut self, block_hashes: [U256; 256]) {
         self.block_hashes = block_hashes
     }
