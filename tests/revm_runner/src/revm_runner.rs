@@ -81,7 +81,7 @@ where
 
         println!("Execution result: {:#?}", execution_result);
 
-        // TODO: compare execution results, maybe as a separate funciton
+        // TODO: compare execution results, maybe as a separate function
         /*let compare_report = CompareReport::build(
             evm.0.db_mut(),
             &block_output.storage_writes,
