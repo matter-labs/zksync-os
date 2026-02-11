@@ -9,18 +9,7 @@ ZKsync OS is a new state transition function implementation that enables multipl
 The most recent documentation can be found here:
 
 - [In-repo documentation](./docs/README.md)
-
-## Crates
-
-The project contains the following crates (the list is not complete):
-
-* [zk_ee](./zk_ee/) - execution environment
-* [zksync_os](./zksync_os/) - operating system - that can handle multiple execution environments. Compiled into RISC-V.
-* [zksync_os_runner](./zksync_os_runner/) - allows running programs on zksync_os using RISC-V simulator.
-* [basic_system](./basic_system/) - basic implementation of zk_ee::system and system functions
-* [basic_bootloader](./basic_bootloader/) - implementation of bootloader and main execution loop
-* [evm_interpreter](./evm_interpreter/) - EVM execution environment
-* [forward_system](./forward_system/) - implementation for "forward" running (sequencing)
+- [Repository structure](./docs/repository_structure.md)
 
 ## How to build
 
@@ -32,96 +21,80 @@ rustup target add riscv32i-unknown-none-elf
 cargo install cargo-binutils && rustup component add llvm-tools-preview
 ```
 
-ZKsync OS should be built for 2 targets:
+ZKsync OS can be built for 2 targets:
 - your platform, this will be used in the sequencer to execute blocks
 - RISC-V, this is a program that will be proved using RISC-V prover
 
-### Build for your platform
+### Build for host platform
 ```
-cargo build --release
+cargo build --workspace
 ```
 
 ### Build for RISC-V
+
+#### Reproducible build
+
+To build RISC-V binaries in an reproducible way use the following command (requires Docker):
+
+```
+./zksync_os/reproduce/reproduce.sh
+```
+
+#### Manual build
 
 Navigate to the `zksync_os` directory and run:
 ```
 ./dump_bin.sh --type for-tests
 ```
 
+For other build modes, check `zksync_os/dump_bin.sh`.
+
 ## Testing
 
 ### Integration tests
 
-**To run the integration tests you should build ZKsync OS first, see the `building` section above**
-
-Integration tests are located in the `tests` folder. You can run them as regular cargo tests.
-
-For example, to run basic tests that execute a few ERC-20 calls using different tx types use:
-```
-cargo test --release -p transactions -- --nocapture
+Build `zksync_os` first for tests that execute the proof-running path:
+```bash
+cd zksync_os && ./dump_bin.sh --type for-tests
 ```
 
-### Proving
+Run workspace tests:
+```bash
+cargo test --workspace
+```
+
+Note: `cargo test --workspace` does **not** include directories excluded in root `Cargo.toml` (for example `zksync_os`, `tests/fuzzer`, `tests/evm_tester`, `tests/instances/eth_runner`).
+
+Integration tests are mainly organized in `tests/instances/` using the rig in `tests/rig/`.
+
+Examples:
+```
+cargo test -p transactions -- --nocapture
+cargo test -p precompiles -- --nocapture
+cargo test -p unit
+```
+
+### Proving tests execution
 
 You can run proving by enabling the `e2e_proving` feature while running tests, for example:
 ```
-cargo test --release --features e2e_proving -p transactions -- --nocapture
+cargo test --features e2e_proving -p transactions -- --nocapture
 ```
 
-### Alternative proving workflow with Prover CLI
+Alternatively tests can be proven manually: [Proving tests with](./docs/proving_tests_with_cli.md).
 
-**Generating the CRS File**
+### EVM Tester
 
-You can set the `CSR_READS_DUMP` env variable to dump CSR reads for proving (witnesses) and then run any test.
-It will create a CSR file with the path `CSR_READS_DUMP`.
+The repository also contains the EVM tester setup in `tests/evm_tester`.
 
-**Using the Prover CLI**
-
-The Prover CLI is part of the `zksync-airbender` repository, located in the [tools/cli](https://github.com/matter-labs/zksync-airbender/tree/main/tools/cli) directory.
-
-Run the following from the zksync-airbender repository:
-
-```
-mkdir zkee_output
-
-cargo run --profile cli --no-default-features -p cli prove --bin ../zksync-os/zksync_os/for_tests.bin --input-file ${CSR_READS_DUMP} --output-dir zkee_output
+Prepare fixtures once:
+```bash
+cd tests/evm_tester && ./download_ethereum_fixtures.sh
 ```
 
-This generates multiple proof files in the `zkee_output` directory. For recursion (compressing proofs into fewer files), refer to the instructions in the `zksync-airbender` repository.
-
-
-### Proving workflow with anvil-zksync
-
-1. Build ZKsync OS
-2. Run anvil-zksync
-3. Send transactions
-4. Tell prover cli to get the witnesses from anvil-zksync
-
-**Anvil ZKsync**
-
-Run [anvil-zksync from GitHub](https://github.com/matter-labs/anvil-zksync) - **IMPORTANT** - make sure to use the `zkos-dev` branch.
-
-```shell
-cargo run  -- --use-zkos --zkos-bin-path=../zksync-os/zksync_os/for_tests.bin
-```
-
-**Send transactions**
-
-You can use any tool (for example, forge) to send transactions to the anvil binary.
-
-**Tell prover cli to get the witnesses from anvil-zksync**
-
-From the zksync-airbender repo:
-```
-    cargo run --no-default-features -- run --bin ../zksync-os/zksync_os/for_tests.bin --input-rpc http://localhost:8012 --input-batch 15
-```
-
-You can get the witness via the RPC call, where you pass the batch ID as a parameter:
-
-```
-http POST http://127.0.0.1:8011 \
-    Content-Type:application/json \
-    id:=1 jsonrpc="2.0" method="zkos_getWitness" params:='[1]'
+Run:
+```bash
+cd tests/evm_tester && cargo run --bin evm-tester --release --features zksync_os_forward_system/no_print
 ```
 
 ## Policies

@@ -3,6 +3,7 @@
 This directory contains documentation of ZKsync OS:
 
 - [Overview](./overview.md)
+- [Repository structure](./repository_structure.md)
 - [Running tests](./running_tests.md)
 - [System hooks](./system_hooks.md)
 - [Data Availability Commitment Schemes](./da_commitment_schemes.md)
