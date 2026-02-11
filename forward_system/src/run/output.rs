@@ -1,6 +1,7 @@
 // Includes code adapted from https://github.com/bluealloy/revm/blob/fb80087996dfbd6c74eaf308538cfa707ecb763c/crates/context/interface/src/result.rs
 
 use crate::run::convert::IntoInterface;
+use crate::run::convert_alloy_ruint::IntoAlloy;
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::run::TxResultCallback;
 use alloy::primitives::Address;
@@ -37,7 +38,7 @@ impl StorageWriteExt for StorageWrite {
         StorageWrite {
             key: flat_key.as_u8_array().into(),
             value: value.as_u8_array().into(),
-            account: address.to_be_bytes().into(),
+            account: address.into_alloy(),
             account_key: key.as_u8_array().into(),
         }
     }

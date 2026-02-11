@@ -1,7 +1,7 @@
 use alloy::primitives::{Address, B256};
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
+use forward_system::run::convert_alloy_ruint::IntoRuint;
 use forward_system::run::ReadStorage as ForwardSystemReadStorage;
-use ruint::aliases::B160 as RuintB160;
 use zk_ee::utils::Bytes32;
 use zksync_os_interface::traits::{PreimageSource, ReadStorage};
 use zksync_os_revm_runner::revm_state_provider::ViewState;
@@ -31,7 +31,7 @@ impl ReadStorage for ChainStateView {
 
 impl ViewState for ChainStateView {
     fn get_account(&mut self, address: Address) -> Option<AccountProperties> {
-        let address = RuintB160::from_be_bytes(address.into_array());
+        let address = address.into_ruint();
         self.chain.get_account_properties_maybe(&address)
     }
 

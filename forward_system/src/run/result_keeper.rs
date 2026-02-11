@@ -1,3 +1,4 @@
+use crate::run::convert_alloy_ruint::IntoAlloy;
 use crate::run::TxResultCallback;
 use basic_bootloader::bootloader::result_keeper::{ResultKeeperExt, TxProcessingOutput};
 use ruint::aliases::B160;
@@ -104,7 +105,7 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
         let owned_result = tx_result.map(|output| TxProcessingOutputOwned {
             status: output.status,
             output: output.output.to_vec(),
-            contract_address: output.contract_address.map(|a| a.to_be_bytes().into()),
+            contract_address: output.contract_address.map(IntoAlloy::into_alloy),
             gas_used: output.gas_used,
             gas_refunded: output.gas_refunded,
             computational_native_used: output.computational_native_used,

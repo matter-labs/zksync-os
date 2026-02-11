@@ -5,9 +5,10 @@
 use std::path::Path;
 
 use crate::test_suits::index;
+use zksync_os_forward_system::run::convert_alloy_ruint::IntoRuint;
 
 pub(crate) fn address_to_b160(value: alloy::primitives::Address) -> ruint::aliases::B160 {
-    ruint::aliases::B160::from_be_bytes(value.0 .0)
+    value.into_ruint()
 }
 
 ///
