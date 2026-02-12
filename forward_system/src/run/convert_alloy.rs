@@ -9,7 +9,7 @@ pub trait IntoAlloy<T> {
 pub trait FromAlloy<T> {
     /// Performs conversion from an Alloy type.
     #[must_use]
-    fn from_alloy(self) -> T;
+    fn from_alloy(from: T) -> Self;
 }
 
 impl IntoAlloy<alloy::primitives::Address> for ruint::aliases::B160 {
@@ -26,17 +26,17 @@ impl IntoAlloy<alloy::primitives::Address> for &ruint::aliases::B160 {
     }
 }
 
-impl FromAlloy<ruint::aliases::B160> for alloy::primitives::Address {
+impl FromAlloy<alloy::primitives::Address> for ruint::aliases::B160 {
     #[inline]
-    fn from_alloy(self) -> ruint::aliases::B160 {
-        ruint::aliases::B160::from_be_bytes(self.0.into())
+    fn from_alloy(from: alloy::primitives::Address) -> ruint::aliases::B160 {
+        ruint::aliases::B160::from_be_bytes(from.0.into())
     }
 }
 
-impl FromAlloy<ruint::aliases::B160> for &alloy::primitives::Address {
+impl FromAlloy<&alloy::primitives::Address> for ruint::aliases::B160 {
     #[inline]
-    fn from_alloy(self) -> ruint::aliases::B160 {
-        ruint::aliases::B160::from_be_bytes(self.0.into())
+    fn from_alloy(from: &alloy::primitives::Address) -> ruint::aliases::B160 {
+        ruint::aliases::B160::from_be_bytes(from.0.into())
     }
 }
 
@@ -54,16 +54,23 @@ impl IntoAlloy<alloy::primitives::B256> for &zk_ee::utils::Bytes32 {
     }
 }
 
-impl FromAlloy<zk_ee::utils::Bytes32> for alloy::primitives::B256 {
+impl FromAlloy<alloy::primitives::B256> for zk_ee::utils::Bytes32 {
     #[inline]
-    fn from_alloy(self) -> zk_ee::utils::Bytes32 {
-        zk_ee::utils::Bytes32::from(self.0)
+    fn from_alloy(from: alloy::primitives::B256) -> zk_ee::utils::Bytes32 {
+        zk_ee::utils::Bytes32::from(from.0)
     }
 }
 
-impl FromAlloy<zk_ee::utils::Bytes32> for &alloy::primitives::B256 {
+impl FromAlloy<&alloy::primitives::B256> for zk_ee::utils::Bytes32 {
     #[inline]
-    fn from_alloy(self) -> zk_ee::utils::Bytes32 {
-        zk_ee::utils::Bytes32::from(self.0)
+    fn from_alloy(from: &alloy::primitives::B256) -> zk_ee::utils::Bytes32 {
+        zk_ee::utils::Bytes32::from(from.0)
+    }
+}
+
+impl FromAlloy<&alloy::primitives::B256> for ruint::aliases::B256 {
+    #[inline]
+    fn from_alloy(from: &alloy::primitives::B256) -> ruint::aliases::B256 {
+        ruint::aliases::B256::from_be_bytes(from.0.into())
     }
 }

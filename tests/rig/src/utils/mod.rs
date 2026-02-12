@@ -150,18 +150,18 @@ pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
     dsts.iter().for_each(|to| {
-        chain.set_evm_bytecode(to.from_alloy(), &bytecode);
+        chain.set_evm_bytecode(ruint::aliases::B160::from_alloy(to), &bytecode);
     });
 
     wallets.iter().zip(dsts.clone()).for_each(|(wallet, to)| {
         chain.set_balance(
-            wallet.address().from_alloy(),
+            ruint::aliases::B160::from_alloy(wallet.address()),
             ruint::aliases::U256::from(1_000_000_000_000_000_u64),
         );
         let key = compute_erc20_balance_slot(wallet.address());
         let value =
             ruint::aliases::B256::from(ruint::aliases::U256::from(1_000_000_000_000_000_u64));
-        chain.set_storage_slot(to.from_alloy(), key, value)
+        chain.set_storage_slot(ruint::aliases::B160::from_alloy(to), key, value)
     });
 
     let output = chain.run_block(

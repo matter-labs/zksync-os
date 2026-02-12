@@ -2,6 +2,7 @@ use crate::prestate::*;
 use crate::receipts::TransactionReceipt;
 use alloy::hex;
 use rig::crypto::MiniDigest;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::log::{error, info};
 use rig::zksync_os_interface::types::BlockOutput;
 use ruint::aliases::{B160, B256, U256};
@@ -273,7 +274,7 @@ fn zksync_os_output_into_account_state(
             .map(|(key, value)| (key.0, value)),
     );
     for w in output.storage_writes {
-        if rig::chain::is_account_properties_address(&B160::from_be_bytes(w.account.into_array())) {
+        if rig::chain::is_account_properties_address(&B160::from_alloy(w.account)) {
             // populate account
             let address: [u8; 20] = w.account_key.as_slice()[12..].try_into().unwrap();
             let address = B160::from_be_bytes(address);
@@ -300,9 +301,7 @@ fn zksync_os_output_into_account_state(
             // populate slot
             let address = w.account;
             let key = U256::from_be_bytes(w.account_key.0);
-            let entry = updates
-                .entry(B160::from_be_bytes(address.into_array()))
-                .or_default();
+            let entry = updates.entry(B160::from_alloy(address)).or_default();
             let value = B256::from_be_bytes(w.value.0);
             entry.storage.get_or_insert_default().insert(key, value);
         }

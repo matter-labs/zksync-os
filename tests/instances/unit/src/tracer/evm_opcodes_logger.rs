@@ -7,6 +7,7 @@
 
 use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{address, Address, TxKind, U256};
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::forward_system::system::tracers::evm_opcodes_logger::EvmOpcodesLogger;
 use rig::ruint::aliases::B160;
@@ -34,12 +35,12 @@ fn run_chain_with_tracer_and_validator<V>(
     let wallet = chain.random_signer();
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000_u64),
     );
 
     for (address, bytecode) in contracts {
-        chain.set_evm_bytecode(B160::from_be_bytes(address.into_array()), &bytecode);
+        chain.set_evm_bytecode(B160::from_alloy(address), &bytecode);
     }
 
     let encoded_tx = {

@@ -8,6 +8,7 @@ use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::primitives::Address;
 use rig::alloy::rpc::types::TransactionRequest;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::B160;
 use rig::ruint::aliases::U256;
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
@@ -41,7 +42,7 @@ fn test_set_bytecode_details_evm() {
             .unwrap();
 
     chain.set_balance(
-        B160::from_be_bytes(contract_deployer_address.into_array()),
+        B160::from_alloy(contract_deployer_address),
         U256::from(1_000_000_000_000_000_u64),
     );
 
@@ -296,7 +297,7 @@ fn test_l2_base_token_withdraw_events() {
     let l1_receiver = address!("0987654321098765432109876543210987654321");
     let withdrawal_amount = alloy::primitives::U256::from(1000000000000000000u64); // 1 ETH
 
-    chain.set_balance(B160::from_be_bytes(sender.into_array()), withdrawal_amount);
+    chain.set_balance(B160::from_alloy(sender), withdrawal_amount);
 
     // Prepare withdraw(address) calldata
     // withdraw(address) has selector 0x51cff8d9
@@ -370,7 +371,7 @@ fn test_l2_base_token_withdraw_with_message_events() {
     let additional_data = b"test message data";
 
     // Set up initial balance for the sender
-    chain.set_balance(B160::from_be_bytes(sender.into_array()), withdrawal_amount);
+    chain.set_balance(B160::from_alloy(sender), withdrawal_amount);
 
     // Prepare withdrawWithMessage(address,bytes) calldata
     // withdrawWithMessage(address,bytes) has selector 0x84bc3eb0
@@ -464,7 +465,7 @@ fn test_l2_base_token_withdraw_with_dirty_address() {
 
     // Deliberately set invalid balance (insufficient funds)
     // Set up initial balance for the sender
-    chain.set_balance(B160::from_be_bytes(sender.into_array()), withdrawal_amount);
+    chain.set_balance(B160::from_alloy(sender), withdrawal_amount);
 
     // Prepare withdraw(address) calldata
     let mut calldata = Vec::new();
@@ -515,7 +516,7 @@ fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
     let additional_data = b"test message data";
 
     // Set up initial balance for the sender
-    chain.set_balance(B160::from_be_bytes(sender.into_array()), withdrawal_amount);
+    chain.set_balance(B160::from_alloy(sender), withdrawal_amount);
 
     // Prepare withdrawWithMessage(address,bytes) calldata
     // withdrawWithMessage(address,bytes) has selector 0x84bc3eb0
@@ -765,7 +766,7 @@ fn test_mint_base_token_hook() {
 
     // Check initial balance of L2_BASE_TOKEN_ADDRESS is zero
     let initial_balance = chain
-        .get_account_properties(&B160::from_be_bytes(l2_base_token_address.into_array()))
+        .get_account_properties(&B160::from_alloy(l2_base_token_address))
         .balance;
 
     // Prepare calldata: 32 bytes containing the mint amount as U256 big-endian
@@ -801,7 +802,7 @@ fn test_mint_base_token_hook() {
 
     // Check that the caller's (L2_BASE_TOKEN_ADDRESS) balance was increased by the mint amount
     let final_balance = chain
-        .get_account_properties(&B160::from_be_bytes(l2_base_token_address.into_array()))
+        .get_account_properties(&B160::from_alloy(l2_base_token_address))
         .balance;
 
     let actually_minted_amount = final_balance
@@ -847,7 +848,7 @@ fn test_event_hooks_empty_topics() {
             &test_contract_bytecode,
         );
 
-        let encoded_tx = rig::utils::encode_l1_tx(tx);
+        let encoded_tx = rig::utils::tx_encoding::encode_l1_tx(tx);
         let transactions = vec![encoded_tx];
 
         let output = chain.run_block(transactions, None, None, None);

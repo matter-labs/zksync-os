@@ -7,6 +7,7 @@ use alloy::consensus::{TxEip1559, TxLegacy};
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
 use rig::alloy::primitives::address;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::run::generate_batch_proof_input;
 use rig::log::debug;
 use rig::ruint::aliases::{B160, U256};
@@ -33,7 +34,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     let to = address!("0000000000000000000000000000000000010002");
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
     chain.set_balance(
         B160::from_be_bytes(from.0),

@@ -8,6 +8,7 @@
 
 use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{address, TxKind, U256};
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::B160;
 use rig::zk_ee::system::tracer::evm_tracer::NopEvmTracer;
@@ -20,7 +21,7 @@ use rig::zk_ee::{
     },
     utils::Bytes32,
 };
-use rig::Chain;
+use rig::{ruint, Chain};
 
 /// A struct to track tracer calls for event operations
 #[derive(Debug, Clone, Default)]
@@ -125,11 +126,11 @@ fn test_event_hook() {
     let test_contract_bytecode = hex::decode("604260005260206000A060206000611234a100").unwrap();
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        ruint::aliases::B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000_u64),
     );
     chain.set_evm_bytecode(
-        B160::from_be_bytes(contract_address.into_array()),
+        ruint::aliases::B160::from_alloy(contract_address),
         &test_contract_bytecode,
     );
 
@@ -174,7 +175,7 @@ fn test_event_hook() {
         "Should have captured exactly 2 events"
     );
 
-    let contract_address = B160::from_be_bytes(contract_address.into_array());
+    let contract_address = ruint::aliases::B160::from_alloy(contract_address);
     assert_eq!(
         tracer.calls.events[0],
         (

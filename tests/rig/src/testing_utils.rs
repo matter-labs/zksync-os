@@ -48,7 +48,7 @@ pub fn get_first_traced_call_to(
     address: Address,
     tracer: &CallTracer,
 ) -> Option<&forward_system::system::tracers::call_tracer::Call> {
-    let expected_to = address.from_alloy();
+    let expected_to = B160::from_alloy(address);
     for tx in tracer.transactions.iter().flatten() {
         let search_res = get_first_traced_subcall_to(&expected_to, tx);
         if search_res.is_some() {
@@ -71,7 +71,7 @@ pub fn call_address_and_measure_gas_cost(
 
     if value != 0 {
         let value_encoded = alloy::primitives::U256::from(value);
-        chain.set_balance(sender.from_alloy(), value_encoded);
+        chain.set_balance(B160::from_alloy(sender), value_encoded);
     }
 
     // Needed to test force deploys

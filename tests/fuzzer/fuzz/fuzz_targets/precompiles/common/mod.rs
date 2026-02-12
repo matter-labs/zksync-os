@@ -1,4 +1,5 @@
 use forward_system::run::output::BlockOutput;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::BlockContext;
 use rig::{
     alloy::consensus::TxLegacy,
@@ -20,11 +21,11 @@ pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
     let forwarder = address!("0x1000000000000000000000000000000000000000");
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000_u64),
     );
     chain.set_evm_bytecode(
-        B160::from_be_bytes(forwarder.into_array()),
+        B160::from_alloy(forwarder),
         &hex::decode(FORWARDER_BYTECODE).unwrap(),
     );
 

@@ -9,6 +9,7 @@ use rig::alloy::hex::FromHex;
 use rig::alloy::primitives::FixedBytes;
 use rig::alloy_sol_types::sol;
 use rig::alloy_sol_types::SolCall;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::zksync_os_interface::types::ExecutionOutput;
 use rig::zksync_os_interface::types::ExecutionResult;
 use rig::BlockContext;
@@ -81,10 +82,10 @@ fn test_blockhash() {
 
     // Set a reasonable balance that would be sufficient for normal transactions
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000_u64),
     );
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
     let tx = rig::utils::sign_and_encode_alloy_tx(
         TxLegacy {
@@ -152,10 +153,10 @@ fn bench_addmod() {
     let wallet = chain.random_signer();
     let to = address!("0x1000000000000000000000000000000000000000");
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000u64),
     );
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
     // Some handy builders for U256
     let shl = |bits: u32| U256::from(1u64) << bits;
@@ -759,10 +760,10 @@ fn bench_mulmod() {
     let to = address!("0x1000000000000000000000000000000000000000");
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000u64),
     );
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
     // Build txs with unique nonces
     let txs: Vec<_> = vectors
@@ -892,10 +893,10 @@ fn bench_signextend() {
     let to = address!("0x1000000000000000000000000000000000000000");
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000u64),
     );
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
     // Build signed txs (unique nonces)
     let txs: Vec<_> = vectors
@@ -950,9 +951,9 @@ fn test_eip4844_blobhash() {
     // }
     let bytecode: Vec<u8> = hex::decode("608060405260043610601b575f3560e01c8063ab3ae25514601f575b5f5ffd5b60356004803603810190603191906073565b6037565b005b8049805f5260205ff35b5f5ffd5b5f819050919050565b6055816045565b8114605e575f5ffd5b50565b5f81359050606d81604e565b92915050565b5f6020828403121560855760846041565b5b5f6090848285016061565b9150509291505056fea26469706673582212209d46704950c75b3505742b2236950b59adbcc17d023f976acb6b5c43bca401fc64736f6c634300081e0033").unwrap();
 
-    chain.set_evm_bytecode(B160::from_be_bytes(inspector_addr.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(inspector_addr), &bytecode);
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000_u64),
     );
 

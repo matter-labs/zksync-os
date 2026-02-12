@@ -4,6 +4,7 @@ use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
 use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::{B160, U256};
 use rig::zksync_os_interface::traits::EncodedTx;
 use rig::{alloy, zksync_web3_rs, BlockContext, Chain};
@@ -24,7 +25,7 @@ fn run_tx(tx: EncodedTx, basefee: u64, native_price: u64, should_succeed: bool, 
 
     let bytecode = hex::decode(crate::ERC_20_BYTECODE).unwrap();
     let wallet = PrivateKeySigner::from_str(WALLET).unwrap();
-    chain.set_evm_bytecode(B160::from_be_bytes(TO.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(TO), &bytecode);
     let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
     let from = wallet_ethers.address();
 
@@ -39,7 +40,7 @@ fn run_tx(tx: EncodedTx, basefee: u64, native_price: u64, should_succeed: bool, 
     );
     let key = crate::compute_erc20_balance_slot(wallet.address());
     let value = rig::ruint::aliases::B256::from(U256::from(1_000_000_000_000_000_u64));
-    chain.set_storage_slot(B160::from_be_bytes(TO.0 .0), key, value);
+    chain.set_storage_slot(B160::from_alloy(TO), key, value);
 
     let block_context = BlockContext {
         native_price: U256::from(native_price),

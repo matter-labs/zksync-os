@@ -7,6 +7,7 @@
 
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy::primitives::{address, TxKind};
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
 use rig::zk_ee::system::tracer::NopTracer;
@@ -74,7 +75,7 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
     let from = wallet.address();
 
     chain.set_balance(
-        B160::from_be_bytes(from.into_array()),
+        B160::from_alloy(from),
         U256::from(1_000_000_000_000_000_u64),
     );
 
@@ -159,7 +160,7 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
     let from = wallet.address();
 
     chain.set_balance(
-        B160::from_be_bytes(from.into_array()),
+        B160::from_alloy(from),
         U256::from(1_000_000_000_000_000_u64),
     );
 
@@ -309,7 +310,7 @@ fn test_tx_validator_filters_out_tx_on_begin_tx() {
     let from = wallet.address();
 
     chain.set_balance(
-        B160::from_be_bytes(from.into_array()),
+        B160::from_alloy(from),
         U256::from(1_000_000_000_000_000_u64),
     );
 

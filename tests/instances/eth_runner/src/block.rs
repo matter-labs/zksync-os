@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use crate::calltrace::CallTrace;
 use alloy::eips::Typed2718;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::utils::tx_encoding::encode_alloy_rpc_tx;
 use rig::{log::warn, zksync_os_interface::traits::EncodedTx};
 use ruint::aliases::{B160, U256};
@@ -26,7 +27,7 @@ impl Block {
             eip1559_basefee: base_fee,
             pubdata_price: U256::ZERO,
             native_price: (base_fee / U256::from(100)).max(U256::ONE),
-            coinbase: B160::from_be_bytes(self.result.header.beneficiary.0 .0),
+            coinbase: B160::from_alloy(self.result.header.beneficiary),
             gas_limit: self.result.header.gas_limit,
             pubdata_limit: u64::MAX,
             mix_hash: U256::from_be_bytes(self.result.header.mix_hash.0),

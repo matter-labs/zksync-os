@@ -10,9 +10,8 @@ use reth_revm::{
     state::{AccountInfo, Bytecode},
     DatabaseRef,
 };
-use ruint::aliases::B160;
 use std::fmt;
-use zk_ee::common_structs::derive_flat_storage_key;
+use zk_ee::{common_structs::derive_flat_storage_key, utils::Bytes32};
 use zksync_os_interface::{
     traits::{PreimageSource, ReadStorage},
     types::BlockHashes,
@@ -23,7 +22,7 @@ pub trait ViewState: ReadStorage + PreimageSource + Send + Clone {
     fn get_account(&mut self, address: Address) -> Option<AccountProperties> {
         let key = derive_flat_storage_key(
             &ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
-            &address_into_special_storage_key(&B160::from_be_bytes(address.into_array())),
+            &address_into_special_storage_key(&FromAlloy::from_alloy(address)),
         );
         self.read(key.into_alloy()).map(|hash| {
             AccountProperties::decode(&self.get_preimage(hash).unwrap().try_into().unwrap())
@@ -130,9 +129,9 @@ where
         index: StorageKey,
     ) -> Result<StorageValue, Self::Error> {
         let storage_key: B256 = index.into();
-        let storage_key = storage_key.from_alloy();
+        let storage_key = Bytes32::from_alloy(storage_key);
         let flat_key =
-            derive_flat_storage_key(&B160::from_be_bytes(address.into_array()), &storage_key);
+            derive_flat_storage_key(&ruint::aliases::B160::from_alloy(address), &storage_key);
         Ok(self
             .state_view
             .clone()

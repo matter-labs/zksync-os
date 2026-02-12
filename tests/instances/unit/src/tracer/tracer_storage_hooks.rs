@@ -5,6 +5,7 @@
 
 use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{address, TxKind, U256};
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::B160;
 use rig::zk_ee::system::tracer::evm_tracer::NopEvmTracer;
@@ -132,13 +133,10 @@ fn test_storage_hooks() {
     let test_contract_bytecode = hex::decode("602a60005560005450602a60005D60005C50").unwrap();
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000_u64),
     );
-    chain.set_evm_bytecode(
-        B160::from_be_bytes(contract_address.into_array()),
-        &test_contract_bytecode,
-    );
+    chain.set_evm_bytecode(B160::from_alloy(contract_address), &test_contract_bytecode);
 
     // Create transaction to call the contract
     let encoded_tx = {
@@ -179,7 +177,7 @@ fn test_storage_hooks() {
         tracer.calls.storage_reads[0],
         (
             false,
-            B160::from_be_bytes(contract_address.into_array()),
+            B160::from_alloy(contract_address),
             Bytes32::zero(),
             Bytes32::from_hex("000000000000000000000000000000000000000000000000000000000000002a")
         )
@@ -188,7 +186,7 @@ fn test_storage_hooks() {
         tracer.calls.storage_reads[1],
         (
             true,
-            B160::from_be_bytes(contract_address.into_array()),
+            B160::from_alloy(contract_address),
             Bytes32::zero(),
             Bytes32::from_hex("000000000000000000000000000000000000000000000000000000000000002a")
         )
@@ -199,7 +197,7 @@ fn test_storage_hooks() {
         tracer.calls.storage_writes[0],
         (
             false,
-            B160::from_be_bytes(contract_address.into_array()),
+            B160::from_alloy(contract_address),
             Bytes32::zero(),
             Bytes32::from_hex("000000000000000000000000000000000000000000000000000000000000002a")
         )
@@ -208,7 +206,7 @@ fn test_storage_hooks() {
         tracer.calls.storage_writes[1],
         (
             true,
-            B160::from_be_bytes(contract_address.into_array()),
+            B160::from_alloy(contract_address),
             Bytes32::zero(),
             Bytes32::from_hex("000000000000000000000000000000000000000000000000000000000000002a")
         )

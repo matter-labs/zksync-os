@@ -2,6 +2,7 @@
 use alloy::consensus::{TxEip1559, TxEip2930};
 use alloy::primitives::{address, TxKind, U256};
 use alloy::signers::local::PrivateKeySigner;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::B160;
 use rig::zksync_os_interface::traits::EncodedTx;
 use rig::zksync_os_interface::types::BlockOutput;
@@ -20,7 +21,7 @@ fn run_transactions_as_eoa(
 ) -> BlockOutput {
     let mut chain = rig::Chain::empty(None);
     chain.set_balance(
-        B160::from_be_bytes(eoa_address.0 .0),
+        B160::from_alloy(eoa_address),
         U256::from(1_000_000_000_000_000_u64),
     );
     chain.run_block(encoded_txs, None, None, None)

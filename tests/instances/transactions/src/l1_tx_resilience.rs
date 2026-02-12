@@ -14,6 +14,7 @@
 use alloy::primitives::TxKind;
 use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::{B160, U256};
 use rig::utils::tx_encoding::encode_l1_tx;
 use rig::{alloy, Chain};
@@ -41,7 +42,7 @@ fn test_l1_tx_gas_limit_below_intrinsic() {
     let to = address!("4242000000000000000000000000000000000000");
 
     // Give the sender some balance
-    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+    chain.set_balance(B160::from_alloy(from), U256::from(u64::MAX));
 
     // Create an L1 transaction with gas limit below intrinsic gas (21000)
     // The intrinsic gas for L1 txs is L1_TX_INTRINSIC_L2_GAS = 21_000
@@ -101,7 +102,7 @@ fn test_l1_tx_gas_price_overflow_native_per_gas() {
 
     // Give the sender a reasonable balance (not MAX to avoid overflow issues elsewhere)
     chain.set_balance(
-        B160::from_be_bytes(from.into_array()),
+        B160::from_alloy(from),
         U256::from(1_000_000_000_000_000_u64),
     );
 
@@ -169,7 +170,7 @@ fn test_l1_tx_intrinsic_gas_overflow() {
 
     // Set up balances
     chain.set_balance(
-        rig::ruint::aliases::B160::from_be_bytes(from_address.into_array()),
+        B160::from_alloy(from_address),
         rig::ruint::aliases::U256::from(1_000_000_000_000_000_u64),
     );
     // Test L1 transaction - this triggers the overflow scenario

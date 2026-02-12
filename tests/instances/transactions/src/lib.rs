@@ -10,6 +10,7 @@ use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
 use rig::chain::RunConfig;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::revm_consistency_checker::ChainStateView;
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
@@ -172,7 +173,7 @@ fn run_base_system() {
     ];
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
     chain
         .set_balance(
@@ -180,7 +181,7 @@ fn run_base_system() {
             U256::from(1_000_000_000_000_000_u64),
         )
         .set_balance(
-            B160::from_be_bytes(eoa_wallet.address().0 .0),
+            B160::from_alloy(eoa_wallet.address()),
             U256::from(1_000_000_000_000_000_u64),
         );
 
@@ -293,7 +294,7 @@ fn test_withdrawal() {
     let transactions = vec![withdrawal_tx, withdrawal_with_message_tx];
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
     chain.set_balance(
         B160::from_be_bytes(from.0),
@@ -370,7 +371,7 @@ fn test_tx_with_access_list() {
     let transactions = vec![encoded_mint_tx];
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
     chain.set_balance(
         B160::from_be_bytes(from.0),
@@ -434,7 +435,7 @@ fn test_tx_with_authorization_list() {
     let transactions = vec![encoded_mint_tx];
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
-    chain.set_evm_bytecode(B160::from_be_bytes(erc_20_contract.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(erc_20_contract), &bytecode);
 
     chain.set_balance(
         B160::from_be_bytes(from.0),
@@ -515,7 +516,7 @@ fn test_cold_in_new_tx() {
     let transactions = vec![encoded_mint_tx, encoded_mint1_tx, encoded_mint_tx2];
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
     chain.set_balance(
         B160::from_be_bytes(from.0),
@@ -585,11 +586,11 @@ fn test_independent_txs_have_same_pubdata() {
 
     chain
         .set_balance(
-            B160::from_be_bytes(wallet1.address().0 .0),
+            B160::from_alloy(wallet1.address()),
             U256::from(1_000_000_000_000_000_u64),
         )
         .set_balance(
-            B160::from_be_bytes(wallet2.address().0 .0),
+            B160::from_alloy(wallet2.address()),
             U256::from(1_000_000_000_000_000_u64),
         );
 
@@ -641,7 +642,7 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
         let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
 
         chain.set_balance(
-            B160::from_be_bytes(l1_messenger_contract.into_array()),
+            B160::from_alloy(l1_messenger_contract),
             U256::from(1_000_000_000_000_000_u64),
         );
 
@@ -672,7 +673,7 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
     };
 
     let transactions = vec![encoded_mint1_tx, withdrawal_tx];
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
     chain.set_balance(
         B160::from_be_bytes(from.0),
         U256::from(1_000_000_000_000_000_u64),
@@ -725,7 +726,7 @@ fn test_invalid_tx_does_not_affect_native() {
 
     let mut chain = Chain::empty(None);
     let transactions = vec![encoded_mint_tx.clone()];
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
     chain.set_balance(
         B160::from_be_bytes(from.0),
         U256::from(1_000_000_000_000_000_u64),
@@ -756,7 +757,7 @@ fn test_invalid_tx_does_not_affect_native() {
 
     let mut chain = Chain::empty(None);
     let transactions = vec![encoded_mint1_tx, encoded_mint_tx];
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
     chain.set_balance(
         B160::from_be_bytes(from.0),
         U256::from(1_000_000_000_000_000_u64),
@@ -833,7 +834,7 @@ fn test_regression_returndata_empty_3541() {
     let transactions = vec![encoded_tx];
 
     let bytecode = hex::decode(BYTECODE).unwrap();
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
     chain.set_balance(
         B160::from_be_bytes(from.0),
@@ -862,7 +863,7 @@ fn test_balance_overflow_protection() {
 
     // Set a reasonable balance that would be sufficient for normal transactions
     chain.set_balance(
-        B160::from_be_bytes(from.into_array()),
+        B160::from_alloy(from),
         U256::from(1_000_000_000_000_000_u64),
     );
 
@@ -923,10 +924,7 @@ fn test_upgrade_tx_revert_internal_error() {
     let revert_contract_address = address!("0000000000000000000000000000000000010003");
     // Simple contract bytecode that just does REVERT(0, 0)
     let revert_bytecode = hex::decode("60006000fd").unwrap(); // PUSH1 0, PUSH1 0, REVERT
-    chain.set_evm_bytecode(
-        B160::from_be_bytes(revert_contract_address.into_array()),
-        &revert_bytecode,
-    );
+    chain.set_evm_bytecode(B160::from_alloy(revert_contract_address), &revert_bytecode);
 
     // Create a proper upgrade transaction that calls the reverting contract
     let upgrade_tx = encode_upgrade_tx(TransactionRequest {
@@ -967,10 +965,7 @@ fn test_upgrade_tx_succeeds() {
     let revert_contract_address = address!("0000000000000000000000000000000000010003");
     // Simple contract bytecode that just does RETURN(0, 0)
     let revert_bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
-    chain.set_evm_bytecode(
-        B160::from_be_bytes(revert_contract_address.into_array()),
-        &revert_bytecode,
-    );
+    chain.set_evm_bytecode(B160::from_alloy(revert_contract_address), &revert_bytecode);
 
     // Create a proper upgrade transaction that calls the contract
     let upgrade_tx = encode_upgrade_tx(TransactionRequest {
@@ -1001,10 +996,7 @@ fn test_invalid_transaction_type_failure() {
     // Create a simple success contract for the call
     let contract_address = address!("0000000000000000000000000000000000010003");
     let success_bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
-    chain.set_evm_bytecode(
-        B160::from_be_bytes(contract_address.into_array()),
-        &success_bytecode,
-    );
+    chain.set_evm_bytecode(B160::from_alloy(contract_address), &success_bytecode);
 
     let transaction_types = vec![0x7d, 0x80, 0xFF]; // Some invalid types;
 
@@ -1089,7 +1081,7 @@ fn test_modexp_intermediate_zero_block() {
     let transactions = vec![encoded_tx];
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(10u64.pow(18)),
     );
 
@@ -1164,7 +1156,7 @@ fn test_point_eval_call() {
     let transactions = vec![encoded_tx];
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(10u64.pow(18)),
     );
 
@@ -1205,13 +1197,10 @@ fn test_selfdestruct_to_precompile_gas() {
     let bytecode = hex::decode("730000000000000000000000000000000000000001ff").unwrap();
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000_u64),
     );
-    chain.set_evm_bytecode(
-        B160::from_be_bytes(contract_address.into_array()),
-        &bytecode,
-    );
+    chain.set_evm_bytecode(B160::from_alloy(contract_address), &bytecode);
 
     use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
 
@@ -1266,13 +1255,13 @@ fn test_reject_caller_with_code_behavior() {
 
     // Deploy bytecode to the contract address to make it a "contract with code"
     chain.set_evm_bytecode(
-        B160::from_be_bytes(contract_address.into_array()),
+        B160::from_alloy(contract_address),
         &hex::decode("60006000f3").unwrap(), // Simple contract: PUSH1 0, PUSH1 0, RETURN
     );
 
     // Set balance for the contract address
     chain.set_balance(
-        B160::from_be_bytes(contract_address.into_array()),
+        B160::from_alloy(contract_address),
         U256::from(1_000_000_000_000_000_u64),
     );
 
@@ -1319,7 +1308,7 @@ fn test_expensive_pubdata() {
     let target_address = address!("4242000000000000000000000000000000000000");
 
     // Set balance for the contract address
-    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+    chain.set_balance(B160::from_alloy(from), U256::from(u64::MAX));
 
     let tx = {
         let tx = TxEip1559 {
@@ -1363,7 +1352,7 @@ fn test_check_pubdata_encoding_version() {
     let target_address = address!("4242000000000000000000000000000000000000");
 
     // Set balance for the contract address
-    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+    chain.set_balance(B160::from_alloy(from), U256::from(u64::MAX));
 
     let tx = {
         let tx = TxEip1559 {
@@ -1405,7 +1394,7 @@ fn test_check_pubdata_has_timestamp() {
     let target_address = address!("4242000000000000000000000000000000000000");
 
     // Set balance for the contract address
-    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+    chain.set_balance(B160::from_alloy(from), U256::from(u64::MAX));
 
     let tx = {
         let tx = TxEip1559 {
@@ -1456,7 +1445,7 @@ fn test_simple_service_transaction() {
     let target_address = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes::<20>();
 
     // Set balance for the contract address
-    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+    chain.set_balance(B160::from_alloy(from), U256::from(u64::MAX));
 
     let tx = encode_service_tx(&target_address, &[], 0);
 
@@ -1479,7 +1468,7 @@ fn test_simple_service_transaction_whitelist() {
     let target_address = [0u8; 20];
 
     // Set balance for the contract address
-    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+    chain.set_balance(B160::from_alloy(from), U256::from(u64::MAX));
 
     let tx = encode_service_tx(&target_address, &[], 0);
 
@@ -1501,7 +1490,7 @@ fn test_service_block_invariants() {
     let target_address = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes::<20>();
 
     // Set balance for the contract address
-    chain.set_balance(B160::from_be_bytes(from.into_array()), U256::from(u64::MAX));
+    chain.set_balance(B160::from_alloy(from), U256::from(u64::MAX));
 
     // Check that a service block with several service txs works
     let tx1 = encode_service_tx(&target_address, &[], 0);
@@ -1573,7 +1562,7 @@ fn test_simulation_skips_nonce_check() {
 
     // Set balance so the tx can pay for gas
     chain.set_balance(
-        B160::from_be_bytes(from.into_array()),
+        B160::from_alloy(from),
         U256::from(1_000_000_000_000_000_u64),
     );
 
@@ -1751,7 +1740,7 @@ fn test_simulation_gas_and_native_used() {
     let target_address = address!("4242000000000000000000000000000000000000");
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().0 .0),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000_u64),
     );
 
@@ -1811,7 +1800,7 @@ fn test_simulation_gas_used_regression() {
     let mut chain = Chain::empty(None);
     let wallet = chain.random_signer();
     let target_address = address!("4242000000000000000000000000000000000000");
-    chain.set_balance(B160::from_be_bytes(wallet.address().0 .0), U256::MAX);
+    chain.set_balance(B160::from_alloy(wallet.address()), U256::MAX);
 
     // First tx, 0 gas price.
     let tx = {
@@ -1885,17 +1874,17 @@ fn test_treasury_based_token_distribution_regression() {
 
     // Record initial operator balance
     let operator_initial_balance = chain
-        .get_account_properties(&B160::from_be_bytes(coinbase.into_array()))
+        .get_account_properties(&B160::from_alloy(coinbase))
         .balance;
 
     // Record initial recipient balance
     let recipient_initial_balance = chain
-        .get_account_properties(&B160::from_be_bytes(l1_recipient.into_array()))
+        .get_account_properties(&B160::from_alloy(l1_recipient))
         .balance;
 
     // Record initial refund recipient balance
     let refund_recipient_initial_balance = chain
-        .get_account_properties(&B160::from_be_bytes(refund_recipient.into_array()))
+        .get_account_properties(&B160::from_alloy(refund_recipient))
         .balance;
 
     // Create L1→L2 transaction with value transfer and fees
@@ -1919,7 +1908,7 @@ fn test_treasury_based_token_distribution_regression() {
     };
 
     let block_context = BlockContext {
-        coinbase: B160::from_be_bytes(coinbase.into_array()),
+        coinbase: B160::from_alloy(coinbase),
         ..Default::default()
     };
     let output = chain.run_block(vec![l1_tx], Some(block_context), None, None);
@@ -1947,15 +1936,15 @@ fn test_treasury_based_token_distribution_regression() {
         .balance;
 
     let operator_final_balance = chain
-        .get_account_properties(&B160::from_be_bytes(coinbase.into_array()))
+        .get_account_properties(&B160::from_alloy(coinbase))
         .balance;
 
     let recipient_final_balance = chain
-        .get_account_properties(&B160::from_be_bytes(l1_recipient.into_array()))
+        .get_account_properties(&B160::from_alloy(l1_recipient))
         .balance;
 
     let refund_recipient_final_balance = chain
-        .get_account_properties(&B160::from_be_bytes(refund_recipient.into_array()))
+        .get_account_properties(&B160::from_alloy(refund_recipient))
         .balance;
 
     // Calculate total amount that should go to operator (fee + refund)
@@ -2066,7 +2055,7 @@ fn test_pubdata_native_calculation_overflow() {
 
     // Set initial balance for the wallet
     chain.set_balance(
-        B160::from_be_bytes(from.into_array()),
+        B160::from_alloy(from),
         U256::from_str("100000000000000000000010000").unwrap(),
     );
 
@@ -2084,7 +2073,7 @@ fn test_pubdata_native_calculation_overflow() {
     */
     // Spam some pubdata
     let bytecode = hex::decode("60806040525f5f90505b6014811015603f576c0fffffffffffffffffffffffff5f5f8381526020019081526020015f208190555080806001019150506009565b00fea2646970667358221220d8f4977e359f09d23e2979156755d7e177d43f8a1882a5a178eb98dd8bcb237264736f6c634300081f0033").unwrap();
-    chain.set_evm_bytecode(B160::from_be_bytes(to.into_array()), &bytecode);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
     // Create a transaction that will generate significant pubdata
     let tx = {

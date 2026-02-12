@@ -20,7 +20,7 @@ pub trait ReadStorageTree: ReadStorage {
 
 impl<T: zksync_os_interface::traits::ReadStorage> ReadStorage for T {
     fn read(&mut self, key: Bytes32) -> Option<Bytes32> {
-        self.read(key.into_alloy()).map(|v| v.from_alloy())
+        self.read(key.into_alloy()).map(|v| Bytes32::from_alloy(v))
     }
 }
 

@@ -6,6 +6,7 @@
 //! This is a minimalistic sanity checking. Does not properly cover all cases and functionality
 
 use rig::alloy::primitives::address;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::system::tracers::call_tracer::{CallTracer, CallType};
 use rig::ruint::aliases::{B160, U256};
 use rig::BlockContext;
@@ -46,7 +47,7 @@ fn test_call_tracer_basic_call() {
 
     // Verify basic call properties
     assert!(matches!(call.call_type, CallType::Call));
-    assert_eq!(call.to, B160::from_be_bytes(contract_address.into_array()));
+    assert_eq!(call.to, B160::from_alloy(contract_address));
     assert!(!call.reverted, "Call should not be reverted");
     assert!(call.error.is_none(), "Call should not have error");
     assert_eq!(call.gas, 100_000 - 21_000, "Call should have gas assigned");
@@ -97,10 +98,7 @@ fn test_call_tracer_nested_calls() {
 
     let subcall = &main_call.calls[0];
     assert!(matches!(subcall.call_type, CallType::Call));
-    assert_eq!(
-        subcall.to,
-        B160::from_be_bytes(contract_b_address.into_array())
-    );
+    assert_eq!(subcall.to, B160::from_alloy(contract_b_address));
     assert!(!subcall.reverted, "Subcall should not be reverted");
     assert!(subcall.error.is_none(), "Subcall should not have error");
     assert!(subcall.gas > 0, "Subcall should have gas assigned");

@@ -3,6 +3,7 @@
 
 use bytes::Bytes;
 use rig::alloy::consensus::TxLegacy;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
 use rig::zksync_os_interface::types::BlockOutput;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
@@ -27,11 +28,11 @@ fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockO
     let forwarder = address!("0x1000000000000000000000000000000000000000");
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        FromAlloy::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000_u64),
     );
     chain.set_evm_bytecode(
-        B160::from_be_bytes(forwarder.into_array()),
+        FromAlloy::from_alloy(forwarder),
         &hex::decode(FORWARDER_BYTECODE).unwrap(),
     );
 
@@ -6415,11 +6416,11 @@ fn test_regression_p256_is_warm() {
     let forwarder = address!("0x1000000000000000000000000000000000000000");
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000_u64),
     );
     chain.set_evm_bytecode(
-        B160::from_be_bytes(forwarder.into_array()),
+        B160::from_alloy(forwarder),
         &hex::decode(FORWARDER_BYTECODE).unwrap(),
     );
 

@@ -26,7 +26,7 @@ impl FromInterface<BlockContext> for BlockMetadataFromOracle {
             eip1559_basefee: value.eip1559_basefee,
             pubdata_price: value.pubdata_price,
             native_price: value.native_price,
-            coinbase: value.coinbase.from_alloy(),
+            coinbase: ruint::aliases::B160::from_alloy(value.coinbase),
             gas_limit: value.gas_limit,
             pubdata_limit: value.pubdata_limit,
             mix_hash: value.mix_hash,

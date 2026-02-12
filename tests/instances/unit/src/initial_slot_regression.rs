@@ -13,6 +13,7 @@ use rig::basic_system::system_implementation::flat_storage_model::{
     FlatStorageCommitment, TREE_HEIGHT,
 };
 use rig::chain::TestingOracleFactory;
+use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::run::query_processors::{
     BlockMetadataResponder, DACommitmentSchemeResponder, GenericPreimageResponder, TxDataResponder,
     ZKProofDataResponder,
@@ -179,13 +180,10 @@ fn test_initial_slot_value_assertion() {
     let simple_storage_bytecode = hex::decode("6080604052348015600e575f5ffd5b50600436106026575f3560e01c80636057361d14602a575b5f5ffd5b60406004803603810190603c9190607d565b6042565b005b805f8190555050565b5f5ffd5b5f819050919050565b605f81604f565b81146068575f5ffd5b50565b5f813590506077816058565b92915050565b5f60208284031215608f57608e604b565b5b5f609a84828501606b565b9150509291505056fea26469706673582212209a9900f35fcdc7903c2ece72cf1b055b4dda7395c3555e100df93ef7977e707064736f6c634300081e0033").unwrap();
 
     chain.set_balance(
-        B160::from_be_bytes(wallet.address().into_array()),
+        B160::from_alloy(wallet.address()),
         U256::from(1_000_000_000_000_000_u64),
     );
-    chain.set_evm_bytecode(
-        B160::from_be_bytes(contract_address.into_array()),
-        &simple_storage_bytecode,
-    );
+    chain.set_evm_bytecode(B160::from_alloy(contract_address), &simple_storage_bytecode);
 
     // Create a transaction that calls store(42) which writes to storage slot 0
     // Function selector for store(uint256): 6057361d
@@ -209,7 +207,7 @@ fn test_initial_slot_value_assertion() {
 
     // Use the malicious oracle factory that should trigger the assertion
     let malicious_factory = InvalidInitialValueOracleFactory::new(vec![(
-        B160::from_be_bytes(contract_address.into_array()),
+        B160::from_alloy(contract_address),
         Bytes32::zero(),
     )]);
 
