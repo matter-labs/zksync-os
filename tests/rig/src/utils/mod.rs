@@ -72,7 +72,7 @@ pub fn load_sol_bytecode(project_name: &str, contract_name: &str) -> Vec<u8> {
 pub fn construct_calldata(selector: &str, data: &[&str]) -> Vec<u8> {
     let mut cd = alloy::hex::decode(selector).unwrap();
     for val in data {
-        let mut x = alloy::primitives::U256::from_str(val)
+        let mut x = alloy::primitives::U256::from_str_radix(val, 16)
             .unwrap()
             .to_be_bytes::<32>()
             .to_vec();
