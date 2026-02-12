@@ -9,7 +9,6 @@
 #![allow(clippy::type_complexity)]
 #![allow(incomplete_features)]
 
-
 pub mod constants;
 pub(crate) mod environment;
 pub(crate) mod filters;

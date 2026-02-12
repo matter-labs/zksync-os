@@ -202,8 +202,12 @@ impl ZKsyncOS {
     ///
     pub fn set_nonce(&mut self, address: Address, nonce: U256) {
         let nonce = u256_to_u64_saturated(&nonce);
-        self.chain
-            .set_account_properties(ruint::aliases::B160::from_alloy(address), None, Some(nonce), None)
+        self.chain.set_account_properties(
+            ruint::aliases::B160::from_alloy(address),
+            None,
+            Some(nonce),
+            None,
+        )
     }
 
     pub fn get_storage_slot(&mut self, address: Address, key: U256) -> Option<B256> {
