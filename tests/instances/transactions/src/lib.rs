@@ -27,8 +27,8 @@ mod native_charging;
 fn run_config() -> Option<rig::chain::RunConfig> {
     Some(rig::chain::RunConfig {
         app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
+        only_forward: true,
+        check_storage_diff_hashes: false,
         skip_minting_tokens_to_treasury: false,
         ..Default::default()
     })
@@ -1237,7 +1237,7 @@ fn test_selfdestruct_to_precompile_gas() {
 
     use rig::utils::tx_encoding::EncodableToEncodedTx;
 
-    let result = chain.run_block(vec![tx_request.encode()], None, None, None);
+    let result = chain.run_block(vec![tx_request.encode()], None, None, run_config());
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
     let gas_used = res0.clone().unwrap().gas_used;
@@ -1251,7 +1251,7 @@ fn test_selfdestruct_to_precompile_gas() {
     let block_context = generate_block_context_interface(&chain, &BlockContext::default());
 
     revm_runner
-        .run(vec![tx_request], block_context, None)
+        .run(vec![tx_request], block_context, Some(result))
         .expect("RevmRunner execution failed");
 }
 

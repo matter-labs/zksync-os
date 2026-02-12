@@ -1,4 +1,5 @@
 use alloy::primitives::U256;
+use reth_revm::context::ContextTr;
 use reth_revm::ExecuteCommitEvm;
 use reth_revm::{db::CacheDB, Context};
 use zksync_os_interface::types::BlockContext;
@@ -10,6 +11,7 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
 
 use crate::helpers::zk_tx_into_revm_tx;
 use crate::revm_state_provider::{RevmStateProvider, ViewState};
+use crate::storage_diff_comp::CompareReport;
 
 pub struct RevmRunner<State>
 where
@@ -54,7 +56,7 @@ where
             })
             .build_zk();
 
-        let revm_txs: Vec<_> = if let Some(block_output) = block_output {
+        let revm_txs: Vec<_> = if let Some(block_output) = block_output.as_ref() {
             transactions
                 .iter()
                 .zip(&block_output.tx_results)
@@ -81,14 +83,19 @@ where
 
         println!("Execution result: {:#?}", execution_result);
 
-        // TODO: compare execution results, maybe as a separate function
-        /*let compare_report = CompareReport::build(
-            evm.0.db_mut(),
-            &block_output.storage_writes,
-            &block_output.account_diffs,
-        )?;
-        self.handle_report(&replay_record, &compare_report)?;
-        */
+        if let Some(block_output) = block_output {
+            // TODO: maybe it should be a separate function
+            let compare_report = CompareReport::build(
+                evm.0.db_mut(),
+                &block_output.storage_writes,
+                &block_output.account_diffs,
+            )?;
+            if !compare_report.is_empty() {
+                compare_report.log_tracing(10);
+                anyhow::bail!("State mismatch found. See logs for details.");
+            }
+        }
+
         Ok(())
     }
 }
