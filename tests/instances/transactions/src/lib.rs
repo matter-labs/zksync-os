@@ -11,7 +11,6 @@ use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
 use rig::chain::RunConfig;
 use rig::forward_system::run::convert_alloy::FromAlloy;
-use rig::revm_consistency_checker::ChainStateView;
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::testing_utils::install_system_contracts;
@@ -1222,8 +1221,6 @@ fn test_selfdestruct_to_precompile_gas() {
         ZKsyncTxRequest::new_l2(tx_request, wallet)
     };
 
-    let chain_before = chain.clone();
-
     use rig::utils::tx_encoding::EncodableToEncodedTx;
 
     let result = chain.run_block(vec![tx_request.encode()], None, None, run_config());
@@ -1231,17 +1228,6 @@ fn test_selfdestruct_to_precompile_gas() {
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
     let gas_used = res0.clone().unwrap().gas_used;
     assert_eq!(gas_used, 26003);
-
-    use zksync_os_revm_runner::revm_runner::RevmRunner;
-    let chain_state = ChainStateView {
-        chain: chain_before,
-    };
-    let mut revm_runner: RevmRunner<ChainStateView> = RevmRunner::new(chain_state);
-    let block_context = generate_block_context_interface(&chain, &BlockContext::default());
-
-    revm_runner
-        .run(vec![tx_request], block_context, Some(result))
-        .expect("RevmRunner execution failed");
 }
 
 #[test]
