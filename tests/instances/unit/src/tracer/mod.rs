@@ -10,8 +10,10 @@ use rig::alloy::primitives::{Address, TxKind, U256};
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::system::tracers::call_tracer::CallTracer;
 use rig::ruint::aliases::B160;
+use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::zk_ee::system::validator::NopTxValidator;
 use rig::{BlockContext, Chain};
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 pub(crate) fn run_chain_with_tracer(
     to: Address,
@@ -43,7 +45,7 @@ pub(crate) fn run_chain_with_tracer(
             input: Default::default(),
             access_list: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     let _ = chain.run_block_with_extra_stats(

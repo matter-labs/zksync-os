@@ -67,7 +67,7 @@ fn run_base_system() {
             value: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let encoded_transfer_tx = {
@@ -82,7 +82,7 @@ fn run_base_system() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(transfer_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(transfer_tx, wallet.clone()).encode()
     };
 
     // `to` == null
@@ -97,7 +97,7 @@ fn run_base_system() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_DEPLOYMENT_BYTECODE).unwrap().into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(deployment_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(deployment_tx, wallet.clone()).encode()
     };
     let encoded_transfer_to_eoa_tx = {
         let eoa_to = address!("4242000000000000000000000000000000000000");
@@ -112,7 +112,7 @@ fn run_base_system() {
             access_list: Default::default(),
             input: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(transfer_to_eoa, &eoa_wallet)
+        ZKsyncTxEnvelope::new_l2_tx(transfer_to_eoa, eoa_wallet.clone()).encode()
     };
 
     let encoded_mint2_tx = {
@@ -127,7 +127,7 @@ fn run_base_system() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let encoded_l1_l2_transfer = {
@@ -265,7 +265,7 @@ fn test_withdrawal() {
             value: U256::from(10),
             input: withdrawal_calldata.into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let mut withdrawal_with_message_calldata =
@@ -288,7 +288,7 @@ fn test_withdrawal() {
             value: U256::from(5),
             input: withdrawal_with_message_calldata.into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let transactions = vec![withdrawal_tx, withdrawal_with_message_tx];
@@ -365,7 +365,7 @@ fn test_tx_with_access_list() {
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
             access_list,
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let transactions = vec![encoded_mint_tx];
@@ -429,7 +429,7 @@ fn test_tx_with_authorization_list() {
             access_list: Default::default(),
             authorization_list,
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let transactions = vec![encoded_mint_tx];
@@ -482,7 +482,7 @@ fn test_cold_in_new_tx() {
             value: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     // Gas is just enough to succeed.
@@ -496,7 +496,7 @@ fn test_cold_in_new_tx() {
             value: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     // Any lower gas amount should fail
@@ -510,7 +510,7 @@ fn test_cold_in_new_tx() {
             value: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let transactions = vec![encoded_mint_tx, encoded_mint1_tx, encoded_mint_tx2];
@@ -564,7 +564,7 @@ fn test_independent_txs_have_same_pubdata() {
             input: Default::default(),
             ..Default::default()
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet1)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet1.clone()).encode()
     };
 
     let encoded_tx_2 = {
@@ -579,7 +579,7 @@ fn test_independent_txs_have_same_pubdata() {
             input: Default::default(),
             ..Default::default()
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet2)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet2.clone()).encode()
     };
 
     let transactions = vec![encoded_tx_1, encoded_tx_2];
@@ -635,7 +635,7 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
             value: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
     let withdrawal_tx = {
         let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
@@ -721,7 +721,7 @@ fn test_invalid_tx_does_not_affect_native() {
             value: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let mut chain = Chain::empty(None);
@@ -752,7 +752,7 @@ fn test_invalid_tx_does_not_affect_native() {
             value: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let mut chain = Chain::empty(None);
@@ -828,7 +828,7 @@ fn test_regression_returndata_empty_3541() {
             value: Default::default(),
             ..Default::default()
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let transactions = vec![encoded_tx];
@@ -879,7 +879,7 @@ fn test_balance_overflow_protection() {
             value: U256::from(100u64), // Small value
             ..Default::default()
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     // Test 2: Transaction with value + fee_amount overflow
@@ -894,7 +894,7 @@ fn test_balance_overflow_protection() {
             value: U256::MAX, // Maximum value will cause overflow when adding fees
             ..Default::default()
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     let output = chain.run_block(
@@ -1075,7 +1075,7 @@ fn test_modexp_intermediate_zero_block() {
             input: input_data.into(),
             ..Default::default()
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let transactions = vec![encoded_tx];
@@ -1150,7 +1150,7 @@ fn test_point_eval_call() {
             input: input_data.into(),
             ..Default::default()
         };
-        rig::utils::sign_and_encode_alloy_tx(mint_tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
     };
 
     let transactions = vec![encoded_tx];
@@ -1263,7 +1263,7 @@ fn test_reject_caller_with_code_behavior() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     let result_simulation = chain.simulate_block(vec![from_contract_tx.clone()], None);
@@ -1309,7 +1309,7 @@ fn test_expensive_pubdata() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     // Validation uses 40 bytes of pubdata, we want the validation
@@ -1353,7 +1353,7 @@ fn test_check_pubdata_encoding_version() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     let native_price = U256::from(100);
@@ -1395,7 +1395,7 @@ fn test_check_pubdata_has_timestamp() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     let native_price = U256::from(100);
@@ -1509,7 +1509,7 @@ fn test_service_block_invariants() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
     let block_context = BlockContext {
         eip1559_basefee: U256::from(1000),
@@ -1566,7 +1566,7 @@ fn test_simulation_skips_nonce_check() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     // In simulation mode, the transaction should succeed (nonce check skipped)
@@ -1611,7 +1611,7 @@ fn test_simulation_balance_check() {
             value: U256::from(1),
             input: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
     let result_simulation = chain.simulate_block(vec![tx.clone()], None);
     assert!(
@@ -1630,7 +1630,7 @@ fn test_simulation_balance_check() {
             value: Default::default(),
             input: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
     let result_simulation = chain.simulate_block(vec![tx.clone()], None);
     assert!(
@@ -1649,7 +1649,7 @@ fn test_simulation_balance_check() {
             value: U256::from(1),
             input: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
     let result_simulation = chain.simulate_block(vec![tx.clone()], None);
     assert!(
@@ -1668,7 +1668,7 @@ fn test_simulation_balance_check() {
             value: Default::default(),
             input: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
     let result_simulation = chain.simulate_block(vec![tx.clone()], None);
     assert!(
@@ -1704,7 +1704,7 @@ fn test_simulation_4844_zero_blob_fee_allowed() {
         )],
         max_fee_per_blob_gas: 0,
     };
-    let encoded_tx = rig::utils::sign_and_encode_alloy_tx(tx, &wallet);
+    let encoded_tx = ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode();
 
     let block_context = BlockContext {
         blob_fee: U256::from(1),
@@ -1801,7 +1801,7 @@ fn test_simulation_gas_used_regression() {
             value: U256::ZERO,
             input: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
     let block_context = BlockContext {
         eip1559_basefee: U256::from(91161500u64),
@@ -1825,7 +1825,7 @@ fn test_simulation_gas_used_regression() {
             value: U256::ZERO,
             input: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     let result_simulation = chain.simulate_block(vec![tx.clone()], Some(block_context));
@@ -2075,7 +2075,7 @@ fn test_pubdata_native_calculation_overflow() {
             value: U256::from(1000),
             ..Default::default()
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     // Set extremely high native_per_pubdata to trigger overflow in current_pubdata_spent.checked_mul(native_per_pubdata)

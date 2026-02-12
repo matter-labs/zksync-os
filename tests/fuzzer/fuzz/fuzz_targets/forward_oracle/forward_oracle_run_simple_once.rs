@@ -5,6 +5,8 @@ use alloy::primitives::{Bytes, TxKind, U256};
 use libfuzzer_sys::fuzz_target;
 use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use rig::ruint::aliases::B160;
+use rig::utils::tx_encoding::EncodableToEncodedTx;
+use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 fuzz_target!(|data: &[u8]| {
     let mut chain = rig::Chain::empty(None);
@@ -21,7 +23,7 @@ fuzz_target!(|data: &[u8]| {
     let gas = 57000;
     let call_value = U256::from(0);
 
-    let tx = rig::utils::sign_and_encode_alloy_tx(
+    let tx = ZKsyncTxEnvelope::new_l2_tx(
         TxLegacy {
             chain_id: None,
             nonce: 0,
@@ -31,8 +33,9 @@ fuzz_target!(|data: &[u8]| {
             value: call_value,
             input: Bytes::from(data.to_vec()),
         },
-        &from,
-    );
+        from.clone(),
+    )
+    .encode();
 
     chain.set_balance(
         B160::from_alloy(from.address()),

@@ -10,7 +10,9 @@ use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{address, TxKind, U256};
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::B160;
+use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::{BlockContext, Chain};
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[test]
 #[should_panic]
@@ -36,7 +38,7 @@ fn test_invalid_coinbase() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     // Create invalid coinbase with 24 bytes set

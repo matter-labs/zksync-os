@@ -7,6 +7,8 @@ use rig::{
     utils::{calldata_for_forwarder, FORWARDER_BYTECODE},
 };
 use ruint::aliases::{B160, U256};
+use rig::utils::tx_encoding::EncodableToEncodedTx;
+use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 // Creates two txs:
 /// 1. Calls the precompile with given input and gas limit.
@@ -29,7 +31,7 @@ pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
         &hex::decode(FORWARDER_BYTECODE).unwrap(),
     );
 
-    let direct_tx = rig::utils::sign_and_encode_alloy_tx(
+    let direct_tx = ZKsyncTxEnvelope::new_l2_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -39,11 +41,12 @@ pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
             value: Default::default(),
             input: input.to_vec().into(),
         },
-        &wallet,
-    );
+        wallet.clone(),
+    )
+    .encode();
 
     let calldata = calldata_for_forwarder(target, input);
-    let forwarded_tx = rig::utils::sign_and_encode_alloy_tx(
+    let forwarded_tx = ZKsyncTxEnvelope::new_l2_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 1,
@@ -53,8 +56,9 @@ pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
             value: Default::default(),
             input: calldata.into(),
         },
-        &wallet,
-    );
+        wallet.clone(),
+    )
+    .encode();
     // We use a very high native per gas ratio
     let block_context = BlockContext {
         native_price: U256::ONE,

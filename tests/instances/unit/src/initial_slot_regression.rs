@@ -22,6 +22,7 @@ use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::run::ReadStorage;
 use rig::oracle_provider::{MemorySource, OracleQueryProcessor, ZkEENonDeterminismSource};
 use rig::ruint::aliases::B160;
+use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::zk_ee::common_structs::{
     da_commitment_scheme::DACommitmentScheme, derive_flat_storage_key, ProofData,
 };
@@ -35,6 +36,7 @@ use rig::zk_ee::types_config::EthereumIOTypesConfig;
 use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_interface::traits::TxListSource;
 use rig::Chain;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// Malicious storage responder that returns non-zero initial values for new storage slots
 #[derive(Clone, Debug)]
@@ -202,7 +204,7 @@ fn test_initial_slot_value_assertion() {
             input: calldata.into(),
             access_list: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     // Use the malicious oracle factory that should trigger the assertion

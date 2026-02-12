@@ -11,6 +11,7 @@ use rig::alloy::primitives::{address, TxKind, U256};
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::B160;
+use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::zk_ee::system::tracer::evm_tracer::NopEvmTracer;
 use rig::zk_ee::system::validator::NopTxValidator;
 use rig::zk_ee::{
@@ -22,6 +23,7 @@ use rig::zk_ee::{
     utils::Bytes32,
 };
 use rig::{ruint, Chain};
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// A struct to track tracer calls for event operations
 #[derive(Debug, Clone, Default)]
@@ -146,7 +148,7 @@ fn test_event_hook() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        rig::utils::sign_and_encode_alloy_tx(tx, &wallet)
+        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
     };
 
     let mut tracer = EventOperationTracer::new();

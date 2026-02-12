@@ -15,8 +15,10 @@ use std::io::Read;
 use std::path::PathBuf;
 pub use zksync_os_api::helpers::*;
 use zksync_os_interface::types::BlockOutput;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 pub mod tx_encoding;
+use tx_encoding::EncodableToEncodedTx;
 
 pub use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
@@ -143,7 +145,7 @@ pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
                 access_list: Default::default(),
                 input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             };
-            sign_and_encode_alloy_tx(transfer_tx, wallet)
+            ZKsyncTxEnvelope::new_l2_tx(transfer_tx, wallet.clone()).encode()
         })
         .collect();
 

@@ -34,6 +34,7 @@ pub use system_hooks;
 pub use zk_ee;
 pub use zksync_os_api;
 pub use zksync_os_interface;
+pub use zksync_os_tests_common;
 pub use zksync_web3_rs;
 
 static INIT_LOGGER_ONCE: Once = Once::new();
