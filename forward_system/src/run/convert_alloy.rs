@@ -71,6 +71,6 @@ impl FromAlloy<&alloy::primitives::B256> for zk_ee::utils::Bytes32 {
 impl FromAlloy<&alloy::primitives::B256> for ruint::aliases::B256 {
     #[inline]
     fn from_alloy(from: &alloy::primitives::B256) -> ruint::aliases::B256 {
-        ruint::aliases::B256::from_be_bytes(from.0.into())
+        ruint::aliases::B256::from_be_bytes(from.0)
     }
 }
