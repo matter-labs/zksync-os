@@ -9,7 +9,7 @@ use rig::{
     utils::tx_encoding::EncodableToEncodedTx,
 };
 use std::path::PathBuf;
-use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[test]
 fn get_name_sol() {
@@ -25,7 +25,7 @@ fn get_name_sol() {
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let tx_get_name = ZKsyncTxRequest::new_l2(
+    let tx_get_name = ZKsyncTxEnvelope::new_l2_req(
         TransactionRequest {
             to: Some(TxKind::Call(erc20_addr)),
             gas: Some(1 << 27),
@@ -97,7 +97,7 @@ fn balance_of_sol() {
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let tx_mint = ZKsyncTxRequest::new_l2(
+    let tx_mint = ZKsyncTxEnvelope::new_l2_req(
         TransactionRequest {
             to: Some(TxKind::Call(erc20_addr)),
             gas: Some(1u64 << 27),
@@ -117,7 +117,7 @@ fn balance_of_sol() {
     )
     .encode();
 
-    let tx_balance = ZKsyncTxRequest::new_l2(
+    let tx_balance = ZKsyncTxEnvelope::new_l2_req(
         TransactionRequest {
             to: Some(TxKind::Call(erc20_addr)),
             gas: Some(1u64 << 27),
@@ -214,7 +214,7 @@ fn transfer_sol() {
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let tx_mint = ZKsyncTxRequest::new_l2(
+    let tx_mint = ZKsyncTxEnvelope::new_l2_req(
         TransactionRequest {
             to: Some(TxKind::Call(erc20_addr)),
             gas: Some(1u64 << 27),
@@ -234,7 +234,7 @@ fn transfer_sol() {
     )
     .encode();
 
-    let tx_transfer = ZKsyncTxRequest::new_l2(
+    let tx_transfer = ZKsyncTxEnvelope::new_l2_req(
         TransactionRequest {
             to: Some(TxKind::Call(erc20_addr)),
             gas: Some(1u64 << 27),

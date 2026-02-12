@@ -7,7 +7,7 @@ use zksync_os_interface::types::BlockOutput;
 use zksync_os_revm::DefaultZk;
 use zksync_os_revm::ZkBuilder;
 use zksync_os_revm::ZkSpecId;
-use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 use crate::helpers::zk_tx_into_revm_tx;
 use crate::revm_state_provider::{RevmStateProvider, ViewState};
@@ -30,7 +30,7 @@ where
 
     pub fn run(
         &mut self,
-        transactions: Vec<ZKsyncTxRequest>,
+        transactions: Vec<ZKsyncTxEnvelope>,
         block_context: BlockContext,
         block_output: Option<BlockOutput>,
     ) -> anyhow::Result<()> {

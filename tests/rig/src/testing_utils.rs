@@ -7,7 +7,7 @@ use forward_system::system::tracers::call_tracer::CallTracer;
 use once_cell::sync::Lazy;
 use ruint::aliases::B160;
 use zk_ee::{system::validator, utils::Bytes32};
-use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 use crate::{utils::tx_encoding::EncodableToEncodedTx, Chain};
 use system_hooks::addresses_constants::{
@@ -81,7 +81,7 @@ pub fn call_address_and_measure_gas_cost(
     }
 
     let encoded_tx = {
-        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
+        let tx = ZKsyncTxEnvelope::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(sender),
             to: Some(TxKind::Call(address)),

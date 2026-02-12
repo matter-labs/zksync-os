@@ -15,7 +15,7 @@ use rig::zk_ee::system::tracer::NopTracer;
 use rig::zk_ee::system::validator::{TxValidationError, TxValidator};
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::Chain;
-use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[derive(Default)]
 struct LoggingTxValidator {
@@ -238,7 +238,7 @@ fn test_l1_transactions_are_not_filtered_by_validator() {
             .unwrap();
 
     let mk_l1_tx = |nonce: u64, value: u64| {
-        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
+        let tx = ZKsyncTxEnvelope::new_l1(TransactionRequest {
             from: Some(from),
             chain_id: Some(37u64.into()),
             nonce: Some(nonce),

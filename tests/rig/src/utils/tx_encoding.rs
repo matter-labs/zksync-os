@@ -1,32 +1,34 @@
 use alloy::{
-    consensus::{SignableTransaction, TxEnvelope, TxLegacy},
-    eips::Encodable2718,
-    network::TxSignerSync,
-    primitives::Address,
-    rpc::types::TransactionRequest,
+    consensus::TxEnvelope, primitives::Address, rpc::types::TransactionRequest,
     signers::local::PrivateKeySigner,
 };
 use zksync_os_api::helpers::{encode_envelope_2718, encode_tx};
 use zksync_os_interface::traits::EncodedTx;
-use zksync_os_tests_common::zksync_tx::{ZKsyncTxRequest, ZKsyncTxType};
+use zksync_os_tests_common::zksync_tx::{ZKsyncSpecificTxType, ZKsyncTxEnvelope, ZKsyncTxType};
 
 pub trait EncodableToEncodedTx {
     fn encode(&self) -> EncodedTx;
 }
 
-impl EncodableToEncodedTx for ZKsyncTxRequest {
+impl EncodableToEncodedTx for ZKsyncTxEnvelope {
     fn encode(&self) -> EncodedTx {
-        match self.tx_type {
-            ZKsyncTxType::L1 => encode_l1_tx(self.inner.clone()),
-            ZKsyncTxType::Upgrade => encode_upgrade_tx(self.inner.clone()),
-            ZKsyncTxType::L2(_) => encode_and_sign_as_legacy_l2(
-                self.inner.clone(),
+        match &self.inner {
+            ZKsyncTxType::ZKsync(zksync_tx_type, tx_req) => match zksync_tx_type {
+                ZKsyncSpecificTxType::L1 => encode_l1_tx(tx_req.clone()),
+                ZKsyncSpecificTxType::Upgrade => encode_upgrade_tx(tx_req.clone()),
+                ZKsyncSpecificTxType::Service => {
+                    unimplemented!("service transactions are not supported yet")
+                }
+                ZKsyncSpecificTxType::Custom(custom_type) => {
+                    encode_special_tx_type(tx_req.clone(), *custom_type)
+                }
+            },
+            ZKsyncTxType::Ethereum(ethereum_tx_envelope) => encode_ethereum_tx_envelope(
+                ethereum_tx_envelope,
                 self.signer
                     .as_ref()
                     .expect("L2 transactions must have a signer"),
             ),
-            ZKsyncTxType::Service => unimplemented!("service transactions are not supported yet"),
-            ZKsyncTxType::Custom(tx_type) => encode_special_tx_type(self.inner.clone(), tx_type),
         }
     }
 }
@@ -39,17 +41,9 @@ pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> EncodedTx {
     EncodedTx::Rlp(bytes, Address::from_slice(&from))
 }
 
-// If you want “raw tx bytes” to send via eth_sendRawTransaction:
-fn encode_and_sign_as_legacy_l2(req: TransactionRequest, signer: &PrivateKeySigner) -> EncodedTx {
-    let mut tx: TxLegacy = req.build_legacy().expect("Should build");
-
-    //let signer = signer.with_chain_id(Some(chain_id));
-
-    let sig = signer.sign_transaction_sync(&mut tx).expect("Should sign");
-
-    // Turn it into a signed tx envelope; then encode as EIP-2718 bytes.
-    let signed = tx.into_signed(sig);
-    EncodedTx::Rlp(signed.encoded_2718(), signer.address())
+fn encode_ethereum_tx_envelope(tx_envelope: &TxEnvelope, signer: &PrivateKeySigner) -> EncodedTx {
+    let bytes = encode_envelope_2718(tx_envelope);
+    EncodedTx::Rlp(bytes, signer.address())
 }
 
 ///

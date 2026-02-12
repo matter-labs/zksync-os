@@ -18,7 +18,7 @@ use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::{B160, U256};
 use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::{alloy, Chain};
-use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 fn run_config() -> Option<rig::chain::RunConfig> {
     Some(rig::chain::RunConfig {
@@ -48,7 +48,7 @@ fn test_l1_tx_gas_limit_below_intrinsic() {
     // Create an L1 transaction with gas limit below intrinsic gas (21000)
     // The intrinsic gas for L1 txs is L1_TX_INTRINSIC_L2_GAS = 21_000
     let tx = {
-        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
+        let tx = ZKsyncTxEnvelope::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(from),
             to: Some(TxKind::Call(to)),
@@ -114,7 +114,7 @@ fn test_l1_tx_gas_price_overflow_native_per_gas() {
     let overflow_gas_price = u128::from(u64::MAX) * 11;
 
     let tx = {
-        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
+        let tx = ZKsyncTxEnvelope::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(from),
             to: Some(TxKind::Call(to)),
@@ -155,7 +155,7 @@ fn test_l1_tx_intrinsic_gas_overflow() {
     // Create an L1 transaction that will cause gas overflow
     // L1 transactions bypass the intrinsic gas check that would normally prevent this
     let overflow_l1_tx = {
-        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
+        let tx = ZKsyncTxEnvelope::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(from_address),
             to: Some(TxKind::Call(to_address)),

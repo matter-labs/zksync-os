@@ -16,7 +16,7 @@ use rig::{
     ruint::aliases::{B160, U256},
 };
 use std::assert_matches::assert_matches;
-use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// Performs two calls:
 /// 1. Calls the precompile with given input and gas limit.
@@ -6136,7 +6136,7 @@ fn test_precompile_parses_input_correctly() {
                 U256::from(1_000_000_000_000_000_u64),
             );
 
-            let tx = ZKsyncTxRequest::new_l2(
+            let tx = ZKsyncTxEnvelope::new_l2_req(
                 TransactionRequest {
                     to: Some(TxKind::Call(addr)),
                     gas: Some(1 << 27),
