@@ -31,8 +31,6 @@ gpu_prover = { workspace = true, optional = true }
 zksync_os_tests_common = { path = "../common" }
 zksync_os_revm_runner = { path = "../revm_runner" }
 
-
-ethers = "2.0.0" # ethers 2.0.0 is required due to dependency conflict TODO: replace with alloy
 futures = "0.3.30"
 hex = "*"
 ruint = { workspace = true, default-features = false }

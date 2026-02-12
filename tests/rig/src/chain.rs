@@ -17,7 +17,6 @@ use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
     TREE_HEIGHT,
 };
-use ethers::signers::LocalWallet;
 use forward_system::run::query_processors::DACommitmentSchemeResponder;
 use forward_system::run::query_processors::EthereumCLResponder;
 use forward_system::run::query_processors::EthereumTargetBlockHeaderResponder;
@@ -1079,17 +1078,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     pub fn set_preimage(&mut self, hash: Bytes32, preimage: &[u8]) -> &mut Self {
         self.preimage_source.inner.insert(hash, preimage.to_vec());
         self
-    }
-
-    ///
-    /// Generates random ethers local wallet(private key) with chain id.
-    ///
-    pub fn random_wallet(&self) -> LocalWallet {
-        use ethers::signers::Signer;
-        let r =
-            LocalWallet::new(&mut ethers::core::rand::thread_rng()).with_chain_id(self.chain_id);
-        info!("Generated wallet: {r:0x?}");
-        r
     }
 
     ///

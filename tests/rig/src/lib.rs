@@ -22,7 +22,6 @@ pub use chain::Chain;
 #[cfg(feature = "airbender_cli")]
 pub use cli_lib;
 pub use crypto;
-pub use ethers;
 pub use forward_system;
 #[cfg(feature = "gpu")]
 pub use gpu_prover;

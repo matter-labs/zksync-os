@@ -19,7 +19,7 @@ impl EncodableToEncodedTx for ZKsyncTxRequest {
         match self.tx_type {
             ZKsyncTxType::L1 => encode_l1_tx(self.inner.clone()),
             ZKsyncTxType::Upgrade => encode_upgrade_tx(self.inner.clone()),
-            ZKsyncTxType::L2 => encode_and_sign_as_legacy_l2(
+            ZKsyncTxType::L2(_) => encode_and_sign_as_legacy_l2(
                 self.inner.clone(),
                 self.signer
                     .as_ref()
@@ -39,32 +39,8 @@ pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> EncodedTx {
     EncodedTx::Rlp(bytes, Address::from_slice(&from))
 }
 
-///
-/// Sign and encode ethers legacy transaction using provided `wallet`.
-///
-/// It's assumed that chain id is set for wallet or tx.
-///
-pub fn sign_and_encode_ethers_legacy_tx(
-    tx: ethers::types::TransactionRequest,
-    wallet: &ethers::signers::LocalWallet,
-) -> EncodedTx {
-    use ethers::signers::Signer;
-    use ethers::types::transaction::eip2718::TypedTransaction;
-    let ttx: TypedTransaction = tx.into();
-    let sig = wallet.sign_transaction_sync(&ttx).unwrap();
-    let raw = ttx.rlp_signed(&sig);
-    let from = {
-        let a = wallet.address();
-        Address::from_slice(a.as_bytes())
-    };
-    EncodedTx::Rlp(raw.to_vec(), from)
-}
-
 // If you want “raw tx bytes” to send via eth_sendRawTransaction:
-pub fn encode_and_sign_as_legacy_l2(
-    req: TransactionRequest,
-    signer: &PrivateKeySigner,
-) -> EncodedTx {
+fn encode_and_sign_as_legacy_l2(req: TransactionRequest, signer: &PrivateKeySigner) -> EncodedTx {
     let mut tx: TxLegacy = req.build_legacy().expect("Should build");
 
     //let signer = signer.with_chain_id(Some(chain_id));

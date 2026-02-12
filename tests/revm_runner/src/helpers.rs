@@ -31,7 +31,7 @@ pub fn zk_tx_into_revm_tx(
         ZKsyncTxType::Service => {
             unimplemented!("handle system txs");
         }
-        ZKsyncTxType::L2 => {
+        ZKsyncTxType::L2(_) => {
             // L2 transactions are standard Ethereum transactions
             let gas_price = tx.inner.max_fee_per_gas;
             let priority_fee = tx.inner.max_priority_fee_per_gas;

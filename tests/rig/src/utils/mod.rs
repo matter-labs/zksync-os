@@ -10,8 +10,6 @@ use alloy::consensus::TxEip1559;
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::sol;
-use ethers::abi::AbiEncode;
-use ethers::types::U256;
 use forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use std::io::Read;
 use std::path::PathBuf;
@@ -72,9 +70,12 @@ pub fn load_sol_bytecode(project_name: &str, contract_name: &str) -> Vec<u8> {
 /// Creates calldata with given selector and data chunks, in fact it will just merge given hex values into byte array.
 ///
 pub fn construct_calldata(selector: &str, data: &[&str]) -> Vec<u8> {
-    let mut cd = ethers::utils::hex::decode(selector).unwrap();
+    let mut cd = alloy::hex::decode(selector).unwrap();
     for val in data {
-        let mut x = U256::from_str(val).unwrap().encode();
+        let mut x = alloy::primitives::U256::from_str(val)
+            .unwrap()
+            .to_be_bytes::<32>()
+            .to_vec();
         cd.append(&mut x);
     }
 

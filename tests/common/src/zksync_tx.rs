@@ -2,7 +2,7 @@ use alloy::{rpc::types::TransactionRequest, signers::local::PrivateKeySigner};
 
 pub enum ZKsyncTxType {
     L1,
-    L2,
+    L2(u8),
     Upgrade,
     Service,
     Custom(u8),
@@ -25,7 +25,7 @@ impl ZKsyncTxRequest {
 
     pub fn new_l2(inner: TransactionRequest, signer: PrivateKeySigner) -> Self {
         Self {
-            tx_type: ZKsyncTxType::L2,
+            tx_type: ZKsyncTxType::L2(0), // Currently only support legacy transactions for L2, which have type 0
             inner,
             signer: Some(signer),
         }
@@ -58,10 +58,10 @@ impl ZKsyncTxRequest {
     pub fn ty(&self) -> u8 {
         match self.tx_type {
             ZKsyncTxType::L1 => 0x7f,
-            ZKsyncTxType::L2 => 0x0, // Currently only support legacy transactions for L2, which have type 0
+            ZKsyncTxType::L2(tx_type) => tx_type,
             ZKsyncTxType::Upgrade => 0x7d,
             ZKsyncTxType::Service => 0x7c,
-            ZKsyncTxType::Custom(value) => value as u8,
+            ZKsyncTxType::Custom(tx_type) => tx_type,
         }
     }
 }

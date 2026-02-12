@@ -1,18 +1,22 @@
 #![cfg(test)]
 #![feature(assert_matches)]
 
-use bytes::Bytes;
 use rig::alloy::consensus::TxLegacy;
 use rig::forward_system::run::convert_alloy::FromAlloy;
+use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
 use rig::zksync_os_interface::types::BlockOutput;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
 use rig::BlockContext;
 use rig::{
-    alloy::primitives::{address, Address},
+    alloy::{
+        primitives::{address, Address, TxKind},
+        rpc::types::TransactionRequest,
+    },
     ruint::aliases::{B160, U256},
 };
 use std::assert_matches::assert_matches;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
 
 /// Performs two calls:
 /// 1. Calls the precompile with given input and gas limit.
@@ -6109,8 +6113,6 @@ fn test_modexp_out_of_gas_ref() {
 
 #[test]
 fn test_precompile_parses_input_correctly() {
-    use rig::ethers::signers::Signer;
-    use rig::ethers::types::{Address, TransactionRequest};
     let target_precompiles: [&str; 4] = [
         "0000000000000000000000000000000000000001", // ecrecover
         "0000000000000000000000000000000000000006", // ecadd
@@ -6127,22 +6129,25 @@ fn test_precompile_parses_input_correctly() {
 
         for i in length {
             let mut chain = rig::Chain::empty(None);
-            let wallet = chain.random_wallet();
+            let wallet = chain.random_signer();
 
             chain.set_balance(
-                B160::from_be_bytes(wallet.address().0),
+                B160::from_alloy(wallet.address()),
                 U256::from(1_000_000_000_000_000_u64),
             );
 
-            let tx = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
-                TransactionRequest::new()
-                    .to(addr)
-                    .gas(1 << 27)
-                    .gas_price(1000)
-                    .data(Bytes::copy_from_slice(empty_input[0..i].as_ref()))
-                    .nonce(0),
-                &wallet,
-            );
+            let tx = ZKsyncTxRequest::new_l2(
+                TransactionRequest {
+                    to: Some(TxKind::Call(addr)),
+                    gas: Some(1 << 27),
+                    gas_price: Some(1000),
+                    input: empty_input[0..i].to_vec().into(),
+                    nonce: Some(0),
+                    ..Default::default()
+                },
+                wallet,
+            )
+            .encode();
 
             let _block_output = chain.run_block(vec![tx], None, None, None);
         }

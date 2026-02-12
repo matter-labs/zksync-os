@@ -1,9 +1,12 @@
 #![cfg(test)]
 use rig::{
-    ethers::{abi::Address, signers::Signer, types::TransactionRequest},
+    alloy::{self, primitives::TxKind, rpc::types::TransactionRequest},
+    forward_system::run::convert_alloy::FromAlloy,
     ruint::aliases::{B160, U256},
+    utils::tx_encoding::EncodableToEncodedTx,
 };
 use std::path::PathBuf;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
 
 // WASM disabled for now
 // #[test]
@@ -86,33 +89,35 @@ use std::path::PathBuf;
 #[test]
 fn fibish_sol() {
     let mut chain = rig::Chain::empty(None);
-    let wallet = chain.random_wallet();
+    let wallet = chain.random_signer();
 
-    let c_addr = Address::from_low_u64_ne(1);
+    let c_addr = alloy::primitives::Address::from(alloy::primitives::U160::from(1));
     let c_bytes = rig::utils::load_sol_bytecode("bench", "arith");
     chain
-        .set_evm_bytecode(B160::from_be_bytes(c_addr.0), &c_bytes)
+        .set_evm_bytecode(B160::from_alloy(c_addr), &c_bytes)
         .set_balance(
-            B160::from_be_bytes(wallet.address().0),
+            B160::from_alloy(wallet.address()),
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let tx = rig::utils::tx_encoding::sign_and_encode_ethers_legacy_tx(
-        TransactionRequest::new()
-            .to(c_addr)
-            .gas(1 << 27)
-            .gas_price(1000)
-            .data(rig::utils::construct_calldata(
-                "0x9714e370",
-                &[
-                    "0000000000000000000000000000000000000000000000000000000000000001",
-                    "0000000000000000000000000000000000000000000000000000000000000003",
-                    "0000000000000000000000000000000000000000000000000000000000000002",
-                ],
-            ))
-            .nonce(0),
-        &wallet,
-    );
+    let tx = TransactionRequest {
+        to: Some(TxKind::Call(c_addr)),
+        gas: Some(1 << 27),
+        gas_price: Some(1000),
+        input: rig::utils::construct_calldata(
+            "0x9714e370",
+            &[
+                "0000000000000000000000000000000000000000000000000000000000000001",
+                "0000000000000000000000000000000000000000000000000000000000000003",
+                "0000000000000000000000000000000000000000000000000000000000000002",
+            ],
+        )
+        .into(),
+        nonce: Some(0),
+        ..Default::default()
+    };
+
+    let encoded_tx = ZKsyncTxRequest::new_l2(tx, wallet).encode();
 
     let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
         "{}/os_profile_fibish_sol.svg",
@@ -123,5 +128,5 @@ fn fibish_sol() {
         profiler_config: Some(pc),
         ..Default::default()
     };
-    chain.run_block(vec![tx], None, None, Some(run_config));
+    chain.run_block(vec![encoded_tx], None, None, Some(run_config));
 }
