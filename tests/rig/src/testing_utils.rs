@@ -10,7 +10,7 @@ use zk_ee::{system::validator, utils::Bytes32};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
 
 use crate::{
-    utils::{self, tx_encoding::EncodableToEncodedTx},
+    utils::tx_encoding::EncodableToEncodedTx,
     Chain,
 };
 use system_hooks::addresses_constants::{

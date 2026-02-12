@@ -13,7 +13,6 @@ use alloy::sol_types::sol;
 use forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use std::io::Read;
 use std::path::PathBuf;
-use std::str::FromStr;
 pub use zksync_os_api::helpers::*;
 use zksync_os_interface::types::BlockOutput;
 
