@@ -9,10 +9,7 @@ use ruint::aliases::B160;
 use zk_ee::{system::validator, utils::Bytes32};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
 
-use crate::{
-    utils::tx_encoding::EncodableToEncodedTx,
-    Chain,
-};
+use crate::{utils::tx_encoding::EncodableToEncodedTx, Chain};
 use system_hooks::addresses_constants::{
     CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
 };
