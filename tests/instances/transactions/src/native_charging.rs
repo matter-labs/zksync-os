@@ -6,9 +6,11 @@ use rig::alloy::primitives::address;
 use rig::alloy::rpc::types::TransactionRequest;
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::{B160, U256};
+use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::zksync_os_interface::traits::EncodedTx;
 use rig::{alloy, zksync_web3_rs, BlockContext, Chain};
 use std::str::FromStr;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 
 const WALLET: &str = "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
@@ -71,7 +73,7 @@ fn test_l1_tx_low_ratio() {
     let native_price = 10;
     let gas_price = native_price * LOW_RATIO;
     let tx = {
-        let tx = TransactionRequest {
+        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(alloy::signers::Signer::address(&wallet)),
             to: Some(TxKind::Call(TO)),
@@ -81,8 +83,8 @@ fn test_l1_tx_low_ratio() {
             nonce: Some(0),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
-        };
-        rig::utils::tx_encoding::encode_l1_tx(tx)
+        });
+        tx.encode()
     };
     run_tx(tx, gas_price, native_price, false, false)
 }
@@ -95,7 +97,7 @@ fn test_l1_tx_avg_ratio() {
     let native_price = 10;
     let gas_price = native_price * AVG_RATIO;
     let tx = {
-        let tx = TransactionRequest {
+        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(alloy::signers::Signer::address(&wallet)),
             to: Some(TxKind::Call(TO)),
@@ -105,8 +107,8 @@ fn test_l1_tx_avg_ratio() {
             nonce: Some(0),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
-        };
-        rig::utils::tx_encoding::encode_l1_tx(tx)
+        });
+        tx.encode()
     };
     run_tx(tx, gas_price, native_price, true, false)
 }
@@ -119,7 +121,7 @@ fn test_l1_tx_high_ratio() {
     let native_price = 10;
     let gas_price = native_price * HIGH_RATIO;
     let tx = {
-        let tx = TransactionRequest {
+        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(alloy::signers::Signer::address(&wallet)),
             to: Some(TxKind::Call(TO)),
@@ -129,8 +131,8 @@ fn test_l1_tx_high_ratio() {
             nonce: Some(0),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
-        };
-        rig::utils::tx_encoding::encode_l1_tx(tx)
+        });
+        tx.encode()
     };
     run_tx(tx, gas_price, native_price, true, false)
 }
@@ -229,7 +231,7 @@ fn test_0_gas_limit() {
     run_tx(tx, gas_price, native_price, false, true);
 
     let tx = {
-        let tx = TransactionRequest {
+        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(alloy::signers::Signer::address(&wallet)),
             to: Some(TxKind::Call(TO)),
@@ -239,8 +241,8 @@ fn test_0_gas_limit() {
             nonce: Some(0),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
-        };
-        rig::utils::tx_encoding::encode_l1_tx(tx)
+        });
+        tx.encode()
     };
     run_tx(tx.clone(), gas_price, native_price, false, false);
     run_tx(tx, gas_price, native_price, false, true);
@@ -271,7 +273,7 @@ fn test_0_gas_price() {
     run_tx(tx, gas_price, native_price, true, true);
 
     let tx = {
-        let tx = TransactionRequest {
+        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(alloy::signers::Signer::address(&wallet)),
             to: Some(TxKind::Call(TO)),
@@ -281,8 +283,8 @@ fn test_0_gas_price() {
             nonce: Some(0),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
-        };
-        rig::utils::tx_encoding::encode_l1_tx(tx)
+        });
+        tx.encode()
     };
     run_tx(tx.clone(), gas_price, native_price, true, false)
 }

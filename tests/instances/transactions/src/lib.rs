@@ -14,11 +14,12 @@ use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::testing_utils::install_system_contracts;
-use rig::utils::tx_encoding::{encode_special_tx_type, encode_upgrade_tx};
+use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::{alloy, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 
 mod l1_tx_resilience;
@@ -130,7 +131,7 @@ fn run_base_system() {
     };
 
     let encoded_l1_l2_transfer = {
-        let transfer = TransactionRequest {
+        let transfer = ZKsyncTxRequest::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(address!("1234000000000000000000000000000000000000")),
             to: Some(TxKind::Call(address!(
@@ -142,12 +143,12 @@ fn run_base_system() {
             value: Some(alloy::primitives::U256::from(100)),
             nonce: Some(0),
             ..TransactionRequest::default()
-        };
-        rig::utils::tx_encoding::encode_l1_tx(transfer)
+        });
+        transfer.encode()
     };
 
     let encoded_l1_l2_erc_transfer = {
-        let tx = TransactionRequest {
+        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(alloy::signers::Signer::address(&wallet)),
             to: Some(TxKind::Call(to)),
@@ -157,8 +158,8 @@ fn run_base_system() {
             nonce: Some(3),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             ..TransactionRequest::default()
-        };
-        rig::utils::tx_encoding::encode_l1_tx(tx)
+        });
+        tx.encode()
     };
 
     let transactions = vec![
@@ -649,7 +650,7 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
             hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
                 .unwrap();
 
-        let tx = TransactionRequest {
+        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(l1_messenger_contract),
             to: Some(TxKind::Call(l1_messenger_hook)),
@@ -666,9 +667,9 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
             blob_versioned_hashes: None,
             sidecar: None,
             authorization_list: None,
-        };
+        });
 
-        rig::utils::tx_encoding::encode_l1_tx(tx)
+        tx.encode()
     };
 
     let transactions = vec![encoded_mint1_tx, withdrawal_tx];
@@ -926,7 +927,7 @@ fn test_upgrade_tx_revert_internal_error() {
     chain.set_evm_bytecode(B160::from_alloy(revert_contract_address), &revert_bytecode);
 
     // Create a proper upgrade transaction that calls the reverting contract
-    let upgrade_tx = encode_upgrade_tx(TransactionRequest {
+    let upgrade_tx = ZKsyncTxRequest::new_upgrade_tx(TransactionRequest {
         chain_id: Some(37),
         from: Some(address!("1234000000000000000000000000000000000000")),
         to: Some(TxKind::Call(revert_contract_address)),
@@ -938,7 +939,7 @@ fn test_upgrade_tx_revert_internal_error() {
         ..TransactionRequest::default()
     });
 
-    let transactions = vec![upgrade_tx];
+    let transactions = vec![upgrade_tx.encode()];
 
     // Use run_block_no_panic to catch the error instead of panicking
     let result = chain.run_block_no_panic(transactions, None, None, None);
@@ -967,7 +968,7 @@ fn test_upgrade_tx_succeeds() {
     chain.set_evm_bytecode(B160::from_alloy(revert_contract_address), &revert_bytecode);
 
     // Create a proper upgrade transaction that calls the contract
-    let upgrade_tx = encode_upgrade_tx(TransactionRequest {
+    let upgrade_tx = ZKsyncTxRequest::new_upgrade_tx(TransactionRequest {
         chain_id: Some(37),
         from: Some(address!("1234000000000000000000000000000000000000")),
         to: Some(TxKind::Call(revert_contract_address)),
@@ -979,7 +980,7 @@ fn test_upgrade_tx_succeeds() {
         ..TransactionRequest::default()
     });
 
-    let transactions = vec![upgrade_tx];
+    let transactions = vec![upgrade_tx.encode()];
 
     // Use run_block_no_panic to catch the error instead of panicking
     let result = chain.run_block_no_panic(transactions, None, None, None);
@@ -1000,7 +1001,7 @@ fn test_invalid_transaction_type_failure() {
     let transaction_types = vec![0x7d, 0x80, 0xFF]; // Some invalid types;
 
     for tx_type in transaction_types {
-        let invalid_tx = encode_special_tx_type(
+        let invalid_tx = ZKsyncTxRequest::new_special_tx_type(
             TransactionRequest {
                 chain_id: Some(37),
                 from: Some(address!("1234000000000000000000000000000000000000")),
@@ -1015,7 +1016,7 @@ fn test_invalid_transaction_type_failure() {
             tx_type,
         );
 
-        let transactions = vec![invalid_tx];
+        let transactions = vec![invalid_tx.encode()];
         let result = chain.run_block(transactions, None, None, run_config());
         assert!(
             result.tx_results[0].is_err(),
@@ -1879,7 +1880,7 @@ fn test_treasury_based_token_distribution_regression() {
     let value_to_transfer = U256::from(1_000_000u64);
 
     let l1_tx = {
-        let tx = TransactionRequest {
+        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(l1_sender),
             to: Some(TxKind::Call(l1_recipient)),
@@ -1889,8 +1890,8 @@ fn test_treasury_based_token_distribution_regression() {
             value: Some(value_to_transfer),
             nonce: Some(0),
             ..TransactionRequest::default()
-        };
-        rig::utils::tx_encoding::encode_l1_tx(tx)
+        });
+        tx.encode()
     };
 
     let block_context = BlockContext {
@@ -1993,7 +1994,7 @@ fn test_treasury_insufficient_balance_failure() {
     let value_to_transfer = U256::from(500_000u64); // More than treasury can cover
 
     let l1_tx = {
-        let tx = TransactionRequest {
+        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(l1_sender),
             to: Some(TxKind::Call(l1_recipient)),
@@ -2003,8 +2004,8 @@ fn test_treasury_insufficient_balance_failure() {
             value: Some(value_to_transfer),
             nonce: Some(0),
             ..TransactionRequest::default()
-        };
-        rig::utils::tx_encoding::encode_l1_tx(tx)
+        });
+        tx.encode()
     };
 
     let config = RunConfig {

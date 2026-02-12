@@ -10,10 +10,12 @@ use rig::alloy::primitives::{address, TxKind};
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
+use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::zk_ee::system::tracer::NopTracer;
 use rig::zk_ee::system::validator::{TxValidationError, TxValidator};
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::Chain;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
 
 #[derive(Default)]
 struct LoggingTxValidator {
@@ -236,7 +238,7 @@ fn test_l1_transactions_are_not_filtered_by_validator() {
             .unwrap();
 
     let mk_l1_tx = |nonce: u64, value: u64| {
-        let tx = TransactionRequest {
+        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
             from: Some(from),
             chain_id: Some(37u64.into()),
             nonce: Some(nonce),
@@ -246,8 +248,8 @@ fn test_l1_transactions_are_not_filtered_by_validator() {
             value: Some(U256::from(value)),
             input: withdrawal_calldata.clone().into(),
             ..TransactionRequest::default()
-        };
-        rig::utils::tx_encoding::encode_l1_tx(tx)
+        });
+        tx.encode()
     };
 
     let tx0 = mk_l1_tx(0, 10);

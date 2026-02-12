@@ -7,8 +7,12 @@ use forward_system::system::tracers::call_tracer::CallTracer;
 use once_cell::sync::Lazy;
 use ruint::aliases::B160;
 use zk_ee::{system::validator, utils::Bytes32};
+use zksync_os_tests_common::zksync_tx::ZKsyncTxRequest;
 
-use crate::{utils, Chain};
+use crate::{
+    utils::{self, tx_encoding::EncodableToEncodedTx},
+    Chain,
+};
 use system_hooks::addresses_constants::{
     CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
 };
@@ -80,7 +84,7 @@ pub fn call_address_and_measure_gas_cost(
     }
 
     let encoded_tx = {
-        let tx = TransactionRequest {
+        let tx = ZKsyncTxRequest::new_l1(TransactionRequest {
             chain_id: Some(37),
             from: Some(sender),
             to: Some(TxKind::Call(address)),
@@ -91,8 +95,8 @@ pub fn call_address_and_measure_gas_cost(
             value: Some(alloy::primitives::U256::from(value)),
             nonce: Some(0),
             ..TransactionRequest::default()
-        };
-        utils::tx_encoding::encode_l1_tx(tx)
+        });
+        tx.encode()
     };
     let transactions = vec![encoded_tx];
 

@@ -85,6 +85,9 @@ pub fn zk_tx_into_revm_tx(
                 inner.from.expect("L1 tx should have from field"), // TODO check it
             )
         }
+        ZKsyncTxType::Custom(_) => {
+            panic!("Custom transactions are not supported by REVM runner");
+        }
     };
 
     // Determine transaction kind (Call or Create)

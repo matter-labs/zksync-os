@@ -26,6 +26,7 @@ impl EncodableToEncodedTx for ZKsyncTxRequest {
                     .expect("L2 transactions must have a signer"),
             ),
             ZKsyncTxType::Service => unimplemented!("service transactions are not supported yet"),
+            ZKsyncTxType::Custom(tx_type) => encode_special_tx_type(self.inner.clone(), tx_type),
         }
     }
 }
@@ -80,7 +81,7 @@ pub fn encode_and_sign_as_legacy_l2(
 ///
 /// Panics if needed fields are unset/set incorrectly.
 ///
-pub fn encode_l1_tx(tx: TransactionRequest) -> EncodedTx {
+fn encode_l1_tx(tx: TransactionRequest) -> EncodedTx {
     let tx_type = 0x7f;
     encode_special_tx_type(tx, tx_type)
 }
@@ -90,12 +91,12 @@ pub fn encode_l1_tx(tx: TransactionRequest) -> EncodedTx {
 ///
 /// Panics if needed fields are unset/set incorrectly.
 ///
-pub fn encode_upgrade_tx(tx: TransactionRequest) -> EncodedTx {
+fn encode_upgrade_tx(tx: TransactionRequest) -> EncodedTx {
     let tx_type = 0x7e;
     encode_special_tx_type(tx, tx_type)
 }
 
-pub fn encode_special_tx_type(tx: TransactionRequest, tx_type: u8) -> EncodedTx {
+fn encode_special_tx_type(tx: TransactionRequest, tx_type: u8) -> EncodedTx {
     let from = tx.from.unwrap().into_array();
     let to = Some(tx.to.unwrap().to().unwrap().into_array());
     let gas_limit = tx.gas.unwrap() as u128;

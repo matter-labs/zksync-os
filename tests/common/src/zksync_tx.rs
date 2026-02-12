@@ -5,6 +5,7 @@ pub enum ZKsyncTxType {
     L2,
     Upgrade,
     Service,
+    Custom(u8),
 }
 
 pub struct ZKsyncTxRequest {
@@ -46,12 +47,21 @@ impl ZKsyncTxRequest {
         }
     }
 
+    pub fn new_special_tx_type(inner: TransactionRequest, tx_type: u8) -> Self {
+        Self {
+            tx_type: ZKsyncTxType::Custom(tx_type),
+            inner,
+            signer: None,
+        }
+    }
+
     pub fn ty(&self) -> u8 {
         match self.tx_type {
             ZKsyncTxType::L1 => 0x7f,
             ZKsyncTxType::L2 => 0x0, // Currently only support legacy transactions for L2, which have type 0
             ZKsyncTxType::Upgrade => 0x7d,
             ZKsyncTxType::Service => 0x7c,
+            ZKsyncTxType::Custom(value) => value as u8,
         }
     }
 }
