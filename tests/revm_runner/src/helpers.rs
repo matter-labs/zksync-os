@@ -1,12 +1,12 @@
 use alloy::{
     consensus::Transaction,
-    primitives::{Bytes, TxKind, U256},
+    primitives::{Bytes, TxKind},
     rpc::types::TransactionInput,
 };
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use reth_revm::{context::TxEnv, state::Bytecode};
 use zksync_os_revm::{transaction::abstraction::ZKsyncTxBuilder, ZKsyncTx};
-use zksync_os_tests_common::zksync_tx::{ZKsyncSpecificTxType, ZKsyncTxEnvelope, ZKsyncTxType};
+use zksync_os_tests_common::zksync_tx::{ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope, ZKsyncTxType};
 
 /// Get unpadded code from full bytecode with artifacts.
 pub fn get_unpadded_code(full_bytecode: &[u8], account: &AccountProperties) -> Bytecode {
@@ -34,48 +34,6 @@ pub fn zk_tx_into_revm_tx(
         gas,
         nonce,
     ) = match &tx.inner {
-        ZKsyncTxType::ZKsync(zk_specific_type, tx_request) => match zk_specific_type {
-            ZKsyncSpecificTxType::Service => {
-                unimplemented!("handle system txs");
-            }
-            ZKsyncSpecificTxType::L1 => {
-                // L1 priority transactions - extract from canonical transaction format
-                let inner = &tx_request;
-                (
-                    inner.max_fee_per_gas,
-                    inner.max_priority_fee_per_gas,
-                    inner.value,
-                    inner.input.clone(),
-                    None,
-                    Default::default(), // L1 transactions don't have access lists
-                    U256::ZERO, // TODO: Minting is not supported for l1 transactions in our rig
-                    None,       // TODO: Minting is not supported for l1 transactions in our rig
-                    inner.from.expect("L1 tx should have from field"),
-                    inner.gas,
-                    inner.nonce,
-                )
-            }
-            ZKsyncSpecificTxType::Upgrade => {
-                // Upgrade transactions - system-level transactions
-                let inner = &tx_request;
-                (
-                    None,
-                    None,
-                    inner.value,
-                    inner.input.clone(),
-                    None,
-                    Default::default(),
-                    U256::ZERO, // TODO: Minting is not supported for upgrade transactions in our rig
-                    None, // TODO: Minting is not supported for upgrade transactions in our rig
-                    inner.from.expect("Upgrade tx should have from field"), // TODO check it
-                    inner.gas,
-                    inner.nonce,
-                )
-            }
-            ZKsyncSpecificTxType::Custom(_) => {
-                panic!("Custom transactions are not supported by REVM runner");
-            }
-        },
         ZKsyncTxType::Ethereum(ethereum_tx_envelope) => {
             // L2 transactions are standard Ethereum transactions
             let gas_price = Some(ethereum_tx_envelope.max_fee_per_gas());
@@ -106,6 +64,48 @@ pub fn zk_tx_into_revm_tx(
                 gas,
                 nonce,
             )
+        }
+        ZKsyncTxType::ZKsyncEnvelope(zksync_specific_tx_envelope) => {
+            match zksync_specific_tx_envelope {
+                ZKsyncSpecificTxEnvelope::L1(zksync_l1_tx) => {
+                    (
+                        Some(zksync_l1_tx.max_fee_per_gas),
+                        Some(zksync_l1_tx.max_priority_fee_per_gas),
+                        Some(zksync_l1_tx.value),
+                        TransactionInput::new(zksync_l1_tx.input.clone()),
+                        None, // Chain id is not specified in ZKsync specific transactions
+                        Default::default(), // L1 transactions don't have access lists
+                        zksync_l1_tx.to_mint,
+                        Some(zksync_l1_tx.refund_recipient),
+                        zksync_l1_tx.from,
+                        Some(zksync_l1_tx.gas_limit.try_into().unwrap()), // TODO conversion
+                        Some(zksync_l1_tx.nonce.try_into().unwrap()),     // TODO conversion
+                    )
+                }
+                ZKsyncSpecificTxEnvelope::Upgrade(zksync_upgrade_tx) => {
+                    (
+                        Some(zksync_upgrade_tx.max_fee_per_gas),
+                        Some(zksync_upgrade_tx.max_priority_fee_per_gas),
+                        Some(zksync_upgrade_tx.value),
+                        TransactionInput::new(zksync_upgrade_tx.input.clone()),
+                        None, // Chain id is not specified in ZKsync specific transactions
+                        Default::default(), // L1 transactions don't have access lists
+                        zksync_upgrade_tx.to_mint,
+                        Some(zksync_upgrade_tx.refund_recipient),
+                        zksync_upgrade_tx.from,
+                        Some(zksync_upgrade_tx.gas_limit.try_into().unwrap()), // TODO conversion
+                        Some(zksync_upgrade_tx.nonce.try_into().unwrap()),     // TODO conversion
+                    )
+                }
+                ZKsyncSpecificTxEnvelope::Service(_) => {
+                    unimplemented!(
+                        "System transactions are not currently supported by REVM runner"
+                    );
+                }
+            }
+        }
+        ZKsyncTxType::Custom(_, _) => {
+            panic!("Custom transactions are not supported by REVM runner")
         }
     };
 

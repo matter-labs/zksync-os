@@ -1,20 +1,18 @@
+use std::ops::Add;
+
 use alloy::{
     consensus::{SignableTransaction, Signed, Transaction, TxEnvelope, TypedTransaction},
+    eips::{eip2718::IsTyped2718, Typed2718},
     network::TxSignerSync,
+    primitives::{Address, Bytes, B256, U160, U256},
     rpc::types::TransactionRequest,
     signers::{local::PrivateKeySigner, Signature},
 };
 
 pub enum ZKsyncTxType {
-    ZKsync(ZKsyncSpecificTxType, TransactionRequest),
     Ethereum(TxEnvelope),
-}
-
-pub enum ZKsyncSpecificTxType {
-    L1,
-    Upgrade,
-    Service,
-    Custom(u8),
+    ZKsyncEnvelope(ZKsyncSpecificTxEnvelope),
+    Custom(u8, TransactionRequest), // For custom transaction types
 }
 
 pub struct ZKsyncTxEnvelope {
@@ -24,8 +22,38 @@ pub struct ZKsyncTxEnvelope {
 
 impl ZKsyncTxEnvelope {
     pub fn new_l1(inner: TransactionRequest) -> Self {
+        let to_mint = inner.value.unwrap_or_default().add(U256::from(
+            inner.gas.unwrap_or_default() as u128 * inner.max_fee_per_gas.unwrap_or_default(),
+        )); // TODO overflow
+            // This behavior was implemented incorrectly before and we keep it as is for now to avoid breaking existing tests
+        let refund_recipient_as_uint = if inner.to.is_none() {
+            U256::ONE
+        } else {
+            U256::ZERO
+        };
+        let refund_recipient = Address::from(U160::from(refund_recipient_as_uint));
+
+        let l1_tx = ZKsyncL1Tx {
+            from: inner.from.expect("L1 tx should have from field"),
+            to: inner
+                .to
+                .expect("L1 tx should have to field")
+                .to()
+                .cloned()
+                .expect("L1 tx should not be of Create type"),
+            gas_limit: inner.gas.unwrap_or_default() as u128,
+            gas_per_pubdata_byte_limit: 0, // This field is not present in the TransactionRequest, set to 0
+            max_fee_per_gas: inner.max_fee_per_gas.unwrap_or_default() as u128,
+            max_priority_fee_per_gas: inner.max_priority_fee_per_gas.unwrap_or_default(),
+            nonce: inner.nonce.unwrap_or_default() as u128,
+            value: inner.value.unwrap_or_default(),
+            to_mint: to_mint,
+            refund_recipient,
+            input: inner.input.input().cloned().unwrap_or_default(),
+            factory_deps: vec![], // Not supported
+        };
         Self {
-            inner: ZKsyncTxType::ZKsync(ZKsyncSpecificTxType::L1, inner),
+            inner: ZKsyncTxType::ZKsyncEnvelope(l1_tx.into()),
             signer: None,
         }
     }
@@ -48,22 +76,43 @@ impl ZKsyncTxEnvelope {
     }
 
     pub fn new_upgrade_tx(inner: TransactionRequest) -> Self {
-        Self {
-            inner: ZKsyncTxType::ZKsync(ZKsyncSpecificTxType::Upgrade, inner),
-            signer: None,
-        }
-    }
+        let to_mint = Default::default();
+        // This behavior was implemented incorrectly before and we keep it as is for now to avoid breaking existing tests
+        let refund_recipient_as_uint = if inner.to.is_none() {
+            U256::ONE
+        } else {
+            U256::ZERO
+        };
+        let refund_recipient = Address::from(U160::from(refund_recipient_as_uint));
 
-    pub fn new_service_tx(inner: TransactionRequest) -> Self {
+        let upgrade_tx = ZKsyncUpgradeTx {
+            from: inner.from.expect("L1 tx should have from field"),
+            to: inner
+                .to
+                .expect("L1 tx should have to field")
+                .to()
+                .cloned()
+                .expect("L1 tx should not be of Create type"),
+            gas_limit: inner.gas.unwrap_or_default() as u128,
+            gas_per_pubdata_byte_limit: 0, // This field is not present in the TransactionRequest, set to 0
+            max_fee_per_gas: inner.max_fee_per_gas.unwrap_or_default() as u128,
+            max_priority_fee_per_gas: inner.max_priority_fee_per_gas.unwrap_or_default(),
+            nonce: inner.nonce.unwrap_or_default() as u128,
+            value: inner.value.unwrap_or_default(),
+            to_mint: to_mint,
+            refund_recipient,
+            input: inner.input.input().cloned().unwrap_or_default(),
+            factory_deps: vec![], // Not supported
+        };
         Self {
-            inner: ZKsyncTxType::ZKsync(ZKsyncSpecificTxType::Service, inner),
+            inner: ZKsyncTxType::ZKsyncEnvelope(upgrade_tx.into()),
             signer: None,
         }
     }
 
     pub fn new_special_tx_type(inner: TransactionRequest, tx_type: u8) -> Self {
         Self {
-            inner: ZKsyncTxType::ZKsync(ZKsyncSpecificTxType::Custom(tx_type), inner),
+            inner: ZKsyncTxType::Custom(tx_type, inner),
             signer: None,
         }
     }
@@ -85,22 +134,155 @@ impl ZKsyncTxEnvelope {
 
     pub fn to(&self) -> Option<alloy::primitives::Address> {
         match &self.inner {
-            ZKsyncTxType::ZKsync(_, req) => req.to.as_ref().map(|to| to.to().copied().unwrap()),
             ZKsyncTxType::Ethereum(env) => env.to(),
+            ZKsyncTxType::ZKsyncEnvelope(specific_envelope) => Some(specific_envelope.to()),
+            ZKsyncTxType::Custom(_, req) => req.to.as_ref().map(|to| to.to().copied().unwrap()), // TODO unwrap is incorrect here
         }
     }
 
     pub fn ty(&self) -> u8 {
         match &self.inner {
-            ZKsyncTxType::ZKsync(zk_specific_type, _) => match zk_specific_type {
-                ZKsyncSpecificTxType::L1 => 0x7f,
-                ZKsyncSpecificTxType::Upgrade => 0x7e,
-                ZKsyncSpecificTxType::Service => 0x7d,
-                ZKsyncSpecificTxType::Custom(tx_type) => *tx_type,
-            },
-            ZKsyncTxType::Ethereum(ethereum_tx_envelope) => {
-                ethereum_tx_envelope.tx_type().clone().into()
-            }
+            ZKsyncTxType::Ethereum(ethereum_tx_envelope) => ethereum_tx_envelope.ty(),
+            ZKsyncTxType::ZKsyncEnvelope(specific_envelope) => specific_envelope.ty(),
+            ZKsyncTxType::Custom(tx_type, _) => *tx_type,
         }
+    }
+}
+
+pub enum ZKsyncSpecificTxEnvelope {
+    L1(ZKsyncL1Tx),
+    Upgrade(ZKsyncUpgradeTx),
+    Service(ZKsyncServiceTx),
+}
+
+impl ZKsyncSpecificTxEnvelope {
+    pub fn to(&self) -> Address {
+        match self {
+            ZKsyncSpecificTxEnvelope::L1(tx) => tx.to,
+            ZKsyncSpecificTxEnvelope::Upgrade(tx) => tx.to,
+            ZKsyncSpecificTxEnvelope::Service(tx) => tx.to,
+        }
+    }
+
+    pub fn ty(&self) -> u8 {
+        match self {
+            ZKsyncSpecificTxEnvelope::L1(_) => ZKsyncL1Tx::TX_TYPE,
+            ZKsyncSpecificTxEnvelope::Upgrade(_) => ZKsyncUpgradeTx::TX_TYPE,
+            ZKsyncSpecificTxEnvelope::Service(_) => ZKsyncServiceTx::TX_TYPE,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ZKsyncL1Tx {
+    pub from: Address,
+    pub to: Address,
+    pub gas_limit: u128,
+    pub gas_per_pubdata_byte_limit: u128,
+    pub max_fee_per_gas: u128,
+    pub max_priority_fee_per_gas: u128,
+    pub nonce: u128,
+    pub value: U256,
+    /// The amount of base token that should be minted on L2 as the result of this transaction.
+    pub to_mint: U256,
+    /// The recipient of the refund for the transaction on L2. If the transaction fails, then this
+    /// address will receive the `value` of this transaction.
+    pub refund_recipient: Address,
+    /// data: An unlimited size byte array specifying the input data of the message call.
+    pub input: Bytes,
+    /// The set of L2 bytecode hashes whose preimages were shown on L1.
+    pub factory_deps: Vec<B256>,
+}
+
+impl ZKsyncL1Tx {
+    const TX_TYPE: u8 = 0x7f;
+}
+
+impl Typed2718 for ZKsyncL1Tx {
+    fn ty(&self) -> u8 {
+        Self::TX_TYPE
+    }
+}
+
+impl Into<ZKsyncSpecificTxEnvelope> for ZKsyncL1Tx {
+    fn into(self) -> ZKsyncSpecificTxEnvelope {
+        ZKsyncSpecificTxEnvelope::L1(self)
+    }
+}
+
+impl IsTyped2718 for ZKsyncL1Tx {
+    fn is_type(type_id: u8) -> bool {
+        matches!(type_id, Self::TX_TYPE)
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ZKsyncUpgradeTx {
+    pub from: Address,
+    pub to: Address,
+    pub gas_limit: u128,
+    pub gas_per_pubdata_byte_limit: u128,
+    pub max_fee_per_gas: u128,
+    pub max_priority_fee_per_gas: u128,
+    pub nonce: u128,
+    pub value: U256,
+    /// The amount of base token that should be minted on L2 as the result of this transaction.
+    pub to_mint: U256,
+    /// The recipient of the refund for the transaction on L2. If the transaction fails, then this
+    /// address will receive the `value` of this transaction.
+    pub refund_recipient: Address,
+    /// data: An unlimited size byte array specifying the input data of the message call.
+    pub input: Bytes,
+    /// The set of L2 bytecode hashes whose preimages were shown on L1.
+    pub factory_deps: Vec<B256>,
+}
+
+impl ZKsyncUpgradeTx {
+    const TX_TYPE: u8 = 0x7e;
+}
+
+impl Typed2718 for ZKsyncUpgradeTx {
+    fn ty(&self) -> u8 {
+        Self::TX_TYPE
+    }
+}
+
+impl IsTyped2718 for ZKsyncUpgradeTx {
+    fn is_type(type_id: u8) -> bool {
+        matches!(type_id, Self::TX_TYPE)
+    }
+}
+
+impl Into<ZKsyncSpecificTxEnvelope> for ZKsyncUpgradeTx {
+    fn into(self) -> ZKsyncSpecificTxEnvelope {
+        ZKsyncSpecificTxEnvelope::Upgrade(self)
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ZKsyncServiceTx {
+    pub to: Address,
+    pub input: Bytes,
+}
+
+impl ZKsyncServiceTx {
+    const TX_TYPE: u8 = 0x7d;
+}
+
+impl Typed2718 for ZKsyncServiceTx {
+    fn ty(&self) -> u8 {
+        Self::TX_TYPE
+    }
+}
+
+impl IsTyped2718 for ZKsyncServiceTx {
+    fn is_type(type_id: u8) -> bool {
+        matches!(type_id, Self::TX_TYPE)
+    }
+}
+
+impl Into<ZKsyncSpecificTxEnvelope> for ZKsyncServiceTx {
+    fn into(self) -> ZKsyncSpecificTxEnvelope {
+        ZKsyncSpecificTxEnvelope::Service(self)
     }
 }
