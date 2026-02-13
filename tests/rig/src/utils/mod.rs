@@ -314,6 +314,10 @@ pub struct L1TxBuilder {
     pub input: Vec<u8>,
     pub value: alloy::primitives::U256,
     pub nonce: u128,
+    pub refund_recipient: Option<alloy::primitives::Address>,
+    pub to_mint: Option<alloy::primitives::U256>,
+    pub factory_deps: Vec<alloy::primitives::B256>,
+    pub gas_per_pubdata_byte_limit: u128,
 }
 
 impl L1TxBuilder {
@@ -326,6 +330,10 @@ impl L1TxBuilder {
             input: Vec::new(),
             value: Default::default(),
             nonce: 0,
+            refund_recipient: Default::default(),
+            to_mint: Default::default(),
+            factory_deps: Vec::new(),
+            gas_per_pubdata_byte_limit: 0,
         }
     }
 
@@ -364,6 +372,26 @@ impl L1TxBuilder {
         self
     }
 
+    pub fn refund_recipient(mut self, recipient: alloy::primitives::Address) -> Self {
+        self.refund_recipient = Some(recipient);
+        self
+    }
+
+    pub fn to_mint(mut self, to_mint: alloy::primitives::U256) -> Self {
+        self.to_mint = Some(to_mint);
+        self
+    }
+
+    pub fn factory_deps(mut self, factory_deps: Vec<alloy::primitives::B256>) -> Self {
+        self.factory_deps = factory_deps;
+        self
+    }
+
+    pub fn gas_per_pubdata_byte_limit(mut self, limit: u128) -> Self {
+        self.gas_per_pubdata_byte_limit = limit;
+        self
+    }
+
     pub fn build(self) -> ZKsyncTxEnvelope {
         ZKsyncL1Tx {
             from: self.from,
@@ -371,12 +399,18 @@ impl L1TxBuilder {
             max_fee_per_gas: self.gas_price,
             max_priority_fee_per_gas: self.gas_price,
             gas_limit: self.gas_limit,
-            to_mint: self.value.add(alloy::primitives::U256::from(
-                self.gas_limit * self.gas_price,
-            )),
+            to_mint: self.to_mint.unwrap_or_else(|| {
+                self.value.add(
+                    alloy::primitives::U256::from(self.gas_limit)
+                        * alloy::primitives::U256::from(self.gas_price),
+                )
+            }),
             input: self.input.into(),
             nonce: self.nonce,
-            ..Default::default()
+            refund_recipient: self.refund_recipient.unwrap_or_default(),
+            factory_deps: self.factory_deps,
+            gas_per_pubdata_byte_limit: self.gas_per_pubdata_byte_limit,
+            value: self.value,
         }
         .into()
     }
