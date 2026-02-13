@@ -3,11 +3,9 @@
 //!
 #![cfg(test)]
 
-use alloy::primitives::TxKind;
 use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::primitives::Address;
-use rig::alloy::rpc::types::TransactionRequest;
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::B160;
 use rig::ruint::aliases::U256;
@@ -17,12 +15,12 @@ use rig::testing_utils::call_address_and_measure_gas_cost;
 use rig::testing_utils::install_system_contracts;
 use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::utils::{
-    address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
+    address_into_special_storage_key, AccountProperties, L1TxBuilder,
+    ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
 use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_interface::types::ExecutionResult;
 use rig::{alloy, Chain};
-use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[test]
 fn test_set_bytecode_details_evm() {
@@ -49,19 +47,14 @@ fn test_set_bytecode_details_evm() {
     );
 
     let encoded_tx = {
-        let tx = TransactionRequest {
-            chain_id: Some(37),
-            from: Some(contract_deployer_address),
-            to: Some(TxKind::Call(contract_deployer_hook_address)),
-            input: calldata.into(),
-            gas: Some(200_000),
-            max_fee_per_gas: Some(1000),
-            max_priority_fee_per_gas: Some(1000),
-            value: Some(alloy::primitives::U256::from(0)),
-            nonce: Some(0),
-            ..TransactionRequest::default()
-        };
-        ZKsyncTxEnvelope::new_l1(tx).encode()
+        let tx = L1TxBuilder::new()
+            .from(contract_deployer_address)
+            .to(contract_deployer_hook_address)
+            .input(calldata)
+            .gas_price(1000)
+            .gas_limit(200_000)
+            .build();
+        tx.encode()
     };
     let transactions = vec![encoded_tx];
 
@@ -116,19 +109,14 @@ fn test_set_deployed_bytecode_evm_unauthorized() {
             .unwrap();
 
     let encoded_tx = {
-        let tx = TransactionRequest {
-            chain_id: Some(37),
-            from: Some(from),
-            to: Some(TxKind::Call(contract_deployer_address)),
-            input: calldata.into(),
-            gas: Some(200_000),
-            max_fee_per_gas: Some(1000),
-            max_priority_fee_per_gas: Some(1000),
-            value: Some(alloy::primitives::U256::from(0)),
-            nonce: Some(0),
-            ..TransactionRequest::default()
-        };
-        ZKsyncTxEnvelope::new_l1(tx).encode()
+        let tx = L1TxBuilder::new()
+            .from(from)
+            .to(contract_deployer_address)
+            .input(calldata)
+            .gas_price(1000)
+            .gas_limit(200_000)
+            .build();
+        tx.encode()
     };
     let transactions = vec![encoded_tx];
 
@@ -161,20 +149,15 @@ fn test_l1_messenger_hook_succeeds() {
         "000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     .unwrap();
 
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(l1_messenger_contract),
-        to: Some(TxKind::Call(l1_messenger_hook)),
-        input: hook_calldata.into(),
-        gas: Some(200_000),
-        max_fee_per_gas: Some(1000),
-        max_priority_fee_per_gas: Some(1000),
-        value: Some(alloy::primitives::U256::from(0)),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
+    let tx = L1TxBuilder::new()
+        .from(l1_messenger_contract)
+        .to(l1_messenger_hook)
+        .input(hook_calldata)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
 
-    let encoded_tx = ZKsyncTxEnvelope::new_l1(tx).encode();
+    let encoded_tx = tx.encode();
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -210,20 +193,15 @@ fn test_l1_messenger_hook_fails_with_invalid_calldata() {
     // Invalid calldata
     let hook_calldata = hex::decode("00000000000000000000000011111111").unwrap();
 
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(l1_messenger_contract),
-        to: Some(TxKind::Call(l1_messenger_hook)),
-        input: hook_calldata.into(),
-        gas: Some(200_000),
-        max_fee_per_gas: Some(1000),
-        max_priority_fee_per_gas: Some(1000),
-        value: Some(alloy::primitives::U256::from(0)),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
+    let tx = L1TxBuilder::new()
+        .from(l1_messenger_contract)
+        .to(l1_messenger_hook)
+        .input(hook_calldata)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
 
-    let encoded_tx = ZKsyncTxEnvelope::new_l1(tx).encode();
+    let encoded_tx = tx.encode();
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -259,20 +237,15 @@ fn test_l1_messenger_hook_unauthorized_sender_ignored() {
     )
     .unwrap();
 
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(unauthorized_from),
-        to: Some(TxKind::Call(l1_messenger_hook)),
-        input: hook_calldata.into(),
-        gas: Some(200_000),
-        max_fee_per_gas: Some(1000),
-        max_priority_fee_per_gas: Some(1000),
-        value: Some(alloy::primitives::U256::from(0)),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
+    let tx = L1TxBuilder::new()
+        .from(unauthorized_from)
+        .to(l1_messenger_hook)
+        .input(hook_calldata)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
 
-    let encoded_tx = ZKsyncTxEnvelope::new_l1(tx).encode();
+    let encoded_tx = tx.encode();
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -308,20 +281,16 @@ fn test_l2_base_token_withdraw_events() {
     calldata.extend_from_slice(&[0u8; 12]); // padding for address
     calldata.extend_from_slice(l1_receiver.as_slice()); // l1_receiver address
 
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(sender),
-        to: Some(TxKind::Call(l2_base_token_address)),
-        input: calldata.into(),
-        value: Some(withdrawal_amount),
-        gas: Some(200_000),
-        max_fee_per_gas: Some(1000),
-        max_priority_fee_per_gas: Some(1000),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
+    let tx = L1TxBuilder::new()
+        .from(sender)
+        .to(l2_base_token_address)
+        .input(calldata)
+        .value(withdrawal_amount)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
 
-    let encoded_tx = ZKsyncTxEnvelope::new_l1(tx).encode();
+    let encoded_tx = tx.encode();
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -397,20 +366,16 @@ fn test_l2_base_token_withdraw_with_message_events() {
         calldata.extend_from_slice(&vec![0u8; padding_needed]);
     }
 
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(sender),
-        to: Some(TxKind::Call(l2_base_token_address)),
-        input: calldata.into(),
-        value: Some(withdrawal_amount),
-        gas: Some(300_000),
-        max_fee_per_gas: Some(1000),
-        max_priority_fee_per_gas: Some(1000),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
+    let tx = L1TxBuilder::new()
+        .from(sender)
+        .to(l2_base_token_address)
+        .input(calldata)
+        .value(withdrawal_amount)
+        .gas_price(1000)
+        .gas_limit(300_000)
+        .build();
 
-    let encoded_tx = ZKsyncTxEnvelope::new_l1(tx).encode();
+    let encoded_tx = tx.encode();
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -475,20 +440,16 @@ fn test_l2_base_token_withdraw_with_dirty_address() {
     calldata.extend_from_slice(&[1u8; 12]); // "dirty" padding for address
     calldata.extend_from_slice(l1_receiver.as_slice()); // l1_receiver address
 
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(sender),
-        to: Some(TxKind::Call(l2_base_token_address)),
-        input: calldata.into(),
-        value: Some(withdrawal_amount),
-        gas: Some(200_000),
-        max_fee_per_gas: Some(1000),
-        max_priority_fee_per_gas: Some(1000),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
+    let tx = L1TxBuilder::new()
+        .from(sender)
+        .to(l2_base_token_address)
+        .input(calldata)
+        .value(withdrawal_amount)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
 
-    let encoded_tx = ZKsyncTxEnvelope::new_l1(tx).encode();
+    let encoded_tx = tx.encode();
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -542,20 +503,16 @@ fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
         calldata.extend_from_slice(&vec![0u8; padding_needed]);
     }
 
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(sender),
-        to: Some(TxKind::Call(l2_base_token_address)),
-        input: calldata.into(),
-        value: Some(withdrawal_amount),
-        gas: Some(300_000),
-        max_fee_per_gas: Some(1000),
-        max_priority_fee_per_gas: Some(1000),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
+    let tx = L1TxBuilder::new()
+        .from(sender)
+        .to(l2_base_token_address)
+        .input(calldata)
+        .value(withdrawal_amount)
+        .gas_price(1000)
+        .gas_limit(300_000)
+        .build();
 
-    let encoded_tx = ZKsyncTxEnvelope::new_l1(tx).encode();
+    let encoded_tx = tx.encode();
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -589,20 +546,15 @@ fn test_l2_base_token_no_mint_event_regression() {
 
     // Create a transaction that sends ETH to the L2 base token contract
     // This simulates a bridge deposit or native token mint
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(sender),
-        to: Some(TxKind::Call(recipient)),
-        input: hex::decode("").unwrap().into(), // Empty calldata for value transfer
-        value: Some(mint_amount),
-        gas: Some(100_000),
-        max_fee_per_gas: Some(1000),
-        max_priority_fee_per_gas: Some(1000),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
+    let tx = L1TxBuilder::new()
+        .from(sender)
+        .to(recipient)
+        .value(mint_amount)
+        .gas_price(1000)
+        .gas_limit(100_000)
+        .build();
 
-    let encoded_tx = ZKsyncTxEnvelope::new_l1(tx).encode();
+    let encoded_tx = tx.encode();
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -775,20 +727,16 @@ fn test_mint_base_token_hook() {
     let calldata = mint_amount.to_be_bytes::<32>().to_vec();
 
     // Create transaction from L2_BASE_TOKEN_ADDRESS to MINT_HOOK_ADDRESS
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(l2_base_token_address),
-        to: Some(TxKind::Call(mint_hook_address)),
-        input: calldata.into(),
-        value: Some(alloy::primitives::U256::ZERO), // No ETH value needed for mint
-        gas: Some(200_000),
-        max_fee_per_gas: Some(1000),
-        max_priority_fee_per_gas: Some(1000),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
+    let tx = L1TxBuilder::new()
+        .from(l2_base_token_address)
+        .to(mint_hook_address)
+        .input(calldata)
+        .value(alloy::primitives::U256::ZERO) // No ETH value needed for mint
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
 
-    let encoded_tx = ZKsyncTxEnvelope::new_l1(tx).encode();
+    let encoded_tx = tx.encode();
     let transactions = vec![encoded_tx];
 
     let output = chain.run_block(transactions, None, None, None);
@@ -832,25 +780,20 @@ fn test_event_hooks_empty_topics() {
         // STOP          -> 00
         let test_contract_bytecode = hex::decode("60006000a000").unwrap();
 
-        let tx = TransactionRequest {
-            chain_id: Some(37),
-            from: Some(address!("1234567890123456789012345678901234567890")),
-            to: Some(TxKind::Call(test_contract)),
-            input: hex::decode("").unwrap().into(),
-            gas: Some(200_000),
-            max_fee_per_gas: Some(1000),
-            max_priority_fee_per_gas: Some(1000),
-            value: Some(alloy::primitives::U256::from(0)),
-            nonce: Some(0),
-            ..TransactionRequest::default()
-        };
+        let tx = L1TxBuilder::new()
+            .from(address!("1234567890123456789012345678901234567890"))
+            .to(test_contract)
+            .input(hex::decode("").unwrap())
+            .gas_price(1000)
+            .gas_limit(200_000)
+            .build();
 
         chain.set_evm_bytecode(
             B160::from_be_bytes(test_contract.clone().into_array()),
             &test_contract_bytecode,
         );
 
-        let encoded_tx = ZKsyncTxEnvelope::new_l1(tx).encode();
+        let encoded_tx = tx.encode();
         let transactions = vec![encoded_tx];
 
         let output = chain.run_block(transactions, None, None, None);

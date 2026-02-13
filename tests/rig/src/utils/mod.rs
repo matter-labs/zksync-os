@@ -12,9 +12,11 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::sol;
 use forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use std::io::Read;
+use std::ops::Add;
 use std::path::PathBuf;
 pub use zksync_os_api::helpers::*;
 use zksync_os_interface::types::BlockOutput;
+use zksync_os_tests_common::zksync_tx::ZKsyncL1Tx;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 pub mod tx_encoding;
@@ -301,5 +303,81 @@ pub fn generate_block_context_interface(
         execution_version: 0, // TODO meaningless here
         blob_fee: rig_block_context.blob_fee,
         code_size_limit: None, // Unused
+    }
+}
+
+pub struct L1TxBuilder {
+    pub from: alloy::primitives::Address,
+    pub to: alloy::primitives::Address,
+    pub gas_price: u128,
+    pub gas_limit: u128,
+    pub input: Vec<u8>,
+    pub value: alloy::primitives::U256,
+    pub nonce: u128,
+}
+
+impl L1TxBuilder {
+    pub fn new() -> Self {
+        Self {
+            from: Default::default(),
+            to: Default::default(),
+            gas_price: 0,
+            gas_limit: 0,
+            input: Vec::new(),
+            value: Default::default(),
+            nonce: 0,
+        }
+    }
+
+    pub fn from(mut self, from: alloy::primitives::Address) -> Self {
+        self.from = from;
+        self
+    }
+
+    pub fn to(mut self, to: alloy::primitives::Address) -> Self {
+        self.to = to;
+        self
+    }
+
+    pub fn gas_price(mut self, gas_price: u128) -> Self {
+        self.gas_price = gas_price;
+        self
+    }
+
+    pub fn gas_limit(mut self, gas_limit: u128) -> Self {
+        self.gas_limit = gas_limit;
+        self
+    }
+
+    pub fn input(mut self, input: Vec<u8>) -> Self {
+        self.input = input;
+        self
+    }
+
+    pub fn value(mut self, value: alloy::primitives::U256) -> Self {
+        self.value = value;
+        self
+    }
+
+    pub fn nonce(mut self, nonce: u128) -> Self {
+        self.nonce = nonce;
+        self
+    }
+
+    pub fn build(self) -> ZKsyncTxEnvelope {
+        ZKsyncL1Tx {
+            from: self.from,
+            to: self.to,
+            max_fee_per_gas: self.gas_price,
+            max_priority_fee_per_gas: self.gas_price,
+            gas_limit: self.gas_limit,
+            to_mint: self.value.add(alloy::primitives::U256::from(
+                self.gas_limit * self.gas_price,
+            )),
+            input: self.input.into(),
+            nonce: self.nonce,
+            ..Default::default()
+        }
+        .into()
     }
 }

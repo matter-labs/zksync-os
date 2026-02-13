@@ -131,34 +131,25 @@ fn run_base_system() {
     };
 
     let encoded_l1_l2_transfer = {
-        let transfer = ZKsyncTxEnvelope::new_l1(TransactionRequest {
-            chain_id: Some(37),
-            from: Some(address!("1234000000000000000000000000000000000000")),
-            to: Some(TxKind::Call(address!(
-                "4242000000000000000000000000000000000000"
-            ))),
-            gas: Some(21_000),
-            max_fee_per_gas: Some(1000),
-            max_priority_fee_per_gas: Some(1000),
-            value: Some(alloy::primitives::U256::from(100)),
-            nonce: Some(0),
-            ..TransactionRequest::default()
-        });
+        let transfer = L1TxBuilder::new()
+            .from(address!("1234000000000000000000000000000000000000"))
+            .to(address!("4242000000000000000000000000000000000000"))
+            .value(alloy::primitives::U256::from(100))
+            .gas_price(1000)
+            .gas_limit(21_000)
+            .build();
         transfer.encode()
     };
 
     let encoded_l1_l2_erc_transfer = {
-        let tx = ZKsyncTxEnvelope::new_l1(TransactionRequest {
-            chain_id: Some(37),
-            from: Some(alloy::signers::Signer::address(&wallet)),
-            to: Some(TxKind::Call(to)),
-            gas: Some(40_000),
-            max_fee_per_gas: Some(1000),
-            max_priority_fee_per_gas: Some(1000),
-            nonce: Some(3),
-            input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
-            ..TransactionRequest::default()
-        });
+        let tx = L1TxBuilder::new()
+            .from(wallet.address())
+            .to(to)
+            .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into())
+            .gas_price(1000)
+            .gas_limit(40_000)
+            .nonce(3)
+            .build();
         tx.encode()
     };
 
@@ -650,24 +641,14 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
             hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
                 .unwrap();
 
-        let tx = ZKsyncTxEnvelope::new_l1(TransactionRequest {
-            chain_id: Some(37),
-            from: Some(l1_messenger_contract),
-            to: Some(TxKind::Call(l1_messenger_hook)),
-            input: withdrawal_calldata.into(),
-            gas: Some(500_000),
-            max_fee_per_gas: Some(1000),
-            max_priority_fee_per_gas: Some(1000),
-            value: Some(alloy::primitives::U256::from(0)),
-            nonce: Some(0),
-            gas_price: Some(1000),
-            max_fee_per_blob_gas: Some(0),
-            access_list: None,
-            transaction_type: None,
-            blob_versioned_hashes: None,
-            sidecar: None,
-            authorization_list: None,
-        });
+        let tx = L1TxBuilder::new()
+            .from(l1_messenger_contract)
+            .to(l1_messenger_hook)
+            .input(withdrawal_calldata)
+            .gas_price(1000)
+            .gas_limit(500_000)
+            .nonce(0)
+            .build();
 
         tx.encode()
     };
@@ -1872,17 +1853,14 @@ fn test_treasury_based_token_distribution_regression() {
     let value_to_transfer = U256::from(1_000_000u64);
 
     let l1_tx = {
-        let tx = ZKsyncTxEnvelope::new_l1(TransactionRequest {
-            chain_id: Some(37),
-            from: Some(l1_sender),
-            to: Some(TxKind::Call(l1_recipient)),
-            gas: Some(gas_limit),
-            max_fee_per_gas: Some(gas_price.into()),
-            max_priority_fee_per_gas: Some(gas_price.into()),
-            value: Some(value_to_transfer),
-            nonce: Some(0),
-            ..TransactionRequest::default()
-        });
+        let tx = L1TxBuilder::new()
+            .from(l1_sender)
+            .to(l1_recipient)
+            .gas_price(gas_price.into())
+            .gas_limit(gas_limit.into())
+            .value(value_to_transfer)
+            .build();
+
         tx.encode()
     };
 
@@ -1986,17 +1964,13 @@ fn test_treasury_insufficient_balance_failure() {
     let value_to_transfer = U256::from(500_000u64); // More than treasury can cover
 
     let l1_tx = {
-        let tx = ZKsyncTxEnvelope::new_l1(TransactionRequest {
-            chain_id: Some(37),
-            from: Some(l1_sender),
-            to: Some(TxKind::Call(l1_recipient)),
-            gas: Some(gas_limit),
-            max_fee_per_gas: Some(gas_price.into()),
-            max_priority_fee_per_gas: Some(gas_price.into()),
-            value: Some(value_to_transfer),
-            nonce: Some(0),
-            ..TransactionRequest::default()
-        });
+        let tx = L1TxBuilder::new()
+            .from(l1_sender)
+            .to(l1_recipient)
+            .gas_price(gas_price.into())
+            .gas_limit(gas_limit.into())
+            .value(value_to_transfer)
+            .build();
         tx.encode()
     };
 

@@ -1,10 +1,8 @@
-use std::ops::Add;
-
 use alloy::{
     consensus::{SignableTransaction, Signed, Transaction, TxEnvelope, TypedTransaction},
     eips::{eip2718::IsTyped2718, Typed2718},
     network::TxSignerSync,
-    primitives::{Address, Bytes, B256, U160, U256},
+    primitives::{Address, Bytes, B256, U256},
     rpc::types::TransactionRequest,
     signers::{local::PrivateKeySigner, Signature},
 };
@@ -16,40 +14,6 @@ pub enum ZKsyncTxEnvelope {
 }
 
 impl ZKsyncTxEnvelope {
-    pub fn new_l1(inner: TransactionRequest) -> Self {
-        let to_mint = inner.value.unwrap_or_default().add(U256::from(
-            inner.gas.unwrap_or_default() as u128 * inner.max_fee_per_gas.unwrap_or_default(),
-        )); // TODO overflow
-            // This behavior was implemented incorrectly before and we keep it as is for now to avoid breaking existing tests
-        let refund_recipient_as_uint = if inner.to.is_none() {
-            U256::ONE
-        } else {
-            U256::ZERO
-        };
-        let refund_recipient = Address::from(U160::from(refund_recipient_as_uint));
-
-        let l1_tx = ZKsyncL1Tx {
-            from: inner.from.expect("L1 tx should have from field"),
-            to: inner
-                .to
-                .expect("L1 tx should have to field")
-                .to()
-                .cloned()
-                .expect("L1 tx should not be of Create type"),
-            gas_limit: inner.gas.unwrap_or_default() as u128,
-            gas_per_pubdata_byte_limit: 0, // This field is not present in the TransactionRequest, set to 0
-            max_fee_per_gas: inner.max_fee_per_gas.unwrap_or_default(),
-            max_priority_fee_per_gas: inner.max_priority_fee_per_gas.unwrap_or_default(),
-            nonce: inner.nonce.unwrap_or_default() as u128,
-            value: inner.value.unwrap_or_default(),
-            to_mint,
-            refund_recipient,
-            input: inner.input.input().cloned().unwrap_or_default(),
-            factory_deps: vec![], // Not supported
-        };
-        l1_tx.into()
-    }
-
     pub fn new_special_tx_type(inner: TransactionRequest, tx_type: u8) -> Self {
         Self::Custom(tx_type, inner)
     }
