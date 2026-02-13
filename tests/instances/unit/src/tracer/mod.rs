@@ -45,7 +45,7 @@ pub(crate) fn run_chain_with_tracer(
             input: Default::default(),
             access_list: Default::default(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
 
     let _ = chain.run_block_with_extra_stats(

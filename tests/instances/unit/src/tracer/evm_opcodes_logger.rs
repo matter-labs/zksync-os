@@ -56,7 +56,7 @@ fn run_chain_with_tracer_and_validator<V>(
             input: Default::default(),
             access_list: Default::default(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
 
     let result =

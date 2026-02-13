@@ -23,7 +23,7 @@ fuzz_target!(|data: &[u8]| {
     let gas = 57000;
     let call_value = U256::from(0);
 
-    let tx = ZKsyncTxEnvelope::new_l2_tx(
+    let tx = ZKsyncTxEnvelope::from_eth_tx(
         TxLegacy {
             chain_id: None,
             nonce: 0,

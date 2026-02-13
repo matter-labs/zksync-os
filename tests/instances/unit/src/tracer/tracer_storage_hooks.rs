@@ -152,7 +152,7 @@ fn test_storage_hooks() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
 
     let mut tracer = StorageOperationTracer::new();

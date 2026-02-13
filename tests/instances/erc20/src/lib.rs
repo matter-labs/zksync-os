@@ -25,7 +25,7 @@ fn get_name_sol() {
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let tx_get_name = ZKsyncTxEnvelope::new_eth_tx_from_req(
+    let tx_get_name = ZKsyncTxEnvelope::from_eth_tx_from_req(
         TransactionRequest {
             to: Some(TxKind::Call(erc20_addr)),
             gas: Some(1 << 27),
@@ -97,7 +97,7 @@ fn balance_of_sol() {
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let tx_mint = ZKsyncTxEnvelope::new_eth_tx_from_req(
+    let tx_mint = ZKsyncTxEnvelope::from_eth_tx_from_req(
         TransactionRequest {
             to: Some(TxKind::Call(erc20_addr)),
             gas: Some(1u64 << 27),
@@ -117,7 +117,7 @@ fn balance_of_sol() {
     )
     .encode();
 
-    let tx_balance = ZKsyncTxEnvelope::new_eth_tx_from_req(
+    let tx_balance = ZKsyncTxEnvelope::from_eth_tx_from_req(
         TransactionRequest {
             to: Some(TxKind::Call(erc20_addr)),
             gas: Some(1u64 << 27),
@@ -214,7 +214,7 @@ fn transfer_sol() {
             U256::from(1_000_000_000_000_000_u64),
         );
 
-    let tx_mint = ZKsyncTxEnvelope::new_eth_tx_from_req(
+    let tx_mint = ZKsyncTxEnvelope::from_eth_tx_from_req(
         TransactionRequest {
             to: Some(TxKind::Call(erc20_addr)),
             gas: Some(1u64 << 27),
@@ -234,7 +234,7 @@ fn transfer_sol() {
     )
     .encode();
 
-    let tx_transfer = ZKsyncTxEnvelope::new_eth_tx_from_req(
+    let tx_transfer = ZKsyncTxEnvelope::from_eth_tx_from_req(
         TransactionRequest {
             to: Some(TxKind::Call(erc20_addr)),
             gas: Some(1u64 << 27),

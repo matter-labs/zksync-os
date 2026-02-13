@@ -31,7 +31,7 @@ pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
         &hex::decode(FORWARDER_BYTECODE).unwrap(),
     );
 
-    let direct_tx = ZKsyncTxEnvelope::new_l2_tx(
+    let direct_tx = ZKsyncTxEnvelope::from_eth_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -46,7 +46,7 @@ pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
     .encode();
 
     let calldata = calldata_for_forwarder(target, input);
-    let forwarded_tx = ZKsyncTxEnvelope::new_l2_tx(
+    let forwarded_tx = ZKsyncTxEnvelope::from_eth_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 1,

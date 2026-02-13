@@ -204,7 +204,7 @@ fn test_initial_slot_value_assertion() {
             input: calldata.into(),
             access_list: Default::default(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
 
     // Use the malicious oracle factory that should trigger the assertion

@@ -32,7 +32,7 @@ impl ZKsyncTxEnvelope {
     }
 
     /// Signs an Ethereum transaction and wraps it as an ZKsync OS-compatible envelope.
-    pub fn new_eth_tx<T: SignableTransaction<Signature>, S: TxSignerSync<Signature>>(
+    pub fn from_eth_tx<T: SignableTransaction<Signature>, S: TxSignerSync<Signature>>(
         mut tx: T,
         signer: S,
     ) -> Self
@@ -47,10 +47,10 @@ impl ZKsyncTxEnvelope {
         Self::Ethereum(env, signer.address())
     }
 
-    /// Same as `new_eth_tx`, but starts from `TransactionRequest`.
+    /// Same as `from_eth_tx`, but starts from `TransactionRequest`.
     ///
     /// Can be more convenient if exact tx type is not important.
-    pub fn new_eth_tx_from_req<S: TxSignerSync<Signature>>(
+    pub fn from_eth_tx_from_req<S: TxSignerSync<Signature>>(
         req: TransactionRequest,
         signer: S,
     ) -> Self {
@@ -63,11 +63,11 @@ impl ZKsyncTxEnvelope {
             req.build_typed_tx().expect("Failed to build typed tx")
         };
         match typed_tx {
-            TypedTransaction::Legacy(tx) => Self::new_eth_tx(tx, signer),
-            TypedTransaction::Eip1559(tx) => Self::new_eth_tx(tx, signer),
-            TypedTransaction::Eip7702(tx) => Self::new_eth_tx(tx, signer),
-            TypedTransaction::Eip2930(tx) => Self::new_eth_tx(tx, signer),
-            TypedTransaction::Eip4844(tx) => Self::new_eth_tx(tx, signer),
+            TypedTransaction::Legacy(tx) => Self::from_eth_tx(tx, signer),
+            TypedTransaction::Eip1559(tx) => Self::from_eth_tx(tx, signer),
+            TypedTransaction::Eip7702(tx) => Self::from_eth_tx(tx, signer),
+            TypedTransaction::Eip2930(tx) => Self::from_eth_tx(tx, signer),
+            TypedTransaction::Eip4844(tx) => Self::from_eth_tx(tx, signer),
         }
     }
 

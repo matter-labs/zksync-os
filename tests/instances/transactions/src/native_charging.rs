@@ -143,7 +143,7 @@ fn test_l2_tx_low_ratio() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
     run_tx(tx, gas_price, native_price, false, false)
 }
@@ -166,7 +166,7 @@ fn test_l2_tx_avg_ratio() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
     run_tx(tx, gas_price, native_price, true, false)
 }
@@ -189,7 +189,7 @@ fn test_l2_tx_high_ratio() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
     run_tx(tx, gas_price, native_price, true, false)
 }
@@ -213,7 +213,7 @@ fn test_0_gas_limit() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
     run_tx(tx.clone(), gas_price, native_price, false, false);
     run_tx(tx, gas_price, native_price, false, true);
@@ -251,7 +251,7 @@ fn test_0_gas_price() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
     run_tx(tx.clone(), gas_price, native_price, true, false);
     run_tx(tx, gas_price, native_price, true, true);
@@ -290,7 +290,7 @@ fn test_delta_gas() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
     // Should fail
     run_tx(tx, gas_price, native_price, false, false);
@@ -307,7 +307,7 @@ fn test_delta_gas() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
     // Should succeed
     run_tx(tx, gas_price, native_price, true, false)

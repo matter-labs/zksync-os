@@ -97,7 +97,7 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
             value: U256::from(value),
             input: withdrawal_calldata.clone().into(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
 
     let tx0 = mk_withdrawal(0, 10);
@@ -183,7 +183,7 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
             value: U256::from(value),
             input: withdrawal_calldata.clone().into(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
 
     // Normal nonces (0 then 1), because nothing is filtered.
@@ -328,7 +328,7 @@ fn test_tx_validator_filters_out_tx_on_begin_tx() {
             value: U256::from(value),
             input: withdrawal_calldata.clone().into(),
         };
-        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
     };
 
     // Both txs with nonce 0 (first will be filtered, second should succeed with same nonce)
