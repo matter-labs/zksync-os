@@ -10,8 +10,8 @@ use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{address, TxKind, U256};
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::B160;
-use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::{BlockContext, Chain};
+use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[test]

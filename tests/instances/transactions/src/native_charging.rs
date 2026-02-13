@@ -5,11 +5,11 @@ use alloy::signers::local::PrivateKeySigner;
 use rig::alloy::primitives::address;
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::{B160, U256};
-use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::utils::L1TxBuilder;
 use rig::zksync_os_interface::traits::EncodedTx;
 use rig::{alloy, zksync_web3_rs, BlockContext, Chain};
 use std::str::FromStr;
+use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 

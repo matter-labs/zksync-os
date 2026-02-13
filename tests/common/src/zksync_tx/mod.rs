@@ -11,6 +11,7 @@ use crate::zksync_tx::{
     l1_tx::ZKsyncL1Tx, service_tx::ZKsyncServiceTx, upgrade_tx::ZKsyncUpgradeTx,
 };
 
+pub mod encoding;
 pub mod l1_tx;
 pub mod service_tx;
 pub mod upgrade_tx;

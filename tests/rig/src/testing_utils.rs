@@ -4,11 +4,9 @@ use forward_system::system::tracers::call_tracer::CallTracer;
 use once_cell::sync::Lazy;
 use ruint::aliases::B160;
 use zk_ee::{system::validator, utils::Bytes32};
+use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 
-use crate::{
-    utils::{tx_encoding::EncodableToEncodedTx, L1TxBuilder},
-    Chain,
-};
+use crate::{utils::L1TxBuilder, Chain};
 use system_hooks::addresses_constants::{
     CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
 };

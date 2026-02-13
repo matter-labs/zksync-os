@@ -1,9 +1,13 @@
 use alloy::{
     eips::{eip2718::IsTyped2718, Typed2718},
-    primitives::{Address, Bytes, B256, U256},
+    primitives::{Address, Bytes, B256, U160, U256},
+    rlp::BufMut,
 };
 
-use crate::zksync_tx::ZKsyncSpecificTxEnvelope;
+use crate::zksync_tx::{
+    encoding::{encode_abi_tx, AbiEncodableTx},
+    ZKsyncSpecificTxEnvelope,
+};
 
 /// ZKsync OS protocol-upgrade tx payload.
 #[derive(Debug, Default, Clone)]
@@ -47,5 +51,37 @@ impl IsTyped2718 for ZKsyncUpgradeTx {
 impl From<ZKsyncUpgradeTx> for ZKsyncSpecificTxEnvelope {
     fn from(val: ZKsyncUpgradeTx) -> Self {
         ZKsyncSpecificTxEnvelope::Upgrade(val)
+    }
+}
+
+impl AbiEncodableTx for ZKsyncUpgradeTx {
+    fn abi_encode(&self, out: &mut dyn BufMut) {
+        let tx_type = self.ty();
+        let refund_recipient: U160 = self.refund_recipient.into();
+        let reserved = [
+            self.to_mint,
+            U256::from(refund_recipient),
+            U256::ZERO,
+            U256::ZERO,
+        ];
+        let res = encode_abi_tx(
+            tx_type,
+            self.from.into_array(),
+            Some(self.to.into_array()),
+            self.gas_limit,
+            Some(self.gas_per_pubdata_byte_limit),
+            self.max_fee_per_gas,
+            Some(self.max_priority_fee_per_gas),
+            Some([0u8; 20]), // ignored in ZKsync OS
+            self.nonce,
+            self.value.to_be_bytes(),
+            reserved,
+            self.input.to_vec(),
+            vec![],       // ignored in ZKsync OS
+            Some(vec![]), // ignored in ZKsync OS
+            None,         // ignored in ZKsync OS
+            self.factory_deps.clone(),
+        );
+        out.put_slice(&res);
     }
 }

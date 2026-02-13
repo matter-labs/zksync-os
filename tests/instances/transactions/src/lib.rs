@@ -14,11 +14,11 @@ use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::testing_utils::install_system_contracts;
-use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::{alloy, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
+use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
@@ -1194,8 +1194,6 @@ fn test_selfdestruct_to_precompile_gas() {
 
         ZKsyncTxEnvelope::from_eth_tx_from_req(tx_request, wallet)
     };
-
-    use rig::utils::tx_encoding::EncodableToEncodedTx;
 
     let result = chain.run_block(vec![tx_request.encode()], None, None, run_config());
     let res0 = result.tx_results.first().expect("Must have a tx result");

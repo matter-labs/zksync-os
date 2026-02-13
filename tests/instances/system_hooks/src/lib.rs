@@ -13,7 +13,6 @@ use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::system_hooks::addresses_constants::SYSTEM_CONTEXT_ADDRESS;
 use rig::testing_utils::call_address_and_measure_gas_cost;
 use rig::testing_utils::install_system_contracts;
-use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::utils::{
     address_into_special_storage_key, AccountProperties, L1TxBuilder,
     ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
@@ -21,6 +20,7 @@ use rig::utils::{
 use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_interface::types::ExecutionResult;
 use rig::{alloy, Chain};
+use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 
 #[test]
 fn test_set_bytecode_details_evm() {

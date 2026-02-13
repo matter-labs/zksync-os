@@ -14,9 +14,9 @@
 use rig::alloy::primitives::address;
 use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::{B160, U256};
-use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::utils::L1TxBuilder;
 use rig::{alloy, Chain};
+use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 
 fn run_config() -> Option<rig::chain::RunConfig> {
     Some(rig::chain::RunConfig {

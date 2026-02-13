@@ -3,57 +3,70 @@ use std::ops::Add;
 use alloy::{
     consensus::TxEnvelope,
     dyn_abi::DynSolValue,
-    eips::Typed2718,
-    primitives::{Address, B256, U160, U256},
+    eips::Encodable2718,
+    primitives::{address, Address, B256, U256},
+    rlp::BufMut,
     rpc::types::TransactionRequest,
 };
-use zksync_os_api::helpers::encode_envelope_2718;
 use zksync_os_interface::traits::EncodedTx;
-use zksync_os_tests_common::zksync_tx::{
-    l1_tx::ZKsyncL1Tx, service_tx::ZKsyncServiceTx, upgrade_tx::ZKsyncUpgradeTx,
-    ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope,
-};
 
-pub trait EncodableToEncodedTx {
-    fn encode(&self) -> EncodedTx;
+use crate::zksync_tx::{ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope};
+
+pub trait AbiEncodableTx {
+    fn abi_encode(&self, out: &mut dyn BufMut);
 }
 
-impl EncodableToEncodedTx for ZKsyncTxEnvelope {
-    fn encode(&self) -> EncodedTx {
-        match &self {
+pub trait ZKsyncOsEncodable {
+    fn encode(self) -> EncodedTx;
+}
+
+pub const BOOTLOADER_FORMAL_ADDRESS: Address =
+    address!("0x0000000000000000000000000000000000008001");
+
+impl ZKsyncOsEncodable for ZKsyncTxEnvelope {
+    fn encode(self) -> EncodedTx {
+        match self {
             ZKsyncTxEnvelope::Ethereum(ethereum_tx_envelope, signer) => {
-                encode_ethereum_tx_envelope(ethereum_tx_envelope, *signer)
+                encode_2718_tx_envelope(ethereum_tx_envelope, signer)
             }
             ZKsyncTxEnvelope::ZKsync(zksync_specific_tx_envelope) => {
                 match zksync_specific_tx_envelope {
                     ZKsyncSpecificTxEnvelope::L1(zksync_l1_tx) => {
-                        encode_l1_tx_from_tx(zksync_l1_tx)
+                        encode_abi_tx_envelope(zksync_l1_tx)
                     }
                     ZKsyncSpecificTxEnvelope::Upgrade(zksync_upgrade_tx) => {
-                        encode_upgrade_tx_from_tx(zksync_upgrade_tx)
+                        encode_abi_tx_envelope(zksync_upgrade_tx)
                     }
                     ZKsyncSpecificTxEnvelope::Service(zksync_service_tx) => {
-                        encode_service_tx_from_tx(zksync_service_tx)
+                        encode_2718_tx_envelope(zksync_service_tx, BOOTLOADER_FORMAL_ADDRESS)
                     }
                 }
             }
             ZKsyncTxEnvelope::Custom(custom_type, tx_req) => {
-                encode_special_tx_type(tx_req.clone(), *custom_type)
+                encode_special_tx_type(tx_req.clone(), custom_type)
             }
         }
     }
 }
 
-#[allow(deprecated)]
-pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> EncodedTx {
-    let from = tx.as_recovered().signer().into_array();
-    let env: TxEnvelope = tx.into();
-    let bytes = encode_envelope_2718(&env);
-    EncodedTx::Rlp(bytes, Address::from_slice(&from))
+impl ZKsyncOsEncodable for alloy::rpc::types::Transaction {
+    #[allow(deprecated)]
+    fn encode(self) -> EncodedTx {
+        let from = self.as_recovered().signer().into_array();
+        let env: TxEnvelope = self.into();
+        encode_2718_tx_envelope(env, Address::from_slice(&from))
+    }
 }
 
-fn encode_ethereum_tx_envelope(tx_envelope: &TxEnvelope, signer: Address) -> EncodedTx {
-    let bytes = encode_envelope_2718(tx_envelope);
+fn encode_abi_tx_envelope<T: AbiEncodableTx>(tx_envelope: T) -> EncodedTx {
+    let mut bytes = vec![];
+    tx_envelope.abi_encode(&mut bytes);
+    EncodedTx::Abi(bytes)
+}
+
+fn encode_2718_tx_envelope<T: Encodable2718>(tx_envelope: T, signer: Address) -> EncodedTx {
+    let mut bytes = vec![];
+    tx_envelope.encode_2718(&mut bytes);
     EncodedTx::Rlp(bytes, signer)
 }
 
@@ -85,7 +98,7 @@ fn encode_special_tx_type(tx: TransactionRequest, tx_type: u8) -> EncodedTx {
         U256::ZERO,
     ];
 
-    encode_abi_tx(
+    let bytes = encode_abi_tx(
         tx_type,
         from,
         to,
@@ -102,65 +115,8 @@ fn encode_special_tx_type(tx: TransactionRequest, tx_type: u8) -> EncodedTx {
         paymaster_input,
         None,
         vec![], // not supported here
-    )
-}
-
-fn encode_l1_tx_from_tx(tx: &ZKsyncL1Tx) -> EncodedTx {
-    let tx_type = tx.ty();
-    let refund_recipient: U160 = tx.refund_recipient.into();
-    let reserved = [
-        tx.to_mint,
-        U256::from(refund_recipient),
-        U256::ZERO,
-        U256::ZERO,
-    ];
-    encode_abi_tx(
-        tx_type,
-        tx.from.into_array(),
-        Some(tx.to.into_array()),
-        tx.gas_limit,
-        Some(tx.gas_per_pubdata_byte_limit),
-        tx.max_fee_per_gas,
-        Some(tx.max_priority_fee_per_gas),
-        Some([0u8; 20]), // ignored in ZKsync OS
-        tx.nonce,
-        tx.value.to_be_bytes(),
-        reserved,
-        tx.input.to_vec(),
-        vec![],       // ignored in ZKsync OS
-        Some(vec![]), // ignored in ZKsync OS
-        None,         // ignored in ZKsync OS
-        tx.factory_deps.clone(),
-    )
-}
-
-fn encode_upgrade_tx_from_tx(tx: &ZKsyncUpgradeTx) -> EncodedTx {
-    let tx_type = tx.ty();
-    let refund_recipient: U160 = tx.refund_recipient.into();
-    let reserved = [
-        tx.to_mint,
-        U256::from(refund_recipient),
-        U256::ZERO,
-        U256::ZERO,
-    ];
-    encode_abi_tx(
-        tx_type,
-        tx.from.into_array(),
-        Some(tx.to.into_array()),
-        tx.gas_limit,
-        Some(tx.gas_per_pubdata_byte_limit),
-        tx.max_fee_per_gas,
-        Some(tx.max_priority_fee_per_gas),
-        Some([0u8; 20]), // ignored in ZKsync OS
-        tx.nonce,
-        tx.value.to_be_bytes(),
-        reserved,
-        tx.input.to_vec(),
-        vec![],       // ignored in ZKsync OS
-        Some(vec![]), // ignored in ZKsync OS
-        None,         // ignored in ZKsync OS
-        tx.factory_deps.clone(),
-    )
+    );
+    EncodedTx::Abi(bytes)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -181,8 +137,8 @@ pub fn encode_abi_tx(
     paymaster_input: Option<Vec<u8>>,
     reserved_dynamic: Option<Vec<u8>>,
     factory_deps: Vec<B256>,
-) -> EncodedTx {
-    let bytes = DynSolValue::Tuple(vec![
+) -> Vec<u8> {
+    DynSolValue::Tuple(vec![
         U256::from(tx_type).into(),
         address_to_value(&from),
         address_to_value(&to.unwrap_or_default()),
@@ -200,19 +156,7 @@ pub fn encode_abi_tx(
         DynSolValue::Bytes(paymaster_input.unwrap_or_default()),
         DynSolValue::Bytes(reserved_dynamic.unwrap_or_default()),
     ])
-    .abi_encode_params();
-    EncodedTx::Abi(bytes)
-}
-
-fn encode_service_tx_from_tx(tx: &ZKsyncServiceTx) -> EncodedTx {
-    let tx_type = tx.ty();
-    let bytes = DynSolValue::Tuple(vec![
-        U256::from(tx_type).into(),
-        address_to_value(&tx.to.into_array()),
-        DynSolValue::Bytes(tx.input.to_vec()),
-    ])
-    .abi_encode_params();
-    EncodedTx::Abi(bytes)
+    .abi_encode_params()
 }
 
 fn address_to_value(address: &[u8; 20]) -> DynSolValue {

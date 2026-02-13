@@ -3,7 +3,6 @@
 
 use rig::alloy::consensus::TxLegacy;
 use rig::forward_system::run::convert_alloy::FromAlloy;
-use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
 use rig::zksync_os_interface::types::BlockOutput;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
@@ -16,6 +15,7 @@ use rig::{
     ruint::aliases::{B160, U256},
 };
 use std::assert_matches::assert_matches;
+use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// Performs two calls:

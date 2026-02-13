@@ -3,10 +3,9 @@ use rig::{
     alloy::{self, primitives::TxKind, rpc::types::TransactionRequest},
     forward_system::run::convert_alloy::FromAlloy,
     ruint::aliases::{B160, U256},
-    utils::tx_encoding::EncodableToEncodedTx,
 };
 use std::path::PathBuf;
-use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+use zksync_os_tests_common::zksync_tx::{encoding::ZKsyncOsEncodable, ZKsyncTxEnvelope};
 
 // WASM disabled for now
 // #[test]
