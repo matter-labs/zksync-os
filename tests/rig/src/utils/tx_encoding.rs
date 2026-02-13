@@ -83,11 +83,10 @@ fn encode_special_tx_type(tx: TransactionRequest, tx_type: u8) -> EncodedTx {
             U256::from_be_bytes(value).add(U256::from(gas_limit * max_fee_per_gas))
         } else {
             U256::ZERO
-        })
-        .into(),
-        (if to.is_none() { U256::ONE } else { U256::ZERO }).into(),
-        U256::ZERO.into(),
-        U256::ZERO.into(),
+        }),
+        (if to.is_none() { U256::ONE } else { U256::ZERO }),
+        U256::ZERO,
+        U256::ZERO,
     ];
 
     encode_abi_tx(

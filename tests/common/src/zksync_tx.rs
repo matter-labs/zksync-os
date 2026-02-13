@@ -43,11 +43,11 @@ impl ZKsyncTxEnvelope {
                 .expect("L1 tx should not be of Create type"),
             gas_limit: inner.gas.unwrap_or_default() as u128,
             gas_per_pubdata_byte_limit: 0, // This field is not present in the TransactionRequest, set to 0
-            max_fee_per_gas: inner.max_fee_per_gas.unwrap_or_default() as u128,
+            max_fee_per_gas: inner.max_fee_per_gas.unwrap_or_default(),
             max_priority_fee_per_gas: inner.max_priority_fee_per_gas.unwrap_or_default(),
             nonce: inner.nonce.unwrap_or_default() as u128,
             value: inner.value.unwrap_or_default(),
-            to_mint: to_mint,
+            to_mint,
             refund_recipient,
             input: inner.input.input().cloned().unwrap_or_default(),
             factory_deps: vec![], // Not supported
@@ -95,11 +95,11 @@ impl ZKsyncTxEnvelope {
                 .expect("L1 tx should not be of Create type"),
             gas_limit: inner.gas.unwrap_or_default() as u128,
             gas_per_pubdata_byte_limit: 0, // This field is not present in the TransactionRequest, set to 0
-            max_fee_per_gas: inner.max_fee_per_gas.unwrap_or_default() as u128,
+            max_fee_per_gas: inner.max_fee_per_gas.unwrap_or_default(),
             max_priority_fee_per_gas: inner.max_priority_fee_per_gas.unwrap_or_default(),
             nonce: inner.nonce.unwrap_or_default() as u128,
             value: inner.value.unwrap_or_default(),
-            to_mint: to_mint,
+            to_mint,
             refund_recipient,
             input: inner.input.input().cloned().unwrap_or_default(),
             factory_deps: vec![], // Not supported
@@ -204,9 +204,9 @@ impl Typed2718 for ZKsyncL1Tx {
     }
 }
 
-impl Into<ZKsyncSpecificTxEnvelope> for ZKsyncL1Tx {
-    fn into(self) -> ZKsyncSpecificTxEnvelope {
-        ZKsyncSpecificTxEnvelope::L1(self)
+impl From<ZKsyncL1Tx> for ZKsyncSpecificTxEnvelope {
+    fn from(val: ZKsyncL1Tx) -> Self {
+        ZKsyncSpecificTxEnvelope::L1(val)
     }
 }
 
@@ -253,9 +253,9 @@ impl IsTyped2718 for ZKsyncUpgradeTx {
     }
 }
 
-impl Into<ZKsyncSpecificTxEnvelope> for ZKsyncUpgradeTx {
-    fn into(self) -> ZKsyncSpecificTxEnvelope {
-        ZKsyncSpecificTxEnvelope::Upgrade(self)
+impl From<ZKsyncUpgradeTx> for ZKsyncSpecificTxEnvelope {
+    fn from(val: ZKsyncUpgradeTx) -> Self {
+        ZKsyncSpecificTxEnvelope::Upgrade(val)
     }
 }
 
@@ -281,8 +281,8 @@ impl IsTyped2718 for ZKsyncServiceTx {
     }
 }
 
-impl Into<ZKsyncSpecificTxEnvelope> for ZKsyncServiceTx {
-    fn into(self) -> ZKsyncSpecificTxEnvelope {
-        ZKsyncSpecificTxEnvelope::Service(self)
+impl From<ZKsyncServiceTx> for ZKsyncSpecificTxEnvelope {
+    fn from(val: ZKsyncServiceTx) -> Self {
+        ZKsyncSpecificTxEnvelope::Service(val)
     }
 }
