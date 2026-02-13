@@ -52,7 +52,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
             value: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::new_l2_tx(mint_tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::new_eth_tx(mint_tx, wallet.clone()).encode()
     };
 
     let block1_result = chain
@@ -77,7 +77,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::new_l2_tx(transfer_tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::new_eth_tx(transfer_tx, wallet.clone()).encode()
     };
 
     let block2_result = chain

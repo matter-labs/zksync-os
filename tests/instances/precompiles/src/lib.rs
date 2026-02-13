@@ -40,7 +40,7 @@ fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockO
         &hex::decode(FORWARDER_BYTECODE).unwrap(),
     );
 
-    let direct_tx = ZKsyncTxEnvelope::new_l2_tx(
+    let direct_tx = ZKsyncTxEnvelope::new_eth_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -55,7 +55,7 @@ fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockO
     .encode();
 
     let calldata = calldata_for_forwarder(target, input);
-    let forwarded_tx = ZKsyncTxEnvelope::new_l2_tx(
+    let forwarded_tx = ZKsyncTxEnvelope::new_eth_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 1,
@@ -6436,7 +6436,7 @@ fn test_regression_p256_is_warm() {
     let input = hex::decode("d1b3bd13d427f487b786a48d3a515c6fc1b0170ba3936bcd4ea53c960df3ef2f6e1207f671f5fa32eb46850921546ae5b03a4579012c562a62f4fb2d39269257bed27d4909e4f5ca8f543f5042691371b8fcc58f881e1b4daed7fa6f5b1b3898a880e9b88d6a707662aa25325798903d6e34740e832830860ba323d9e14defc75999af8ead7e63566aa8b94b7bb5dfa8e8f114c39ca179016f393363953f979a").unwrap();
 
     let calldata = calldata_for_forwarder(target, &input);
-    let forwarded_tx = ZKsyncTxEnvelope::new_l2_tx(
+    let forwarded_tx = ZKsyncTxEnvelope::new_eth_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,

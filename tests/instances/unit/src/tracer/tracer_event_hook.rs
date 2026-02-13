@@ -148,7 +148,7 @@ fn test_event_hook() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
     };
 
     let mut tracer = EventOperationTracer::new();

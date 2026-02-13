@@ -145,7 +145,7 @@ pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
                 access_list: Default::default(),
                 input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             };
-            ZKsyncTxEnvelope::new_l2_tx(transfer_tx, wallet.clone()).encode()
+            ZKsyncTxEnvelope::new_eth_tx(transfer_tx, wallet.clone()).encode()
         })
         .collect();
 

@@ -89,7 +89,7 @@ fn test_blockhash() {
     );
     chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
-    let tx = ZKsyncTxEnvelope::new_l2_tx(
+    let tx = ZKsyncTxEnvelope::new_eth_tx(
         TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -392,7 +392,7 @@ fn bench_addmod() {
         .enumerate()
         .map(|(i, (a, b, m, _tag))| {
             let input = encode_3(*a, *b, *m);
-            ZKsyncTxEnvelope::new_l2_tx(
+            ZKsyncTxEnvelope::new_eth_tx(
                 TxLegacy {
                     chain_id: 37u64.into(),
                     nonce: i as u64,
@@ -775,7 +775,7 @@ fn bench_mulmod() {
         .enumerate()
         .map(|(i, (a, b, m, _tag))| {
             let input = encode_3(*a, *b, *m);
-            ZKsyncTxEnvelope::new_l2_tx(
+            ZKsyncTxEnvelope::new_eth_tx(
                 TxLegacy {
                     chain_id: 37u64.into(),
                     nonce: i as u64,
@@ -909,7 +909,7 @@ fn bench_signextend() {
         .enumerate()
         .map(|(i, (k, x, _tag))| {
             let input = encode_2(*k, *x);
-            ZKsyncTxEnvelope::new_l2_tx(
+            ZKsyncTxEnvelope::new_eth_tx(
                 TxLegacy {
                     chain_id: 37u64.into(),
                     nonce: i as u64,
@@ -988,7 +988,7 @@ fn test_eip4844_blobhash() {
         blob_versioned_hashes: vec![versioned_hash],
         max_fee_per_blob_gas: 1_000,
     };
-    let tx = ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode();
+    let tx = ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode();
 
     let run_config = rig::chain::RunConfig {
         app: Some("for_tests".to_string()),

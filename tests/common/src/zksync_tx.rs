@@ -67,11 +67,11 @@ impl ZKsyncTxEnvelope {
             req.build_typed_tx().expect("Failed to build typed tx")
         };
         match typed_tx {
-            TypedTransaction::Legacy(tx) => Self::new_l2_tx(tx, signer),
-            TypedTransaction::Eip1559(tx) => Self::new_l2_tx(tx, signer),
-            TypedTransaction::Eip7702(tx) => Self::new_l2_tx(tx, signer),
-            TypedTransaction::Eip2930(tx) => Self::new_l2_tx(tx, signer),
-            TypedTransaction::Eip4844(tx) => Self::new_l2_tx(tx, signer),
+            TypedTransaction::Legacy(tx) => Self::new_eth_tx(tx, signer),
+            TypedTransaction::Eip1559(tx) => Self::new_eth_tx(tx, signer),
+            TypedTransaction::Eip7702(tx) => Self::new_eth_tx(tx, signer),
+            TypedTransaction::Eip2930(tx) => Self::new_eth_tx(tx, signer),
+            TypedTransaction::Eip4844(tx) => Self::new_eth_tx(tx, signer),
         }
     }
 
@@ -117,7 +117,10 @@ impl ZKsyncTxEnvelope {
         }
     }
 
-    pub fn new_l2_tx<T: SignableTransaction<Signature>>(mut tx: T, signer: PrivateKeySigner) -> Self
+    pub fn new_eth_tx<T: SignableTransaction<Signature>>(
+        mut tx: T,
+        signer: PrivateKeySigner,
+    ) -> Self
     where
         Signed<T>: Into<TxEnvelope>,
     {

@@ -38,7 +38,7 @@ fn test_invalid_coinbase() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        ZKsyncTxEnvelope::new_l2_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::new_eth_tx(tx, wallet.clone()).encode()
     };
 
     // Create invalid coinbase with 24 bytes set

@@ -62,7 +62,7 @@ fn run_forge_test_create_many_contracts() {
             .into(),
     };
     let encoded_deployment_tx =
-        ZKsyncTxEnvelope::new_l2_tx(deployment_tx, eoa_wallet.clone()).encode();
+        ZKsyncTxEnvelope::new_eth_tx(deployment_tx, eoa_wallet.clone()).encode();
 
     let run_tx = TxEip1559 {
         chain_id: 37u64,
@@ -76,7 +76,7 @@ fn run_forge_test_create_many_contracts() {
         // 'run()'
         input: hex::decode("c0406226").unwrap().into(),
     };
-    let encoded_run_tx = ZKsyncTxEnvelope::new_l2_tx(run_tx, eoa_wallet.clone()).encode();
+    let encoded_run_tx = ZKsyncTxEnvelope::new_eth_tx(run_tx, eoa_wallet.clone()).encode();
 
     let output = run_transactions_as_eoa(
         eoa_wallet.address(),
@@ -130,7 +130,7 @@ fn run_forge_test_create_in_constructor() {
             .into(),
     };
     let encoded_deployment_tx =
-        ZKsyncTxEnvelope::new_l2_tx(deployment_tx, eoa_wallet.clone()).encode();
+        ZKsyncTxEnvelope::new_eth_tx(deployment_tx, eoa_wallet.clone()).encode();
 
     let run_tx = TxEip1559 {
         chain_id: 37u64,
@@ -144,7 +144,7 @@ fn run_forge_test_create_in_constructor() {
         // 'run()'
         input: hex::decode("c0406226").unwrap().into(),
     };
-    let encoded_run_tx = ZKsyncTxEnvelope::new_l2_tx(run_tx, eoa_wallet.clone()).encode();
+    let encoded_run_tx = ZKsyncTxEnvelope::new_eth_tx(run_tx, eoa_wallet.clone()).encode();
 
     let output = run_transactions_as_eoa(
         eoa_wallet.address(),
@@ -203,7 +203,7 @@ fn run_forge_test_delegate_calls() {
             .into(),
     };
     let encoded_deployment_tx =
-        ZKsyncTxEnvelope::new_l2_tx(deployment_tx, eoa_wallet.clone()).encode();
+        ZKsyncTxEnvelope::new_eth_tx(deployment_tx, eoa_wallet.clone()).encode();
 
     let run_tx = TxEip1559 {
         chain_id: 37u64,
@@ -217,7 +217,7 @@ fn run_forge_test_delegate_calls() {
         // 'run()'
         input: hex::decode("c0406226").unwrap().into(),
     };
-    let encoded_run_tx = ZKsyncTxEnvelope::new_l2_tx(run_tx, eoa_wallet.clone()).encode();
+    let encoded_run_tx = ZKsyncTxEnvelope::new_eth_tx(run_tx, eoa_wallet.clone()).encode();
 
     let output = run_transactions_as_eoa(
         eoa_wallet.address(),
