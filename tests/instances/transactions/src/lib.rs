@@ -29,8 +29,8 @@ mod native_charging;
 fn run_config() -> Option<rig::chain::RunConfig> {
     Some(rig::chain::RunConfig {
         app: Some("for_tests".to_string()),
-        only_forward: true,
-        check_storage_diff_hashes: false,
+        only_forward: false,
+        check_storage_diff_hashes: true,
         skip_minting_tokens_to_treasury: false,
         ..Default::default()
     })
