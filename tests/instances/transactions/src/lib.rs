@@ -19,7 +19,8 @@ use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::{alloy, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
-use zksync_os_tests_common::zksync_tx::{ZKsyncTxEnvelope, ZKsyncUpgradeTx};
+use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 
 mod l1_tx_resilience;
@@ -973,7 +974,7 @@ fn test_invalid_transaction_type_failure() {
     let transaction_types = vec![0x55, 0x80, 0xFF]; // Some invalid types;
 
     for tx_type in transaction_types {
-        let invalid_tx = ZKsyncTxEnvelope::new_special_tx_type(
+        let invalid_tx = ZKsyncTxEnvelope::new_custom_tx_type(
             TransactionRequest {
                 chain_id: Some(37),
                 from: Some(address!("1234000000000000000000000000000000000000")),

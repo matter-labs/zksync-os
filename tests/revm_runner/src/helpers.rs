@@ -62,7 +62,7 @@ pub fn zk_tx_into_revm_tx(
                 nonce,
             )
         }
-        ZKsyncTxEnvelope::ZKsyncEnvelope(zksync_specific_tx_envelope) => {
+        ZKsyncTxEnvelope::ZKsync(zksync_specific_tx_envelope) => {
             match zksync_specific_tx_envelope {
                 ZKsyncSpecificTxEnvelope::L1(zksync_l1_tx) => {
                     (

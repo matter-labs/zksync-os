@@ -11,7 +11,8 @@ use alloy::{
 use zksync_os_api::helpers::encode_envelope_2718;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_tests_common::zksync_tx::{
-    ZKsyncL1Tx, ZKsyncServiceTx, ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope, ZKsyncUpgradeTx,
+    l1_tx::ZKsyncL1Tx, service_tx::ZKsyncServiceTx, upgrade_tx::ZKsyncUpgradeTx,
+    ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope,
 };
 
 pub trait EncodableToEncodedTx {
@@ -24,7 +25,7 @@ impl EncodableToEncodedTx for ZKsyncTxEnvelope {
             ZKsyncTxEnvelope::Ethereum(ethereum_tx_envelope, signer) => {
                 encode_ethereum_tx_envelope(ethereum_tx_envelope, signer)
             }
-            ZKsyncTxEnvelope::ZKsyncEnvelope(zksync_specific_tx_envelope) => {
+            ZKsyncTxEnvelope::ZKsync(zksync_specific_tx_envelope) => {
                 match zksync_specific_tx_envelope {
                     ZKsyncSpecificTxEnvelope::L1(zksync_l1_tx) => {
                         encode_l1_tx_from_tx(zksync_l1_tx)
