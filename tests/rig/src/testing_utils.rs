@@ -86,7 +86,7 @@ pub fn call_address_and_measure_gas_cost(
             .gas_price(1000)
             .gas_limit(200_000)
             .value(alloy::primitives::U256::from(value))
-            .input(calldata.into())
+            .input(calldata)
             .nonce(0)
             .build();
 

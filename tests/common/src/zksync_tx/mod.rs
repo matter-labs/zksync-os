@@ -77,10 +77,7 @@ impl ZKsyncTxEnvelope {
             Self::Ethereum(env, _) => env.to(),
             Self::ZKsync(specific_envelope) => Some(specific_envelope.to()),
             Self::Custom(_, req) => match req.to {
-                Some(to) => match to.to() {
-                    Some(addr) => Some(*addr),
-                    None => None,
-                },
+                Some(to) => to.to().copied(),
                 None => None,
             },
         }

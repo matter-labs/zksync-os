@@ -6,7 +6,6 @@ use alloy::{
     eips::Typed2718,
     primitives::{Address, B256, U160, U256},
     rpc::types::TransactionRequest,
-    signers::local::PrivateKeySigner,
 };
 use zksync_os_api::helpers::encode_envelope_2718;
 use zksync_os_interface::traits::EncodedTx;

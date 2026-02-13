@@ -320,6 +320,12 @@ pub struct L1TxBuilder {
     pub gas_per_pubdata_byte_limit: u128,
 }
 
+impl Default for L1TxBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl L1TxBuilder {
     pub fn new() -> Self {
         Self {
