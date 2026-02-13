@@ -5,6 +5,7 @@ use alloy::{
 
 use crate::zksync_tx::ZKsyncSpecificTxEnvelope;
 
+/// ZKsync OS L1 priority tx.
 #[derive(Debug, Default, Clone)]
 pub struct ZKsyncL1Tx {
     pub from: Address,
@@ -27,6 +28,7 @@ pub struct ZKsyncL1Tx {
 }
 
 impl ZKsyncL1Tx {
+    /// Canonical 2718 type byte for L1 priority txs.
     const TX_TYPE: u8 = 0x7f;
 }
 

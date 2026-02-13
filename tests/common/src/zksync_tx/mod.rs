@@ -4,7 +4,7 @@ use alloy::{
     network::TxSignerSync,
     primitives::Address,
     rpc::types::TransactionRequest,
-    signers::{local::PrivateKeySigner, Signature},
+    signers::Signature,
 };
 
 use crate::zksync_tx::{
@@ -15,22 +15,26 @@ pub mod l1_tx;
 pub mod service_tx;
 pub mod upgrade_tx;
 
+/// Wrapper over all tx envelope kinds we feed into ZKsync OS.
 pub enum ZKsyncTxEnvelope {
-    Ethereum(TxEnvelope, PrivateKeySigner),
+    /// Standard Ethereum typed envelope signed by the corresponding address.
+    Ethereum(TxEnvelope, Address),
+    /// ZKsync OS specific typed envelope.
     ZKsync(ZKsyncSpecificTxEnvelope),
-    Custom(u8, TransactionRequest), // For custom transaction types
+    /// Raw request with an explicit type byte (used for negative/fuzz cases).
+    Custom(u8, TransactionRequest),
 }
 
 impl ZKsyncTxEnvelope {
-    // Used to create transactions with custom (or invalid) types, for testing purposes.
+    /// Builds a custom-typed tx envelope (including intentionally invalid types).
     pub fn new_custom_tx_type(inner: TransactionRequest, tx_type: u8) -> Self {
         Self::Custom(tx_type, inner)
     }
 
-    // Convert Ethereum transaction into ZKsync OS compatible envelope.
-    pub fn new_eth_tx<T: SignableTransaction<Signature>>(
+    /// Signs an Ethereum transaction and wraps it as an ZKsync OS-compatible envelope.
+    pub fn new_eth_tx<T: SignableTransaction<Signature>, S: TxSignerSync<Signature>>(
         mut tx: T,
-        signer: PrivateKeySigner,
+        signer: S,
     ) -> Self
     where
         Signed<T>: Into<TxEnvelope>,
@@ -40,12 +44,18 @@ impl ZKsyncTxEnvelope {
             .expect("transaction signing failed");
         let signed: Signed<T> = tx.into_signed(sig);
         let env: TxEnvelope = signed.into();
-        Self::Ethereum(env, signer)
+        Self::Ethereum(env, signer.address())
     }
 
-    // More flexible option, uses TransactionRequest.
-    pub fn new_eth_tx_from_req(req: TransactionRequest, signer: PrivateKeySigner) -> Self {
+    /// Same as `new_eth_tx`, but starts from `TransactionRequest`.
+    ///
+    /// Can be more convenient if exact tx type is not important.
+    pub fn new_eth_tx_from_req<S: TxSignerSync<Signature>>(
+        req: TransactionRequest,
+        signer: S,
+    ) -> Self {
         let typed_tx = if req.blob_versioned_hashes.is_some() {
+            // Tests do not attach sidecars; encode 4844 as a bare typed tx.
             req.build_4844_without_sidecar()
                 .expect("Failed to build 4844 tx")
                 .into()
@@ -61,15 +71,24 @@ impl ZKsyncTxEnvelope {
         }
     }
 
+    /// Returns the call target address if this tx kind has one.
     pub fn to(&self) -> Option<alloy::primitives::Address> {
         match &self {
             Self::Ethereum(env, _) => env.to(),
             Self::ZKsync(specific_envelope) => Some(specific_envelope.to()),
-            Self::Custom(_, req) => req.to.as_ref().map(|to| to.to().copied().unwrap()), // TODO unwrap is incorrect here
+            Self::Custom(_, req) => match req.to {
+                Some(to) => match to.to() {
+                    Some(addr) => Some(*addr),
+                    None => None,
+                },
+                None => None,
+            },
         }
     }
+}
 
-    pub fn ty(&self) -> u8 {
+impl Typed2718 for ZKsyncTxEnvelope {
+    fn ty(&self) -> u8 {
         match &self {
             Self::Ethereum(ethereum_tx_envelope, _) => ethereum_tx_envelope.ty(),
             Self::ZKsync(specific_envelope) => specific_envelope.ty(),
@@ -96,6 +115,7 @@ impl From<ZKsyncServiceTx> for ZKsyncTxEnvelope {
     }
 }
 
+/// ZKsync OS specific transactions wrapper.
 pub enum ZKsyncSpecificTxEnvelope {
     L1(ZKsyncL1Tx),
     Upgrade(ZKsyncUpgradeTx),
@@ -110,8 +130,10 @@ impl ZKsyncSpecificTxEnvelope {
             ZKsyncSpecificTxEnvelope::Service(tx) => tx.to,
         }
     }
+}
 
-    pub fn ty(&self) -> u8 {
+impl Typed2718 for ZKsyncSpecificTxEnvelope {
+    fn ty(&self) -> u8 {
         match self {
             ZKsyncSpecificTxEnvelope::L1(tx) => tx.ty(),
             ZKsyncSpecificTxEnvelope::Upgrade(tx) => tx.ty(),

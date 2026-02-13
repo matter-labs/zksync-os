@@ -5,6 +5,7 @@ use alloy::{
 
 use crate::zksync_tx::ZKsyncSpecificTxEnvelope;
 
+/// ZKsync OS service tx payload for system-internal calls.
 #[derive(Debug, Default, Clone)]
 pub struct ZKsyncServiceTx {
     pub to: Address,
@@ -12,6 +13,7 @@ pub struct ZKsyncServiceTx {
 }
 
 impl ZKsyncServiceTx {
+    /// Canonical 2718 type byte for service txs.
     const TX_TYPE: u8 = 0x7d;
 }
 

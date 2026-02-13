@@ -1,5 +1,6 @@
 use alloy::{
     consensus::Transaction,
+    eips::Typed2718,
     primitives::{Bytes, TxKind},
     rpc::types::TransactionInput,
 };
@@ -57,7 +58,7 @@ pub fn zk_tx_into_revm_tx(
                 access_list,
                 Default::default(),
                 None,
-                signer.address(),
+                *signer,
                 gas,
                 nonce,
             )

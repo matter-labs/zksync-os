@@ -5,6 +5,7 @@ use alloy::{
 
 use crate::zksync_tx::ZKsyncSpecificTxEnvelope;
 
+/// ZKsync OS protocol-upgrade tx payload.
 #[derive(Debug, Default, Clone)]
 pub struct ZKsyncUpgradeTx {
     pub from: Address,
@@ -27,6 +28,7 @@ pub struct ZKsyncUpgradeTx {
 }
 
 impl ZKsyncUpgradeTx {
+    /// Canonical 2718 type byte for upgrade txs.
     const TX_TYPE: u8 = 0x7e;
 }
 

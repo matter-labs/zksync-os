@@ -23,7 +23,7 @@ impl EncodableToEncodedTx for ZKsyncTxEnvelope {
     fn encode(&self) -> EncodedTx {
         match &self {
             ZKsyncTxEnvelope::Ethereum(ethereum_tx_envelope, signer) => {
-                encode_ethereum_tx_envelope(ethereum_tx_envelope, signer)
+                encode_ethereum_tx_envelope(ethereum_tx_envelope, *signer)
             }
             ZKsyncTxEnvelope::ZKsync(zksync_specific_tx_envelope) => {
                 match zksync_specific_tx_envelope {
@@ -53,9 +53,9 @@ pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> EncodedTx {
     EncodedTx::Rlp(bytes, Address::from_slice(&from))
 }
 
-fn encode_ethereum_tx_envelope(tx_envelope: &TxEnvelope, signer: &PrivateKeySigner) -> EncodedTx {
+fn encode_ethereum_tx_envelope(tx_envelope: &TxEnvelope, signer: Address) -> EncodedTx {
     let bytes = encode_envelope_2718(tx_envelope);
-    EncodedTx::Rlp(bytes, signer.address())
+    EncodedTx::Rlp(bytes, signer)
 }
 
 fn encode_special_tx_type(tx: TransactionRequest, tx_type: u8) -> EncodedTx {
