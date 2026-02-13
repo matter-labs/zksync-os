@@ -10,7 +10,7 @@ use alloy::consensus::TxEip1559;
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::sol;
-use forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
+use forward_system::run::convert_alloy::FromAlloy;
 use std::io::Read;
 use std::ops::Add;
 use std::path::PathBuf;
@@ -281,29 +281,6 @@ pub fn encode_pubdata_for_4844_blobs(data: &[u8]) -> Vec<u8> {
     vec.extend_from_slice(data);
 
     vec
-}
-
-use zksync_os_interface::types::BlockContext as BlockContextInterface;
-pub fn generate_block_context_interface(
-    chain: &Chain,
-    rig_block_context: &BlockContext,
-) -> BlockContextInterface {
-    BlockContextInterface {
-        block_number: chain.next_block_number(),
-        timestamp: rig_block_context.timestamp,
-        eip1559_basefee: rig_block_context.eip1559_basefee,
-        chain_id: chain.chain_id(),
-        block_hashes: zksync_os_interface::types::BlockHashes(chain.block_hashes()),
-        pubdata_price: rig_block_context.pubdata_price,
-        native_price: rig_block_context.native_price,
-        coinbase: rig_block_context.coinbase.into_alloy(),
-        gas_limit: rig_block_context.gas_limit,
-        pubdata_limit: rig_block_context.pubdata_limit,
-        mix_hash: rig_block_context.mix_hash,
-        execution_version: 0, // TODO meaningless here
-        blob_fee: rig_block_context.blob_fee,
-        code_size_limit: None, // Unused
-    }
 }
 
 pub struct L1TxBuilder {
