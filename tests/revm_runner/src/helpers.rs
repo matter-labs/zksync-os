@@ -6,7 +6,7 @@ use alloy::{
 use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use reth_revm::{context::TxEnv, state::Bytecode};
 use zksync_os_revm::{transaction::abstraction::ZKsyncTxBuilder, ZKsyncTx};
-use zksync_os_tests_common::zksync_tx::{ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope, ZKsyncTxType};
+use zksync_os_tests_common::zksync_tx::{ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope};
 
 /// Get unpadded code from full bytecode with artifacts.
 pub fn get_unpadded_code(full_bytecode: &[u8], account: &AccountProperties) -> Bytecode {
@@ -33,8 +33,8 @@ pub fn zk_tx_into_revm_tx(
         caller,
         gas,
         nonce,
-    ) = match &tx.inner {
-        ZKsyncTxType::Ethereum(ethereum_tx_envelope) => {
+    ) = match &tx {
+        ZKsyncTxEnvelope::Ethereum(ethereum_tx_envelope, signer) => {
             // L2 transactions are standard Ethereum transactions
             let gas_price = Some(ethereum_tx_envelope.max_fee_per_gas());
             let priority_fee = ethereum_tx_envelope.max_priority_fee_per_gas();
@@ -57,15 +57,12 @@ pub fn zk_tx_into_revm_tx(
                 access_list,
                 Default::default(),
                 None,
-                tx.signer
-                    .as_ref()
-                    .expect("L2 tx must have a signer")
-                    .address(),
+                signer.address(),
                 gas,
                 nonce,
             )
         }
-        ZKsyncTxType::ZKsyncEnvelope(zksync_specific_tx_envelope) => {
+        ZKsyncTxEnvelope::ZKsyncEnvelope(zksync_specific_tx_envelope) => {
             match zksync_specific_tx_envelope {
                 ZKsyncSpecificTxEnvelope::L1(zksync_l1_tx) => {
                     (
@@ -104,7 +101,7 @@ pub fn zk_tx_into_revm_tx(
                 }
             }
         }
-        ZKsyncTxType::Custom(_, _) => {
+        ZKsyncTxEnvelope::Custom(_, _) => {
             panic!("Custom transactions are not supported by REVM runner")
         }
     };

@@ -11,8 +11,7 @@ use alloy::{
 use zksync_os_api::helpers::encode_envelope_2718;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_tests_common::zksync_tx::{
-    ZKsyncL1Tx, ZKsyncServiceTx, ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope, ZKsyncTxType,
-    ZKsyncUpgradeTx,
+    ZKsyncL1Tx, ZKsyncServiceTx, ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope, ZKsyncUpgradeTx,
 };
 
 pub trait EncodableToEncodedTx {
@@ -21,14 +20,11 @@ pub trait EncodableToEncodedTx {
 
 impl EncodableToEncodedTx for ZKsyncTxEnvelope {
     fn encode(&self) -> EncodedTx {
-        match &self.inner {
-            ZKsyncTxType::Ethereum(ethereum_tx_envelope) => encode_ethereum_tx_envelope(
-                ethereum_tx_envelope,
-                self.signer
-                    .as_ref()
-                    .expect("L2 transactions must have a signer"),
-            ),
-            ZKsyncTxType::ZKsyncEnvelope(zksync_specific_tx_envelope) => {
+        match &self {
+            ZKsyncTxEnvelope::Ethereum(ethereum_tx_envelope, signer) => {
+                encode_ethereum_tx_envelope(ethereum_tx_envelope, signer)
+            }
+            ZKsyncTxEnvelope::ZKsyncEnvelope(zksync_specific_tx_envelope) => {
                 match zksync_specific_tx_envelope {
                     ZKsyncSpecificTxEnvelope::L1(zksync_l1_tx) => {
                         encode_l1_tx_from_tx(zksync_l1_tx)
@@ -41,7 +37,7 @@ impl EncodableToEncodedTx for ZKsyncTxEnvelope {
                     }
                 }
             }
-            ZKsyncTxType::Custom(custom_type, tx_req) => {
+            ZKsyncTxEnvelope::Custom(custom_type, tx_req) => {
                 encode_special_tx_type(tx_req.clone(), *custom_type)
             }
         }

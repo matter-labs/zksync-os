@@ -117,7 +117,7 @@ fn fibish_sol() {
         ..Default::default()
     };
 
-    let encoded_tx = ZKsyncTxEnvelope::new_l2_req(tx, wallet).encode();
+    let encoded_tx = ZKsyncTxEnvelope::new_eth_tx_from_req(tx, wallet).encode();
 
     let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
         "{}/os_profile_fibish_sol.svg",

@@ -19,7 +19,7 @@ use rig::zksync_os_interface::error::InvalidTransaction;
 use rig::{alloy, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
-use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+use zksync_os_tests_common::zksync_tx::{ZKsyncTxEnvelope, ZKsyncUpgradeTx};
 use zksync_web3_rs::signers::{LocalWallet, Signer};
 
 mod l1_tx_resilience;
@@ -927,16 +927,12 @@ fn test_upgrade_tx_revert_internal_error() {
     chain.set_evm_bytecode(B160::from_alloy(revert_contract_address), &revert_bytecode);
 
     // Create a proper upgrade transaction that calls the reverting contract
-    let upgrade_tx = ZKsyncTxEnvelope::new_upgrade_tx(TransactionRequest {
-        chain_id: Some(37),
-        from: Some(address!("1234000000000000000000000000000000000000")),
-        to: Some(TxKind::Call(revert_contract_address)),
-        gas: Some(100_000u64),
-        max_fee_per_gas: Some(0),
-        max_priority_fee_per_gas: Some(0),
-        value: Some(alloy::primitives::U256::from(0)),
-        nonce: Some(0),
-        ..TransactionRequest::default()
+
+    let upgrade_tx = ZKsyncTxEnvelope::from(ZKsyncUpgradeTx {
+        from: address!("1234000000000000000000000000000000000000"),
+        to: revert_contract_address,
+        gas_limit: 100_000u128,
+        ..Default::default()
     });
 
     let transactions = vec![upgrade_tx.encode()];
@@ -968,16 +964,11 @@ fn test_upgrade_tx_succeeds() {
     chain.set_evm_bytecode(B160::from_alloy(revert_contract_address), &revert_bytecode);
 
     // Create a proper upgrade transaction that calls the contract
-    let upgrade_tx = ZKsyncTxEnvelope::new_upgrade_tx(TransactionRequest {
-        chain_id: Some(37),
-        from: Some(address!("1234000000000000000000000000000000000000")),
-        to: Some(TxKind::Call(revert_contract_address)),
-        gas: Some(100_000u64),
-        max_fee_per_gas: Some(0),
-        max_priority_fee_per_gas: Some(0),
-        value: Some(alloy::primitives::U256::from(0)),
-        nonce: Some(0),
-        ..TransactionRequest::default()
+    let upgrade_tx = ZKsyncTxEnvelope::from(ZKsyncUpgradeTx {
+        from: address!("1234000000000000000000000000000000000000"),
+        to: revert_contract_address,
+        gas_limit: 100_000u128,
+        ..Default::default()
     });
 
     let transactions = vec![upgrade_tx.encode()];
@@ -998,7 +989,7 @@ fn test_invalid_transaction_type_failure() {
     let success_bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
     chain.set_evm_bytecode(B160::from_alloy(contract_address), &success_bytecode);
 
-    let transaction_types = vec![0x7d, 0x80, 0xFF]; // Some invalid types;
+    let transaction_types = vec![0x55, 0x80, 0xFF]; // Some invalid types;
 
     for tx_type in transaction_types {
         let invalid_tx = ZKsyncTxEnvelope::new_special_tx_type(
@@ -1219,7 +1210,7 @@ fn test_selfdestruct_to_precompile_gas() {
             ..Default::default()
         };
 
-        ZKsyncTxEnvelope::new_l2_req(tx_request, wallet)
+        ZKsyncTxEnvelope::new_eth_tx_from_req(tx_request, wallet)
     };
 
     use rig::utils::tx_encoding::EncodableToEncodedTx;

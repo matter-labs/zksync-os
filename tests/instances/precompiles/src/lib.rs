@@ -6138,7 +6138,7 @@ fn test_precompile_parses_input_correctly() {
                 U256::from(1_000_000_000_000_000_u64),
             );
 
-            let tx = ZKsyncTxEnvelope::new_l2_req(
+            let tx = ZKsyncTxEnvelope::new_eth_tx_from_req(
                 TransactionRequest {
                     to: Some(TxKind::Call(addr)),
                     gas: Some(1 << 27),
