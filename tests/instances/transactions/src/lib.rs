@@ -19,6 +19,7 @@ use rig::{alloy, zksync_web3_rs, Chain};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
+use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
 use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use zksync_web3_rs::signers::{LocalWallet, Signer};
@@ -1398,20 +1399,19 @@ fn test_check_pubdata_has_timestamp() {
 #[test]
 fn test_simple_service_transaction() {
     let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
-    let from = wallet.address();
     let target_address = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes::<20>();
 
-    // Set balance for the contract address
-    chain.set_balance(B160::from_alloy(from), U256::from(u64::MAX));
-
-    let tx = encode_service_tx(&target_address, &[], 0);
+    let tx = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
+        to: alloy::primitives::Address::from_slice(&target_address),
+        input: Default::default(),
+        salt: 0,
+    })
+    .encode();
 
     let block_context = BlockContext {
         eip1559_basefee: U256::from(1000),
         ..Default::default()
     };
-    // Check tx succeeds
     let result = chain.run_block(vec![tx], Some(block_context), None, run_config());
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
@@ -1428,7 +1428,12 @@ fn test_simple_service_transaction_whitelist() {
     // Set balance for the contract address
     chain.set_balance(B160::from_alloy(from), U256::from(u64::MAX));
 
-    let tx = encode_service_tx(&target_address, &[], 0);
+    let tx = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
+        to: alloy::primitives::Address::from_slice(&target_address),
+        input: Default::default(),
+        salt: 0,
+    })
+    .encode();
 
     let block_context = BlockContext {
         eip1559_basefee: U256::from(1000),
@@ -1451,9 +1456,24 @@ fn test_service_block_invariants() {
     chain.set_balance(B160::from_alloy(from), U256::from(u64::MAX));
 
     // Check that a service block with several service txs works
-    let tx1 = encode_service_tx(&target_address, &[], 0);
-    let tx2 = encode_service_tx(&target_address, &[], 1);
-    let tx3 = encode_service_tx(&target_address, &[], 2);
+    let tx1 = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
+        to: alloy::primitives::Address::from_slice(&target_address),
+        input: Default::default(),
+        salt: 0,
+    })
+    .encode();
+    let tx2 = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
+        to: alloy::primitives::Address::from_slice(&target_address),
+        input: Default::default(),
+        salt: 1,
+    })
+    .encode();
+    let tx3 = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
+        to: alloy::primitives::Address::from_slice(&target_address),
+        input: Default::default(),
+        salt: 2,
+    })
+    .encode();
 
     let block_context = BlockContext {
         eip1559_basefee: U256::from(1000),
