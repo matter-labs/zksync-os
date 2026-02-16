@@ -106,7 +106,8 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
     /// Returns if the batch has had an upgrade tx
     ///
     pub fn has_upgrade_tx(&self) -> bool {
-        self.upgrade_tx_hash
+        !self
+            .upgrade_tx_hash
             .is_none_or(|hash| hash == Bytes32::ZERO)
     }
 
@@ -297,5 +298,45 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> TxHashesAccumulator for ZKBatchDat
     // used to write l1 txs in tx loop
     fn add_tx_hash(&mut self, tx_hash: &Bytes32) {
         self.enforced_txs_accumulator.add_tx_hash(tx_hash);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::alloc::Global;
+    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use zk_ee::system::errors::internal::InternalError;
+
+    struct DummyOracle;
+
+    impl IOOracle for DummyOracle {
+        type RawIterator<'a> = core::iter::Empty<usize>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            _query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            Ok(core::iter::empty())
+        }
+    }
+
+    #[test]
+    fn has_upgrade_tx_is_false_for_none_and_zero_hash() {
+        let mut keeper = ZKBatchDataKeeper::<Global, DummyOracle>::new();
+
+        assert!(!keeper.has_upgrade_tx());
+
+        keeper.upgrade_tx_hash = Some(Bytes32::ZERO);
+        assert!(!keeper.has_upgrade_tx());
+    }
+
+    #[test]
+    fn has_upgrade_tx_is_true_for_non_zero_hash() {
+        let mut keeper = ZKBatchDataKeeper::<Global, DummyOracle>::new();
+        keeper.upgrade_tx_hash = Some(Bytes32::from_byte_fill(1));
+
+        assert!(keeper.has_upgrade_tx());
     }
 }
