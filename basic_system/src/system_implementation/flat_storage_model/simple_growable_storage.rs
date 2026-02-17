@@ -1441,7 +1441,7 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Clone, const RANDOMIZE
         positions.push(0);
         positions.windows(2).zip(leaves_vec).for_each(|(p, leaf)| {
             let pos = p[0];
-            let next = if p[1] == 0 { 1 } else { p[0] };
+            let next = if p[1] == 0 { 1 } else { p[1] };
             leaves.insert(
                 pos,
                 FlatStorageLeaf::<N> {
@@ -1806,6 +1806,25 @@ mod test {
         let mut mutated_proof = proof.existing;
         *mutated_proof.path.last_mut().unwrap() = Bytes32::zero();
         assert!(!tree.verify_proof(&mut hasher, &mutated_proof));
+    }
+
+    #[test]
+    fn test_new_in_with_leaves_links_next_positions() {
+        let mut leaves = Vec::new_in(Global);
+        leaves.push((Bytes32::from_byte_fill(0x01), Bytes32::from_byte_fill(0x10)));
+        leaves.push((Bytes32::from_byte_fill(0x02), Bytes32::from_byte_fill(0x20)));
+
+        let tree = TestingTree::<false>::new_in_with_leaves(Global, leaves);
+
+        let start = tree.leaves.get(&0).expect("start guard missing");
+        let first = tree.leaves.get(&2).expect("first leaf missing");
+        let second = tree.leaves.get(&3).expect("second leaf missing");
+        let end = tree.leaves.get(&1).expect("end guard missing");
+
+        assert_eq!(start.next, 2);
+        assert_eq!(first.next, 3);
+        assert_eq!(second.next, 1);
+        assert_eq!(end.next, 1);
     }
 
     #[test]

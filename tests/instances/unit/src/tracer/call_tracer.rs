@@ -225,3 +225,50 @@ fn test_call_tracer_out_of_native_during_validation() {
 
     assert!(call.is_none());
 }
+
+#[test]
+fn test_call_tracer_create_vs_create2_regression() {
+    let create_contract_address = address!("1000000000000000000000000000000000000001");
+    let create2_contract_address = address!("1000000000000000000000000000000000000002");
+
+    // CREATE bytecode - just returns empty data
+    let create_bytecode = hex::decode("6000600060006000f0").unwrap(); // CREATE opcode
+
+    // CREATE2 bytecode - just returns empty data
+    let create2_bytecode = hex::decode("600060006000600060006000f5").unwrap(); // CREATE2 opcode
+
+    // Test CREATE operation
+    let mut tracer = CallTracer::default();
+    run_chain_with_tracer(
+        create_contract_address,
+        vec![(create_contract_address, create_bytecode)],
+        &mut tracer,
+        None,
+    );
+
+    // Test CREATE2 operation
+    let mut tracer2 = CallTracer::default();
+    run_chain_with_tracer(
+        create2_contract_address,
+        vec![(create2_contract_address, create2_bytecode)],
+        &mut tracer2,
+        None,
+    );
+
+    // Verify that both operations complete without crashing
+    // This is a regression test for the fix that swapped CREATE and CREATE2 logic
+    assert!(
+        matches!(
+            tracer.transactions[0].as_ref().unwrap().calls[0].call_type,
+            CallType::Create
+        ),
+        "First subcall should be CREATE"
+    );
+    assert!(
+        matches!(
+            tracer2.transactions[0].as_ref().unwrap().calls[0].call_type,
+            CallType::Create2
+        ),
+        "First subcall should be CREATE2"
+    );
+}

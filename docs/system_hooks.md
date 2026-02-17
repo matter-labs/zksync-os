@@ -13,6 +13,7 @@ System hooks have two distinct use cases:
   - ecadd
   - ecmul
   - ecpairing
+  - P256
 - Implementing system functionality needed for ZKsync operations:
   - L1 messenger system hook
   - Set bytecode on address system hook

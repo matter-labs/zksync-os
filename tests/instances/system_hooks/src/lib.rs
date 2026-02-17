@@ -6,18 +6,280 @@
 use alloy::primitives::TxKind;
 use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
+use rig::alloy::primitives::Address;
 use rig::alloy::rpc::types::TransactionRequest;
-use rig::forward_system::run;
 use rig::ruint::aliases::B160;
 use rig::ruint::aliases::U256;
+use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
+use rig::system_hooks::addresses_constants::SYSTEM_CONTEXT_ADDRESS;
 use rig::testing_utils::call_address_and_measure_gas_cost;
 use rig::testing_utils::install_system_contracts;
 use rig::utils::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
 use rig::zk_ee::utils::Bytes32;
-use rig::zksync_os_interface::types::ExecutionResult;
+use rig::zksync_os_interface::types::{BlockOutput, ExecutionResult};
 use rig::{alloy, Chain};
+
+fn bal(chain: &mut Chain, addr: alloy::primitives::Address) -> alloy::primitives::U256 {
+    chain
+        .get_account_properties(&B160::from_be_bytes(addr.into_array()))
+        .balance
+}
+
+fn tx_succeeded(output: &BlockOutput, idx: usize) -> bool {
+    output.tx_results[idx]
+        .as_ref()
+        .ok()
+        .map(|o| o.is_success())
+        .unwrap_or(false)
+}
+
+fn tx_failed(output: &BlockOutput, idx: usize) -> bool {
+    !tx_succeeded(output, idx)
+}
+
+#[test]
+fn test_value_transfer_fails_if_insufficient_balance_max_msg_value() {
+    let mut chain = Chain::empty(None);
+
+    let sender = address!("1234567890123456789012345678901234567890");
+    let recipient = address!("2222567890123456789012345678901234567890");
+
+    // Sender has 1 wei, tries to send 2^256 wei.
+    let initial_sender = alloy::primitives::U256::from(1u64);
+    let value = alloy::primitives::U256::MAX;
+
+    chain.set_balance(B160::from_be_bytes(sender.into_array()), initial_sender);
+
+    let tx = TransactionRequest {
+        chain_id: Some(37),
+        from: Some(sender),
+        to: Some(TxKind::Call(recipient)),
+        input: hex::decode("").unwrap().into(),
+        value: Some(value),
+        gas: Some(200_000),
+        // keep fees at 0 so we can assert balances are unchanged on failure
+        max_fee_per_gas: Some(0),
+        max_priority_fee_per_gas: Some(0),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    };
+
+    let encoded = rig::utils::encode_l1_tx(tx);
+    let output = chain.run_block(vec![encoded], None, None, None);
+
+    assert!(
+        tx_failed(&output, 0),
+        "tx must fail when msg.value > sender balance"
+    );
+
+    // Balances must be unchanged (no fees).
+    assert_eq!(
+        bal(&mut chain, sender),
+        initial_sender,
+        "sender balance must not change"
+    );
+    assert_eq!(
+        bal(&mut chain, recipient),
+        alloy::primitives::U256::ZERO,
+        "recipient must not receive value"
+    );
+}
+
+#[test]
+fn test_l2_base_token_withdraw_fails_if_insufficient_balance() {
+    let mut chain = Chain::empty(None);
+
+    let l2_base_token_address = address!("000000000000000000000000000000000000800a");
+    let sender = address!("1234567890123456789012345678901234567890");
+    let l1_receiver = address!("0987654321098765432109876543210987654321");
+
+    // Sender has 1 wei, tries to withdraw 2 eth.
+    let initial_sender = alloy::primitives::U256::from(1u64);
+    let value = alloy::primitives::U256::from(2000000000000000000u64); // 2 ETH
+
+    chain.set_balance(B160::from_be_bytes(sender.into_array()), initial_sender);
+
+    // withdraw(address) selector 0x51cff8d9
+    let mut calldata = Vec::new();
+    calldata.extend_from_slice(&hex::decode("51cff8d9").unwrap());
+    calldata.extend_from_slice(&[0u8; 12]);
+    calldata.extend_from_slice(l1_receiver.as_slice());
+
+    let tx = TransactionRequest {
+        chain_id: Some(37),
+        from: Some(sender),
+        to: Some(TxKind::Call(l2_base_token_address)),
+        input: calldata.into(),
+        value: Some(value),
+        gas: Some(200_000),
+        max_fee_per_gas: Some(0),
+        max_priority_fee_per_gas: Some(0),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    };
+
+    let encoded = rig::utils::encode_l1_tx(tx);
+    let output = chain.run_block(vec![encoded], None, None, None);
+
+    assert!(
+        tx_failed(&output, 0),
+        "withdraw must fail when msg.value > sender balance"
+    );
+
+    // Balances unchanged
+    assert_eq!(
+        bal(&mut chain, sender),
+        initial_sender,
+        "sender balance must not change"
+    );
+
+    // No Withdrawal event must be emitted.
+    sol! {
+        event Withdrawal(address indexed _l2Sender, address indexed _l1Receiver, uint256 _amount);
+    }
+    let any_withdrawal = output.tx_results[0]
+        .as_ref()
+        .ok()
+        .map(|r| {
+            r.logs.iter().any(|ev| {
+                ev.address == l2_base_token_address && Withdrawal::decode_log_data(ev).is_ok()
+            })
+        })
+        .unwrap_or(false);
+
+    assert!(
+        !any_withdrawal,
+        "Withdrawal event must not be emitted on insufficient funds"
+    );
+}
+
+#[test]
+fn test_l2_base_token_withdraw_with_message_fails_if_insufficient_balance() {
+    let mut chain = Chain::empty(None);
+
+    let l2_base_token_address = address!("000000000000000000000000000000000000800a");
+    let sender = address!("1234567890123456789012345678901234567890");
+    let l1_receiver = address!("0987654321098765432109876543210987654321");
+    let additional_data = b"test message data";
+
+    // Sender has 1 wei, tries to withdrawWithMessage 2 eth.
+    let initial_sender = alloy::primitives::U256::from(1u64);
+    let value = alloy::primitives::U256::from(2000000000000000000u64); // 2 ETH
+
+    chain.set_balance(B160::from_be_bytes(sender.into_array()), initial_sender);
+
+    // withdrawWithMessage(address,bytes) selector 0x84bc3eb0
+    let mut calldata = Vec::new();
+    calldata.extend_from_slice(&hex::decode("84bc3eb0").unwrap());
+    calldata.extend_from_slice(&[0u8; 12]);
+    calldata.extend_from_slice(l1_receiver.as_slice());
+
+    // offset to bytes data (0x40)
+    calldata.extend_from_slice(&[0u8; 31]);
+    calldata.push(0x40);
+
+    // length
+    calldata.extend_from_slice(&[0u8; 31]);
+    calldata.push(additional_data.len() as u8);
+
+    // bytes data padded
+    calldata.extend_from_slice(additional_data);
+    let padding_needed = 32 - (additional_data.len() % 32);
+    if padding_needed != 32 {
+        calldata.extend_from_slice(&vec![0u8; padding_needed]);
+    }
+
+    let tx = TransactionRequest {
+        chain_id: Some(37),
+        from: Some(sender),
+        to: Some(TxKind::Call(l2_base_token_address)),
+        input: calldata.into(),
+        value: Some(value),
+        gas: Some(300_000),
+        max_fee_per_gas: Some(0),
+        max_priority_fee_per_gas: Some(0),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    };
+
+    let encoded = rig::utils::encode_l1_tx(tx);
+    let output = chain.run_block(vec![encoded], None, None, None);
+
+    assert!(
+        tx_failed(&output, 0),
+        "withdrawWithMessage must fail when msg.value > sender balance"
+    );
+
+    // Balances unchanged
+    assert_eq!(
+        bal(&mut chain, sender),
+        initial_sender,
+        "sender balance must not change"
+    );
+
+    // No WithdrawalWithMessage event must be emitted.
+    sol! {
+        event WithdrawalWithMessage(address indexed _l2Sender, address indexed _l1Receiver, uint256 _amount, bytes _additionalData);
+    }
+    let any_event = output.tx_results[0]
+        .as_ref()
+        .ok()
+        .map(|r| {
+            r.logs.iter().any(|ev| {
+                ev.address == l2_base_token_address
+                    && WithdrawalWithMessage::decode_log_data(ev).is_ok()
+            })
+        })
+        .unwrap_or(false);
+
+    assert!(
+        !any_event,
+        "WithdrawalWithMessage event must not be emitted on insufficient funds"
+    );
+}
+
+/// With sufficient existing L2 balance, an L1 tx with non-zero `value` should succeed and
+/// transfer funds to the recipient (spending from sender’s L2 balance).
+#[test]
+fn test_l1_value_transfer_spends_from_l2_balance() {
+    let mut chain = Chain::empty(None);
+
+    let sender = address!("1234567890123456789012345678901234567890");
+    let recipient = address!("2222567890123456789012345678901234567890");
+    let value = alloy::primitives::U256::from(1_000_000_000_000_000_000u64); // 1 ETH
+
+    // Fund sender so `msg.value` can be paid from L2 balance.
+    chain.set_balance(B160::from_be_bytes(sender.into_array()), value);
+
+    let tx = TransactionRequest {
+        chain_id: Some(37),
+        from: Some(sender),
+        to: Some(TxKind::Call(recipient)),
+        input: hex::decode("").unwrap().into(),
+        value: Some(value),
+        gas: Some(200_000),
+        // keep fees minimal to reduce side-effects
+        max_fee_per_gas: Some(0),
+        max_priority_fee_per_gas: Some(0),
+        nonce: Some(0),
+        ..TransactionRequest::default()
+    };
+
+    let encoded = rig::utils::encode_l1_tx(tx);
+    let output = chain.run_block(vec![encoded], None, None, None);
+
+    assert!(
+        tx_succeeded(&output, 0),
+        "tx must succeed with sufficient L2 balance"
+    );
+    assert_eq!(
+        bal(&mut chain, recipient),
+        value,
+        "recipient must receive msg.value"
+    );
+}
 
 #[test]
 fn test_set_bytecode_details_evm() {
@@ -578,6 +840,8 @@ fn test_l2_base_token_no_mint_event_regression() {
     let recipient = address!("2222567890123456789012345678901234567890");
     let mint_amount = alloy::primitives::U256::from(5000000000000000000u64); // 5 ETH
 
+    chain.set_balance(B160::from_be_bytes(sender.into_array()), mint_amount);
+
     // Prepare mint calldata - typically this would be called by the bootloader or bridge
     // For testing purposes, we'll simulate a mint by sending ETH value to the base token contract
     // The mint event should be emitted when the contract receives value
@@ -809,4 +1073,54 @@ fn test_mint_base_token_hook() {
         actually_minted_amount, mint_amount,
         "Minted amount should match the requested mint amount"
     );
+}
+
+#[test]
+fn test_event_hooks_empty_topics() {
+    for test_contract_address in [L2_INTEROP_ROOT_STORAGE_ADDRESS, SYSTEM_CONTEXT_ADDRESS] {
+        let mut chain = Chain::empty(None);
+
+        // Contract that emits a log with empty topics array - this should be handled gracefully
+        // Before the fix, this would cause a panic due to missing bounds check
+        let test_contract = Address::from(test_contract_address.to_be_bytes());
+
+        // Bytecode that emits LOG0 (no topics)
+        // PUSH1 0x00    -> 6000  (data offset)
+        // PUSH1 0x00    -> 6000  (data length)
+        // LOG0          -> a0    (emit log with no topics)
+        // STOP          -> 00
+        let test_contract_bytecode = hex::decode("60006000a000").unwrap();
+
+        let tx = TransactionRequest {
+            chain_id: Some(37),
+            from: Some(address!("1234567890123456789012345678901234567890")),
+            to: Some(TxKind::Call(test_contract)),
+            input: hex::decode("").unwrap().into(),
+            gas: Some(200_000),
+            max_fee_per_gas: Some(1000),
+            max_priority_fee_per_gas: Some(1000),
+            value: Some(alloy::primitives::U256::from(0)),
+            nonce: Some(0),
+            ..TransactionRequest::default()
+        };
+
+        chain.set_evm_bytecode(
+            B160::from_be_bytes(test_contract.clone().into_array()),
+            &test_contract_bytecode,
+        );
+
+        let encoded_tx = rig::utils::encode_l1_tx(tx);
+        let transactions = vec![encoded_tx];
+
+        let output = chain.run_block(transactions, None, None, None);
+
+        // Transaction should succeed - empty topics should be handled gracefully
+        assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
+            let success = r.clone().is_ok_and(|o| o.is_success());
+            if !success {
+                panic!("({}) Transaction {} failed with: {:?}", test_contract, i, r)
+            }
+            success
+        }));
+    }
 }

@@ -14,7 +14,7 @@ This latter keeps a map of hashes to be published (whose preimage is saved in `s
 
 The [account cache](../../../basic_system/src/system_implementation/flat_storage_model/account_cache.rs) is used to temporarily store the account properties that will later be hashed and stored into the corresponding account properties hash slot.
 
-For snapshotting, it uses a [`history_map`](../../../zk_ee/src/common_structs/history_map.rs) together with a stack of snapshot identifiers. A history map is a key-value map that stores a history of snapshots for every value. With this, it allows to revert to any snapshot from the stack.
+For snapshotting, it uses a [`history_map`](../../../zk_ee/src/common_structs/history_map/mod.rs) together with a stack of snapshot identifiers. A history map is a key-value map that stores a history of snapshots for every value. With this, it allows to revert to any snapshot from the stack.
 
 ## Storage cache
 

@@ -16,7 +16,6 @@ use basic_system::system_implementation::flat_storage_model::AccountProperties;
 use forward_system::run::PreimageSource;
 use ruint::aliases::U256;
 use std::alloc::Global;
-use std::ops::Add;
 use zk_ee::common_structs::interop_root_storage::InteropRoot as StoredInteropRoot;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::EIP7702_DELEGATION_MARKER;
@@ -166,7 +165,7 @@ pub fn encode_tx(
                     U256::ZERO
                 }
             } else if tx_type == 0x7f {
-                U256::from_be_bytes(value).add(U256::from(gas_limit * max_fee_per_gas))
+                U256::from(gas_limit * max_fee_per_gas)
             } else {
                 U256::ZERO
             })

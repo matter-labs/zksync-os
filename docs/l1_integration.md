@@ -95,7 +95,7 @@ This includes almost the same data as block(s) output, with 2 main differences:
 
 For detailed information about the supported DA commitment schemes, their implementations, and use cases, see [Data Availability Commitment Schemes](./da_commitment_schemes.md).
 
-For more details about public inputs check implementation: [public_input.rs](../basic_system/src/system_implementation/system/public_input.rs)
+For more details about public inputs, check the implementation in [public_input.rs](../basic_bootloader/src/bootloader/block_flow/zk/post_tx_op/public_input.rs).
 
 ## Messaging
 

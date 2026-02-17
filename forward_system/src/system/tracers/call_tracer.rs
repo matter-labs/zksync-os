@@ -398,9 +398,9 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for CallTracer {
         assert!(self.create_operation_requested.is_none());
 
         self.create_operation_requested = if is_create2 {
-            Some(CreateType::Create)
-        } else {
             Some(CreateType::Create2)
+        } else {
+            Some(CreateType::Create)
         };
     }
 }

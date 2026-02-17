@@ -62,6 +62,8 @@ pub struct BatchOutput {
     pub pubdata_commitment: Bytes32,
     /// Number of l1 -> l2 processed txs in the batch.
     pub number_of_layer_1_txs: U256,
+    /// Number of processed L2 txs in the batch.
+    pub number_of_layer_2_txs: U256,
     /// Rolling keccak256 hash of l1 -> l2 txs processed in the batch.
     pub priority_operations_hash: Bytes32,
     /// L2 logs tree root.
@@ -91,6 +93,7 @@ impl BatchOutput {
         hasher.update([self.da_commitment_scheme as u8]);
         hasher.update(self.pubdata_commitment.as_u8_ref());
         hasher.update(self.number_of_layer_1_txs.to_be_bytes::<32>());
+        hasher.update(self.number_of_layer_2_txs.to_be_bytes::<32>());
         hasher.update(self.priority_operations_hash.as_u8_ref());
         hasher.update(self.l2_logs_tree_root.as_u8_ref());
         hasher.update(self.upgrade_tx_hash.as_u8_ref());

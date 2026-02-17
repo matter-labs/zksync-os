@@ -2,7 +2,7 @@
 //! These tests are focused on different tx types.
 //!
 #![cfg(test)]
-use alloy::consensus::{TxEip1559, TxEip2930, TxLegacy};
+use alloy::consensus::{TxEip1559, TxEip2930, TxEip4844, TxLegacy};
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
 use rig::alloy::consensus::TxEip7702;
@@ -180,6 +180,10 @@ fn run_base_system() {
         .set_balance(
             B160::from_be_bytes(eoa_wallet.address().0 .0),
             U256::from(1_000_000_000_000_000_u64),
+        ) // Set the balance for L1 -> L2 tx msg.value transfer
+        .set_balance(
+            B160::from_be_bytes(address!("1234000000000000000000000000000000000000").into()),
+            alloy::primitives::U256::from(100),
         );
 
     let output = chain.run_block(transactions, None, None, run_config());
@@ -1678,6 +1682,48 @@ fn test_simulation_balance_check() {
     );
 }
 
+#[test]
+fn test_simulation_4844_zero_blob_fee_allowed() {
+    let mut chain = Chain::empty(None);
+    let wallet = chain.random_signer();
+    let from = wallet.address();
+    let target_address = address!("4242000000000000000000000000000000000000");
+
+    chain.set_balance(
+        B160::from_be_bytes(from.into_array()),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    let tx = TxEip4844 {
+        chain_id: 37u64,
+        nonce: 0,
+        max_fee_per_gas: 1_000,
+        max_priority_fee_per_gas: 1_000,
+        gas_limit: 75_000,
+        to: target_address,
+        value: U256::ZERO,
+        input: Default::default(),
+        access_list: Default::default(),
+        blob_versioned_hashes: vec![b256!(
+            "0x011122223333444455556666777788889999aaaabbbbccccddddeeeeffff0000"
+        )],
+        max_fee_per_blob_gas: 0,
+    };
+    let encoded_tx = rig::utils::sign_and_encode_alloy_tx(tx, &wallet);
+
+    let block_context = BlockContext {
+        blob_fee: U256::from(1),
+        ..Default::default()
+    };
+
+    let result_simulation = chain.simulate_block(vec![encoded_tx], Some(block_context));
+    assert!(
+        result_simulation.tx_results[0].is_ok(),
+        "EIP-4844 tx should pass simulation when blob_fee > 0 and max_fee_per_blob_gas = 0, got: {:?}",
+        result_simulation.tx_results[0]
+    );
+}
+
 /// Check that gas and native used is the same in simulation and actual execution
 #[test]
 fn test_simulation_gas_and_native_used() {
@@ -1838,6 +1884,9 @@ fn test_treasury_based_token_distribution_regression() {
     let gas_limit = 100_000u64;
     let value_to_transfer = U256::from(1_000_000u64);
 
+    // Credit L1 sender with enough balance for the value transfer
+    chain.set_balance(B160::from_be_bytes(l1_sender.0 .0), value_to_transfer);
+
     let l1_tx = {
         let tx = TransactionRequest {
             chain_id: Some(37),
@@ -1901,10 +1950,9 @@ fn test_treasury_based_token_distribution_regression() {
     let total_to_operator = fee_paid_to_operator;
     let total_to_refund_recipient = refund_amount;
 
-    // Verify treasury balance decreased by total amount (fees + refund + value)
+    // Verify treasury balance decreased by max fee (fees + refund)
     let treasury_decrease = treasury_initial_balance - treasury_final_balance;
-    let expected_treasury_decrease =
-        total_to_operator + total_to_refund_recipient + value_to_transfer;
+    let expected_treasury_decrease = total_to_operator + total_to_refund_recipient;
     assert_eq!(
         treasury_decrease, expected_treasury_decrease,
         "Treasury should decrease by total operator payment plus refund and value transferred"

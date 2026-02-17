@@ -333,7 +333,7 @@ where
             system
         )?;
 
-        if &block_base_fee_per_blob_gas > tx_max_fee_per_blob_gas {
+        if &block_base_fee_per_blob_gas > tx_max_fee_per_blob_gas && !Config::SIMULATION {
             return Err(TxError::Validation(
                 InvalidTransaction::BlobBaseFeeGreaterThanMaxFeePerBlobGas,
             ));
