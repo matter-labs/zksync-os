@@ -3,7 +3,10 @@ use super::{
     u256::{self, U256},
     DelegatedModParams, DelegatedMontParams,
 };
-use crate::ark_ff_delegation::{BigInt, BigInteger};
+use crate::{
+    ark_ff_delegation::{BigInt, BigInteger},
+    bigint_delegation::u256::sub_assign,
+};
 
 pub(super) type U512 = BigInt<8>;
 
@@ -186,6 +189,9 @@ pub unsafe fn neg_mod_assign<T: DelegatedModParams<8>>(a: &mut U512) {
 /// Compute `self = self * rhs mod modulus` using montgomery reduction.
 /// Both `self` and `rhs` are assumed to be in montgomery form.
 /// The reduction constant is expected to be `-1/modulus mod 2^256`
+///
+/// Note: as this is only used for bls12-381, we assume that modulus is
+/// strictly less than 512 bits
 /// # Safety
 /// `DelegationMontParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
@@ -351,14 +357,15 @@ pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams<8>>(a: &mut U512, b: 
 
         let carry2 = new_carry_2;
 
+        // for bls12-381 we can't have a carry here
         let carry = u256::add_assign(a1, carry2);
+        debug_assert!(!carry);
 
-        // // Final reduction: result is in [0, 2*modulus). Subtract modulus if >= modulus.
-        // // For BLS12-381, p ≈ 2^381 and R = 2^512, so the probability of a
-        // // non-canonical result is p²/R / p ≈ 2^{-131}
-        // so we check to avoid unnecessary delegation calls
-        if carry || !u256::lt(a1, as_high(T::modulus())) {
-            sub_mod_with_carry::<T>(a, carry);
+        let borrow = u256::sub_assign(a0, as_low(T::modulus()));
+        let borrow = u256::sub_with_carry_bit(a1, as_high(T::modulus()), borrow);
+        if borrow {
+            let carry = u256::add_assign(a0, as_low(T::modulus()));
+            let _ = u256::add_with_carry_bit(a1, as_high(T::modulus()), carry);
         }
 
         debug_assert!(a.0[6..8].iter().all(|&x| x == 0));
