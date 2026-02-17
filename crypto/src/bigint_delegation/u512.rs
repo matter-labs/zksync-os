@@ -3,10 +3,7 @@ use super::{
     u256::{self, U256},
     DelegatedModParams, DelegatedMontParams,
 };
-use crate::{
-    ark_ff_delegation::{BigInt, BigInteger},
-    bigint_delegation::u256::sub_assign,
-};
+use crate::ark_ff_delegation::{BigInt, BigInteger};
 
 pub(super) type U512 = BigInt<8>;
 
