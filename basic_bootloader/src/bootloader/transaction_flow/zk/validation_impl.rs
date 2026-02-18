@@ -71,22 +71,24 @@ where
 
     let calldata = transaction.calldata();
 
-    // Validate block-level invariants
-    {
-        // Validate that the transaction's gas limit is not larger than
-        // the block's gas limit.
-        let block_gas_limit = system.get_gas_limit();
-        // First, check block gas limit can be represented as ergs.
-        require!(
-            block_gas_limit <= MAX_BLOCK_GAS_LIMIT,
-            InvalidTransaction::BlockGasLimitTooHigh,
-            system
-        )?;
-        require!(
-            tx_gas_limit <= block_gas_limit,
-            InvalidTransaction::CallerGasLimitMoreThanBlock,
-            system
-        )?;
+    // Validate block-level invariants (for non-service transactions)
+    if !transaction.is_service() {
+        {
+            // Validate that the transaction's gas limit is not larger than
+            // the block's gas limit.
+            let block_gas_limit = system.get_gas_limit();
+            // First, check block gas limit can be represented as ergs.
+            require!(
+                block_gas_limit <= MAX_BLOCK_GAS_LIMIT,
+                InvalidTransaction::BlockGasLimitTooHigh,
+                system
+            )?;
+            require!(
+                tx_gas_limit <= block_gas_limit,
+                InvalidTransaction::CallerGasLimitMoreThanBlock,
+                system
+            )?;
+        }
     }
 
     // EIP-7623

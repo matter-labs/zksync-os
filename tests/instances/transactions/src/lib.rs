@@ -1450,6 +1450,28 @@ fn test_simple_service_transaction_whitelist() {
 }
 
 #[test]
+fn test_service_tx_gas_limit_exceeds_block() {
+    let mut chain = Chain::empty(None);
+    let target_address = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes::<20>();
+
+    let tx = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
+        to: alloy::primitives::Address::from_slice(&target_address),
+        input: Default::default(),
+        salt: 0,
+    })
+    .encode();
+
+    let block_context = BlockContext {
+        gas_limit: 30_000_000,
+        eip1559_basefee: U256::from(1000),
+        ..Default::default()
+    };
+
+    let result = chain.run_block(vec![tx], Some(block_context), None, run_config());
+    assert!(result.tx_results[0].is_ok());
+}
+
+#[test]
 fn test_service_block_invariants() {
     let mut chain = Chain::empty(None);
     let wallet = chain.random_signer();
