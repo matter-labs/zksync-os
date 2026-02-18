@@ -381,10 +381,8 @@ impl L1TxBuilder {
             max_priority_fee_per_gas: self.gas_price,
             gas_limit: self.gas_limit,
             to_mint: self.to_mint.unwrap_or_else(|| {
-                self.value.add(
-                    alloy::primitives::U256::from(self.gas_limit)
-                        * alloy::primitives::U256::from(self.gas_price),
-                )
+                alloy::primitives::U256::from(self.gas_limit)
+                    * alloy::primitives::U256::from(self.gas_price)
             }),
             input: self.input.into(),
             nonce: self.nonce,
