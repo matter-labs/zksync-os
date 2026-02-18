@@ -244,6 +244,7 @@ dependencies = [
  "borsh",
  "k256",
  "serde",
+ "serde_with",
  "thiserror 2.0.18",
 ]
 
@@ -6362,7 +6363,6 @@ dependencies = [
  "cli",
  "crypto",
  "env_logger 0.11.8",
- "ethers",
  "evm_interpreter",
  "forward_system",
  "futures",
@@ -6380,6 +6380,7 @@ dependencies = [
  "zksync_os_api",
  "zksync_os_interface",
  "zksync_os_runner",
+ "zksync_os_tests_common",
 ]
 
 [[package]]
@@ -9199,6 +9200,15 @@ dependencies = [
  "execution_utils",
  "prover_examples",
  "risc_v_simulator",
+]
+
+[[package]]
+name = "zksync_os_tests_common"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "ruint",
+ "zksync_os_interface",
 ]
 
 [[package]]

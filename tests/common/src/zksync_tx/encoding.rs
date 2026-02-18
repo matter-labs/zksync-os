@@ -164,3 +164,8 @@ fn address_to_value(address: &[u8; 20]) -> DynSolValue {
     padded[12..].copy_from_slice(address.as_slice());
     U256::from_be_bytes(padded).into()
 }
+
+pub fn encode_alloy_rpc_tx(tx: alloy::rpc::types::Transaction) -> EncodedTx {
+    let from = tx.as_recovered().signer().into_array();
+    encode_2718_tx_envelope(tx.inner, Address::from_slice(&from))
+}

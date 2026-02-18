@@ -9,6 +9,7 @@ use rig::{
 use ruint::aliases::{B160, U256};
 use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+use rig::zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 
 // Creates two txs:
 /// 1. Calls the precompile with given input and gas limit.

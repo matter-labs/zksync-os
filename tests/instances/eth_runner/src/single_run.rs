@@ -171,7 +171,7 @@ pub fn single_run(
 }
 
 pub fn eth_run(block_dir: String) -> anyhow::Result<()> {
-    use crate::single_run::utils::tx_encoding::encode_alloy_rpc_tx;
+    use rig::zksync_os_tests_common::zksync_tx::encoding::encode_alloy_rpc_tx;
     use rig::alloy_rlp::Encodable;
     use std::path::Path;
 
