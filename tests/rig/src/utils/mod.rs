@@ -12,7 +12,6 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::sol;
 use forward_system::run::convert_alloy::FromAlloy;
 use std::io::Read;
-use std::ops::Add;
 use std::path::PathBuf;
 pub use zksync_os_api::helpers::*;
 use zksync_os_interface::types::BlockOutput;
