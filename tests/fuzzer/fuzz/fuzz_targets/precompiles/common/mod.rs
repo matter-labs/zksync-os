@@ -7,7 +7,6 @@ use rig::{
     utils::{calldata_for_forwarder, FORWARDER_BYTECODE},
 };
 use ruint::aliases::{B160, U256};
-use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 

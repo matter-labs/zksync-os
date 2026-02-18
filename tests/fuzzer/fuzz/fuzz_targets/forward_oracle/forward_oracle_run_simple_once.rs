@@ -5,7 +5,6 @@ use alloy::primitives::{Bytes, TxKind, U256};
 use libfuzzer_sys::fuzz_target;
 use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use rig::ruint::aliases::B160;
-use rig::utils::tx_encoding::EncodableToEncodedTx;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 
