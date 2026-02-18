@@ -1,5 +1,3 @@
-use std::ops::Add;
-
 use alloy::{
     consensus::TxEnvelope,
     dyn_abi::DynSolValue,
@@ -89,7 +87,7 @@ fn encode_special_tx_type(tx: TransactionRequest, tx_type: u8) -> EncodedTx {
             // is_eip155 is true
             U256::ONE
         } else if tx_type == 0x7f {
-            U256::from_be_bytes(value).add(U256::from(gas_limit * max_fee_per_gas))
+            U256::from(gas_limit * max_fee_per_gas)
         } else {
             U256::ZERO
         }),

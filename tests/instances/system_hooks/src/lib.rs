@@ -53,21 +53,17 @@ fn test_value_transfer_fails_if_insufficient_balance_max_msg_value() {
 
     chain.set_balance(B160::from_be_bytes(sender.into_array()), initial_sender);
 
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(sender),
-        to: Some(TxKind::Call(recipient)),
-        input: hex::decode("").unwrap().into(),
-        value: Some(value),
-        gas: Some(200_000),
+    let encoded = L1TxBuilder::new()
+        .from(sender)
+        .to(recipient)
+        .input(Vec::new())
+        .value(value)
         // keep fees at 0 so we can assert balances are unchanged on failure
-        max_fee_per_gas: Some(0),
-        max_priority_fee_per_gas: Some(0),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
-
-    let encoded = rig::utils::encode_l1_tx(tx);
+        .gas_price(0)
+        .gas_limit(200_000)
+        .nonce(0)
+        .build()
+        .encode();
     let output = chain.run_block(vec![encoded], None, None, None);
 
     assert!(
@@ -108,20 +104,16 @@ fn test_l2_base_token_withdraw_fails_if_insufficient_balance() {
     calldata.extend_from_slice(&[0u8; 12]);
     calldata.extend_from_slice(l1_receiver.as_slice());
 
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(sender),
-        to: Some(TxKind::Call(l2_base_token_address)),
-        input: calldata.into(),
-        value: Some(value),
-        gas: Some(200_000),
-        max_fee_per_gas: Some(0),
-        max_priority_fee_per_gas: Some(0),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
-
-    let encoded = rig::utils::encode_l1_tx(tx);
+    let encoded = L1TxBuilder::new()
+        .from(sender)
+        .to(l2_base_token_address)
+        .input(calldata)
+        .value(value)
+        .gas_price(0)
+        .gas_limit(200_000)
+        .nonce(0)
+        .build()
+        .encode();
     let output = chain.run_block(vec![encoded], None, None, None);
 
     assert!(
@@ -192,20 +184,16 @@ fn test_l2_base_token_withdraw_with_message_fails_if_insufficient_balance() {
         calldata.extend_from_slice(&vec![0u8; padding_needed]);
     }
 
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(sender),
-        to: Some(TxKind::Call(l2_base_token_address)),
-        input: calldata.into(),
-        value: Some(value),
-        gas: Some(300_000),
-        max_fee_per_gas: Some(0),
-        max_priority_fee_per_gas: Some(0),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
-
-    let encoded = rig::utils::encode_l1_tx(tx);
+    let encoded = L1TxBuilder::new()
+        .from(sender)
+        .to(l2_base_token_address)
+        .input(calldata)
+        .value(value)
+        .gas_price(0)
+        .gas_limit(300_000)
+        .nonce(0)
+        .build()
+        .encode();
     let output = chain.run_block(vec![encoded], None, None, None);
 
     assert!(
@@ -254,21 +242,17 @@ fn test_l1_value_transfer_spends_from_l2_balance() {
     // Fund sender so `msg.value` can be paid from L2 balance.
     chain.set_balance(B160::from_be_bytes(sender.into_array()), value);
 
-    let tx = TransactionRequest {
-        chain_id: Some(37),
-        from: Some(sender),
-        to: Some(TxKind::Call(recipient)),
-        input: hex::decode("").unwrap().into(),
-        value: Some(value),
-        gas: Some(200_000),
+    let encoded = L1TxBuilder::new()
+        .from(sender)
+        .to(recipient)
+        .input(Vec::new())
+        .value(value)
         // keep fees minimal to reduce side-effects
-        max_fee_per_gas: Some(0),
-        max_priority_fee_per_gas: Some(0),
-        nonce: Some(0),
-        ..TransactionRequest::default()
-    };
-
-    let encoded = rig::utils::encode_l1_tx(tx);
+        .gas_price(0)
+        .gas_limit(200_000)
+        .nonce(0)
+        .build()
+        .encode();
     let output = chain.run_block(vec![encoded], None, None, None);
 
     assert!(
