@@ -158,6 +158,11 @@ impl UpgradeTx {
     pub fn finish(self) -> Bytes32 {
         self.inner
     }
+
+    /// Returns if an upgrade transaction has been recorded
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_zero()
+    }
 }
 
 #[cfg(test)]

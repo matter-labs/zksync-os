@@ -103,12 +103,20 @@ where
 
         let (priority_operations_hash, number_of_layer_1_txs) =
             block_data.enforced_transaction_hashes_accumulator.finish();
+        // Number of L2 transactions can be calculated as:
+        // Total txs - l1 txs - upgrade txs
+        let mut number_of_layer_2_txs =
+            block_data.current_transaction_number - number_of_layer_1_txs;
+        if !block_data.upgrade_tx_recorder.is_empty() {
+            number_of_layer_2_txs -= 1;
+        }
         let upgrade_tx_hash = block_data.upgrade_tx_recorder.finish();
         let interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
             Bytes32::zero(),
             io.interop_root_storage.iter(),
             &mut crypto::sha3::Keccak256::new(),
         );
+
         let settlement_layer_chain_id = read_settlement_layer_chain_id(&mut io);
         if let Some(new_settlement_layer_chain_id) =
             io.new_settlement_layer_chain_id_storage.value()
@@ -190,6 +198,7 @@ where
             da_commitment_scheme: io.da_commitment_scheme.unwrap(),
             pubdata_commitment: da_commitment,
             number_of_layer_1_txs: U256::try_from(number_of_layer_1_txs).unwrap(),
+            number_of_layer_2_txs: U256::from(number_of_layer_2_txs),
             priority_operations_hash,
             l2_logs_tree_root: full_l2_to_l1_logs_root,
             upgrade_tx_hash,

@@ -26,6 +26,8 @@ pub struct ZKBatchDataKeeper<A: alloc::alloc::Allocator, O: IOOracle> {
     pub da_commitment_generator: Option<alloc::boxed::Box<dyn DACommitmentGenerator<O>, A>>,
     pub logs_storage: ArrayVec<Bytes32, 16384>,
     enforced_txs_accumulator: TransactionsRollingKeccakHasher,
+    // Includes all transactions
+    pub tx_count: U256,
     upgrade_tx_hash: Option<Bytes32>,
     multichain_root: Bytes32,
     interop_roots_rolling_hash: Bytes32,
@@ -46,6 +48,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
             logs_storage: ArrayVec::new(),
             // keccak256([])
             enforced_txs_accumulator: TransactionsRollingKeccakHasher::empty(),
+            tx_count: U256::ZERO,
             upgrade_tx_hash: None,
             multichain_root: Bytes32::zero(),
             interop_roots_rolling_hash: Bytes32::ZERO,
@@ -67,6 +70,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         multichain_root: Bytes32,
         interop_roots: impl Iterator<Item = &'a InteropRoot>,
         settlement_layer_chain_id: U256,
+        number_of_txs_in_block: u32,
     ) {
         if self.is_first_block {
             self.initial_state_commitment = Some(state_commitment_before);
@@ -94,6 +98,8 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
         // we always override multichain root with latest
         self.multichain_root = multichain_root;
 
+        self.tx_count += U256::from(number_of_txs_in_block);
+
         self.interop_roots_rolling_hash = calculate_interop_roots_rolling_hash(
             self.interop_roots_rolling_hash,
             interop_roots,
@@ -102,10 +108,19 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
     }
 
     ///
+    /// Returns if the batch has had an upgrade tx
+    ///
+    pub fn has_upgrade_tx(&self) -> bool {
+        self.upgrade_tx_hash
+            .is_some_and(|hash| hash != Bytes32::ZERO)
+    }
+
+    ///
     /// Create public input for a batch that contains previously added blocks.
     ///
     pub fn into_public_input(self, mut logger: impl Logger, oracle: &mut O) -> BatchPublicInput {
         assert!(!self.is_first_block);
+        let has_upgrade_tx = self.has_upgrade_tx();
 
         let mut chain_batch_root_hasher = crypto::sha3::Keccak256::new();
         chain_batch_root_hasher.update(Self::l2_logs_root(self.logs_storage).as_u8_ref());
@@ -114,13 +129,21 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> ZKBatchDataKeeper<A, O> {
 
         let (priority_operations_hash, number_of_layer_1_txs) =
             self.enforced_txs_accumulator.finish();
+        let number_of_layer_1_txs = U256::from(number_of_layer_1_txs);
+        // Number of L2 transactions can be calculated as:
+        // Total txs - l1 txs - upgrade txs
+        let mut number_of_layer_2_txs = self.tx_count - number_of_layer_1_txs;
+        if has_upgrade_tx {
+            number_of_layer_2_txs -= U256::ONE;
+        }
         let batch_output = BatchOutput {
             chain_id: self.chain_id.unwrap(),
             first_block_timestamp: self.first_block_timestamp.unwrap(),
             last_block_timestamp: self.current_block_timestamp.unwrap(),
             da_commitment_scheme: self.da_commitment_scheme.unwrap(),
             pubdata_commitment: self.da_commitment_generator.unwrap().finalize(oracle),
-            number_of_layer_1_txs: U256::from(number_of_layer_1_txs),
+            number_of_layer_1_txs,
+            number_of_layer_2_txs,
             priority_operations_hash,
             l2_logs_tree_root: chain_batch_root.into(),
             upgrade_tx_hash: self.upgrade_tx_hash.unwrap(),
@@ -279,5 +302,45 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> TxHashesAccumulator for ZKBatchDat
     // used to write l1 txs in tx loop
     fn add_tx_hash(&mut self, tx_hash: &Bytes32) {
         self.enforced_txs_accumulator.add_tx_hash(tx_hash);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::alloc::Global;
+    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use zk_ee::system::errors::internal::InternalError;
+
+    struct DummyOracle;
+
+    impl IOOracle for DummyOracle {
+        type RawIterator<'a> = core::iter::Empty<usize>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            _query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            Ok(core::iter::empty())
+        }
+    }
+
+    #[test]
+    fn has_upgrade_tx_is_false_for_none_and_zero_hash() {
+        let mut keeper = ZKBatchDataKeeper::<Global, DummyOracle>::new();
+
+        assert!(!keeper.has_upgrade_tx());
+
+        keeper.upgrade_tx_hash = Some(Bytes32::ZERO);
+        assert!(!keeper.has_upgrade_tx());
+    }
+
+    #[test]
+    fn has_upgrade_tx_is_true_for_non_zero_hash() {
+        let mut keeper = ZKBatchDataKeeper::<Global, DummyOracle>::new();
+        keeper.upgrade_tx_hash = Some(Bytes32::from_byte_fill(1));
+
+        assert!(keeper.has_upgrade_tx());
     }
 }

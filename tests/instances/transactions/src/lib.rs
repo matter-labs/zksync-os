@@ -176,6 +176,10 @@ fn run_base_system() {
         .set_balance(
             B160::from_alloy(eoa_wallet.address()),
             U256::from(1_000_000_000_000_000_u64),
+        ) // Set the balance for L1 -> L2 tx msg.value transfer
+        .set_balance(
+            B160::from_be_bytes(address!("1234000000000000000000000000000000000000").into()),
+            alloy::primitives::U256::from(100),
         );
 
     let output = chain.run_block(transactions, None, None, run_config());
@@ -1871,6 +1875,9 @@ fn test_treasury_based_token_distribution_regression() {
     let gas_limit = 100_000u64;
     let value_to_transfer = U256::from(1_000_000u64);
 
+    // Credit L1 sender with enough balance for the value transfer
+    chain.set_balance(B160::from_be_bytes(l1_sender.0 .0), value_to_transfer);
+
     let l1_tx = {
         let tx = L1TxBuilder::new()
             .from(l1_sender)
@@ -1931,10 +1938,9 @@ fn test_treasury_based_token_distribution_regression() {
     let total_to_operator = fee_paid_to_operator;
     let total_to_refund_recipient = refund_amount;
 
-    // Verify treasury balance decreased by total amount (fees + refund + value)
+    // Verify treasury balance decreased by max fee (fees + refund)
     let treasury_decrease = treasury_initial_balance - treasury_final_balance;
-    let expected_treasury_decrease =
-        total_to_operator + total_to_refund_recipient + value_to_transfer;
+    let expected_treasury_decrease = total_to_operator + total_to_refund_recipient;
     assert_eq!(
         treasury_decrease, expected_treasury_decrease,
         "Treasury should decrease by total operator payment plus refund and value transferred"

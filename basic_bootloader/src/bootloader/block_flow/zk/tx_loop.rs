@@ -195,6 +195,7 @@ where
                                         .upgrade_tx_recorder
                                         .add_upgrade_tx_hash(&tx_processing_result.tx_hash);
                                 }
+                                block_data.current_transaction_number += 1;
 
                                 result_keeper.tx_processed(Ok(TxProcessingOutput {
                                     status,
