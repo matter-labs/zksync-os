@@ -103,7 +103,6 @@ pub struct UserMsgData<DATA, HASH, ADDRESS> {
 pub struct L1TxLog<HASH> {
     pub tx_hash: HASH,
     pub success: bool,
-    pub is_priority: bool,
 }
 
 /// Log content reference to be returned from the storage
@@ -120,7 +119,6 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
             GenericLogContentData::L1TxLog(l) => GenericLogContentData::L1TxLog(L1TxLog {
                 tx_hash: &l.tx_hash,
                 success: l.success,
-                is_priority: l.is_priority,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
                 address: &m.address,
@@ -139,7 +137,6 @@ impl<IOTypes: SystemIOTypesConfig, A: Allocator> GenericLogContent<IOTypes, A> {
             GenericLogContentData::L1TxLog(l) => GenericLogContentData::L1TxLog(L1TxLog {
                 tx_hash: *l.tx_hash,
                 success: l.success,
-                is_priority: l.is_priority,
             }),
             GenericLogContentData::UserMsg(m) => GenericLogContentData::UserMsg(UserMsgData {
                 address: *m.address,
@@ -218,7 +215,6 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
         tx_number: u32,
         tx_hash: Bytes32,
         success: bool,
-        is_priority: bool,
     ) -> Result<(), SystemError> {
         let total_pubdata = L2_TO_L1_LOG_SERIALIZE_SIZE;
         let total_pubdata = total_pubdata as u32;
@@ -231,11 +227,7 @@ impl<SF: StackFactory<M>, const M: usize, A: Allocator + Clone + Default> LogsSt
         self.list.push(
             LogContent {
                 tx_number,
-                data: GenericLogContentData::L1TxLog(L1TxLog {
-                    tx_hash,
-                    success,
-                    is_priority,
-                }),
+                data: GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }),
             },
             total_pubdata,
         );
@@ -511,9 +503,7 @@ impl<A: Allocator> From<&LogContent<A>> for L2ToL1Log {
                 address.into(),
                 data_hash,
             ),
-            GenericLogContentData::L1TxLog(L1TxLog {
-                tx_hash, success, ..
-            }) => {
+            GenericLogContentData::L1TxLog(L1TxLog { tx_hash, success }) => {
                 let data = if success { U256::from(1) } else { U256::ZERO };
                 (
                     // TODO: move into const

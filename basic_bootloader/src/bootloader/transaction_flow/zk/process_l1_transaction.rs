@@ -310,15 +310,17 @@ where
     }
 
     // Emit log
-    let success = matches!(result, ExecutionResult::Success { .. });
-    let mut inf_resources = S::Resources::FORMAL_INFINITE;
-    system.io.emit_l1_l2_tx_log(
-        ExecutionEnvironmentType::NoEE,
-        &mut inf_resources,
-        tx_hash,
-        success,
-        is_priority_op,
-    )?;
+    // We don't send logs for upgrade txs by protocol convention
+    if is_priority_op {
+        let success = matches!(result, ExecutionResult::Success { .. });
+        let mut inf_resources = S::Resources::FORMAL_INFINITE;
+        system.io.emit_l1_l2_tx_log(
+            ExecutionEnvironmentType::NoEE,
+            &mut inf_resources,
+            tx_hash,
+            success,
+        )?;
+    }
 
     // Add back the intrinsic native charged in get_resources_for_tx,
     // as initial_resources doesn't include them.
