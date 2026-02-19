@@ -367,7 +367,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             let deployed_code = return_values.returndata;
             let mut error_after_constructor = None;
             if deployed_code.len() > MAX_CODE_SIZE {
-                // EIP-158: reject code of length > 24576.
+                // EIP-170: reject code of length > 24576.
                 error_after_constructor = Some(EvmError::CreateContractSizeLimit)
             } else if !deployed_code.is_empty() && deployed_code[0] == 0xEF {
                 // EIP-3541: reject code starting with 0xEF.

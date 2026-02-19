@@ -39,7 +39,7 @@ The hook accepts the following ABI-encoded parameters:
 - `bytes32` - observable bytecode hash
 
 Key features:
-- Enforces EIP-158 by rejecting bytecode longer than 24576 bytes
+- Enforces EIP-170 by rejecting bytecode longer than 24576 bytes
 - Used exclusively for protocol upgrades approved by governance
 - Does not publish full bytecode in pubdata to fit within gas/calldata limits
 - Bytecodes are published separately via Ethereum calldata

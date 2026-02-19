@@ -163,7 +163,7 @@ where
 
     // Although this can be called as a part of protocol upgrade,
     // we are checking the next invariants, just in case
-    // EIP-158: reject code of length > 24576.
+    // EIP-170: reject code of length > 24576.
     if bytecode_length as usize > MAX_CODE_SIZE {
         return Ok(Err(
             "Set bytecode on address failure: called with invalid bytecode(length > 24576)",
