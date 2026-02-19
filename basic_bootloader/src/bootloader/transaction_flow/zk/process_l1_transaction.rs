@@ -1,7 +1,7 @@
 use crate::bootloader::config::BasicBootloaderExecutionConfig;
 use crate::bootloader::constants::{
-    FREE_L1_TX_NATIVE_PER_GAS, L1_TX_INTRINSIC_NATIVE_COST, L1_TX_INTRINSIC_PUBDATA,
-    L1_TX_NATIVE_PRICE,
+    FREE_L1_TX_NATIVE_PER_GAS, L1_TX_INTRINSIC_L2_GAS, L1_TX_INTRINSIC_NATIVE_COST,
+    L1_TX_INTRINSIC_PUBDATA, L1_TX_NATIVE_PRICE,
 };
 use crate::bootloader::errors::BootloaderInterfaceError;
 use crate::bootloader::errors::TxError;
@@ -408,7 +408,7 @@ where
 
     let native_prepaid_from_gas = native_per_gas.saturating_mul(gas_limit);
 
-    let (calldata_tokens, intrinsic_cost) =
+    let (calldata_tokens, minimal_gas_used) =
         compute_calldata_tokens(system, transaction.calldata(), true);
 
     // With L1ResourcesPolicy, this returns Result<ResourcesForTx<S>, BootloaderSubsystemError>
@@ -422,14 +422,14 @@ where
         false, // is_deployment
         transaction.calldata().len() as u64,
         calldata_tokens,
-        intrinsic_cost,
+        L1_TX_INTRINSIC_L2_GAS,
         L1_TX_INTRINSIC_PUBDATA,
         L1_TX_INTRINSIC_NATIVE_COST,
     )?;
 
-    // L1 transactions might have a gas limit < intrinsic cost,
-    // so we pick the min as minimal_gas_used.
-    let minimal_gas_used = intrinsic_cost.min(gas_limit);
+    // L1 transactions might have a gas limit < minimal_gas_used,
+    // so we pick the min.
+    let minimal_gas_used = minimal_gas_used.min(gas_limit);
 
     Ok(ResourceAndFeeInfo {
         resources,
