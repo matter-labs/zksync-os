@@ -263,6 +263,9 @@ impl<
                     .metadata()
                     .basic
                     .considered_warm(self.current_tx_id);
+                if observe {
+                    x.element_properties_mut().mark_value_as_known();
+                }
                 if is_warm == false {
                     if initialized_element == false {
                         // Element exists in cache, but wasn't touched in current tx yet
