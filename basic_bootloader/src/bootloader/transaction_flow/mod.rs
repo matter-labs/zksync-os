@@ -67,11 +67,11 @@ impl<'a, IOTypes: SystemIOTypesConfig> ExecutionResult<'a, IOTypes> {
     pub fn reverted(self) -> Self {
         match self {
             Self::Success {
-                output: ExecutionOutput::Call(r),
+                output: ExecutionOutput::Call(_),
             }
             | Self::Success {
-                output: ExecutionOutput::Create(r, _),
-            } => Self::Revert { output: r },
+                output: ExecutionOutput::Create(_, _),
+            } => Self::Revert { output: &[] },
             a => a,
         }
     }
