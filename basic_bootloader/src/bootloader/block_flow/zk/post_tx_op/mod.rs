@@ -215,7 +215,7 @@ pub fn read_multichain_root<
         &MESSAGE_ROOT_ADDRESS,
         &root_slot,
     )
-    .expect("must read MessageRoot shared tree height")
+    .expect("must read MessageRoot multichain root")
 }
 
 ///

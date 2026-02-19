@@ -28,7 +28,7 @@ pub struct TxDataResponder<TS: TxSource> {
     /// Note: we use different fields for next_tx and next_tx_format
     /// so that they don't have to be consumed at the same time.
     pub next_tx_format: Option<TxEncodingFormat>,
-    /// Cached next transaction format, populated after size query
+    /// Cached next transaction from, populated after size query
     /// (if present)
     pub next_tx_from: Option<B160>,
 }

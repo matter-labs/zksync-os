@@ -146,7 +146,7 @@ impl<S: SystemTypes, A: Allocator + Clone> HooksStorage<S, A> {
         Ok((Some(res), remaining_memory))
     }
 
-    /// Intercepts events emitted from low addresses (< 2^16) and executes hooks
+    /// Intercepts events emitted from low addresses (< 2^32) and executes hooks
     /// stored under that address. If no hook is stored there, return `Ok(None)`.
     ///
     pub fn try_intercept_event(

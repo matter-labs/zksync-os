@@ -52,7 +52,7 @@ impl<O: IOOracle> SystemTypes for ForwardSystemTypes<O> {
         Self::Resources,
         EthereumLikeStorageAccessCostModel,
         VecStackFactory,
-        0, // Stack limit (0 = unlimited)
+        0, // VecStackFactory ignores N (node size), so 0 is fine here
         O, // Oracle implementation
         FlatTreeWithAccountsUnderHashesStorageModel<
             Self::Allocator,
