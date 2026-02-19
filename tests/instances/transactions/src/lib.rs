@@ -945,15 +945,15 @@ fn test_upgrade_tx_succeeds() {
     let mut chain = Chain::empty(None);
 
     // Create a contract that always succeeds
-    let revert_contract_address = address!("0000000000000000000000000000000000010003");
+    let contract_address = address!("0000000000000000000000000000000000010003");
     // Simple contract bytecode that just does RETURN(0, 0)
-    let revert_bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
-    chain.set_evm_bytecode(B160::from_alloy(revert_contract_address), &revert_bytecode);
+    let bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
+    chain.set_evm_bytecode(B160::from_alloy(contract_address), &bytecode);
 
     // Create a proper upgrade transaction that calls the contract
     let upgrade_tx = ZKsyncTxEnvelope::from(ZKsyncUpgradeTx {
         from: address!("1234000000000000000000000000000000000000"),
-        to: revert_contract_address,
+        to: contract_address,
         gas_limit: 100_000u128,
         ..Default::default()
     });
@@ -963,8 +963,11 @@ fn test_upgrade_tx_succeeds() {
     // Use run_block_no_panic to catch the error instead of panicking
     let result = chain.run_block_no_panic(transactions, None, None, None);
     assert!(result.is_ok());
-
-    assert!(result.unwrap().tx_results[0].as_ref().unwrap().is_success());
+    let tx_output = result.unwrap().tx_results[0].as_ref().unwrap();
+    assert!(tx_output.is_success());
+    // make sure that it didn't produce l1 log with upgrade tx result
+    // (such logs were present in the past, but we removed them)
+    assert!(tx_output.l2_to_l1_logs.is_empty());
 }
 
 #[test]
