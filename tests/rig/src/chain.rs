@@ -136,7 +136,7 @@ impl Default for BlockContext {
             gas_limit: MAX_BLOCK_GAS_LIMIT,
             pubdata_limit: u64::MAX,
             mix_hash: U256::ONE,
-            blob_fee: U256::MAX,
+            blob_fee: U256::ONE,
         }
     }
 }
