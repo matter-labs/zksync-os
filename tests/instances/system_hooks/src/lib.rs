@@ -856,8 +856,8 @@ fn test_contract_deployer_gas_charging() {
         vec![(code_hash, bytecode)],
     );
 
-    // The hook should charge HOOK_BASE_ERGS_COST (100 gas) + extra for bytecode length
-    assert_eq!(gas_used, 2950);
+    // The hook should charge for bytecode length
+    assert_eq!(gas_used, 2850);
 }
 
 #[test]

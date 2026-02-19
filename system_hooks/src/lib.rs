@@ -343,8 +343,5 @@ fn make_return_state_from_returndata_region<S: SystemTypes>(
 /// Base cost for calling into a system hook
 const HOOK_BASE_NATIVE_COST: u64 = 1000;
 
-/// Base ergs cost for calling a system hook (100 gas)
-const HOOK_BASE_ERGS_COST: Ergs = Ergs(100 * ERGS_PER_GAS);
-
 /// Ergs cost per byte of bytecode for force deployments.
 const SET_BYTECODE_DETAILS_EXTRA_ERGS_PER_BYTE: Ergs = Ergs(50 * ERGS_PER_GAS);

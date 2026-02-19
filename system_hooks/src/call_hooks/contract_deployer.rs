@@ -115,7 +115,7 @@ where
     evm_interpreter::charge_native_and_ergs::<S::Resources>(
         resources,
         HOOK_BASE_NATIVE_COST,
-        HOOK_BASE_ERGS_COST,
+        Ergs::empty(),
     )?;
 
     if calldata.len() < 4 {

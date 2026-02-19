@@ -121,7 +121,7 @@ where
     evm_interpreter::charge_native_and_ergs::<S::Resources>(
         resources,
         HOOK_BASE_NATIVE_COST,
-        HOOK_BASE_ERGS_COST,
+        Ergs(0), // Do not charge EVM gas here, it is already charged in the system contract
     )?;
 
     if is_static {
