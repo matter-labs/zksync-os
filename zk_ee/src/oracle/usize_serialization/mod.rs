@@ -330,16 +330,11 @@ impl UsizeDeserializable for B160 {
     const USIZE_LEN: usize = <B160 as UsizeSerializable>::USIZE_LEN;
 
     fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        if src.len() < <Self as UsizeDeserializable>::USIZE_LEN {
-            return Err(internal_error!("b160 deserialization failed: too short"));
+        let mut new = MaybeUninit::uninit();
+        unsafe {
+            Self::init_from_iter(&mut new, src)?;
+            Ok(new.assume_init())
         }
-        let mut limbs = [0u64; B160::LIMBS];
-        for limb in &mut limbs {
-            *limb = unsafe { <u64 as UsizeDeserializable>::from_iter(src).unwrap_unchecked() };
-        }
-        let new = B160::from_limbs(limbs);
-
-        Ok(new)
     }
 
     unsafe fn init_from_iter(
