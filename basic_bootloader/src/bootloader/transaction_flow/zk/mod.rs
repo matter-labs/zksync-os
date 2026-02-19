@@ -136,7 +136,7 @@ impl<S: EthereumLikeTypes> core::fmt::Debug for TxContextForPreAndPostProcessing
             .field("native_per_gas", &self.native_per_gas)
             .field("tx_gas_limit", &self.tx_gas_limit)
             .field("gas_used", &self.gas_used)
-            .field("gas_refunded", &self.gas_used)
+            .field("gas_refunded", &self.gas_refunded)
             .field("validation_pubdata", &self.validation_pubdata)
             .field("total_pubdata", &self.total_pubdata)
             .field("native_used", &self.native_used)
