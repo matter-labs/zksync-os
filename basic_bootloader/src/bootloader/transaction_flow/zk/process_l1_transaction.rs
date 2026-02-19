@@ -440,8 +440,15 @@ where
         L1_TX_INTRINSIC_NATIVE_COST,
     )?;
 
-    // L1 transactions might have a gas limit < minimal_gas_used,
-    // so we pick the min.
+    // L1 transactions might have a gas limit < minimal_gas_used. This should be
+    // prevented by L1 validation, but we log and saturate if it happens.
+    if gas_limit < minimal_gas_used {
+        system_log!(
+            system,
+            "L1 tx gas limit below intrinsic cost, using saturated arithmetic instead"
+        );
+    }
+    // Pick the min to keep processing L1 txs even if the L1 validation is wrong.
     let minimal_gas_used = minimal_gas_used.min(gas_limit);
 
     Ok(ResourceAndFeeInfo {
