@@ -184,7 +184,7 @@ where
                                 block_data
                                     .transaction_hashes_accumulator
                                     .add_tx_hash(&tx_processing_result.tx_hash);
-                                if tx_processing_result.is_l1_tx {
+                                if tx_processing_result.is_priority_tx {
                                     block_data
                                         .enforced_transaction_hashes_accumulator
                                         .add_tx_hash(&tx_processing_result.tx_hash);

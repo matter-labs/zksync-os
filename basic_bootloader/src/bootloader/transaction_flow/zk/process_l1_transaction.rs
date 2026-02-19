@@ -333,7 +333,7 @@ where
     Ok(ZkTxResult {
         result,
         tx_hash,
-        is_l1_tx: is_priority_op,
+        is_priority_tx: is_priority_op,
         is_upgrade_tx: !is_priority_op,
         is_service_tx: false,
         gas_used,

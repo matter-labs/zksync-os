@@ -52,7 +52,7 @@ pub struct ZkTransactionFlowOnlyEOA<S: EthereumLikeTypes> {
 pub struct ZkTxResult<'a> {
     pub result: ExecutionResult<'a, EthereumIOTypesConfig>,
     pub tx_hash: Bytes32,
-    pub is_l1_tx: bool,
+    pub is_priority_tx: bool,
     pub is_upgrade_tx: bool,
     pub is_service_tx: bool,
     pub gas_refunded: u64,
@@ -563,7 +563,7 @@ where
         ZkTxResult {
             result,
             tx_hash: context.tx_hash,
-            is_l1_tx: false,
+            is_priority_tx: false,
             is_upgrade_tx: false,
             is_service_tx: transaction.is_service(),
             gas_used: context.gas_used,
