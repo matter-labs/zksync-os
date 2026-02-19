@@ -93,7 +93,16 @@ pub fn u256_try_to_usize(src: &U256) -> Option<usize> {
 
 #[inline(always)]
 pub fn u256_to_usize_saturated(src: &U256) -> usize {
-    u256_to_u64_saturated(src) as usize
+    let value = u256_to_u64_saturated(src);
+    if cfg!(target_pointer_width = "32") {
+        if value > u32::MAX as u64 {
+            u32::MAX as usize
+        } else {
+            value as usize
+        }
+    } else {
+        value as usize
+    }
 }
 
 #[inline(always)]
