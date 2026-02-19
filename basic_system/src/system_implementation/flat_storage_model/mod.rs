@@ -450,15 +450,27 @@ impl<
 
     fn get_account_diff<'a>(
         &'a self,
-        _address: Self::AccountAddress<'a>,
+        address: Self::AccountAddress<'a>,
     ) -> Option<Self::AccountDiff<'a>> {
-        None
+        self.account_data_cache
+            .cache
+            .get(address.into())
+            .map(|item| {
+                let current = item.current().value();
+                (current.nonce, current.balance, current.bytecode_hash)
+            })
     }
     fn accounts_diffs_iterator<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<Item = (Self::AccountAddress<'a>, Self::AccountDiff<'a>)> + Clone
     {
-        [].into_iter()
+        self.account_data_cache.cache.iter().map(|item| {
+            let current = item.current().value();
+            (
+                item.key().as_ref(),
+                (current.nonce, current.balance, current.bytecode_hash),
+            )
+        })
     }
 
     type StorageKey<'a>
