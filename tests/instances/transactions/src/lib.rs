@@ -963,7 +963,7 @@ fn test_upgrade_tx_succeeds() {
     // Use run_block_no_panic to catch the error instead of panicking
     let result = chain.run_block_no_panic(transactions, None, None, None);
     assert!(result.is_ok());
-    let tx_output = result.unwrap().tx_results[0].as_ref().unwrap();
+    let tx_output = result.as_ref().unwrap().tx_results[0].as_ref().unwrap();
     assert!(tx_output.is_success());
     // make sure that it didn't produce l1 log with upgrade tx result
     // (such logs were present in the past, but we removed them)
