@@ -90,7 +90,7 @@ where
         native_per_gas,
         native_per_pubdata,
         minimal_gas_used,
-    } = prepare_and_check_resources::<S>(
+    } = prepare_and_check_resources::<S, Config>(
         system,
         transaction,
         is_priority_op,
@@ -365,7 +365,11 @@ struct ResourceAndFeeInfo<S: EthereumLikeTypes> {
 /// The approach is to use saturating arithmetic and emit a system
 /// log if this situation ever happens.
 ///
-fn prepare_and_check_resources<'a, S: EthereumLikeTypes + 'a>(
+fn prepare_and_check_resources<
+    'a,
+    S: EthereumLikeTypes + 'a,
+    Config: BasicBootloaderExecutionConfig,
+>(
     system: &mut System<S>,
     transaction: &AbiEncodedTransaction<S::Allocator>,
     is_priority_op: bool,
@@ -382,15 +386,24 @@ where
     let native_price = L1_TX_NATIVE_PRICE;
     let native_per_gas = if is_priority_op {
         if gas_price.is_zero() {
-            FREE_L1_TX_NATIVE_PER_GAS
-        } else {
-            u256_try_to_u64(&gas_price.div_ceil(native_price))
-                .unwrap_or_else(|| {
-                    system_log!(
-                        system,
-                        "Native per gas calculation for L1 tx overflows, using saturated arithmetic instead");
+            if Config::SIMULATION {
+                u256_try_to_u64(&system.get_eip1559_basefee().div_ceil(native_price))
+                    .unwrap_or_else(|| {
+                        system_log!(
+                            system,
+                            "Native per gas calculation for L1 tx overflows, using saturated arithmetic instead");
                         u64::MAX
-                })
+                    })
+            } else {
+                FREE_L1_TX_NATIVE_PER_GAS
+            }
+        } else {
+            u256_try_to_u64(&gas_price.div_ceil(native_price)).unwrap_or_else(|| {
+                system_log!(
+                    system,
+                    "Native per gas calculation for L1 tx overflows, using saturated arithmetic instead");
+                u64::MAX
+            })
         }
     } else {
         // Upgrade txs are paid by the protocol, so we use a fixed native per gas
