@@ -120,6 +120,11 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
             alloc::boxed::Box::new_uninit_slice_in(buffer_size, allocator);
         let written_words = init_fn(&mut inner);
         assert!(written_words <= buffer_size); // we do not want to truncate or realloc, but we will expose only written part below
+                                               // Safety: init_fn only guarantees that it initialized `written_words` elements.
+                                               // Initialize the remainder to avoid UB in assume_init().
+        for dst in inner.iter_mut().skip(written_words) {
+            dst.write(0);
+        }
         let byte_capacity = written_words * USIZE_SIZE; // we only count initialized words for capacity purposes
 
         Self {
