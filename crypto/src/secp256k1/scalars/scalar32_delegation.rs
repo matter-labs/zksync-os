@@ -12,13 +12,15 @@ static REDUCTION_CONST: BigInt<4> = ScalarInner::REDUCTION_CONST.0;
 pub(super) struct ScalarParams;
 
 impl DelegatedModParams<4> for ScalarParams {
-    unsafe fn modulus() -> &'static BigInt<4> {
+    const MODULUS_BITSIZE: usize = 256;
+
+    fn modulus() -> &'static BigInt<4> {
         &MODULUS
     }
 }
 
 impl DelegatedMontParams<4> for ScalarParams {
-    unsafe fn reduction_const() -> &'static BigInt<4> {
+    fn reduction_const() -> &'static BigInt<4> {
         &REDUCTION_CONST
     }
 }

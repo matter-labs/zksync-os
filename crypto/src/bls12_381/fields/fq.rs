@@ -11,13 +11,15 @@ compile_error!("feature `bigint_ops` must be activated for RISC-V target");
 struct FqParams;
 
 impl DelegatedModParams<8> for FqParams {
-    unsafe fn modulus() -> &'static BigInt<8> {
+    const MODULUS_BITSIZE: usize = 381;
+
+    fn modulus() -> &'static BigInt<8> {
         &MODULUS_CONSTANT
     }
 }
 
 impl DelegatedMontParams<8> for FqParams {
-    unsafe fn reduction_const() -> &'static BigInt<4> {
+    fn reduction_const() -> &'static BigInt<4> {
         &MONT_REDUCTION_CONSTANT
     }
 }

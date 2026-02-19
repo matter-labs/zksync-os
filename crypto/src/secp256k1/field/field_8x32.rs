@@ -14,13 +14,15 @@ static NEG_MODULUS: BigInt<4> = FieldElement8x32::NEG_MODULUS;
 pub(super) struct FieldParams;
 
 impl DelegatedModParams<4> for FieldParams {
-    unsafe fn modulus() -> &'static BigInt<4> {
+    const MODULUS_BITSIZE: usize = 256;
+
+    fn modulus() -> &'static BigInt<4> {
         &MODULUS
     }
 }
 
 impl DelegatedBarretParams<4> for FieldParams {
-    unsafe fn neg_modulus() -> &'static BigInt<4> {
+    fn neg_modulus() -> &'static BigInt<4> {
         &NEG_MODULUS
     }
 }

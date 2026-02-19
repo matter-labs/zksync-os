@@ -28,13 +28,15 @@ static MONT_REDUCTION_CONSTANT: B =
 struct FqParams;
 
 impl DelegatedModParams<4> for FqParams {
-    unsafe fn modulus() -> &'static BigInt<4> {
+    const MODULUS_BITSIZE: usize = 254;
+
+    fn modulus() -> &'static BigInt<4> {
         &MODULUS_CONSTANT
     }
 }
 
 impl DelegatedMontParams<4> for FqParams {
-    unsafe fn reduction_const() -> &'static BigInt<4> {
+    fn reduction_const() -> &'static BigInt<4> {
         &MONT_REDUCTION_CONSTANT
     }
 }

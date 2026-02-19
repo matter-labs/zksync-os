@@ -375,7 +375,9 @@ mod tests {
     struct ZeroMod;
 
     impl DelegatedModParams<4> for ZeroMod {
-        unsafe fn modulus() -> &'static BigInt<4> {
+        const MODULUS_BITSIZE: usize = 0;
+
+        fn modulus() -> &'static BigInt<4> {
             &ZERO
         }
     }

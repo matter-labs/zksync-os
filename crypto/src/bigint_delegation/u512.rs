@@ -187,12 +187,14 @@ pub unsafe fn neg_mod_assign<T: DelegatedModParams<8>>(a: &mut U512) {
 /// Both `self` and `rhs` are assumed to be in montgomery form.
 /// The reduction constant is expected to be `-1/modulus mod 2^256`
 ///
-/// Note: as this is only used for bls12-381, we assume that modulus is
-/// strictly less than 512 bits
+/// Note: we assume that modulus is strictly less than 512 bits
 /// # Safety
 /// `DelegationMontParams` should only provide references to mutable statics.
 /// It is the responsibility of the caller to make sure that is the case
 pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams<8>>(a: &mut U512, b: &U512) {
+    // otherwise we may get a carry in the final addition
+    assert!(T::MODULUS_BITSIZE < 512);
+
     with_scratch!(s => {
         let (r0, r1) = {
             let b0 = as_low(b);
@@ -354,8 +356,8 @@ pub unsafe fn mul_assign_montgomery<T: DelegatedMontParams<8>>(a: &mut U512, b: 
 
         let carry2 = new_carry_2;
 
-        // for bls12-381 we can't have a carry here
         let carry = u256::add_assign(a1, carry2);
+        // we can't have a carry since MODULUS_BITSIZE < 512
         debug_assert!(!carry);
 
         let borrow = u256::sub_assign(a0, as_low(T::modulus()));
@@ -404,7 +406,9 @@ mod tests {
     ]);
 
     impl DelegatedModParams<8> for TestMod {
-        unsafe fn modulus() -> &'static BigInt<8> {
+        const MODULUS_BITSIZE: usize = 381;
+
+        fn modulus() -> &'static BigInt<8> {
             &TEST_MODULUS
         }
     }
