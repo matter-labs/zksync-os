@@ -76,6 +76,18 @@ where
         }
     }
 
+    /// Clears the map while reusing history record allocations.
+    pub fn reset_for_new_tx(&mut self) {
+        for (_, element) in self.btree.iter_mut() {
+            self.records_memory_pool
+                .reuse_memory(element.head, element.initial);
+        }
+        self.btree.clear();
+        self.state.next_snapshot_id = CacheSnapshotId(1);
+        self.state.frozen_snapshot_id = CacheSnapshotId(0);
+        self.state.pending_updated_elements = StackLinkedList::empty(self.state.alloc.clone());
+    }
+
     /// Get history of an element by key
     pub fn get<'s>(&'s self, key: &'s K) -> Option<HistoryMapItemRef<'s, K, V, A, KP>> {
         self.btree
