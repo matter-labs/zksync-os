@@ -189,7 +189,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
                 }
                 // appearance mark
                 if observe {
-                    x.element_properties_mut().mark_value_as_known();
+                    x.element_properties_mut().mark_value_as_observed();
                 }
 
                 Ok(x)
@@ -220,7 +220,9 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
 
         let cur = account_data.current().value().balance;
         let new = update_fn(&cur)?;
-        account_data.element_properties_mut().mark_value_as_known();
+        account_data
+            .element_properties_mut()
+            .mark_value_as_observed();
         account_data.update(|cache_record| {
             cache_record.update(|v, _| {
                 v.balance = new;
@@ -389,7 +391,9 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
         let mut account_data = self
             .materialize_element::<PROOF_ENV>(ee_type, resources, address, oracle, false, true)?;
         // we are actually going to use account properties, so we should mark it so
-        account_data.element_properties_mut().mark_value_as_known();
+        account_data
+            .element_properties_mut()
+            .mark_value_as_observed();
         let element_properties = account_data.element_properties();
         let full_data = account_data.current().value();
 
@@ -476,7 +480,9 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
 
         let nonce = account_data.current().value().nonce;
         if let Some(new_nonce) = nonce.checked_add(increment_by) {
-            account_data.element_properties_mut().mark_value_as_known();
+            account_data
+                .element_properties_mut()
+                .mark_value_as_observed();
             account_data.update(|cache_record| {
                 cache_record.update(|x, _| {
                     if x.bytecode_hash.is_zero() {
@@ -604,7 +610,9 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
 
-        account_data.element_properties_mut().mark_value_as_known();
+        account_data
+            .element_properties_mut()
+            .mark_value_as_observed();
         account_data.update(|cache_record| {
             cache_record.update(|v, m| {
                 v.bytecode_hash = bytecode_hash;
@@ -647,7 +655,9 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             account_data.current().metadata().deployed_in_tx == Some(cur_tx) || in_constructor;
 
         if should_be_deconstructed {
-            account_data.element_properties_mut().mark_value_as_known();
+            account_data
+                .element_properties_mut()
+                .mark_value_as_observed();
             account_data.update(|data| {
                 data.update_metadata(|metadata| {
                     metadata.is_marked_for_deconstruction = true;
@@ -756,7 +766,9 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
             WARM_ACCOUNT_CACHE_WRITE_EXTRA_NATIVE_COST,
         )))?;
 
-        account_data.element_properties_mut().mark_value_as_known();
+        account_data
+            .element_properties_mut()
+            .mark_value_as_observed();
         account_data.update(|cache_record| {
             cache_record.update(|v, _m| {
                 v.bytecode_hash = bytecode_hash;
@@ -781,7 +793,7 @@ impl<A: Allocator + Clone, R: Resources, SF: StackFactory<N>, const N: usize>
 
                     // NOTE: Balance will be zeroed out if deconstruction happens here
                     let initially_empty = cache_appearance.is_new_element();
-                    assert!(cache_appearance.is_value_known());
+                    assert!(cache_appearance.is_value_observed());
                     current.value.update(|x, metadata| {
                         metadata.is_marked_for_deconstruction = false;
                         if initially_empty {

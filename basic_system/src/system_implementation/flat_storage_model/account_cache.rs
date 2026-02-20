@@ -264,7 +264,7 @@ impl<
                     .basic
                     .considered_warm(self.current_tx_id);
                 if observe {
-                    x.element_properties_mut().mark_value_as_known();
+                    x.element_properties_mut().mark_value_as_observed();
                 }
                 if is_warm == false {
                     if initialized_element == false {
@@ -1160,7 +1160,9 @@ impl<
             || in_constructor;
 
         if should_be_deconstructed {
-            account_data.element_properties_mut().mark_value_as_known();
+            account_data
+                .element_properties_mut()
+                .mark_value_as_observed();
             account_data.update(|data| {
                 data.update_metadata(|metadata| {
                     metadata.basic.is_marked_for_deconstruction = true;
@@ -1234,7 +1236,7 @@ impl<
                 if current.value.metadata().basic.is_marked_for_deconstruction {
                     // NOTE: it can only happen if the account is initially empty,
                     // so we need to make sure that it was observed earlier - when bytecode was deployed
-                    assert!(cache_appearance.is_value_known());
+                    assert!(cache_appearance.is_value_observed());
                     current.value.update(|x, metadata| {
                         metadata.basic.is_marked_for_deconstruction = false;
                         *x = AccountProperties::TRIVIAL_VALUE;

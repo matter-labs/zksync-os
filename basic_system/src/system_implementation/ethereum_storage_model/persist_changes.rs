@@ -555,7 +555,7 @@ impl EthereumStoragePersister {
                         .cache
                         .get_mut((&active_address).into())
                         .expect("account with storage address must be cached");
-                    e.element_properties_mut().mark_value_as_known();
+                    e.element_properties_mut().mark_value_as_observed();
                 }
 
                 // recompute new root
@@ -687,7 +687,7 @@ impl EthereumStoragePersister {
                 addr.0.as_uint()
             );
 
-            if !key_properties.is_value_known() {
+            if !key_properties.is_value_observed() {
                 // whatever it was - it's unobservable, we can just skip it
                 assert_eq!(initial.value(), current.value());
 

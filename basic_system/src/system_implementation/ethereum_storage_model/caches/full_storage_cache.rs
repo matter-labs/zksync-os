@@ -168,7 +168,7 @@ impl<
             let current_record = item.current();
             let initial_record = item.initial();
             let is_new_storage_slot = item.key_properties().is_new_element();
-            let initial_value_used = item.key_properties().is_value_known();
+            let initial_value_used = item.key_properties().is_value_observed();
             (
                 *item.key(),
                 // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
