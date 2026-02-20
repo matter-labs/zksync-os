@@ -16,6 +16,7 @@ use crate::bootloader::transaction_flow::TxExecutionResult;
 use crate::bootloader::transaction_flow::{ExecutionOutput, ExecutionResult};
 use crate::bootloader::BasicBootloaderExecutionConfig;
 use crate::bootloader::TxProcessingOutput;
+use alloc::format;
 use core::fmt::Write;
 use errors::cascade::CascadedError;
 use errors::root_cause::RootCause;
