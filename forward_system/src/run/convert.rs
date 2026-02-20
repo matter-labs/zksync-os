@@ -3,8 +3,10 @@ use alloy::consensus::{Header, Sealed};
 use alloy::primitives::Log;
 use basic_bootloader::bootloader::block_header::BlockHeader;
 use zk_ee::common_structs::GenericEventContent;
+use zk_ee::system::evm::EvmError as ZkEvmError;
 use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::types_config::EthereumIOTypesConfig;
+use zksync_os_evm_errors::EvmError as InterfaceEvmError;
 use zksync_os_interface::error::InvalidTransaction;
 use zksync_os_interface::types::{BlockContext, L2ToL1Log};
 
@@ -14,6 +16,66 @@ pub trait FromInterface<T> {
 
 pub trait IntoInterface<T> {
     fn into_interface(self) -> T;
+}
+
+impl IntoInterface<InterfaceEvmError> for ZkEvmError {
+    fn into_interface(self) -> InterfaceEvmError {
+        match self {
+            ZkEvmError::Revert => InterfaceEvmError::Revert,
+            ZkEvmError::OutOfGas => InterfaceEvmError::OutOfGas,
+            ZkEvmError::InvalidJump => InterfaceEvmError::InvalidJump,
+            ZkEvmError::ReturnDataOutOfBounds => InterfaceEvmError::ReturnDataOutOfBounds,
+            ZkEvmError::InvalidOpcode(opcode) => InterfaceEvmError::InvalidOpcode(opcode),
+            ZkEvmError::StackUnderflow => InterfaceEvmError::StackUnderflow,
+            ZkEvmError::StackOverflow => InterfaceEvmError::StackOverflow,
+            ZkEvmError::CallNotAllowedInsideStatic => InterfaceEvmError::CallNotAllowedInsideStatic,
+            ZkEvmError::StateChangeDuringStaticCall => {
+                InterfaceEvmError::StateChangeDuringStaticCall
+            }
+            ZkEvmError::MemoryLimitOOG => InterfaceEvmError::MemoryLimitOOG,
+            ZkEvmError::InvalidOperandOOG => InterfaceEvmError::InvalidOperandOOG,
+            ZkEvmError::CodeStoreOutOfGas => InterfaceEvmError::CodeStoreOutOfGas,
+            ZkEvmError::CallTooDeep => InterfaceEvmError::CallTooDeep,
+            ZkEvmError::InsufficientBalance => InterfaceEvmError::InsufficientBalance,
+            ZkEvmError::CreateCollision => InterfaceEvmError::CreateCollision,
+            ZkEvmError::NonceOverflow => InterfaceEvmError::NonceOverflow,
+            ZkEvmError::CreateContractSizeLimit => InterfaceEvmError::CreateContractSizeLimit,
+            ZkEvmError::CreateInitcodeSizeLimit => InterfaceEvmError::CreateInitcodeSizeLimit,
+            ZkEvmError::CreateContractStartingWithEF => {
+                InterfaceEvmError::CreateContractStartingWithEF
+            }
+        }
+    }
+}
+
+impl FromInterface<InterfaceEvmError> for ZkEvmError {
+    fn from_interface(value: InterfaceEvmError) -> Self {
+        match value {
+            InterfaceEvmError::Revert => ZkEvmError::Revert,
+            InterfaceEvmError::OutOfGas => ZkEvmError::OutOfGas,
+            InterfaceEvmError::InvalidJump => ZkEvmError::InvalidJump,
+            InterfaceEvmError::ReturnDataOutOfBounds => ZkEvmError::ReturnDataOutOfBounds,
+            InterfaceEvmError::InvalidOpcode(opcode) => ZkEvmError::InvalidOpcode(opcode),
+            InterfaceEvmError::StackUnderflow => ZkEvmError::StackUnderflow,
+            InterfaceEvmError::StackOverflow => ZkEvmError::StackOverflow,
+            InterfaceEvmError::CallNotAllowedInsideStatic => ZkEvmError::CallNotAllowedInsideStatic,
+            InterfaceEvmError::StateChangeDuringStaticCall => {
+                ZkEvmError::StateChangeDuringStaticCall
+            }
+            InterfaceEvmError::MemoryLimitOOG => ZkEvmError::MemoryLimitOOG,
+            InterfaceEvmError::InvalidOperandOOG => ZkEvmError::InvalidOperandOOG,
+            InterfaceEvmError::CodeStoreOutOfGas => ZkEvmError::CodeStoreOutOfGas,
+            InterfaceEvmError::CallTooDeep => ZkEvmError::CallTooDeep,
+            InterfaceEvmError::InsufficientBalance => ZkEvmError::InsufficientBalance,
+            InterfaceEvmError::CreateCollision => ZkEvmError::CreateCollision,
+            InterfaceEvmError::NonceOverflow => ZkEvmError::NonceOverflow,
+            InterfaceEvmError::CreateContractSizeLimit => ZkEvmError::CreateContractSizeLimit,
+            InterfaceEvmError::CreateInitcodeSizeLimit => ZkEvmError::CreateInitcodeSizeLimit,
+            InterfaceEvmError::CreateContractStartingWithEF => {
+                ZkEvmError::CreateContractStartingWithEF
+            }
+        }
+    }
 }
 
 impl FromInterface<BlockContext> for BlockMetadataFromOracle {

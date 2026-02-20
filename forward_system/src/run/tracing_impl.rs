@@ -1,8 +1,9 @@
+use crate::run::convert::IntoInterface;
 use crate::run::convert_alloy::IntoAlloy;
 use alloy::primitives::{Address, U256};
 use std::marker::PhantomData;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::system::evm::EvmFrameInterface;
+use zk_ee::system::evm::{EvmError as ZkEEEvmError, EvmFrameInterface};
 use zk_ee::system::tracer::evm_tracer::EvmTracer;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::{
@@ -10,7 +11,7 @@ use zk_ee::system::{
     Resources, SystemTypes,
 };
 use zk_ee::types_config::SystemIOTypesConfig;
-use zksync_os_evm_errors::EvmError;
+use zksync_os_evm_errors::EvmError as InterfaceEvmError;
 use zksync_os_interface::tracing::{EvmRequest, EvmResources};
 
 /// Wrapper around interface `EvmTracer` to make it compatible with `zk_ee` tracing API.
@@ -183,13 +184,17 @@ impl<'a, T: zksync_os_interface::tracing::EvmTracer, S: EthereumLikeTypes> EvmTr
         )
     }
 
-    fn on_opcode_error(&mut self, error: &EvmError, frame_state: &impl EvmFrameInterface<S>) {
-        self.0
-            .on_opcode_error(error, EvmFrameInterfaceWrapped::from(frame_state))
+    fn on_opcode_error(&mut self, error: &ZkEEEvmError, frame_state: &impl EvmFrameInterface<S>) {
+        let interface_error: InterfaceEvmError = error.clone().into_interface();
+        self.0.on_opcode_error(
+            &interface_error,
+            EvmFrameInterfaceWrapped::from(frame_state),
+        )
     }
 
-    fn on_call_error(&mut self, error: &EvmError) {
-        self.0.on_call_error(error)
+    fn on_call_error(&mut self, error: &ZkEEEvmError) {
+        let interface_error: InterfaceEvmError = error.clone().into_interface();
+        self.0.on_call_error(&interface_error)
     }
 
     fn on_selfdestruct(
@@ -327,7 +332,9 @@ impl<'a> zksync_os_interface::tracing::EvmStackInterface for EvmStackInterfaceWr
         self.inner.len()
     }
 
-    fn peek_n(&self, index: usize) -> Result<&U256, EvmError> {
-        self.inner.peek_n(index)
+    fn peek_n(&self, index: usize) -> Result<&U256, InterfaceEvmError> {
+        self.inner
+            .peek_n(index)
+            .map_err(|error| error.into_interface())
     }
 }

@@ -45,7 +45,8 @@ use zk_ee::system::{Ergs, EthereumLikeTypes, Resource, Resources, System, System
 use alloc::vec::Vec;
 use zk_ee::utils::*;
 use zk_ee::{internal_error, types_config::*};
-use zksync_os_evm_errors::EvmError;
+
+use zk_ee::system::evm::EvmError;
 
 mod ee_trait_impl;
 pub mod errors;
