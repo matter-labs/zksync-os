@@ -223,6 +223,18 @@ where
     )
 }
 
+pub fn add_contract_deployer<S: EthereumLikeTypes, A: Allocator + Clone>(
+    hooks: &mut HooksStorage<S, A>,
+) -> Result<(), InternalError>
+where
+    S::IO: IOSubsystemExt,
+{
+    hooks.add_call_hook(
+        CONTRACT_DEPLOYER_ADDRESS_LOW,
+        SystemCallHook::new(contract_deployer_hook),
+    )
+}
+
 pub fn add_base_token_mint<S: EthereumLikeTypes, A: Allocator + Clone>(
     hooks: &mut HooksStorage<S, A>,
 ) -> Result<(), InternalError>
