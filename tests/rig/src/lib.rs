@@ -194,7 +194,7 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
     }
 
     pub fn with_evm_contract(mut self, address: ruint::aliases::B160, bytecode: &[u8]) -> Self {
-        self.set_evm_bytecode(address, bytecode);
+        self.set_evm_contract(address, bytecode);
         self
     }
 
@@ -212,7 +212,7 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         self
     }
 
-    pub fn set_evm_bytecode(
+    pub fn set_evm_contract(
         &mut self,
         address: ruint::aliases::B160,
         bytecode: &[u8],
@@ -342,38 +342,35 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         crate::utils::run_block_of_erc20_with_fee(&mut self.chain, n, block_context, fee)
     }
 
-    pub fn execute_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {
+    pub fn execute_block<T: IntoEncodedTx>(&mut self, transactions: Vec<T>) -> BlockOutput {
         let encoded_txs = transactions
-            .iter()
-            .map(|tx| tx.clone().encode())
+            .into_iter()
+            .map(IntoEncodedTx::into_encoded_tx)
             .collect::<Vec<_>>();
-        let block_output = self.chain.run_block(
+        self.chain.run_block(
             encoded_txs,
             self.block_context.clone(),
             self.da_commitment_scheme.clone(),
             self.run_config.clone(),
-        );
-        block_output
+        )
     }
 
-    pub fn simulate_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {
+    pub fn simulate_block<T: IntoEncodedTx>(&mut self, transactions: Vec<T>) -> BlockOutput {
         let encoded_txs = transactions
-            .iter()
-            .map(|tx| tx.clone().encode())
+            .into_iter()
+            .map(IntoEncodedTx::into_encoded_tx)
             .collect::<Vec<_>>();
-        let block_output = self
-            .chain
-            .simulate_block(encoded_txs, self.block_context.clone());
-        block_output
+        self.chain
+            .simulate_block(encoded_txs, self.block_context.clone())
     }
 
-    pub fn execute_block_no_panic(
+    pub fn execute_block_no_panic<T: IntoEncodedTx>(
         &mut self,
-        transactions: Vec<ZKsyncTxEnvelope>,
+        transactions: Vec<T>,
     ) -> Result<BlockOutput, basic_bootloader::bootloader::errors::BootloaderSubsystemError> {
         let encoded_txs = transactions
-            .iter()
-            .map(|tx| tx.clone().encode())
+            .into_iter()
+            .map(IntoEncodedTx::into_encoded_tx)
             .collect::<Vec<_>>();
         self.chain.run_block_no_panic(
             encoded_txs,
