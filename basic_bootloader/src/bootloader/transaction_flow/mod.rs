@@ -64,7 +64,7 @@ pub enum ExecutionResult<'a, IOTypes: SystemIOTypesConfig> {
 }
 
 impl<'a, IOTypes: SystemIOTypesConfig> ExecutionResult<'a, IOTypes> {
-    pub fn reverted(self) -> Self {
+    pub fn to_reverted(self) -> Self {
         match self {
             Self::Success {
                 output: ExecutionOutput::Call(_),

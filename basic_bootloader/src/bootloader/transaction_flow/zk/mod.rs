@@ -862,10 +862,10 @@ where
             Some(context.validation_pubdata),
         )?;
         if !has_enough {
-            execution_result = execution_result.reverted();
+            execution_result = execution_result.to_reverted();
             system_log!(system, "Not enough gas for pubdata after execution\n");
             Ok((
-                execution_result.reverted(),
+                execution_result.to_reverted(),
                 CachedPubdataInfo {
                     pubdata_used,
                     to_charge_for_pubdata,
