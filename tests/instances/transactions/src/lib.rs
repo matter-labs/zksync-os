@@ -287,7 +287,7 @@ fn test_withdrawal() {
 
     let output = tester.execute_block(transactions);
 
-    tester.assert_all_txs_succeded(&output);
+    tester.assert_all_txs_succeeded(&output);
 
     // Check preimage of withdrawal
     let mut expected_preimage =
@@ -346,7 +346,7 @@ fn test_tx_with_access_list() {
 
     let output = tester.execute_block(transactions);
 
-    tester.assert_all_txs_succeded(&output);
+    tester.assert_all_txs_succeeded(&output);
 }
 
 #[test]
@@ -396,7 +396,7 @@ fn test_tx_with_authorization_list() {
 
     let output = tester.execute_block(vec![mint_tx]);
 
-    tester.assert_all_txs_succeded(&output);
+    tester.assert_all_txs_succeeded(&output);
 }
 
 // Test that slots made warm in a tx are cold in the next tx
@@ -460,7 +460,13 @@ fn test_cold_in_new_tx() {
 
     let output = tester.execute_block(transactions);
 
-    tester.assert_all_txs_succeded(&output);
+    // Assert all txs succeeded
+    let result0 = output.tx_results.first().unwrap().clone();
+    let result1 = output.tx_results.get(1).unwrap().clone();
+    let result2 = output.tx_results.get(2).unwrap().clone();
+    assert!(result0.is_ok_and(|o| o.is_success()));
+    assert!(result1.is_ok_and(|o| o.is_success()));
+    assert!(result2.is_ok_and(|o| !o.is_success()));
 }
 
 #[test]
@@ -514,7 +520,7 @@ fn test_independent_txs_have_same_pubdata() {
     let output = tester.execute_block(transactions);
 
     // Assert all txs succeeded and compare pubdata len
-    tester.assert_all_txs_succeded(&output);
+    tester.assert_all_txs_succeeded(&output);
 
     let result1 = output.tx_results.first().unwrap().clone();
     let result2 = output.tx_results.get(1).unwrap().clone();
@@ -616,7 +622,7 @@ fn test_invalid_tx_does_not_affect_native() {
     let output = tester.execute_block(transactions);
 
     // Assert tx succeeded
-    tester.assert_all_txs_succeded(&output);
+    tester.assert_all_txs_succeeded(&output);
 
     let native_used_reference = output
         .tx_results

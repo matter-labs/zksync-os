@@ -15,6 +15,7 @@ use alloy::signers::local::PrivateKeySigner;
 pub use alloy_rlp;
 pub use alloy_sol_types;
 pub use basic_bootloader;
+use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 pub use basic_system;
 pub use callable_oracles;
 pub use chain::BlockContext;
@@ -105,6 +106,12 @@ impl ZKsyncOSTester<true> {
             da_commitment_scheme: None,
             run_config: None,
         }
+    }
+}
+
+impl Default for ZKsyncOSTester<false> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -283,7 +290,7 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         self.chain.run_block(
             encoded_txs,
             self.block_context.clone(),
-            self.da_commitment_scheme.clone(),
+            self.da_commitment_scheme,
             self.run_config.clone(),
         )
     }
@@ -300,7 +307,7 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
     pub fn execute_block_no_panic<T: IntoEncodedTx>(
         &mut self,
         transactions: Vec<T>,
-    ) -> Result<BlockOutput, basic_bootloader::bootloader::errors::BootloaderSubsystemError> {
+    ) -> Result<BlockOutput, BootloaderSubsystemError> {
         let encoded_txs = transactions
             .into_iter()
             .map(IntoEncodedTx::into_encoded_tx)
@@ -308,12 +315,12 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         self.chain.run_block_no_panic(
             encoded_txs,
             self.block_context.clone(),
-            self.da_commitment_scheme.clone(),
+            self.da_commitment_scheme,
             self.run_config.clone(),
         )
     }
 
-    pub fn assert_all_txs_succeded(&self, block_output: &BlockOutput) {
+    pub fn assert_all_txs_succeeded(&self, block_output: &BlockOutput) {
         assert!(block_output
             .tx_results
             .iter()
