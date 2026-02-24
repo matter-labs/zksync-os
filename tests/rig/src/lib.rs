@@ -50,6 +50,7 @@ use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 pub use zksync_web3_rs;
 
+use crate::chain::TestingOracleFactory;
 use crate::chain::{BlockExtraStats, RunConfig};
 
 static INIT_LOGGER_ONCE: Once = Once::new();
@@ -108,6 +109,7 @@ pub struct ZKsyncOSTester<const RANDOMIZED_TREE: bool = false> {
     da_commitment_scheme: Option<DACommitmentScheme>,
     run_config: Option<RunConfig>,
     last_executed_block_info: Option<LastExecutedBlockInfo>,
+    oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
 }
 
 impl ZKsyncOSTester<true> {
@@ -120,6 +122,7 @@ impl ZKsyncOSTester<true> {
             da_commitment_scheme: None,
             run_config: None,
             last_executed_block_info: None,
+            oracle_factory: None,
         }
     }
 }
@@ -140,6 +143,7 @@ impl ZKsyncOSTester<false> {
             da_commitment_scheme: None,
             run_config: None,
             last_executed_block_info: None,
+            oracle_factory: None,
         }
     }
 }
@@ -181,6 +185,14 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
 
     pub fn with_run_config(mut self, run_config: RunConfig) -> Self {
         self.run_config = Some(run_config);
+        self
+    }
+
+    pub fn with_oracle_factory(
+        mut self,
+        oracle_factory: impl TestingOracleFactory<RANDOMIZED_TREE> + 'static,
+    ) -> Self {
+        self.oracle_factory = Some(Box::new(oracle_factory));
         self
     }
 
@@ -247,6 +259,14 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
 
     pub fn set_run_config(&mut self, run_config: Option<RunConfig>) -> &mut Self {
         self.run_config = run_config;
+        self
+    }
+
+    pub fn set_oracle_factory(
+        &mut self,
+        oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
+    ) -> &mut Self {
+        self.oracle_factory = oracle_factory;
         self
     }
 
@@ -356,17 +376,31 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
             .into_iter()
             .map(IntoEncodedTx::into_encoded_tx)
             .collect::<Vec<_>>();
-        let (block_output, block_extra_stats, proof_input) = self
-            .chain
-            .run_block_with_extra_stats(
-                encoded_txs,
-                self.block_context.clone(),
-                self.da_commitment_scheme,
-                self.run_config.clone(),
-                tracer,
-                validator,
-            )
-            .unwrap();
+        let (block_output, block_extra_stats, proof_input) =
+            if let Some(oracle_factory) = &self.oracle_factory {
+                self.chain
+                    .run_block_with_extra_stats_with_oracle_factory(
+                        encoded_txs,
+                        self.block_context.clone(),
+                        self.da_commitment_scheme,
+                        self.run_config.clone(),
+                        tracer,
+                        validator,
+                        oracle_factory.as_ref(),
+                    )
+                    .unwrap()
+            } else {
+                self.chain
+                    .run_block_with_extra_stats(
+                        encoded_txs,
+                        self.block_context.clone(),
+                        self.da_commitment_scheme,
+                        self.run_config.clone(),
+                        tracer,
+                        validator,
+                    )
+                    .unwrap()
+            };
 
         self.last_executed_block_info = Some(LastExecutedBlockInfo {
             block_output: block_output.clone(),
