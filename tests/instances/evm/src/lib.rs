@@ -9,23 +9,18 @@ use rig::alloy::hex::FromHex;
 use rig::alloy::primitives::FixedBytes;
 use rig::alloy_sol_types::sol;
 use rig::alloy_sol_types::SolCall;
-use rig::forward_system::run::convert_alloy::FromAlloy;
+use rig::default_run_config;
 use rig::zksync_os_interface::types::ExecutionOutput;
 use rig::zksync_os_interface::types::ExecutionResult;
-use rig::zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::BlockContext;
-use rig::Chain;
-use rig::{
-    alloy::primitives::address,
-    ruint::aliases::{B160, U256},
-};
+use rig::{alloy::primitives::address, ruint::aliases::U256, ZKsyncOSTester};
 
 #[test]
 fn test_blockhash() {
     // Check that all the last 256 block hashes are accessible and the previous to that/
     // current are out of range.
-    let mut chain = Chain::empty(None);
+    let mut tester = ZKsyncOSTester::new();
 
     // Code of contract used for testing
     //   contract BlockhashTester {
@@ -78,16 +73,14 @@ fn test_blockhash() {
         call.abi_encode()
     };
 
-    let wallet = chain.random_signer();
+    let wallet = tester.random_signer();
 
     let to = address!("0x1000000000000000000000000000000000000000");
 
     // Set a reasonable balance that would be sufficient for normal transactions
-    chain.set_balance(
-        B160::from_alloy(wallet.address()),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_evm_contract(to, &bytecode);
 
     let tx = ZKsyncTxEnvelope::from_eth_tx(
         TxLegacy {
@@ -100,27 +93,21 @@ fn test_blockhash() {
             input: calldata.into(),
         },
         wallet.clone(),
-    )
-    .encode();
+    );
 
     // We set block number to 300, to have > 256 block hashes to query
     let block_number = 300;
-    chain.set_last_block_number(block_number - 1);
-
     let mut block_hashes = [U256::ZERO; 256];
     for i in 0..256 {
         let n = block_number - (256 - i);
         block_hashes[i as usize] = U256::from(n);
     }
-    chain.set_block_hashes(block_hashes);
+    tester = tester
+        .with_block_number(block_number)
+        .with_block_hashes(block_hashes)
+        .with_run_config(default_run_config());
 
-    let run_config = rig::chain::RunConfig {
-        app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
-        ..Default::default()
-    };
-    let result = chain.run_block(vec![tx], None, None, Some(run_config));
+    let result = tester.execute_block(vec![tx]);
     assert!(result.tx_results[0].is_ok(),);
 
     let tx_result = result.tx_results[0].as_ref().unwrap();
@@ -152,18 +139,16 @@ fn bench_addmod() {
     }
 
     // Chain setup
-    let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = ZKsyncOSTester::new();
+    let wallet = tester.random_signer();
     let to = address!("0x1000000000000000000000000000000000000000");
-    chain.set_balance(
-        B160::from_alloy(wallet.address()),
-        U256::from(1_000_000_000_000_000u64),
-    );
-    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000u64))
+        .with_evm_contract(to, &bytecode);
 
     // Some handy builders for U256
     let shl = |bits: u32| U256::from(1u64) << bits;
-    let ones = |bits: u32| (shl(bits) - U256::from(1u64)); // ((1<<bits) - 1)
+    let ones = |bits: u32| shl(bits) - U256::from(1u64); // ((1<<bits) - 1)
     let max = ones(256);
 
     // “Interesting” vectors that tickle 32-bit costs (carry storms, divider sizes, edge cases)
@@ -404,18 +389,12 @@ fn bench_addmod() {
                 },
                 wallet.clone(),
             )
-            .encode()
         })
         .collect();
 
     // Run them all in one block
-    let run_config = rig::chain::RunConfig {
-        app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
-        ..Default::default()
-    };
-    let _result = chain.run_block(txs, None, None, Some(run_config));
+    tester = tester.with_run_config(default_run_config());
+    let _result = tester.execute_block(txs);
 }
 
 #[ignore = "benchmark for native constants"]
@@ -434,7 +413,7 @@ fn bench_mulmod() {
 
     // Helpers for vectors
     let shl = |bits: u32| U256::from(1u64) << bits;
-    let ones = |bits: u32| (shl(bits) - U256::from(1u64));
+    let ones = |bits: u32| shl(bits) - U256::from(1u64);
     let max = ones(256);
 
     // Byte-pattern helpers that keep limb0 ≠ 0
@@ -759,15 +738,13 @@ fn bench_mulmod() {
     ];
 
     // --- Chain setup
-    let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = ZKsyncOSTester::new();
+    let wallet = tester.random_signer();
     let to = address!("0x1000000000000000000000000000000000000000");
 
-    chain.set_balance(
-        B160::from_alloy(wallet.address()),
-        U256::from(1_000_000_000_000_000u64),
-    );
-    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000u64))
+        .with_evm_contract(to, &bytecode);
 
     // Build txs with unique nonces
     let txs: Vec<_> = vectors
@@ -787,18 +764,12 @@ fn bench_mulmod() {
                 },
                 wallet.clone(),
             )
-            .encode()
         })
         .collect();
 
     // Run all calls in one block
-    let run_config = rig::chain::RunConfig {
-        app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
-        ..Default::default()
-    };
-    let _result = chain.run_block(txs, None, None, Some(run_config));
+    tester = tester.with_run_config(default_run_config());
+    let _result = tester.execute_block(txs);
 }
 
 #[test]
@@ -893,15 +864,13 @@ fn bench_signextend() {
     ];
 
     // --- Chain setup + deploy
-    let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = ZKsyncOSTester::new();
+    let wallet = tester.random_signer();
     let to = address!("0x1000000000000000000000000000000000000000");
 
-    chain.set_balance(
-        B160::from_alloy(wallet.address()),
-        U256::from(1_000_000_000_000_000u64),
-    );
-    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000u64))
+        .with_evm_contract(to, &bytecode);
 
     // Build signed txs (unique nonces)
     let txs: Vec<_> = vectors
@@ -921,25 +890,19 @@ fn bench_signextend() {
                 },
                 wallet.clone(),
             )
-            .encode()
         })
         .collect();
 
-    let run_config = rig::chain::RunConfig {
-        app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
-        ..Default::default()
-    };
-    let _result = chain.run_block(txs, None, None, Some(run_config));
+    tester = tester.with_run_config(default_run_config());
+    let _result = tester.execute_block(txs);
 }
 
 #[test]
 fn test_eip4844_blobhash() {
-    let mut chain = Chain::empty(None);
+    let mut tester = ZKsyncOSTester::new();
 
     // Test funding signer
-    let wallet = chain.random_signer();
+    let wallet = tester.random_signer();
 
     // Deploy address for the contract in this test (set to some deterministic slot)
     let inspector_addr = address!("0000000000000000000000000000000000010003");
@@ -957,11 +920,9 @@ fn test_eip4844_blobhash() {
     // }
     let bytecode: Vec<u8> = hex::decode("608060405260043610601b575f3560e01c8063ab3ae25514601f575b5f5ffd5b60356004803603810190603191906073565b6037565b005b8049805f5260205ff35b5f5ffd5b5f819050919050565b6055816045565b8114605e575f5ffd5b50565b5f81359050606d81604e565b92915050565b5f6020828403121560855760846041565b5b5f6090848285016061565b9150509291505056fea26469706673582212209d46704950c75b3505742b2236950b59adbcc17d023f976acb6b5c43bca401fc64736f6c634300081e0033").unwrap();
 
-    chain.set_evm_bytecode(B160::from_alloy(inspector_addr), &bytecode);
-    chain.set_balance(
-        B160::from_alloy(wallet.address()),
-        U256::from(1_000_000_000_000_000_u64),
-    );
+    tester = tester
+        .with_evm_contract(inspector_addr, &bytecode)
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
     sol! {
         contract BlobHashEcho {
@@ -988,19 +949,16 @@ fn test_eip4844_blobhash() {
         blob_versioned_hashes: vec![versioned_hash],
         max_fee_per_blob_gas: 1_000,
     };
-    let tx = ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode();
+    let tx = ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone());
 
-    let run_config = rig::chain::RunConfig {
-        app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
-        ..Default::default()
-    };
     let block_context = BlockContext {
         blob_fee: U256::from(1000),
         ..Default::default()
     };
-    let result = chain.run_block(vec![tx], Some(block_context), None, Some(run_config));
+    tester = tester
+        .with_block_context(block_context)
+        .with_run_config(default_run_config());
+    let result = tester.execute_block(vec![tx]);
     assert!(result.tx_results[0].is_ok(),);
     let tx_result = result.tx_results[0].as_ref().unwrap();
     assert!(tx_result.is_success(), "Transaction should be successful");
