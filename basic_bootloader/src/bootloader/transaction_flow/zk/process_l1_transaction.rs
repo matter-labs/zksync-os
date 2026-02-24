@@ -419,7 +419,13 @@ where
                 u64::MAX
         });
 
-    let native_prepaid_from_gas = native_per_gas.saturating_mul(gas_limit);
+    let native_prepaid_from_gas = native_per_gas.checked_mul(gas_limit)
+        .unwrap_or_else(|| {
+            system_log!(
+                system,
+                "Native prepaid from gas calculation for L1 tx overflows, using saturated arithmetic instead");
+                u64::MAX
+        });
 
     let (calldata_tokens, minimal_gas_used) =
         compute_calldata_tokens(system, transaction.calldata(), true);
