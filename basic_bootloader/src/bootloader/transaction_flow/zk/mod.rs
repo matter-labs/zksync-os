@@ -478,8 +478,9 @@ where
         // go to the operator. Base fees are effectively "burned" (not transferred anywhere).
         let gas_price_for_operator = if cfg!(feature = "burn_base_fee") {
             let base_fee = system.get_eip1559_basefee();
-            // Note, underflow can only happen during simulation or
-            // service transactions
+            // We use saturating arithmetic to allow the caller of this method to
+            // allow gas_price < base_fee. This can be used, for example, for
+            // transaction simulation
             context.gas_price.saturating_sub(base_fee)
         } else {
             context.gas_price
