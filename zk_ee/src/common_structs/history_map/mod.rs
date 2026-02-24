@@ -77,7 +77,7 @@ where
     }
 
     /// Clears the map while reusing history record allocations.
-    pub fn reset_for_new_tx(&mut self) {
+    pub fn clear(&mut self) {
         for (_, element) in self.btree.iter_mut() {
             self.records_memory_pool
                 .reuse_memory(element.head, element.initial);
@@ -622,5 +622,75 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn clear_removes_elements_and_pending_changes() {
+        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+
+        map.snapshot();
+
+        // Create one modified entry.
+        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        v.update::<_, ()>(|x| {
+            *x = 2;
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(map.iter().len(), 1);
+        assert_eq!(map.iter_altered_since_commit().count(), 1);
+
+        // Drop all state.
+        map.clear();
+
+        assert!(map.get(&1).is_none());
+        assert_eq!(map.iter().len(), 0);
+        assert_eq!(map.iter_altered_since_commit().count(), 0);
+        map.apply_to_all_updated_elements::<_, ()>(|_, _, _| {
+            panic!("Map is expected to be empty after clear")
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn clear_resets_snapshots() {
+        let mut map = HistoryMap::<usize, usize, Global>::new(Global);
+
+        // Keep a pre-clear snapshot handle.
+        let pre_clear_snapshot = map.snapshot();
+
+        let mut v = map.get_or_insert::<()>(&1, || Ok((1, ()))).unwrap();
+        v.update::<_, ()>(|x| {
+            *x = 2;
+            Ok(())
+        })
+        .unwrap();
+
+        map.clear();
+
+        // Old snapshot ids are no longer valid.
+        assert!(map.rollback(pre_clear_snapshot).is_err());
+
+        // Materialize key after clear with initial value.
+        map.get_or_insert::<()>(&1, || Ok((3, ()))).unwrap();
+
+        // Take snapshot after clear.
+        let post_clear_snapshot = map.snapshot();
+        assert_eq!(post_clear_snapshot, super::CacheSnapshotId(1));
+
+        let mut v = map.get_or_insert::<()>(&1, || Ok((5, ()))).unwrap();
+        v.update::<_, ()>(|x| {
+            *x = 4;
+            Ok(())
+        })
+        .unwrap();
+
+        // Rollback restores the post-clear initial value for this key.
+        map.rollback(post_clear_snapshot).expect("Valid snapshot");
+        let restored = map.get(&1).expect("Element must remain after rollback");
+
+        assert_eq!(*restored.initial(), 3);
+        assert_eq!(*restored.current(), 3);
     }
 }

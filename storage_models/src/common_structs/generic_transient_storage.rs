@@ -42,7 +42,7 @@ impl<
         // Just discard old history
         // Note: it will reset snapshots counter, old snapshots handlers can't be used anymore
         // Note: We will reset it redundantly for first tx
-        self.cache.reset_for_new_tx();
+        self.cache.clear();
         self.current_tx_number += 1;
     }
 
