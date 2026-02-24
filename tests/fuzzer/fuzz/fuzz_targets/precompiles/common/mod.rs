@@ -68,7 +68,7 @@ pub fn run_precompile(id: &str, input: &[u8]) -> BlockOutput {
 
     let run_config = rig::chain::RunConfig {
         app: Some("for_tests".to_string()),
-        only_forward: false,
+        do_riscv_run: true,
         check_storage_diff_hashes: true,
         ..Default::default()
     };
