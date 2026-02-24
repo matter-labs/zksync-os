@@ -49,6 +49,22 @@ pub fn init_logger() {
     INIT_LOGGER_ONCE.call_once(env_logger::init);
 }
 
+pub trait IntoEncodedTx {
+    fn into_encoded_tx(self) -> zksync_os_interface::traits::EncodedTx;
+}
+
+impl IntoEncodedTx for zksync_os_interface::traits::EncodedTx {
+    fn into_encoded_tx(self) -> zksync_os_interface::traits::EncodedTx {
+        self
+    }
+}
+
+impl IntoEncodedTx for ZKsyncTxEnvelope {
+    fn into_encoded_tx(self) -> zksync_os_interface::traits::EncodedTx {
+        self.encode()
+    }
+}
+
 #[allow(dead_code)]
 mod colors {
     pub const RESET: &str = "\x1b[0m";
@@ -80,7 +96,7 @@ pub struct ZKsyncOSTester<const RANDOMIZED_TREE: bool = false> {
 }
 
 impl ZKsyncOSTester<true> {
-    pub fn new() -> Self {
+    pub fn new_with_randomized_tree() -> Self {
         init_logger();
 
         Self {
@@ -130,6 +146,11 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         self
     }
 
+    pub fn set_block_context(&mut self, block_context: Option<BlockContext>) -> &mut Self {
+        self.block_context = block_context;
+        self
+    }
+
     pub fn with_da_commitment_scheme(mut self, da_commitment_scheme: DACommitmentScheme) -> Self {
         self.da_commitment_scheme = Some(da_commitment_scheme);
         self
@@ -140,17 +161,45 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         self
     }
 
+    pub fn with_system_contracts(
+        mut self,
+        with_l1_messenger: bool,
+        with_l2_base_token: bool,
+        with_contract_deployer: bool,
+    ) -> Self {
+        crate::testing_utils::install_system_contracts(
+            &mut self.chain,
+            with_l1_messenger,
+            with_l2_base_token,
+            with_contract_deployer,
+        );
+        self
+    }
+
     pub fn with_balance(
         mut self,
         address: ruint::aliases::B160,
         balance: ruint::aliases::U256,
     ) -> Self {
-        self.chain.set_balance(address, balance);
+        self.set_balance(address, balance);
+        self
+    }
+
+    pub fn with_prefunded_account(mut self, address: ruint::aliases::B160) -> Self {
+        self.set_balance(
+            address,
+            ruint::aliases::U256::from(1_000_000_000_000_000_u64),
+        );
         self
     }
 
     pub fn with_evm_contract(mut self, address: ruint::aliases::B160, bytecode: &[u8]) -> Self {
-        self.chain.set_evm_bytecode(address, bytecode);
+        self.set_evm_bytecode(address, bytecode);
+        self
+    }
+
+    pub fn set_run_config(&mut self, run_config: Option<RunConfig>) -> &mut Self {
+        self.run_config = run_config;
         self
     }
 
@@ -178,21 +227,36 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
 
     pub fn prefunded_random_signer(&mut self) -> PrivateKeySigner {
         let signer = self.chain.random_signer();
-        self.chain.set_balance(
+        self.set_balance(
             ruint::aliases::B160::from_alloy(signer.address()),
             ruint::aliases::U256::from(1_000_000_000_000_000_u64),
         );
         signer
     }
 
-    pub fn run_block(
+    pub fn run_block<T: IntoEncodedTx>(
         &mut self,
-        transactions: Vec<zksync_os_interface::traits::EncodedTx>,
+        transactions: Vec<T>,
         block_context: Option<BlockContext>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: Option<RunConfig>,
     ) -> BlockOutput {
-        self.chain.run_block(
+        let encoded_txs = transactions
+            .into_iter()
+            .map(IntoEncodedTx::into_encoded_tx)
+            .collect::<Vec<_>>();
+        self.chain
+            .run_block(encoded_txs, block_context, da_commitment_scheme, run_config)
+    }
+
+    pub fn execute_block_with<T: IntoEncodedTx>(
+        &mut self,
+        transactions: Vec<T>,
+        block_context: Option<BlockContext>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        run_config: Option<RunConfig>,
+    ) -> BlockOutput {
+        self.run_block(
             transactions,
             block_context,
             da_commitment_scheme,
@@ -200,22 +264,49 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         )
     }
 
-    pub fn simulate_encoded_block(
+    pub fn simulate_encoded_block<T: IntoEncodedTx>(
         &mut self,
-        transactions: Vec<zksync_os_interface::traits::EncodedTx>,
+        transactions: Vec<T>,
         block_context: Option<BlockContext>,
     ) -> BlockOutput {
-        self.chain.simulate_block(transactions, block_context)
+        let encoded_txs = transactions
+            .into_iter()
+            .map(IntoEncodedTx::into_encoded_tx)
+            .collect::<Vec<_>>();
+        self.chain.simulate_block(encoded_txs, block_context)
     }
 
-    pub fn run_block_no_panic(
+    pub fn simulate_block_with<T: IntoEncodedTx>(
         &mut self,
-        transactions: Vec<zksync_os_interface::traits::EncodedTx>,
+        transactions: Vec<T>,
+        block_context: Option<BlockContext>,
+    ) -> BlockOutput {
+        self.simulate_encoded_block(transactions, block_context)
+    }
+
+    pub fn run_block_no_panic<T: IntoEncodedTx>(
+        &mut self,
+        transactions: Vec<T>,
         block_context: Option<BlockContext>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: Option<RunConfig>,
     ) -> Result<BlockOutput, basic_bootloader::bootloader::errors::BootloaderSubsystemError> {
-        self.chain.run_block_no_panic(
+        let encoded_txs = transactions
+            .into_iter()
+            .map(IntoEncodedTx::into_encoded_tx)
+            .collect::<Vec<_>>();
+        self.chain
+            .run_block_no_panic(encoded_txs, block_context, da_commitment_scheme, run_config)
+    }
+
+    pub fn execute_block_no_panic_with<T: IntoEncodedTx>(
+        &mut self,
+        transactions: Vec<T>,
+        block_context: Option<BlockContext>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        run_config: Option<RunConfig>,
+    ) -> Result<BlockOutput, basic_bootloader::bootloader::errors::BootloaderSubsystemError> {
+        self.run_block_no_panic(
             transactions,
             block_context,
             da_commitment_scheme,
@@ -274,6 +365,37 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
             .chain
             .simulate_block(encoded_txs, self.block_context.clone());
         block_output
+    }
+
+    pub fn execute_block_no_panic(
+        &mut self,
+        transactions: Vec<ZKsyncTxEnvelope>,
+    ) -> Result<BlockOutput, basic_bootloader::bootloader::errors::BootloaderSubsystemError> {
+        let encoded_txs = transactions
+            .iter()
+            .map(|tx| tx.clone().encode())
+            .collect::<Vec<_>>();
+        self.chain.run_block_no_panic(
+            encoded_txs,
+            self.block_context.clone(),
+            self.da_commitment_scheme.clone(),
+            self.run_config.clone(),
+        )
+    }
+
+    pub fn assert_all_txs_succeded(&self, block_output: &BlockOutput) {
+        assert!(block_output
+            .tx_results
+            .iter()
+            .cloned()
+            .enumerate()
+            .all(|(i, r)| {
+                let success = r.clone().is_ok_and(|o| o.is_success());
+                if !success {
+                    println!("Transaction {i} failed with: {r:?}")
+                }
+                success
+            }));
     }
 }
 
