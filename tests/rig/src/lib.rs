@@ -393,3 +393,13 @@ pub fn signer_from_key(key: &str) -> PrivateKeySigner {
 pub fn common_target_address() -> alloy::primitives::Address {
     address!("4242000000000000000000000000000000000000")
 }
+
+pub fn default_run_config() -> RunConfig {
+    RunConfig {
+        app: Some("for_tests".to_string()),
+        only_forward: false,
+        check_storage_diff_hashes: true,
+        skip_minting_tokens_to_treasury: false,
+        ..Default::default()
+    }
+}

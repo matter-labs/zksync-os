@@ -8,12 +8,11 @@ use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
-use rig::chain::RunConfig;
 use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::{alloy, common_target_address, signer_from_key, ZKsyncOSTester};
+use rig::{ZKsyncOSTester, alloy, common_target_address, default_run_config, signer_from_key};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
@@ -26,16 +25,6 @@ mod native_charging;
 const PRIMARY_TEST_PK: &str = "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
 const SECONDARY_TEST_PK: &str = "a226d3a5c8c408741c3446c762aee8dff742f21e381a0e5ab85a96c5c00100be";
 const TERTIARY_TEST_PK: &str = "abcdebdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
-
-fn run_config() -> RunConfig {
-    RunConfig {
-        app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
-        skip_minting_tokens_to_treasury: false,
-        ..Default::default()
-    }
-}
 
 #[test]
 fn run_base_system() {
@@ -168,7 +157,7 @@ fn run_base_system() {
         );
 
     let output = tester
-        .with_run_config(run_config())
+        .with_run_config(default_run_config())
         .execute_block(transactions);
 
     // Assert all txs succeeded
@@ -271,7 +260,7 @@ fn test_withdrawal() {
     let mut tester = ZKsyncOSTester::new()
         .with_system_contracts(true, true, false)
         .with_prefunded_account(wallet.address())
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
 
     let output = tester.execute_block(transactions);
 
@@ -330,7 +319,7 @@ fn test_tx_with_access_list() {
     let mut tester = ZKsyncOSTester::new()
         .with_evm_contract(to, &bytecode)
         .with_prefunded_account(wallet.address())
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
 
     let output = tester.execute_block(transactions);
 
@@ -380,7 +369,7 @@ fn test_tx_with_authorization_list() {
     let mut tester = ZKsyncOSTester::new()
         .with_evm_contract(erc_20_contract, &bytecode)
         .with_prefunded_account(wallet.address())
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
 
     let output = tester.execute_block(vec![mint_tx]);
 
@@ -444,7 +433,7 @@ fn test_cold_in_new_tx() {
     let mut tester = ZKsyncOSTester::new()
         .with_evm_contract(to, &bytecode)
         .with_prefunded_account(wallet.address())
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
 
     let output = tester.execute_block(transactions);
 
@@ -503,7 +492,7 @@ fn test_independent_txs_have_same_pubdata() {
     let mut tester = ZKsyncOSTester::new()
         .with_balance(wallet1.address(), U256::from(1_000_000_000_000_000_u64))
         .with_balance(wallet2.address(), U256::from(1_000_000_000_000_000_u64))
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
 
     let output = tester.execute_block(transactions);
 
@@ -689,7 +678,7 @@ fn test_regression_returndata_empty_3541() {
     let mut tester = ZKsyncOSTester::new()
         .with_evm_contract(to, &bytecode)
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
 
     // We do an initial mint to populate storage slots, otherwise SSTORE
     // costs are hard to reason about.
@@ -723,7 +712,7 @@ fn test_balance_overflow_protection() {
     let to = address!("0000000000000000000000000000000000010002");
     let mut tester = ZKsyncOSTester::new()
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
 
     // Test 1: Transaction with max_fee_per_gas * gas_limit overflow
     let overflow_fee_tx = {
@@ -840,7 +829,7 @@ fn test_invalid_transaction_type_failure() {
     let success_bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
     let mut tester = ZKsyncOSTester::new()
         .with_evm_contract(contract_address, &success_bytecode)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
 
     let transaction_types = vec![0x55, 0x80, 0xFF]; // Some invalid types;
 
@@ -1048,7 +1037,7 @@ fn test_selfdestruct_to_precompile_gas() {
         ZKsyncTxEnvelope::from_eth_tx_from_req(tx_request, wallet)
     };
 
-    tester = tester.with_run_config(run_config());
+    tester = tester.with_run_config(default_run_config());
     let result = tester.execute_block(vec![tx_request]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
@@ -1099,7 +1088,7 @@ fn test_reject_caller_with_code_behavior() {
 
     // But in normal mode it should fail
     let result_normal = tester
-        .with_run_config(run_config())
+        .with_run_config(default_run_config())
         .execute_block(vec![from_contract_tx]);
     assert!(matches!(
         result_normal.tx_results[0],
@@ -1146,7 +1135,7 @@ fn test_expensive_pubdata() {
     tester = tester
         .with_balance(wallet.address(), U256::from(u64::MAX))
         .with_block_context(block_context)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
@@ -1186,7 +1175,7 @@ fn test_check_pubdata_encoding_version() {
     tester = tester
         .with_balance(wallet.address(), U256::from(u64::MAX))
         .with_block_context(block_context)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
@@ -1230,7 +1219,7 @@ fn test_check_pubdata_has_timestamp() {
     tester = tester
         .with_balance(wallet.address(), U256::from(u64::MAX))
         .with_block_context(block_context)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
@@ -1262,7 +1251,7 @@ fn test_simple_service_transaction() {
     };
     let mut tester = ZKsyncOSTester::new()
         .with_block_context(block_context)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
     let result = tester.execute_block(vec![tx]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
@@ -1288,7 +1277,7 @@ fn test_simple_service_transaction_whitelist() {
     tester = tester
         .with_balance(wallet.address(), U256::from(u64::MAX))
         .with_block_context(block_context)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
@@ -1312,7 +1301,7 @@ fn test_service_tx_gas_limit_exceeds_block() {
     };
     let mut tester = ZKsyncOSTester::new()
         .with_block_context(block_context)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
     let result = tester.execute_block(vec![tx]);
     assert!(result.tx_results[0].is_ok());
 }
@@ -1348,7 +1337,7 @@ fn test_service_block_invariants() {
     };
     tester = tester
         .with_block_context(block_context)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
     // Check txs succeed
     let result = tester.execute_block(vec![tx1, tx2, tx3]);
     assert!(
@@ -1382,7 +1371,7 @@ fn test_service_block_invariants() {
     };
     tester = tester
         .with_block_context(block_context)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
     tester
         .execute_block_no_panic(vec![tx4.clone(), tx_non_service.clone()])
         .expect_err("Service block with non service tx should fail");
@@ -1394,7 +1383,7 @@ fn test_service_block_invariants() {
     };
     tester = tester
         .with_block_context(block_context)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
     tester
         .execute_block_no_panic(vec![tx_non_service, tx4])
         .expect_err("Service block with non service tx should fail");
@@ -1432,7 +1421,7 @@ fn test_simulation_skips_nonce_check() {
     );
 
     // In normal execution mode, the transaction should fail with NonceTooHigh
-    tester = tester.with_run_config(run_config());
+    tester = tester.with_run_config(default_run_config());
     let result_normal = tester.execute_block(vec![tx]);
     assert!(
         matches!(
@@ -1611,7 +1600,7 @@ fn test_simulation_gas_and_native_used() {
 
     tester = tester
         .with_block_context(block_context)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
     let result_normal = tester.execute_block(vec![encoded]);
     let tx_result_normal = result_normal.tx_results[0]
         .clone()
@@ -1833,7 +1822,7 @@ fn test_treasury_insufficient_balance_failure() {
         .build()
         .into();
 
-    let mut config = run_config();
+    let mut config = default_run_config();
     config.skip_minting_tokens_to_treasury = true; // Ensure we rely on treasury balance, not minting
 
     // This should fail due to insufficient treasury balance
@@ -1909,7 +1898,7 @@ fn test_pubdata_native_calculation_overflow() {
         )
         .with_evm_contract(to, &bytecode)
         .with_block_context(block_context)
-        .with_run_config(run_config());
+        .with_run_config(default_run_config());
     let result = tester.execute_block(vec![tx]);
 
     // Verify the specific error is OutOfNativeResources
