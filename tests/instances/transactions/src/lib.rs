@@ -268,11 +268,8 @@ fn test_withdrawal() {
 
     let transactions = vec![withdrawal_tx, withdrawal_with_message_tx];
 
-    let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
-
     let mut tester = ZKsyncOSTester::new()
         .with_system_contracts(true, true, false)
-        .with_evm_contract(to, &bytecode)
         .with_prefunded_account(wallet.address())
         .with_run_config(run_config());
 
