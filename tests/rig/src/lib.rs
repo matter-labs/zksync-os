@@ -90,10 +90,10 @@ mod colors {
 }
 
 pub struct ZKsyncOSTester<const RANDOMIZED_TREE: bool = false> {
-    pub chain: Chain<RANDOMIZED_TREE>,
-    pub block_context: Option<BlockContext>,
-    pub da_commitment_scheme: Option<DACommitmentScheme>,
-    pub run_config: Option<RunConfig>,
+    chain: Chain<RANDOMIZED_TREE>,
+    block_context: Option<BlockContext>,
+    da_commitment_scheme: Option<DACommitmentScheme>,
+    run_config: Option<RunConfig>,
 }
 
 impl ZKsyncOSTester<true> {
@@ -209,6 +209,16 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         self
     }
 
+    pub fn with_storage_slot(
+        mut self,
+        address: alloy::primitives::Address,
+        key: ruint::aliases::U256,
+        value: ruint::aliases::B256,
+    ) -> Self {
+        self.set_storage_slot(address, key, value);
+        self
+    }
+
     pub fn set_run_config(&mut self, run_config: Option<RunConfig>) -> &mut Self {
         self.run_config = run_config;
         self
@@ -231,6 +241,17 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
     ) -> &mut Self {
         self.chain
             .set_evm_bytecode(ruint::aliases::B160::from_alloy(address), bytecode);
+        self
+    }
+
+    pub fn set_storage_slot(
+        &mut self,
+        address: alloy::primitives::Address,
+        key: ruint::aliases::U256,
+        value: ruint::aliases::B256,
+    ) -> &mut Self {
+        self.chain
+            .set_storage_slot(ruint::aliases::B160::from_alloy(address), key, value);
         self
     }
 
@@ -282,7 +303,7 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         crate::utils::run_block_of_erc20_with_fee(&mut self.chain, n, block_context, fee)
     }
 
-    pub fn execute_block<T: IntoEncodedTx>(&mut self, transactions: Vec<T>) -> BlockOutput {
+    pub fn execute_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {
         let encoded_txs = transactions
             .into_iter()
             .map(IntoEncodedTx::into_encoded_tx)
@@ -295,7 +316,7 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         )
     }
 
-    pub fn simulate_block<T: IntoEncodedTx>(&mut self, transactions: Vec<T>) -> BlockOutput {
+    pub fn simulate_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {
         let encoded_txs = transactions
             .into_iter()
             .map(IntoEncodedTx::into_encoded_tx)
@@ -304,9 +325,9 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
             .simulate_block(encoded_txs, self.block_context.clone())
     }
 
-    pub fn execute_block_no_panic<T: IntoEncodedTx>(
+    pub fn execute_block_no_panic(
         &mut self,
-        transactions: Vec<T>,
+        transactions: Vec<ZKsyncTxEnvelope>,
     ) -> Result<BlockOutput, BootloaderSubsystemError> {
         let encoded_txs = transactions
             .into_iter()
