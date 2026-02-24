@@ -835,6 +835,112 @@ fn test_regression_returndata_empty_3541() {
     assert!(result0.is_ok_and(|o| o.is_success()));
 }
 
+#[test]
+fn test_returndata_cleared_when_reverted_after_execution() {
+    let wallet = PrivateKeySigner::from_str(
+        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
+    )
+    .unwrap();
+    let from = wallet.address();
+    let to = address!("0000000000000000000000000000000000010002");
+    let bytecode = hex::decode(
+        "602a600052600160005560016001556001600255600160035560016004556001600555600160065560016007556001600855600160095560206000f3",
+    )
+    .unwrap();
+
+    // First run with regular block context: call succeeds and returns non-empty data.
+    let mut chain = Chain::empty(None);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
+    chain.set_balance(
+        B160::from_alloy(from),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    let tx = TxEip1559 {
+        chain_id: 37u64,
+        nonce: 0,
+        max_fee_per_gas: 1000,
+        max_priority_fee_per_gas: 1000,
+        gas_limit: 250_000,
+        to: TxKind::Call(to),
+        value: U256::ZERO,
+        input: Default::default(),
+        access_list: Default::default(),
+    };
+    let encoded_tx = ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode();
+    let success_output = chain.run_block(vec![encoded_tx], None, None, run_config());
+    let success_tx = success_output.tx_results[0]
+        .as_ref()
+        .expect("Control transaction should be processed");
+    assert!(
+        success_tx.is_success(),
+        "Control transaction should succeed, got: {:?}",
+        success_output.tx_results[0]
+    );
+    match &success_tx.execution_result {
+        rig::zksync_os_interface::types::ExecutionResult::Success(
+            rig::zksync_os_interface::types::ExecutionOutput::Call(output),
+        ) => {
+            assert!(
+                !output.is_empty(),
+                "Control transaction should return non-empty returndata"
+            );
+        }
+        other => panic!("Unexpected control execution result: {other:?}"),
+    }
+
+    // Run the same tx with expensive pubdata so post-execution pubdata check forces a revert.
+    // Regression: such reverts must not keep the successful call returndata.
+    let mut chain = Chain::empty(None);
+    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
+    chain.set_balance(
+        B160::from_alloy(from),
+        U256::from(1_000_000_000_000_000_u64),
+    );
+
+    let tx = TxEip1559 {
+        chain_id: 37u64,
+        nonce: 0,
+        max_fee_per_gas: 1000,
+        max_priority_fee_per_gas: 1000,
+        gas_limit: 250_000,
+        to: TxKind::Call(to),
+        value: U256::ZERO,
+        input: Default::default(),
+        access_list: Default::default(),
+    };
+    let encoded_tx = ZKsyncTxEnvelope::from_eth_tx(tx, wallet).encode();
+    let expensive_pubdata_context = BlockContext {
+        eip1559_basefee: U256::from(1000),
+        native_price: U256::ONE,
+        pubdata_price: U256::from(700_000u64),
+        ..Default::default()
+    };
+    let reverted_output = chain.run_block(
+        vec![encoded_tx],
+        Some(expensive_pubdata_context),
+        None,
+        run_config(),
+    );
+    let reverted_tx = reverted_output.tx_results[0]
+        .as_ref()
+        .expect("Transaction should be processed even if reverted");
+    assert!(
+        !reverted_tx.is_success(),
+        "Transaction should be reverted by pubdata check, got: {:?}",
+        reverted_output.tx_results[0]
+    );
+    match &reverted_tx.execution_result {
+        rig::zksync_os_interface::types::ExecutionResult::Revert(output) => {
+            assert!(
+                output.is_empty(),
+                "Returndata must be cleared when converting success into revert"
+            );
+        }
+        other => panic!("Expected revert result, got: {other:?}"),
+    }
+}
+
 /// Test that transactions with balance calculation overflow are properly rejected
 #[test]
 fn test_balance_overflow_protection() {

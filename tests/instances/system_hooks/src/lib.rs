@@ -1011,6 +1011,54 @@ fn test_mint_base_token_hook() {
 }
 
 #[test]
+fn test_mint_base_token_hook_rejects_non_zero_value() {
+    let mut chain = Chain::empty(None);
+
+    chain.mint_tokens_to_treasury();
+
+    let l2_base_token_address = address!("000000000000000000000000000000000000800a");
+    let mint_hook_address = address!("0000000000000000000000000000000000007100");
+    let mint_amount = alloy::primitives::U256::from(3000000000000000000u64);
+    let call_value = alloy::primitives::U256::from(1u64);
+
+    let initial_balance = chain
+        .get_account_properties(&B160::from_alloy(l2_base_token_address))
+        .balance;
+
+    let calldata = mint_amount.to_be_bytes::<32>().to_vec();
+
+    let tx = L1TxBuilder::new()
+        .from(l2_base_token_address)
+        .to(mint_hook_address)
+        .input(calldata)
+        .value(call_value)
+        .gas_price(0)
+        .gas_limit(200_000)
+        .build();
+
+    let output = chain.run_block(vec![tx.encode()], None, None, None);
+    let tx_result = output.tx_results[0]
+        .as_ref()
+        .expect("Mint hook call should be processed");
+    assert!(
+        !tx_result.is_success(),
+        "Mint hook should fail when called with non-zero value"
+    );
+
+    let final_balance = chain
+        .get_account_properties(&B160::from_alloy(l2_base_token_address))
+        .balance;
+
+    let balance_delta = final_balance
+        .checked_sub(initial_balance)
+        .expect("Final balance should not be below initial balance");
+    assert!(
+        balance_delta <= call_value,
+        "Mint amount should not be credited when value is non-zero"
+    );
+}
+
+#[test]
 fn test_event_hooks_empty_topics() {
     for test_contract_address in [L2_INTEROP_ROOT_STORAGE_ADDRESS, SYSTEM_CONTEXT_ADDRESS] {
         let mut chain = Chain::empty(None);
