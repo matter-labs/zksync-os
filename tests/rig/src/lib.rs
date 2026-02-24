@@ -5,12 +5,14 @@
 //! It contains `Chain` - in memory chain state structure with methods to run blocks, change state
 //! and few utility methods(in the `utils` module) to encode transactions, load contracts, etc.
 //!
+use std::str::FromStr;
 use std::sync::Once;
 pub mod chain;
 pub mod testing_utils;
 pub mod utils;
 
 pub use alloy;
+use alloy::primitives::address;
 use alloy::signers::local::PrivateKeySigner;
 pub use alloy_rlp;
 pub use alloy_sol_types;
@@ -219,6 +221,16 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         self
     }
 
+    pub fn with_preimage(mut self, key: zk_ee::utils::Bytes32, value: &[u8]) -> Self {
+        self.set_preimage(key, value);
+        self
+    }
+
+    pub fn with_minted_tokens_to_treasury(mut self) -> Self {
+        self.mint_tokens_to_treasury();
+        self
+    }
+
     pub fn set_run_config(&mut self, run_config: Option<RunConfig>) -> &mut Self {
         self.run_config = run_config;
         self
@@ -252,6 +264,11 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
     ) -> &mut Self {
         self.chain
             .set_storage_slot(ruint::aliases::B160::from_alloy(address), key, value);
+        self
+    }
+
+    pub fn set_preimage(&mut self, key: zk_ee::utils::Bytes32, value: &[u8]) -> &mut Self {
+        self.chain.set_preimage(key, value);
         self
     }
 
@@ -355,4 +372,24 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
                 success
             }));
     }
+}
+
+pub fn tx_succeeded(output: &BlockOutput, idx: usize) -> bool {
+    output.tx_results[idx]
+        .as_ref()
+        .ok()
+        .map(|o| o.is_success())
+        .unwrap_or(false)
+}
+
+pub fn tx_failed(output: &BlockOutput, idx: usize) -> bool {
+    !tx_succeeded(output, idx)
+}
+
+pub fn signer_from_key(key: &str) -> PrivateKeySigner {
+    PrivateKeySigner::from_str(key).unwrap()
+}
+
+pub fn common_target_address() -> alloy::primitives::Address {
+    address!("4242000000000000000000000000000000000000")
 }

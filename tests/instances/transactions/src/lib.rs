@@ -4,7 +4,6 @@
 #![cfg(test)]
 use alloy::consensus::{TxEip1559, TxEip2930, TxEip4844, TxLegacy};
 use alloy::primitives::TxKind;
-use alloy::signers::local::PrivateKeySigner;
 use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
@@ -14,7 +13,7 @@ use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::{alloy, ZKsyncOSTester};
+use rig::{alloy, common_target_address, signer_from_key, ZKsyncOSTester};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
@@ -27,14 +26,6 @@ mod native_charging;
 const PRIMARY_TEST_PK: &str = "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
 const SECONDARY_TEST_PK: &str = "a226d3a5c8c408741c3446c762aee8dff742f21e381a0e5ab85a96c5c00100be";
 const TERTIARY_TEST_PK: &str = "abcdebdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
-
-fn signer_from_key(key: &str) -> PrivateKeySigner {
-    PrivateKeySigner::from_str(key).unwrap()
-}
-
-fn common_target_address() -> alloy::primitives::Address {
-    address!("4242000000000000000000000000000000000000")
-}
 
 fn run_config() -> RunConfig {
     RunConfig {
