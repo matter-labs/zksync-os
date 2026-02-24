@@ -25,14 +25,26 @@ use zksync_web3_rs::signers::{LocalWallet, Signer};
 mod l1_tx_resilience;
 mod native_charging;
 
-fn run_config() -> Option<rig::chain::RunConfig> {
-    Some(rig::chain::RunConfig {
+const PRIMARY_TEST_PK: &str = "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
+const SECONDARY_TEST_PK: &str = "a226d3a5c8c408741c3446c762aee8dff742f21e381a0e5ab85a96c5c00100be";
+const TERTIARY_TEST_PK: &str = "abcdebdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
+
+fn signer_from_key(key: &str) -> PrivateKeySigner {
+    PrivateKeySigner::from_str(key).unwrap()
+}
+
+fn common_target_address() -> alloy::primitives::Address {
+    address!("4242000000000000000000000000000000000000")
+}
+
+fn run_config() -> RunConfig {
+    RunConfig {
         app: Some("for_tests".to_string()),
         only_forward: false,
         check_storage_diff_hashes: true,
         skip_minting_tokens_to_treasury: false,
         ..Default::default()
-    })
+    }
 }
 
 #[test]
@@ -41,19 +53,11 @@ fn run_base_system() {
     // Which seems to suggest that it is special.
     // Consider changing this one to be more "random".
 
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
-    let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
+    let wallet = signer_from_key(PRIMARY_TEST_PK);
 
     // We used for test where from cannot have deployed code
-    let eoa_wallet = PrivateKeySigner::from_str(
-        "a226d3a5c8c408741c3446c762aee8dff742f21e381a0e5ab85a96c5c00100be",
-    )
-    .unwrap();
+    let eoa_wallet = signer_from_key(SECONDARY_TEST_PK);
 
-    let from = wallet_ethers.address();
     let to = address!("0000000000000000000000000000000000010002");
 
     let mint_tx = {
@@ -99,7 +103,7 @@ fn run_base_system() {
         ZKsyncTxEnvelope::from_eth_tx(deployment_tx, wallet.clone())
     };
     let transfer_to_eoa_tx = {
-        let eoa_to = address!("4242000000000000000000000000000000000000");
+        let eoa_to = common_target_address();
         let transfer_to_eoa = TxEip1559 {
             chain_id: 37u64,
             nonce: 0,
@@ -132,7 +136,7 @@ fn run_base_system() {
     let l1_l2_transfer = {
         L1TxBuilder::new()
             .from(address!("1234000000000000000000000000000000000000"))
-            .to(address!("4242000000000000000000000000000000000000"))
+            .to(common_target_address())
             .value(alloy::primitives::U256::from(100))
             .gas_price(1000)
             .gas_limit(21_000)
@@ -166,7 +170,7 @@ fn run_base_system() {
 
     let tester = ZKsyncOSTester::new()
         .with_evm_contract(B160::from_alloy(to), &bytecode)
-        .with_prefunded_account(B160::from_be_bytes(from.0))
+        .with_prefunded_account(B160::from_alloy(wallet.address()))
         .with_prefunded_account(B160::from_alloy(eoa_wallet.address()))
         .with_balance(
             B160::from_alloy(address!("1234000000000000000000000000000000000000")),
@@ -174,7 +178,7 @@ fn run_base_system() {
         );
 
     let output = tester
-        .with_run_config(run_config().unwrap())
+        .with_run_config(run_config())
         .execute_block(transactions);
 
     // Assert all txs succeeded
@@ -227,13 +231,7 @@ fn test_gas_price_zero_fee_one() {
 
 #[test]
 fn test_withdrawal() {
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
-    let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
-
-    let from = wallet_ethers.address();
+    let wallet = signer_from_key(PRIMARY_TEST_PK);
 
     // L2 base token address
     let to = address!("000000000000000000000000000000000000800a");
@@ -285,8 +283,8 @@ fn test_withdrawal() {
     let mut tester = ZKsyncOSTester::new()
         .with_system_contracts(true, true, false)
         .with_evm_contract(B160::from_alloy(to), &bytecode)
-        .with_prefunded_account(B160::from_be_bytes(from.0))
-        .with_run_config(run_config().unwrap());
+        .with_prefunded_account(B160::from_alloy(wallet.address()))
+        .with_run_config(run_config());
 
     let output = tester.execute_block(transactions);
 
@@ -312,19 +310,13 @@ fn test_withdrawal() {
 
 #[test]
 fn test_tx_with_access_list() {
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
-    let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
-
-    let from = wallet_ethers.address();
+    let wallet = signer_from_key(PRIMARY_TEST_PK);
 
     let to = address!("0000000000000000000000000000000000010002");
 
     // We do an initial mint to populate storage slots, otherwise SSTORE
     // costs are hard to reason about.
-    let encoded_mint_tx = {
+    let mint_tx = {
         let access_list = AccessList::from(vec![AccessListItem {
             address: to,
             storage_keys: vec![b256!(
@@ -344,14 +336,14 @@ fn test_tx_with_access_list() {
         ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
     };
 
-    let transactions = vec![encoded_mint_tx];
+    let transactions = vec![mint_tx];
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
     let mut tester = ZKsyncOSTester::new()
         .with_evm_contract(B160::from_alloy(to), &bytecode)
-        .with_prefunded_account(B160::from_be_bytes(from.0))
-        .with_run_config(run_config().unwrap());
+        .with_prefunded_account(B160::from_alloy(wallet.address()))
+        .with_run_config(run_config());
 
     let output = tester.execute_block(transactions);
 
@@ -363,23 +355,17 @@ fn test_tx_with_authorization_list() {
     use rig::alloy::eips::eip7702::*;
     use rig::alloy::signers::SignerSync;
 
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
+    let wallet = signer_from_key(PRIMARY_TEST_PK);
     let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
 
-    let delegate = PrivateKeySigner::from_str(
-        "a226d3a5c8c408741c3446c762aee8dff742f21e381a0e5ab85a96c5c00100be",
-    )
-    .unwrap();
+    let delegate = signer_from_key(SECONDARY_TEST_PK);
 
     let from = wallet_ethers.address();
     let to = delegate.address();
 
     let erc_20_contract = address!("0000000000000000000000000000000000010002");
 
-    let encoded_mint_tx = {
+    let mint_tx = {
         let authorization = Authorization {
             chain_id: U256::from(37u64),
             address: erc_20_contract,
@@ -409,9 +395,9 @@ fn test_tx_with_authorization_list() {
     let mut tester = ZKsyncOSTester::new()
         .with_evm_contract(B160::from_alloy(erc_20_contract), &bytecode)
         .with_prefunded_account(B160::from_be_bytes(from.0))
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
 
-    let output = tester.execute_block(vec![encoded_mint_tx]);
+    let output = tester.execute_block(vec![mint_tx]);
 
     tester.assert_all_txs_succeded(&output);
 }
@@ -419,10 +405,7 @@ fn test_tx_with_authorization_list() {
 // Test that slots made warm in a tx are cold in the next tx
 #[test]
 fn test_cold_in_new_tx() {
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
+    let wallet = signer_from_key(PRIMARY_TEST_PK);
     let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
 
     let from = wallet_ethers.address();
@@ -431,7 +414,7 @@ fn test_cold_in_new_tx() {
 
     // We do an initial mint to populate storage slots, otherwise SSTORE
     // costs are hard to reason about.
-    let encoded_mint_tx = {
+    let mint_tx = {
         let mint_tx = TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -445,7 +428,7 @@ fn test_cold_in_new_tx() {
     };
 
     // Gas is just enough to succeed.
-    let encoded_mint1_tx = {
+    let mint_tx_1 = {
         let mint_tx = TxLegacy {
             chain_id: 37u64.into(),
             nonce: 1,
@@ -459,7 +442,7 @@ fn test_cold_in_new_tx() {
     };
 
     // Any lower gas amount should fail
-    let encoded_mint_tx2 = {
+    let mint_tx_2 = {
         let mint_tx = TxLegacy {
             chain_id: 37u64.into(),
             nonce: 2,
@@ -472,14 +455,14 @@ fn test_cold_in_new_tx() {
         ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
     };
 
-    let transactions = vec![encoded_mint_tx, encoded_mint1_tx, encoded_mint_tx2];
+    let transactions = vec![mint_tx, mint_tx_1, mint_tx_2];
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
     let mut tester = ZKsyncOSTester::new()
         .with_evm_contract(B160::from_alloy(to), &bytecode)
         .with_prefunded_account(B160::from_be_bytes(from.0))
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
 
     let output = tester.execute_block(transactions);
 
@@ -490,20 +473,14 @@ fn test_cold_in_new_tx() {
 // Test that if we send 2 simple transfers from and to different addresses,
 // the length of the pubdata from both is the same.
 fn test_independent_txs_have_same_pubdata() {
-    let wallet1 = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
+    let wallet1 = signer_from_key(PRIMARY_TEST_PK);
 
-    let wallet2 = PrivateKeySigner::from_str(
-        "abcdebdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
+    let wallet2 = signer_from_key(TERTIARY_TEST_PK);
 
     let to1 = address!("0000000000000000000000000000000000010002");
     let to2 = address!("0000000000000000000000000000000000010003");
 
-    let encoded_tx_1 = {
+    let tx_1 = {
         let tx = TxEip1559 {
             chain_id: 37u64,
             nonce: 0,
@@ -518,7 +495,7 @@ fn test_independent_txs_have_same_pubdata() {
         ZKsyncTxEnvelope::from_eth_tx(tx, wallet1.clone())
     };
 
-    let encoded_tx_2 = {
+    let tx_2 = {
         let tx = TxEip1559 {
             chain_id: 37u64,
             nonce: 0,
@@ -533,7 +510,7 @@ fn test_independent_txs_have_same_pubdata() {
         ZKsyncTxEnvelope::from_eth_tx(tx, wallet2.clone())
     };
 
-    let transactions = vec![encoded_tx_1, encoded_tx_2];
+    let transactions = vec![tx_1, tx_2];
 
     let mut tester = ZKsyncOSTester::new()
         .with_balance(
@@ -544,7 +521,7 @@ fn test_independent_txs_have_same_pubdata() {
             B160::from_alloy(wallet2.address()),
             U256::from(1_000_000_000_000_000_u64),
         )
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
 
     let output = tester.execute_block(transactions);
 
@@ -560,10 +537,7 @@ fn test_independent_txs_have_same_pubdata() {
 
 #[test]
 fn test_invalid_tx_does_not_bump_tx_counter() {
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
+    let wallet = signer_from_key(PRIMARY_TEST_PK);
     let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
     let from = wallet_ethers.address();
     let to = address!("0000000000000000000000000000000000010002");
@@ -573,7 +547,7 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
     let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
 
     // Invalid tx first
-    let encoded_mint1_tx = {
+    let mint_tx_1 = {
         let mint_tx = TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -602,7 +576,7 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
         tx.into()
     };
 
-    let transactions = vec![encoded_mint1_tx, withdrawal_tx];
+    let transactions = vec![mint_tx_1, withdrawal_tx];
 
     let mut tester = ZKsyncOSTester::new()
         .with_balance(
@@ -636,17 +610,14 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
 
 #[test]
 fn test_invalid_tx_does_not_affect_native() {
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
+    let wallet = signer_from_key(PRIMARY_TEST_PK);
     let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
     let from = wallet_ethers.address();
     let to = address!("0000000000000000000000000000000000010002");
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
     // First we run a single tx to get the "normal" amount of native used
-    let encoded_mint_tx = {
+    let mint_tx = {
         let mint_tx = TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -659,7 +630,7 @@ fn test_invalid_tx_does_not_affect_native() {
         ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
     };
 
-    let transactions = vec![encoded_mint_tx.clone()];
+    let transactions = vec![mint_tx.clone()];
     let mut tester = ZKsyncOSTester::new()
         .with_evm_contract(B160::from_alloy(to), &bytecode)
         .with_balance(
@@ -683,7 +654,7 @@ fn test_invalid_tx_does_not_affect_native() {
     // Same tx but with a huge gas limit, which makes it invalid
     // We run this one first and then the valid one, and check that
     // the valid one uses the same amount of native as in the reference case.
-    let encoded_mint1_tx = {
+    let mint_tx_1 = {
         let mint_tx = TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -702,7 +673,7 @@ fn test_invalid_tx_does_not_affect_native() {
             B160::from_be_bytes(from.0),
             U256::from(1_000_000_000_000_000_u64),
         );
-    let transactions = vec![encoded_mint1_tx, encoded_mint_tx];
+    let transactions = vec![mint_tx_1, mint_tx];
     let output = tester.execute_block(transactions);
 
     // Assert tx succeeded
@@ -720,10 +691,7 @@ fn test_invalid_tx_does_not_affect_native() {
 // TODO: find better place for regression tests
 #[test]
 fn test_regression_returndata_empty_3541() {
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
+    let wallet = signer_from_key(PRIMARY_TEST_PK);
     let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
     // Code for:
     // PUSH13 0x63EF0000006000526004601CF3
@@ -761,11 +729,11 @@ fn test_regression_returndata_empty_3541() {
             B160::from_be_bytes(from.0),
             U256::from(1_000_000_000_000_000_u64),
         )
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
 
     // We do an initial mint to populate storage slots, otherwise SSTORE
     // costs are hard to reason about.
-    let encoded_tx = {
+    let tx_envelope = {
         let mint_tx = TxEip2930 {
             chain_id: 37u64,
             nonce: 0,
@@ -778,7 +746,7 @@ fn test_regression_returndata_empty_3541() {
         ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
     };
 
-    let transactions = vec![encoded_tx];
+    let transactions = vec![tx_envelope];
 
     let output = tester.execute_block(transactions);
 
@@ -790,10 +758,7 @@ fn test_regression_returndata_empty_3541() {
 /// Test that transactions with balance calculation overflow are properly rejected
 #[test]
 fn test_balance_overflow_protection() {
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
+    let wallet = signer_from_key(PRIMARY_TEST_PK);
 
     let from = alloy::primitives::Address::from_slice(&wallet.address().as_slice());
     let to = address!("0000000000000000000000000000000000010002");
@@ -802,7 +767,7 @@ fn test_balance_overflow_protection() {
             B160::from_alloy(from),
             U256::from(1_000_000_000_000_000_u64),
         )
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
 
     // Test 1: Transaction with max_fee_per_gas * gas_limit overflow
     let overflow_fee_tx = {
@@ -920,7 +885,7 @@ fn test_invalid_transaction_type_failure() {
     let success_bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
     let mut tester = ZKsyncOSTester::new()
         .with_evm_contract(B160::from_alloy(contract_address), &success_bytecode)
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
 
     let transaction_types = vec![0x55, 0x80, 0xFF]; // Some invalid types;
 
@@ -951,10 +916,7 @@ fn test_invalid_transaction_type_failure() {
 
 #[test]
 fn test_modexp_intermediate_zero_block() {
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
+    let wallet = signer_from_key(PRIMARY_TEST_PK);
     let mut tester = ZKsyncOSTester::new().with_balance(
         B160::from_alloy(wallet.address()),
         U256::from(10u64.pow(18)),
@@ -991,7 +953,7 @@ fn test_modexp_intermediate_zero_block() {
     ))
     .unwrap();
 
-    let encoded_tx = {
+    let tx_envelope = {
         let mint_tx = TxEip2930 {
             chain_id: 37u64,
             nonce: 0,
@@ -1005,7 +967,7 @@ fn test_modexp_intermediate_zero_block() {
         ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
     };
 
-    let transactions = vec![encoded_tx];
+    let transactions = vec![tx_envelope];
 
     let result = tester.execute_block(transactions);
 
@@ -1034,10 +996,7 @@ fn test_modexp_intermediate_zero_block() {
 
 #[test]
 fn test_point_eval_call() {
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
+    let wallet = signer_from_key(PRIMARY_TEST_PK);
     let mut tester = ZKsyncOSTester::new().with_balance(
         B160::from_alloy(wallet.address()),
         U256::from(10u64.pow(18)),
@@ -1064,7 +1023,7 @@ fn test_point_eval_call() {
         2, 255, 254, 91, 254, 255, 255, 255, 255, 0, 0, 0, 1,
     ];
 
-    let encoded_tx = {
+    let tx_envelope = {
         let mint_tx = TxEip2930 {
             chain_id: 37u64,
             nonce: 0,
@@ -1078,7 +1037,7 @@ fn test_point_eval_call() {
         ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
     };
 
-    let transactions = vec![encoded_tx];
+    let transactions = vec![tx_envelope];
 
     let result = tester.execute_block(transactions);
 
@@ -1138,7 +1097,7 @@ fn test_selfdestruct_to_precompile_gas() {
         ZKsyncTxEnvelope::from_eth_tx_from_req(tx_request, wallet)
     };
 
-    tester = tester.with_run_config(run_config().unwrap());
+    tester = tester.with_run_config(run_config());
     let result = tester.execute_block(vec![tx_request]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
@@ -1153,7 +1112,7 @@ fn test_reject_caller_with_code_behavior() {
 
     // Create a contract address with bytecode deployed
     let contract_address = wallet.address();
-    let target_address = address!("4242000000000000000000000000000000000000");
+    let target_address = common_target_address();
 
     // Deploy bytecode to the contract address to make it a "contract with code"
     tester.set_evm_contract(
@@ -1189,7 +1148,7 @@ fn test_reject_caller_with_code_behavior() {
 
     // But in normal mode it should fail
     let result_normal = tester
-        .with_run_config(run_config().unwrap())
+        .with_run_config(run_config())
         .execute_block(vec![from_contract_tx]);
     assert!(matches!(
         result_normal.tx_results[0],
@@ -1204,7 +1163,7 @@ fn test_expensive_pubdata() {
     let mut tester = ZKsyncOSTester::new();
     let wallet = tester.random_signer();
     let from = wallet.address();
-    let target_address = address!("4242000000000000000000000000000000000000");
+    let target_address = common_target_address();
 
     let tx = {
         let tx = TxEip1559 {
@@ -1237,7 +1196,7 @@ fn test_expensive_pubdata() {
     tester = tester
         .with_balance(B160::from_alloy(from), U256::from(u64::MAX))
         .with_block_context(block_context)
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
@@ -1249,7 +1208,7 @@ fn test_check_pubdata_encoding_version() {
     let mut tester = ZKsyncOSTester::new();
     let wallet = tester.random_signer();
     let from = wallet.address();
-    let target_address = address!("4242000000000000000000000000000000000000");
+    let target_address = common_target_address();
 
     let tx = {
         let tx = TxEip1559 {
@@ -1278,7 +1237,7 @@ fn test_check_pubdata_encoding_version() {
     tester = tester
         .with_balance(B160::from_alloy(from), U256::from(u64::MAX))
         .with_block_context(block_context)
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
@@ -1292,7 +1251,7 @@ fn test_check_pubdata_has_timestamp() {
     let mut tester = ZKsyncOSTester::new();
     let wallet = tester.random_signer();
     let from = wallet.address();
-    let target_address = address!("4242000000000000000000000000000000000000");
+    let target_address = common_target_address();
 
     let tx = {
         let tx = TxEip1559 {
@@ -1323,7 +1282,7 @@ fn test_check_pubdata_has_timestamp() {
     tester = tester
         .with_balance(B160::from_alloy(from), U256::from(u64::MAX))
         .with_block_context(block_context)
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
@@ -1355,7 +1314,7 @@ fn test_simple_service_transaction() {
     };
     let mut tester = ZKsyncOSTester::new()
         .with_block_context(block_context)
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
     let result = tester.execute_block(vec![tx]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
@@ -1382,7 +1341,7 @@ fn test_simple_service_transaction_whitelist() {
     tester = tester
         .with_balance(B160::from_alloy(from), U256::from(u64::MAX))
         .with_block_context(block_context)
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
@@ -1406,7 +1365,7 @@ fn test_service_tx_gas_limit_exceeds_block() {
     };
     let mut tester = ZKsyncOSTester::new()
         .with_block_context(block_context)
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
     let result = tester.execute_block(vec![tx]);
     assert!(result.tx_results[0].is_ok());
 }
@@ -1443,7 +1402,7 @@ fn test_service_block_invariants() {
     };
     tester = tester
         .with_block_context(block_context)
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
     // Check txs succeed
     let result = tester.execute_block(vec![tx1, tx2, tx3]);
     assert!(
@@ -1464,7 +1423,7 @@ fn test_service_block_invariants() {
             max_fee_per_gas: 134217728,
             max_priority_fee_per_gas: 134217728,
             gas_limit: 75_000,
-            to: TxKind::Call(address!("4242000000000000000000000000000000000000")),
+            to: TxKind::Call(common_target_address()),
             value: Default::default(),
             input: Default::default(),
             access_list: Default::default(),
@@ -1477,7 +1436,7 @@ fn test_service_block_invariants() {
     };
     tester = tester
         .with_block_context(block_context)
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
     tester
         .execute_block_no_panic(vec![tx4.clone(), tx_non_service.clone()])
         .expect_err("Service block with non service tx should fail");
@@ -1489,7 +1448,7 @@ fn test_service_block_invariants() {
     };
     tester = tester
         .with_block_context(block_context)
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
     tester
         .execute_block_no_panic(vec![tx_non_service, tx4])
         .expect_err("Service block with non service tx should fail");
@@ -1500,7 +1459,7 @@ fn test_service_block_invariants() {
 fn test_simulation_skips_nonce_check() {
     let mut tester = ZKsyncOSTester::new();
     let wallet = tester.prefunded_random_signer();
-    let target_address = address!("4242000000000000000000000000000000000000");
+    let target_address = common_target_address();
 
     // Create a transaction with nonce 100, but the account's nonce is 0
     let tx = {
@@ -1527,7 +1486,7 @@ fn test_simulation_skips_nonce_check() {
     );
 
     // In normal execution mode, the transaction should fail with NonceTooHigh
-    tester = tester.with_run_config(run_config().unwrap());
+    tester = tester.with_run_config(run_config());
     let result_normal = tester.execute_block(vec![tx]);
     assert!(
         matches!(
@@ -1548,7 +1507,7 @@ fn test_simulation_skips_nonce_check() {
 fn test_simulation_balance_check() {
     let mut tester = ZKsyncOSTester::new();
     let wallet = tester.random_signer();
-    let target_address = address!("4242000000000000000000000000000000000000");
+    let target_address = common_target_address();
 
     // - gasPrice > 0 && value > 0: fail
     let tx = {
@@ -1631,7 +1590,7 @@ fn test_simulation_balance_check() {
 fn test_simulation_4844_zero_blob_fee_allowed() {
     let mut tester = ZKsyncOSTester::new();
     let wallet = tester.prefunded_random_signer();
-    let target_address = address!("4242000000000000000000000000000000000000");
+    let target_address = common_target_address();
 
     let tx = TxEip4844 {
         chain_id: 37u64,
@@ -1648,7 +1607,7 @@ fn test_simulation_4844_zero_blob_fee_allowed() {
         )],
         max_fee_per_blob_gas: 0,
     };
-    let encoded_tx = ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone());
+    let tx_envelope = ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone());
 
     let block_context = BlockContext {
         blob_fee: U256::from(1),
@@ -1656,7 +1615,7 @@ fn test_simulation_4844_zero_blob_fee_allowed() {
     };
 
     tester = tester.with_block_context(block_context);
-    let result_simulation = tester.simulate_block(vec![encoded_tx]);
+    let result_simulation = tester.simulate_block(vec![tx_envelope]);
     assert!(
         result_simulation.tx_results[0].is_ok(),
         "EIP-4844 tx should pass simulation when blob_fee > 0 and max_fee_per_blob_gas = 0, got: {:?}",
@@ -1669,7 +1628,7 @@ fn test_simulation_4844_zero_blob_fee_allowed() {
 fn test_simulation_gas_and_native_used() {
     let mut tester = ZKsyncOSTester::new();
     let wallet = tester.prefunded_random_signer();
-    let target_address = address!("4242000000000000000000000000000000000000");
+    let target_address = common_target_address();
 
     let tx = TxEip1559 {
         chain_id: 37u64,
@@ -1683,7 +1642,7 @@ fn test_simulation_gas_and_native_used() {
         access_list: Default::default(),
     };
 
-    let encoded_for_simulation = ZKsyncTxEnvelope::from_eth_tx(tx.clone(), wallet.clone());
+    let tx_for_simulation = ZKsyncTxEnvelope::from_eth_tx(tx.clone(), wallet.clone());
 
     // We use a very low native per gas ratio to force the transaction to require extra gas
     let block_context = BlockContext {
@@ -1693,7 +1652,7 @@ fn test_simulation_gas_and_native_used() {
     };
 
     tester = tester.with_block_context(block_context.clone());
-    let result_simulation = tester.simulate_block(vec![encoded_for_simulation]);
+    let result_simulation = tester.simulate_block(vec![tx_for_simulation]);
     let tx_result_simulation = result_simulation.tx_results[0]
         .clone()
         .expect("Simulation must succeed");
@@ -1706,7 +1665,7 @@ fn test_simulation_gas_and_native_used() {
 
     tester = tester
         .with_block_context(block_context)
-        .with_run_config(run_config().unwrap());
+        .with_run_config(run_config());
     let result_normal = tester.execute_block(vec![encoded]);
     let tx_result_normal = result_normal.tx_results[0]
         .clone()
@@ -1730,7 +1689,7 @@ fn test_simulation_gas_and_native_used() {
 fn test_simulation_gas_used_regression() {
     let mut tester = ZKsyncOSTester::new();
     let wallet = tester.random_signer();
-    let target_address = address!("4242000000000000000000000000000000000000");
+    let target_address = common_target_address();
     tester = tester.with_balance(B160::from_alloy(wallet.address()), U256::MAX);
 
     // First tx, 0 gas price.
@@ -1801,24 +1760,16 @@ fn test_treasury_based_token_distribution_regression() {
     let refund_recipient = address!("0000000000000000000000000000000000000000"); // refund recipient (zero address)
 
     // Record initial treasury balance
-    let treasury_initial_balance = tester
-        .get_account_properties(&BASE_TOKEN_HOLDER_ADDRESS)
-        .balance;
+    let treasury_initial_balance = tester.get_balance(&BASE_TOKEN_HOLDER_ADDRESS);
 
     // Record initial operator balance
-    let operator_initial_balance = tester
-        .get_account_properties(&B160::from_alloy(coinbase))
-        .balance;
+    let operator_initial_balance = tester.get_balance(&B160::from_alloy(coinbase));
 
     // Record initial recipient balance
-    let recipient_initial_balance = tester
-        .get_account_properties(&B160::from_alloy(l1_recipient))
-        .balance;
+    let recipient_initial_balance = tester.get_balance(&B160::from_alloy(l1_recipient));
 
     // Record initial refund recipient balance
-    let refund_recipient_initial_balance = tester
-        .get_account_properties(&B160::from_alloy(refund_recipient))
-        .balance;
+    let refund_recipient_initial_balance = tester.get_balance(&B160::from_alloy(refund_recipient));
 
     // Create L1→L2 transaction with value transfer and fees
     let gas_price = 1000u64;
@@ -1828,17 +1779,14 @@ fn test_treasury_based_token_distribution_regression() {
     // Credit L1 sender with enough balance for the value transfer
     tester = tester.with_balance(B160::from_be_bytes(l1_sender.0 .0), value_to_transfer);
 
-    let l1_tx: ZKsyncTxEnvelope = {
-        let tx = L1TxBuilder::new()
-            .from(l1_sender)
-            .to(l1_recipient)
-            .gas_price(gas_price.into())
-            .gas_limit(gas_limit.into())
-            .value(value_to_transfer)
-            .build();
-
-        tx.into()
-    };
+    let l1_tx: ZKsyncTxEnvelope = L1TxBuilder::new()
+        .from(l1_sender)
+        .to(l1_recipient)
+        .gas_price(gas_price.into())
+        .gas_limit(gas_limit.into())
+        .value(value_to_transfer)
+        .build()
+        .into();
 
     let block_context = BlockContext {
         coinbase: B160::from_alloy(coinbase),
@@ -1865,21 +1813,13 @@ fn test_treasury_based_token_distribution_regression() {
     let fee_paid_to_operator = U256::from(gas_used) * U256::from(gas_price);
 
     // Get final balances
-    let treasury_final_balance = tester
-        .get_account_properties(&BASE_TOKEN_HOLDER_ADDRESS)
-        .balance;
+    let treasury_final_balance = tester.get_balance(&BASE_TOKEN_HOLDER_ADDRESS);
 
-    let operator_final_balance = tester
-        .get_account_properties(&B160::from_alloy(coinbase))
-        .balance;
+    let operator_final_balance = tester.get_balance(&B160::from_alloy(coinbase));
 
-    let recipient_final_balance = tester
-        .get_account_properties(&B160::from_alloy(l1_recipient))
-        .balance;
+    let recipient_final_balance = tester.get_balance(&B160::from_alloy(l1_recipient));
 
-    let refund_recipient_final_balance = tester
-        .get_account_properties(&B160::from_alloy(refund_recipient))
-        .balance;
+    let refund_recipient_final_balance = tester.get_balance(&B160::from_alloy(refund_recipient));
 
     // Calculate total amount that should go to operator (fee + refund)
     // Refund recipient is 0 in this test
@@ -1938,21 +1878,17 @@ fn test_treasury_insufficient_balance_failure() {
     let gas_limit = 100_000u64;
     let value_to_transfer = U256::from(500_000u64); // More than treasury can cover
 
-    let l1_tx: ZKsyncTxEnvelope = {
-        let tx = L1TxBuilder::new()
-            .from(l1_sender)
-            .to(l1_recipient)
-            .gas_price(gas_price.into())
-            .gas_limit(gas_limit.into())
-            .value(value_to_transfer)
-            .build();
-        tx.into()
-    };
+    let l1_tx: ZKsyncTxEnvelope = L1TxBuilder::new()
+        .from(l1_sender)
+        .to(l1_recipient)
+        .gas_price(gas_price.into())
+        .gas_limit(gas_limit.into())
+        .value(value_to_transfer)
+        .build()
+        .into();
 
-    let config = RunConfig {
-        skip_minting_tokens_to_treasury: true,
-        ..Default::default()
-    };
+    let mut config = run_config();
+    config.skip_minting_tokens_to_treasury = true; // Ensure we rely on treasury balance, not minting
 
     // This should fail due to insufficient treasury balance
     tester = tester.with_run_config(config);
@@ -2027,7 +1963,8 @@ fn test_pubdata_native_calculation_overflow() {
             U256::from_str("100000000000000000000010000").unwrap(),
         )
         .with_evm_contract(B160::from_alloy(to), &bytecode)
-        .with_block_context(block_context);
+        .with_block_context(block_context)
+        .with_run_config(run_config());
     let result = tester.execute_block(vec![tx]);
 
     // Verify the specific error is OutOfNativeResources

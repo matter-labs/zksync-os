@@ -226,92 +226,12 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
     }
 
     pub fn prefunded_random_signer(&mut self) -> PrivateKeySigner {
-        let signer = self.chain.random_signer();
+        let signer = self.random_signer();
         self.set_balance(
             ruint::aliases::B160::from_alloy(signer.address()),
             ruint::aliases::U256::from(1_000_000_000_000_000_u64),
         );
         signer
-    }
-
-    pub fn run_block<T: IntoEncodedTx>(
-        &mut self,
-        transactions: Vec<T>,
-        block_context: Option<BlockContext>,
-        da_commitment_scheme: Option<DACommitmentScheme>,
-        run_config: Option<RunConfig>,
-    ) -> BlockOutput {
-        let encoded_txs = transactions
-            .into_iter()
-            .map(IntoEncodedTx::into_encoded_tx)
-            .collect::<Vec<_>>();
-        self.chain
-            .run_block(encoded_txs, block_context, da_commitment_scheme, run_config)
-    }
-
-    pub fn execute_block_with<T: IntoEncodedTx>(
-        &mut self,
-        transactions: Vec<T>,
-        block_context: Option<BlockContext>,
-        da_commitment_scheme: Option<DACommitmentScheme>,
-        run_config: Option<RunConfig>,
-    ) -> BlockOutput {
-        self.run_block(
-            transactions,
-            block_context,
-            da_commitment_scheme,
-            run_config,
-        )
-    }
-
-    pub fn simulate_encoded_block<T: IntoEncodedTx>(
-        &mut self,
-        transactions: Vec<T>,
-        block_context: Option<BlockContext>,
-    ) -> BlockOutput {
-        let encoded_txs = transactions
-            .into_iter()
-            .map(IntoEncodedTx::into_encoded_tx)
-            .collect::<Vec<_>>();
-        self.chain.simulate_block(encoded_txs, block_context)
-    }
-
-    pub fn simulate_block_with<T: IntoEncodedTx>(
-        &mut self,
-        transactions: Vec<T>,
-        block_context: Option<BlockContext>,
-    ) -> BlockOutput {
-        self.simulate_encoded_block(transactions, block_context)
-    }
-
-    pub fn run_block_no_panic<T: IntoEncodedTx>(
-        &mut self,
-        transactions: Vec<T>,
-        block_context: Option<BlockContext>,
-        da_commitment_scheme: Option<DACommitmentScheme>,
-        run_config: Option<RunConfig>,
-    ) -> Result<BlockOutput, basic_bootloader::bootloader::errors::BootloaderSubsystemError> {
-        let encoded_txs = transactions
-            .into_iter()
-            .map(IntoEncodedTx::into_encoded_tx)
-            .collect::<Vec<_>>();
-        self.chain
-            .run_block_no_panic(encoded_txs, block_context, da_commitment_scheme, run_config)
-    }
-
-    pub fn execute_block_no_panic_with<T: IntoEncodedTx>(
-        &mut self,
-        transactions: Vec<T>,
-        block_context: Option<BlockContext>,
-        da_commitment_scheme: Option<DACommitmentScheme>,
-        run_config: Option<RunConfig>,
-    ) -> Result<BlockOutput, basic_bootloader::bootloader::errors::BootloaderSubsystemError> {
-        self.run_block_no_panic(
-            transactions,
-            block_context,
-            da_commitment_scheme,
-            run_config,
-        )
     }
 
     pub fn mint_tokens_to_treasury(&mut self) {
@@ -323,6 +243,10 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         address: &ruint::aliases::B160,
     ) -> basic_system::system_implementation::flat_storage_model::AccountProperties {
         self.chain.get_account_properties(address)
+    }
+
+    pub fn get_balance(&mut self, address: &ruint::aliases::B160) -> ruint::aliases::U256 {
+        self.chain.get_account_properties(address).balance
     }
 
     pub fn run_block_of_erc20(
@@ -393,21 +317,5 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
                 }
                 success
             }));
-    }
-}
-
-impl ZKsyncOSTester<false> {
-    pub fn install_system_contracts(
-        &mut self,
-        with_l1_messenger: bool,
-        with_l2_base_token: bool,
-        with_contract_deployer: bool,
-    ) {
-        crate::testing_utils::install_system_contracts(
-            &mut self.chain,
-            with_l1_messenger,
-            with_l2_base_token,
-            with_contract_deployer,
-        );
     }
 }
