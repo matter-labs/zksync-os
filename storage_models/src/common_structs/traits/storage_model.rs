@@ -244,24 +244,6 @@ pub trait StorageModel: Sized + SnapshottableIo {
     /// Reports any new preimages (e.g., bytecode) to the result keeper.
     fn report_new_preimages(&mut self, result_keeper: &mut impl IOResultKeeper<Self::IOTypes>);
 
-    type AccountAddress<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
-    where
-        Self: 'a;
-    type AccountDiff<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
-    where
-        Self: 'a;
-
-    /// Returns the diff for a specific account address, if any changes were made.
-    fn get_account_diff<'a>(
-        &'a self,
-        address: Self::AccountAddress<'a>,
-    ) -> Option<Self::AccountDiff<'a>>;
-
-    /// Returns an iterator over all account diffs (address, diff pairs).
-    fn accounts_diffs_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = (Self::AccountAddress<'a>, Self::AccountDiff<'a>)> + Clone;
-
     type StorageKey<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
     where
         Self: 'a;

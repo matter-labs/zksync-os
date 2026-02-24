@@ -10,7 +10,6 @@ use crate::system_implementation::ethereum_storage_model::caches::full_storage_c
 use crate::system_implementation::ethereum_storage_model::caches::preimage::BytecodeKeccakPreimagesStorage;
 use crate::system_implementation::ethereum_storage_model::persist_changes::EthereumStoragePersister;
 use core::alloc::Allocator;
-use ruint::aliases::B160;
 use storage_models::common_structs::snapshottable_io::SnapshottableIo;
 use storage_models::common_structs::StorageCacheModel;
 use storage_models::common_structs::StorageModel;
@@ -372,34 +371,6 @@ impl<
                 .iter()
                 .map(|(k, v)| (k, v.as_slice(), PreimageType::Bytecode)),
         );
-    }
-
-    type AccountAddress<'a>
-        = &'a B160
-    where
-        Self: 'a;
-    type AccountDiff<'a>
-        = BasicAccountDiff<Self::IOTypes>
-    where
-        Self: 'a;
-
-    fn get_account_diff<'a>(
-        &'a self,
-        _address: Self::AccountAddress<'a>,
-    ) -> Option<Self::AccountDiff<'a>> {
-        None
-    }
-    fn accounts_diffs_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = (Self::AccountAddress<'a>, Self::AccountDiff<'a>)> + Clone
-    {
-        self.account_cache.cache.iter().map(|v| {
-            let current = v.current().value();
-            (
-                v.key().as_ref(),
-                (current.nonce, current.balance, current.bytecode_hash),
-            )
-        })
     }
 
     type StorageKey<'a>

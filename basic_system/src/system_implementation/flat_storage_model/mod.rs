@@ -25,7 +25,6 @@ use storage_models::common_structs::StorageCacheModel;
 use storage_models::common_structs::StorageModel;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::BalanceSubsystemError;
-use zk_ee::system::BasicAccountDiff;
 use zk_ee::system::DeconstructionSubsystemError;
 use zk_ee::system::NonceSubsystemError;
 use zk_ee::system::Resources;
@@ -437,40 +436,6 @@ impl<
         self.preimages_cache
             .report_new_preimages(result_keeper)
             .expect("must report preimages");
-    }
-
-    type AccountAddress<'a>
-        = &'a B160
-    where
-        Self: 'a;
-    type AccountDiff<'a>
-        = BasicAccountDiff<Self::IOTypes>
-    where
-        Self: 'a;
-
-    fn get_account_diff<'a>(
-        &'a self,
-        address: Self::AccountAddress<'a>,
-    ) -> Option<Self::AccountDiff<'a>> {
-        self.account_data_cache
-            .cache
-            .get(address.into())
-            .map(|item| {
-                let current = item.current().value();
-                (current.nonce, current.balance, current.bytecode_hash)
-            })
-    }
-    fn accounts_diffs_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = (Self::AccountAddress<'a>, Self::AccountDiff<'a>)> + Clone
-    {
-        self.account_data_cache.cache.iter().map(|item| {
-            let current = item.current().value();
-            (
-                item.key().as_ref(),
-                (current.nonce, current.balance, current.bytecode_hash),
-            )
-        })
     }
 
     type StorageKey<'a>

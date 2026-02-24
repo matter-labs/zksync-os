@@ -569,25 +569,6 @@ pub trait IOTeardown<IOTypes: SystemIOTypesConfig>: IOSubsystemExt<IOTypes = IOT
         result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
     );
 
-    type AccountAddress<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
-    where
-        Self: 'a;
-
-    type AccountDiff<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
-    where
-        Self: 'a;
-
-    /// Returns the account diff for a specific address, if any changes occurred.
-    fn get_account_diff<'a>(
-        &'a self,
-        address: Self::AccountAddress<'a>,
-    ) -> Option<Self::AccountDiff<'a>>;
-
-    /// Returns an iterator over all account state changes (nonce, balance, code).
-    fn accounts_diffs_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = (Self::AccountAddress<'a>, Self::AccountDiff<'a>)> + Clone;
-
     type StorageKey<'a>: 'a + Clone + Copy + PartialEq + Eq + core::fmt::Debug
     where
         Self: 'a;

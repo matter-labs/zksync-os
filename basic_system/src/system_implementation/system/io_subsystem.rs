@@ -769,28 +769,6 @@ impl<
         self.storage.report_new_preimages(result_keeper);
     }
 
-    type AccountAddress<'a>
-        = M::AccountAddress<'a>
-    where
-        Self: 'a;
-    type AccountDiff<'a>
-        = M::AccountDiff<'a>
-    where
-        Self: 'a;
-
-    fn get_account_diff<'a>(
-        &'a self,
-        address: Self::AccountAddress<'a>,
-    ) -> Option<Self::AccountDiff<'a>> {
-        self.storage.get_account_diff(address)
-    }
-    fn accounts_diffs_iterator<'a>(
-        &'a self,
-    ) -> impl ExactSizeIterator<Item = (Self::AccountAddress<'a>, Self::AccountDiff<'a>)> + Clone
-    {
-        self.storage.accounts_diffs_iterator()
-    }
-
     type StorageKey<'a>
         = M::StorageKey<'a>
     where
