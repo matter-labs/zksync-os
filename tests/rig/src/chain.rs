@@ -174,7 +174,7 @@ impl Default for BlockContext {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct RunConfig {
     // Config for the profiler
     pub profiler_config: Option<ProfilerConfig>,
@@ -182,13 +182,29 @@ pub struct RunConfig {
     pub witness_output_file: Option<PathBuf>,
     // Name of risc-v binary to use
     pub app: Option<String>,
-    // Only run in forward mode, skip proving run
-    pub only_forward: bool,
+    // Run RISC-V simulation
+    pub do_riscv_run: bool,
     // Whether to check that storage diff hashes from forward and proof runs match
     // Only to be used when state-diffs-pi feature is enabled in the binary and
-    // only_forward is false
+    // do_riscv_run is true
     pub check_storage_diff_hashes: bool,
     pub skip_minting_tokens_to_treasury: bool,
+}
+
+impl Default for RunConfig {
+    fn default() -> Self {
+        let do_riscv_run =
+            std::env::var("ZKSYNC_PROVING_RUN").is_ok() || std::env::var("CI").is_ok();
+
+        RunConfig {
+            app: Some("for_tests".to_string()),
+            do_riscv_run,
+            check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
+            skip_minting_tokens_to_treasury: false,
+            profiler_config: None,
+            witness_output_file: None,
+        }
+    }
 }
 
 impl Chain<false> {
@@ -494,7 +510,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             profiler_config,
             witness_output_file,
             app,
-            only_forward,
+            do_riscv_run,
             check_storage_diff_hashes,
             skip_minting_tokens_to_treasury,
         } = run_config;
@@ -627,7 +643,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 .insert(hash.0.into(), preimage.clone());
         }
 
-        let proof_input = if !only_forward {
+        let proof_input = if do_riscv_run {
             if let Some(path) = witness_output_file {
                 let result = Self::run_block_generate_witness::<false>(oracle, &app);
                 let mut file = File::create(&path).expect("should create file");

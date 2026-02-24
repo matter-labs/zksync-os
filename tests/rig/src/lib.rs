@@ -120,7 +120,7 @@ impl ZKsyncOSTester<true> {
             chain: Chain::empty_randomized(None),
             block_context: None,
             da_commitment_scheme: None,
-            run_config: None,
+            run_config: Some(Default::default()),
             last_executed_block_info: None,
             oracle_factory: None,
         }
@@ -141,7 +141,7 @@ impl ZKsyncOSTester<false> {
             chain: Chain::empty(None),
             block_context: None,
             da_commitment_scheme: None,
-            run_config: None,
+            run_config: Some(Default::default()),
             last_executed_block_info: None,
             oracle_factory: None,
         }
@@ -470,14 +470,4 @@ pub fn signer_from_key(key: &str) -> PrivateKeySigner {
 
 pub fn common_target_address() -> alloy::primitives::Address {
     address!("4242000000000000000000000000000000000000")
-}
-
-pub fn default_run_config() -> RunConfig {
-    RunConfig {
-        app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
-        skip_minting_tokens_to_treasury: false,
-        ..Default::default()
-    }
 }

@@ -9,7 +9,6 @@ use rig::alloy::hex::FromHex;
 use rig::alloy::primitives::FixedBytes;
 use rig::alloy_sol_types::sol;
 use rig::alloy_sol_types::SolCall;
-use rig::default_run_config;
 use rig::zksync_os_interface::types::ExecutionOutput;
 use rig::zksync_os_interface::types::ExecutionResult;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
@@ -104,8 +103,7 @@ fn test_blockhash() {
     }
     tester = tester
         .with_block_number(block_number)
-        .with_block_hashes(block_hashes)
-        .with_run_config(default_run_config());
+        .with_block_hashes(block_hashes);
 
     let result = tester.execute_block(vec![tx]);
     assert!(result.tx_results[0].is_ok(),);
@@ -393,7 +391,6 @@ fn bench_addmod() {
         .collect();
 
     // Run them all in one block
-    tester = tester.with_run_config(default_run_config());
     let _result = tester.execute_block(txs);
 }
 
@@ -768,7 +765,6 @@ fn bench_mulmod() {
         .collect();
 
     // Run all calls in one block
-    tester = tester.with_run_config(default_run_config());
     let _result = tester.execute_block(txs);
 }
 
@@ -893,7 +889,6 @@ fn bench_signextend() {
         })
         .collect();
 
-    tester = tester.with_run_config(default_run_config());
     let _result = tester.execute_block(txs);
 }
 
@@ -955,9 +950,7 @@ fn test_eip4844_blobhash() {
         blob_fee: U256::from(1000),
         ..Default::default()
     };
-    tester = tester
-        .with_block_context(block_context)
-        .with_run_config(default_run_config());
+    tester = tester.with_block_context(block_context);
     let result = tester.execute_block(vec![tx]);
     assert!(result.tx_results[0].is_ok(),);
     let tx_result = result.tx_results[0].as_ref().unwrap();

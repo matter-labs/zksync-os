@@ -5,6 +5,7 @@ use rig::alloy::consensus::TxLegacy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
 use rig::zksync_os_interface::types::BlockOutput;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
+use rig::BlockContext;
 use rig::{
     alloy::{
         primitives::{address, Address, TxKind},
@@ -13,7 +14,6 @@ use rig::{
     ruint::aliases::U256,
     ZKsyncOSTester,
 };
-use rig::{default_run_config, BlockContext};
 use std::assert_matches::assert_matches;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
@@ -68,10 +68,7 @@ fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockO
         ..Default::default()
     };
 
-    let run_config = default_run_config();
-    tester = tester
-        .with_block_context(block_context)
-        .with_run_config(run_config);
+    tester = tester.with_block_context(block_context);
 
     tester.execute_block(vec![direct_tx, forwarded_tx])
 }
@@ -6433,15 +6430,7 @@ fn test_regression_p256_is_warm() {
         ..Default::default()
     };
 
-    let run_config = rig::chain::RunConfig {
-        app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
-        ..Default::default()
-    };
-    tester = tester
-        .with_block_context(block_context)
-        .with_run_config(run_config);
+    tester = tester.with_block_context(block_context);
 
     let res = tester.execute_block(vec![forwarded_tx]);
     let tx_res = res
