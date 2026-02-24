@@ -178,14 +178,14 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
 
     pub fn with_balance(
         mut self,
-        address: ruint::aliases::B160,
+        address: alloy::primitives::Address,
         balance: ruint::aliases::U256,
     ) -> Self {
         self.set_balance(address, balance);
         self
     }
 
-    pub fn with_prefunded_account(mut self, address: ruint::aliases::B160) -> Self {
+    pub fn with_prefunded_account(mut self, address: alloy::primitives::Address) -> Self {
         self.set_balance(
             address,
             ruint::aliases::U256::from(1_000_000_000_000_000_u64),
@@ -193,7 +193,11 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
         self
     }
 
-    pub fn with_evm_contract(mut self, address: ruint::aliases::B160, bytecode: &[u8]) -> Self {
+    pub fn with_evm_contract(
+        mut self,
+        address: alloy::primitives::Address,
+        bytecode: &[u8],
+    ) -> Self {
         self.set_evm_contract(address, bytecode);
         self
     }
@@ -205,19 +209,21 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
 
     pub fn set_balance(
         &mut self,
-        address: ruint::aliases::B160,
+        address: alloy::primitives::Address,
         balance: ruint::aliases::U256,
     ) -> &mut Self {
-        self.chain.set_balance(address, balance);
+        self.chain
+            .set_balance(ruint::aliases::B160::from_alloy(address), balance);
         self
     }
 
     pub fn set_evm_contract(
         &mut self,
-        address: ruint::aliases::B160,
+        address: alloy::primitives::Address,
         bytecode: &[u8],
     ) -> &mut Self {
-        self.chain.set_evm_bytecode(address, bytecode);
+        self.chain
+            .set_evm_bytecode(ruint::aliases::B160::from_alloy(address), bytecode);
         self
     }
 
@@ -228,7 +234,7 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
     pub fn prefunded_random_signer(&mut self) -> PrivateKeySigner {
         let signer = self.random_signer();
         self.set_balance(
-            ruint::aliases::B160::from_alloy(signer.address()),
+            signer.address(),
             ruint::aliases::U256::from(1_000_000_000_000_000_u64),
         );
         signer
@@ -240,13 +246,16 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
 
     pub fn get_account_properties(
         &mut self,
-        address: &ruint::aliases::B160,
+        address: &alloy::primitives::Address,
     ) -> basic_system::system_implementation::flat_storage_model::AccountProperties {
-        self.chain.get_account_properties(address)
+        self.chain
+            .get_account_properties(&ruint::aliases::B160::from_alloy(address))
     }
 
-    pub fn get_balance(&mut self, address: &ruint::aliases::B160) -> ruint::aliases::U256 {
-        self.chain.get_account_properties(address).balance
+    pub fn get_balance(&mut self, address: &alloy::primitives::Address) -> ruint::aliases::U256 {
+        self.chain
+            .get_account_properties(&ruint::aliases::B160::from_alloy(address))
+            .balance
     }
 
     pub fn run_block_of_erc20(
