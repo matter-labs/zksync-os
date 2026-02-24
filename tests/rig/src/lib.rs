@@ -27,6 +27,7 @@ pub use cli_lib;
 pub use crypto;
 pub use forward_system;
 use forward_system::run::convert_alloy::FromAlloy;
+use forward_system::system::system_types::ForwardRunningSystem;
 #[cfg(feature = "gpu")]
 pub use gpu_prover;
 pub use log;
@@ -38,7 +39,9 @@ pub use system_hooks;
 pub use zk_ee;
 use zk_ee::common_structs::DACommitmentScheme;
 use zk_ee::system::tracer::NopTracer;
+use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::NopTxValidator;
+use zk_ee::system::validator::TxValidator;
 pub use zksync_os_api;
 pub use zksync_os_interface;
 use zksync_os_interface::types::BlockOutput;
@@ -336,6 +339,19 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
     }
 
     pub fn execute_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {
+        self.execute_block_with_tracing(
+            transactions,
+            &mut NopTracer::default(),
+            &mut NopTxValidator,
+        )
+    }
+
+    pub fn execute_block_with_tracing(
+        &mut self,
+        transactions: Vec<ZKsyncTxEnvelope>,
+        tracer: &mut impl Tracer<ForwardRunningSystem>,
+        validator: &mut impl TxValidator<ForwardRunningSystem>,
+    ) -> BlockOutput {
         let encoded_txs = transactions
             .into_iter()
             .map(IntoEncodedTx::into_encoded_tx)
@@ -347,8 +363,8 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
                 self.block_context.clone(),
                 self.da_commitment_scheme,
                 self.run_config.clone(),
-                &mut NopTracer::default(),
-                &mut NopTxValidator::default(),
+                tracer,
+                validator,
             )
             .unwrap();
 
