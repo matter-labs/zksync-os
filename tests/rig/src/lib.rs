@@ -11,6 +11,7 @@ pub mod testing_utils;
 pub mod utils;
 
 pub use alloy;
+use alloy::signers::local::PrivateKeySigner;
 pub use alloy_rlp;
 pub use alloy_sol_types;
 pub use basic_bootloader;
@@ -22,6 +23,7 @@ pub use chain::Chain;
 pub use cli_lib;
 pub use crypto;
 pub use forward_system;
+use forward_system::run::convert_alloy::FromAlloy;
 #[cfg(feature = "gpu")]
 pub use gpu_prover;
 pub use log;
@@ -31,10 +33,16 @@ pub use risc_v_simulator::sim::ProfilerConfig;
 pub use ruint;
 pub use system_hooks;
 pub use zk_ee;
+use zk_ee::common_structs::DACommitmentScheme;
 pub use zksync_os_api;
 pub use zksync_os_interface;
+use zksync_os_interface::types::BlockOutput;
 pub use zksync_os_tests_common;
+use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 pub use zksync_web3_rs;
+
+use crate::chain::RunConfig;
 
 static INIT_LOGGER_ONCE: Once = Once::new();
 pub fn init_logger() {
@@ -62,4 +70,225 @@ mod colors {
     pub const BRIGHT_MAGENTA: &str = "\x1b[95m";
     pub const BRIGHT_CYAN: &str = "\x1b[96m";
     pub const BRIGHT_WHITE: &str = "\x1b[97m";
+}
+
+pub struct ZKsyncOSTester<const RANDOMIZED_TREE: bool = false> {
+    pub chain: Chain<RANDOMIZED_TREE>,
+    pub block_context: Option<BlockContext>,
+    pub da_commitment_scheme: Option<DACommitmentScheme>,
+    pub run_config: Option<RunConfig>,
+}
+
+impl ZKsyncOSTester<true> {
+    pub fn new() -> Self {
+        init_logger();
+
+        Self {
+            chain: Chain::empty_randomized(None),
+            block_context: None,
+            da_commitment_scheme: None,
+            run_config: None,
+        }
+    }
+}
+
+impl ZKsyncOSTester<false> {
+    pub fn new() -> Self {
+        init_logger();
+
+        Self {
+            chain: Chain::empty(None),
+            block_context: None,
+            da_commitment_scheme: None,
+            run_config: None,
+        }
+    }
+}
+
+impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
+    pub fn with_chain_id(mut self, chain_id: u64) -> Self {
+        self.chain.set_chain_id(chain_id);
+        self
+    }
+
+    pub fn with_block_hashes(mut self, block_hashes: [ruint::aliases::U256; 256]) -> Self {
+        self.chain.set_block_hashes(block_hashes);
+        self
+    }
+
+    pub fn with_block_number(mut self, block_number: u64) -> Self {
+        self.chain.set_last_block_number(
+            block_number
+                .checked_sub(1)
+                .expect("block number should be > 0"),
+        );
+        self
+    }
+
+    pub fn with_block_context(mut self, block_context: BlockContext) -> Self {
+        self.block_context = Some(block_context);
+        self
+    }
+
+    pub fn with_da_commitment_scheme(mut self, da_commitment_scheme: DACommitmentScheme) -> Self {
+        self.da_commitment_scheme = Some(da_commitment_scheme);
+        self
+    }
+
+    pub fn with_run_config(mut self, run_config: RunConfig) -> Self {
+        self.run_config = Some(run_config);
+        self
+    }
+
+    pub fn with_balance(
+        mut self,
+        address: ruint::aliases::B160,
+        balance: ruint::aliases::U256,
+    ) -> Self {
+        self.chain.set_balance(address, balance);
+        self
+    }
+
+    pub fn with_evm_contract(mut self, address: ruint::aliases::B160, bytecode: &[u8]) -> Self {
+        self.chain.set_evm_bytecode(address, bytecode);
+        self
+    }
+
+    pub fn set_balance(
+        &mut self,
+        address: ruint::aliases::B160,
+        balance: ruint::aliases::U256,
+    ) -> &mut Self {
+        self.chain.set_balance(address, balance);
+        self
+    }
+
+    pub fn set_evm_bytecode(
+        &mut self,
+        address: ruint::aliases::B160,
+        bytecode: &[u8],
+    ) -> &mut Self {
+        self.chain.set_evm_bytecode(address, bytecode);
+        self
+    }
+
+    pub fn random_signer(&self) -> PrivateKeySigner {
+        self.chain.random_signer()
+    }
+
+    pub fn prefunded_random_signer(&mut self) -> PrivateKeySigner {
+        let signer = self.chain.random_signer();
+        self.chain.set_balance(
+            ruint::aliases::B160::from_alloy(signer.address()),
+            ruint::aliases::U256::from(1_000_000_000_000_000_u64),
+        );
+        signer
+    }
+
+    pub fn run_block(
+        &mut self,
+        transactions: Vec<zksync_os_interface::traits::EncodedTx>,
+        block_context: Option<BlockContext>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        run_config: Option<RunConfig>,
+    ) -> BlockOutput {
+        self.chain.run_block(
+            transactions,
+            block_context,
+            da_commitment_scheme,
+            run_config,
+        )
+    }
+
+    pub fn simulate_encoded_block(
+        &mut self,
+        transactions: Vec<zksync_os_interface::traits::EncodedTx>,
+        block_context: Option<BlockContext>,
+    ) -> BlockOutput {
+        self.chain.simulate_block(transactions, block_context)
+    }
+
+    pub fn run_block_no_panic(
+        &mut self,
+        transactions: Vec<zksync_os_interface::traits::EncodedTx>,
+        block_context: Option<BlockContext>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        run_config: Option<RunConfig>,
+    ) -> Result<BlockOutput, basic_bootloader::bootloader::errors::BootloaderSubsystemError> {
+        self.chain.run_block_no_panic(
+            transactions,
+            block_context,
+            da_commitment_scheme,
+            run_config,
+        )
+    }
+
+    pub fn mint_tokens_to_treasury(&mut self) {
+        self.chain.mint_tokens_to_treasury();
+    }
+
+    pub fn get_account_properties(
+        &mut self,
+        address: &ruint::aliases::B160,
+    ) -> basic_system::system_implementation::flat_storage_model::AccountProperties {
+        self.chain.get_account_properties(address)
+    }
+
+    pub fn run_block_of_erc20(
+        &mut self,
+        n: usize,
+        block_context: Option<BlockContext>,
+    ) -> BlockOutput {
+        crate::utils::run_block_of_erc20(&mut self.chain, n, block_context)
+    }
+
+    pub fn run_block_of_erc20_with_fee(
+        &mut self,
+        n: usize,
+        block_context: Option<BlockContext>,
+        fee: u128,
+    ) -> BlockOutput {
+        crate::utils::run_block_of_erc20_with_fee(&mut self.chain, n, block_context, fee)
+    }
+
+    pub fn execute_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {
+        let encoded_txs = transactions
+            .iter()
+            .map(|tx| tx.clone().encode())
+            .collect::<Vec<_>>();
+        let block_output = self.chain.run_block(
+            encoded_txs,
+            self.block_context.clone(),
+            self.da_commitment_scheme.clone(),
+            self.run_config.clone(),
+        );
+        block_output
+    }
+
+    pub fn simulate_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {
+        let encoded_txs = transactions
+            .iter()
+            .map(|tx| tx.clone().encode())
+            .collect::<Vec<_>>();
+        let block_output = self
+            .chain
+            .simulate_block(encoded_txs, self.block_context.clone());
+        block_output
+    }
+}
+
+impl ZKsyncOSTester<false> {
+    pub fn install_system_contracts(
+        &mut self,
+        with_l1_messenger: bool,
+        with_l2_base_token: bool,
+        with_contract_deployer: bool,
+    ) {
+        crate::testing_utils::install_system_contracts(
+            &mut self.chain,
+            with_l1_messenger,
+            with_l2_base_token,
+            with_contract_deployer,
+        );
+    }
 }

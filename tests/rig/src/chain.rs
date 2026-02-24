@@ -141,7 +141,7 @@ impl Default for BlockContext {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RunConfig {
     // Config for the profiler
     pub profiler_config: Option<ProfilerConfig>,
@@ -228,6 +228,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn set_block_hashes(&mut self, block_hashes: [U256; 256]) {
         self.block_hashes = block_hashes
+    }
+
+    pub fn set_chain_id(&mut self, chain_id: u64) {
+        self.chain_id = chain_id;
     }
 
     /// TODO: duplicated from API, unify.

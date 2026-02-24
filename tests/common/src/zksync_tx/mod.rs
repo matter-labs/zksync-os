@@ -17,6 +17,7 @@ pub mod service_tx;
 pub mod upgrade_tx;
 
 /// Wrapper over all tx envelope kinds we feed into ZKsync OS.
+#[derive(Clone)]
 pub enum ZKsyncTxEnvelope {
     /// Standard Ethereum typed envelope signed by the corresponding address.
     Ethereum(TxEnvelope, Address),
@@ -114,6 +115,7 @@ impl From<ZKsyncServiceTx> for ZKsyncTxEnvelope {
 }
 
 /// ZKsync OS specific transactions wrapper.
+#[derive(Clone)]
 pub enum ZKsyncSpecificTxEnvelope {
     L1(ZKsyncL1Tx),
     Upgrade(ZKsyncUpgradeTx),
