@@ -37,6 +37,8 @@ pub use ruint;
 pub use system_hooks;
 pub use zk_ee;
 use zk_ee::common_structs::DACommitmentScheme;
+use zk_ee::system::tracer::NopTracer;
+use zk_ee::system::validator::NopTxValidator;
 pub use zksync_os_api;
 pub use zksync_os_interface;
 use zksync_os_interface::types::BlockOutput;
@@ -45,7 +47,7 @@ use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 pub use zksync_web3_rs;
 
-use crate::chain::RunConfig;
+use crate::chain::{BlockExtraStats, RunConfig};
 
 static INIT_LOGGER_ONCE: Once = Once::new();
 pub fn init_logger() {
@@ -91,11 +93,18 @@ mod colors {
     pub const BRIGHT_WHITE: &str = "\x1b[97m";
 }
 
+pub struct LastExecutedBlockInfo {
+    pub block_output: BlockOutput,
+    pub block_extra_stats: BlockExtraStats,
+    pub proof_input: Vec<u32>,
+}
+
 pub struct ZKsyncOSTester<const RANDOMIZED_TREE: bool = false> {
     chain: Chain<RANDOMIZED_TREE>,
     block_context: Option<BlockContext>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     run_config: Option<RunConfig>,
+    last_executed_block_info: Option<LastExecutedBlockInfo>,
 }
 
 impl ZKsyncOSTester<true> {
@@ -107,6 +116,7 @@ impl ZKsyncOSTester<true> {
             block_context: None,
             da_commitment_scheme: None,
             run_config: None,
+            last_executed_block_info: None,
         }
     }
 }
@@ -126,6 +136,7 @@ impl ZKsyncOSTester<false> {
             block_context: None,
             da_commitment_scheme: None,
             run_config: None,
+            last_executed_block_info: None,
         }
     }
 }
@@ -303,6 +314,10 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
             .balance
     }
 
+    pub fn last_executed_block_info(&self) -> Option<&LastExecutedBlockInfo> {
+        self.last_executed_block_info.as_ref()
+    }
+
     pub fn run_block_of_erc20(
         &mut self,
         n: usize,
@@ -325,12 +340,25 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
             .into_iter()
             .map(IntoEncodedTx::into_encoded_tx)
             .collect::<Vec<_>>();
-        self.chain.run_block(
-            encoded_txs,
-            self.block_context.clone(),
-            self.da_commitment_scheme,
-            self.run_config.clone(),
-        )
+        let (block_output, block_extra_stats, proof_input) = self
+            .chain
+            .run_block_with_extra_stats(
+                encoded_txs,
+                self.block_context.clone(),
+                self.da_commitment_scheme,
+                self.run_config.clone(),
+                &mut NopTracer::default(),
+                &mut NopTxValidator::default(),
+            )
+            .unwrap();
+
+        self.last_executed_block_info = Some(LastExecutedBlockInfo {
+            block_output: block_output.clone(),
+            block_extra_stats,
+            proof_input,
+        });
+
+        block_output
     }
 
     pub fn simulate_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {

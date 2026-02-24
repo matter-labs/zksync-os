@@ -5,7 +5,6 @@ use rig::alloy::consensus::TxLegacy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
 use rig::zksync_os_interface::types::BlockOutput;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
-use rig::{BlockContext, default_run_config};
 use rig::{
     alloy::{
         primitives::{address, Address, TxKind},
@@ -14,6 +13,7 @@ use rig::{
     ruint::aliases::U256,
     ZKsyncOSTester,
 };
+use rig::{default_run_config, BlockContext};
 use std::assert_matches::assert_matches;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 

@@ -12,7 +12,7 @@ use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::{ZKsyncOSTester, alloy, common_target_address, default_run_config, signer_from_key};
+use rig::{alloy, common_target_address, default_run_config, signer_from_key, ZKsyncOSTester};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
