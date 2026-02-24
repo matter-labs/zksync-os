@@ -6358,6 +6358,7 @@ fn all_ones_bits(n: usize) -> Vec<u8> {
     vec![0xFF; 4 * n]
 }
 
+#[allow(dead_code)]
 fn all_ones_except_top_bit(n: usize) -> Vec<u8> {
     let mut v = vec![0xFF; 4 * n];
     v[0] &= 0x7F; // clear the top (MSB) bit in the first byte
