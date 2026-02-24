@@ -338,6 +338,22 @@ where
                 crate::system::NextTxInterfaceError::TxWriteIteratorTooBig
             )));
         }
+        // We preallocate uninitialized memory; if oracle returns too few words for the declared
+        // tx byte length, exposing buffer.as_slice() would touch uninitialized bytes.
+        let tx_iterator_num_bytes =
+            match tx_iterator.len().checked_mul(core::mem::size_of::<usize>()) {
+                Some(num_bytes) => num_bytes,
+                None => {
+                    return Some(Err(interface_error!(
+                        crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
+                    )))
+                }
+            };
+        if tx_iterator_num_bytes < next_tx_len_bytes {
+            return Some(Err(interface_error!(
+                crate::system::NextTxInterfaceError::TxWriteIteratorTooSmall
+            )));
+        }
         for word in tx_iterator {
             unsafe {
                 as_writable.write_usize(word);
@@ -413,6 +429,7 @@ define_subsystem!(NextTx,
     TxLengthTooLarge,
     DestinationBufferInsufficient,
     TxWriteIteratorTooBig,
+    TxWriteIteratorTooSmall,
   }
 );
 

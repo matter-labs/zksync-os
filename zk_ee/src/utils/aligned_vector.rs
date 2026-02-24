@@ -26,10 +26,21 @@ pub fn allocate_vec_usize_aligned<A: Allocator>(
     unsafe { alloc::vec::Vec::from_raw_parts_in(new_ptr, new_len, new_capacity, allocator) }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct UsizeAlignedByteBox<A: Allocator> {
-    inner: alloc::boxed::Box<[usize], A>,
+    inner: alloc::boxed::Box<[MaybeUninit<usize>], A>,
     byte_capacity: usize,
+    initialized_bytes: usize,
+}
+
+impl<A: Allocator> core::fmt::Debug for UsizeAlignedByteBox<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("UsizeAlignedByteBox")
+            .field("word_capacity", &self.inner.len())
+            .field("byte_capacity", &self.byte_capacity)
+            .field("initialized_bytes", &self.initialized_bytes)
+            .finish()
+    }
 }
 
 impl<A: Allocator> AsRef<[u8]> for UsizeAlignedByteBox<A> {
@@ -41,18 +52,24 @@ impl<A: Allocator> AsRef<[u8]> for UsizeAlignedByteBox<A> {
 impl<A: Allocator> UsizeAlignedByteBox<A> {
     pub fn preallocated_in(byte_capacity: usize, allocator: A) -> Self {
         let num_usize_words = num_usize_words_for_u8_capacity(byte_capacity);
-        let inner: alloc::boxed::Box<[usize], A> = unsafe {
-            alloc::boxed::Box::new_uninit_slice_in(num_usize_words, allocator).assume_init()
-        };
+        let inner: alloc::boxed::Box<[MaybeUninit<usize>], A> =
+            alloc::boxed::Box::new_uninit_slice_in(num_usize_words, allocator);
 
         Self {
             inner,
             byte_capacity,
+            initialized_bytes: 0,
         }
     }
 
     pub fn as_slice(&self) -> &[u8] {
         debug_assert!(self.inner.len() * USIZE_SIZE >= self.byte_capacity);
+        assert!(
+            self.initialized_bytes >= self.byte_capacity,
+            "trying to access {} bytes, but only {} bytes are initialized",
+            self.byte_capacity,
+            self.initialized_bytes
+        );
         unsafe { core::slice::from_raw_parts(self.inner.as_ptr().cast::<u8>(), self.byte_capacity) }
     }
 
@@ -70,6 +87,7 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
                 src.len(),
             );
         }
+        result.initialized_bytes = src.len();
 
         result
     }
@@ -86,6 +104,7 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
                 dst = dst.add(src.len());
             }
         }
+        result.initialized_bytes = total_len;
 
         result
     }
@@ -101,13 +120,12 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
         for (src, dst) in src.zip(inner.iter_mut()) {
             dst.write(src);
         }
-        // everything was initialized
-        let inner = unsafe { inner.assume_init() };
         let byte_capacity = word_capacity * USIZE_SIZE;
 
         Self {
             inner,
             byte_capacity,
+            initialized_bytes: byte_capacity,
         }
     }
 
@@ -121,15 +139,16 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
         let written_words = init_fn(&mut inner);
         assert!(written_words <= buffer_size); // we do not want to truncate or realloc, but we will expose only written part below
                                                // Safety: init_fn only guarantees that it initialized `written_words` elements.
-                                               // Initialize the remainder to avoid UB in assume_init().
+                                               // Initialize the remainder to keep the full allocation initialized.
         for dst in inner.iter_mut().skip(written_words) {
             dst.write(0);
         }
         let byte_capacity = written_words * USIZE_SIZE; // we only count initialized words for capacity purposes
 
         Self {
-            inner: unsafe { inner.assume_init() },
+            inner,
             byte_capacity,
+            initialized_bytes: buffer_size * USIZE_SIZE,
         }
     }
 
@@ -157,22 +176,26 @@ impl<A: Allocator> AsUsizeWritable for UsizeAlignedByteBox<A> {
         let range = self.inner.as_mut_ptr_range();
 
         UsizeSliceWriter {
+            start: range.start,
             dst: range.start,
             end: range.end,
+            initialized_bytes: &mut self.initialized_bytes,
             _marker: core::marker::PhantomData,
         }
     }
 }
 
 pub struct UsizeSliceWriter<'a> {
-    dst: *mut usize,
-    end: *mut usize,
+    start: *mut MaybeUninit<usize>,
+    dst: *mut MaybeUninit<usize>,
+    end: *mut MaybeUninit<usize>,
+    initialized_bytes: &'a mut usize,
     _marker: core::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> UsizeWriteable for UsizeSliceWriter<'a> {
     unsafe fn write_usize(&mut self, value: usize) {
-        self.dst.write(value);
+        self.dst.write(MaybeUninit::new(value));
         self.dst = self.dst.add(1);
     }
 }
@@ -190,5 +213,205 @@ impl<'a> SafeUsizeWritable for UsizeSliceWriter<'a> {
 
     fn len(&self) -> usize {
         unsafe { self.end.offset_from_unsigned(self.dst) }
+    }
+}
+
+impl Drop for UsizeSliceWriter<'_> {
+    fn drop(&mut self) {
+        // Track how many words this writer advanced from the beginning of the allocation.
+        // The tx path writes from offset 0, so this reflects the initialized prefix in bytes.
+        let words_written = unsafe { self.dst.offset_from_unsigned(self.start) };
+        let bytes_written = words_written
+            .checked_mul(USIZE_SIZE)
+            .expect("bytes written must fit in usize");
+        // Keep monotonic initialization tracking in case multiple writers are created.
+        if *self.initialized_bytes < bytes_written {
+            *self.initialized_bytes = bytes_written;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::panic::AssertUnwindSafe;
+
+    use std::alloc::Global;
+
+    use super::{
+        allocate_vec_usize_aligned, num_usize_words_for_u8_capacity, UsizeAlignedByteBox,
+        USIZE_SIZE,
+    };
+    use crate::utils::usize_rw::{AsUsizeWritable, SafeUsizeWritable, UsizeWriteable};
+
+    #[test]
+    fn num_usize_words_for_u8_capacity_rounds_up_and_keeps_even_word_count() {
+        assert_eq!(num_usize_words_for_u8_capacity(0), 0);
+        assert_eq!(num_usize_words_for_u8_capacity(1), 2);
+        assert_eq!(num_usize_words_for_u8_capacity(USIZE_SIZE), 2);
+        assert_eq!(num_usize_words_for_u8_capacity(USIZE_SIZE + 1), 2);
+        assert_eq!(num_usize_words_for_u8_capacity(2 * USIZE_SIZE), 2);
+        assert_eq!(num_usize_words_for_u8_capacity(2 * USIZE_SIZE + 1), 4);
+    }
+
+    #[test]
+    fn allocate_vec_usize_aligned_has_aligned_capacity() {
+        let requested = USIZE_SIZE + 1;
+        let buffer = allocate_vec_usize_aligned(requested, Global);
+
+        assert_eq!(buffer.len(), 0);
+        assert!(buffer.capacity() >= requested);
+        assert_eq!(buffer.capacity() % USIZE_SIZE, 0);
+    }
+
+    #[test]
+    fn preallocated_len_reports_requested_byte_length() {
+        let requested = USIZE_SIZE + 3;
+        let buffer = UsizeAlignedByteBox::preallocated_in(requested, Global);
+
+        assert_eq!(buffer.len(), requested);
+    }
+
+    #[test]
+    fn preallocated_panics_if_read_before_init() {
+        let buffer = UsizeAlignedByteBox::preallocated_in(1, Global);
+
+        let panicked = std::panic::catch_unwind(|| {
+            let _ = buffer.as_slice();
+        })
+        .is_err();
+
+        assert!(panicked);
+    }
+
+    #[test]
+    fn from_slice_in_roundtrip_and_as_ref() {
+        let input = [1u8, 2, 3, 4, 5];
+        let buffer = UsizeAlignedByteBox::from_slice_in(&input, Global);
+
+        assert_eq!(buffer.len(), input.len());
+        assert_eq!(buffer.as_slice(), &input);
+        assert_eq!(buffer.as_ref(), &input);
+    }
+
+    #[test]
+    fn from_slices_in_roundtrip() {
+        let a = [1u8, 2];
+        let b = [];
+        let c = [3u8, 4, 5];
+        let buffer = UsizeAlignedByteBox::from_slices_in(&[&a, &b, &c], Global);
+
+        assert_eq!(buffer.len(), a.len() + b.len() + c.len());
+        assert_eq!(buffer.as_slice(), &[1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn from_usize_iterator_in_serializes_words() {
+        let words = [1usize, 2usize, usize::MAX];
+        let expected: alloc::vec::Vec<u8> =
+            words.iter().flat_map(|word| word.to_ne_bytes()).collect();
+        let buffer = UsizeAlignedByteBox::from_usize_iterator_in(words.into_iter(), Global);
+
+        assert_eq!(buffer.len(), words.len() * USIZE_SIZE);
+        assert_eq!(buffer.as_slice(), expected.as_slice());
+    }
+
+    #[test]
+    fn from_init_fn_in_uses_written_word_count_for_len() {
+        let buffer = UsizeAlignedByteBox::from_init_fn_in(
+            4,
+            |dst| {
+                dst[0].write(11usize);
+                dst[1].write(22usize);
+                2
+            },
+            Global,
+        );
+
+        let expected: alloc::vec::Vec<u8> = [11usize, 22usize]
+            .into_iter()
+            .flat_map(|word| word.to_ne_bytes())
+            .collect();
+        assert_eq!(buffer.len(), 2 * USIZE_SIZE);
+        assert_eq!(buffer.as_slice(), expected.as_slice());
+    }
+
+    #[test]
+    fn from_init_fn_in_panics_if_written_words_exceed_buffer_size() {
+        let panicked = std::panic::catch_unwind(|| {
+            UsizeAlignedByteBox::from_init_fn_in(1, |_dst| 2, Global);
+        })
+        .is_err();
+
+        assert!(panicked);
+    }
+
+    #[test]
+    fn truncated_to_byte_length_reduces_visible_len() {
+        let mut buffer = UsizeAlignedByteBox::from_slice_in(&[1, 2, 3, 4], Global);
+        buffer.truncated_to_byte_length(3);
+
+        assert_eq!(buffer.len(), 3);
+        assert_eq!(buffer.as_slice(), &[1, 2, 3]);
+    }
+
+    #[test]
+    fn truncated_to_byte_length_panics_if_new_len_is_too_large() {
+        let mut buffer = UsizeAlignedByteBox::from_slice_in(&[1, 2, 3], Global);
+        let panicked = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            buffer.truncated_to_byte_length(4);
+        }))
+        .is_err();
+
+        assert!(panicked);
+    }
+
+    #[test]
+    fn usize_slice_writer_try_write_updates_len_and_writes_data() {
+        let byte_len = 2 * USIZE_SIZE;
+        let mut buffer = UsizeAlignedByteBox::preallocated_in(byte_len, Global);
+
+        {
+            let mut writer = buffer.as_writable();
+            assert_eq!(writer.len(), num_usize_words_for_u8_capacity(byte_len));
+            writer.try_write(111).unwrap();
+            assert_eq!(writer.len(), 1);
+            writer.try_write(222).unwrap();
+            assert_eq!(writer.len(), 0);
+        }
+
+        let expected: alloc::vec::Vec<u8> = [111usize, 222usize]
+            .into_iter()
+            .flat_map(|word| word.to_ne_bytes())
+            .collect();
+        assert_eq!(buffer.as_slice(), expected.as_slice());
+    }
+
+    #[test]
+    fn usize_slice_writer_try_write_returns_err_when_out_of_bounds() {
+        let mut buffer = UsizeAlignedByteBox::preallocated_in(0, Global);
+
+        let mut writer = buffer.as_writable();
+        assert_eq!(writer.len(), 0);
+        assert!(writer.try_write(1).is_err());
+    }
+
+    #[test]
+    fn usize_slice_writer_unsafe_write_usize_path_writes_data() {
+        let byte_len = USIZE_SIZE + 1;
+        let mut buffer = UsizeAlignedByteBox::preallocated_in(byte_len, Global);
+
+        {
+            let mut writer = buffer.as_writable();
+            unsafe {
+                UsizeWriteable::write_usize(&mut writer, usize::MAX);
+                UsizeWriteable::write_usize(&mut writer, 0);
+            }
+        }
+
+        let mut expected: alloc::vec::Vec<u8> = usize::MAX.to_ne_bytes().to_vec();
+        expected.extend([0usize; 1].iter().flat_map(|word| word.to_ne_bytes()));
+        expected.truncate(byte_len);
+        assert_eq!(buffer.as_slice().len(), byte_len);
+        assert_eq!(buffer.as_slice(), expected.as_slice());
     }
 }
