@@ -694,10 +694,7 @@ fn test_regression_returndata_empty_3541() {
 
 #[test]
 fn test_returndata_cleared_when_reverted_after_execution() {
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
+    let wallet = testing_signer(0);
     let from = wallet.address();
     let to = address!("0000000000000000000000000000000000010002");
     let bytecode = hex::decode(
@@ -705,27 +702,26 @@ fn test_returndata_cleared_when_reverted_after_execution() {
     )
     .unwrap();
 
-    // First run with regular block context: call succeeds and returns non-empty data.
-    let mut chain = Chain::empty(None);
-    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
-    chain.set_balance(
-        B160::from_alloy(from),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-
-    let tx = TxEip1559 {
-        chain_id: 37u64,
-        nonce: 0,
-        max_fee_per_gas: 1000,
-        max_priority_fee_per_gas: 1000,
-        gas_limit: 250_000,
-        to: TxKind::Call(to),
-        value: U256::ZERO,
-        input: Default::default(),
-        access_list: Default::default(),
+    let make_tx = |nonce: u64| {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit: 250_000,
+            to: TxKind::Call(to),
+            value: U256::ZERO,
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
-    let encoded_tx = ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode();
-    let success_output = chain.run_block(vec![encoded_tx], None, None, run_config());
+
+    // First run with regular block context: call succeeds and returns non-empty data.
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(to, &bytecode)
+        .with_balance(from, U256::from(1_000_000_000_000_000_u64));
+    let success_output = tester.execute_block(vec![make_tx(0)]);
     let success_tx = success_output.tx_results[0]
         .as_ref()
         .expect("Control transaction should be processed");
@@ -748,37 +744,17 @@ fn test_returndata_cleared_when_reverted_after_execution() {
 
     // Run the same tx with expensive pubdata so post-execution pubdata check forces a revert.
     // Regression: such reverts must not keep the successful call returndata.
-    let mut chain = Chain::empty(None);
-    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
-    chain.set_balance(
-        B160::from_alloy(from),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-
-    let tx = TxEip1559 {
-        chain_id: 37u64,
-        nonce: 0,
-        max_fee_per_gas: 1000,
-        max_priority_fee_per_gas: 1000,
-        gas_limit: 250_000,
-        to: TxKind::Call(to),
-        value: U256::ZERO,
-        input: Default::default(),
-        access_list: Default::default(),
-    };
-    let encoded_tx = ZKsyncTxEnvelope::from_eth_tx(tx, wallet).encode();
     let expensive_pubdata_context = BlockContext {
         eip1559_basefee: U256::from(1000),
         native_price: U256::ONE,
         pubdata_price: U256::from(700_000u64),
         ..Default::default()
     };
-    let reverted_output = chain.run_block(
-        vec![encoded_tx],
-        Some(expensive_pubdata_context),
-        None,
-        run_config(),
-    );
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(to, &bytecode)
+        .with_balance(from, U256::from(1_000_000_000_000_000_u64))
+        .with_block_context(expensive_pubdata_context);
+    let reverted_output = tester.execute_block(vec![make_tx(0)]);
     let reverted_tx = reverted_output.tx_results[0]
         .as_ref()
         .expect("Transaction should be processed even if reverted");
