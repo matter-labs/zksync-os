@@ -20,7 +20,7 @@ blake2s_u32 = { workspace = true, optional = true, default-features = false }
 ripemd = { version = "0.1", default-features = false }
 ruint = { workspace = true, default-features = false }
 
-cfg-if = "1.0.4"
+cfg-if = { workspace = true }
 const_for = "0.1.5"
 
 # zeroize = { version = "1", default-features = false, optional = true }
@@ -34,11 +34,11 @@ ark-ec = { version = "0.5", default-features = false }
 ark-serialize = { version = "0.5", default-features = false }
 ark-bn254 = { version = "0.5", default-features = false, features = ["curve", "scalar_field"] }
 ark-bls12-381 = { version = "0.5", default-features = false, features = ["curve", "scalar_field"] }
-num-bigint = { version = "0.4", default-features = false }
+num-bigint = { workspace = true, default-features = false }
 zeroize = { version = "1", default-features = false }
 itertools = { version = "0.14.0", default-features = false }
 educe = { version = "0.6.0", default-features = false }
-num-traits = { version = "0.2", default-features = false }
+num-traits = { workspace = true, default-features = false }
 
 # ark-ff = { path = "../../git_copies/algebra/ff", default-features = false }
 # ark-ec = { path = "../../git_copies/algebra/ec", default-features = false }
@@ -52,10 +52,10 @@ risc_v_simulator = { workspace = true, features = ["delegation"] }
 # blake2s_u32 = {path = "../../zksync-airbender/blake2s_u32", optional = true, default-features = false}
 ark-std = { version = "0.5" }
 zeroize = { version = "1", default-features = false }
-num-traits = { version = "0.2", default-features = false }
-num-bigint = { version = "0.4", default-features = false }
-num-integer = { version = "0.1", default-features = false }
-proptest = "1.0.0"
+num-traits = { workspace = true, default-features = false }
+num-bigint = { workspace = true, default-features = false }
+num-integer = { workspace = true, default-features = false }
+proptest = { workspace = true }
 hex-literal = "0.4.1"
 ark-test-curves = { version = "0.5", features = ["secp256k1", "bls12_381_curve"] }
 rand_core = { version = "0.6.4", features = ["getrandom"] }

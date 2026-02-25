@@ -12,7 +12,7 @@ categories.workspace = true
 [dependencies]
 rig = { path = "../../rig", features = ["for_tests"] }
 zksync_os_tests_common = { path = "../../common" }
-hex = "*"
+hex = { workspace = true }
 
 [features]
 e2e_proving = ["rig/e2e_proving"]

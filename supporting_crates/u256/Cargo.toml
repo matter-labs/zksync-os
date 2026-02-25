@@ -19,4 +19,4 @@ serde = ["ruint/serde", "delegated_u256/serde"]
 delegation = []
 
 [dev-dependencies]
-proptest = "1.7.0"
+proptest = { workspace = true }

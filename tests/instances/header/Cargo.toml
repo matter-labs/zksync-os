@@ -11,7 +11,7 @@ categories.workspace = true
 
 [dependencies]
 rig = { path = "../../rig", features = ["for_tests"] }
-hex = "*"
+hex = { workspace = true }
 basic_bootloader = { path = "../../../basic_bootloader" }
 
 [features]

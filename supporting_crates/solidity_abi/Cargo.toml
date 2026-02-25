@@ -15,4 +15,4 @@ solidity_abi_derive = { path = "../solidity_abi_derive"}
 const_keccak256 = { path = "../keccak"}
 
 [dev-dependencies]
-hex = "*"
+hex = { workspace = true }

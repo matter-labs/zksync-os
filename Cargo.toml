@@ -73,6 +73,15 @@ gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v
 ruint = { version = "1.16", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
 serde = { version = "1", default-features = false }
+hex = "0.4.3"
+paste = "1.0.15"
+strum_macros = "0.27.1"
+cfg-if = "1.0.4"
+either = { version = "1.15.0", default-features = false }
+num-bigint = { version = "0.4", default-features = false }
+num-traits = { version = "0.2", default-features = false }
+num-integer = { version = "0.1", default-features = false }
+proptest = "1.7.0"
 
 
 # zerocopy 0.8.29 introduced a compilation issue, remove this
@@ -105,4 +114,3 @@ debug = true
 # prover_examples = { path = "../zksync-airbender/circuit_defs/prover_examples" }
 # risc_v_simulator = { path = "../zksync-airbender/risc_v_simulator" }
 # execution_utils = { path = "../zksync-airbender/execution_utils" }
-
