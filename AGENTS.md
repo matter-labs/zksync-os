@@ -72,7 +72,7 @@ cd zksync_os && ./dump_bin.sh --type for-tests
 ### Testing Infrastructure
 
 #### Integration tests
-The project uses a custom testing rig located in `tests/rig/` with the main abstraction being the `ZKsyncOSTester` struct. Tests are organized in `tests/instances/` and follow this pattern:
+The project uses a custom testing rig located in `tests/rig/` with the main abstraction being the `TestingFramework` struct. Tests are organized in `tests/instances/` and follow this pattern:
 1. Set up initial chain state (predeployed contracts, balances)
 2. Define transactions to execute
 3. Call `execute_block` to execute (typically runs both forward and proof systems, unless configured otherwise)
@@ -82,6 +82,11 @@ Avoid direct `Chain` usage in test instances unless a low-level path is explicit
 To run rig-based tests without detailed executions logs use:
 ```bash
 cargo test -p <crate-name> --features rig/no_print
+```
+
+By default, local rig runs skip RISC-V simulation unless `ZKSYNC_PROVING_RUN` or `CI` is set. To force proving-mode simulation locally use:
+```bash
+ZKSYNC_PROVING_RUN=true cargo test -p <crate-name>
 ```
 
 #### EVM tester
