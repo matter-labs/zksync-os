@@ -12,7 +12,7 @@ use rig::{
         rpc::types::TransactionRequest,
     },
     ruint::aliases::U256,
-    ZKsyncOSTester,
+    TestingFramework,
 };
 use std::assert_matches::assert_matches;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
@@ -25,7 +25,7 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockOutput {
     let gas = gas.unwrap_or(1 << 27);
 
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let target = Address::from_slice(hex::decode(precompile_id).unwrap().as_slice());
     let forwarder = address!("0x1000000000000000000000000000000000000000");
@@ -6113,7 +6113,7 @@ fn test_precompile_parses_input_correctly() {
         let empty_input = [0u8; 193];
 
         for i in length {
-            let mut tester = ZKsyncOSTester::new();
+            let mut tester = TestingFramework::new();
             let wallet = tester.random_signer();
             tester = tester.with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
@@ -6392,7 +6392,7 @@ fn bench_modexp() {
 
 #[test]
 fn test_regression_p256_is_warm() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let target = Address::from_slice(
         hex::decode("0000000000000000000000000000000000000100")

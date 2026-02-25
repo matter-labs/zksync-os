@@ -12,7 +12,7 @@ use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::{alloy, common_target_address, signer_from_key, ZKsyncOSTester};
+use rig::{alloy, common_target_address, signer_from_key, TestingFramework};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
@@ -147,7 +147,7 @@ fn run_base_system() {
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_evm_contract(to, &bytecode)
         .with_prefunded_account(wallet.address())
         .with_prefunded_account(eoa_wallet.address())
@@ -170,13 +170,13 @@ fn run_base_system() {
 
 #[test]
 fn test_block_of_erc20() {
-    let mut tester = ZKsyncOSTester::new_with_randomized_tree();
+    let mut tester = TestingFramework::new_with_randomized_tree();
     tester.run_block_of_erc20(10, None);
 }
 
 #[test]
 fn test_gas_price_zero_fee_zero() {
-    let mut tester = ZKsyncOSTester::new_with_randomized_tree();
+    let mut tester = TestingFramework::new_with_randomized_tree();
     let block_context = BlockContext {
         eip1559_basefee: U256::ZERO,
         ..BlockContext::default()
@@ -198,7 +198,7 @@ fn test_gas_price_zero_fee_zero() {
 
 #[test]
 fn test_gas_price_zero_fee_one() {
-    let mut tester = ZKsyncOSTester::new_with_randomized_tree();
+    let mut tester = TestingFramework::new_with_randomized_tree();
     let block_context = BlockContext {
         eip1559_basefee: U256::ZERO,
         ..BlockContext::default()
@@ -255,7 +255,7 @@ fn test_withdrawal() {
 
     let transactions = vec![withdrawal_tx, withdrawal_with_message_tx];
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_system_contracts(true, true, false)
         .with_prefunded_account(wallet.address());
 
@@ -313,7 +313,7 @@ fn test_tx_with_access_list() {
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_evm_contract(to, &bytecode)
         .with_prefunded_account(wallet.address());
 
@@ -362,7 +362,7 @@ fn test_tx_with_authorization_list() {
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_evm_contract(erc_20_contract, &bytecode)
         .with_prefunded_account(wallet.address());
 
@@ -425,7 +425,7 @@ fn test_cold_in_new_tx() {
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_evm_contract(to, &bytecode)
         .with_prefunded_account(wallet.address());
 
@@ -483,7 +483,7 @@ fn test_independent_txs_have_same_pubdata() {
 
     let transactions = vec![tx_1, tx_2];
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_balance(wallet1.address(), U256::from(1_000_000_000_000_000_u64))
         .with_balance(wallet2.address(), U256::from(1_000_000_000_000_000_u64));
 
@@ -540,7 +540,7 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
 
     let transactions = vec![mint_tx_1, withdrawal_tx];
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_balance(l1_messenger_contract, U256::from(1_000_000_000_000_000_u64))
         .with_evm_contract(to, &bytecode)
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
@@ -585,7 +585,7 @@ fn test_invalid_tx_does_not_affect_native() {
     };
 
     let transactions = vec![mint_tx.clone()];
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_evm_contract(to, &bytecode)
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
@@ -618,7 +618,7 @@ fn test_invalid_tx_does_not_affect_native() {
         ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
     };
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_evm_contract(to, &bytecode)
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
     let transactions = vec![mint_tx_1, mint_tx];
@@ -668,7 +668,7 @@ fn test_regression_returndata_empty_3541() {
 
     let to = address!("0000000000000000000000000000000000010002");
     let bytecode = hex::decode(BYTECODE).unwrap();
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_evm_contract(to, &bytecode)
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
@@ -702,8 +702,8 @@ fn test_balance_overflow_protection() {
     let wallet = signer_from_key(PRIMARY_TEST_PK);
 
     let to = address!("0000000000000000000000000000000000010002");
-    let mut tester =
-        ZKsyncOSTester::new().with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
+    let mut tester = TestingFramework::new()
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
     // Test 1: Transaction with max_fee_per_gas * gas_limit overflow
     let overflow_fee_tx = {
@@ -756,7 +756,7 @@ fn test_upgrade_tx_revert_internal_error() {
     // Simple contract bytecode that just does REVERT(0, 0)
     let revert_bytecode = hex::decode("60006000fd").unwrap(); // PUSH1 0, PUSH1 0, REVERT
     let mut tester =
-        ZKsyncOSTester::new().with_evm_contract(revert_contract_address, &revert_bytecode);
+        TestingFramework::new().with_evm_contract(revert_contract_address, &revert_bytecode);
 
     // Create a proper upgrade transaction that calls the reverting contract
 
@@ -791,7 +791,7 @@ fn test_upgrade_tx_succeeds() {
     let contract_address = address!("0000000000000000000000000000000000010003");
     // Simple contract bytecode that just does RETURN(0, 0)
     let bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
-    let mut tester = ZKsyncOSTester::new().with_evm_contract(contract_address, &bytecode);
+    let mut tester = TestingFramework::new().with_evm_contract(contract_address, &bytecode);
 
     // Create a proper upgrade transaction that calls the contract
     let upgrade_tx = ZKsyncTxEnvelope::from(ZKsyncUpgradeTx {
@@ -818,7 +818,7 @@ fn test_invalid_transaction_type_failure() {
     // Create a simple success contract for the call
     let contract_address = address!("0000000000000000000000000000000000010003");
     let success_bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
-    let mut tester = ZKsyncOSTester::new().with_evm_contract(contract_address, &success_bytecode);
+    let mut tester = TestingFramework::new().with_evm_contract(contract_address, &success_bytecode);
 
     let transaction_types = vec![0x55, 0x80, 0xFF]; // Some invalid types;
 
@@ -851,7 +851,7 @@ fn test_invalid_transaction_type_failure() {
 fn test_modexp_intermediate_zero_block() {
     let wallet = signer_from_key(PRIMARY_TEST_PK);
     let mut tester =
-        ZKsyncOSTester::new().with_balance(wallet.address(), U256::from(10u64.pow(18)));
+        TestingFramework::new().with_balance(wallet.address(), U256::from(10u64.pow(18)));
 
     // Modexp precompile address
     let modexp_address = address!("0000000000000000000000000000000000000005");
@@ -929,7 +929,7 @@ fn test_modexp_intermediate_zero_block() {
 fn test_point_eval_call() {
     let wallet = signer_from_key(PRIMARY_TEST_PK);
     let mut tester =
-        ZKsyncOSTester::new().with_balance(wallet.address(), U256::from(10u64.pow(18)));
+        TestingFramework::new().with_balance(wallet.address(), U256::from(10u64.pow(18)));
 
     let point_eval_address = address!("000000000000000000000000000000000000000a");
 
@@ -995,7 +995,7 @@ fn test_selfdestruct_to_precompile_gas() {
     // Test that a selfdestruct with a precompile as target doesn't charge for
     // extra warm gas (regression)
 
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.prefunded_random_signer();
 
     let contract_address = address!("1000000000000000000000000000000000000001");
@@ -1035,7 +1035,7 @@ fn test_selfdestruct_to_precompile_gas() {
 
 #[test]
 fn test_reject_caller_with_code_behavior() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.prefunded_random_signer();
 
     // Create a contract address with bytecode deployed
@@ -1086,7 +1086,7 @@ fn test_reject_caller_with_code_behavior() {
 fn test_expensive_pubdata() {
     // Test if a transaction can be executed even if the pubdata price is such that
     // validation pubdata requires to use withheld resources.
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let target_address = common_target_address();
 
@@ -1129,7 +1129,7 @@ fn test_expensive_pubdata() {
 
 #[test]
 fn test_check_pubdata_encoding_version() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let target_address = common_target_address();
 
@@ -1170,7 +1170,7 @@ fn test_check_pubdata_encoding_version() {
 
 #[test]
 fn test_check_pubdata_has_timestamp() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let target_address = common_target_address();
 
@@ -1232,7 +1232,7 @@ fn test_simple_service_transaction() {
         eip1559_basefee: U256::from(1000),
         ..Default::default()
     };
-    let mut tester = ZKsyncOSTester::new().with_block_context(block_context);
+    let mut tester = TestingFramework::new().with_block_context(block_context);
     let result = tester.execute_block(vec![tx]);
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
@@ -1240,7 +1240,7 @@ fn test_simple_service_transaction() {
 
 #[test]
 fn test_simple_service_transaction_whitelist() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     // Invalid target
     let target_address = [0u8; 20];
@@ -1279,14 +1279,14 @@ fn test_service_tx_gas_limit_exceeds_block() {
         eip1559_basefee: U256::from(1000),
         ..Default::default()
     };
-    let mut tester = ZKsyncOSTester::new().with_block_context(block_context);
+    let mut tester = TestingFramework::new().with_block_context(block_context);
     let result = tester.execute_block(vec![tx]);
     assert!(result.tx_results[0].is_ok());
 }
 
 #[test]
 fn test_service_block_invariants() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let target_address = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes::<20>();
 
@@ -1364,7 +1364,7 @@ fn test_service_block_invariants() {
 /// Regression test for: Skip nonce check on simulation
 #[test]
 fn test_simulation_skips_nonce_check() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.prefunded_random_signer();
     let target_address = common_target_address();
 
@@ -1411,7 +1411,7 @@ fn test_simulation_skips_nonce_check() {
 /// - gasPrice == 0 && value == 0: ok
 #[test]
 fn test_simulation_balance_check() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let target_address = common_target_address();
 
@@ -1494,7 +1494,7 @@ fn test_simulation_balance_check() {
 
 #[test]
 fn test_simulation_4844_zero_blob_fee_allowed() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.prefunded_random_signer();
     let target_address = common_target_address();
 
@@ -1532,7 +1532,7 @@ fn test_simulation_4844_zero_blob_fee_allowed() {
 /// Check that gas and native used is the same in simulation and actual execution
 #[test]
 fn test_simulation_gas_and_native_used() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.prefunded_random_signer();
     let target_address = common_target_address();
 
@@ -1591,7 +1591,7 @@ fn test_simulation_gas_and_native_used() {
 /// underestimated gas usage.
 #[test]
 fn test_simulation_gas_used_regression() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let target_address = common_target_address();
     tester = tester.with_balance(wallet.address(), U256::MAX);
@@ -1652,7 +1652,7 @@ fn test_simulation_gas_used_regression() {
 fn test_treasury_based_token_distribution_regression() {
     use rig::system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
 
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
 
     // Manually ensure treasury is funded for this test
     tester.mint_tokens_to_treasury();
@@ -1771,7 +1771,7 @@ fn test_treasury_insufficient_balance_failure() {
 
     // Manually set very low treasury balance instead of using default
     let low_treasury_balance = U256::from(1000u64);
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_balance(BASE_TOKEN_HOLDER_ADDRESS.into_alloy(), low_treasury_balance);
 
     // Create L1→L2 transaction that requires more tokens than treasury has
@@ -1818,7 +1818,7 @@ fn test_pubdata_native_calculation_overflow() {
     use alloy::consensus::TxEip1559;
     use rig::alloy::primitives::TxKind;
 
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
 
     let to = address!("1234567890123456789012345678901234567890");

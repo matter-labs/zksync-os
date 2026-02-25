@@ -17,7 +17,7 @@ use rig::zk_ee::{
     },
     utils::Bytes32,
 };
-use rig::ZKsyncOSTester;
+use rig::TestingFramework;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// A struct to track tracer calls for storage operations
@@ -120,7 +120,7 @@ impl Tracer<ForwardRunningSystem> for StorageOperationTracer {
 
 #[test]
 fn test_storage_hooks() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
 
     let contract_address = address!("1000000000000000000000000000000000000001");

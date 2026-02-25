@@ -19,7 +19,7 @@ use rig::utils::{
 };
 use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_interface::types::ExecutionResult;
-use rig::{alloy, ZKsyncOSTester};
+use rig::{alloy, TestingFramework};
 
 #[test]
 fn test_value_transfer_fails_if_insufficient_balance_max_msg_value() {
@@ -30,7 +30,7 @@ fn test_value_transfer_fails_if_insufficient_balance_max_msg_value() {
     let initial_sender = alloy::primitives::U256::from(1u64);
     let value = alloy::primitives::U256::MAX;
 
-    let mut tester = ZKsyncOSTester::new().with_balance(sender, initial_sender);
+    let mut tester = TestingFramework::new().with_balance(sender, initial_sender);
 
     let tx = L1TxBuilder::new()
         .from(sender)
@@ -72,7 +72,7 @@ fn test_l2_base_token_withdraw_fails_if_insufficient_balance() {
     let initial_sender = alloy::primitives::U256::from(1u64);
     let value = alloy::primitives::U256::from(2000000000000000000u64); // 2 ETH
 
-    let mut tester = ZKsyncOSTester::new().with_balance(sender, initial_sender);
+    let mut tester = TestingFramework::new().with_balance(sender, initial_sender);
 
     // withdraw(address) selector 0x51cff8d9
     let mut calldata = Vec::new();
@@ -134,7 +134,7 @@ fn test_l2_base_token_withdraw_with_message_fails_if_insufficient_balance() {
     let initial_sender = alloy::primitives::U256::from(1u64);
     let value = alloy::primitives::U256::from(2000000000000000000u64); // 2 ETH
 
-    let mut tester = ZKsyncOSTester::new().with_balance(sender, initial_sender);
+    let mut tester = TestingFramework::new().with_balance(sender, initial_sender);
 
     // withdrawWithMessage(address,bytes) selector 0x84bc3eb0
     let mut calldata = Vec::new();
@@ -210,7 +210,7 @@ fn test_l1_value_transfer_spends_from_l2_balance() {
     let value = alloy::primitives::U256::from(1_000_000_000_000_000_000u64); // 1 ETH
 
     // Fund sender so `msg.value` can be paid from L2 balance.
-    let mut tester = ZKsyncOSTester::new().with_balance(sender, value);
+    let mut tester = TestingFramework::new().with_balance(sender, value);
 
     let tx = L1TxBuilder::new()
         .from(sender)
@@ -251,7 +251,7 @@ fn test_set_bytecode_details_evm() {
         hex::decode("00000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
             .unwrap();
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_preimage(code_hash, &bytecode)
         .with_balance(
             contract_deployer_address,
@@ -305,7 +305,7 @@ fn test_set_deployed_bytecode_evm_unauthorized() {
             .try_into()
             .unwrap(),
     );
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_system_contracts(false, false, true)
         .with_preimage(code_hash, &bytecode);
 
@@ -339,7 +339,7 @@ fn test_set_deployed_bytecode_evm_unauthorized() {
 #[test]
 fn test_l1_messenger_hook_succeeds() {
     // making sure hooks are installed
-    let mut tester = ZKsyncOSTester::new().with_system_contracts(false, false, true);
+    let mut tester = TestingFramework::new().with_system_contracts(false, false, true);
 
     let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
 
@@ -382,7 +382,7 @@ fn test_l1_messenger_hook_succeeds() {
 #[test]
 fn test_l1_messenger_hook_fails_with_invalid_calldata() {
     // making sure hooks are installed
-    let mut tester = ZKsyncOSTester::new().with_system_contracts(false, false, true);
+    let mut tester = TestingFramework::new().with_system_contracts(false, false, true);
 
     let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
 
@@ -415,7 +415,7 @@ fn test_l1_messenger_hook_fails_with_invalid_calldata() {
 #[test]
 fn test_l1_messenger_hook_unauthorized_sender_ignored() {
     // making sure hooks are installed
-    let mut tester = ZKsyncOSTester::new().with_system_contracts(false, false, true);
+    let mut tester = TestingFramework::new().with_system_contracts(false, false, true);
 
     // ❌ this should NOT be the L1Messenger system contract address
     let unauthorized_from = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
@@ -460,7 +460,7 @@ fn test_l2_base_token_withdraw_events() {
     let l1_receiver = address!("0987654321098765432109876543210987654321");
     let withdrawal_amount = alloy::primitives::U256::from(1000000000000000000u64); // 1 ETH
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_system_contracts(true, true, false)
         .with_balance(sender, withdrawal_amount);
 
@@ -526,7 +526,7 @@ fn test_l2_base_token_withdraw_with_message_events() {
     let additional_data = b"test message data";
 
     // Set up initial balance for the sender
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_system_contracts(true, true, false)
         .with_balance(sender, withdrawal_amount);
 
@@ -612,7 +612,7 @@ fn test_l2_base_token_withdraw_with_dirty_address() {
 
     // Deliberately set invalid balance (insufficient funds)
     // Set up initial balance for the sender
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_system_contracts(true, true, false)
         .with_balance(sender, withdrawal_amount);
 
@@ -655,7 +655,7 @@ fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
     let additional_data = b"test message data";
 
     // Set up initial balance for the sender
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_system_contracts(true, true, false)
         .with_balance(sender, withdrawal_amount);
 
@@ -713,7 +713,7 @@ fn test_l2_base_token_no_mint_event_regression() {
     let recipient = address!("2222567890123456789012345678901234567890");
     let mint_amount = alloy::primitives::U256::from(5000000000000000000u64); // 5 ETH
 
-    let mut tester = ZKsyncOSTester::new().with_balance(sender, mint_amount);
+    let mut tester = TestingFramework::new().with_balance(sender, mint_amount);
 
     // Prepare mint calldata - typically this would be called by the bootloader or bridge
     // For testing purposes, we'll simulate a mint by sending ETH value to the base token contract
@@ -880,7 +880,7 @@ fn test_l2_base_token_withdraw_with_message_gas_charging() {
 
 #[test]
 fn test_mint_base_token_hook() {
-    let mut tester = ZKsyncOSTester::new().with_minted_tokens_to_treasury();
+    let mut tester = TestingFramework::new().with_minted_tokens_to_treasury();
 
     // L2 base token address is the only address allowed to call the mint hook
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
@@ -944,7 +944,7 @@ fn test_event_hooks_empty_topics() {
         // STOP          -> 00
         let test_contract_bytecode = hex::decode("60006000a000").unwrap();
         let mut tester =
-            ZKsyncOSTester::new().with_evm_contract(test_contract, &test_contract_bytecode);
+            TestingFramework::new().with_evm_contract(test_contract, &test_contract_bytecode);
 
         let tx = L1TxBuilder::new()
             .from(address!("1234567890123456789012345678901234567890"))

@@ -14,7 +14,7 @@ use rig::utils::L1TxBuilder;
 use rig::zk_ee::system::tracer::NopTracer;
 use rig::zk_ee::system::validator::{TxValidationError, TxValidator};
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::ZKsyncOSTester;
+use rig::TestingFramework;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[derive(Default)]
@@ -72,7 +72,7 @@ fn included_tx_number_in_block<T>(
 
 #[test]
 fn test_tx_validator_filters_out_tx_without_bumping_counter() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let from = wallet.address();
 
@@ -147,7 +147,7 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
 fn test_no_custom_validator_does_not_restrict_tx_flow() {
     use rig::zk_ee::system::validator::NopTxValidator;
 
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let from = wallet.address();
 
@@ -203,7 +203,7 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
 
 #[test]
 fn test_l1_transactions_are_not_filtered_by_validator() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let from = wallet.address();
 
@@ -272,7 +272,7 @@ fn test_tx_validator_filters_out_tx_on_begin_tx() {
     //! If a transaction is filtered by validator.begin_tx(),
     //! it should be rejected before execution and should not affect nonce counts.
 
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let from = wallet.address();
 

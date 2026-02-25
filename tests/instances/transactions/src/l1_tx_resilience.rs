@@ -14,7 +14,7 @@
 use rig::alloy::primitives::address;
 use rig::ruint::aliases::U256;
 use rig::utils::L1TxBuilder;
-use rig::{alloy, ZKsyncOSTester};
+use rig::{alloy, TestingFramework};
 
 use super::common_target_address;
 
@@ -41,7 +41,7 @@ fn test_l1_tx_gas_limit_below_intrinsic() {
         .into();
 
     // The block should complete without panicking (no internal error)
-    let mut tester = ZKsyncOSTester::new().with_balance(from, U256::from(u64::MAX));
+    let mut tester = TestingFramework::new().with_balance(from, U256::from(u64::MAX));
     let result = tester.execute_block_no_panic(vec![tx]);
     assert!(
         result.is_ok(),
@@ -93,7 +93,7 @@ fn test_l1_tx_gas_price_overflow_native_per_gas() {
         .into();
 
     let mut tester =
-        ZKsyncOSTester::new().with_balance(from, U256::from(1_000_000_000_000_000_u64));
+        TestingFramework::new().with_balance(from, U256::from(1_000_000_000_000_000_u64));
 
     // The block should complete without panicking (no internal error)
     let result = tester.execute_block_no_panic(vec![tx]);
@@ -132,7 +132,7 @@ fn test_l1_tx_intrinsic_gas_overflow() {
 
     // Test L1 transaction - this triggers the overflow scenario
     let mut tester =
-        ZKsyncOSTester::new().with_balance(from_address, U256::from(1_000_000_000_000_000_u64));
+        TestingFramework::new().with_balance(from_address, U256::from(1_000_000_000_000_000_u64));
     let result_l1 = tester.execute_block(vec![overflow_l1_tx]);
 
     assert!(result_l1.tx_results[0].is_ok());

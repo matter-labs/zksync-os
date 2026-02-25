@@ -9,7 +9,7 @@ use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{Address, TxKind, U256};
 use rig::forward_system::system::tracers::call_tracer::CallTracer;
 use rig::zk_ee::system::validator::NopTxValidator;
-use rig::{BlockContext, ZKsyncOSTester};
+use rig::{BlockContext, TestingFramework};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 pub(crate) fn run_chain_with_tracer(
@@ -18,7 +18,7 @@ pub(crate) fn run_chain_with_tracer(
     tracer: &mut CallTracer,
     block_context: Option<BlockContext>,
 ) {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     tester = tester.with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 

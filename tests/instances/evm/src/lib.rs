@@ -13,13 +13,13 @@ use rig::zksync_os_interface::types::ExecutionOutput;
 use rig::zksync_os_interface::types::ExecutionResult;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::BlockContext;
-use rig::{alloy::primitives::address, ruint::aliases::U256, ZKsyncOSTester};
+use rig::{alloy::primitives::address, ruint::aliases::U256, TestingFramework};
 
 #[test]
 fn test_blockhash() {
     // Check that all the last 256 block hashes are accessible and the previous to that/
     // current are out of range.
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
 
     // Code of contract used for testing
     //   contract BlockhashTester {
@@ -137,7 +137,7 @@ fn bench_addmod() {
     }
 
     // Chain setup
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let to = address!("0x1000000000000000000000000000000000000000");
     tester = tester
@@ -735,7 +735,7 @@ fn bench_mulmod() {
     ];
 
     // --- Chain setup
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let to = address!("0x1000000000000000000000000000000000000000");
 
@@ -860,7 +860,7 @@ fn bench_signextend() {
     ];
 
     // --- Chain setup + deploy
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let to = address!("0x1000000000000000000000000000000000000000");
 
@@ -894,7 +894,7 @@ fn bench_signextend() {
 
 #[test]
 fn test_eip4844_blobhash() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
 
     // Test funding signer
     let wallet = tester.random_signer();

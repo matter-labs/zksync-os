@@ -12,7 +12,7 @@ use rig::ruint::aliases::U256;
 use rig::utils::{ERC_20_BYTECODE, ERC_20_MINT_CALLDATA, ERC_20_TRANSFER_CALLDATA};
 use rig::zk_ee::common_structs::DACommitmentScheme;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
-use rig::{alloy, signer_from_key, ZKsyncOSTester};
+use rig::{alloy, signer_from_key, TestingFramework};
 use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
 use std::path::PathBuf;
 
@@ -37,7 +37,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
     };
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_evm_contract(to, &bytecode)
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
         .with_da_commitment_scheme(da_commitment_scheme);

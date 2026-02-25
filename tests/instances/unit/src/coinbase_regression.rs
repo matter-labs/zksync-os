@@ -9,13 +9,13 @@
 use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{TxKind, U256};
 use rig::ruint::aliases::B160;
-use rig::{common_target_address, BlockContext, ZKsyncOSTester};
+use rig::{common_target_address, BlockContext, TestingFramework};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[test]
 #[should_panic]
 fn test_invalid_coinbase() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
     let from = wallet.address();
     let target_address = common_target_address();

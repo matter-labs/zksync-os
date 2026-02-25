@@ -2,7 +2,7 @@
 use rig::{
     alloy::{self, primitives::TxKind, rpc::types::TransactionRequest},
     ruint::aliases::U256,
-    ZKsyncOSTester,
+    TestingFramework,
 };
 use std::path::PathBuf;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
@@ -87,7 +87,7 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[test]
 fn fibish_sol() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
 
     let c_addr = alloy::primitives::Address::from(alloy::primitives::U160::from(1));

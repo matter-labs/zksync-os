@@ -103,7 +103,7 @@ pub struct LastExecutedBlockInfo {
     pub proof_input: Vec<u32>,
 }
 
-pub struct ZKsyncOSTester<const RANDOMIZED_TREE: bool = false> {
+pub struct TestingFramework<const RANDOMIZED_TREE: bool = false> {
     chain: Chain<RANDOMIZED_TREE>,
     block_context: Option<BlockContext>,
     da_commitment_scheme: Option<DACommitmentScheme>,
@@ -112,7 +112,7 @@ pub struct ZKsyncOSTester<const RANDOMIZED_TREE: bool = false> {
     oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
 }
 
-impl ZKsyncOSTester<true> {
+impl TestingFramework<true> {
     pub fn new_with_randomized_tree() -> Self {
         init_logger();
 
@@ -127,13 +127,13 @@ impl ZKsyncOSTester<true> {
     }
 }
 
-impl Default for ZKsyncOSTester<false> {
+impl Default for TestingFramework<false> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ZKsyncOSTester<false> {
+impl TestingFramework<false> {
     pub fn new() -> Self {
         init_logger();
 
@@ -148,7 +148,7 @@ impl ZKsyncOSTester<false> {
     }
 }
 
-impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
+impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     pub fn with_chain_id(mut self, chain_id: u64) -> Self {
         self.chain.set_chain_id(chain_id);
         self

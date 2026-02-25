@@ -7,12 +7,12 @@ use basic_bootloader::bootloader::block_header::EMPTY_OMMER_ROOT_HASH;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use rig::alloy::primitives::{Address, B256};
 use rig::ruint::aliases::{B160, U256};
-use rig::ZKsyncOSTester;
+use rig::TestingFramework;
 
 // Run a block of ERC20 transactions and check invariants on the block header.
 #[test]
 fn test_block_header_invariants() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let output = tester.run_block_of_erc20(10, None);
     let header = output.header;
 

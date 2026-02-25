@@ -10,7 +10,7 @@ use rig::alloy::primitives::{address, Address, TxKind, U256};
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::forward_system::system::tracers::evm_opcodes_logger::EvmOpcodesLogger;
 use rig::zk_ee::system::validator::{NopTxValidator, TxValidator};
-use rig::ZKsyncOSTester;
+use rig::TestingFramework;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 fn run_chain_with_tracer(
@@ -30,7 +30,7 @@ fn run_chain_with_tracer_and_validator<V>(
 ) where
     V: TxValidator<ForwardRunningSystem>,
 {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
 
     tester = tester.with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));

@@ -34,7 +34,7 @@ use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use rig::zk_ee::types_config::EthereumIOTypesConfig;
 use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_interface::traits::TxListSource;
-use rig::ZKsyncOSTester;
+use rig::TestingFramework;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// Malicious storage responder that returns non-zero initial values for new storage slots
@@ -211,7 +211,7 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
 #[test]
 #[should_panic(expected = "Initial value of empty slot must be trivial")]
 fn test_initial_slot_value_assertion() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
 
     let contract_address = address!("1000000000000000000000000000000000000001");

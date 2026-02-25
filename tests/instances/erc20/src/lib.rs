@@ -5,14 +5,14 @@ use rig::{
         rpc::types::TransactionRequest,
     },
     ruint::aliases::U256,
-    ZKsyncOSTester,
+    TestingFramework,
 };
 use std::path::PathBuf;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[test]
 fn get_name_sol() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
 
     let erc20_addr = address!("0000000000000000000000000000000000000001");
@@ -81,7 +81,7 @@ fn get_name_sol() {
 
 #[test]
 fn balance_of_sol() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet = tester.random_signer();
 
     let erc20_addr = address!("0000000000000000000000000000000000000001");
@@ -193,7 +193,7 @@ fn balance_of_sol() {
 
 #[test]
 fn transfer_sol() {
-    let mut tester = ZKsyncOSTester::new();
+    let mut tester = TestingFramework::new();
     let wallet_a = tester.random_signer();
     let wallet_b = tester.random_signer();
 

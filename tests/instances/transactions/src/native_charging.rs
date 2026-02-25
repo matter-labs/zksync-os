@@ -4,7 +4,7 @@ use rig::alloy;
 use rig::alloy::primitives::{address, TxKind};
 use rig::ruint::aliases::{B256, U256};
 use rig::utils::L1TxBuilder;
-use rig::{BlockContext, ZKsyncOSTester};
+use rig::{BlockContext, TestingFramework};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 use super::signer_from_key;
@@ -34,7 +34,7 @@ fn run_tx(
         ..Default::default()
     };
 
-    let mut tester = ZKsyncOSTester::new()
+    let mut tester = TestingFramework::new()
         .with_evm_contract(TO, &bytecode)
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
         .with_storage_slot(TO, key, value)

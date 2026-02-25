@@ -18,7 +18,7 @@ fn run_transactions_as_eoa(
     eoa_address: alloy::primitives::Address,
     txs: Vec<ZKsyncTxEnvelope>,
 ) -> BlockOutput {
-    let mut tester = rig::ZKsyncOSTester::new().with_prefunded_account(eoa_address);
+    let mut tester = rig::TestingFramework::new().with_prefunded_account(eoa_address);
     tester.execute_block(txs)
 }
 
