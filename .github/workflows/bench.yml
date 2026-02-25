@@ -17,7 +17,7 @@ concurrency:
 jobs:
   vm-benchmarks:
     name: Run benchmarks
-    runs-on: [matterlabs-ci-runner]
+    runs-on: [matterlabs-ci-runner-high-performance]
     permissions:
       contents: read
       pull-requests: write
