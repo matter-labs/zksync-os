@@ -520,6 +520,22 @@ pub fn signer_from_key(key: &str) -> PrivateKeySigner {
     PrivateKeySigner::from_str(key).unwrap()
 }
 
+pub const PRIMARY_TEST_PK: &str =
+    "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
+pub const SECONDARY_TEST_PK: &str =
+    "a226d3a5c8c408741c3446c762aee8dff742f21e381a0e5ab85a96c5c00100be";
+pub const TERTIARY_TEST_PK: &str =
+    "abcdebdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
+
+pub fn testing_signer(index: u64) -> PrivateKeySigner {
+    match index {
+        0 => signer_from_key(PRIMARY_TEST_PK),
+        1 => signer_from_key(SECONDARY_TEST_PK),
+        2 => signer_from_key(TERTIARY_TEST_PK),
+        _ => panic!("unsupported testing signer index: {index}"),
+    }
+}
+
 pub fn common_target_address() -> alloy::primitives::Address {
     address!("4242000000000000000000000000000000000000")
 }

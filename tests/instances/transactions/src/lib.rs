@@ -12,7 +12,7 @@ use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::{alloy, common_target_address, signer_from_key, TestingFramework};
+use rig::{alloy, common_target_address, testing_signer, TestingFramework};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
@@ -22,20 +22,16 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 mod l1_tx_resilience;
 mod native_charging;
 
-const PRIMARY_TEST_PK: &str = "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
-const SECONDARY_TEST_PK: &str = "a226d3a5c8c408741c3446c762aee8dff742f21e381a0e5ab85a96c5c00100be";
-const TERTIARY_TEST_PK: &str = "abcdebdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
-
 #[test]
 fn run_base_system() {
     // FIXME: this address looks very similar to bridgehub/shared bridge on gateway.
     // Which seems to suggest that it is special.
     // Consider changing this one to be more "random".
 
-    let wallet = signer_from_key(PRIMARY_TEST_PK);
+    let wallet = testing_signer(0);
 
     // We used for test where from cannot have deployed code
-    let eoa_wallet = signer_from_key(SECONDARY_TEST_PK);
+    let eoa_wallet = testing_signer(1);
 
     let to = address!("0000000000000000000000000000000000010002");
 
@@ -208,7 +204,7 @@ fn test_gas_price_zero_fee_one() {
 
 #[test]
 fn test_withdrawal() {
-    let wallet = signer_from_key(PRIMARY_TEST_PK);
+    let wallet = testing_signer(0);
 
     // L2 base token address
     let to = address!("000000000000000000000000000000000000800a");
@@ -283,7 +279,7 @@ fn test_withdrawal() {
 
 #[test]
 fn test_tx_with_access_list() {
-    let wallet = signer_from_key(PRIMARY_TEST_PK);
+    let wallet = testing_signer(0);
 
     let to = address!("0000000000000000000000000000000000010002");
 
@@ -327,9 +323,9 @@ fn test_tx_with_authorization_list() {
     use rig::alloy::eips::eip7702::*;
     use rig::alloy::signers::SignerSync;
 
-    let wallet = signer_from_key(PRIMARY_TEST_PK);
+    let wallet = testing_signer(0);
 
-    let delegate = signer_from_key(SECONDARY_TEST_PK);
+    let delegate = testing_signer(1);
 
     let to = delegate.address();
 
@@ -374,7 +370,7 @@ fn test_tx_with_authorization_list() {
 // Test that slots made warm in a tx are cold in the next tx
 #[test]
 fn test_cold_in_new_tx() {
-    let wallet = signer_from_key(PRIMARY_TEST_PK);
+    let wallet = testing_signer(0);
 
     let to = address!("0000000000000000000000000000000000010002");
 
@@ -444,9 +440,9 @@ fn test_cold_in_new_tx() {
 // Test that if we send 2 simple transfers from and to different addresses,
 // the length of the pubdata from both is the same.
 fn test_independent_txs_have_same_pubdata() {
-    let wallet1 = signer_from_key(PRIMARY_TEST_PK);
+    let wallet1 = testing_signer(0);
 
-    let wallet2 = signer_from_key(TERTIARY_TEST_PK);
+    let wallet2 = testing_signer(2);
 
     let to1 = address!("0000000000000000000000000000000000010002");
     let to2 = address!("0000000000000000000000000000000000010003");
@@ -501,7 +497,7 @@ fn test_independent_txs_have_same_pubdata() {
 
 #[test]
 fn test_invalid_tx_does_not_bump_tx_counter() {
-    let wallet = signer_from_key(PRIMARY_TEST_PK);
+    let wallet = testing_signer(0);
     let to = address!("0000000000000000000000000000000000010002");
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
@@ -566,7 +562,7 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
 
 #[test]
 fn test_invalid_tx_does_not_affect_native() {
-    let wallet = signer_from_key(PRIMARY_TEST_PK);
+    let wallet = testing_signer(0);
     let to = address!("0000000000000000000000000000000000010002");
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
 
@@ -639,7 +635,7 @@ fn test_invalid_tx_does_not_affect_native() {
 // TODO: find better place for regression tests
 #[test]
 fn test_regression_returndata_empty_3541() {
-    let wallet = signer_from_key(PRIMARY_TEST_PK);
+    let wallet = testing_signer(0);
     // Code for:
     // PUSH13 0x63EF0000006000526004601CF3
     // PUSH1  0x00
@@ -699,7 +695,7 @@ fn test_regression_returndata_empty_3541() {
 /// Test that transactions with balance calculation overflow are properly rejected
 #[test]
 fn test_balance_overflow_protection() {
-    let wallet = signer_from_key(PRIMARY_TEST_PK);
+    let wallet = testing_signer(0);
 
     let to = address!("0000000000000000000000000000000000010002");
     let mut tester = TestingFramework::new()
@@ -849,7 +845,7 @@ fn test_invalid_transaction_type_failure() {
 
 #[test]
 fn test_modexp_intermediate_zero_block() {
-    let wallet = signer_from_key(PRIMARY_TEST_PK);
+    let wallet = testing_signer(0);
     let mut tester =
         TestingFramework::new().with_balance(wallet.address(), U256::from(10u64.pow(18)));
 
@@ -927,7 +923,7 @@ fn test_modexp_intermediate_zero_block() {
 
 #[test]
 fn test_point_eval_call() {
-    let wallet = signer_from_key(PRIMARY_TEST_PK);
+    let wallet = testing_signer(0);
     let mut tester =
         TestingFramework::new().with_balance(wallet.address(), U256::from(10u64.pow(18)));
 

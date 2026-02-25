@@ -13,13 +13,12 @@ use rig::ruint::aliases::U256;
 use rig::utils::{ERC_20_BYTECODE, ERC_20_MINT_CALLDATA, ERC_20_TRANSFER_CALLDATA};
 use rig::zk_ee::common_structs::DACommitmentScheme;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
-use rig::{alloy, signer_from_key, TestingFramework};
+use rig::{alloy, testing_signer, TestingFramework};
 use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
 use std::path::PathBuf;
 
 fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
-    let wallet =
-        signer_from_key("dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7");
+    let wallet = testing_signer(0);
 
     let to = address!("0000000000000000000000000000000000010002");
 

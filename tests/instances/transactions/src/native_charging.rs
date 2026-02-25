@@ -3,13 +3,11 @@ use crate::ERC_20_TRANSFER_CALLDATA;
 use rig::alloy;
 use rig::alloy::primitives::{address, TxKind};
 use rig::ruint::aliases::{B256, U256};
+use rig::testing_signer;
 use rig::utils::L1TxBuilder;
 use rig::{BlockContext, TestingFramework};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
-use super::signer_from_key;
-
-const WALLET: &str = "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
 const TO: alloy::primitives::Address = address!("0000000000000000000000000000000000010002");
 
 const AVG_RATIO: u64 = 150;
@@ -24,7 +22,7 @@ fn run_tx(
     simulation: bool,
 ) {
     let bytecode = hex::decode(crate::ERC_20_BYTECODE).unwrap();
-    let wallet = signer_from_key(WALLET);
+    let wallet = testing_signer(0);
     let key = crate::compute_erc20_balance_slot(wallet.address());
     let value = B256::from(U256::from(1_000_000_000_000_000_u64));
 
@@ -59,7 +57,7 @@ fn run_tx(
 // Test with a low cycles/gas ratio, should fail
 #[test]
 fn test_l1_tx_low_ratio() {
-    let wallet = signer_from_key(WALLET);
+    let wallet = testing_signer(0);
     // L1 Txs have a hard-coded native price of 10
     let native_price = 10;
     let gas_price = native_price * LOW_RATIO;
@@ -77,7 +75,7 @@ fn test_l1_tx_low_ratio() {
 // Test with a avg cycles/gas ratio, should succeed
 #[test]
 fn test_l1_tx_avg_ratio() {
-    let wallet = signer_from_key(WALLET);
+    let wallet = testing_signer(0);
     // L1 Txs have a hard-coded native price of 10
     let native_price = 10;
     let gas_price = native_price * AVG_RATIO;
@@ -95,7 +93,7 @@ fn test_l1_tx_avg_ratio() {
 // Test with a high cycles/gas ratio, should succeed
 #[test]
 fn test_l1_tx_high_ratio() {
-    let wallet = signer_from_key(WALLET);
+    let wallet = testing_signer(0);
     // L1 Txs have a hard-coded native price of 10
     let native_price = 10;
     let gas_price = native_price * HIGH_RATIO;
@@ -113,7 +111,7 @@ fn test_l1_tx_high_ratio() {
 // Test with a low cycles/gas ratio, should fail
 #[test]
 fn test_l2_tx_low_ratio() {
-    let wallet = signer_from_key(WALLET);
+    let wallet = testing_signer(0);
     let native_price = 100;
     let gas_price = 100 * LOW_RATIO;
     let tx = {
@@ -136,7 +134,7 @@ fn test_l2_tx_low_ratio() {
 // Test with a avg cycles/gas ratio, should succeed
 #[test]
 fn test_l2_tx_avg_ratio() {
-    let wallet = signer_from_key(WALLET);
+    let wallet = testing_signer(0);
     let native_price = 100;
     let gas_price = native_price * AVG_RATIO;
     let tx = {
@@ -159,7 +157,7 @@ fn test_l2_tx_avg_ratio() {
 // Test with a high cycles/gas ratio, should succeed
 #[test]
 fn test_l2_tx_high_ratio() {
-    let wallet = signer_from_key(WALLET);
+    let wallet = testing_signer(0);
     let native_price = 100;
     let gas_price = native_price * HIGH_RATIO;
     let tx = {
@@ -183,7 +181,7 @@ fn test_l2_tx_high_ratio() {
 // Also call as simulation to skip validation step.
 #[test]
 fn test_0_gas_limit() {
-    let wallet = signer_from_key(WALLET);
+    let wallet = testing_signer(0);
     let native_price = 10;
     let gas_price = native_price * AVG_RATIO;
     let tx = {
@@ -219,7 +217,7 @@ fn test_0_gas_limit() {
 // Also call as simulation to skip validation step.
 #[test]
 fn test_0_gas_price() {
-    let wallet = signer_from_key(WALLET);
+    let wallet = testing_signer(0);
     let native_price = 10;
     let gas_price = 0;
     let tx = {
@@ -253,7 +251,7 @@ fn test_0_gas_price() {
 // Test delta gas, pass lower ratio
 #[test]
 fn test_delta_gas() {
-    let wallet = signer_from_key(WALLET);
+    let wallet = testing_signer(0);
     let native_price = 100;
     // Low enough that tx will fail without priority fee
     let ratio = 20;
