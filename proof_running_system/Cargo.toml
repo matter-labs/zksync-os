@@ -18,13 +18,9 @@ basic_system = { path = "../basic_system", default-features = false }
 system_hooks = { path = "../system_hooks", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
 ruint = { workspace = true, default-features = false }
-arrayvec = { workspace = true, default-features = false }
 crypto = { path = "../crypto", default-features = false }
 cfg-if = { workspace = true }
-cc-traits = { version = "2.0.0", default-features = false }
-seq-macro = { version = "0.3.6", default-features = false }
 talc = { version = "4.4.3", default-features = false, features = ["allocator", "nightly_api"]}
-lock_api = "0.4.11"
 # talc = { path = "../../talc", default-features = false, features = ["allocator", "nightly_api"]}
 
 [dev-dependencies]

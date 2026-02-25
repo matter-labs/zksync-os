@@ -14,25 +14,19 @@ serde = { version = "1.0", features = ["derive"] }
 ruint = { version = "1.16", default-features = false }
 
 alloy = { version = "1", features = ["full", "ssz"]}
-alloy-rpc-types-eth = { version = "*", features = ["serde"] }
 serde_json = { version = "1.0", features = ["unbounded_depth"] }
 rig = { path = "../../rig", features = ["eth_runner"]}
 zk_ee = { path = "../../../zk_ee" }
 basic_system = { path = "../../../basic_system" }
-system_hooks = {path = "../../../system_hooks" }
 clap = { version = "4.4", features = ["derive"] }
 anyhow = "=1.0.89"
 ureq = { version = "3", features = ["json", "gzip"] }
 sled = {version = "0.34" }
 bincode = { version = "2", features = ["serde"] }
 alloy-rpc-types-debug = { version = "*", default-features = false }
-serde_with = "3.13.0"
 csv = "1.3"
 reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"] }
 zstd = "0.13"
-# zerocopy 0.8.29 introduced a compilation issue, remove this
-# when the compilation issue is resolved
-zerocopy = { version = "=0.8.28" }
 
 [features]
 simulate_witness_gen = ["rig/simulate_witness_gen"]

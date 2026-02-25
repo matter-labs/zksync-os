@@ -431,9 +431,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rlp"
-version = "0.3.12"
+version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f70d83b765fdc080dbcd4f4db70d8d23fe4761f2f02ebfa9146b833900634b4"
+checksum = "e93e50f64a77ad9c5470bf2ad0ca02f228da70c792a8f06634801e202579f35e"
 dependencies = [
  "alloy-rlp-derive",
  "arrayvec",
@@ -442,9 +442,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rlp-derive"
-version = "0.3.12"
+version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64b728d511962dda67c1bc7ea7c03736ec275ed2cf4c35d9585298ac9ccf3b73"
+checksum = "ce8849c74c9ca0f5a03da1c865e3eb6f768df816e67dd3721a398a8a7e398011"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1701,9 +1701,7 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "cc-traits",
- "cfg-if",
  "const-hex",
- "const_for",
  "crypto",
  "cycle_marker",
  "either",
@@ -1717,8 +1715,6 @@ dependencies = [
  "serde",
  "storage_models",
  "strum_macros",
- "system_hooks",
- "zerocopy",
  "zk_ee",
 ]
 
@@ -1957,13 +1953,10 @@ dependencies = [
 name = "callable_oracles"
 version = "0.1.0"
 dependencies = [
- "alloy-consensus",
  "basic_bootloader",
  "basic_system",
  "c-kzg",
  "crypto",
- "num-bigint",
- "num-traits",
  "oracle_provider",
  "risc_v_simulator",
  "ruint",
@@ -2821,7 +2814,6 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "alloy-rpc-types-debug",
- "alloy-rpc-types-eth",
  "anyhow",
  "basic_system",
  "bincode 2.0.1",
@@ -2832,11 +2824,8 @@ dependencies = [
  "ruint",
  "serde",
  "serde_json",
- "serde_with",
  "sled",
- "system_hooks",
  "ureq",
- "zerocopy",
  "zk_ee",
  "zstd",
 ]
@@ -3068,7 +3057,6 @@ name = "forward_system"
 version = "0.1.0"
 dependencies = [
  "alloy",
- "arrayvec",
  "basic_bootloader",
  "basic_system",
  "bincode 1.3.3",
@@ -5998,7 +5986,6 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "storage_models"
 version = "0.1.0"
 dependencies = [
- "crypto",
  "zk_ee",
 ]
 
@@ -7509,12 +7496,10 @@ dependencies = [
  "alloy-sol-types",
  "basic_bootloader",
  "basic_system",
- "callable_oracles",
  "crypto",
  "evm_interpreter",
  "forward_system",
  "oracle_provider",
- "risc_v_simulator",
  "ruint",
  "zk_ee",
  "zksync_os_interface",
@@ -7554,7 +7539,6 @@ name = "zksync_os_tests_common"
 version = "0.1.0"
 dependencies = [
  "alloy",
- "ruint",
  "zksync_os_interface",
 ]
 
