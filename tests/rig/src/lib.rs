@@ -397,7 +397,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
                         validator,
                         oracle_factory.as_ref(),
                     )
-                    .unwrap()
+                    .unwrap_or_else(|err| panic!("block execution failed with custom oracle: {err:?}"))
             } else {
                 self.chain
                     .run_block_with_extra_stats(
@@ -408,7 +408,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
                         tracer,
                         validator,
                     )
-                    .unwrap()
+                    .unwrap_or_else(|err| panic!("block execution failed: {err:?}"))
             };
 
         self.last_executed_block_info = Some(LastExecutedBlockInfo {
