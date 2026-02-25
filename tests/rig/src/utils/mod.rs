@@ -7,6 +7,7 @@ use crate::Chain;
 use alloy::consensus::SidecarBuilder;
 use alloy::consensus::SimpleCoder;
 use alloy::consensus::TxEip1559;
+use alloy::hex;
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::sol;

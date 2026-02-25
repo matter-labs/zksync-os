@@ -1,4 +1,4 @@
-use alloy::primitives::Address;
+use alloy::{hex, primitives::Address};
 use forward_system::run::convert_alloy::FromAlloy;
 use forward_system::system::tracers::call_tracer::CallTracer;
 use once_cell::sync::Lazy;

@@ -30,7 +30,6 @@ gpu_prover = { workspace = true, optional = true }
 
 zksync_os_tests_common = { path = "../common" }
 
-hex = "*"
 ruint = { workspace = true, default-features = false }
 env_logger = "0.11.6"
 log = "0.4.22"

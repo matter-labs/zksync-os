@@ -5009,7 +5009,6 @@ dependencies = [
  "env_logger",
  "evm_interpreter",
  "forward_system",
- "hex",
  "log",
  "once_cell",
  "oracle_provider",

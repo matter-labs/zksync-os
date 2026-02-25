@@ -1,5 +1,6 @@
 use crate::{colors, init_logger};
 use alloy::consensus::Header;
+use alloy::hex;
 use alloy::signers::local::PrivateKeySigner;
 use alloy_rlp::{Decodable, Encodable};
 use basic_bootloader::bootloader::block_flow::ethereum::PectraForkHeader;
