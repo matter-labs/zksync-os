@@ -48,7 +48,6 @@ use zksync_os_interface::types::BlockOutput;
 pub use zksync_os_tests_common;
 use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
-pub use zksync_web3_rs;
 
 use crate::chain::TestingOracleFactory;
 use crate::chain::{BlockExtraStats, RunConfig};
