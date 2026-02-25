@@ -143,8 +143,8 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
             alloc::boxed::Box::new_uninit_slice_in(buffer_size, allocator);
         let written_words = init_fn(&mut inner);
         assert!(written_words <= buffer_size); // we do not want to truncate or realloc, but we will expose only written part below
-        // Safety: init_fn only guarantees that it initialized `written_words` elements.
-        // Initialize the remainder to keep the full allocation initialized.
+                                               // Safety: init_fn only guarantees that it initialized `written_words` elements.
+                                               // Initialize the remainder to keep the full allocation initialized.
         for dst in inner.iter_mut().skip(written_words) {
             dst.write(0);
         }
@@ -319,6 +319,19 @@ mod tests {
     }
 
     #[test]
+    fn writer_drop_without_writes_keeps_existing_initialized_prefix() {
+        let input = [1u8, 2, 3, 4, 5];
+        let mut buffer = UsizeAlignedByteBox::from_slice_in(&input, Global);
+
+        {
+            let _writer = buffer.as_writable();
+            // Intentionally perform no writes.
+        }
+
+        assert_eq!(buffer.as_slice(), &input);
+    }
+
+    #[test]
     fn from_usize_iterator_in_serializes_words() {
         let words = [1usize, 2usize, usize::MAX];
         let expected: alloc::vec::Vec<u8> =
@@ -427,5 +440,22 @@ mod tests {
         expected.truncate(byte_len);
         assert_eq!(buffer.as_slice().len(), byte_len);
         assert_eq!(buffer.as_slice(), expected.as_slice());
+    }
+
+    #[test]
+    fn preallocated_partial_write_panics_on_read() {
+        let mut buffer = UsizeAlignedByteBox::preallocated_in(2 * USIZE_SIZE, Global);
+
+        {
+            let mut writer = buffer.as_writable();
+            writer.try_write(123).unwrap();
+            // One word initialized, but `byte_capacity` requires two words.
+        }
+
+        let panicked = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = buffer.as_slice();
+        }))
+        .is_err();
+        assert!(panicked);
     }
 }
