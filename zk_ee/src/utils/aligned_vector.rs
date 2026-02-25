@@ -26,10 +26,15 @@ pub fn allocate_vec_usize_aligned<A: Allocator>(
     unsafe { alloc::vec::Vec::from_raw_parts_in(new_ptr, new_len, new_capacity, allocator) }
 }
 
+// Clone preserves both the raw buffer bytes and initialization accounting.
 #[derive(Clone)]
 pub struct UsizeAlignedByteBox<A: Allocator> {
     inner: alloc::boxed::Box<[MaybeUninit<usize>], A>,
     byte_capacity: usize,
+    // Number of initialized bytes in `inner`.
+    // Constructors that copy byte slices track this precisely (byte-granular),
+    // while `UsizeSliceWriter` advances this in whole words on drop.
+    // The value is monotonic and must be >= `byte_capacity` before `as_slice`.
     initialized_bytes: usize,
 }
 
@@ -138,8 +143,8 @@ impl<A: Allocator> UsizeAlignedByteBox<A> {
             alloc::boxed::Box::new_uninit_slice_in(buffer_size, allocator);
         let written_words = init_fn(&mut inner);
         assert!(written_words <= buffer_size); // we do not want to truncate or realloc, but we will expose only written part below
-                                               // Safety: init_fn only guarantees that it initialized `written_words` elements.
-                                               // Initialize the remainder to keep the full allocation initialized.
+        // Safety: init_fn only guarantees that it initialized `written_words` elements.
+        // Initialize the remainder to keep the full allocation initialized.
         for dst in inner.iter_mut().skip(written_words) {
             dst.write(0);
         }
@@ -302,6 +307,15 @@ mod tests {
 
         assert_eq!(buffer.len(), a.len() + b.len() + c.len());
         assert_eq!(buffer.as_slice(), &[1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn from_slices_in_empty_input() {
+        let srcs: [&[u8]; 0] = [];
+        let buffer = UsizeAlignedByteBox::from_slices_in(&srcs, Global);
+
+        assert_eq!(buffer.len(), 0);
+        assert_eq!(buffer.as_slice(), &[]);
     }
 
     #[test]
