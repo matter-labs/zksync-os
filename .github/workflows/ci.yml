@@ -8,7 +8,7 @@ permissions: read-all
 
 env:
     CARGO_INCREMENTAL: 0
-    ZKSYNC_PROVING_RUN: true
+    ZKSYNC_RISC_V_RUN: true
     CI: true
 
 # Cancel previous runs that might be caused by appbin update

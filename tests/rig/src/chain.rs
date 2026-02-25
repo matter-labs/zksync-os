@@ -195,7 +195,7 @@ pub struct RunConfig {
 impl Default for RunConfig {
     fn default() -> Self {
         let do_riscv_run = Self::should_do_riscv_run(
-            std::env::var_os("ZKSYNC_PROVING_RUN").is_some(),
+            std::env::var_os("ZKSYNC_RISC_V_RUN").is_some(),
             std::env::var_os("CI").is_some(),
         );
 

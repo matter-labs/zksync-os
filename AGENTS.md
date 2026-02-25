@@ -84,9 +84,9 @@ To run rig-based tests without detailed executions logs use:
 cargo test -p <crate-name> --features rig/no_print
 ```
 
-By default, local rig runs skip RISC-V simulation unless `ZKSYNC_PROVING_RUN` or `CI` is set. To force proving-mode simulation locally use:
+By default, local rig runs skip RISC-V simulation unless `ZKSYNC_RISC_V_RUN` or `CI` is set. To force proving-mode simulation locally use:
 ```bash
-ZKSYNC_PROVING_RUN=true cargo test -p <crate-name>
+ZKSYNC_RISC_V_RUN=true cargo test -p <crate-name>
 ```
 
 #### EVM tester

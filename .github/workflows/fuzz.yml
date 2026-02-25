@@ -8,7 +8,7 @@ on:
 permissions: read-all
 
 env:
-    ZKSYNC_PROVING_RUN: true
+    ZKSYNC_RISC_V_RUN: true
     CI: true
 
 jobs:
