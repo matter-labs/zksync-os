@@ -23,7 +23,7 @@ system_hooks = { path = "../../system_hooks"}
 crypto = { path = "../../crypto" }
 cycle_marker = { path = "../../cycle_marker", optional = true }
 zksync_os_api = { path = "../../api" }
-zksync_os_interface = { workspace = true, default-features = false }
+zksync_os_interface = { workspace = true }
 cli = { workspace =  true, optional = true }
 prover_examples = { workspace = true, optional = true}
 gpu_prover = { workspace = true, optional = true }
@@ -31,13 +31,13 @@ gpu_prover = { workspace = true, optional = true }
 zksync_os_tests_common = { path = "../common" }
 
 ruint = { workspace = true, default-features = false }
-env_logger = "0.11.6"
-log = "0.4.22"
-alloy = { version = "1", features = ["full", "eip712", "consensus"]}
-alloy-rlp = { version = "0.3.12" }
-alloy-sol-types = "1"
-alloy-rpc-types-debug = { version = "*", default-features = false }
-once_cell = "1.20.3"
+env_logger = { workspace = true }
+log = { workspace = true }
+alloy = { workspace = true, features = ["full", "eip712", "consensus"] }
+alloy-rlp = { workspace = true }
+alloy-sol-types = { workspace = true }
+alloy-rpc-types-debug = { workspace = true }
+once_cell = { workspace = true }
 
 [features]
 default = ["testing", "risc_v_simulator/delegation"]
@@ -61,5 +61,3 @@ evm_tester = ["forward_system/evm_tester"]
 # Features used for legacy evm_tester. Only defined in forward system,
 # as the legacy evm_tester does not perform a proof run.
 evm_tester_legacy = ["forward_system/evm_tester_legacy"]
-
-

@@ -51,12 +51,12 @@ crypto = { path = "../crypto", default-features = false, features = ["secp256k1-
 num-bigint = { workspace = true, default-features = true }
 num-traits = { workspace = true, default-features = true }
 arbitrary = { version = "1", features = ["derive"] }
-serde_json = "*"
-alloy-rpc-types-debug = { version = "*", default-features = false }
-alloy = { version = "1", features = ["rlp", "full"] }
-alloy-rlp = { version = "*" }
-alloy-primitives = { version = "1", features = ["arbitrary"] }
-reqwest = { version = "*", features = ["blocking", "json"] }
+serde_json = { workspace = true }
+alloy-rpc-types-debug = { workspace = true }
+alloy = { workspace = true, features = ["rlp", "full"] }
+alloy-rlp = { workspace = true }
+alloy-primitives = { workspace = true, features = ["arbitrary"] }
+reqwest = { workspace = true, features = ["blocking", "json"] }
 reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git", tag = "v1.8.4" }
 reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git", tag = "v1.8.4" }
 

@@ -27,9 +27,9 @@ serde-big-array = "0.5"
 
 
 [dev-dependencies]
-alloy = { version = "1", features = ["rlp", "full"] }
-alloy-rlp = { version = "*" }
-alloy-primitives = { version = "1", features = ["arbitrary"] }
+alloy = { workspace = true, features = ["rlp", "full"] }
+alloy-rlp = { workspace = true }
+alloy-primitives = { workspace = true, features = ["arbitrary"] }
 
 [features]
 serde = ["dep:serde", "ruint/serde"]

@@ -12,7 +12,7 @@ categories.workspace = true
 [dependencies]
 rig = { path = "../../rig", features = ["for_tests"] }
 hex = { workspace = true }
-alloy-sol-types = "1.4.0"
+alloy-sol-types = { workspace = true }
 
 [features]
 e2e_proving = ["rig/e2e_proving"]

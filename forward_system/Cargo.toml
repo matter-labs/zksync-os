@@ -21,7 +21,7 @@ evm_interpreter = { path = "../evm_interpreter", default-features = false }
 basic_system = { path = "../basic_system", default-features = false }
 basic_bootloader = { path = "../basic_bootloader", default-features = false }
 zksync_os_evm_errors = { workspace = true, default-features = false }
-zksync_os_interface = { workspace = true, default-features = false }
+zksync_os_interface = { workspace = true }
 system_hooks = { path = "../system_hooks", default-features = false }
 crypto = { path = "../crypto", default-features = false }
 
@@ -30,7 +30,7 @@ ruint = { workspace = true, default-features = false }
 arrayvec = { workspace = true, default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive", "alloc"] }
 
-alloy = { version = "1", default-features = false, features = ["consensus"] }
+alloy = { workspace = true, features = ["consensus"] }
 hex = { workspace = true }
 bincode = "1.3"
 strum_macros = { workspace = true }

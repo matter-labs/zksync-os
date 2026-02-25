@@ -10,10 +10,10 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-alloy = { version = "1", default-features = false, features = [
+alloy = { workspace = true, features = [
     "serde",
     "serde-bincode-compat",
 ] }
 ruint = { workspace = true, default-features = false }
 
-zksync_os_interface = { workspace = true, default-features = false }
+zksync_os_interface = { workspace = true }
