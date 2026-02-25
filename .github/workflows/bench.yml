@@ -5,6 +5,10 @@ on:
 
 permissions: read-all
 
+env:
+    ZKSYNC_RISC_V_RUN: true
+    CI: true
+
 # Cancel previous runs that might be caused by appbin update
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
