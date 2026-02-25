@@ -42,7 +42,7 @@ fn run<const RANDOMIZED: bool>(
     });
     let run_config = rig::chain::RunConfig {
         witness_output_file: output_path,
-        only_forward: false,
+        do_riscv_run: true,
         app: Some("evm_replay".to_string()),
         check_storage_diff_hashes: true,
         ..Default::default()

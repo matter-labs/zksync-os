@@ -6,44 +6,23 @@
 use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::primitives::Address;
-use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::ruint::aliases::B160;
 use rig::ruint::aliases::U256;
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::system_hooks::addresses_constants::SYSTEM_CONTEXT_ADDRESS;
 use rig::testing_utils::call_address_and_measure_gas_cost;
-use rig::testing_utils::install_system_contracts;
+use rig::tx_failed;
+use rig::tx_succeeded;
 use rig::utils::{
     address_into_special_storage_key, AccountProperties, L1TxBuilder,
     ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
 use rig::zk_ee::utils::Bytes32;
-use rig::zksync_os_interface::types::{BlockOutput, ExecutionResult};
-use rig::{alloy, Chain};
-use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
-
-fn bal(chain: &mut Chain, addr: alloy::primitives::Address) -> alloy::primitives::U256 {
-    chain
-        .get_account_properties(&B160::from_be_bytes(addr.into_array()))
-        .balance
-}
-
-fn tx_succeeded(output: &BlockOutput, idx: usize) -> bool {
-    output.tx_results[idx]
-        .as_ref()
-        .ok()
-        .map(|o| o.is_success())
-        .unwrap_or(false)
-}
-
-fn tx_failed(output: &BlockOutput, idx: usize) -> bool {
-    !tx_succeeded(output, idx)
-}
+use rig::zksync_os_interface::types::ExecutionResult;
+use rig::{alloy, TestingFramework};
 
 #[test]
 fn test_value_transfer_fails_if_insufficient_balance_max_msg_value() {
-    let mut chain = Chain::empty(None);
-
     let sender = address!("1234567890123456789012345678901234567890");
     let recipient = address!("2222567890123456789012345678901234567890");
 
@@ -51,9 +30,9 @@ fn test_value_transfer_fails_if_insufficient_balance_max_msg_value() {
     let initial_sender = alloy::primitives::U256::from(1u64);
     let value = alloy::primitives::U256::MAX;
 
-    chain.set_balance(B160::from_be_bytes(sender.into_array()), initial_sender);
+    let mut tester = TestingFramework::new().with_balance(sender, initial_sender);
 
-    let encoded = L1TxBuilder::new()
+    let tx = L1TxBuilder::new()
         .from(sender)
         .to(recipient)
         .input(Vec::new())
@@ -62,9 +41,8 @@ fn test_value_transfer_fails_if_insufficient_balance_max_msg_value() {
         .gas_price(0)
         .gas_limit(200_000)
         .nonce(0)
-        .build()
-        .encode();
-    let output = chain.run_block(vec![encoded], None, None, None);
+        .build();
+    let output = tester.execute_block(vec![tx]);
 
     assert!(
         tx_failed(&output, 0),
@@ -73,12 +51,12 @@ fn test_value_transfer_fails_if_insufficient_balance_max_msg_value() {
 
     // Balances must be unchanged (no fees).
     assert_eq!(
-        bal(&mut chain, sender),
+        tester.get_balance(&sender),
         initial_sender,
         "sender balance must not change"
     );
     assert_eq!(
-        bal(&mut chain, recipient),
+        tester.get_balance(&recipient),
         alloy::primitives::U256::ZERO,
         "recipient must not receive value"
     );
@@ -86,8 +64,6 @@ fn test_value_transfer_fails_if_insufficient_balance_max_msg_value() {
 
 #[test]
 fn test_l2_base_token_withdraw_fails_if_insufficient_balance() {
-    let mut chain = Chain::empty(None);
-
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
     let sender = address!("1234567890123456789012345678901234567890");
     let l1_receiver = address!("0987654321098765432109876543210987654321");
@@ -96,7 +72,7 @@ fn test_l2_base_token_withdraw_fails_if_insufficient_balance() {
     let initial_sender = alloy::primitives::U256::from(1u64);
     let value = alloy::primitives::U256::from(2000000000000000000u64); // 2 ETH
 
-    chain.set_balance(B160::from_be_bytes(sender.into_array()), initial_sender);
+    let mut tester = TestingFramework::new().with_balance(sender, initial_sender);
 
     // withdraw(address) selector 0x51cff8d9
     let mut calldata = Vec::new();
@@ -104,7 +80,7 @@ fn test_l2_base_token_withdraw_fails_if_insufficient_balance() {
     calldata.extend_from_slice(&[0u8; 12]);
     calldata.extend_from_slice(l1_receiver.as_slice());
 
-    let encoded = L1TxBuilder::new()
+    let tx = L1TxBuilder::new()
         .from(sender)
         .to(l2_base_token_address)
         .input(calldata)
@@ -112,9 +88,8 @@ fn test_l2_base_token_withdraw_fails_if_insufficient_balance() {
         .gas_price(0)
         .gas_limit(200_000)
         .nonce(0)
-        .build()
-        .encode();
-    let output = chain.run_block(vec![encoded], None, None, None);
+        .build();
+    let output = tester.execute_block(vec![tx]);
 
     assert!(
         tx_failed(&output, 0),
@@ -123,7 +98,7 @@ fn test_l2_base_token_withdraw_fails_if_insufficient_balance() {
 
     // Balances unchanged
     assert_eq!(
-        bal(&mut chain, sender),
+        tester.get_balance(&sender),
         initial_sender,
         "sender balance must not change"
     );
@@ -150,8 +125,6 @@ fn test_l2_base_token_withdraw_fails_if_insufficient_balance() {
 
 #[test]
 fn test_l2_base_token_withdraw_with_message_fails_if_insufficient_balance() {
-    let mut chain = Chain::empty(None);
-
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
     let sender = address!("1234567890123456789012345678901234567890");
     let l1_receiver = address!("0987654321098765432109876543210987654321");
@@ -161,7 +134,7 @@ fn test_l2_base_token_withdraw_with_message_fails_if_insufficient_balance() {
     let initial_sender = alloy::primitives::U256::from(1u64);
     let value = alloy::primitives::U256::from(2000000000000000000u64); // 2 ETH
 
-    chain.set_balance(B160::from_be_bytes(sender.into_array()), initial_sender);
+    let mut tester = TestingFramework::new().with_balance(sender, initial_sender);
 
     // withdrawWithMessage(address,bytes) selector 0x84bc3eb0
     let mut calldata = Vec::new();
@@ -184,7 +157,7 @@ fn test_l2_base_token_withdraw_with_message_fails_if_insufficient_balance() {
         calldata.extend_from_slice(&vec![0u8; padding_needed]);
     }
 
-    let encoded = L1TxBuilder::new()
+    let tx = L1TxBuilder::new()
         .from(sender)
         .to(l2_base_token_address)
         .input(calldata)
@@ -192,9 +165,8 @@ fn test_l2_base_token_withdraw_with_message_fails_if_insufficient_balance() {
         .gas_price(0)
         .gas_limit(300_000)
         .nonce(0)
-        .build()
-        .encode();
-    let output = chain.run_block(vec![encoded], None, None, None);
+        .build();
+    let output = tester.execute_block(vec![tx]);
 
     assert!(
         tx_failed(&output, 0),
@@ -203,7 +175,7 @@ fn test_l2_base_token_withdraw_with_message_fails_if_insufficient_balance() {
 
     // Balances unchanged
     assert_eq!(
-        bal(&mut chain, sender),
+        tester.get_balance(&sender),
         initial_sender,
         "sender balance must not change"
     );
@@ -233,16 +205,14 @@ fn test_l2_base_token_withdraw_with_message_fails_if_insufficient_balance() {
 /// transfer funds to the recipient (spending from sender’s L2 balance).
 #[test]
 fn test_l1_value_transfer_spends_from_l2_balance() {
-    let mut chain = Chain::empty(None);
-
     let sender = address!("1234567890123456789012345678901234567890");
     let recipient = address!("2222567890123456789012345678901234567890");
     let value = alloy::primitives::U256::from(1_000_000_000_000_000_000u64); // 1 ETH
 
     // Fund sender so `msg.value` can be paid from L2 balance.
-    chain.set_balance(B160::from_be_bytes(sender.into_array()), value);
+    let mut tester = TestingFramework::new().with_balance(sender, value);
 
-    let encoded = L1TxBuilder::new()
+    let tx = L1TxBuilder::new()
         .from(sender)
         .to(recipient)
         .input(Vec::new())
@@ -251,16 +221,15 @@ fn test_l1_value_transfer_spends_from_l2_balance() {
         .gas_price(0)
         .gas_limit(200_000)
         .nonce(0)
-        .build()
-        .encode();
-    let output = chain.run_block(vec![encoded], None, None, None);
+        .build();
+    let output = tester.execute_block(vec![tx]);
 
     assert!(
         tx_succeeded(&output, 0),
         "tx must succeed with sufficient L2 balance"
     );
     assert_eq!(
-        bal(&mut chain, recipient),
+        tester.get_balance(&recipient),
         value,
         "recipient must receive msg.value"
     );
@@ -268,8 +237,6 @@ fn test_l1_value_transfer_spends_from_l2_balance() {
 
 #[test]
 fn test_set_bytecode_details_evm() {
-    let mut chain = Chain::empty(None);
-
     let contract_deployer_address = address!("0000000000000000000000000000000000008006");
     let contract_deployer_hook_address = address!("0000000000000000000000000000000000007002");
 
@@ -280,29 +247,26 @@ fn test_set_bytecode_details_evm() {
             .try_into()
             .unwrap(),
     );
-    chain.set_preimage(code_hash, &bytecode);
     let calldata =
         hex::decode("00000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
             .unwrap();
 
-    chain.set_balance(
-        B160::from_alloy(contract_deployer_address),
-        U256::from(1_000_000_000_000_000_u64),
-    );
+    let mut tester = TestingFramework::new()
+        .with_preimage(code_hash, &bytecode)
+        .with_balance(
+            contract_deployer_address,
+            U256::from(1_000_000_000_000_000_u64),
+        );
 
-    let encoded_tx = {
-        let tx = L1TxBuilder::new()
-            .from(contract_deployer_address)
-            .to(contract_deployer_hook_address)
-            .input(calldata)
-            .gas_price(1000)
-            .gas_limit(200_000)
-            .build();
-        tx.encode()
-    };
-    let transactions = vec![encoded_tx];
+    let tx = L1TxBuilder::new()
+        .from(contract_deployer_address)
+        .to(contract_deployer_hook_address)
+        .input(calldata)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
 
-    let output = chain.run_block(transactions, None, None, None);
+    let output = tester.execute_block(vec![tx]);
 
     // Assert all txs succeeded
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
@@ -334,9 +298,6 @@ fn test_set_bytecode_details_evm() {
 
 #[test]
 fn test_set_deployed_bytecode_evm_unauthorized() {
-    let mut chain = Chain::empty(None);
-    install_system_contracts(&mut chain, false, false, true);
-
     let bytecode = hex::decode("0123456789").unwrap();
     let code_hash = Bytes32::from_array(
         hex::decode("1c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7")
@@ -344,7 +305,9 @@ fn test_set_deployed_bytecode_evm_unauthorized() {
             .try_into()
             .unwrap(),
     );
-    chain.set_preimage(code_hash, &bytecode);
+    let mut tester = TestingFramework::new()
+        .with_system_contracts(false, false, true)
+        .with_preimage(code_hash, &bytecode);
 
     let from = address!("000000000000000000000000000000000000800e");
     let contract_deployer_address = address!("0000000000000000000000000000000000008006");
@@ -352,19 +315,15 @@ fn test_set_deployed_bytecode_evm_unauthorized() {
         hex::decode("231b395700000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b9440000000000000000000000000000000000000000000000000000000000000005")
             .unwrap();
 
-    let encoded_tx = {
-        let tx = L1TxBuilder::new()
-            .from(from)
-            .to(contract_deployer_address)
-            .input(calldata)
-            .gas_price(1000)
-            .gas_limit(200_000)
-            .build();
-        tx.encode()
-    };
-    let transactions = vec![encoded_tx];
+    let tx = L1TxBuilder::new()
+        .from(from)
+        .to(contract_deployer_address)
+        .input(calldata)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
 
-    let output = chain.run_block(transactions, None, None, None);
+    let output = tester.execute_block(vec![tx]);
 
     let result = &output
         .tx_results
@@ -379,9 +338,8 @@ fn test_set_deployed_bytecode_evm_unauthorized() {
 
 #[test]
 fn test_l1_messenger_hook_succeeds() {
-    let mut chain = Chain::empty(None);
     // making sure hooks are installed
-    install_system_contracts(&mut chain, false, false, true);
+    let mut tester = TestingFramework::new().with_system_contracts(false, false, true);
 
     let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
 
@@ -401,10 +359,7 @@ fn test_l1_messenger_hook_succeeds() {
         .gas_limit(200_000)
         .build();
 
-    let encoded_tx = tx.encode();
-    let transactions = vec![encoded_tx];
-
-    let output = chain.run_block(transactions, None, None, None);
+    let output = tester.execute_block(vec![tx]);
 
     let tx_result = &output
         .tx_results
@@ -426,9 +381,8 @@ fn test_l1_messenger_hook_succeeds() {
 
 #[test]
 fn test_l1_messenger_hook_fails_with_invalid_calldata() {
-    let mut chain = Chain::empty(None);
     // making sure hooks are installed
-    install_system_contracts(&mut chain, false, false, true);
+    let mut tester = TestingFramework::new().with_system_contracts(false, false, true);
 
     let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
 
@@ -445,10 +399,7 @@ fn test_l1_messenger_hook_fails_with_invalid_calldata() {
         .gas_limit(200_000)
         .build();
 
-    let encoded_tx = tx.encode();
-    let transactions = vec![encoded_tx];
-
-    let output = chain.run_block(transactions, None, None, None);
+    let output = tester.execute_block(vec![tx]);
 
     let tx_result = &output
         .tx_results
@@ -463,9 +414,8 @@ fn test_l1_messenger_hook_fails_with_invalid_calldata() {
 
 #[test]
 fn test_l1_messenger_hook_unauthorized_sender_ignored() {
-    let mut chain = Chain::empty(None);
     // making sure hooks are installed
-    install_system_contracts(&mut chain, false, false, true);
+    let mut tester = TestingFramework::new().with_system_contracts(false, false, true);
 
     // ❌ this should NOT be the L1Messenger system contract address
     let unauthorized_from = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
@@ -489,10 +439,7 @@ fn test_l1_messenger_hook_unauthorized_sender_ignored() {
         .gas_limit(200_000)
         .build();
 
-    let encoded_tx = tx.encode();
-    let transactions = vec![encoded_tx];
-
-    let output = chain.run_block(transactions, None, None, None);
+    let output = tester.execute_block(vec![tx]);
 
     let tx_result = &output
         .tx_results
@@ -507,16 +454,15 @@ fn test_l1_messenger_hook_unauthorized_sender_ignored() {
 
 #[test]
 fn test_l2_base_token_withdraw_events() {
-    let mut chain = Chain::empty(None);
-    install_system_contracts(&mut chain, true, true, false);
-
     // L2 base token address is 0x800a
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
     let sender = address!("1234567890123456789012345678901234567890");
     let l1_receiver = address!("0987654321098765432109876543210987654321");
     let withdrawal_amount = alloy::primitives::U256::from(1000000000000000000u64); // 1 ETH
 
-    chain.set_balance(B160::from_alloy(sender), withdrawal_amount);
+    let mut tester = TestingFramework::new()
+        .with_system_contracts(true, true, false)
+        .with_balance(sender, withdrawal_amount);
 
     // Prepare withdraw(address) calldata
     // withdraw(address) has selector 0x51cff8d9
@@ -534,10 +480,7 @@ fn test_l2_base_token_withdraw_events() {
         .gas_limit(200_000)
         .build();
 
-    let encoded_tx = tx.encode();
-    let transactions = vec![encoded_tx];
-
-    let output = chain.run_block(transactions, None, None, None);
+    let output = tester.execute_block(vec![tx]);
 
     // Assert transaction succeeded
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
@@ -576,9 +519,6 @@ fn test_l2_base_token_withdraw_events() {
 
 #[test]
 fn test_l2_base_token_withdraw_with_message_events() {
-    let mut chain = Chain::empty(None);
-    install_system_contracts(&mut chain, true, true, false);
-
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
     let sender = address!("1234567890123456789012345678901234567890");
     let l1_receiver = address!("0987654321098765432109876543210987654321");
@@ -586,7 +526,9 @@ fn test_l2_base_token_withdraw_with_message_events() {
     let additional_data = b"test message data";
 
     // Set up initial balance for the sender
-    chain.set_balance(B160::from_alloy(sender), withdrawal_amount);
+    let mut tester = TestingFramework::new()
+        .with_system_contracts(true, true, false)
+        .with_balance(sender, withdrawal_amount);
 
     // Prepare withdrawWithMessage(address,bytes) calldata
     // withdrawWithMessage(address,bytes) has selector 0x84bc3eb0
@@ -619,10 +561,7 @@ fn test_l2_base_token_withdraw_with_message_events() {
         .gas_limit(300_000)
         .build();
 
-    let encoded_tx = tx.encode();
-    let transactions = vec![encoded_tx];
-
-    let output = chain.run_block(transactions, None, None, None);
+    let output = tester.execute_block(vec![tx]);
 
     // Assert transaction succeeded
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
@@ -666,9 +605,6 @@ fn test_l2_base_token_withdraw_with_message_events() {
 
 #[test]
 fn test_l2_base_token_withdraw_with_dirty_address() {
-    let mut chain = Chain::empty(None);
-    install_system_contracts(&mut chain, true, true, false);
-
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
     let sender = address!("1234567890123456789012345678901234567890");
     let l1_receiver = address!("0987654321098765432109876543210987654321");
@@ -676,7 +612,9 @@ fn test_l2_base_token_withdraw_with_dirty_address() {
 
     // Deliberately set invalid balance (insufficient funds)
     // Set up initial balance for the sender
-    chain.set_balance(B160::from_alloy(sender), withdrawal_amount);
+    let mut tester = TestingFramework::new()
+        .with_system_contracts(true, true, false)
+        .with_balance(sender, withdrawal_amount);
 
     // Prepare withdraw(address) calldata
     let mut calldata = Vec::new();
@@ -693,10 +631,7 @@ fn test_l2_base_token_withdraw_with_dirty_address() {
         .gas_limit(200_000)
         .build();
 
-    let encoded_tx = tx.encode();
-    let transactions = vec![encoded_tx];
-
-    let output = chain.run_block(transactions, None, None, None);
+    let output = tester.execute_block(vec![tx]);
 
     // Assert transaction failed due to insufficient balance
     assert!(
@@ -713,9 +648,6 @@ fn test_l2_base_token_withdraw_with_dirty_address() {
 
 #[test]
 fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
-    let mut chain = Chain::empty(None);
-    install_system_contracts(&mut chain, true, true, false);
-
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
     let sender = address!("1234567890123456789012345678901234567890");
     let l1_receiver = address!("0987654321098765432109876543210987654321");
@@ -723,7 +655,9 @@ fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
     let additional_data = b"test message data";
 
     // Set up initial balance for the sender
-    chain.set_balance(B160::from_alloy(sender), withdrawal_amount);
+    let mut tester = TestingFramework::new()
+        .with_system_contracts(true, true, false)
+        .with_balance(sender, withdrawal_amount);
 
     // Prepare withdrawWithMessage(address,bytes) calldata
     // withdrawWithMessage(address,bytes) has selector 0x84bc3eb0
@@ -756,10 +690,7 @@ fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
         .gas_limit(300_000)
         .build();
 
-    let encoded_tx = tx.encode();
-    let transactions = vec![encoded_tx];
-
-    let output = chain.run_block(transactions, None, None, None);
+    let output = tester.execute_block(vec![tx]);
 
     // Assert transaction failed due to insufficient balance
     assert!(
@@ -776,15 +707,13 @@ fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
 
 #[test]
 fn test_l2_base_token_no_mint_event_regression() {
-    let mut chain = Chain::empty(None);
-
     // L2 base token address is 0x800a
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
     let sender = address!("1234567890123456789012345678901234567890");
     let recipient = address!("2222567890123456789012345678901234567890");
     let mint_amount = alloy::primitives::U256::from(5000000000000000000u64); // 5 ETH
 
-    chain.set_balance(B160::from_be_bytes(sender.into_array()), mint_amount);
+    let mut tester = TestingFramework::new().with_balance(sender, mint_amount);
 
     // Prepare mint calldata - typically this would be called by the bootloader or bridge
     // For testing purposes, we'll simulate a mint by sending ETH value to the base token contract
@@ -800,10 +729,7 @@ fn test_l2_base_token_no_mint_event_regression() {
         .gas_limit(100_000)
         .build();
 
-    let encoded_tx = tx.encode();
-    let transactions = vec![encoded_tx];
-
-    let output = chain.run_block(transactions, None, None, None);
+    let output = tester.execute_block(vec![tx]);
 
     // Assert transaction succeeded
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
@@ -954,9 +880,7 @@ fn test_l2_base_token_withdraw_with_message_gas_charging() {
 
 #[test]
 fn test_mint_base_token_hook() {
-    let mut chain = Chain::empty(None);
-
-    chain.mint_tokens_to_treasury(); // to properly reflect the initial balance
+    let mut tester = TestingFramework::new().with_minted_tokens_to_treasury();
 
     // L2 base token address is the only address allowed to call the mint hook
     let l2_base_token_address = address!("000000000000000000000000000000000000800a");
@@ -965,8 +889,8 @@ fn test_mint_base_token_hook() {
     let mint_amount = alloy::primitives::U256::from(3000000000000000000u64); // 3 ETH
 
     // Check initial balance of L2_BASE_TOKEN_ADDRESS is zero
-    let initial_balance = chain
-        .get_account_properties(&B160::from_alloy(l2_base_token_address))
+    let initial_balance = tester
+        .get_account_properties(&l2_base_token_address)
         .balance;
 
     // Prepare calldata: 32 bytes containing the mint amount as U256 big-endian
@@ -982,10 +906,7 @@ fn test_mint_base_token_hook() {
         .gas_limit(200_000)
         .build();
 
-    let encoded_tx = tx.encode();
-    let transactions = vec![encoded_tx];
-
-    let output = chain.run_block(transactions, None, None, None);
+    let output = tester.execute_block(vec![tx]);
 
     // Assert transaction succeeded
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
@@ -997,8 +918,8 @@ fn test_mint_base_token_hook() {
     }));
 
     // Check that the caller's (L2_BASE_TOKEN_ADDRESS) balance was increased by the mint amount
-    let final_balance = chain
-        .get_account_properties(&B160::from_alloy(l2_base_token_address))
+    let final_balance = tester
+        .get_account_properties(&l2_base_token_address)
         .balance;
 
     let actually_minted_amount = final_balance
@@ -1061,10 +982,7 @@ fn test_mint_base_token_hook_rejects_non_zero_value() {
 #[test]
 fn test_event_hooks_empty_topics() {
     for test_contract_address in [L2_INTEROP_ROOT_STORAGE_ADDRESS, SYSTEM_CONTEXT_ADDRESS] {
-        let mut chain = Chain::empty(None);
-
         // Contract that emits a log with empty topics array - this should be handled gracefully
-        // Before the fix, this would cause a panic due to missing bounds check
         let test_contract = Address::from(test_contract_address.to_be_bytes());
 
         // Bytecode that emits LOG0 (no topics)
@@ -1073,6 +991,8 @@ fn test_event_hooks_empty_topics() {
         // LOG0          -> a0    (emit log with no topics)
         // STOP          -> 00
         let test_contract_bytecode = hex::decode("60006000a000").unwrap();
+        let mut tester =
+            TestingFramework::new().with_evm_contract(test_contract, &test_contract_bytecode);
 
         let tx = L1TxBuilder::new()
             .from(address!("1234567890123456789012345678901234567890"))
@@ -1082,15 +1002,7 @@ fn test_event_hooks_empty_topics() {
             .gas_limit(200_000)
             .build();
 
-        chain.set_evm_bytecode(
-            B160::from_be_bytes(test_contract.clone().into_array()),
-            &test_contract_bytecode,
-        );
-
-        let encoded_tx = tx.encode();
-        let transactions = vec![encoded_tx];
-
-        let output = chain.run_block(transactions, None, None, None);
+        let output = tester.execute_block(vec![tx]);
 
         // Transaction should succeed - empty topics should be handled gracefully
         assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {

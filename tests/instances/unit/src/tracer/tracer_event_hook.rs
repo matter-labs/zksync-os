@@ -8,8 +8,8 @@
 
 use rig::alloy::consensus::TxEip2930;
 use rig::alloy::primitives::{address, TxKind, U256};
-use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
+use rig::ruint;
 use rig::ruint::aliases::B160;
 use rig::zk_ee::system::tracer::evm_tracer::NopEvmTracer;
 use rig::zk_ee::system::validator::NopTxValidator;
@@ -21,8 +21,7 @@ use rig::zk_ee::{
     },
     utils::Bytes32,
 };
-use rig::{ruint, Chain};
-use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
+use rig::TestingFramework;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// A struct to track tracer calls for event operations
@@ -115,8 +114,8 @@ impl Tracer<ForwardRunningSystem> for EventOperationTracer {
 
 #[test]
 fn test_event_hook() {
-    let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
 
     let contract_address = address!("1000000000000000000000000000000000000001");
 
@@ -127,17 +126,12 @@ fn test_event_hook() {
     // STOP
     let test_contract_bytecode = hex::decode("604260005260206000A060206000611234a100").unwrap();
 
-    chain.set_balance(
-        ruint::aliases::B160::from_alloy(wallet.address()),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-    chain.set_evm_bytecode(
-        ruint::aliases::B160::from_alloy(contract_address),
-        &test_contract_bytecode,
-    );
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_evm_contract(contract_address, &test_contract_bytecode);
 
     // Create transaction to call the contract
-    let encoded_tx = {
+    let tx = {
         let tx = TxEip2930 {
             chain_id: 37u64,
             nonce: 0,
@@ -148,22 +142,13 @@ fn test_event_hook() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
 
     let mut tracer = EventOperationTracer::new();
 
-    let result = chain.run_block_with_extra_stats(
-        vec![encoded_tx],
-        None,
-        None,
-        None,
-        &mut tracer,
-        &mut NopTxValidator::default(),
-    );
-
-    assert!(result.is_ok(), "Block execution should succeed");
-    let (block_output, _, _) = result.unwrap();
+    let block_output =
+        tester.execute_block_with_tracing(vec![tx], &mut tracer, &mut NopTxValidator::default());
     assert!(
         block_output.tx_results[0].is_ok(),
         "Transaction should succeed with correct tracer calls. Result: {:?}",
@@ -177,7 +162,7 @@ fn test_event_hook() {
         "Should have captured exactly 2 events"
     );
 
-    let contract_address = ruint::aliases::B160::from_alloy(contract_address);
+    let contract_address = ruint::aliases::B160::from_be_bytes(contract_address.into_array());
     assert_eq!(
         tracer.calls.events[0],
         (

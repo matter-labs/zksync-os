@@ -101,7 +101,7 @@ impl ZKsyncOS {
 
         let run_config = RunConfig {
             app: Some("evm_tester".to_string()),
-            only_forward: !proof_run,
+            do_riscv_run: proof_run,
             check_storage_diff_hashes: proof_run,
             ..Default::default()
         };

@@ -125,7 +125,7 @@ pub fn run_block(
     
     let run_config = rig::chain::RunConfig {
         witness_output_file: output_path,
-        only_forward,
+        do_riscv_run: !only_forward,
         app: Some("evm_replay".to_string()),
         check_storage_diff_hashes: true,
         ..Default::default()

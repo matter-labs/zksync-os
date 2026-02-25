@@ -13,7 +13,7 @@ fn test_unit_serialization() {
 
     // Test deserialization
     let mut empty_iter = core::iter::empty();
-    let deserialized = <() as UsizeDeserializable>::from_iter(&mut empty_iter).unwrap();
+    let _ = <() as UsizeDeserializable>::from_iter(&mut empty_iter).unwrap();
 }
 
 #[test]

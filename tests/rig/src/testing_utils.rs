@@ -1,4 +1,4 @@
-use alloy::primitives::Address;
+use alloy::{hex, primitives::Address};
 use forward_system::run::convert_alloy::FromAlloy;
 use forward_system::system::tracers::call_tracer::CallTracer;
 use once_cell::sync::Lazy;
@@ -110,8 +110,8 @@ pub fn call_address_and_measure_gas_cost(
 
 /// Installation of system contracts required by tests.
 /// Use booleans to keep it flexible per test.
-pub fn install_system_contracts(
-    chain: &mut Chain,
+pub fn install_system_contracts<const RANDOMIZED_TREE: bool>(
+    chain: &mut Chain<RANDOMIZED_TREE>,
     with_l1_messenger: bool,
     with_l2_base_token: bool,
     with_contract_deployer: bool,

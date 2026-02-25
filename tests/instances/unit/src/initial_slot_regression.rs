@@ -34,8 +34,7 @@ use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
 use rig::zk_ee::types_config::EthereumIOTypesConfig;
 use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_interface::traits::TxListSource;
-use rig::Chain;
-use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
+use rig::TestingFramework;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// Malicious storage responder that returns non-zero initial values for new storage slots
@@ -124,10 +123,8 @@ impl InvalidInitialValueOracleFactory {
     fn new(targets: Vec<(B160, Bytes32)>) -> Self {
         Self { targets }
     }
-}
 
-impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
-    fn create_oracle<M: MemorySource>(
+    fn build_oracle<M: MemorySource + 'static>(
         &self,
         block_metadata: BlockMetadataFromOracle,
         state_tree: InMemoryTree<false>,
@@ -135,7 +132,6 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
         tx_source: TxListSource,
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
-        _add_uart: bool,
     ) -> ZkEENonDeterminismSource<M> {
         // Create a malicious oracle manually instead of using the default factory
         let block_metadata_responder = BlockMetadataResponder { block_metadata };
@@ -169,11 +165,54 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
     }
 }
 
+impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
+    fn create_forward_oracle(
+        &self,
+        block_metadata: BlockMetadataFromOracle,
+        state_tree: InMemoryTree<false>,
+        preimage_source: InMemoryPreimageSource,
+        tx_source: TxListSource,
+        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        _add_uart: bool,
+    ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+        self.build_oracle(
+            block_metadata,
+            state_tree,
+            preimage_source,
+            tx_source,
+            proof_data,
+            da_commitment_scheme,
+        )
+    }
+
+    fn create_proof_oracle(
+        &self,
+        block_metadata: BlockMetadataFromOracle,
+        state_tree: InMemoryTree<false>,
+        preimage_source: InMemoryPreimageSource,
+        tx_source: TxListSource,
+        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        _add_uart: bool,
+    ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
+    {
+        self.build_oracle(
+            block_metadata,
+            state_tree,
+            preimage_source,
+            tx_source,
+            proof_data,
+            da_commitment_scheme,
+        )
+    }
+}
+
 #[test]
 #[should_panic(expected = "Initial value of empty slot must be trivial")]
 fn test_initial_slot_value_assertion() {
-    let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
 
     let contract_address = address!("1000000000000000000000000000000000000001");
 
@@ -181,19 +220,13 @@ fn test_initial_slot_value_assertion() {
     // function store(uint256 value) { data = value; }
     let simple_storage_bytecode = hex::decode("6080604052348015600e575f5ffd5b50600436106026575f3560e01c80636057361d14602a575b5f5ffd5b60406004803603810190603c9190607d565b6042565b005b805f8190555050565b5f5ffd5b5f819050919050565b605f81604f565b81146068575f5ffd5b50565b5f813590506077816058565b92915050565b5f60208284031215608f57608e604b565b5b5f609a84828501606b565b9150509291505056fea26469706673582212209a9900f35fcdc7903c2ece72cf1b055b4dda7395c3555e100df93ef7977e707064736f6c634300081e0033").unwrap();
 
-    chain.set_balance(
-        B160::from_alloy(wallet.address()),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-    chain.set_evm_bytecode(B160::from_alloy(contract_address), &simple_storage_bytecode);
-
     // Create a transaction that calls store(42) which writes to storage slot 0
     // Function selector for store(uint256): 6057361d
     let calldata =
         hex::decode("6057361d000000000000000000000000000000000000000000000000000000000000002a")
             .unwrap();
 
-    let encoded_tx = {
+    let tx = {
         let tx = TxEip2930 {
             chain_id: 37u64,
             nonce: 0,
@@ -204,7 +237,7 @@ fn test_initial_slot_value_assertion() {
             input: calldata.into(),
             access_list: Default::default(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
 
     // Use the malicious oracle factory that should trigger the assertion
@@ -213,8 +246,12 @@ fn test_initial_slot_value_assertion() {
         Bytes32::zero(),
     )]);
 
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_evm_contract(contract_address, &simple_storage_bytecode)
+        .with_custom_oracle_factory(malicious_factory);
+
     // This should panic with "initial value of empty slot must be trivial"
     // when the oracle returns invalid initial values for empty storage slots
-    let _result =
-        chain.run_block_with_oracle_factory(vec![encoded_tx], None, None, None, &malicious_factory);
+    let _result = tester.execute_block(vec![tx]);
 }

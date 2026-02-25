@@ -7,15 +7,14 @@
 
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy::primitives::{address, TxKind};
-use rig::forward_system::run::convert_alloy::FromAlloy;
+use rig::chain::RunConfig;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
-use rig::ruint::aliases::{B160, U256};
+use rig::ruint::aliases::U256;
 use rig::utils::L1TxBuilder;
 use rig::zk_ee::system::tracer::NopTracer;
 use rig::zk_ee::system::validator::{TxValidationError, TxValidator};
 use rig::zksync_os_interface::error::InvalidTransaction;
-use rig::Chain;
-use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
+use rig::TestingFramework;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[derive(Default)]
@@ -73,14 +72,11 @@ fn included_tx_number_in_block<T>(
 
 #[test]
 fn test_tx_validator_filters_out_tx_without_bumping_counter() {
-    let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
     let from = wallet.address();
 
-    chain.set_balance(
-        B160::from_alloy(from),
-        U256::from(1_000_000_000_000_000_u64),
-    );
+    tester = tester.with_balance(from, U256::from(1_000_000_000_000_000_u64));
 
     let withdrawal_to = address!("000000000000000000000000000000000000800a");
     let withdrawal_calldata =
@@ -97,7 +93,7 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
             value: U256::from(value),
             input: withdrawal_calldata.clone().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
 
     let tx0 = mk_withdrawal(0, 10);
@@ -106,17 +102,10 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
     let mut tracer = NopTracer::default();
     let mut validator = LoggingTxValidator::new(true, false);
 
-    let result = chain.run_block_with_extra_stats(
-        vec![tx0, tx1],
-        None,
-        None,
-        None,
-        &mut tracer,
-        &mut validator,
-    );
+    // Disable RISC-V run because TxValidator is ignored during RISC-V execution
+    tester.set_run_config(Some(RunConfig::without_riscv_run()));
 
-    assert!(result.is_ok());
-    let (out, _, _) = result.unwrap();
+    let out = tester.execute_block_with_tracing(vec![tx0, tx1], &mut tracer, &mut validator);
 
     println!(
         "[TxValidator] totals: begin_calls={}, finish_calls={}",
@@ -158,14 +147,11 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
 fn test_no_custom_validator_does_not_restrict_tx_flow() {
     use rig::zk_ee::system::validator::NopTxValidator;
 
-    let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
     let from = wallet.address();
 
-    chain.set_balance(
-        B160::from_alloy(from),
-        U256::from(1_000_000_000_000_000_u64),
-    );
+    tester = tester.with_balance(from, U256::from(1_000_000_000_000_000_u64));
 
     // Keep same tx shape; don't depend on L2->L1 logs.
     let withdrawal_to = address!("000000000000000000000000000000000000800a");
@@ -183,7 +169,7 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
             value: U256::from(value),
             input: withdrawal_calldata.clone().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
 
     // Normal nonces (0 then 1), because nothing is filtered.
@@ -193,17 +179,7 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
     let mut tracer = NopTracer::default();
     let mut validator = NopTxValidator::default();
 
-    let result = chain.run_block_with_extra_stats(
-        vec![tx0, tx1],
-        None,
-        None,
-        None,
-        &mut tracer,
-        &mut validator,
-    );
-
-    assert!(result.is_ok());
-    let (out, _, _) = result.unwrap();
+    let out = tester.execute_block_with_tracing(vec![tx0, tx1], &mut tracer, &mut validator);
 
     // 1) Both tx must succeed
     assert!(
@@ -227,8 +203,8 @@ fn test_no_custom_validator_does_not_restrict_tx_flow() {
 
 #[test]
 fn test_l1_transactions_are_not_filtered_by_validator() {
-    let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
     let from = wallet.address();
 
     let withdrawal_to = address!("000000000000000000000000000000000000800a");
@@ -236,10 +212,10 @@ fn test_l1_transactions_are_not_filtered_by_validator() {
         hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .unwrap();
 
-    chain.set_balance(B160::from_be_bytes(from.0 .0), U256::from(10_000_000));
+    tester = tester.with_balance(from, U256::from(10_000_000));
 
     let mk_l1_tx = |nonce: u64, value: u64| {
-        let tx = L1TxBuilder::new()
+        L1TxBuilder::new()
             .from(from)
             .to(withdrawal_to)
             .gas_price(1000u128.into())
@@ -247,8 +223,8 @@ fn test_l1_transactions_are_not_filtered_by_validator() {
             .value(U256::from(value))
             .input(withdrawal_calldata.clone().into())
             .nonce(nonce.into())
-            .build();
-        tx.encode()
+            .build()
+            .into()
     };
 
     let tx0 = mk_l1_tx(0, 10);
@@ -257,17 +233,7 @@ fn test_l1_transactions_are_not_filtered_by_validator() {
     let mut tracer = NopTracer::default();
     let mut validator = LoggingTxValidator::new(true, false);
 
-    let result = chain.run_block_with_extra_stats(
-        vec![tx0, tx1],
-        None,
-        None,
-        None,
-        &mut tracer,
-        &mut validator,
-    );
-
-    assert!(result.is_ok());
-    let (out, _, _) = result.unwrap();
+    let out = tester.execute_block_with_tracing(vec![tx0, tx1], &mut tracer, &mut validator);
 
     println!(
         "[TxValidator] totals: begin_calls={}, finish_calls={}",
@@ -306,14 +272,11 @@ fn test_tx_validator_filters_out_tx_on_begin_tx() {
     //! If a transaction is filtered by validator.begin_tx(),
     //! it should be rejected before execution and should not affect nonce counts.
 
-    let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
     let from = wallet.address();
 
-    chain.set_balance(
-        B160::from_alloy(from),
-        U256::from(1_000_000_000_000_000_u64),
-    );
+    tester = tester.with_balance(from, U256::from(1_000_000_000_000_000_u64));
 
     let withdrawal_to = address!("000000000000000000000000000000000000800a");
     let withdrawal_calldata =
@@ -330,7 +293,7 @@ fn test_tx_validator_filters_out_tx_on_begin_tx() {
             value: U256::from(value),
             input: withdrawal_calldata.clone().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
 
     // Both txs with nonce 0 (first will be filtered, second should succeed with same nonce)
@@ -341,17 +304,10 @@ fn test_tx_validator_filters_out_tx_on_begin_tx() {
     // Validator that filters on begin_tx only (first tx)
     let mut validator = LoggingTxValidator::new(true, false);
 
-    let result = chain.run_block_with_extra_stats(
-        vec![tx0, tx1],
-        None,
-        None,
-        None,
-        &mut tracer,
-        &mut validator,
-    );
+    // Disable RISC-V run because TxValidator is ignored during RISC-V execution
+    tester.set_run_config(Some(RunConfig::without_riscv_run()));
 
-    assert!(result.is_ok());
-    let (out, _, _) = result.unwrap();
+    let out = tester.execute_block_with_tracing(vec![tx0, tx1], &mut tracer, &mut validator);
 
     println!(
         "[TxValidator] totals: begin_calls={}, finish_calls={}",

@@ -12,20 +12,11 @@
 //!
 
 use rig::alloy::primitives::address;
-use rig::forward_system::run::convert_alloy::FromAlloy;
-use rig::ruint::aliases::{B160, U256};
+use rig::ruint::aliases::U256;
 use rig::utils::L1TxBuilder;
-use rig::{alloy, Chain};
-use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
+use rig::{alloy, TestingFramework};
 
-fn run_config() -> Option<rig::chain::RunConfig> {
-    Some(rig::chain::RunConfig {
-        app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
-        ..Default::default()
-    })
-}
+use super::common_target_address;
 
 /// Test that an L1 transaction with gas limit below intrinsic gas (21k) is
 /// processed gracefully instead of causing a validation error.
@@ -35,30 +26,23 @@ fn run_config() -> Option<rig::chain::RunConfig> {
 /// and the transaction proceeds.
 #[test]
 fn test_l1_tx_gas_limit_below_intrinsic() {
-    let mut chain = Chain::empty(None);
-
     let from = address!("1234000000000000000000000000000000000000");
-    let to = address!("4242000000000000000000000000000000000000");
-
-    // Give the sender some balance
-    chain.set_balance(B160::from_alloy(from), U256::from(u64::MAX));
+    let to = common_target_address();
 
     // Create an L1 transaction with gas limit below intrinsic gas (21000)
     // The intrinsic gas for L1 txs is L1_TX_INTRINSIC_L2_GAS = 21_000
-    let tx = {
-        let tx = L1TxBuilder::new()
-            .from(from)
-            .to(to)
-            .gas_price(1500)
-            .gas_limit(20_000)
-            .value(alloy::primitives::U256::from(100))
-            .build();
-
-        tx.encode()
-    };
+    let tx = L1TxBuilder::new()
+        .from(from)
+        .to(to)
+        .gas_price(1500)
+        .gas_limit(20_000)
+        .value(alloy::primitives::U256::from(100))
+        .build()
+        .into();
 
     // The block should complete without panicking (no internal error)
-    let result = chain.run_block_no_panic(vec![tx], None, None, run_config());
+    let mut tester = TestingFramework::new().with_balance(from, U256::from(u64::MAX));
+    let result = tester.execute_block_no_panic(vec![tx]);
     assert!(
         result.is_ok(),
         "Block should complete without internal error, got: {:?}",
@@ -91,35 +75,28 @@ fn test_l1_tx_gas_limit_below_intrinsic() {
 /// via saturating arithmetic.
 #[test]
 fn test_l1_tx_gas_price_overflow_native_per_gas() {
-    let mut chain = Chain::empty(None);
-
     let from = address!("1234000000000000000000000000000000000000");
-    let to = address!("4242000000000000000000000000000000000000");
-
-    // Give the sender a reasonable balance (not MAX to avoid overflow issues elsewhere)
-    chain.set_balance(
-        B160::from_alloy(from),
-        U256::from(1_000_000_000_000_000_u64),
-    );
+    let to = common_target_address();
 
     // L1_TX_NATIVE_PRICE = 10
     // To overflow u64 in native_per_gas calculation: gas_price / 10 > u64::MAX
     // So gas_price > u64::MAX * 10
     let overflow_gas_price = u128::from(u64::MAX) * 11;
 
-    let tx = {
-        let tx = L1TxBuilder::new()
-            .from(from)
-            .to(to)
-            .gas_price(overflow_gas_price)
-            .gas_limit(100_000)
-            .value(alloy::primitives::U256::from(100))
-            .build();
-        tx.encode()
-    };
+    let tx = L1TxBuilder::new()
+        .from(from)
+        .to(to)
+        .gas_price(overflow_gas_price)
+        .gas_limit(100_000)
+        .value(alloy::primitives::U256::from(100))
+        .build()
+        .into();
+
+    let mut tester =
+        TestingFramework::new().with_balance(from, U256::from(1_000_000_000_000_000_u64));
 
     // The block should complete without panicking (no internal error)
-    let result = chain.run_block_no_panic(vec![tx], None, None, run_config());
+    let result = tester.execute_block_no_panic(vec![tx]);
     assert!(
         result.is_ok(),
         "Block should complete without internal error, got: {:?}",
@@ -138,31 +115,25 @@ fn test_l1_tx_gas_price_overflow_native_per_gas() {
 
 #[test]
 fn test_l1_tx_intrinsic_gas_overflow() {
-    let mut chain = Chain::empty(None);
     let from_address = address!("1234000000000000000000000000000000000000");
-    let to_address = address!("4242000000000000000000000000000000000000");
+    let to_address = common_target_address();
 
     // Create an L1 transaction that will cause gas overflow
     // L1 transactions bypass the intrinsic gas check that would normally prevent this
-    let overflow_l1_tx = {
-        let tx = L1TxBuilder::new()
-            .from(from_address)
-            .to(to_address)
-            .gas_price(1000)
-            .gas_limit(200000) // Gas limit that should not be sufficient for the input data
-            .value(alloy::primitives::U256::from(100))
-            .input(vec![0u8; 50_000].into()) // Very large input data to increase intrinsic cost
-            .build();
-        tx.encode()
-    };
+    let overflow_l1_tx = L1TxBuilder::new()
+        .from(from_address)
+        .to(to_address)
+        .gas_price(1000)
+        .gas_limit(200000) // Gas limit that should not be sufficient for the input data
+        .value(alloy::primitives::U256::from(100))
+        .input(vec![0u8; 50_000].into()) // Very large input data to increase intrinsic cost
+        .build()
+        .into();
 
-    // Set up balances
-    chain.set_balance(
-        B160::from_alloy(from_address),
-        rig::ruint::aliases::U256::from(1_000_000_000_000_000_u64),
-    );
     // Test L1 transaction - this triggers the overflow scenario
-    let result_l1 = chain.run_block(vec![overflow_l1_tx], None, None, None);
+    let mut tester =
+        TestingFramework::new().with_balance(from_address, U256::from(1_000_000_000_000_000_u64));
+    let result_l1 = tester.execute_block(vec![overflow_l1_tx]);
 
     assert!(result_l1.tx_results[0].is_ok());
 

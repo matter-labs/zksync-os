@@ -7,6 +7,7 @@ use crate::Chain;
 use alloy::consensus::SidecarBuilder;
 use alloy::consensus::SimpleCoder;
 use alloy::consensus::TxEip1559;
+use alloy::hex;
 use alloy::primitives::TxKind;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::sol;
@@ -110,12 +111,18 @@ pub fn run_block_of_erc20<const RANDOMIZED: bool>(
     run_block_of_erc20_with_fee(chain, n, block_context, 1000)
 }
 
-pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
+pub fn prepare_block_of_erc20<const RANDOMIZED: bool>(
     chain: &mut Chain<RANDOMIZED>,
     n: usize,
-    block_context: Option<BlockContext>,
+) -> Vec<ZKsyncTxEnvelope> {
+    prepare_block_of_erc20_with_fee(chain, n, 1000)
+}
+
+pub fn prepare_block_of_erc20_with_fee<const RANDOMIZED: bool>(
+    chain: &mut Chain<RANDOMIZED>,
+    n: usize,
     fee: u128,
-) -> BlockOutput {
+) -> Vec<ZKsyncTxEnvelope> {
     let wallets: Vec<_> = (1..=n).map(|_| PrivateKeySigner::random()).collect();
     let dsts: Vec<_> = (1..=n)
         .map(|i| {
@@ -144,7 +151,7 @@ pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
                 access_list: Default::default(),
                 input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
             };
-            ZKsyncTxEnvelope::from_eth_tx(transfer_tx, wallet.clone()).encode()
+            ZKsyncTxEnvelope::from_eth_tx(transfer_tx, wallet.clone())
         })
         .collect();
 
@@ -154,7 +161,7 @@ pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
         chain.set_evm_bytecode(ruint::aliases::B160::from_alloy(to), &bytecode);
     });
 
-    wallets.iter().zip(dsts.clone()).for_each(|(wallet, to)| {
+    wallets.iter().zip(dsts).for_each(|(wallet, to)| {
         chain.set_balance(
             ruint::aliases::B160::from_alloy(wallet.address()),
             ruint::aliases::U256::from(1_000_000_000_000_000_u64),
@@ -164,6 +171,20 @@ pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
             ruint::aliases::B256::from(ruint::aliases::U256::from(1_000_000_000_000_000_u64));
         chain.set_storage_slot(ruint::aliases::B160::from_alloy(to), key, value)
     });
+
+    transactions
+}
+
+pub fn run_block_of_erc20_with_fee<const RANDOMIZED: bool>(
+    chain: &mut Chain<RANDOMIZED>,
+    n: usize,
+    block_context: Option<BlockContext>,
+    fee: u128,
+) -> BlockOutput {
+    let transactions = prepare_block_of_erc20_with_fee(chain, n, fee)
+        .into_iter()
+        .map(ZKsyncTxEnvelope::encode)
+        .collect();
 
     let output = chain.run_block(
         transactions,

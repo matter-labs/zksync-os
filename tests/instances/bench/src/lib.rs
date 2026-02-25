@@ -1,11 +1,11 @@
 #![cfg(test)]
 use rig::{
     alloy::{self, primitives::TxKind, rpc::types::TransactionRequest},
-    forward_system::run::convert_alloy::FromAlloy,
-    ruint::aliases::{B160, U256},
+    ruint::aliases::U256,
+    TestingFramework,
 };
 use std::path::PathBuf;
-use zksync_os_tests_common::zksync_tx::{encoding::ZKsyncOsEncodable, ZKsyncTxEnvelope};
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 // WASM disabled for now
 // #[test]
@@ -87,17 +87,14 @@ use zksync_os_tests_common::zksync_tx::{encoding::ZKsyncOsEncodable, ZKsyncTxEnv
 
 #[test]
 fn fibish_sol() {
-    let mut chain = rig::Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
 
     let c_addr = alloy::primitives::Address::from(alloy::primitives::U160::from(1));
     let c_bytes = rig::utils::load_sol_bytecode("bench", "arith");
-    chain
-        .set_evm_bytecode(B160::from_alloy(c_addr), &c_bytes)
-        .set_balance(
-            B160::from_alloy(wallet.address()),
-            U256::from(1_000_000_000_000_000_u64),
-        );
+    tester = tester
+        .with_evm_contract(c_addr, &c_bytes)
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
     let tx = TransactionRequest {
         to: Some(TxKind::Call(c_addr)),
@@ -116,7 +113,7 @@ fn fibish_sol() {
         ..Default::default()
     };
 
-    let encoded_tx = ZKsyncTxEnvelope::from_eth_tx_from_req(tx, wallet).encode();
+    let tx = ZKsyncTxEnvelope::from_eth_tx_from_req(tx, wallet);
 
     let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
         "{}/os_profile_fibish_sol.svg",
@@ -127,5 +124,6 @@ fn fibish_sol() {
         profiler_config: Some(pc),
         ..Default::default()
     };
-    chain.run_block(vec![encoded_tx], None, None, Some(run_config));
+    tester = tester.with_run_config(run_config);
+    tester.execute_block(vec![tx]);
 }

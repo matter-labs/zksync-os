@@ -2,7 +2,6 @@
 #![feature(assert_matches)]
 
 use rig::alloy::consensus::TxLegacy;
-use rig::forward_system::run::convert_alloy::FromAlloy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
 use rig::zksync_os_interface::types::BlockOutput;
 use rig::zksync_os_interface::types::ExecutionResult::Revert;
@@ -12,10 +11,10 @@ use rig::{
         primitives::{address, Address, TxKind},
         rpc::types::TransactionRequest,
     },
-    ruint::aliases::{B160, U256},
+    ruint::aliases::U256,
+    TestingFramework,
 };
 use std::assert_matches::assert_matches;
-use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// Performs two calls:
@@ -26,19 +25,14 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockOutput {
     let gas = gas.unwrap_or(1 << 27);
 
-    let mut chain = rig::Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
     let target = Address::from_slice(hex::decode(precompile_id).unwrap().as_slice());
     let forwarder = address!("0x1000000000000000000000000000000000000000");
 
-    chain.set_balance(
-        FromAlloy::from_alloy(wallet.address()),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-    chain.set_evm_bytecode(
-        FromAlloy::from_alloy(forwarder),
-        &hex::decode(FORWARDER_BYTECODE).unwrap(),
-    );
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_evm_contract(forwarder, &hex::decode(FORWARDER_BYTECODE).unwrap());
 
     let direct_tx = ZKsyncTxEnvelope::from_eth_tx(
         TxLegacy {
@@ -51,8 +45,7 @@ fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockO
             input: input.to_vec().into(),
         },
         wallet.clone(),
-    )
-    .encode();
+    );
 
     let calldata = calldata_for_forwarder(target, input);
     let forwarded_tx = ZKsyncTxEnvelope::from_eth_tx(
@@ -66,8 +59,7 @@ fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockO
             input: calldata.into(),
         },
         wallet.clone(),
-    )
-    .encode();
+    );
 
     // We use a very high native per gas ratio
     let block_context = BlockContext {
@@ -76,18 +68,9 @@ fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockO
         ..Default::default()
     };
 
-    let run_config = rig::chain::RunConfig {
-        app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
-        ..Default::default()
-    };
-    chain.run_block(
-        vec![direct_tx, forwarded_tx],
-        Some(block_context),
-        None,
-        Some(run_config),
-    )
+    tester = tester.with_block_context(block_context);
+
+    tester.execute_block(vec![direct_tx, forwarded_tx])
 }
 
 struct Test {
@@ -6130,13 +6113,9 @@ fn test_precompile_parses_input_correctly() {
         let empty_input = [0u8; 193];
 
         for i in length {
-            let mut chain = rig::Chain::empty(None);
-            let wallet = chain.random_signer();
-
-            chain.set_balance(
-                B160::from_alloy(wallet.address()),
-                U256::from(1_000_000_000_000_000_u64),
-            );
+            let mut tester = TestingFramework::new();
+            let wallet = tester.random_signer();
+            tester = tester.with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
             let tx = ZKsyncTxEnvelope::from_eth_tx_from_req(
                 TransactionRequest {
@@ -6148,10 +6127,9 @@ fn test_precompile_parses_input_correctly() {
                     ..Default::default()
                 },
                 wallet,
-            )
-            .encode();
+            );
 
-            let _block_output = chain.run_block(vec![tx], None, None, None);
+            let _block_output = tester.execute_block(vec![tx]);
         }
     }
 }
@@ -6377,6 +6355,7 @@ fn all_ones_bits(n: usize) -> Vec<u8> {
     vec![0xFF; 4 * n]
 }
 
+#[allow(dead_code)]
 fn all_ones_except_top_bit(n: usize) -> Vec<u8> {
     let mut v = vec![0xFF; 4 * n];
     v[0] &= 0x7F; // clear the top (MSB) bit in the first byte
@@ -6413,8 +6392,8 @@ fn bench_modexp() {
 
 #[test]
 fn test_regression_p256_is_warm() {
-    let mut chain = rig::Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
     let target = Address::from_slice(
         hex::decode("0000000000000000000000000000000000000100")
             .unwrap()
@@ -6422,14 +6401,9 @@ fn test_regression_p256_is_warm() {
     );
     let forwarder = address!("0x1000000000000000000000000000000000000000");
 
-    chain.set_balance(
-        B160::from_alloy(wallet.address()),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-    chain.set_evm_bytecode(
-        B160::from_alloy(forwarder),
-        &hex::decode(FORWARDER_BYTECODE).unwrap(),
-    );
+    tester = tester
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_evm_contract(forwarder, &hex::decode(FORWARDER_BYTECODE).unwrap());
 
     // Just enough for tx to succeed if the address is warm
     let gas_limit = 54707;
@@ -6447,8 +6421,7 @@ fn test_regression_p256_is_warm() {
             input: calldata.into(),
         },
         wallet.clone(),
-    )
-    .encode();
+    );
 
     // We use a very high native per gas ratio
     let block_context = BlockContext {
@@ -6457,18 +6430,9 @@ fn test_regression_p256_is_warm() {
         ..Default::default()
     };
 
-    let run_config = rig::chain::RunConfig {
-        app: Some("for_tests".to_string()),
-        only_forward: false,
-        check_storage_diff_hashes: true,
-        ..Default::default()
-    };
-    let res = chain.run_block(
-        vec![forwarded_tx],
-        Some(block_context),
-        None,
-        Some(run_config),
-    );
+    tester = tester.with_block_context(block_context);
+
+    let res = tester.execute_block(vec![forwarded_tx]);
     let tx_res = res
         .tx_results
         .first()

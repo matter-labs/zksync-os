@@ -5,44 +5,26 @@
 
 use alloy::consensus::{TxEip1559, TxLegacy};
 use alloy::primitives::TxKind;
-use alloy::signers::local::PrivateKeySigner;
 use rig::alloy::primitives::address;
-use rig::forward_system::run::convert_alloy::FromAlloy;
+use rig::chain::RunConfig;
 use rig::forward_system::run::generate_batch_proof_input;
 use rig::log::debug;
-use rig::ruint::aliases::{B160, U256};
+use rig::ruint::aliases::U256;
 use rig::utils::{ERC_20_BYTECODE, ERC_20_MINT_CALLDATA, ERC_20_TRANSFER_CALLDATA};
 use rig::zk_ee::common_structs::DACommitmentScheme;
-use rig::zk_ee::system::tracer::NopTracer;
-use rig::zk_ee::system::validator::NopTxValidator;
-use rig::zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
-use rig::{alloy, zksync_web3_rs, Chain};
+use rig::{alloy, testing_signer, TestingFramework};
 use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
 use std::path::PathBuf;
-use std::str::FromStr;
-use zksync_web3_rs::signers::{LocalWallet, Signer};
 
 fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
-    let mut chain = Chain::empty(None);
-    let wallet = PrivateKeySigner::from_str(
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7",
-    )
-    .unwrap();
-    let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
+    let wallet = testing_signer(0);
 
-    let from = wallet_ethers.address();
     let to = address!("0000000000000000000000000000000000010002");
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
-    chain.set_evm_bytecode(B160::from_alloy(to), &bytecode);
 
-    chain.set_balance(
-        B160::from_be_bytes(from.0),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-
-    let encoded_mint_tx = {
+    let mint_tx = {
         let mint_tx = TxLegacy {
             chain_id: 37u64.into(),
             nonce: 0,
@@ -52,19 +34,26 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
             value: Default::default(),
             input: hex::decode(ERC_20_MINT_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
     };
 
-    let block1_result = chain
-        .run_block_with_extra_stats(
-            vec![encoded_mint_tx],
-            None,
-            Some(da_commitment_scheme),
-            None,
-            &mut NopTracer::default(),
-            &mut NopTxValidator::default(),
-        )
-        .unwrap();
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(to, &bytecode)
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_run_config(RunConfig::with_riscv_run())
+        .with_da_commitment_scheme(da_commitment_scheme);
+
+    let block1_result = tester.execute_block(vec![mint_tx]);
+    let block1_proof_input = tester
+        .last_executed_block_info()
+        .unwrap()
+        .proof_input
+        .clone();
+    assert!(
+        !block1_proof_input.is_empty(),
+        "block1 proof input must be non-empty; proving run is required"
+    );
+
     let encoded_transfer_tx = {
         let transfer_tx = TxEip1559 {
             chain_id: 37u64,
@@ -77,26 +66,26 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(transfer_tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(transfer_tx, wallet.clone())
     };
 
-    let block2_result = chain
-        .run_block_with_extra_stats(
-            vec![encoded_transfer_tx],
-            None,
-            Some(da_commitment_scheme),
-            None,
-            &mut NopTracer::default(),
-            &mut NopTxValidator::default(),
-        )
-        .unwrap();
+    let block2_result = tester.execute_block(vec![encoded_transfer_tx]);
+    let block2_proof_input = tester
+        .last_executed_block_info()
+        .unwrap()
+        .proof_input
+        .clone();
+    assert!(
+        !block2_proof_input.is_empty(),
+        "block2 proof input must be non-empty; proving run is required"
+    );
 
     let batch_input = generate_batch_proof_input(
-        vec![block1_result.2.as_slice(), block2_result.2.as_slice()],
+        vec![&block1_proof_input, &block2_proof_input],
         da_commitment_scheme,
         vec![
-            block1_result.0.pubdata.as_slice(),
-            block2_result.0.pubdata.as_slice(),
+            block1_result.pubdata.as_slice(),
+            block2_result.pubdata.as_slice(),
         ],
     );
 

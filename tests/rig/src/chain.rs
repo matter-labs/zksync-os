@@ -1,5 +1,6 @@
 use crate::{colors, init_logger};
 use alloy::consensus::Header;
+use alloy::hex;
 use alloy::signers::local::PrivateKeySigner;
 use alloy_rlp::{Decodable, Encodable};
 use basic_bootloader::bootloader::block_flow::ethereum::PectraForkHeader;
@@ -33,7 +34,7 @@ use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
 use log::{debug, info, trace};
 use oracle_provider::MemorySource;
-use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
+use oracle_provider::{DummyMemorySource, ReadWitnessSource, ZkEENonDeterminismSource};
 use risc_v_simulator::abstractions::memory::VectorMemoryImpl;
 use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
 use ruint::aliases::{B160, B256, U256};
@@ -58,7 +59,7 @@ use zksync_os_interface::types::StorageWrite;
 /// Trait for creating oracles with custom configuration
 pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
     #[allow(clippy::too_many_arguments)]
-    fn create_oracle<M: MemorySource + 'static>(
+    fn create_forward_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
@@ -67,7 +68,19 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-    ) -> ZkEENonDeterminismSource<M>;
+    ) -> ZkEENonDeterminismSource<DummyMemorySource>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn create_proof_oracle(
+        &self,
+        block_metadata: BlockMetadataFromOracle,
+        state_tree: InMemoryTree<RANDOMIZED_TREE>,
+        preimage_source: InMemoryPreimageSource,
+        tx_source: TxListSource,
+        proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        add_uart: bool,
+    ) -> ZkEENonDeterminismSource<VectorMemoryImpl>;
 }
 
 /// Default oracle factory that uses the existing make_oracle_for_proofs_and_dumps function
@@ -76,7 +89,7 @@ pub struct DefaultOracleFactory<const RANDOMIZED_TREE: bool>;
 impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
     for DefaultOracleFactory<RANDOMIZED_TREE>
 {
-    fn create_oracle<M: MemorySource + 'static>(
+    fn create_forward_oracle(
         &self,
         block_metadata: BlockMetadataFromOracle,
         state_tree: InMemoryTree<RANDOMIZED_TREE>,
@@ -85,7 +98,28 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-    ) -> ZkEENonDeterminismSource<M> {
+    ) -> ZkEENonDeterminismSource<DummyMemorySource> {
+        forward_system::run::make_oracle_for_proofs_and_dumps(
+            block_metadata,
+            state_tree,
+            preimage_source,
+            tx_source,
+            proof_data,
+            da_commitment_scheme,
+            add_uart,
+        )
+    }
+
+    fn create_proof_oracle(
+        &self,
+        block_metadata: BlockMetadataFromOracle,
+        state_tree: InMemoryTree<RANDOMIZED_TREE>,
+        preimage_source: InMemoryPreimageSource,
+        tx_source: TxListSource,
+        proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
+        da_commitment_scheme: Option<DACommitmentScheme>,
+        add_uart: bool,
+    ) -> ZkEENonDeterminismSource<VectorMemoryImpl> {
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
             state_tree,
@@ -141,7 +175,7 @@ impl Default for BlockContext {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct RunConfig {
     // Config for the profiler
     pub profiler_config: Option<ProfilerConfig>,
@@ -149,13 +183,56 @@ pub struct RunConfig {
     pub witness_output_file: Option<PathBuf>,
     // Name of risc-v binary to use
     pub app: Option<String>,
-    // Only run in forward mode, skip proving run
-    pub only_forward: bool,
+    // Run RISC-V simulation
+    pub do_riscv_run: bool,
     // Whether to check that storage diff hashes from forward and proof runs match
     // Only to be used when state-diffs-pi feature is enabled in the binary and
-    // only_forward is false
+    // do_riscv_run is true
     pub check_storage_diff_hashes: bool,
     pub skip_minting_tokens_to_treasury: bool,
+}
+
+impl Default for RunConfig {
+    fn default() -> Self {
+        let do_riscv_run = Self::should_do_riscv_run(
+            std::env::var_os("ZKSYNC_RISC_V_RUN").is_some(),
+            std::env::var_os("CI").is_some(),
+        );
+
+        RunConfig {
+            app: Some("for_tests".to_string()),
+            do_riscv_run,
+            check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
+            skip_minting_tokens_to_treasury: false,
+            profiler_config: None,
+            witness_output_file: None,
+        }
+    }
+}
+
+impl RunConfig {
+    fn should_do_riscv_run(zksync_proving_run_set: bool, ci_set: bool) -> bool {
+        zksync_proving_run_set || ci_set
+    }
+
+    pub fn without_riscv_run() -> Self {
+        let mut config = Self::default();
+        config.disable_riscv_run();
+        config
+    }
+
+    pub fn with_riscv_run() -> Self {
+        Self {
+            do_riscv_run: true,
+            check_storage_diff_hashes: true, // Enable storage diff hash checks when doing RISC-V run
+            ..Default::default()
+        }
+    }
+
+    pub fn disable_riscv_run(&mut self) {
+        self.do_riscv_run = false;
+        self.check_storage_diff_hashes = false; // Disable storage diff hash checks when RISC-V run is disabled
+    }
 }
 
 impl Chain<false> {
@@ -228,6 +305,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn set_block_hashes(&mut self, block_hashes: [U256; 256]) {
         self.block_hashes = block_hashes
+    }
+
+    pub fn set_chain_id(&mut self, chain_id: u64) {
+        self.chain_id = chain_id;
     }
 
     /// TODO: duplicated from API, unify.
@@ -354,13 +435,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     ///
     /// You can also pass a run config.
     ///
-    pub fn run_block_with_oracle_factory<OF: TestingOracleFactory<RANDOMIZED_TREE>>(
+    pub fn run_block_with_oracle_factory(
         &mut self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: Option<RunConfig>,
-        oracle_factory: &OF,
+        oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
     ) -> BlockOutput {
         self.run_block_with_extra_stats_with_oracle_factory(
             transactions,
@@ -420,9 +501,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     #[allow(clippy::result_large_err)]
     #[allow(clippy::too_many_arguments)]
-    pub fn run_block_with_extra_stats_with_oracle_factory<
-        OF: TestingOracleFactory<RANDOMIZED_TREE>,
-    >(
+    pub fn run_block_with_extra_stats_with_oracle_factory(
         &mut self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
@@ -430,7 +509,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         run_config: Option<RunConfig>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
-        oracle_factory: &OF,
+        oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
         self.run_inner(
             transactions,
@@ -445,13 +524,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     #[allow(clippy::result_large_err)]
     #[allow(clippy::too_many_arguments)]
-    fn run_inner<OF: TestingOracleFactory<RANDOMIZED_TREE>>(
+    fn run_inner(
         &mut self,
         transactions: Vec<EncodedTx>,
         block_context: Option<BlockContext>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         run_config: RunConfig,
-        oracle_factory: &OF,
+        oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
@@ -459,7 +538,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             profiler_config,
             witness_output_file,
             app,
-            only_forward,
+            do_riscv_run,
             check_storage_diff_hashes,
             skip_minting_tokens_to_treasury,
         } = run_config;
@@ -497,7 +576,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let da_commitment_scheme =
             da_commitment_scheme.unwrap_or(DACommitmentScheme::BlobsAndPubdataKeccak256);
-        let oracle = oracle_factory.create_oracle(
+        let oracle = oracle_factory.create_proof_oracle(
             block_metadata,
             self.state_tree.clone(),
             self.preimage_source.clone(),
@@ -507,7 +586,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             true,
         );
 
-        let forward_oracle = oracle_factory.create_oracle(
+        let forward_oracle = oracle_factory.create_forward_oracle(
             block_metadata,
             self.state_tree.clone(),
             self.preimage_source.clone(),
@@ -519,7 +598,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         #[cfg(feature = "simulate_witness_gen")]
         let source_for_witness_bench = {
-            oracle_factory.create_oracle(
+            oracle_factory.create_proof_oracle(
                 block_metadata,
                 self.state_tree.clone(),
                 self.preimage_source.clone(),
@@ -592,7 +671,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 .insert(hash.0.into(), preimage.clone());
         }
 
-        let proof_input = if !only_forward {
+        let proof_input = if do_riscv_run {
             if let Some(path) = witness_output_file {
                 let result = Self::run_block_generate_witness::<false>(oracle, &app);
                 let mut file = File::create(&path).expect("should create file");
@@ -1160,4 +1239,29 @@ fn run_prover(csr_reads: &[u32]) {
     );
 
     info!("block proved successfully");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RunConfig;
+
+    #[test]
+    fn run_config_should_do_riscv_run_matches_env_signals() {
+        assert!(RunConfig::should_do_riscv_run(true, false));
+        assert!(RunConfig::should_do_riscv_run(false, true));
+        assert!(RunConfig::should_do_riscv_run(true, true));
+        assert!(!RunConfig::should_do_riscv_run(false, false));
+    }
+
+    #[test]
+    fn run_config_without_riscv_run_disables_hash_checks() {
+        let mut config = RunConfig {
+            do_riscv_run: true,
+            check_storage_diff_hashes: true,
+            ..RunConfig::default()
+        };
+        config.disable_riscv_run();
+        assert!(!config.do_riscv_run);
+        assert!(!config.check_storage_diff_hashes);
+    }
 }

@@ -1,61 +1,50 @@
 use crate::TxEip1559;
 use crate::ERC_20_TRANSFER_CALLDATA;
-use alloy::primitives::TxKind;
-use alloy::signers::local::PrivateKeySigner;
-use rig::alloy::primitives::address;
-use rig::forward_system::run::convert_alloy::FromAlloy;
-use rig::ruint::aliases::{B160, U256};
+use rig::alloy;
+use rig::alloy::primitives::{address, TxKind};
+use rig::ruint::aliases::{B256, U256};
+use rig::testing_signer;
 use rig::utils::L1TxBuilder;
-use rig::zksync_os_interface::traits::EncodedTx;
-use rig::{alloy, zksync_web3_rs, BlockContext, Chain};
-use std::str::FromStr;
-use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
+use rig::{BlockContext, TestingFramework};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
-use zksync_web3_rs::signers::{LocalWallet, Signer};
 
-const WALLET: &str = "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7";
 const TO: alloy::primitives::Address = address!("0000000000000000000000000000000000010002");
 
 const AVG_RATIO: u64 = 150;
 const LOW_RATIO: u64 = 1;
 const HIGH_RATIO: u64 = 1_000_000;
 
-fn run_tx(tx: EncodedTx, basefee: u64, native_price: u64, should_succeed: bool, simulation: bool) {
-    let mut chain = Chain::empty(None);
-
-    let transactions = vec![tx];
-
+fn run_tx(
+    tx: ZKsyncTxEnvelope,
+    basefee: u64,
+    native_price: u64,
+    should_succeed: bool,
+    simulation: bool,
+) {
     let bytecode = hex::decode(crate::ERC_20_BYTECODE).unwrap();
-    let wallet = PrivateKeySigner::from_str(WALLET).unwrap();
-    chain.set_evm_bytecode(B160::from_alloy(TO), &bytecode);
-    let wallet_ethers = LocalWallet::from_bytes(wallet.to_bytes().as_slice()).unwrap();
-    let from = wallet_ethers.address();
-
-    chain.set_balance(
-        B160::from_be_bytes(from.0),
-        U256::from(1_000_000_000_000_000_u64),
-    );
-
-    chain.set_balance(
-        B160::from_be_bytes(from.0),
-        U256::from(1_000_000_000_000_000_u64),
-    );
+    let wallet = testing_signer(0);
     let key = crate::compute_erc20_balance_slot(wallet.address());
-    let value = rig::ruint::aliases::B256::from(U256::from(1_000_000_000_000_000_u64));
-    chain.set_storage_slot(B160::from_alloy(TO), key, value);
+    let value = B256::from(U256::from(1_000_000_000_000_000_u64));
 
     let block_context = BlockContext {
         native_price: U256::from(native_price),
         eip1559_basefee: U256::from(basefee),
         ..Default::default()
     };
+
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(TO, &bytecode)
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_storage_slot(TO, key, value)
+        .with_block_context(block_context);
+
     let output = if simulation {
-        chain.simulate_block(transactions, Some(block_context))
+        tester.simulate_block(vec![tx])
     } else {
-        chain.run_block(transactions, Some(block_context), None, None)
+        tester.execute_block(vec![tx])
     };
 
-    // Assert all txs succeeded
+    // Assert all txs succeeded/failed as expected.
     assert!(output.tx_results.iter().cloned().enumerate().all(|(i, r)| {
         let success = r.clone().is_ok_and(|o| o.is_success());
         if !success {
@@ -68,67 +57,61 @@ fn run_tx(tx: EncodedTx, basefee: u64, native_price: u64, should_succeed: bool, 
 // Test with a low cycles/gas ratio, should fail
 #[test]
 fn test_l1_tx_low_ratio() {
-    let wallet = PrivateKeySigner::from_str(WALLET).unwrap();
+    let wallet = testing_signer(0);
     // L1 Txs have a hard-coded native price of 10
     let native_price = 10;
     let gas_price = native_price * LOW_RATIO;
-    let tx = {
-        let tx = L1TxBuilder::new()
-            .from(wallet.address())
-            .to(TO)
-            .gas_price(gas_price.into())
-            .gas_limit(70_000)
-            .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-            .build();
-        tx.encode()
-    };
+    let tx = L1TxBuilder::new()
+        .from(wallet.address())
+        .to(TO)
+        .gas_price(gas_price.into())
+        .gas_limit(70_000)
+        .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
+        .build()
+        .into();
     run_tx(tx, gas_price, native_price, false, false)
 }
 
 // Test with a avg cycles/gas ratio, should succeed
 #[test]
 fn test_l1_tx_avg_ratio() {
-    let wallet = PrivateKeySigner::from_str(WALLET).unwrap();
+    let wallet = testing_signer(0);
     // L1 Txs have a hard-coded native price of 10
     let native_price = 10;
     let gas_price = native_price * AVG_RATIO;
-    let tx = {
-        let tx = L1TxBuilder::new()
-            .from(wallet.address())
-            .to(TO)
-            .gas_price(gas_price.into())
-            .gas_limit(70_000)
-            .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-            .build();
-        tx.encode()
-    };
+    let tx = L1TxBuilder::new()
+        .from(wallet.address())
+        .to(TO)
+        .gas_price(gas_price.into())
+        .gas_limit(70_000)
+        .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
+        .build()
+        .into();
     run_tx(tx, gas_price, native_price, true, false)
 }
 
 // Test with a high cycles/gas ratio, should succeed
 #[test]
 fn test_l1_tx_high_ratio() {
-    let wallet = PrivateKeySigner::from_str(WALLET).unwrap();
+    let wallet = testing_signer(0);
     // L1 Txs have a hard-coded native price of 10
     let native_price = 10;
     let gas_price = native_price * HIGH_RATIO;
-    let tx = {
-        let tx = L1TxBuilder::new()
-            .from(wallet.address())
-            .to(TO)
-            .gas_price(gas_price.into())
-            .gas_limit(70_000)
-            .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-            .build();
-        tx.encode()
-    };
+    let tx = L1TxBuilder::new()
+        .from(wallet.address())
+        .to(TO)
+        .gas_price(gas_price.into())
+        .gas_limit(70_000)
+        .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
+        .build()
+        .into();
     run_tx(tx, gas_price, native_price, true, false)
 }
 
 // Test with a low cycles/gas ratio, should fail
 #[test]
 fn test_l2_tx_low_ratio() {
-    let wallet = PrivateKeySigner::from_str(WALLET).unwrap();
+    let wallet = testing_signer(0);
     let native_price = 100;
     let gas_price = 100 * LOW_RATIO;
     let tx = {
@@ -143,7 +126,7 @@ fn test_l2_tx_low_ratio() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
     };
     run_tx(tx, gas_price, native_price, false, false)
 }
@@ -151,7 +134,7 @@ fn test_l2_tx_low_ratio() {
 // Test with a avg cycles/gas ratio, should succeed
 #[test]
 fn test_l2_tx_avg_ratio() {
-    let wallet = PrivateKeySigner::from_str(WALLET).unwrap();
+    let wallet = testing_signer(0);
     let native_price = 100;
     let gas_price = native_price * AVG_RATIO;
     let tx = {
@@ -166,7 +149,7 @@ fn test_l2_tx_avg_ratio() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
     };
     run_tx(tx, gas_price, native_price, true, false)
 }
@@ -174,7 +157,7 @@ fn test_l2_tx_avg_ratio() {
 // Test with a high cycles/gas ratio, should succeed
 #[test]
 fn test_l2_tx_high_ratio() {
-    let wallet = PrivateKeySigner::from_str(WALLET).unwrap();
+    let wallet = testing_signer(0);
     let native_price = 100;
     let gas_price = native_price * HIGH_RATIO;
     let tx = {
@@ -189,7 +172,7 @@ fn test_l2_tx_high_ratio() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
     };
     run_tx(tx, gas_price, native_price, true, false)
 }
@@ -198,7 +181,7 @@ fn test_l2_tx_high_ratio() {
 // Also call as simulation to skip validation step.
 #[test]
 fn test_0_gas_limit() {
-    let wallet = PrivateKeySigner::from_str(WALLET).unwrap();
+    let wallet = testing_signer(0);
     let native_price = 10;
     let gas_price = native_price * AVG_RATIO;
     let tx = {
@@ -213,21 +196,19 @@ fn test_0_gas_limit() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
     run_tx(tx.clone(), gas_price, native_price, false, false);
     run_tx(tx, gas_price, native_price, false, true);
 
-    let tx = {
-        let tx = L1TxBuilder::new()
-            .from(wallet.address())
-            .to(TO)
-            .gas_price(gas_price.into())
-            .gas_limit(0)
-            .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-            .build();
-        tx.encode()
-    };
+    let tx: ZKsyncTxEnvelope = L1TxBuilder::new()
+        .from(wallet.address())
+        .to(TO)
+        .gas_price(gas_price.into())
+        .gas_limit(0)
+        .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
+        .build()
+        .into();
     run_tx(tx.clone(), gas_price, native_price, false, false);
     run_tx(tx, gas_price, native_price, false, true);
 }
@@ -236,7 +217,7 @@ fn test_0_gas_limit() {
 // Also call as simulation to skip validation step.
 #[test]
 fn test_0_gas_price() {
-    let wallet = PrivateKeySigner::from_str(WALLET).unwrap();
+    let wallet = testing_signer(0);
     let native_price = 10;
     let gas_price = 0;
     let tx = {
@@ -251,28 +232,26 @@ fn test_0_gas_price() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
     run_tx(tx.clone(), gas_price, native_price, true, false);
     run_tx(tx, gas_price, native_price, true, true);
 
-    let tx = {
-        let tx = L1TxBuilder::new()
-            .from(wallet.address())
-            .to(TO)
-            .gas_price(gas_price.into())
-            .gas_limit(70_000)
-            .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
-            .build();
-        tx.encode()
-    };
+    let tx: ZKsyncTxEnvelope = L1TxBuilder::new()
+        .from(wallet.address())
+        .to(TO)
+        .gas_price(gas_price.into())
+        .gas_limit(70_000)
+        .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
+        .build()
+        .into();
     run_tx(tx.clone(), gas_price, native_price, true, false)
 }
 
 // Test delta gas, pass lower ratio
 #[test]
 fn test_delta_gas() {
-    let wallet = PrivateKeySigner::from_str(WALLET).unwrap();
+    let wallet = testing_signer(0);
     let native_price = 100;
     // Low enough that tx will fail without priority fee
     let ratio = 20;
@@ -290,7 +269,7 @@ fn test_delta_gas() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
     // Should fail
     run_tx(tx, gas_price, native_price, false, false);
@@ -307,7 +286,7 @@ fn test_delta_gas() {
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
     // Should succeed
     run_tx(tx, gas_price, native_price, true, false)

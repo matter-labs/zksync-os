@@ -8,6 +8,8 @@ permissions: read-all
 
 env:
     CARGO_INCREMENTAL: 0
+    ZKSYNC_RISC_V_RUN: true
+    CI: true
 
 # Cancel previous runs that might be caused by appbin update
 concurrency:
@@ -41,7 +43,7 @@ jobs:
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
-              run: cargo test --release -j 3 -- --skip verify_default_binaries
+              run: cargo test --release -j 3
     crypto_test:
         name: crypto crate tests
         runs-on: [matterlabs-ci-runner]
@@ -101,7 +103,7 @@ jobs:
                   ./dump_bin.sh --type singleblock-batch
                   ./dump_bin.sh --type multiblock-batch
             - name: Run binary checker
-              run: cargo test -p binary_checker -- --nocapture
+              run: cargo test -p binary_checker -- --nocapture --ignored
 
     e2e_prove:
         name: e2e_prove

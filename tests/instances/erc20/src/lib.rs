@@ -4,25 +4,22 @@ use rig::{
         primitives::{address, TxKind},
         rpc::types::TransactionRequest,
     },
-    forward_system::run::convert_alloy::FromAlloy,
-    ruint::aliases::{B160, U256},
+    ruint::aliases::U256,
+    TestingFramework,
 };
 use std::path::PathBuf;
-use zksync_os_tests_common::zksync_tx::{encoding::ZKsyncOsEncodable, ZKsyncTxEnvelope};
+use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[test]
 fn get_name_sol() {
-    let mut chain = rig::Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
 
     let erc20_addr = address!("0000000000000000000000000000000000000001");
     let erc20_bytecode = rig::utils::load_sol_bytecode("erc20", "erc20");
-    chain
-        .set_evm_bytecode(B160::from_alloy(erc20_addr), &erc20_bytecode)
-        .set_balance(
-            B160::from_alloy(wallet.address()),
-            U256::from(1_000_000_000_000_000_u64),
-        );
+    tester = tester
+        .with_evm_contract(erc20_addr, &erc20_bytecode)
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
     let tx_get_name = ZKsyncTxEnvelope::from_eth_tx_from_req(
         TransactionRequest {
@@ -34,8 +31,7 @@ fn get_name_sol() {
             ..Default::default()
         },
         wallet,
-    )
-    .encode();
+    );
 
     let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
         "{}/os_profile_get_name_sol.svg",
@@ -46,7 +42,8 @@ fn get_name_sol() {
         profiler_config: Some(pc),
         ..Default::default()
     };
-    chain.run_block(vec![tx_get_name], None, None, Some(run_config));
+    tester = tester.with_run_config(run_config);
+    tester.execute_block(vec![tx_get_name]);
 }
 
 // WASM disabled for now
@@ -84,17 +81,14 @@ fn get_name_sol() {
 
 #[test]
 fn balance_of_sol() {
-    let mut chain = rig::Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
 
     let erc20_addr = address!("0000000000000000000000000000000000000001");
     let erc20_bytecode = rig::utils::load_sol_bytecode("erc20", "erc20");
-    chain
-        .set_evm_bytecode(B160::from_alloy(erc20_addr), &erc20_bytecode)
-        .set_balance(
-            B160::from_alloy(wallet.address()),
-            U256::from(1_000_000_000_000_000_u64),
-        );
+    tester = tester
+        .with_evm_contract(erc20_addr, &erc20_bytecode)
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
 
     let tx_mint = ZKsyncTxEnvelope::from_eth_tx_from_req(
         TransactionRequest {
@@ -113,8 +107,7 @@ fn balance_of_sol() {
             ..Default::default()
         },
         wallet.clone(),
-    )
-    .encode();
+    );
 
     let tx_balance = ZKsyncTxEnvelope::from_eth_tx_from_req(
         TransactionRequest {
@@ -130,8 +123,7 @@ fn balance_of_sol() {
             ..Default::default()
         },
         wallet,
-    )
-    .encode();
+    );
 
     let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
         "{}/os_profile_balance_of_sol.svg",
@@ -142,7 +134,8 @@ fn balance_of_sol() {
         profiler_config: Some(pc),
         ..Default::default()
     };
-    chain.run_block(vec![tx_mint, tx_balance], None, None, Some(run_config));
+    tester = tester.with_run_config(run_config);
+    tester.execute_block(vec![tx_mint, tx_balance]);
 }
 
 // WASM disabled for now
@@ -200,18 +193,15 @@ fn balance_of_sol() {
 
 #[test]
 fn transfer_sol() {
-    let mut chain = rig::Chain::empty(None);
-    let wallet_a = chain.random_signer();
-    let wallet_b = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet_a = tester.random_signer();
+    let wallet_b = tester.random_signer();
 
     let erc20_addr = address!("0000000000000000000000000000000000000001");
     let erc20_bytecode = rig::utils::load_sol_bytecode("erc20", "erc20");
-    chain
-        .set_evm_bytecode(B160::from_alloy(erc20_addr), &erc20_bytecode)
-        .set_balance(
-            B160::from_alloy(wallet_a.address()),
-            U256::from(1_000_000_000_000_000_u64),
-        );
+    tester = tester
+        .with_evm_contract(erc20_addr, &erc20_bytecode)
+        .with_balance(wallet_a.address(), U256::from(1_000_000_000_000_000_u64));
 
     let tx_mint = ZKsyncTxEnvelope::from_eth_tx_from_req(
         TransactionRequest {
@@ -230,8 +220,7 @@ fn transfer_sol() {
             ..Default::default()
         },
         wallet_a.clone(),
-    )
-    .encode();
+    );
 
     let tx_transfer = ZKsyncTxEnvelope::from_eth_tx_from_req(
         TransactionRequest {
@@ -250,8 +239,7 @@ fn transfer_sol() {
             ..Default::default()
         },
         wallet_a,
-    )
-    .encode();
+    );
 
     let mut pc = rig::ProfilerConfig::new(PathBuf::from(format!(
         "{}/os_profile_transfer_sol.svg",
@@ -262,7 +250,8 @@ fn transfer_sol() {
         profiler_config: Some(pc),
         ..Default::default()
     };
-    chain.run_block(vec![tx_mint, tx_transfer], None, None, Some(run_config));
+    tester = tester.with_run_config(run_config);
+    tester.execute_block(vec![tx_mint, tx_transfer]);
 }
 
 // WASM disabled for now

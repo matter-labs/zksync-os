@@ -7,25 +7,20 @@
 //!
 
 use rig::alloy::consensus::TxEip2930;
-use rig::alloy::primitives::{address, TxKind, U256};
-use rig::forward_system::run::convert_alloy::FromAlloy;
+use rig::alloy::primitives::{TxKind, U256};
 use rig::ruint::aliases::B160;
-use rig::{BlockContext, Chain};
-use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
+use rig::{common_target_address, BlockContext, TestingFramework};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[test]
 #[should_panic]
 fn test_invalid_coinbase() {
-    let mut chain = Chain::empty(None);
-    let wallet = chain.random_signer();
+    let mut tester = TestingFramework::new();
+    let wallet = tester.random_signer();
     let from = wallet.address();
-    let target_address = address!("4242000000000000000000000000000000000000");
+    let target_address = common_target_address();
 
-    chain.set_balance(
-        B160::from_alloy(from),
-        U256::from(1_000_000_000_000_000_u64),
-    );
+    tester = tester.with_balance(from, U256::from(1_000_000_000_000_000_u64));
 
     let tx = {
         let tx = TxEip2930 {
@@ -38,11 +33,11 @@ fn test_invalid_coinbase() {
             input: Default::default(),
             access_list: Default::default(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone()).encode()
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
 
     // Create invalid coinbase with 24 bytes set
-    let mut coinbase = rig::ruint::aliases::B160::ZERO;
+    let mut coinbase = B160::ZERO;
     unsafe {
         for limb in coinbase.as_limbs_mut() {
             *limb = u64::MAX;
@@ -55,5 +50,6 @@ fn test_invalid_coinbase() {
         ..Default::default()
     };
 
-    let _result = chain.run_block(vec![tx], Some(block_context), None, None);
+    tester.set_block_context(Some(block_context));
+    let _result = tester.execute_block(vec![tx]);
 }
