@@ -58,22 +58,6 @@ pub fn init_logger() {
     INIT_LOGGER_ONCE.call_once(env_logger::init);
 }
 
-pub trait IntoEncodedTx {
-    fn into_encoded_tx(self) -> zksync_os_interface::traits::EncodedTx;
-}
-
-impl IntoEncodedTx for zksync_os_interface::traits::EncodedTx {
-    fn into_encoded_tx(self) -> zksync_os_interface::traits::EncodedTx {
-        self
-    }
-}
-
-impl IntoEncodedTx for ZKsyncTxEnvelope {
-    fn into_encoded_tx(self) -> zksync_os_interface::traits::EncodedTx {
-        self.encode()
-    }
-}
-
 #[allow(dead_code)]
 mod colors {
     pub const RESET: &str = "\x1b[0m";
@@ -383,7 +367,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     ) -> BlockOutput {
         let encoded_txs = transactions
             .into_iter()
-            .map(IntoEncodedTx::into_encoded_tx)
+            .map(ZKsyncTxEnvelope::encode)
             .collect::<Vec<_>>();
         let (block_output, block_extra_stats, proof_input) =
             if let Some(oracle_factory) = &self.oracle_factory {
@@ -423,7 +407,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     pub fn simulate_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {
         let encoded_txs = transactions
             .into_iter()
-            .map(IntoEncodedTx::into_encoded_tx)
+            .map(ZKsyncTxEnvelope::encode)
             .collect::<Vec<_>>();
         self.chain
             .simulate_block(encoded_txs, self.block_context.clone())
@@ -436,7 +420,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     ) -> Result<BlockOutput, BootloaderSubsystemError> {
         let encoded_txs = transactions
             .into_iter()
-            .map(IntoEncodedTx::into_encoded_tx)
+            .map(ZKsyncTxEnvelope::encode)
             .collect::<Vec<_>>();
         let block_execution_result = if let Some(oracle_factory) = &self.oracle_factory {
             self.chain.run_block_with_extra_stats_with_oracle_factory(
