@@ -7,6 +7,7 @@
 
 use rig::alloy::consensus::TxLegacy;
 use rig::alloy::primitives::{address, TxKind};
+use rig::chain::RunConfig;
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::U256;
 use rig::utils::L1TxBuilder;
@@ -100,6 +101,9 @@ fn test_tx_validator_filters_out_tx_without_bumping_counter() {
 
     let mut tracer = NopTracer::default();
     let mut validator = LoggingTxValidator::new(true, false);
+
+    // Disable RISC-V run because TxValidator is ignored during RISC-V execution
+    tester.set_run_config(Some(RunConfig::without_riscv_run()));
 
     let out = tester.execute_block_with_tracing(vec![tx0, tx1], &mut tracer, &mut validator);
 
@@ -299,6 +303,9 @@ fn test_tx_validator_filters_out_tx_on_begin_tx() {
     let mut tracer = NopTracer::default();
     // Validator that filters on begin_tx only (first tx)
     let mut validator = LoggingTxValidator::new(true, false);
+
+    // Disable RISC-V run because TxValidator is ignored during RISC-V execution
+    tester.set_run_config(Some(RunConfig::without_riscv_run()));
 
     let out = tester.execute_block_with_tracing(vec![tx0, tx1], &mut tracer, &mut validator);
 

@@ -420,6 +420,7 @@ impl<const RANDOMIZED_TREE: bool> ZKsyncOSTester<RANDOMIZED_TREE> {
             .simulate_block(encoded_txs, self.block_context.clone())
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn execute_block_no_panic(
         &mut self,
         transactions: Vec<ZKsyncTxEnvelope>,
