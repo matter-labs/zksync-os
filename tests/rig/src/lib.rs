@@ -346,7 +346,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         n: usize,
         block_context: Option<BlockContext>,
     ) -> BlockOutput {
-        crate::utils::run_block_of_erc20(&mut self.chain, n, block_context)
+        self.run_block_of_erc20_with_fee(n, block_context, 1000)
     }
 
     pub fn run_block_of_erc20_with_fee(
@@ -355,7 +355,16 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         block_context: Option<BlockContext>,
         fee: u128,
     ) -> BlockOutput {
-        crate::utils::run_block_of_erc20_with_fee(&mut self.chain, n, block_context, fee)
+        let transactions = crate::utils::prepare_block_of_erc20_with_fee(&mut self.chain, n, fee);
+        let previous_block_context = self.block_context.clone();
+        if let Some(block_context) = block_context {
+            self.block_context = Some(block_context);
+        }
+
+        let output = self.execute_block(transactions);
+        self.block_context = previous_block_context;
+        self.assert_all_txs_succeeded(&output);
+        output
     }
 
     pub fn execute_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {
