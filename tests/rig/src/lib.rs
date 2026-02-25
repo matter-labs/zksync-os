@@ -404,6 +404,11 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         block_output
     }
 
+    /// Simulate a block in forward mode only.
+    ///
+    /// This method applies only the explicit/attached block context and intentionally
+    /// ignores proving-related configuration such as `run_config`, DA commitment scheme,
+    /// and custom oracle factories.
     pub fn simulate_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {
         let encoded_txs = transactions
             .into_iter()
