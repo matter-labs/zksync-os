@@ -102,7 +102,7 @@ fn test_blockhash() {
         block_hashes[i as usize] = U256::from(n);
     }
     tester = tester
-        .with_block_number(block_number)
+        .with_next_block_number(block_number)
         .with_block_hashes(block_hashes);
 
     let result = tester.execute_block(vec![tx]);

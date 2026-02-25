@@ -97,6 +97,7 @@ pub struct TestingFramework<const RANDOMIZED_TREE: bool = false> {
 }
 
 impl TestingFramework<true> {
+    /// Creates a framework instance backed by a randomized in-memory tree.
     pub fn new_with_randomized_tree() -> Self {
         init_logger();
 
@@ -118,6 +119,7 @@ impl Default for TestingFramework<false> {
 }
 
 impl TestingFramework<false> {
+    /// Creates a framework instance backed by the default in-memory tree.
     pub fn new() -> Self {
         init_logger();
 
@@ -133,17 +135,20 @@ impl TestingFramework<false> {
 }
 
 impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
+    /// Builder: sets the chain ID used for block metadata and transaction signing.
     pub fn with_chain_id(mut self, chain_id: u64) -> Self {
         self.chain.set_chain_id(chain_id);
         self
     }
 
+    /// Builder: sets the 256 previous block hashes exposed to execution.
     pub fn with_block_hashes(mut self, block_hashes: [ruint::aliases::U256; 256]) -> Self {
         self.chain.set_block_hashes(block_hashes);
         self
     }
 
-    pub fn with_block_number(mut self, block_number: u64) -> Self {
+    /// Builder: sets the next block number to execute.
+    pub fn with_next_block_number(mut self, block_number: u64) -> Self {
         self.chain.set_last_block_number(
             block_number
                 .checked_sub(1)
@@ -152,27 +157,33 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: sets default block context used by subsequent block execution.
     pub fn with_block_context(mut self, block_context: BlockContext) -> Self {
         self.block_context = Some(block_context);
         self
     }
 
+    /// Setter: replaces the default block context for subsequent block execution.
     pub fn set_block_context(&mut self, block_context: Option<BlockContext>) -> &mut Self {
         self.block_context = block_context;
         self
     }
 
+    /// Builder: sets the DA commitment scheme used for block execution.
     pub fn with_da_commitment_scheme(mut self, da_commitment_scheme: DACommitmentScheme) -> Self {
         self.da_commitment_scheme = Some(da_commitment_scheme);
         self
     }
 
+    /// Builder: sets run-level configuration for forward/proving execution.
     pub fn with_run_config(mut self, run_config: RunConfig) -> Self {
         self.run_config = Some(run_config);
         self
     }
 
-    pub fn with_oracle_factory(
+    /// Builder: installs a custom oracle factory for forward/proof runs.
+    /// Can be used for testing cases with corrupted or malicious oracles
+    pub fn with_custom_oracle_factory(
         mut self,
         oracle_factory: impl TestingOracleFactory<RANDOMIZED_TREE> + 'static,
     ) -> Self {
@@ -180,6 +191,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: installs selected system contracts into the in-memory chain state.
     pub fn with_system_contracts(
         mut self,
         with_l1_messenger: bool,
@@ -195,6 +207,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: sets account balance for the provided address.
     pub fn with_balance(
         mut self,
         address: alloy::primitives::Address,
@@ -204,6 +217,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: funds account with a fixed default testing balance.
     pub fn with_prefunded_account(mut self, address: alloy::primitives::Address) -> Self {
         self.set_balance(
             address,
@@ -212,6 +226,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: deploys EVM bytecode on the given address.
     pub fn with_evm_contract(
         mut self,
         address: alloy::primitives::Address,
@@ -221,6 +236,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: writes a storage slot value for the given account.
     pub fn with_storage_slot(
         mut self,
         address: alloy::primitives::Address,
@@ -231,22 +247,27 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: injects a preimage value under the provided hash key.
     pub fn with_preimage(mut self, key: zk_ee::utils::Bytes32, value: &[u8]) -> Self {
         self.set_preimage(key, value);
         self
     }
 
+    /// Builder: mints base tokens to the protocol treasury account.
     pub fn with_minted_tokens_to_treasury(mut self) -> Self {
         self.mint_tokens_to_treasury();
         self
     }
 
+    /// Setter: updates run configuration for subsequent block execution.
     pub fn set_run_config(&mut self, run_config: Option<RunConfig>) -> &mut Self {
         self.run_config = run_config;
         self
     }
 
-    pub fn set_oracle_factory(
+    /// Setter: updates custom oracle factory used for subsequent block execution.
+    /// Can be used for testing cases with corrupted or malicious oracles
+    pub fn set_custom_oracle_factory(
         &mut self,
         oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
     ) -> &mut Self {
@@ -254,6 +275,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Setter: sets account balance in chain state.
     pub fn set_balance(
         &mut self,
         address: alloy::primitives::Address,
@@ -264,6 +286,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Setter: deploys EVM bytecode at the provided address.
     pub fn set_evm_contract(
         &mut self,
         address: alloy::primitives::Address,
@@ -274,6 +297,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Setter: writes a raw storage slot for the provided account.
     pub fn set_storage_slot(
         &mut self,
         address: alloy::primitives::Address,
@@ -285,15 +309,18 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Setter: stores a preimage entry under the provided hash key.
     pub fn set_preimage(&mut self, key: zk_ee::utils::Bytes32, value: &[u8]) -> &mut Self {
         self.chain.set_preimage(key, value);
         self
     }
 
+    /// Returns a random signer configured for the active chain ID.
     pub fn random_signer(&self) -> PrivateKeySigner {
         self.chain.random_signer()
     }
 
+    /// Returns a random signer and prefunds it with the default testing balance.
     pub fn prefunded_random_signer(&mut self) -> PrivateKeySigner {
         let signer = self.random_signer();
         self.set_balance(
@@ -303,10 +330,12 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         signer
     }
 
+    /// Mints base tokens to the protocol treasury account.
     pub fn mint_tokens_to_treasury(&mut self) {
         self.chain.mint_tokens_to_treasury();
     }
 
+    /// Returns decoded account properties for the provided address.
     pub fn get_account_properties(
         &mut self,
         address: &alloy::primitives::Address,
@@ -315,16 +344,19 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .get_account_properties(&ruint::aliases::B160::from_alloy(address))
     }
 
+    /// Returns native token balance for the provided address.
     pub fn get_balance(&mut self, address: &alloy::primitives::Address) -> ruint::aliases::U256 {
         self.chain
             .get_account_properties(&ruint::aliases::B160::from_alloy(address))
             .balance
     }
 
+    /// Returns execution metadata of the most recently executed block, if any.
     pub fn last_executed_block_info(&self) -> Option<&LastExecutedBlockInfo> {
         self.last_executed_block_info.as_ref()
     }
 
+    /// Builds and executes an ERC20 transfer block using default fee settings.
     pub fn run_block_of_erc20(
         &mut self,
         n: usize,
@@ -333,6 +365,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self.run_block_of_erc20_with_fee(n, block_context, 1000)
     }
 
+    /// Builds and executes an ERC20 transfer block with an explicit max fee.
     pub fn run_block_of_erc20_with_fee(
         &mut self,
         n: usize,
@@ -351,6 +384,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         output
     }
 
+    /// Executes a block using no-op tracer and validator.
     pub fn execute_block(&mut self, transactions: Vec<ZKsyncTxEnvelope>) -> BlockOutput {
         self.execute_block_with_tracing(
             transactions,
@@ -359,6 +393,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         )
     }
 
+    /// Executes a block with custom tracer and validator hooks.
     pub fn execute_block_with_tracing(
         &mut self,
         transactions: Vec<ZKsyncTxEnvelope>,
@@ -369,31 +404,32 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .into_iter()
             .map(ZKsyncTxEnvelope::encode)
             .collect::<Vec<_>>();
-        let (block_output, block_extra_stats, proof_input) =
-            if let Some(oracle_factory) = &self.oracle_factory {
-                self.chain
-                    .run_block_with_extra_stats_with_oracle_factory(
-                        encoded_txs,
-                        self.block_context.clone(),
-                        self.da_commitment_scheme,
-                        self.run_config.clone(),
-                        tracer,
-                        validator,
-                        oracle_factory.as_ref(),
-                    )
-                    .unwrap_or_else(|err| panic!("block execution failed with custom oracle: {err:?}"))
-            } else {
-                self.chain
-                    .run_block_with_extra_stats(
-                        encoded_txs,
-                        self.block_context.clone(),
-                        self.da_commitment_scheme,
-                        self.run_config.clone(),
-                        tracer,
-                        validator,
-                    )
-                    .unwrap_or_else(|err| panic!("block execution failed: {err:?}"))
-            };
+        let (block_output, block_extra_stats, proof_input) = if let Some(oracle_factory) =
+            &self.oracle_factory
+        {
+            self.chain
+                .run_block_with_extra_stats_with_oracle_factory(
+                    encoded_txs,
+                    self.block_context.clone(),
+                    self.da_commitment_scheme,
+                    self.run_config.clone(),
+                    tracer,
+                    validator,
+                    oracle_factory.as_ref(),
+                )
+                .unwrap_or_else(|err| panic!("block execution failed with custom oracle: {err:?}"))
+        } else {
+            self.chain
+                .run_block_with_extra_stats(
+                    encoded_txs,
+                    self.block_context.clone(),
+                    self.da_commitment_scheme,
+                    self.run_config.clone(),
+                    tracer,
+                    validator,
+                )
+                .unwrap_or_else(|err| panic!("block execution failed: {err:?}"))
+        };
 
         self.last_executed_block_info = Some(LastExecutedBlockInfo {
             block_output: block_output.clone(),
@@ -419,6 +455,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     }
 
     #[allow(clippy::result_large_err)]
+    /// Executes a block and returns a typed error instead of panicking.
     pub fn execute_block_no_panic(
         &mut self,
         transactions: Vec<ZKsyncTxEnvelope>,
@@ -458,6 +495,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         })
     }
 
+    /// Asserts that every transaction in block output completed successfully.
     pub fn assert_all_txs_succeeded(&self, block_output: &BlockOutput) {
         for (i, result) in block_output.tx_results.iter().enumerate() {
             let success = result.as_ref().is_ok_and(|o| o.is_success());

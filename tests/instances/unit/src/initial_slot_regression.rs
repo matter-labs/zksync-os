@@ -249,7 +249,7 @@ fn test_initial_slot_value_assertion() {
     tester = tester
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
         .with_evm_contract(contract_address, &simple_storage_bytecode)
-        .with_oracle_factory(malicious_factory);
+        .with_custom_oracle_factory(malicious_factory);
 
     // This should panic with "initial value of empty slot must be trivial"
     // when the oracle returns invalid initial values for empty storage slots
