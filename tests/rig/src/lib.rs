@@ -470,18 +470,10 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     }
 
     pub fn assert_all_txs_succeeded(&self, block_output: &BlockOutput) {
-        assert!(block_output
-            .tx_results
-            .iter()
-            .cloned()
-            .enumerate()
-            .all(|(i, r)| {
-                let success = r.clone().is_ok_and(|o| o.is_success());
-                if !success {
-                    println!("Transaction {i} failed with: {r:?}")
-                }
-                success
-            }));
+        for (i, result) in block_output.tx_results.iter().enumerate() {
+            let success = result.as_ref().is_ok_and(|o| o.is_success());
+            assert!(success, "Transaction {i} failed with: {result:?}");
+        }
     }
 }
 
