@@ -193,8 +193,10 @@ pub struct RunConfig {
 
 impl Default for RunConfig {
     fn default() -> Self {
-        let do_riscv_run =
-            std::env::var("ZKSYNC_PROVING_RUN").is_ok() || std::env::var("CI").is_ok();
+        let do_riscv_run = Self::should_do_riscv_run(
+            std::env::var_os("ZKSYNC_PROVING_RUN").is_some(),
+            std::env::var_os("CI").is_some(),
+        );
 
         RunConfig {
             app: Some("for_tests".to_string()),
@@ -208,6 +210,10 @@ impl Default for RunConfig {
 }
 
 impl RunConfig {
+    fn should_do_riscv_run(zksync_proving_run_set: bool, ci_set: bool) -> bool {
+        zksync_proving_run_set || ci_set
+    }
+
     pub fn without_riscv_run() -> Self {
         let mut config = Self::default();
         config.disable_riscv_run();
@@ -1224,4 +1230,29 @@ fn run_prover(csr_reads: &[u32]) {
     );
 
     info!("block proved successfully");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RunConfig;
+
+    #[test]
+    fn run_config_should_do_riscv_run_matches_env_signals() {
+        assert!(RunConfig::should_do_riscv_run(true, false));
+        assert!(RunConfig::should_do_riscv_run(false, true));
+        assert!(RunConfig::should_do_riscv_run(true, true));
+        assert!(!RunConfig::should_do_riscv_run(false, false));
+    }
+
+    #[test]
+    fn run_config_without_riscv_run_disables_hash_checks() {
+        let mut config = RunConfig {
+            do_riscv_run: true,
+            check_storage_diff_hashes: true,
+            ..RunConfig::default()
+        };
+        config.disable_riscv_run();
+        assert!(!config.do_riscv_run);
+        assert!(!config.check_storage_diff_hashes);
+    }
 }
