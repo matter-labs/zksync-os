@@ -103,7 +103,7 @@ jobs:
                   ./dump_bin.sh --type singleblock-batch
                   ./dump_bin.sh --type multiblock-batch
             - name: Run binary checker
-              run: cargo test -p binary_checker -- --nocapture -- --ignored
+              run: cargo test -p binary_checker -- --nocapture --ignored
 
     e2e_prove:
         name: e2e_prove
