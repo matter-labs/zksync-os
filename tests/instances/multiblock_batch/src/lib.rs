@@ -6,6 +6,7 @@
 use alloy::consensus::{TxEip1559, TxLegacy};
 use alloy::primitives::TxKind;
 use rig::alloy::primitives::address;
+use rig::chain::RunConfig;
 use rig::forward_system::run::generate_batch_proof_input;
 use rig::log::debug;
 use rig::ruint::aliases::U256;
@@ -40,6 +41,11 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     let mut tester = TestingFramework::new()
         .with_evm_contract(to, &bytecode)
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_run_config(RunConfig {
+            do_riscv_run: true,
+            check_storage_diff_hashes: true,
+            ..Default::default()
+        })
         .with_da_commitment_scheme(da_commitment_scheme);
 
     let block1_result = tester.execute_block(vec![mint_tx]);
@@ -48,6 +54,10 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         .unwrap()
         .proof_input
         .clone();
+    assert!(
+        !block1_proof_input.is_empty(),
+        "block1 proof input must be non-empty; proving run is required"
+    );
 
     let encoded_transfer_tx = {
         let transfer_tx = TxEip1559 {
@@ -70,6 +80,10 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
         .unwrap()
         .proof_input
         .clone();
+    assert!(
+        !block2_proof_input.is_empty(),
+        "block2 proof input must be non-empty; proving run is required"
+    );
 
     let batch_input = generate_batch_proof_input(
         vec![&block1_proof_input, &block2_proof_input],
