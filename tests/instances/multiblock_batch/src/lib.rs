@@ -41,11 +41,7 @@ fn run_multiblock_batch_proof_run(da_commitment_scheme: DACommitmentScheme) {
     let mut tester = TestingFramework::new()
         .with_evm_contract(to, &bytecode)
         .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
-        .with_run_config(RunConfig {
-            do_riscv_run: true,
-            check_storage_diff_hashes: true,
-            ..Default::default()
-        })
+        .with_run_config(RunConfig::with_riscv_run())
         .with_da_commitment_scheme(da_commitment_scheme);
 
     let block1_result = tester.execute_block(vec![mint_tx]);

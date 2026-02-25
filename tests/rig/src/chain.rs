@@ -220,6 +220,13 @@ impl RunConfig {
         config
     }
 
+    pub fn with_riscv_run() -> Self {
+        let mut config = Self::default();
+        config.do_riscv_run = true;
+        config.check_storage_diff_hashes = true; // Enable storage diff hash checks when RISC-V run is enabled
+        config
+    }
+
     pub fn disable_riscv_run(&mut self) {
         self.do_riscv_run = false;
         self.check_storage_diff_hashes = false; // Disable storage diff hash checks when RISC-V run is disabled
