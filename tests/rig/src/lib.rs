@@ -429,12 +429,35 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .into_iter()
             .map(IntoEncodedTx::into_encoded_tx)
             .collect::<Vec<_>>();
-        self.chain.run_block_no_panic(
-            encoded_txs,
-            self.block_context.clone(),
-            self.da_commitment_scheme,
-            self.run_config.clone(),
-        )
+        let block_execution_result = if let Some(oracle_factory) = &self.oracle_factory {
+            self.chain.run_block_with_extra_stats_with_oracle_factory(
+                encoded_txs,
+                self.block_context.clone(),
+                self.da_commitment_scheme,
+                self.run_config.clone(),
+                &mut NopTracer::default(),
+                &mut NopTxValidator,
+                oracle_factory.as_ref(),
+            )
+        } else {
+            self.chain.run_block_with_extra_stats(
+                encoded_txs,
+                self.block_context.clone(),
+                self.da_commitment_scheme,
+                self.run_config.clone(),
+                &mut NopTracer::default(),
+                &mut NopTxValidator,
+            )
+        };
+
+        block_execution_result.map(|(block_output, block_extra_stats, proof_input)| {
+            self.last_executed_block_info = Some(LastExecutedBlockInfo {
+                block_output: block_output.clone(),
+                block_extra_stats,
+                proof_input,
+            });
+            block_output
+        })
     }
 
     pub fn assert_all_txs_succeeded(&self, block_output: &BlockOutput) {
