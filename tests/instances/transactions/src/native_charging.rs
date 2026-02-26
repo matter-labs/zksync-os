@@ -113,22 +113,127 @@ fn test_l1_tx_high_ratio() {
 fn test_l2_tx_low_ratio() {
     let wallet = testing_signer(0);
     let native_price = 100;
-    let gas_price = 100 * LOW_RATIO;
+    // This ratio passes validation but runs out of native during execution.
+    let gas_price = native_price * 20u64;
+    let gas_limit = 60_000;
     let tx = {
         let tx = TxEip1559 {
             chain_id: 37u64,
             nonce: 0,
             max_fee_per_gas: gas_price.into(),
             max_priority_fee_per_gas: gas_price.into(),
-            gas_limit: 60_000,
+            gas_limit,
             to: TxKind::Call(TO),
             value: Default::default(),
             access_list: Default::default(),
             input: hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into(),
         };
-        ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
     };
-    run_tx(tx, gas_price, native_price, false, false)
+
+    let bytecode = hex::decode(crate::ERC_20_BYTECODE).unwrap();
+    let key = crate::compute_erc20_balance_slot(wallet.address());
+    let value = B256::from(U256::from(1_000_000_000_000_000_u64));
+    let block_context = BlockContext {
+        native_price: U256::from(native_price),
+        eip1559_basefee: U256::from(gas_price),
+        ..Default::default()
+    };
+
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(TO, &bytecode)
+        .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+        .with_storage_slot(TO, key, value)
+        .with_block_context(block_context);
+
+    let output = tester.execute_block(vec![tx]);
+    let tx_result = output
+        .tx_results
+        .first()
+        .expect("Must have a tx result")
+        .as_ref()
+        .expect("Tx should be processed as a top-level revert");
+
+    assert!(
+        !tx_result.is_success(),
+        "Low native-per-gas tx should revert by running out of native"
+    );
+    assert_eq!(
+        tx_result.gas_used, gas_limit,
+        "Out-of-native tx must consume full gas limit"
+    );
+}
+
+#[test]
+fn test_l2_tx_not_enough_native_for_pubdata_uses_full_gas_limit() {
+    let wallet = testing_signer(0);
+    let from = wallet.address();
+    let gas_limit = 250_000;
+    let bytecode = hex::decode(
+        "602a600052600160005560016001556001600255600160035560016004556001600555600160065560016007556001600855600160095560206000f3",
+    )
+    .unwrap();
+
+    let make_tx = || {
+        let tx = TxEip1559 {
+            chain_id: 37u64,
+            nonce: 0,
+            max_fee_per_gas: 1000,
+            max_priority_fee_per_gas: 1000,
+            gas_limit,
+            to: TxKind::Call(TO),
+            value: U256::ZERO,
+            input: Default::default(),
+            access_list: Default::default(),
+        };
+        ZKsyncTxEnvelope::from_eth_tx(tx, wallet.clone())
+    };
+
+    // Control execution should succeed, so the failing case below is specific to
+    // post-execution pubdata charging.
+    let control_context = BlockContext {
+        eip1559_basefee: U256::from(1000),
+        native_price: U256::ONE,
+        pubdata_price: U256::ONE,
+        ..Default::default()
+    };
+    let mut control_tester = TestingFramework::new()
+        .with_evm_contract(TO, &bytecode)
+        .with_balance(from, U256::from(1_000_000_000_000_000_u64))
+        .with_block_context(control_context);
+    let control_output = control_tester.execute_block(vec![make_tx()]);
+    let control_tx = control_output.tx_results[0]
+        .as_ref()
+        .expect("Control tx should be processed");
+    assert!(
+        control_tx.is_success(),
+        "Control tx must succeed with regular pubdata pricing"
+    );
+
+    // Expensive pubdata causes a post-execution revert due to insufficient native.
+    let expensive_pubdata_context = BlockContext {
+        eip1559_basefee: U256::from(1000),
+        native_price: U256::ONE,
+        pubdata_price: U256::from(700_000u64),
+        ..Default::default()
+    };
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(TO, &bytecode)
+        .with_balance(from, U256::from(1_000_000_000_000_000_u64))
+        .with_block_context(expensive_pubdata_context);
+    let output = tester.execute_block(vec![make_tx()]);
+    let tx_result = output.tx_results[0]
+        .as_ref()
+        .expect("Tx should be processed even when reverted");
+
+    assert!(
+        !tx_result.is_success(),
+        "Tx should revert when pubdata cannot be paid after execution"
+    );
+    assert_eq!(
+        tx_result.gas_used, gas_limit,
+        "Tx reverted by post-execution pubdata charging must consume full gas limit"
+    );
 }
 
 // Test with a avg cycles/gas ratio, should succeed
