@@ -864,6 +864,8 @@ where
         if !has_enough {
             execution_result = execution_result.to_reverted();
             system_log!(system, "Not enough gas for pubdata after execution\n");
+            // Burn all remaining ergs.
+            context.resources.main_resources.exhaust_ergs();
             Ok((
                 execution_result.to_reverted(),
                 CachedPubdataInfo {
