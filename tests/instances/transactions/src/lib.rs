@@ -8,6 +8,7 @@ use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
 use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
+use rig::basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR;
 use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
@@ -1302,7 +1303,7 @@ fn test_simple_service_transaction() {
 
     let tx = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
         to: alloy::primitives::Address::from_slice(&target_address),
-        input: Default::default(),
+        input: ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR.into(),
         salt: 0,
     });
 
@@ -1348,7 +1349,7 @@ fn test_service_tx_gas_limit_exceeds_block() {
 
     let tx = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
         to: alloy::primitives::Address::from_slice(&target_address),
-        input: Default::default(),
+        input: ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR.into(),
         salt: 0,
     });
 
@@ -1373,17 +1374,17 @@ fn test_service_block_invariants() {
     // Check that a service block with several service txs works
     let tx1 = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
         to: alloy::primitives::Address::from_slice(&target_address),
-        input: Default::default(),
+        input: ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR.into(),
         salt: 0,
     });
     let tx2 = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
         to: alloy::primitives::Address::from_slice(&target_address),
-        input: Default::default(),
+        input: ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR.into(),
         salt: 1,
     });
     let tx3 = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
         to: alloy::primitives::Address::from_slice(&target_address),
-        input: Default::default(),
+        input: ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR.into(),
         salt: 2,
     });
 
@@ -1402,7 +1403,7 @@ fn test_service_block_invariants() {
     // Check that a service block with a non-service tx fails
     let tx4 = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
         to: alloy::primitives::Address::from_slice(&target_address),
-        input: Default::default(),
+        input: ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR.into(),
         salt: 3,
     });
     let tx_non_service = {

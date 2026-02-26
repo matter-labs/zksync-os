@@ -16,15 +16,43 @@ use system_hooks::addresses_constants::{
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ServiceTx<'a> {
     pub(crate) to: &'a [u8; 20], // NOTE: has to be one of the addresses in SERVICE_DESTINATION_WHITELIST
-    pub(crate) data: &'a [u8],
+    pub(crate) data: &'a [u8], // NOTE: has to start with one of the selectors in SERVICE_DESTINATION_WHITELIST
     salt: u64, // Some salt used by the server to identify service transactions. Ignored by ZKsync OS.
 }
 
-const SERVICE_DESTINATION_WHITELIST: &[B160] = &[
-    L2_INTEROP_ROOT_STORAGE_ADDRESS,
-    SYSTEM_CONTEXT_ADDRESS,
-    L2_INTEROP_CENTER_ADDRESS,
+/// Selector for
+/// addInteropRootsInBatch((uint256,uint256,bytes32[])[])
+/// -> 0xcca2f7bc
+pub const ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR: [u8; 4] = [0xcc, 0xa2, 0xf7, 0xbc];
+
+/// Selector for
+/// setSettlementLayerChainId(uint256)
+/// -> 0x040203e6
+pub const SET_SL_CHAIN_ID_SELECTOR: [u8; 4] = [0x04, 0x02, 0x03, 0xe6];
+
+/// Selector for
+/// setInteropFee(uint256)
+/// -> 0x08273d8a
+pub const SET_INTEROP_FEE_SELECTOR: [u8; 4] = [0x09, 0x27, 0x3d, 0x8a];
+
+/// Pairs (destination, selector) that service transactions are allowed
+/// to interact with.
+const SERVICE_DESTINATION_WHITELIST: &[(B160, [u8; 4])] = &[
+    (
+        L2_INTEROP_ROOT_STORAGE_ADDRESS,
+        ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR,
+    ),
+    (SYSTEM_CONTEXT_ADDRESS, SET_SL_CHAIN_ID_SELECTOR),
+    (L2_INTEROP_CENTER_ADDRESS, SET_INTEROP_FEE_SELECTOR),
 ];
+
+fn whitelisted(to: B160, data: &[u8]) -> bool {
+    let selector: [u8; 4] = match data.get(..4).and_then(|bytes| bytes.try_into().ok()) {
+        Some(selector) => selector,
+        None => return false,
+    };
+    SERVICE_DESTINATION_WHITELIST.contains(&(to, selector))
+}
 
 pub const SERVICE_TX_TYPE: u8 = 0x7d;
 
@@ -46,12 +74,11 @@ impl<'a> RlpListDecode<'a> for ServiceTx<'a> {
 
         let to_b160 = B160::from_be_bytes(*to);
 
+        let data = r.bytes()?;
         // Validate whitelist
-        if !SERVICE_DESTINATION_WHITELIST.contains(&to_b160) {
+        if !whitelisted(to_b160, data) {
             return Err(InvalidTransaction::InvalidStructure);
         }
-
-        let data = r.bytes()?;
         let salt = r.u64()?;
         Ok(Self { to, data, salt })
     }
@@ -112,7 +139,7 @@ mod tests {
     #[test]
     fn to_in_whitelist_parses() {
         let to_bytes: [u8; 20] = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes();
-        let data: Vec<u8> = vec![0xde, 0xad, 0xbe, 0xef];
+        let data: Vec<u8> = ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR.to_vec();
 
         let bytes = encode_service_tx(&to_bytes, &data, 0);
 
