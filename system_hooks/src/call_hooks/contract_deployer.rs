@@ -36,6 +36,18 @@ where
 
     debug_assert_eq!(callee, CONTRACT_DEPLOYER_ADDRESS);
 
+    if caller != L2_COMPLEX_UPGRADER_ADDRESS {
+        system_log!(
+            system,
+            "Set bytecode hook: invalid caller (caller={caller:?})\n"
+        );
+        // Pretend to be an empty account
+        return Ok((
+            make_return_state_from_returndata_region(available_resources, &[]),
+            return_memory,
+        ));
+    }
+
     // There are no "payable" methods
     let mut error = nominal_token_value != U256::ZERO;
     let mut is_static = false;
