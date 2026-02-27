@@ -14,7 +14,7 @@ use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
 use rig::forward_system::system::system_types::ForwardRunningSystem;
 use rig::ruint::aliases::{B160, U256};
 use system_hooks::addresses_constants::{
-    CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
+    CONTRACT_DEPLOYER_HOOK_TEMP_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
     SET_BYTECODE_ON_ADDRESS_HOOK,
 };
 use zk_ee::common_structs::system_hooks::HooksStorage;
@@ -88,7 +88,7 @@ impl<'a> Arbitrary<'a> for FuzzInput<'a> {
         if selector == 3 {
             let bias: u8 = Arbitrary::arbitrary(u)?; // 0..=255
             if (bias as usize) < (u8::MAX as usize * 9) / 10 {
-                from = CONTRACT_DEPLOYER_ADDRESS.to_be_bytes();
+                from = CONTRACT_DEPLOYER_HOOK_TEMP_ADDRESS.to_be_bytes();
             }
         }
 

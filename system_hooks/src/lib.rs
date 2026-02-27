@@ -231,7 +231,7 @@ where
     S::IO: IOSubsystemExt,
 {
     hooks.add_call_hook(
-        CONTRACT_DEPLOYER_ADDRESS_LOW,
+        CONTRACT_DEPLOYER_HOOK_TEMP_ADDRESS_LOW,
         SystemCallHook::new(contract_deployer_hook),
     )
 }
