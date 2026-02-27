@@ -13,7 +13,7 @@ use zk_ee::system_log;
 use zk_ee::utils::Bytes32;
 use zk_ee::{internal_error, out_of_return_memory};
 
-pub fn contract_deployer_hook<'a, S: EthereumLikeTypes>(
+pub fn contract_deployer_temp_hook<'a, S: EthereumLikeTypes>(
     request: ExternalCallRequest<S>,
     caller_ee: u8,
     system: &mut System<S>,
@@ -34,7 +34,7 @@ where
         modifier,
     } = request;
 
-    debug_assert_eq!(callee, CONTRACT_DEPLOYER_ADDRESS);
+    debug_assert_eq!(callee, CONTRACT_DEPLOYER_HOOK_TEMP_ADDRESS);
 
     if caller != L2_COMPLEX_UPGRADER_ADDRESS {
         system_log!(

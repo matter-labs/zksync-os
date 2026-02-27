@@ -24,7 +24,7 @@
 extern crate alloc;
 
 use crate::addresses_constants::*;
-use crate::call_hooks::contract_deployer::contract_deployer_hook;
+use crate::call_hooks::contract_deployer_temp::contract_deployer_temp_hook;
 use crate::call_hooks::l1_messenger::l1_messenger_hook;
 use crate::call_hooks::mint_base_token::mint_base_token_hook;
 use crate::call_hooks::set_bytecode_on_address::set_bytecode_on_address_hook;
@@ -232,7 +232,7 @@ where
 {
     hooks.add_call_hook(
         CONTRACT_DEPLOYER_HOOK_TEMP_ADDRESS_LOW,
-        SystemCallHook::new(contract_deployer_hook),
+        SystemCallHook::new(contract_deployer_temp_hook),
     )
 }
 

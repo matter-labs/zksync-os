@@ -88,7 +88,7 @@ impl<'a> Arbitrary<'a> for FuzzInput<'a> {
         if selector == 3 {
             let bias: u8 = Arbitrary::arbitrary(u)?; // 0..=255
             if (bias as usize) < (u8::MAX as usize * 9) / 10 {
-                from = CONTRACT_DEPLOYER_HOOK_TEMP_ADDRESS.to_be_bytes();
+                from = CONTRACT_DEPLOYER_ADDRESS.to_be_bytes();
             }
         }
 
