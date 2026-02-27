@@ -18,7 +18,7 @@ use rig::utils::{
     ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
 use rig::zk_ee::utils::Bytes32;
-use rig::zksync_os_interface::types::ExecutionResult;
+use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
 use rig::{alloy, TestingFramework};
 
 #[test]
@@ -399,6 +399,124 @@ fn test_set_deployed_bytecode_evm_unauthorized() {
 }
 
 #[test]
+fn test_set_bytecode_on_address_unauthorized_pretends_empty_and_no_gas_burn() {
+    let unauthorized_from = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    let set_bytecode_hook_address = address!("0000000000000000000000000000000000007002");
+
+    let calldata =
+        hex::decode("00000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
+            .unwrap();
+
+    let tx = L1TxBuilder::new()
+        .from(unauthorized_from)
+        .to(set_bytecode_hook_address)
+        .input(calldata.clone())
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
+
+    let mut tester = TestingFramework::new();
+    let output = tester.execute_block(vec![tx]);
+
+    let tx_result = &output
+        .tx_results
+        .first()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .execution_result;
+    match tx_result {
+        ExecutionResult::Success(ExecutionOutput::Call(return_data)) => {
+            assert!(
+                return_data.is_empty(),
+                "unauthorized call must return empty data"
+            );
+        }
+        _ => panic!("unauthorized call must succeed as empty account, got: {tx_result:?}"),
+    }
+
+    // The call must not perform code deployment writes.
+    let deployment_write = output.storage_writes.iter().find(|write| {
+        write.account.0 == ACCOUNT_PROPERTIES_STORAGE_ADDRESS.to_be_bytes()
+            && write.account_key.0
+                == address_into_special_storage_key(&B160::from_limbs([0x10002, 0, 0]))
+                    .as_u8_array()
+    });
+    assert!(
+        deployment_write.is_none(),
+        "unauthorized caller must not write bytecode details"
+    );
+
+    let gas_used = call_address_and_measure_gas_cost(
+        set_bytecode_hook_address,
+        unauthorized_from,
+        0,
+        calldata,
+        vec![],
+    );
+    assert_eq!(gas_used, 0, "hook must not burn EVM gas");
+}
+
+#[test]
+fn test_contract_deployer_temp_hook_unauthorized_pretends_empty_and_no_gas_burn() {
+    let unauthorized_from = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    let contract_deployer_temp_hook_address = address!("0000000000000000000000000000000000007003");
+
+    let calldata =
+        hex::decode("f6eca0b000000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
+            .unwrap();
+
+    let tx = L1TxBuilder::new()
+        .from(unauthorized_from)
+        .to(contract_deployer_temp_hook_address)
+        .input(calldata.clone())
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
+
+    let mut tester = TestingFramework::new();
+    let output = tester.execute_block(vec![tx]);
+
+    let tx_result = &output
+        .tx_results
+        .first()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .execution_result;
+    match tx_result {
+        ExecutionResult::Success(ExecutionOutput::Call(return_data)) => {
+            assert!(
+                return_data.is_empty(),
+                "unauthorized call must return empty data"
+            );
+        }
+        _ => panic!("unauthorized call must succeed as empty account, got: {tx_result:?}"),
+    }
+
+    // The call must not perform code deployment writes.
+    let deployment_write = output.storage_writes.iter().find(|write| {
+        write.account.0 == ACCOUNT_PROPERTIES_STORAGE_ADDRESS.to_be_bytes()
+            && write.account_key.0
+                == address_into_special_storage_key(&B160::from_limbs([0x10002, 0, 0]))
+                    .as_u8_array()
+    });
+    assert!(
+        deployment_write.is_none(),
+        "unauthorized caller must not write bytecode details"
+    );
+
+    let gas_used = call_address_and_measure_gas_cost(
+        contract_deployer_temp_hook_address,
+        unauthorized_from,
+        0,
+        calldata,
+        vec![],
+    );
+    assert_eq!(gas_used, 0, "hook must not burn EVM gas");
+}
+
+#[test]
 fn test_l1_messenger_hook_succeeds() {
     // making sure hooks are installed
     let mut tester = TestingFramework::new().with_system_contracts(false, false, true);
@@ -496,7 +614,7 @@ fn test_l1_messenger_hook_unauthorized_sender_ignored() {
     let tx = L1TxBuilder::new()
         .from(unauthorized_from)
         .to(l1_messenger_hook)
-        .input(hook_calldata)
+        .input(hook_calldata.clone())
         .gas_price(1000)
         .gas_limit(200_000)
         .build();
@@ -511,7 +629,27 @@ fn test_l1_messenger_hook_unauthorized_sender_ignored() {
         .unwrap()
         .execution_result;
 
-    assert!(matches!(tx_result, ExecutionResult::Success { .. }));
+    match tx_result {
+        ExecutionResult::Success(ExecutionOutput::Call(return_data)) => {
+            assert!(
+                return_data.is_empty(),
+                "unauthorized call must return empty data"
+            );
+        }
+        _ => panic!("unauthorized call must succeed as empty account, got: {tx_result:?}"),
+    }
+
+    let logs = &output.tx_results[0].as_ref().unwrap().logs;
+    assert!(logs.is_empty(), "unauthorized caller must not emit logs");
+
+    let gas_used = call_address_and_measure_gas_cost(
+        l1_messenger_hook,
+        unauthorized_from,
+        0,
+        hook_calldata,
+        vec![],
+    );
+    assert_eq!(gas_used, 0, "hook must not burn EVM gas");
 }
 
 #[test]
