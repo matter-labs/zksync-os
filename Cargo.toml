@@ -59,8 +59,8 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [workspace.dependencies]
-zksync_os_evm_errors = { version = "0.0.13", default-features =  false }
-zksync_os_interface = { version = "0.0.13", default-features = false }
+zksync_os_evm_errors = { version = "0.0.14", default-features = false }
+zksync_os_interface = { version = "0.0.14", default-features = false }
 
 risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2"}
 blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.5.2", default-features = false }

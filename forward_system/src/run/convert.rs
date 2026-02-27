@@ -120,8 +120,7 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::CreateInitCodeSizeLimit => { InvalidTransaction::CreateInitCodeSizeLimit }
             basic_bootloader::bootloader::errors::InvalidTransaction::InvalidChainId => { InvalidTransaction::InvalidChainId }
             basic_bootloader::bootloader::errors::InvalidTransaction::AccessListNotSupported => { InvalidTransaction::AccessListNotSupported }
-            // TODO: fix mapping after updating interface
-            basic_bootloader::bootloader::errors::InvalidTransaction::PubdataPriceTooHigh => { InvalidTransaction::GasPerPubdataTooHigh }
+            basic_bootloader::bootloader::errors::InvalidTransaction::PubdataPriceTooHigh => { InvalidTransaction::PubdataPriceTooHigh }
             basic_bootloader::bootloader::errors::InvalidTransaction::BlockGasLimitTooHigh => { InvalidTransaction::BlockGasLimitTooHigh }
             basic_bootloader::bootloader::errors::InvalidTransaction::UpgradeTxNotFirst => { InvalidTransaction::UpgradeTxNotFirst }
             basic_bootloader::bootloader::errors::InvalidTransaction::ReceivedInsufficientFees { received, required } => { InvalidTransaction::ReceivedInsufficientFees { received, required } }
@@ -143,8 +142,10 @@ impl IntoInterface<InvalidTransaction>
             basic_bootloader::bootloader::errors::InvalidTransaction::BlobListTooLong => {InvalidTransaction::BlobListTooLong}
             basic_bootloader::bootloader::errors::InvalidTransaction::EmptyBlobList => {InvalidTransaction::EmptyBlobList}
             basic_bootloader::bootloader::errors::InvalidTransaction::BlobElementIsNotSupported => {InvalidTransaction::BlobElementIsNotSupported}
-            // TODO: add missing errors to interface
-            _ => todo!()
+            basic_bootloader::bootloader::errors::InvalidTransaction::CallerGasLimitTooHigh => {InvalidTransaction::CallerGasLimitTooHigh}
+            basic_bootloader::bootloader::errors::InvalidTransaction::NativeResourcesAreTooExpensive => {InvalidTransaction::NativeResourcesAreTooExpensive}
+            basic_bootloader::bootloader::errors::InvalidTransaction::EIP7623IntrinsicGasIsTooLow => {InvalidTransaction::EIP7623IntrinsicGasIsTooLow}
+            basic_bootloader::bootloader::errors::InvalidTransaction::CallerGasLimitMoreThanTxLimit => {InvalidTransaction::CallerGasLimitMoreThanTxLimit}
         }
     }
 }
