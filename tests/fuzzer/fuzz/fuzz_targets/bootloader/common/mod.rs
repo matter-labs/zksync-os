@@ -284,8 +284,8 @@ fn mutate_zksync_transaction(tx: &mut TransactionData, rng: &mut StdRng) {
         }
         1 => mutate_address_inplace(&mut tx.from, rng),
         2 => mutate_address_inplace(&mut tx.to, rng),
-        3 => tx.gas_limit = mutate_u256_vec(tx.gas_limit, rng),
-        4 => tx.gas_per_pubdata_limit = mutate_u256_vec(tx.gas_per_pubdata_limit, rng),
+        3 => tx.gas_limit = mutate_u64_field(tx.gas_limit, rng),
+        4 => tx.gas_per_pubdata_limit = mutate_u32_field(tx.gas_per_pubdata_limit, rng),
         5 => tx.max_fee_per_gas = mutate_u256_vec(tx.max_fee_per_gas, rng),
         6 => tx.max_priority_fee_per_gas = mutate_u256_vec(tx.max_priority_fee_per_gas, rng),
         7 => tx.nonce = mutate_u256_vec(tx.nonce, rng),
@@ -342,6 +342,22 @@ fn mutate_u256_vec(num: U256, rng: &mut StdRng) -> U256 {
     U256::from_be_bytes(mutated_bytes)
 }
 
+fn mutate_u64_field(num: U256, rng: &mut StdRng) -> U256 {
+    mutate_low_bytes(num, 8, rng)
+}
+
+fn mutate_u32_field(num: U256, rng: &mut StdRng) -> U256 {
+    mutate_low_bytes(num, 4, rng)
+}
+
+fn mutate_low_bytes(num: U256, bytes_to_mutate: usize, rng: &mut StdRng) -> U256 {
+    let mut mutated_bytes = num.to_be_bytes();
+    let start = 32usize.saturating_sub(bytes_to_mutate);
+    let idx = rng.gen_range(start..mutated_bytes.len());
+    mutated_bytes[idx] ^= rng.gen::<u8>();
+    U256::from_be_bytes(mutated_bytes)
+}
+
 #[allow(dead_code)]
 fn mutate_u8(num: u8, rng: &mut StdRng) -> u8 {
     num ^ rng.gen::<u8>()
@@ -384,6 +400,10 @@ fn pad32(v: &mut Vec<u8>) {
     }
 }
 
+fn clamp_to_u32(value: usize) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
+
 // Push a dynamic `bytes` arg: put its offset in head, then tail = len + data + pad
 pub(crate) fn abi_push_bytes(
     head: &mut Vec<[u8; 32]>,
@@ -391,9 +411,9 @@ pub(crate) fn abi_push_bytes(
     data: &[u8],
     head_size_bytes: usize,
 ) {
-    let offset = U256::from(head_size_bytes + tail.len());
-    head.push(enc_u256(offset));
-    tail.extend_from_slice(&enc_u256(U256::from(data.len() as u64)));
+    let offset = clamp_to_u32(head_size_bytes + tail.len());
+    head.push(enc_u32(offset));
+    tail.extend_from_slice(&enc_u32(clamp_to_u32(data.len())));
     tail.extend_from_slice(data);
     pad32(tail);
 }
@@ -405,9 +425,9 @@ pub(crate) fn abi_push_bytes32_array(
     items: &[[u8; 32]],
     head_size_bytes: usize,
 ) {
-    let offset = U256::from(head_size_bytes + tail.len());
-    head.push(enc_u256(offset));
-    tail.extend_from_slice(&enc_u256(U256::from(items.len() as u64)));
+    let offset = clamp_to_u32(head_size_bytes + tail.len());
+    head.push(enc_u32(offset));
+    tail.extend_from_slice(&enc_u32(clamp_to_u32(items.len())));
     for it in items {
         tail.extend_from_slice(it);
     }
