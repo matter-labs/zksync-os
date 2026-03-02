@@ -4,6 +4,7 @@ use alloy::dyn_abi::DynSolValue;
 use alloy::network::TxSignerSync;
 use alloy::primitives::Address;
 use alloy::primitives::Signature;
+use alloy::primitives::B256;
 use alloy::rlp::{encode, BufMut, Encodable};
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
@@ -49,6 +50,16 @@ pub fn get_code<P: PreimageSource>(
         None => vec![],
         Some(full_bytecode) => get_unpadded_code(&full_bytecode, account).to_vec(),
     }
+}
+
+/// Computes the canonical ZKsync OS bytecode hash for EVM bytecode.
+///
+/// This follows the same path as account code installation, including
+/// delegation marker handling and artifacts construction.
+pub fn compute_evm_bytecode_hash(evm_code: &[u8]) -> B256 {
+    let mut account = AccountProperties::default();
+    let _ = set_properties_code(&mut account, evm_code);
+    B256::from(account.bytecode_hash.as_u8_array())
 }
 
 /// Sets the balance for an account.

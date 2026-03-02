@@ -1,5 +1,4 @@
-use crate::helpers::get_unpadded_code;
-use alloy::primitives::{Address, B256, KECCAK256_EMPTY};
+use alloy::primitives::{Address, Bytes, B256, KECCAK256_EMPTY};
 use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
@@ -24,25 +23,14 @@ pub trait ViewState: ReadStorage + PreimageSource + Send + Clone {
             &ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
             &address_into_special_storage_key(&FromAlloy::from_alloy(address)),
         );
-        let hash = self.read(key.into_alloy());
-        if let Some(hash) = hash {
-            if hash != B256::ZERO {
-                Some(AccountProperties::decode(
-                    &self.get_preimage(hash).unwrap().try_into().unwrap(),
-                ))
-            } else {
-                None
-            }
-        } else {
+        let hash = self.read(key.into_alloy())?;
+        if hash == B256::ZERO {
             None
+        } else {
+            let preimage = self.get_preimage(hash)?;
+            let encoded: [u8; AccountProperties::ENCODED_SIZE] = preimage.try_into().ok()?;
+            Some(AccountProperties::decode(&encoded))
         }
-    }
-
-    /// Get account's nonce by its address.
-    ///
-    /// Returns `None` if the account doesn't exist
-    fn account_nonce(&mut self, address: Address) -> Option<u64> {
-        self.get_account(address).map(|a| a.nonce)
     }
 }
 
@@ -107,7 +95,9 @@ where
                     None
                 } else {
                     let bytecode = self.code_by_hash_ref(props.bytecode_hash.into_alloy())?;
-                    Some(get_unpadded_code(bytecode.bytes_slice(), &props))
+                    let unpadded =
+                        zksync_os_api::helpers::get_unpadded_code(bytecode.bytes_slice(), &props);
+                    Some(Bytecode::new_legacy(Bytes::copy_from_slice(unpadded)))
                 };
 
                 Ok(AccountInfo {

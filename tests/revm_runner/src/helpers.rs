@@ -1,19 +1,11 @@
-use alloy::{
-    consensus::Transaction,
-    eips::Typed2718,
-    primitives::{Bytes, TxKind},
-    rpc::types::TransactionInput,
-};
-use basic_system::system_implementation::flat_storage_model::AccountProperties;
-use reth_revm::{context::TxEnv, state::Bytecode};
+use alloy::{consensus::Transaction, eips::Typed2718, primitives::TxKind};
+use anyhow::{anyhow, bail, Context};
+use reth_revm::context::TxEnv;
 use zksync_os_revm::{transaction::abstraction::ZKsyncTxBuilder, ZKsyncTx};
 use zksync_os_tests_common::zksync_tx::{ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope};
 
-/// Get unpadded code from full bytecode with artifacts.
-pub fn get_unpadded_code(full_bytecode: &[u8], account: &AccountProperties) -> Bytecode {
-    Bytecode::new_legacy(Bytes::copy_from_slice(
-        &full_bytecode[0..account.unpadded_code_len as usize],
-    ))
+fn checked_u64(value: u128, field: &str) -> anyhow::Result<u64> {
+    u64::try_from(value).with_context(|| format!("{field} does not fit into u64: {value}"))
 }
 
 /// Convert a ZkTransaction into a revm TxEnv for REVM re-execution
@@ -21,7 +13,7 @@ pub fn zk_tx_into_revm_tx(
     tx: &ZKsyncTxEnvelope,
     gas_used_override: Option<u64>,
     force_revert: bool,
-) -> ZKsyncTx<TxEnv> {
+) -> anyhow::Result<ZKsyncTx<TxEnv>> {
     let (
         gas_price,
         gas_priority_fee,
@@ -32,7 +24,7 @@ pub fn zk_tx_into_revm_tx(
         to_mint,
         refund_recipient,
         caller,
-        gas,
+        gas_limit,
         nonce,
     ) = match &tx {
         ZKsyncTxEnvelope::Ethereum(ethereum_tx_envelope, signer) => {
@@ -40,70 +32,73 @@ pub fn zk_tx_into_revm_tx(
             let gas_price = Some(ethereum_tx_envelope.max_fee_per_gas());
             let priority_fee = ethereum_tx_envelope.max_priority_fee_per_gas();
             let value = Some(ethereum_tx_envelope.value());
-            let input = ethereum_tx_envelope.input();
+            let data = ethereum_tx_envelope.input().clone();
             let chain_id = ethereum_tx_envelope.chain_id();
             let access_list = ethereum_tx_envelope
                 .access_list()
                 .cloned()
                 .unwrap_or_default();
-            let gas = Some(ethereum_tx_envelope.gas_limit());
-            let nonce = Some(ethereum_tx_envelope.nonce());
+            let gas_limit = ethereum_tx_envelope.gas_limit();
+            let nonce = ethereum_tx_envelope.nonce();
 
             (
                 gas_price,
                 priority_fee,
                 value,
-                TransactionInput::new(input.clone()),
+                data,
                 chain_id,
                 access_list,
                 Default::default(),
                 None,
                 *signer,
-                gas,
+                gas_limit,
                 nonce,
             )
         }
         ZKsyncTxEnvelope::ZKsync(zksync_specific_tx_envelope) => {
             match zksync_specific_tx_envelope {
                 ZKsyncSpecificTxEnvelope::L1(zksync_l1_tx) => {
+                    let gas_limit = checked_u64(zksync_l1_tx.gas_limit, "L1 tx gas_limit")?;
+                    let nonce = checked_u64(zksync_l1_tx.nonce, "L1 tx nonce")?;
                     (
                         Some(zksync_l1_tx.max_fee_per_gas),
                         Some(zksync_l1_tx.max_priority_fee_per_gas),
                         Some(zksync_l1_tx.value),
-                        TransactionInput::new(zksync_l1_tx.input.clone()),
+                        zksync_l1_tx.input.clone(),
                         None, // Chain id is not specified in ZKsync specific transactions
                         Default::default(), // L1 transactions don't have access lists
                         zksync_l1_tx.to_mint,
                         Some(zksync_l1_tx.refund_recipient),
                         zksync_l1_tx.from,
-                        Some(zksync_l1_tx.gas_limit.try_into().unwrap()), // TODO conversion
-                        Some(zksync_l1_tx.nonce.try_into().unwrap()),     // TODO conversion
+                        gas_limit,
+                        nonce,
                     )
                 }
                 ZKsyncSpecificTxEnvelope::Upgrade(zksync_upgrade_tx) => {
+                    let gas_limit =
+                        checked_u64(zksync_upgrade_tx.gas_limit, "Upgrade tx gas_limit")?;
+                    let nonce = checked_u64(zksync_upgrade_tx.nonce, "Upgrade tx nonce")?;
                     (
                         Some(zksync_upgrade_tx.max_fee_per_gas),
                         Some(zksync_upgrade_tx.max_priority_fee_per_gas),
                         Some(zksync_upgrade_tx.value),
-                        TransactionInput::new(zksync_upgrade_tx.input.clone()),
+                        zksync_upgrade_tx.input.clone(),
                         None, // Chain id is not specified in ZKsync specific transactions
                         Default::default(), // L1 transactions don't have access lists
                         zksync_upgrade_tx.to_mint,
                         Some(zksync_upgrade_tx.refund_recipient),
                         zksync_upgrade_tx.from,
-                        Some(zksync_upgrade_tx.gas_limit.try_into().unwrap()), // TODO conversion
-                        Some(zksync_upgrade_tx.nonce.try_into().unwrap()),     // TODO conversion
+                        gas_limit,
+                        nonce,
                     )
                 }
                 ZKsyncSpecificTxEnvelope::Service(_) => {
-                    unimplemented!(
-                        "System transactions are not currently supported by REVM runner"
-                    );
+                    bail!("System transactions are not supported by REVM runner");
                 }
             }
         }
         ZKsyncTxEnvelope::Custom(_, _) => {
-            panic!("Custom transactions are not supported by REVM runner")
+            bail!("Custom transactions are not supported by REVM runner");
         }
     };
 
@@ -116,12 +111,12 @@ pub fn zk_tx_into_revm_tx(
     // Build TxEnv using the builder pattern
     let mut tx_env_builder = TxEnv::builder()
         .caller(caller)
-        .gas_limit(gas.unwrap())
+        .gas_limit(gas_limit)
         .gas_price(gas_price.unwrap_or_default())
         .kind(transact_to)
         .value(value.unwrap_or_default())
-        .data(data.input.unwrap_or_default())
-        .nonce(nonce.unwrap())
+        .data(data)
+        .nonce(nonce)
         .access_list(access_list)
         .tx_type(Some(tx.ty()))
         .chain_id(chain_id)
@@ -138,6 +133,37 @@ pub fn zk_tx_into_revm_tx(
         .gas_used_override(gas_used_override)
         .force_fail(force_revert)
         .build()
-        .map_err(|e| anyhow::anyhow!("Failed to build TxEnv: {e:?}"))
-        .unwrap()
+        .map_err(|e| anyhow!("Failed to build TxEnv: {e:?}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::rpc::types::TransactionRequest;
+    use zksync_os_tests_common::zksync_tx::{l1_tx::ZKsyncL1Tx, service_tx::ZKsyncServiceTx};
+
+    #[test]
+    fn custom_tx_is_rejected() {
+        let tx = ZKsyncTxEnvelope::new_custom_tx_type(TransactionRequest::default(), 0xff);
+        let err = zk_tx_into_revm_tx(&tx, None, false).unwrap_err();
+        assert!(err.to_string().contains("Custom transactions"));
+    }
+
+    #[test]
+    fn service_tx_is_rejected() {
+        let service_tx = ZKsyncServiceTx::default();
+        let tx = ZKsyncTxEnvelope::from(service_tx);
+        let err = zk_tx_into_revm_tx(&tx, None, false).unwrap_err();
+        assert!(err.to_string().contains("System transactions"));
+    }
+
+    #[test]
+    fn overflowing_l1_gas_limit_is_rejected() {
+        let tx = ZKsyncTxEnvelope::from(ZKsyncL1Tx {
+            gas_limit: (u64::MAX as u128) + 1,
+            ..Default::default()
+        });
+        let err = zk_tx_into_revm_tx(&tx, None, false).unwrap_err();
+        assert!(err.to_string().contains("gas_limit"));
+    }
 }

@@ -1,9 +1,5 @@
 use alloy::primitives::B256;
-use blake2::{Blake2s256, Digest};
 use reth_revm::bytecode::LegacyAnalyzedBytecode;
-
-pub const BYTECODE_ALIGNMENT: usize = core::mem::size_of::<u64>();
-pub const JUMPDEST: u8 = 0x5b;
 
 // ZKsync OS native hash of empty bytecode.
 pub const EMPTY_BYTE_CODE_HASH: B256 = B256::new([
@@ -11,37 +7,9 @@ pub const EMPTY_BYTE_CODE_HASH: B256 = B256::new([
     0x1f, 0x55, 0xb6, 0x48, 0x2c, 0xa1, 0xa5, 0x1e, 0x1b, 0x25, 0x0d, 0xfd, 0x1e, 0xd0, 0xee, 0xf9,
 ]);
 
-#[inline(always)]
-const fn padding_len(deployed_len: usize) -> usize {
-    let word = BYTECODE_ALIGNMENT;
-    let rem = deployed_len % word;
-    if rem == 0 {
-        0
-    } else {
-        word - rem
-    }
-}
-
-fn bytecode_artifacts(evm_code: &LegacyAnalyzedBytecode) -> Vec<u8> {
-    let mut artifacts = evm_code.jump_table().as_slice().to_vec();
-    let u64_capacity = evm_code.original_len().next_multiple_of(u64::BITS as usize);
-    artifacts.resize(u64_capacity / 8, 0);
-    artifacts
-}
-
-/// Compute internal ZKsync OS bytecode hash (bytecode + padding + jump bitmap) via Blake2s.
+/// Compute internal ZKsync OS bytecode hash using the canonical API helper.
 pub fn calculate_bytecode_hash(evm_code: &LegacyAnalyzedBytecode) -> B256 {
-    let original = evm_code.original_bytes();
-    let artifacts = bytecode_artifacts(evm_code);
-    let pad = padding_len(original.len());
-    let full_len = original.len() + pad + artifacts.len();
-
-    let mut buf = vec![0u8; full_len];
-    buf[..original.len()].copy_from_slice(&original);
-    let bitmap_offset = original.len() + pad;
-    buf[bitmap_offset..].copy_from_slice(&artifacts);
-
-    B256::from_slice(&Blake2s256::digest(&buf))
+    zksync_os_api::helpers::compute_evm_bytecode_hash(evm_code.original_bytes().as_ref())
 }
 
 #[cfg(test)]

@@ -1,12 +1,11 @@
-use alloy::primitives::{address, Address, B256, U256};
+use alloy::primitives::{Address, B256, U256};
+use basic_system::system_implementation::flat_storage_model::ACCOUNT_PROPERTIES_STORAGE_ADDRESS;
+use forward_system::run::convert_alloy::IntoAlloy;
 use reth_revm::{bytecode::Bytecode, db::CacheDB, DatabaseRef};
 use std::collections::{HashMap, HashSet};
 use zksync_os_interface::types::{AccountDiff, StorageWrite};
 
 use crate::bytecode_hash::{calculate_bytecode_hash, EMPTY_BYTE_CODE_HASH};
-
-const ACCOUNT_PROPERTIES_STORAGE_ADDRESS: Address =
-    address!("0000000000000000000000000000000000008003");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct AccountSnap {
@@ -224,9 +223,10 @@ where
     DB::Error: std::error::Error + Send + Sync + 'static,
 {
     let mut map = HashMap::new();
+    let account_properties_storage_address = ACCOUNT_PROPERTIES_STORAGE_ADDRESS.into_alloy();
 
     for (addr, account) in &cache_db.cache.accounts {
-        if *addr == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
+        if *addr == account_properties_storage_address {
             continue;
         }
         for (slot_key, slot_val) in &account.storage {
@@ -241,8 +241,9 @@ where
 
 fn build_zk_storage_map(zksync_storage_writes: &[StorageWrite]) -> HashMap<(Address, B256), B256> {
     let mut map = HashMap::new();
+    let account_properties_storage_address = ACCOUNT_PROPERTIES_STORAGE_ADDRESS.into_alloy();
     for w in zksync_storage_writes {
-        if w.account == ACCOUNT_PROPERTIES_STORAGE_ADDRESS {
+        if w.account == account_properties_storage_address {
             continue;
         }
         map.insert((w.account, w.account_key), w.value); // latest write wins

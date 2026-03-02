@@ -11,16 +11,14 @@ categories.workspace = true
 
 [dependencies]
 anyhow = "1"
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
 alloy = { workspace = true, default-features = false, features = [
+    "eips",
     "rpc",
     "rpc-types",
     "rpc-types-trace",
     "serde",
     "serde-bincode-compat",
 ] }
-blake2 = "0.10.6"
 ruint = { workspace = true, default-features = false, features = ["alloc"] }
 reth-revm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
 reth-storage-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
@@ -33,5 +31,6 @@ zksync_os_interface = { workspace = true, default-features = false }
 zk_ee = { path = "../../zk_ee" }
 basic_system = { path = "../../basic_system" }
 forward_system = { path = "../../forward_system" }
+zksync_os_api = { path = "../../api" }
 
 zksync_os_tests_common = { path = "../common" }
