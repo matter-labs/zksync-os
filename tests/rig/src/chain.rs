@@ -207,7 +207,7 @@ impl Default for RunConfig {
             skip_minting_tokens_to_treasury: false,
             profiler_config: None,
             witness_output_file: None,
-            update_state_after_block_execution: true
+            update_state_after_block_execution: true,
         }
     }
 }

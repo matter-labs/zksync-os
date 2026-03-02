@@ -1,5 +1,5 @@
 use alloy::primitives::U256;
-use alloy::rpc::types::{trace::geth::CallFrame};
+use alloy::rpc::types::trace::geth::CallFrame;
 use reth_revm::context::ContextTr;
 use reth_revm::inspector::InspectCommitEvm;
 use reth_revm::{db::CacheDB, Context};
