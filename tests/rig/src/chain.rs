@@ -190,6 +190,7 @@ pub struct RunConfig {
     // do_riscv_run is true
     pub check_storage_diff_hashes: bool,
     pub skip_minting_tokens_to_treasury: bool,
+    pub update_state_after_block_execution: bool,
 }
 
 impl Default for RunConfig {
@@ -206,6 +207,7 @@ impl Default for RunConfig {
             skip_minting_tokens_to_treasury: false,
             profiler_config: None,
             witness_output_file: None,
+            update_state_after_block_execution: true
         }
     }
 }
@@ -301,6 +303,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
     pub fn block_hashes(&self) -> [U256; 256] {
         self.block_hashes
+    }
+
+    pub fn set_timestamp(&mut self, timestamp: u64) {
+        self.block_timestamp = timestamp;
     }
 
     pub fn set_block_hashes(&mut self, block_hashes: [U256; 256]) {
@@ -541,6 +547,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             do_riscv_run,
             check_storage_diff_hashes,
             skip_minting_tokens_to_treasury,
+            update_state_after_block_execution,
         } = run_config;
 
         if !skip_minting_tokens_to_treasury {
@@ -648,27 +655,29 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             stats.computational_native_used = Some(native_used);
         }
 
-        // update state
-        self.previous_block_number = Some(self.next_block_number());
-        self.block_timestamp = block_context.timestamp;
-        for i in 0..255 {
-            self.block_hashes[i] = self.block_hashes[i + 1];
-        }
-        self.block_hashes[255] = U256::from_be_bytes(block_output.header.hash().0);
+        if update_state_after_block_execution {
+            // update state
+            self.previous_block_number = Some(self.next_block_number());
+            self.block_timestamp = block_context.timestamp;
+            for i in 0..255 {
+                self.block_hashes[i] = self.block_hashes[i + 1];
+            }
+            self.block_hashes[255] = U256::from_be_bytes(block_output.header.hash().0);
 
-        for storage_write in block_output.storage_writes.iter() {
-            self.state_tree
-                .cold_storage
-                .insert(storage_write.key.0.into(), storage_write.value.0.into());
-            self.state_tree
-                .storage_tree
-                .insert(&storage_write.key.0.into(), &storage_write.value.0.into());
-        }
+            for storage_write in block_output.storage_writes.iter() {
+                self.state_tree
+                    .cold_storage
+                    .insert(storage_write.key.0.into(), storage_write.value.0.into());
+                self.state_tree
+                    .storage_tree
+                    .insert(&storage_write.key.0.into(), &storage_write.value.0.into());
+            }
 
-        for (hash, preimage) in block_output.published_preimages.iter() {
-            self.preimage_source
-                .inner
-                .insert(hash.0.into(), preimage.clone());
+            for (hash, preimage) in block_output.published_preimages.iter() {
+                self.preimage_source
+                    .inner
+                    .insert(hash.0.into(), preimage.clone());
+            }
         }
 
         let proof_input = if do_riscv_run {
