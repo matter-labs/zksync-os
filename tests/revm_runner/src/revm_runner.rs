@@ -51,9 +51,7 @@ where
         let state_provider = RevmStateProvider::new(
             self.state.clone(),
             block_context.block_hashes,
-            block_context
-                .block_number
-                .saturating_sub(1),
+            block_context.block_number.saturating_sub(1),
         );
         let mut cache_db = CacheDB::new(state_provider);
         let mut evm = Context::default()
@@ -109,6 +107,8 @@ where
             transactions
                 .iter()
                 .zip(&block_output.tx_results)
+                // Ignore invalid transactions - they should be skipped
+                .filter(|(_, tx_output_raw)| tx_output_raw.is_ok())
                 .enumerate()
                 .map(|(idx, (transaction, tx_output_raw))| {
                     let tx_output = tx_output_raw.as_ref().map_err(|e| {
