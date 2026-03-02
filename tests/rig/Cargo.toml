@@ -29,6 +29,7 @@ prover_examples = { workspace = true, optional = true}
 gpu_prover = { workspace = true, optional = true }
 
 zksync_os_tests_common = { path = "../common" }
+zksync_os_revm_runner = { path = "../revm_runner" }
 
 ruint = { workspace = true, default-features = false }
 env_logger = { workspace = true }
