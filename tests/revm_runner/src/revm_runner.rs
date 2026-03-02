@@ -53,8 +53,7 @@ where
             block_context.block_hashes,
             block_context
                 .block_number
-                .checked_sub(1)
-                .expect("Can't process block 0"),
+                .saturating_sub(1),
         );
         let mut cache_db = CacheDB::new(state_provider);
         let mut evm = Context::default()
@@ -155,6 +154,11 @@ where
         if !compare_report.is_empty() {
             log::warn!("State mismatch found after REVM replay");
             compare_report.log_tracing(100);
+            bail!(
+                "REVM consistency mismatch: storage={} account={}",
+                compare_report.storage.len(),
+                compare_report.accounts.len()
+            );
         }
 
         Ok(())

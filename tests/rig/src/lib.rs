@@ -46,12 +46,14 @@ use zk_ee::system::validator::TxValidator;
 pub use zksync_os_api;
 pub use zksync_os_interface;
 use zksync_os_interface::types::BlockOutput;
+use zksync_os_revm_runner::revm_runner::RevmRunner;
 pub use zksync_os_tests_common;
 use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 use crate::chain::TestingOracleFactory;
 use crate::chain::{BlockExtraStats, RunConfig};
+use crate::revm_consistency_checker::{generate_block_context_interface, ChainStateView};
 
 static INIT_LOGGER_ONCE: Once = Once::new();
 pub fn init_logger() {
@@ -135,6 +137,100 @@ impl TestingFramework<false> {
 }
 
 impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
+    fn revm_consistency_check_enabled(&self) -> bool {
+        self.run_config
+            .as_ref()
+            .is_some_and(|config| config.check_revm_consistency)
+    }
+
+    fn run_revm_consistency_check(
+        &self,
+        pre_block_chain: Chain<RANDOMIZED_TREE>,
+        transactions: Vec<ZKsyncTxEnvelope>,
+        block_context: BlockContext,
+        block_output: &BlockOutput,
+    ) -> Result<(), String> {
+        let block_context_interface =
+            generate_block_context_interface(&pre_block_chain, &block_context);
+        let mut revm_runner = RevmRunner::new(ChainStateView {
+            chain: pre_block_chain,
+        });
+
+        revm_runner
+            .run(
+                transactions,
+                block_context_interface,
+                Some(block_output.clone()),
+            )
+            .map_err(|err| format!("{err:#}"))
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn execute_block_internal(
+        &mut self,
+        transactions: Vec<ZKsyncTxEnvelope>,
+        tracer: &mut impl Tracer<ForwardRunningSystem>,
+        validator: &mut impl TxValidator<ForwardRunningSystem>,
+    ) -> Result<BlockOutput, BootloaderSubsystemError> {
+        let should_check_revm_consistency = self.revm_consistency_check_enabled();
+        let pre_block_chain = should_check_revm_consistency.then(|| self.chain.clone());
+        let transactions_for_revm = should_check_revm_consistency.then(|| transactions.clone());
+        let block_context_for_revm =
+            should_check_revm_consistency.then(|| self.block_context.clone().unwrap_or_default());
+
+        let encoded_txs = transactions
+            .into_iter()
+            .map(ZKsyncTxEnvelope::encode)
+            .collect::<Vec<_>>();
+
+        let (block_output, block_extra_stats, proof_input) =
+            if let Some(oracle_factory) = &self.oracle_factory {
+                self.chain.run_block_with_extra_stats_with_oracle_factory(
+                    encoded_txs,
+                    self.block_context.clone(),
+                    self.da_commitment_scheme,
+                    self.run_config.clone(),
+                    tracer,
+                    validator,
+                    oracle_factory.as_ref(),
+                )?
+            } else {
+                self.chain.run_block_with_extra_stats(
+                    encoded_txs,
+                    self.block_context.clone(),
+                    self.da_commitment_scheme,
+                    self.run_config.clone(),
+                    tracer,
+                    validator,
+                )?
+            };
+
+        self.last_executed_block_info = Some(LastExecutedBlockInfo {
+            block_output: block_output.clone(),
+            block_extra_stats,
+            proof_input,
+        });
+
+        if let (Some(pre_block_chain), Some(transactions), Some(block_context)) = (
+            pre_block_chain,
+            transactions_for_revm,
+            block_context_for_revm,
+        ) {
+            self.run_revm_consistency_check(
+                pre_block_chain,
+                transactions,
+                block_context,
+                &block_output,
+            )
+            .map_err(|err| -> BootloaderSubsystemError {
+                log::error!("REVM consistency check failed: {err:#}");
+                zk_ee::internal_error!("REVM consistency check failed").into()
+            })?;
+        }
+
+        Ok(block_output)
+    }
+
     /// Builder: sets the chain ID used for block metadata and transaction signing.
     pub fn with_chain_id(mut self, chain_id: u64) -> Self {
         self.chain.set_chain_id(chain_id);
@@ -409,44 +505,8 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> BlockOutput {
-        let encoded_txs = transactions
-            .into_iter()
-            .map(ZKsyncTxEnvelope::encode)
-            .collect::<Vec<_>>();
-        let (block_output, block_extra_stats, proof_input) = if let Some(oracle_factory) =
-            &self.oracle_factory
-        {
-            self.chain
-                .run_block_with_extra_stats_with_oracle_factory(
-                    encoded_txs,
-                    self.block_context.clone(),
-                    self.da_commitment_scheme,
-                    self.run_config.clone(),
-                    tracer,
-                    validator,
-                    oracle_factory.as_ref(),
-                )
-                .unwrap_or_else(|err| panic!("block execution failed with custom oracle: {err:?}"))
-        } else {
-            self.chain
-                .run_block_with_extra_stats(
-                    encoded_txs,
-                    self.block_context.clone(),
-                    self.da_commitment_scheme,
-                    self.run_config.clone(),
-                    tracer,
-                    validator,
-                )
-                .unwrap_or_else(|err| panic!("block execution failed: {err:?}"))
-        };
-
-        self.last_executed_block_info = Some(LastExecutedBlockInfo {
-            block_output: block_output.clone(),
-            block_extra_stats,
-            proof_input,
-        });
-
-        block_output
+        self.execute_block_internal(transactions, tracer, validator)
+            .unwrap_or_else(|err| panic!("block execution failed: {err:?}"))
     }
 
     /// Simulate a block in forward mode only.
@@ -469,39 +529,9 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         &mut self,
         transactions: Vec<ZKsyncTxEnvelope>,
     ) -> Result<BlockOutput, BootloaderSubsystemError> {
-        let encoded_txs = transactions
-            .into_iter()
-            .map(ZKsyncTxEnvelope::encode)
-            .collect::<Vec<_>>();
-        let block_execution_result = if let Some(oracle_factory) = &self.oracle_factory {
-            self.chain.run_block_with_extra_stats_with_oracle_factory(
-                encoded_txs,
-                self.block_context.clone(),
-                self.da_commitment_scheme,
-                self.run_config.clone(),
-                &mut NopTracer::default(),
-                &mut NopTxValidator,
-                oracle_factory.as_ref(),
-            )
-        } else {
-            self.chain.run_block_with_extra_stats(
-                encoded_txs,
-                self.block_context.clone(),
-                self.da_commitment_scheme,
-                self.run_config.clone(),
-                &mut NopTracer::default(),
-                &mut NopTxValidator,
-            )
-        };
-
-        block_execution_result.map(|(block_output, block_extra_stats, proof_input)| {
-            self.last_executed_block_info = Some(LastExecutedBlockInfo {
-                block_output: block_output.clone(),
-                block_extra_stats,
-                proof_input,
-            });
-            block_output
-        })
+        let mut tracer = NopTracer::default();
+        let mut validator = NopTxValidator;
+        self.execute_block_internal(transactions, &mut tracer, &mut validator)
     }
 
     /// Asserts that every transaction in block output completed successfully.

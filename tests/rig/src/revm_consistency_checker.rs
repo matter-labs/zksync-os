@@ -9,18 +9,18 @@ use zksync_os_revm_runner::revm_state_provider::ViewState;
 use crate::{BlockContext, Chain};
 
 #[derive(Clone)]
-pub struct ChainStateView {
-    pub chain: Chain,
+pub struct ChainStateView<const RANDOMIZED_TREE: bool = false> {
+    pub chain: Chain<RANDOMIZED_TREE>,
 }
 
-impl PreimageSource for ChainStateView {
+impl<const RANDOMIZED_TREE: bool> PreimageSource for ChainStateView<RANDOMIZED_TREE> {
     fn get_preimage(&mut self, hash: B256) -> Option<Vec<u8>> {
         let hash = Bytes32::from_alloy(hash);
         self.chain.preimage_source.inner.get(&hash).cloned()
     }
 }
 
-impl ReadStorage for ChainStateView {
+impl<const RANDOMIZED_TREE: bool> ReadStorage for ChainStateView<RANDOMIZED_TREE> {
     fn read(&mut self, key: B256) -> Option<B256> {
         let key = Bytes32::from_alloy(key);
         let value = self.chain.state_tree.read(key);
@@ -29,7 +29,7 @@ impl ReadStorage for ChainStateView {
     }
 }
 
-impl ViewState for ChainStateView {
+impl<const RANDOMIZED_TREE: bool> ViewState for ChainStateView<RANDOMIZED_TREE> {
     fn get_account(&mut self, address: Address) -> Option<AccountProperties> {
         let address = ruint::aliases::B160::from_alloy(address);
         self.chain.get_account_properties_maybe(&address)
@@ -37,8 +37,8 @@ impl ViewState for ChainStateView {
 }
 
 use zksync_os_interface::types::BlockContext as BlockContextInterface;
-pub fn generate_block_context_interface(
-    chain: &Chain,
+pub fn generate_block_context_interface<const RANDOMIZED_TREE: bool>(
+    chain: &Chain<RANDOMIZED_TREE>,
     rig_block_context: &BlockContext,
 ) -> BlockContextInterface {
     BlockContextInterface {

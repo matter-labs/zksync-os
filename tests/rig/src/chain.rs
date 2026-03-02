@@ -3,20 +3,20 @@ use alloy::consensus::Header;
 use alloy::hex;
 use alloy::signers::local::PrivateKeySigner;
 use alloy_rlp::{Decodable, Encodable};
+use basic_bootloader::bootloader::BasicBootloader;
 use basic_bootloader::bootloader::block_flow::ethereum::PectraForkHeader;
 use basic_bootloader::bootloader::config::BasicBootloaderCallSimulationConfig;
 use basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig;
 use basic_bootloader::bootloader::constants::MAX_BLOCK_GAS_LIMIT;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use basic_bootloader::bootloader::transaction_flow::ethereum::EthereumTransactionFlow;
-use basic_bootloader::bootloader::BasicBootloader;
+use basic_system::system_implementation::ethereum_storage_model::EthereumMPT;
 use basic_system::system_implementation::ethereum_storage_model::caches::account_properties::EthereumAccountProperties;
 use basic_system::system_implementation::ethereum_storage_model::vec_trait::VecCtor;
-use basic_system::system_implementation::ethereum_storage_model::EthereumMPT;
 use basic_system::system_implementation::flat_storage_model::FlatStorageCommitment;
 use basic_system::system_implementation::flat_storage_model::{
-    address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
-    TREE_HEIGHT,
+    ACCOUNT_PROPERTIES_STORAGE_ADDRESS, AccountProperties, TREE_HEIGHT,
+    address_into_special_storage_key,
 };
 use forward_system::run::query_processors::DACommitmentSchemeResponder;
 use forward_system::run::query_processors::EthereumCLResponder;
@@ -29,8 +29,8 @@ use forward_system::run::query_processors::UARTPrintResponder;
 use forward_system::run::result_keeper::ForwardRunningResultKeeper;
 use forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree, NoopTxCallback};
 use forward_system::system::bootloader::run_forward_no_panic;
-use forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
 use forward_system::system::system_types::ForwardRunningSystem;
+use forward_system::system::system_types::ethereum::EthereumStorageSystemTypesWithPostOps;
 use log::warn;
 use log::{debug, info, trace};
 use oracle_provider::MemorySource;
@@ -44,7 +44,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use zk_ee::common_structs::da_commitment_scheme::DACommitmentScheme;
-use zk_ee::common_structs::{derive_flat_storage_key, ProofData};
+use zk_ee::common_structs::{ProofData, derive_flat_storage_key};
 use zk_ee::system::metadata::zk_metadata::{BlockHashes, BlockMetadataFromOracle};
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
@@ -189,21 +189,26 @@ pub struct RunConfig {
     // Only to be used when state-diffs-pi feature is enabled in the binary and
     // do_riscv_run is true
     pub check_storage_diff_hashes: bool,
+    // Whether to replay the block in REVM and assert no state divergences.
+    // Can be enabled via ZKSYNC_REVM_CONSISTENCY_CHECK env var.
+    pub check_revm_consistency: bool,
     pub skip_minting_tokens_to_treasury: bool,
     pub update_state_after_block_execution: bool,
 }
 
 impl Default for RunConfig {
     fn default() -> Self {
-        let do_riscv_run = Self::should_do_riscv_run(
-            std::env::var_os("ZKSYNC_RISC_V_RUN").is_some(),
-            std::env::var_os("CI").is_some(),
-        );
+        let zksync_risc_v_run = Self::parse_explicit_bool(std::env::var("ZKSYNC_RISC_V_RUN").ok());
+        let ci_is_true =
+            Self::parse_explicit_bool(std::env::var("CI").ok()).is_some_and(|value| value);
+        let do_riscv_run = Self::should_do_riscv_run(zksync_risc_v_run, ci_is_true);
+        let check_revm_consistency = std::env::var_os("ZKSYNC_REVM_CONSISTENCY_CHECK").is_some();
 
         RunConfig {
             app: Some("for_tests".to_string()),
             do_riscv_run,
             check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
+            check_revm_consistency,
             skip_minting_tokens_to_treasury: false,
             profiler_config: None,
             witness_output_file: None,
@@ -213,8 +218,20 @@ impl Default for RunConfig {
 }
 
 impl RunConfig {
-    fn should_do_riscv_run(zksync_proving_run_set: bool, ci_set: bool) -> bool {
-        zksync_proving_run_set || ci_set
+    fn parse_explicit_bool(value: Option<String>) -> Option<bool> {
+        value.and_then(|v| {
+            if v.eq_ignore_ascii_case("true") {
+                Some(true)
+            } else if v.eq_ignore_ascii_case("false") {
+                Some(false)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn should_do_riscv_run(zksync_risc_v_run: Option<bool>, ci_is_true: bool) -> bool {
+        zksync_risc_v_run == Some(true) || (ci_is_true && zksync_risc_v_run != Some(false))
     }
 
     pub fn without_riscv_run() -> Self {
@@ -234,6 +251,14 @@ impl RunConfig {
     pub fn disable_riscv_run(&mut self) {
         self.do_riscv_run = false;
         self.check_storage_diff_hashes = false; // Disable storage diff hash checks when RISC-V run is disabled
+    }
+
+    pub fn enable_revm_consistency_check(&mut self) {
+        self.check_revm_consistency = true;
+    }
+
+    pub fn disable_revm_consistency_check(&mut self) {
+        self.check_revm_consistency = false;
     }
 }
 
@@ -546,6 +571,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             app,
             do_riscv_run,
             check_storage_diff_hashes,
+            check_revm_consistency: _,
             skip_minting_tokens_to_treasury,
             update_state_after_block_execution,
         } = run_config;
@@ -839,9 +865,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         }
 
         // we will do some really bad heuristics here
-        use basic_system::system_implementation::ethereum_storage_model::digits_from_key;
         use basic_system::system_implementation::ethereum_storage_model::BoxInterner;
         use basic_system::system_implementation::ethereum_storage_model::Path;
+        use basic_system::system_implementation::ethereum_storage_model::digits_from_key;
 
         let mut interner = BoxInterner::with_capacity_in(1 << 26, Global);
         let mut accounts_mpt: EthereumMPT<'_, Global, VecCtor, false> =
@@ -859,7 +885,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                     let key = B160::from_be_bytes::<20>(el[..].try_into().unwrap());
                     account_properties.insert(key, props);
                 } else {
-                    warn!("Account 0x{} is in preimages list, but there is no MTP witness to get it's properties", hex::encode(el));
+                    warn!(
+                        "Account 0x{} is in preimages list, but there is no MTP witness to get it's properties",
+                        hex::encode(el)
+                    );
                 }
             }
         }
@@ -1256,10 +1285,37 @@ mod tests {
 
     #[test]
     fn run_config_should_do_riscv_run_matches_env_signals() {
-        assert!(RunConfig::should_do_riscv_run(true, false));
-        assert!(RunConfig::should_do_riscv_run(false, true));
-        assert!(RunConfig::should_do_riscv_run(true, true));
-        assert!(!RunConfig::should_do_riscv_run(false, false));
+        assert!(RunConfig::should_do_riscv_run(Some(true), false));
+        assert!(RunConfig::should_do_riscv_run(Some(true), true));
+
+        assert!(!RunConfig::should_do_riscv_run(Some(false), false));
+        assert!(!RunConfig::should_do_riscv_run(Some(false), true));
+
+        assert!(!RunConfig::should_do_riscv_run(None, false));
+        assert!(RunConfig::should_do_riscv_run(None, true));
+    }
+
+    #[test]
+    fn parse_explicit_bool_parses_only_true_or_false() {
+        assert_eq!(
+            RunConfig::parse_explicit_bool(Some("true".to_owned())),
+            Some(true)
+        );
+        assert_eq!(
+            RunConfig::parse_explicit_bool(Some("TRUE".to_owned())),
+            Some(true)
+        );
+        assert_eq!(
+            RunConfig::parse_explicit_bool(Some("false".to_owned())),
+            Some(false)
+        );
+        assert_eq!(
+            RunConfig::parse_explicit_bool(Some("FALSE".to_owned())),
+            Some(false)
+        );
+        assert_eq!(RunConfig::parse_explicit_bool(Some("1".to_owned())), None);
+        assert_eq!(RunConfig::parse_explicit_bool(Some("yes".to_owned())), None);
+        assert_eq!(RunConfig::parse_explicit_bool(None), None);
     }
 
     #[test]
