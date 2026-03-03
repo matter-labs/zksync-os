@@ -359,46 +359,6 @@ fn test_contract_deployer_temp_hook() {
 }
 
 #[test]
-fn test_set_deployed_bytecode_evm_unauthorized() {
-    let bytecode = hex::decode("0123456789").unwrap();
-    let code_hash = Bytes32::from_array(
-        hex::decode("1c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7")
-            .unwrap()
-            .try_into()
-            .unwrap(),
-    );
-    let mut tester = TestingFramework::new()
-        .with_system_contracts(false, false, true)
-        .with_preimage(code_hash, &bytecode);
-
-    let from = address!("000000000000000000000000000000000000800e");
-    let contract_deployer_address = address!("0000000000000000000000000000000000008006");
-    let calldata =
-        hex::decode("231b395700000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b9440000000000000000000000000000000000000000000000000000000000000005")
-            .unwrap();
-
-    let tx = L1TxBuilder::new()
-        .from(from)
-        .to(contract_deployer_address)
-        .input(calldata)
-        .gas_price(1000)
-        .gas_limit(200_000)
-        .build();
-
-    let output = tester.execute_block(vec![tx]);
-
-    let result = &output
-        .tx_results
-        .first()
-        .unwrap()
-        .as_ref()
-        .unwrap()
-        .execution_result;
-
-    assert!(matches!(result, ExecutionResult::Revert(_)));
-}
-
-#[test]
 fn test_set_bytecode_on_address_unauthorized_pretends_empty_and_no_gas_burn() {
     let unauthorized_from = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     let set_bytecode_hook_address = address!("0000000000000000000000000000000000007002");
@@ -519,7 +479,7 @@ fn test_contract_deployer_temp_hook_unauthorized_pretends_empty_and_no_gas_burn(
 #[test]
 fn test_l1_messenger_hook_succeeds() {
     // making sure hooks are installed
-    let mut tester = TestingFramework::new().with_system_contracts(false, false, true);
+    let mut tester = TestingFramework::new().with_system_contracts(false, false);
 
     let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
 
@@ -562,7 +522,7 @@ fn test_l1_messenger_hook_succeeds() {
 #[test]
 fn test_l1_messenger_hook_fails_with_invalid_calldata() {
     // making sure hooks are installed
-    let mut tester = TestingFramework::new().with_system_contracts(false, false, true);
+    let mut tester = TestingFramework::new().with_system_contracts(false, false);
 
     let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
 
@@ -595,7 +555,7 @@ fn test_l1_messenger_hook_fails_with_invalid_calldata() {
 #[test]
 fn test_l1_messenger_hook_unauthorized_sender_ignored() {
     // making sure hooks are installed
-    let mut tester = TestingFramework::new().with_system_contracts(false, false, true);
+    let mut tester = TestingFramework::new().with_system_contracts(false, false);
 
     // ❌ this should NOT be the L1Messenger system contract address
     let unauthorized_from = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
@@ -661,7 +621,7 @@ fn test_l2_base_token_withdraw_events() {
     let withdrawal_amount = alloy::primitives::U256::from(1000000000000000000u64); // 1 ETH
 
     let mut tester = TestingFramework::new()
-        .with_system_contracts(true, true, false)
+        .with_system_contracts(true, true)
         .with_balance(sender, withdrawal_amount);
 
     // Prepare withdraw(address) calldata
@@ -727,7 +687,7 @@ fn test_l2_base_token_withdraw_with_message_events() {
 
     // Set up initial balance for the sender
     let mut tester = TestingFramework::new()
-        .with_system_contracts(true, true, false)
+        .with_system_contracts(true, true)
         .with_balance(sender, withdrawal_amount);
 
     // Prepare withdrawWithMessage(address,bytes) calldata
@@ -813,7 +773,7 @@ fn test_l2_base_token_withdraw_with_dirty_address() {
     // Deliberately set invalid balance (insufficient funds)
     // Set up initial balance for the sender
     let mut tester = TestingFramework::new()
-        .with_system_contracts(true, true, false)
+        .with_system_contracts(true, true)
         .with_balance(sender, withdrawal_amount);
 
     // Prepare withdraw(address) calldata
@@ -856,7 +816,7 @@ fn test_l2_base_token_withdraw_with_message_with_dirty_address() {
 
     // Set up initial balance for the sender
     let mut tester = TestingFramework::new()
-        .with_system_contracts(true, true, false)
+        .with_system_contracts(true, true)
         .with_balance(sender, withdrawal_amount);
 
     // Prepare withdrawWithMessage(address,bytes) calldata

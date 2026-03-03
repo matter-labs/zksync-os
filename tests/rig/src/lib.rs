@@ -191,17 +191,16 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     }
 
     /// Builder: installs selected system contracts into the in-memory chain state.
+    /// `with_legacy_contract_deployer` is kept for API compatibility and is currently a no-op.
     pub fn with_system_contracts(
         mut self,
         with_l1_messenger: bool,
         with_l2_base_token: bool,
-        with_contract_deployer: bool,
     ) -> Self {
         crate::testing_utils::install_system_contracts(
             &mut self.chain,
             with_l1_messenger,
             with_l2_base_token,
-            with_contract_deployer,
         );
         self
     }

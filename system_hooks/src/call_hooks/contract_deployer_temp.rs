@@ -1,6 +1,6 @@
 //!
 //! Contract deployer system hook implementation.
-//! It implements a `setDeployedCodeEVM` method, similar to Era.
+//! It implements a `setBytecodeDetailsEVM` method, similar to Era.
 //! It's needed for protocol upgrades.
 //!
 use super::super::*;

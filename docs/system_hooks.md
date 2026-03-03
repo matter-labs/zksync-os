@@ -17,7 +17,8 @@ System hooks have two distinct use cases:
 - Implementing system functionality needed for ZKsync operations:
   - L1 messenger system hook
   - Set bytecode on address system hook
-  - Mint base token system hook (temporary, to be replaced)
+  - Contract deployer system hook (temporary for backward competibility)
+  - Mint base token system hook (used only for system-level mints)
 
 ## L1 messenger system hook
 
@@ -26,6 +27,7 @@ It can only be called by the L1 messenger system contract at address `0x8008`.
 The input should be the ABI-encoded parameters: sender address and message bytes.
 
 Implementation of the L1 messenger system hook decodes the input and records the message using the system method.
+Calls from any other caller are treated as calls to an empty account: success with empty returndata and no side effects.
 
 ## Set bytecode on address system hook
 
@@ -43,6 +45,7 @@ Key features:
 - Used exclusively for protocol upgrades approved by governance
 - Does not publish full bytecode in pubdata to fit within gas/calldata limits
 - Bytecodes are published separately via Ethereum calldata
+- Calls from unauthorized callers are treated as calls to an empty account: success with empty returndata, no writes, and no EVM gas burn.
 
 ## Mint base token system hook
 
@@ -52,8 +55,9 @@ The calldata must be exactly 32 bytes containing the amount to mint (as uint256)
 
 ## Contract deployer system hook
 
-The contract deployer system hook implements only 1 method: `setBytecodeDetailsEVM(address,bytes32,uint32,bytes32)`.
-It allows setting any deployed EVM bytecode to any address but can be called only by the special system address.
+The contract deployer system hook is installed on the ContractDeployer address `0x8006`.
+It implements only 1 method: `setBytecodeDetailsEVM(address,bytes32,uint32,bytes32)`.
+It allows setting any deployed EVM bytecode to any address, but only when called by the ComplexUpgrader system address `0x800f`.
 
 It accepts bytecode hash, bytecode length, and observable bytecode hash.
 Please note that full bytecode will not be published in the pubdata.
@@ -61,3 +65,4 @@ We want to be able to perform upgrade with 1 tx, so we designed this method this
 
 It will be used only by protocol upgrade transactions, which are approved by governance.
 Bytecodes will be published separately with Ethereum calldata.
+Calls from unauthorized callers are treated as calls to an empty account: success with empty returndata, no writes, and no EVM gas burn.

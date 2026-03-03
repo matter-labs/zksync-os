@@ -252,7 +252,7 @@ fn test_withdrawal() {
     let transactions = vec![withdrawal_tx, withdrawal_with_message_tx];
 
     let mut tester = TestingFramework::new()
-        .with_system_contracts(true, true, false)
+        .with_system_contracts(true, true)
         .with_prefunded_account(wallet.address());
 
     let output = tester.execute_block(transactions);
