@@ -144,7 +144,7 @@ where
                     "Contract deployer failure: setBytecodeDetailsEVM called with static context",
                 ));
             }
-            // in future we need to handle regular(not genesis) protocol upgrades
+            // Additional security check just in case. Call from anauthorized caller should be filtered earlier.
             if caller != COMPLEX_UPGRADER_ADDRESS {
                 return Ok(Err(
                     "Contract deployer failure: unauthorized caller for setBytecodeDetailsEVM",
@@ -185,7 +185,7 @@ where
 
             // Although this can be called as a part of protocol upgrade,
             // we are checking the next invariants, just in case
-            // EIP-158: reject code of length > 24576.
+            // EIP-170: reject code of length > 24576.
             if bytecode_length as usize > MAX_CODE_SIZE {
                 return Ok(Err(
                     "Contract deployer failure: setBytecodeDetailsEVM called with invalid bytecode(length > 24576)",
