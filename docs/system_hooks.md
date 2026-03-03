@@ -32,7 +32,8 @@ Calls from any other caller are treated as calls to an empty account: success wi
 ## Set bytecode on address system hook
 
 The set bytecode on address system hook (at address `0x7002`) allows setting deployed EVM bytecode to any address.
-It can only be called by the Contract Deployer system contract at address `0x8006`.
+It can only be called by the Contract Deployer system contract at address `0x8006`
+or directly by the ComplexUpgrader system contract at address `0x800f`.
 
 The hook accepts the following ABI-encoded parameters:
 - `address` - target address to set bytecode on (32 bytes, ABI padded)
