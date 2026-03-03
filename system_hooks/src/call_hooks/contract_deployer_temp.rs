@@ -34,12 +34,12 @@ where
         modifier,
     } = request;
 
-    debug_assert_eq!(callee, CONTRACT_DEPLOYER_HOOK_TEMP_ADDRESS);
+    debug_assert_eq!(callee, CONTRACT_DEPLOYER_ADDRESS);
 
     if caller != L2_COMPLEX_UPGRADER_ADDRESS {
         system_log!(
             system,
-            "Set bytecode hook: invalid caller (caller={caller:?})\n"
+            "ContractDeployer hook: invalid caller (caller={caller:?})\n"
         );
         // Pretend to be an empty account
         return Ok((

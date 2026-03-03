@@ -21,11 +21,6 @@ pub const SET_BYTECODE_ON_ADDRESS_HOOK_LOW: u16 = 0x7002;
 pub const SET_BYTECODE_ON_ADDRESS_HOOK: B160 =
     B160::from_limbs([SET_BYTECODE_ON_ADDRESS_HOOK_LOW as u64, 0, 0]);
 
-// Temporary system hook to imitate Contract Deployer system contract. Should be removed after the upgrade.
-pub const CONTRACT_DEPLOYER_HOOK_TEMP_ADDRESS_LOW: u16 = 0x7003;
-pub const CONTRACT_DEPLOYER_HOOK_TEMP_ADDRESS: B160 =
-    B160::from_limbs([CONTRACT_DEPLOYER_HOOK_TEMP_ADDRESS_LOW as u64, 0, 0]);
-
 // L2 base token system contract
 pub const L2_BASE_TOKEN_ADDRESS_LOW: u16 = 0x800a;
 pub const L2_BASE_TOKEN_ADDRESS: B160 = B160::from_limbs([L2_BASE_TOKEN_ADDRESS_LOW as u64, 0, 0]);
