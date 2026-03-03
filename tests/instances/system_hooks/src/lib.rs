@@ -299,7 +299,7 @@ fn test_set_bytecode_details_evm() {
 #[test]
 fn test_contract_deployer_temp_hook() {
     let complex_upgrader_address = address!("000000000000000000000000000000000000800f");
-    let contract_deployer_temp_hook_address = address!("0000000000000000000000000000000000007003");
+    let contract_deployer_temp_hook_address = address!("0000000000000000000000000000000000008006");
 
     let bytecode = hex::decode("0123456789").unwrap();
     let code_hash = Bytes32::from_array(
@@ -460,7 +460,7 @@ fn test_set_bytecode_on_address_unauthorized_pretends_empty_and_no_gas_burn() {
 #[test]
 fn test_contract_deployer_temp_hook_unauthorized_pretends_empty_and_no_gas_burn() {
     let unauthorized_from = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-    let contract_deployer_temp_hook_address = address!("0000000000000000000000000000000000007003");
+    let contract_deployer_temp_hook_address = address!("0000000000000000000000000000000000008006");
 
     let calldata =
         hex::decode("f6eca0b000000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
