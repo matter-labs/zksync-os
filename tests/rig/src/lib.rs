@@ -191,7 +191,6 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     }
 
     /// Builder: installs selected system contracts into the in-memory chain state.
-    /// `with_legacy_contract_deployer` is kept for API compatibility and is currently a no-op.
     pub fn with_system_contracts(
         mut self,
         with_l1_messenger: bool,

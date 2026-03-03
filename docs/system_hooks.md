@@ -17,7 +17,7 @@ System hooks have two distinct use cases:
 - Implementing system functionality needed for ZKsync operations:
   - L1 messenger system hook
   - Set bytecode on address system hook
-  - Contract deployer system hook (temporary for backward competibility)
+  - Contract deployer system hook (temporary for backward compatibility)
   - Mint base token system hook (used only for system-level mints)
 
 ## L1 messenger system hook
@@ -54,6 +54,8 @@ It can only be called by the L2 base token contract at address `0x800a`.
 The calldata must be exactly 32 bytes containing the amount to mint (as uint256).
 
 ## Contract deployer system hook
+
+This hook is temporary needed for backward compatibility to not break existing upgrade flow.
 
 The contract deployer system hook is installed on the ContractDeployer address `0x8006`.
 It implements only 1 method: `setBytecodeDetailsEVM(address,bytes32,uint32,bytes32)`.

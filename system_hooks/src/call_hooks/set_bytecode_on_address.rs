@@ -36,8 +36,8 @@ where
 
     debug_assert_eq!(callee, SET_BYTECODE_ON_ADDRESS_HOOK);
 
-    // Can be used only by Contract Deployer system contract
-    if caller != CONTRACT_DEPLOYER_ADDRESS {
+    // Can be used only by Contract Deployer system contract or directly by complex upgrader
+    if caller != CONTRACT_DEPLOYER_ADDRESS && caller != COMPLEX_UPGRADER_ADDRESS {
         system_log!(
             system,
             "Set bytecode hook: invalid caller (caller={caller:?})\n"

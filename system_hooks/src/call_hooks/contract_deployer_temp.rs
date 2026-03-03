@@ -36,7 +36,7 @@ where
 
     debug_assert_eq!(callee, CONTRACT_DEPLOYER_ADDRESS);
 
-    if caller != L2_COMPLEX_UPGRADER_ADDRESS {
+    if caller != COMPLEX_UPGRADER_ADDRESS {
         system_log!(
             system,
             "ContractDeployer hook: invalid caller (caller={caller:?})\n"
@@ -111,7 +111,6 @@ where
 
 // setBytecodeDetailsEVM(address,bytes32,uint32,bytes32) - f6eca0b0
 pub const SET_EVM_BYTECODE_DETAILS: &[u8] = &[0xf6, 0xec, 0xa0, 0xb0];
-pub const L2_COMPLEX_UPGRADER_ADDRESS: B160 = B160::from_limbs([0x800f, 0, 0]);
 
 fn contract_deployer_hook_inner<S: EthereumLikeTypes>(
     mut calldata: &[u8],
@@ -146,7 +145,7 @@ where
                 ));
             }
             // in future we need to handle regular(not genesis) protocol upgrades
-            if caller != L2_COMPLEX_UPGRADER_ADDRESS {
+            if caller != COMPLEX_UPGRADER_ADDRESS {
                 return Ok(Err(
                     "Contract deployer failure: unauthorized caller for setBytecodeDetailsEVM",
                 ));
