@@ -19,7 +19,8 @@ pub fn with_profiler(path: impl Into<PathBuf>) -> RunConfig {
 
     let mut config = full_proof();
     let mut profiler_config = ProfilerConfig::new(path.into());
-    profiler_config.frequency_recip = 1;
+    // Keep sampling aligned with existing run_block_generate_witness defaults.
+    profiler_config.frequency_recip = 10;
     config.profiler_config = Some(profiler_config);
     config
 }
