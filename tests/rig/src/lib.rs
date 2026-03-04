@@ -2,13 +2,56 @@
 #![feature(generic_const_exprs)]
 #![feature(allocator_api)]
 #![feature(array_chunks)]
+//! # ZKsync OS Test Rig
 //!
-//! This crate contains infrastructure to write ZKsync OS integration tests.
-//! It contains `Chain` - in memory chain state structure with methods to run blocks, change state
-//! and few utility methods(in the `utils` module) to encode transactions, load contracts, etc.
+//! This crate provides all infrastructure needed to write ZKsync OS integration tests.
 //!
+//! ## Core components
+//!
+//! | Module | What it contains |
+//! |--------|-----------------|
+//! | [`chain`] | [`Chain`] — in-memory chain state; [`BlockContext`]; [`RunConfig`] |
+//! | [`constants`] | Named constants: chain ID, gas limits, fee params, system addresses |
+//! | [`run_config`] | `RunConfig` preset constructors: [`run_config::forward_only`], [`run_config::full_proof`] |
+//! | [`builder`] | [`builder::ChainBuilder`] and [`builder::TxBuilder`] — fluent APIs for setup & signing |
+//! | [`assertions`] | Assertion macros: `assert_tx_success!`, `assert_tx_reverted!`, `assert_all_success!`, … |
+//! | [`utils`] | Low-level helpers: `sign_and_encode_alloy_tx`, `load_sol_bytecode`, … |
+//! | [`testing_utils`] | `call_address_and_measure_gas_cost` and call-tracer helpers |
+//!
+//! ## Quick-start example
+//!
+//! ```rust,ignore
+//! use rig::{Chain, builder::ChainBuilder, builder::TxBuilder, run_config, constants::*};
+//! use rig::utils::sign_and_encode_alloy_tx;
+//!
+//! #[test]
+//! fn my_test() {
+//!     let signer = PrivateKeySigner::random();
+//!     let sender = B160::from_be_bytes(signer.address().into_array());
+//!
+//!     let mut chain = ChainBuilder::new()
+//!         .with_balance(sender, U256::from(DEFAULT_BALANCE))
+//!         .build();
+//!
+//!     let tx = TxBuilder::new()
+//!         .from(signer)
+//!         .to(some_address)
+//!         .gas_limit(TRANSFER_GAS_LIMIT)
+//!         .build();
+//!
+//!     let output = chain.run_block(vec![tx], None, None, Some(run_config::full_proof()));
+//!     assert_tx_success!(output, 0);
+//! }
+//! ```
+//!
+//! See [`tests/TESTING.md`] for a full reference guide.
+
 use std::sync::Once;
+pub mod assertions;
+pub mod builder;
 pub mod chain;
+pub mod constants;
+pub mod run_config;
 pub mod testing_utils;
 pub mod utils;
 
