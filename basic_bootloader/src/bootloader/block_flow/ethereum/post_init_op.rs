@@ -12,8 +12,15 @@ where
     ) -> Result<(), InternalError> {
         add_precompiles(system_functions)?;
 
-        hooks::eip_2537::initialize_eip_2537(system_functions)?;
-        hooks::eip_152::initialize_eip_152(system_functions)?;
+        #[cfg(feature = "eip-2537")]
+        {
+            hooks::eip_2537::initialize_eip_2537(system_functions)?;
+        }
+
+        #[cfg(feature = "eip-152")]
+        {
+            hooks::eip_152::initialize_eip_152(system_functions)?;
+        }
 
         Ok(())
     }

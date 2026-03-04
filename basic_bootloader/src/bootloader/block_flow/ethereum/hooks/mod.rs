@@ -1,5 +1,6 @@
-//! System hooks only used by ethereum STF for now.
-//! Once they are reviewed and tested, they can be moved to system_hooks.
+//! System hooks used by ethereum STF, re-exported from shared hooks.
 
-pub(crate) mod eip_152;
-pub(crate) mod eip_2537;
+#[cfg(feature = "eip-152")]
+pub(crate) use crate::bootloader::hooks::eip_152;
+#[cfg(feature = "eip-2537")]
+pub(crate) use crate::bootloader::hooks::eip_2537;
