@@ -255,7 +255,8 @@ impl Case {
     ) -> Vec<Self> {
         let mut cases = vec![];
 
-        let mut skip_balance_check_for_sender_and_coinbase = hardfork_version != "Cancun";
+        let mut skip_balance_check_for_sender_and_coinbase =
+            hardfork_version != "Cancun" && hardfork_version != "Prague";
 
         let mut indexes_for_expected_results = vec![];
         // The boolean represents if the expectException flag is set.
@@ -430,7 +431,8 @@ impl Case {
             return vec![];
         }
 
-        let mut skip_balance_check_for_sender_and_coinbase = hardfork_version != "Cancun";
+        let mut skip_balance_check_for_sender_and_coinbase =
+            hardfork_version != "Cancun" && hardfork_version != "Prague";
 
         // Apply hash-based filter
         if test_definition
