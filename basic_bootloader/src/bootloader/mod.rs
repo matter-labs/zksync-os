@@ -11,6 +11,7 @@ use zk_ee::system::validator::TxValidator;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt, IOTeardown, System, SystemTypes};
 
 pub mod block_flow;
+pub mod hooks;
 pub mod run_single_interaction;
 pub mod runner;
 pub mod supported_ees;
