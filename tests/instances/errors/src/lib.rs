@@ -192,7 +192,7 @@ fn explicit_revert_no_data() {
 
 #[test]
 fn explicit_revert_with_data() {
-    let revert_with_data = hex::decode("63deadbeef601c5260046000fd").unwrap();
+    let revert_with_data = hex::decode("63deadbeef6000526004601cfd").unwrap();
     let contract = address!("0000000000000000000000000000000000000202");
 
     let signer = PrivateKeySigner::random();
@@ -209,6 +209,14 @@ fn explicit_revert_with_data() {
         .build();
     let output = tester.execute_block(vec![tx]);
     assert_tx_reverted!(output, 0);
+
+    let tx_out = output.tx_results[0].as_ref().unwrap();
+    match &tx_out.execution_result {
+        rig::zksync_os_interface::types::ExecutionResult::Revert(data) => {
+            assert_eq!(data, &hex::decode("deadbeef").unwrap());
+        }
+        _ => panic!("expected revert with payload"),
+    }
 }
 
 #[test]
@@ -314,8 +322,21 @@ fn zero_length_deployed_code() {
         .gas_limit(DEPLOY_GAS_LIMIT)
         .build();
     let output = tester.execute_block(vec![tx]);
-    match &output.tx_results[0] {
-        Ok(_) | Err(_) => {}
+    assert_eq!(output.tx_results.len(), 1);
+    assert_tx_success!(output, 0);
+
+    let tx_out = output.tx_results[0].as_ref().unwrap();
+    match &tx_out.execution_result {
+        rig::zksync_os_interface::types::ExecutionResult::Success(
+            rig::zksync_os_interface::types::ExecutionOutput::Create(data, address),
+        ) => {
+            assert!(data.is_empty(), "runtime code must be empty");
+            assert_ne!(
+                *address,
+                address!("0000000000000000000000000000000000000000")
+            );
+        }
+        _ => panic!("expected successful create execution output"),
     }
 }
 
@@ -348,41 +369,55 @@ fn revert_does_not_mutate_storage() {
 
 #[test]
 fn tstore_reverts_on_frame_revert() {
-    let contract_bytecode =
-        hex::decode("3660001460125761dead60005d60006000fd5b60005c60005260206000f3").unwrap();
-    let contract = address!("0000000000000000000000000000000000000d01");
+    let inner_bytecode = hex::decode("600160005d60006000fd").unwrap();
+    let inner_addr = address!("0000000000000000000000000000000000000d11");
 
-    let signer1 = PrivateKeySigner::random();
-    let signer2 = PrivateKeySigner::random();
-    let sender1 = signer1.address();
-    let sender2 = signer2.address();
+    let inner_bytes = inner_addr.into_array();
+    let mut outer_bytecode: Vec<u8> = vec![
+        0x60, 0x00, // out_size
+        0x60, 0x00, // out_offset
+        0x60, 0x00, // in_size
+        0x60, 0x00, // in_offset
+        0x60, 0x00, // value
+        0x73, // push20(inner)
+    ];
+    outer_bytecode.extend_from_slice(&inner_bytes);
+    outer_bytecode.extend_from_slice(&[
+        0x5a, // gas
+        0xf1, // call
+        0x50, // pop(success)
+        0x60, 0x00, // key = 0
+        0x5c, // tload
+        0x60, 0x00, // mem offset
+        0x52, // mstore
+        0x60, 0x20, // size
+        0x60, 0x00, // offset
+        0xf3, // return
+    ]);
+    let outer_addr = address!("0000000000000000000000000000000000000d12");
+
+    let signer = PrivateKeySigner::random();
+    let sender = signer.address();
 
     let mut tester = new_tester()
-        .with_balance(sender1, U256::from(DEFAULT_BALANCE))
-        .with_balance(sender2, U256::from(DEFAULT_BALANCE))
-        .with_evm_contract(contract, &contract_bytecode);
+        .with_balance(sender, U256::from(DEFAULT_BALANCE))
+        .with_evm_contract(inner_addr, &inner_bytecode)
+        .with_evm_contract(outer_addr, &outer_bytecode);
 
-    let tx0 = TxBuilder::new()
-        .from(signer1)
-        .to(contract)
-        .calldata(vec![0x01])
-        .gas_limit(CALL_GAS_LIMIT)
-        .build();
-    let tx1 = TxBuilder::new()
-        .from(signer2)
-        .to(contract)
+    let tx = TxBuilder::new()
+        .from(signer)
+        .to(outer_addr)
         .gas_limit(CALL_GAS_LIMIT)
         .build();
 
-    let output = tester.execute_block(vec![tx0, tx1]);
-    assert_tx_reverted!(output, 0);
-    assert_tx_success!(output, 1);
+    let output = tester.execute_block(vec![tx]);
+    assert_tx_success!(output, 0);
 
-    let tx1_out = output.tx_results[1].as_ref().unwrap();
-    let returned = tx1_out.as_returned_bytes();
+    let tx_out = output.tx_results[0].as_ref().unwrap();
+    let returned = tx_out.as_returned_bytes();
     assert_eq!(
         returned, &[0u8; 32],
-        "transient storage slot 0 must be 0 in tx1 — tx0 reverted"
+        "transient storage written in a reverted inner frame must be rolled back"
     );
 }
 
