@@ -11,6 +11,16 @@ where
     ) -> Result<(), InternalError> {
         system_hooks::add_precompiles(system_functions)?;
 
+        #[cfg(feature = "eip-2537")]
+        {
+            crate::bootloader::hooks::eip_2537::initialize_eip_2537(system_functions)?;
+        }
+
+        #[cfg(feature = "eip-152")]
+        {
+            crate::bootloader::hooks::eip_152::initialize_eip_152(system_functions)?;
+        }
+
         #[cfg(not(feature = "disable_system_contracts"))]
         {
             system_hooks::add_l1_messenger(system_functions)?;
