@@ -48,6 +48,8 @@ pub struct EvmTester {
     pub mutation_path: Option<String>,
     pub run_spec_tests: bool,
     pub proof_run: bool,
+    /// Global hardfork override from CLI (takes precedence over per-test overrides).
+    pub hardfork: Option<String>,
 }
 
 impl EvmTester {
@@ -60,6 +62,7 @@ impl EvmTester {
         workflow: Workflow,
         mutation_path: Option<String>,
         proof_run: bool,
+        hardfork: Option<String>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             summary,
@@ -68,6 +71,7 @@ impl EvmTester {
             mutation_path,
             run_spec_tests: true,
             proof_run,
+            hardfork,
         })
     }
 
@@ -144,6 +148,7 @@ where {
             environment,
             self.mutation_path.clone(),
             Path::new(index_path),
+            self.hardfork.clone(),
         )
         .map_err(|error| anyhow::anyhow!("Failed to read the tests directory `{path}`: {error}"))
     }

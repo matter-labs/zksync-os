@@ -18,6 +18,7 @@ pub fn read_all(
     environment: Environment,
     mutation_path: Option<String>,
     index_path: &Path,
+    cli_hardfork: Option<String>,
 ) -> anyhow::Result<Vec<Test>> {
     let mut index_maybe = read_index(index_path);
 
@@ -50,6 +51,9 @@ pub fn read_all(
                 .skip(1)
                 .collect();
 
+            // CLI hardfork takes precedence over per-test/per-directory overrides
+            let hardfork_override = cli_hardfork.clone().or(test.hardfork_override);
+
             Some(Test::from_ethereum_spec_test(
                 &file,
                 test.skip_calldatas,
@@ -60,7 +64,7 @@ pub fn read_all(
                 relative_path,
                 mutation_path.clone(),
                 None,
-                test.hardfork_override,
+                hardfork_override,
             ))
         })
         .flatten()

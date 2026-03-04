@@ -67,6 +67,7 @@ fn main_inner(arguments: Arguments) -> anyhow::Result<()> {
         arguments.workflow,
         arguments.mutation_path,
         arguments.proof_run,
+        arguments.hardfork,
     )?;
 
     let run_time_start = Instant::now();
@@ -116,6 +117,7 @@ mod tests {
             mutation_path: None,
             update_indexes: false,
             proof_run: false,
+            hardfork: None,
         };
 
         crate::main_inner(arguments).expect("Manual testing failed");
