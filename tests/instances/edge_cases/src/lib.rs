@@ -102,17 +102,41 @@ fn empty_calldata_call_to_contract() {
 
 // ─── Multiple txs with state dependencies ────────────────────────────────────
 
-/// Two transactions in the same block where tx1 writes a slot and tx2 reads it.
-/// Both must succeed and the state produced by tx1 must be visible to tx2.
+/// Two transactions in the same block where tx0 writes a slot and tx1 reads it.
+/// Both must succeed and tx1 must see the value written by tx0.
+///
+/// Both transactions call the SAME contract so that tx1 reads from the exact
+/// storage namespace that tx0 wrote to. Using separate contracts would test
+/// cross-account isolation (always 0), not within-block state visibility.
+///
+/// Contract dispatch (by calldata presence):
+///   - Non-empty calldata → SSTORE slot 0 ← 0xAB, STOP
+///   - Empty calldata     → SLOAD slot 0, MSTORE, RETURN 32 bytes
+///
+/// Bytecode layout:
+///   Offset  Byte  Instruction
+///    0      36    CALLDATASIZE
+///    1      60 00 PUSH1 0
+///    3      14    EQ
+///    4      60 0d PUSH1 13    ← JUMPDEST offset
+///    6      57    JUMPI
+///    7      60 ab PUSH1 0xAB  ← write path
+///    9      60 00 PUSH1 0
+///   11      55    SSTORE
+///   12      00    STOP
+///   13      5b    JUMPDEST    ← read path
+///   14      60 00 PUSH1 0
+///   16      54    SLOAD
+///   17      60 00 PUSH1 0
+///   19      52    MSTORE
+///   20      60 20 PUSH1 32
+///   22      60 00 PUSH1 0
+///   24      f3    RETURN
 #[test]
 fn multi_tx_block_state_dependency() {
-    // Writer contract: PUSH1 0xAB, PUSH1 0, SSTORE, PUSH1 0, PUSH1 0, RETURN
-    let write_bytecode = hex::decode("60ab60005560006000f3").unwrap();
-    // Reader contract: PUSH1 0, SLOAD, PUSH1 0, MSTORE, PUSH1 32, PUSH1 0, RETURN
-    let read_bytecode = hex::decode("60005460005260206000f3").unwrap();
-
-    let writer_addr = address!("0000000000000000000000000000000000000501");
-    let reader_addr = address!("0000000000000000000000000000000000000502");
+    let contract_bytecode =
+        hex::decode("36600014600d5760ab600055005b60005460005260206000f3").unwrap();
+    let contract_addr = address!("0000000000000000000000000000000000000501");
 
     let signer1 = PrivateKeySigner::random();
     let signer2 = PrivateKeySigner::random();
@@ -122,19 +146,21 @@ fn multi_tx_block_state_dependency() {
     let mut chain = ChainBuilder::new()
         .with_balance(sender1, U256::from(DEFAULT_BALANCE))
         .with_balance(sender2, U256::from(DEFAULT_BALANCE))
-        .with_evm_bytecode(b160(writer_addr), write_bytecode)
-        .with_evm_bytecode(b160(reader_addr), read_bytecode)
+        .with_evm_bytecode(b160(contract_addr), contract_bytecode)
         .build();
 
+    // tx0: non-empty calldata → SSTORE slot 0 = 0xAB
     let tx_write = TxBuilder::new()
         .from(signer1)
-        .to(writer_addr)
+        .to(contract_addr)
+        .calldata(vec![0x01])
         .gas_limit(CALL_GAS_LIMIT)
         .build();
 
+    // tx1: empty calldata → SLOAD slot 0 and return 32 bytes
     let tx_read = TxBuilder::new()
         .from(signer2)
-        .to(reader_addr)
+        .to(contract_addr)
         .gas_limit(CALL_GAS_LIMIT)
         .build();
 
@@ -143,15 +169,34 @@ fn multi_tx_block_state_dependency() {
 
     assert_tx_success!(output, 0);
     assert_tx_success!(output, 1);
+
+    // tx1 returns slot 0's value; must equal 0xAB written by tx0 in the same block
+    let tx1_out = output.tx_results[1].as_ref().unwrap();
+    let returned = tx1_out.as_returned_bytes();
+    let mut expected = [0u8; 32];
+    expected[31] = 0xAB;
+    assert_eq!(returned, &expected, "tx1 must see slot 0 = 0xAB written by tx0 in the same block");
 }
 
 // ─── Multiple blocks ─────────────────────────────────────────────────────────
 
 /// State written in block N is visible in block N+1.
+///
+/// Block 1 writes a known value (0xBE) into storage slot 0, block 2 reads it back
+/// and asserts the returned bytes equal 0xBE — proving that state actually persists
+/// across block boundaries.
+///
+/// Contract dispatch (by calldata presence):
+///   - Non-empty calldata → SSTORE slot 0 ← 0xBE, STOP
+///   - Empty calldata     → SLOAD slot 0, MSTORE, RETURN 32 bytes
+///
+/// Same bytecode layout as `multi_tx_block_state_dependency` but with 0xBE.
+///   Offset 13 = JUMPDEST (read path), value written = 0xBE.
 #[test]
 fn state_persists_across_blocks() {
-    // Contract: reads slot 0, returns it — slot 0 is 0 initially
-    let read_slot0 = hex::decode("60005460005260206000f3").unwrap();
+    // Dispatch: non-empty calldata → SSTORE slot 0 = 0xBE; empty → SLOAD slot 0 and return
+    let contract_bytecode =
+        hex::decode("36600014600d5760be600055005b60005460005260206000f3").unwrap();
     let contract = address!("0000000000000000000000000000000000000601");
 
     let signer = PrivateKeySigner::random();
@@ -159,29 +204,38 @@ fn state_persists_across_blocks() {
 
     let mut chain = ChainBuilder::new()
         .with_balance(sender, U256::from(DEFAULT_BALANCE))
-        .with_evm_bytecode(b160(contract), read_slot0)
+        .with_evm_bytecode(b160(contract), contract_bytecode)
         .build();
 
-    // Block 1: simple call (state set up)
+    // Block 1: write 0xBE to slot 0
     let tx1 = TxBuilder::new()
         .from(signer.clone())
         .to(contract)
+        .calldata(vec![0x01]) // non-empty → SSTORE path
         .gas_limit(CALL_GAS_LIMIT)
         .build();
 
     let out1 = chain.run_block(vec![tx1], None, None, Some(run_config::forward_only()));
     assert_tx_success!(out1, 0);
 
-    // Block 2: another call to same contract using nonce 1
+    // Block 2: read slot 0 — must return 0xBE written in block 1
     let tx2 = TxBuilder::new()
         .from(signer)
         .to(contract)
         .nonce(1)
+        // empty calldata → SLOAD path
         .gas_limit(CALL_GAS_LIMIT)
         .build();
 
     let out2 = chain.run_block(vec![tx2], None, None, Some(run_config::forward_only()));
     assert_tx_success!(out2, 0);
+
+    // Assert the returned value equals the 0xBE written in block 1
+    let tx2_out = out2.tx_results[0].as_ref().unwrap();
+    let returned = tx2_out.as_returned_bytes();
+    let mut expected = [0u8; 32];
+    expected[31] = 0xBE;
+    assert_eq!(returned, &expected, "slot 0 must equal 0xBE written in block 1");
 }
 
 // ─── Gas measurement ─────────────────────────────────────────────────────────

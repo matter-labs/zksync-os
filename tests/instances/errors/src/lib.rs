@@ -502,70 +502,82 @@ fn revert_does_not_mutate_storage() {
 
 /// TSTORE followed by REVERT: the transient write must not persist after the revert.
 ///
-/// Tx0: call a contract that does `TSTORE 0 <- 0xdead; REVERT`. The tx reverts.
-/// Tx1 (next block): call a "check" contract that does `TLOAD 0; return 32 bytes`.
-///   The returned value must be 0x00..00, proving the TSTORE was rolled back.
+/// Both transactions call the SAME contract so that tx1 reads from the exact same
+/// account's transient storage namespace that tx0 wrote to.
 ///
-/// Note: transient storage is per-frame and is rolled back with the frame on REVERT.
-/// (opcode 0x5d = TSTORE, 0x5c = TLOAD, 0xfd = REVERT)
+/// Contract dispatch (by calldata presence):
+///   - Non-empty calldata → TSTORE slot 0 ← 0xdead, REVERT (tx reverts)
+///   - Empty calldata     → TLOAD slot 0, MSTORE, RETURN 32 bytes
+///
+/// Bytecode layout:
+///   Offset  Byte      Instruction
+///    0      36        CALLDATASIZE
+///    1      60 00     PUSH1 0
+///    3      14        EQ
+///    4      60 12     PUSH1 18     ← JUMPDEST offset (read path)
+///    6      57        JUMPI
+///    7      61 de ad  PUSH2 0xdead ← write+revert path
+///   10      60 00     PUSH1 0      (slot)
+///   12      5d        TSTORE
+///   13      60 00     PUSH1 0      (revert size)
+///   15      60 00     PUSH1 0      (revert offset)
+///   17      fd        REVERT
+///   18      5b        JUMPDEST     ← read path
+///   19      60 00     PUSH1 0
+///   21      5c        TLOAD
+///   22      60 00     PUSH1 0
+///   24      52        MSTORE
+///   25      60 20     PUSH1 32
+///   27      60 00     PUSH1 0
+///   29      f3        RETURN
+///
+/// If TSTORE were accidentally implemented as persistent SSTORE (not rolled back by REVERT),
+/// tx1 would return 0xdead. The correct result is 0x00..00.
 #[test]
 fn tstore_reverts_on_frame_revert() {
-    // Revert contract: PUSH2 0xdead  PUSH1 0x00  TSTORE  PUSH1 0x00  PUSH1 0x00  REVERT
-    //   0x61 0xde 0xad = PUSH2 0xdead
-    //   0x60 0x00      = PUSH1 0
-    //   0x5d           = TSTORE
-    //   0x60 0x00      = PUSH1 0 (size)
-    //   0x60 0x00      = PUSH1 0 (offset)
-    //   0xfd           = REVERT
-    let revert_bytecode = hex::decode("61dead60005d60006000fd").unwrap();
-    let revert_contract = address!("0000000000000000000000000000000000000d01");
+    let contract_bytecode =
+        hex::decode("3660001460125761dead60005d60006000fd5b60005c60005260206000f3").unwrap();
+    let contract = address!("0000000000000000000000000000000000000d01");
 
-    // Check contract: PUSH1 0x00  TLOAD  PUSH1 0x00  MSTORE  PUSH1 0x20  PUSH1 0x00  RETURN
-    //   Returns the 32-byte value of transient slot 0 (should be 0 after the revert)
-    let check_bytecode = hex::decode("60005c60005260206000f3").unwrap();
-    let check_contract = address!("0000000000000000000000000000000000000d02");
-
-    let signer = PrivateKeySigner::random();
+    let signer1 = PrivateKeySigner::random();
     let signer2 = PrivateKeySigner::random();
-    let sender = b160(signer.address());
+    let sender1 = b160(signer1.address());
     let sender2 = b160(signer2.address());
 
     let mut chain = ChainBuilder::new()
-        .with_balance(sender, U256::from(DEFAULT_BALANCE))
+        .with_balance(sender1, U256::from(DEFAULT_BALANCE))
         .with_balance(sender2, U256::from(DEFAULT_BALANCE))
-        .with_evm_bytecode(b160(revert_contract), revert_bytecode)
-        .with_evm_bytecode(b160(check_contract), check_bytecode)
+        .with_evm_bytecode(b160(contract), contract_bytecode)
         .build();
 
-    // Block 1: tx0 reverts (TSTORE rolled back)
+    // tx0: non-empty calldata → TSTORE 0xdead, REVERT — tx reverts, TSTORE rolled back
     let tx0 = TxBuilder::new()
-        .from(signer)
-        .to(revert_contract)
+        .from(signer1)
+        .to(contract)
+        .calldata(vec![0x01])
         .gas_limit(CALL_GAS_LIMIT)
         .build();
 
-    let output = chain.run_block(vec![tx0], None, None, Some(run_config::forward_only()));
-
-    // The transaction reverted at EVM level
-    assert_tx_reverted!(output, 0);
-
-    // Block 2: tx1 reads transient slot 0 of the check_contract — must be 0
-    // (transient storage is cleared between transactions and between blocks)
+    // tx1: empty calldata → TLOAD slot 0 from the same contract, return 32 bytes
     let tx1 = TxBuilder::new()
         .from(signer2)
-        .to(check_contract)
+        .to(contract)
         .gas_limit(CALL_GAS_LIMIT)
         .build();
 
-    let output2 = chain.run_block(vec![tx1], None, None, Some(run_config::forward_only()));
-    assert_tx_success!(output2, 0);
+    // Both in the same block: if TSTORE were persistent across tx boundaries,
+    // tx1 would read 0xdead. Correct behavior: tx1 reads 0.
+    let output = chain.run_block(vec![tx0, tx1], None, None, Some(run_config::forward_only()));
 
-    let tx1_out = output2.tx_results[0].as_ref().unwrap();
+    assert_tx_reverted!(output, 0);
+    assert_tx_success!(output, 1);
+
+    let tx1_out = output.tx_results[1].as_ref().unwrap();
     let returned = tx1_out.as_returned_bytes();
     assert_eq!(
         returned,
         &[0u8; 32],
-        "transient storage slot 0 must be 0 after REVERT rolled back the TSTORE"
+        "transient storage slot 0 must be 0 in tx1 — TSTORE from tx0 was rolled back by REVERT"
     );
 }
 
