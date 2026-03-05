@@ -54,7 +54,7 @@ for_tests = ["production", "basic_bootloader/eip-4844"]
 eth_runner = ["basic_bootloader/disable_system_contracts", "zk_ee/prevrandao", "unlimited_native","basic_bootloader/burn_base_fee", "basic_bootloader/eip-4844"]
 
 # Additional features used for eth_stf in eth_runner
-eth_stf = ["basic_bootloader/eip-7702","basic_bootloader/eip_7623", "basic_bootloader/eip-2537", "basic_bootloader/eip-152", "evm_interpreter/eip-2537", "evm_interpreter/eip-152"]
+eth_stf = ["basic_bootloader/eip-7702","basic_bootloader/eip-7623", "basic_bootloader/eip-2537", "basic_bootloader/eip-152", "evm_interpreter/eip-2537", "evm_interpreter/eip-152"]
 
 # Pectra hardfork: enables all execution-affecting Pectra EIPs
 pectra = ["basic_bootloader/pectra", "evm_interpreter/eip-2537", "evm_interpreter/eip-152", "system_hooks/p256_precompile"]
