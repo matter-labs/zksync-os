@@ -59,6 +59,10 @@ use zk_ee::{
 };
 
 pub mod addresses_constants;
+#[cfg(feature = "blake2f")]
+pub mod blake2f;
+#[cfg(feature = "bls12_381")]
+pub mod bls12_381;
 pub mod call_hooks;
 pub mod event_hooks;
 
@@ -168,15 +172,22 @@ where
         <S::SystemFunctions as SystemFunctions<_>>::Bn254PairingCheck,
         Bn254PairingCheckErrors,
     >(hooks, ECPAIRING_HOOK_ADDRESS_LOW)?;
+    #[cfg(feature = "blake2f")]
+    crate::blake2f::initialize_blake2f::<S, A>(hooks)?;
+
+    #[cfg(all(
+        feature = "mock-unsupported-precompiles",
+        not(feature = "blake2f")
+    ))]
+    add_precompile::<
+        _,
+        _,
+        crate::call_hooks::mock_precompiles::mock_precompiles::Blake2f,
+        MissingSystemFunctionErrors,
+    >(hooks, BLAKE2F_HOOK_ADDRESS_LOW)?;
+
     #[cfg(feature = "mock-unsupported-precompiles")]
     {
-        add_precompile::<
-            _,
-            _,
-            crate::call_hooks::mock_precompiles::mock_precompiles::Blake2f,
-            MissingSystemFunctionErrors,
-        >(hooks, BLAKE2F_HOOK_ADDRESS_LOW)?;
-
         #[cfg(not(feature = "point_eval_precompile"))]
         add_precompile::<
             _,
@@ -202,6 +213,10 @@ where
             P256VerifyErrors,
         >(hooks, P256_VERIFY_PREHASH_HOOK_ADDRESS_LOW)?;
     }
+
+    #[cfg(feature = "bls12_381")]
+    crate::bls12_381::initialize_bls12_381::<S, A>(hooks)?;
+
     Ok(())
 }
 

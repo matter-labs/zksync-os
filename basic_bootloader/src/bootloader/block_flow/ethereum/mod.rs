@@ -34,7 +34,6 @@ pub mod eip_4788_historical_beacon_root;
 pub mod eip_6110_deposit_events_parser;
 pub mod eip_7002_withdrawal_contract;
 pub mod eip_7251_consolidation_contract;
-mod hooks;
 mod loop_op;
 pub mod metadata_op;
 pub mod oracle_queries;

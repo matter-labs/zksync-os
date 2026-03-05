@@ -1,5 +1,6 @@
 use crypto::ark_ec::AffineRepr;
-use system_hooks::add_precompile;
+use crate::add_precompile;
+use evm_interpreter::precompile_addresses::*;
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::interface_error;
 
@@ -23,50 +24,48 @@ use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt};
 
 mod addition;
-mod addresses;
 mod mappings;
 mod msm;
 mod pairing;
 
 pub use self::addition::{Bls12381G1AdditionPrecompile, Bls12381G2AdditionPrecompile};
-pub use self::addresses::*;
 pub use self::mappings::{Bls12381G1MappingPrecompile, Bls12381G2MappingPrecompile};
 pub use self::msm::{Bls12381G1MSMPrecompile, Bls12381G2MSMPrecompile};
 pub use self::pairing::Bls12381PairingCheckPrecompile;
 
-pub fn initialize_eip_2537<S: EthereumLikeTypes>(
-    hooks: &mut HooksStorage<S, S::Allocator>,
+pub fn initialize_bls12_381<S: EthereumLikeTypes, A: core::alloc::Allocator + Clone>(
+    hooks: &mut HooksStorage<S, A>,
 ) -> Result<(), InternalError>
 where
     S::IO: IOSubsystemExt,
 {
-    add_precompile::<S, S::Allocator, Bls12381G1AdditionPrecompile, Bls12PrecompileErrors>(
+    add_precompile::<S, A, Bls12381G1AdditionPrecompile, Bls12PrecompileErrors>(
         hooks,
-        BLS12_G1ADD,
+        BLS12_G1ADD_ADDRESS_LOW,
     )?;
-    add_precompile::<S, S::Allocator, Bls12381G2AdditionPrecompile, Bls12PrecompileErrors>(
+    add_precompile::<S, A, Bls12381G2AdditionPrecompile, Bls12PrecompileErrors>(
         hooks,
-        BLS12_G2ADD,
+        BLS12_G2ADD_ADDRESS_LOW,
     )?;
-    add_precompile::<S, S::Allocator, Bls12381G1MSMPrecompile, Bls12PrecompileErrors>(
+    add_precompile::<S, A, Bls12381G1MSMPrecompile, Bls12PrecompileErrors>(
         hooks,
-        BLS12_G1MSM,
+        BLS12_G1MSM_ADDRESS_LOW,
     )?;
-    add_precompile::<S, S::Allocator, Bls12381G2MSMPrecompile, Bls12PrecompileErrors>(
+    add_precompile::<S, A, Bls12381G2MSMPrecompile, Bls12PrecompileErrors>(
         hooks,
-        BLS12_G2MSM,
+        BLS12_G2MSM_ADDRESS_LOW,
     )?;
-    add_precompile::<S, S::Allocator, Bls12381PairingCheckPrecompile, Bls12PrecompileErrors>(
+    add_precompile::<S, A, Bls12381PairingCheckPrecompile, Bls12PrecompileErrors>(
         hooks,
-        BLS12_PAIRING_CHECK,
+        BLS12_PAIRING_CHECK_ADDRESS_LOW,
     )?;
-    add_precompile::<S, S::Allocator, Bls12381G1MappingPrecompile, Bls12PrecompileErrors>(
+    add_precompile::<S, A, Bls12381G1MappingPrecompile, Bls12PrecompileErrors>(
         hooks,
-        BLS12_MAP_FP_TO_G1,
+        BLS12_MAP_FP_TO_G1_ADDRESS_LOW,
     )?;
-    add_precompile::<S, S::Allocator, Bls12381G2MappingPrecompile, Bls12PrecompileErrors>(
+    add_precompile::<S, A, Bls12381G2MappingPrecompile, Bls12PrecompileErrors>(
         hooks,
-        BLS12_MAP_FP2_TO_G2,
+        BLS12_MAP_FP2_TO_G2_ADDRESS_LOW,
     )?;
     Ok(())
 }
@@ -96,7 +95,7 @@ fn parse_g1(input: &[u8; G1_SERIALIZATION_LEN]) -> Result<G1Affine, Bls12Precomp
 fn parse_g2(input: &[u8; G2_SERIALIZATION_LEN]) -> Result<G2Affine, Bls12PrecompileSubsystemError> {
     crypto::bls12_381::eip2537::parse_g2_bytes(input)
         .map(|(point, _)| point)
-        .ok_or_else(|| interface_error!(Bls12PrecompileInterfaceError::InvalidG1Point))
+        .ok_or_else(|| interface_error!(Bls12PrecompileInterfaceError::InvalidG2Point))
 }
 
 fn parse_g1_with_subgroup_check(
