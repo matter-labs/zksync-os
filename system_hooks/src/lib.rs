@@ -175,10 +175,7 @@ where
     #[cfg(feature = "blake2f")]
     crate::blake2f::initialize_blake2f::<S, A>(hooks)?;
 
-    #[cfg(all(
-        feature = "mock-unsupported-precompiles",
-        not(feature = "blake2f")
-    ))]
+    #[cfg(all(feature = "mock-unsupported-precompiles", not(feature = "blake2f")))]
     add_precompile::<
         _,
         _,

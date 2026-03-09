@@ -1,5 +1,5 @@
-use crypto::ark_ec::AffineRepr;
 use crate::add_precompile;
+use crypto::ark_ec::AffineRepr;
 use evm_interpreter::precompile_addresses::*;
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::interface_error;
