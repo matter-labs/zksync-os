@@ -37,13 +37,12 @@ jobs:
       - name: Fetch base and head
         run: |
           git fetch origin ${{ github.event.pull_request.base.ref }}
-          git fetch origin ${{ github.event.pull_request.head.ref }}
 
       - name: Compute merge-base
         id: merge_base
         run: |
           base_ref=origin/${{ github.event.pull_request.base.ref }}
-          head_ref=origin/${{ github.event.pull_request.head.ref }}
+          head_ref=pr_repo/${{ github.event.pull_request.head.ref }}
           sha=$(git merge-base $base_ref $head_ref)
           echo "sha=$sha"
           echo "sha=$sha" >> $GITHUB_OUTPUT
@@ -81,7 +80,7 @@ jobs:
 
       - name: checkout PR
         run: |
-          git checkout --force FETCH_HEAD
+          git checkout --force pr_repo/${{ github.event.pull_request.head.ref }}
 
       - name: Recompile for RISC-V
         working-directory: ./zksync_os
