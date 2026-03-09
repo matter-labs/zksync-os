@@ -252,11 +252,11 @@ impl Case {
         test_definition: &StateTestStructure,
         filters: &Filters,
         hardfork_version: &str,
+        hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         let mut cases = vec![];
 
-        let mut skip_balance_check_for_sender_and_coinbase =
-            hardfork_version != "Cancun" && hardfork_version != "Prague";
+        let mut skip_balance_check_for_sender_and_coinbase = hardfork_was_overridden;
 
         let mut indexes_for_expected_results = vec![];
         // The boolean represents if the expectException flag is set.
@@ -423,6 +423,7 @@ impl Case {
         test_definition: &BlockchainTestStructure,
         filters: &Filters,
         hardfork_version: &str,
+        hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         let prestate = test_definition.pre.clone();
         let expected_state = ExpectStructure::get_expected_result(&test_definition.post_state);
@@ -431,8 +432,7 @@ impl Case {
             return vec![];
         }
 
-        let mut skip_balance_check_for_sender_and_coinbase =
-            hardfork_version != "Cancun" && hardfork_version != "Prague";
+        let mut skip_balance_check_for_sender_and_coinbase = hardfork_was_overridden;
 
         // Apply hash-based filter
         if test_definition
@@ -498,13 +498,14 @@ impl Case {
         test_definition: &TestStructure,
         filters: &Filters,
         hardfork_version: &str,
+        hardfork_was_overridden: bool,
     ) -> Vec<Self> {
         match test_definition {
             TestStructure::State(test) => {
-                Self::from_ethereum_spec_state_test(test, filters, hardfork_version)
+                Self::from_ethereum_spec_state_test(test, filters, hardfork_version, hardfork_was_overridden)
             }
             TestStructure::Blockchain(test) => {
-                Self::from_ethereum_spec_blockchain_test(test, filters, hardfork_version)
+                Self::from_ethereum_spec_blockchain_test(test, filters, hardfork_version, hardfork_was_overridden)
             }
         }
     }

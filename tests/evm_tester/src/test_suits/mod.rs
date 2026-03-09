@@ -51,7 +51,17 @@ pub fn read_all(
                 .skip(1)
                 .collect();
 
-            // CLI hardfork takes precedence over per-test/per-directory overrides
+            // CLI hardfork takes precedence over per-test/per-directory overrides.
+            // The hardfork is considered "overridden" when the final hardfork
+            // differs from what the STF natively supports — i.e., either the CLI
+            // or the index forces a hardfork the compiled STF doesn't match.
+            // The only exception is when the CLI explicitly sets the same hardfork
+            // that the test already targets — that's not an override.
+            let hardfork_was_overridden = match (&cli_hardfork, &test.hardfork_override) {
+                (Some(cli), Some(test_hf)) => cli != test_hf,
+                (Some(_), None) | (None, Some(_)) => true,
+                (None, None) => false,
+            };
             let hardfork_override = cli_hardfork.clone().or(test.hardfork_override);
 
             Some(Test::from_ethereum_spec_test(
@@ -65,6 +75,7 @@ pub fn read_all(
                 mutation_path.clone(),
                 None,
                 hardfork_override,
+                hardfork_was_overridden,
             ))
         })
         .flatten()
