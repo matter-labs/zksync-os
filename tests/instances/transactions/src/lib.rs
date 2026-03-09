@@ -17,6 +17,7 @@ use rig::{utils::*, BlockContext};
 use std::str::FromStr;
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
 use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
+use zksync_os_tests_common::zksync_tx::ZKsyncSpecificTxEnvelope;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 mod l1_tx_resilience;
@@ -1661,6 +1662,89 @@ fn test_simulation_gas_and_native_used() {
         tx_result_simulation.native_used, tx_result_normal.native_used,
         "Mismatch in native used"
     );
+}
+
+#[test]
+fn test_l1_simulation_zero_gas_price_gas_used_matches_execution_leftover_balance() {
+    let from = address!("1234000000000000000000000000000000000000");
+    let to = common_target_address();
+    let value = U256::from(1_000u64);
+    let gas_limit = 100_000u128;
+    let base_fee = 1_000u128;
+    let simulation_total_deposited = U256::from(1_000u64);
+    let execution_total_deposited =
+        U256::from(gas_limit) * U256::from(base_fee) + value + U256::from(100u64);
+
+    let simulation_tx = L1TxBuilder::new()
+        .from(from)
+        .to(to)
+        .gas_price(0)
+        .gas_limit(gas_limit)
+        .value(value)
+        .to_mint(simulation_total_deposited)
+        .build();
+
+    let simulation_l1_tx = match &simulation_tx {
+        ZKsyncTxEnvelope::ZKsync(ZKsyncSpecificTxEnvelope::L1(tx)) => tx,
+        _ => panic!("Expected L1 transaction"),
+    };
+    assert_eq!(
+        simulation_l1_tx.to_mint, simulation_total_deposited,
+        "L1 total_deposited (reserved[0]) must equal 1000"
+    );
+
+    let execution_tx = L1TxBuilder::new()
+        .from(from)
+        .to(to)
+        .gas_price(base_fee)
+        .gas_limit(gas_limit)
+        .value(value)
+        .to_mint(execution_total_deposited)
+        .build();
+
+    let execution_l1_tx = match &execution_tx {
+        ZKsyncTxEnvelope::ZKsync(ZKsyncSpecificTxEnvelope::L1(tx)) => tx,
+        _ => panic!("Expected L1 transaction"),
+    };
+    assert_eq!(
+        execution_l1_tx.to_mint, execution_total_deposited,
+        "Execution total_deposited must cover max fee plus transferred value"
+    );
+
+    let block_context = BlockContext {
+        // In simulation, L1 txs with 0 gas price use basefee/10 as native_per_gas.
+        // In execution, L1 txs use gas_price/10. Set execution gas_price == basefee.
+        eip1559_basefee: U256::from(base_fee),
+        ..Default::default()
+    };
+
+    let mut simulation_tester = TestingFramework::new().with_block_context(block_context.clone());
+    simulation_tester.mint_tokens_to_treasury();
+    let simulation_output = simulation_tester.simulate_block(vec![simulation_tx]);
+    let simulation_result = simulation_output.tx_results[0]
+        .clone()
+        .expect("Simulation must process L1 tx");
+    assert!(
+        simulation_result.is_success(),
+        "Simulation result must be successful"
+    );
+
+    let mut execution_tester = TestingFramework::new().with_block_context(block_context);
+    execution_tester.mint_tokens_to_treasury();
+    let execution_output = execution_tester.execute_block(vec![execution_tx]);
+    let execution_result = execution_output.tx_results[0]
+        .clone()
+        .expect("Execution must process L1 tx");
+    assert!(
+        execution_result.is_success(),
+        "Execution result must be successful"
+    );
+
+    assert_eq!(
+        simulation_result.gas_used, execution_result.gas_used,
+        "Mismatch in gas used between simulation and execution"
+    );
+    assert!(simulation_result.pubdata_used >= execution_result.pubdata_used);
 }
 
 /// Check that gas price doesn't affect gas used in simulation.
