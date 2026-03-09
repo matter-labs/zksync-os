@@ -258,13 +258,15 @@ impl AccountProperties {
                     + 4 // observable bytecode len
             })
         } else {
-            if initial.nonce == r#final.nonce && initial.balance == r#final.balance {
+            let has_balance_diff = initial.balance != r#final.balance || not_compress_balance;
+            let has_nonce_diff = initial.nonce != r#final.nonce;
+            if !has_nonce_diff && !has_balance_diff {
                 return Err(internal_error!(
                     "Account properties diff compression shouldn't be called for same values",
                 ));
             }
             let mut length = 1u32; // metadata byte
-            if initial.nonce != r#final.nonce {
+            if has_nonce_diff {
                 length += ValueDiffCompressionStrategy::optimal_compression_length_u256(
                     initial
                         .nonce
@@ -276,7 +278,7 @@ impl AccountProperties {
                         .map_err(|_| internal_error!("u64 into U256"))?,
                 ) as u32; // nonce diff
             }
-            if initial.balance != r#final.balance || not_compress_balance {
+            if has_balance_diff {
                 length += ValueDiffCompressionStrategy::optimal_compression_length_u256_optional(
                     initial.balance,
                     r#final.balance,

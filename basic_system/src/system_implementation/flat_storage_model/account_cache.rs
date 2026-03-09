@@ -452,11 +452,11 @@ impl<
             // we don't consider this diff in the pubdata charging.
             // This change will be optimized away, so it's actually reducing
             // pubdata.
-            if current.value() == initial.value() {
+            if current.value() == initial.value() && !current.metadata().not_compress_balance {
                 continue;
             }
 
-            if current.value() != at_tx_start.value() {
+            if current.value() != at_tx_start.value() || current.metadata().not_compress_balance {
                 pubdata_used += 32; // key
                 pubdata_used += AccountProperties::diff_compression_length(
                     at_tx_start.value(),
