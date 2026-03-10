@@ -49,7 +49,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1Mappin
         let result: G1Affine = result;
         let result = result.clear_cofactor();
 
-        write_g1(result, output);
+        write_g1(result, output)?;
 
         Ok(())
     }
@@ -98,7 +98,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2Mappin
         let result: G2Affine = result;
         let result = result.clear_cofactor();
 
-        write_g2(result, output);
+        write_g2(result, output)?;
 
         Ok(())
     }

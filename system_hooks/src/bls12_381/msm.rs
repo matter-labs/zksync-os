@@ -233,7 +233,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1MSMPre
 
         let result = result.into_affine();
 
-        write_g1(result, output);
+        write_g1(result, output)?;
 
         Ok(())
     }
@@ -302,7 +302,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2MSMPre
 
         let result = result.into_affine();
 
-        write_g2(result, output);
+        write_g2(result, output)?;
 
         Ok(())
     }

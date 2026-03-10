@@ -3,6 +3,7 @@ use crypto::ark_ec::AffineRepr;
 use evm_interpreter::precompile_addresses::*;
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::interface_error;
+use zk_ee::out_of_return_memory;
 
 define_subsystem!(Bls12Precompile,
   interface Bls12PrecompileInterfaceError
@@ -124,14 +125,26 @@ fn parse_g2_with_subgroup_check(
     }
 }
 
-fn write_g1<D: zk_ee::common_traits::TryExtend<u8> + ?Sized>(el: G1Affine, output: &mut D) {
+fn write_g1<D: zk_ee::common_traits::TryExtend<u8> + ?Sized>(
+    el: G1Affine,
+    output: &mut D,
+) -> Result<(), Bls12PrecompileSubsystemError> {
     let mut buffer = [0u8; G1_SERIALIZATION_LEN];
     crypto::bls12_381::eip2537::serialize_g1_bytes(el, &mut buffer);
-    output.try_extend(buffer).map_err(|_| ()).unwrap();
+    output
+        .try_extend(buffer)
+        .map_err(|_| out_of_return_memory!())?;
+    Ok(())
 }
 
-fn write_g2<D: zk_ee::common_traits::TryExtend<u8> + ?Sized>(el: G2Affine, output: &mut D) {
+fn write_g2<D: zk_ee::common_traits::TryExtend<u8> + ?Sized>(
+    el: G2Affine,
+    output: &mut D,
+) -> Result<(), Bls12PrecompileSubsystemError> {
     let mut buffer = [0u8; G2_SERIALIZATION_LEN];
     crypto::bls12_381::eip2537::serialize_g2_bytes(el, &mut buffer);
-    output.try_extend(buffer).map_err(|_| ()).unwrap();
+    output
+        .try_extend(buffer)
+        .map_err(|_| out_of_return_memory!())?;
+    Ok(())
 }
