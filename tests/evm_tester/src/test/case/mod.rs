@@ -34,6 +34,37 @@ use super::{
 
 const BEACON_ROOTS: Address = address!("0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02");
 
+/// Blob base fee update fraction.
+/// Cancun uses 3338477, Prague (EIP-7840) uses 5007716.
+#[cfg(not(feature = "evm_tester_pectra"))]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 3_338_477;
+#[cfg(feature = "evm_tester_pectra")]
+const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 5_007_716;
+
+const MIN_BASE_FEE_PER_BLOB_GAS: u128 = 1;
+
+/// Compute blob gas price from excess blob gas using the correct update fraction for the hardfork.
+fn calc_blob_gasprice(excess_blob_gas: u64) -> u128 {
+    fake_exponential(
+        MIN_BASE_FEE_PER_BLOB_GAS,
+        excess_blob_gas as u128,
+        BLOB_BASE_FEE_UPDATE_FRACTION as u128,
+    )
+}
+
+/// Approximation of `factor * e ** (numerator / denominator)` using Taylor expansion.
+fn fake_exponential(factor: u128, numerator: u128, denominator: u128) -> u128 {
+    let mut i = 1u128;
+    let mut output = 0u128;
+    let mut numerator_accum = factor * denominator;
+    while numerator_accum > 0 {
+        output += numerator_accum;
+        numerator_accum = (numerator_accum * numerator) / (denominator * i);
+        i += 1;
+    }
+    output / denominator
+}
+
 #[derive(Debug)]
 pub struct Case {
     /// The case label.
@@ -747,11 +778,10 @@ impl Case {
             .env
             .current_excess_blob_gas
             .map(|excess_blob_gas| {
-                U256::from(alloy::eips::eip4844::calc_blob_gasprice(
-                    excess_blob_gas
-                        .try_into()
-                        .expect("excess_blob_gas overflows u64"),
-                ))
+                let excess: u64 = excess_blob_gas
+                    .try_into()
+                    .expect("excess_blob_gas overflows u64");
+                U256::from(calc_blob_gasprice(excess))
             })
             .unwrap_or(U256::MAX);
         system_context.blob_fee = blob_fee;
