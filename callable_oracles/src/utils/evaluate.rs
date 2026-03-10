@@ -72,7 +72,7 @@ pub fn read_memory_as_u64<M: MemorySource>(
         return Err(());
     }
 
-    let mut result = Vec::with_capacity(len_u32_words as usize * 2);
+    let mut result = Vec::with_capacity(len_u64_words as usize);
 
     let mut trap = TrapReason::NoTrap;
 
