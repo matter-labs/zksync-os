@@ -658,4 +658,79 @@ mod tests {
             });
         }
     }
+
+    mod zero_input_regression_tests {
+        use super::*;
+        use oracle_provider::{
+            DummyMemorySource, MemorySource, OracleQueryProcessor, ZkEENonDeterminismSource,
+        };
+
+        /// A processor that should never be reached in these tests.
+        /// Zero-input hook behavior is expected to short-circuit before oracle queries.
+        struct PanickingFieldOpsQuery;
+
+        impl<M: MemorySource> OracleQueryProcessor<M> for PanickingFieldOpsQuery {
+            fn supported_query_ids(&self) -> Vec<u32> {
+                vec![FIELD_OPS_ADVISE_QUERY_ID]
+            }
+
+            fn process_buffered_query(
+                &mut self,
+                query_id: u32,
+                _query: Vec<usize>,
+                _memory: &M,
+            ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+                panic!("field ops oracle should not be queried for zero input, query_id=0x{query_id:08x}");
+            }
+        }
+
+        fn create_panicking_field_ops_oracle() -> ZkEENonDeterminismSource<DummyMemorySource> {
+            let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
+            oracle.add_external_processor(PanickingFieldOpsQuery);
+            oracle
+        }
+
+        fn zero_field_element() -> FieldElement {
+            FieldElement::from_bytes(&[0u8; 32]).expect("zero is a valid field element")
+        }
+
+        #[test]
+        fn test_fe_invert_zero_does_not_query_oracle() {
+            let mut fe_default = zero_field_element();
+            DefaultSecp256k1Hooks.fe_invert_and_assign(&mut fe_default);
+            assert!(fe_default.normalizes_to_zero());
+
+            let mut fe_oracle = zero_field_element();
+            let mut oracle = create_panicking_field_ops_oracle();
+            Secp256k1HooksWithOracle::new(&mut oracle).fe_invert_and_assign(&mut fe_oracle);
+            assert!(fe_oracle.normalizes_to_zero());
+        }
+
+        #[test]
+        fn test_scalar_invert_zero_does_not_query_oracle() {
+            let mut scalar_default = Scalar::ZERO;
+            DefaultSecp256k1Hooks.scalar_invert_and_assign(&mut scalar_default);
+            assert!(scalar_default.is_zero());
+
+            let mut scalar_oracle = Scalar::ZERO;
+            let mut oracle = create_panicking_field_ops_oracle();
+            Secp256k1HooksWithOracle::new(&mut oracle).scalar_invert_and_assign(&mut scalar_oracle);
+            assert!(scalar_oracle.is_zero());
+        }
+
+        #[test]
+        fn test_fe_sqrt_zero_does_not_query_oracle_and_matches_default() {
+            let mut fe_default = zero_field_element();
+            let exists_default = DefaultSecp256k1Hooks.fe_sqrt_and_assign(&mut fe_default);
+            assert!(exists_default);
+            assert!(fe_default.normalizes_to_zero());
+
+            let mut fe_oracle = zero_field_element();
+            let mut oracle = create_panicking_field_ops_oracle();
+            let exists_oracle =
+                Secp256k1HooksWithOracle::new(&mut oracle).fe_sqrt_and_assign(&mut fe_oracle);
+            assert!(exists_oracle);
+            assert!(fe_oracle.normalizes_to_zero());
+        }
+    }
 }
