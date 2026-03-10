@@ -20,7 +20,6 @@ jobs:
     runs-on: [matterlabs-ci-runner-highmem]
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -111,23 +110,13 @@ jobs:
           done
           MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
           pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
-          # Output all lines from the benchmark result starting from the "## ..." comparison header.
-          # Since the output spans multiple lines, we use a heredoc declaration.
-          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-          echo "result<<$EOF" >> $GITHUB_OUTPUT
-          python3 bench_scripts/compare_bench.py "[${pairs}]" >> $GITHUB_OUTPUT
-          echo "$EOF" >> $GITHUB_OUTPUT
+          # Save comparison result to file for the comment workflow
+          python3 bench_scripts/compare_bench.py "[${pairs}]" > bench_results/comparison.md
+
+      - name: Save PR number
+        run: echo "${{ github.event.pull_request.number }}" > bench_results/pr_number.txt
 
       - uses: actions/upload-artifact@v4
         with:
           name: bench_results
           path: bench_results/
-
-      - name: Comment on PR
-        uses: thollander/actions-comment-pull-request@fabd468d3a1a0b97feee5f6b9e499eab0dd903f6 # v2.5.0
-        with:
-          message: |
-            ${{ steps.comparison.outputs.result }}
-          comment_tag: vm-performance-changes
-          mode: recreate
-          create_if_not_exists: true

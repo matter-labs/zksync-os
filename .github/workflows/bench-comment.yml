@@ -1,0 +1,43 @@
+name: "Post benchmark results"
+
+on:
+  workflow_run:
+    workflows: ["Compare performance to base branch"]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  post-comment:
+    name: Post benchmark comment on PR
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench_results
+          path: bench_results/
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read PR number and comparison
+        id: read
+        run: |
+          pr_number=$(cat bench_results/pr_number.txt)
+          echo "pr_number=$pr_number" >> $GITHUB_OUTPUT
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "result<<$EOF" >> $GITHUB_OUTPUT
+          cat bench_results/comparison.md >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR
+        uses: thollander/actions-comment-pull-request@fabd468d3a1a0b97feee5f6b9e499eab0dd903f6 # v2.5.0
+        with:
+          message: |
+            ${{ steps.read.outputs.result }}
+          comment_tag: vm-performance-changes
+          mode: recreate
+          create_if_not_exists: true
+          pr_number: ${{ steps.read.outputs.pr_number }}
