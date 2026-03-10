@@ -25,7 +25,7 @@ reth-storage-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3"
 revm-inspectors = "0.32.0"
 log = { workspace = true }
 
-zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", tag = "v0.0.3" }
+zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", branch = "vv-new-version" }
 zksync_os_interface = { workspace = true, default-features = false }
 
 zk_ee = { path = "../../zk_ee" }

@@ -4,10 +4,9 @@ use forward_system::system::tracers::call_tracer::CallTracer;
 use once_cell::sync::Lazy;
 use ruint::aliases::B160;
 use zk_ee::{system::validator, utils::Bytes32};
-use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 
-use crate::{utils::L1TxBuilder, Chain};
-use system_hooks::addresses_constants::{L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS};
+use crate::{utils::L1TxBuilder, Chain, TestingFramework};
+use system_hooks::addresses_constants::{CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS};
 
 // RUNTIME bytecode
 pub static L1_MESSENGER_BYTECODE: Lazy<Vec<u8>> = Lazy::new(|| {
@@ -59,40 +58,32 @@ pub fn call_address_and_measure_gas_cost(
     calldata: Vec<u8>,
     additional_preimages: Vec<(Bytes32, Vec<u8>)>,
 ) -> u64 {
-    let mut chain = Chain::empty(None);
-    install_system_contracts(&mut chain, true, true);
+    let mut tester = TestingFramework::new().with_system_contracts(true, true);
 
     if value != 0 {
         let value_encoded = alloy::primitives::U256::from(value);
-        chain.set_balance(B160::from_alloy(sender), value_encoded);
+        tester.set_balance(sender, value_encoded);
     }
 
     // Needed to test force deploys
     for (hash, preimage) in additional_preimages {
-        chain.set_preimage(hash, &preimage);
+        tester.set_preimage(hash, &preimage);
     }
 
-    let encoded_tx = {
-        let tx = L1TxBuilder::new()
-            .from(sender)
-            .to(address)
-            .gas_price(1000)
-            .gas_limit(200_000)
-            .value(alloy::primitives::U256::from(value))
-            .input(calldata)
-            .nonce(0)
-            .build();
-
-        tx.encode()
-    };
-    let transactions = vec![encoded_tx];
+    let tx = L1TxBuilder::new()
+        .from(sender)
+        .to(address)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .value(alloy::primitives::U256::from(value))
+        .input(calldata)
+        .nonce(0)
+        .build();
+    let transactions = vec![tx];
 
     let mut tracer = CallTracer::default();
     let mut validator = validator::NopTxValidator;
-
-    let (output, _, _) = chain
-        .run_block_with_extra_stats(transactions, None, None, None, &mut tracer, &mut validator)
-        .expect("Should succeed");
+    let output = tester.execute_block_with_tracing(transactions, &mut tracer, &mut validator);
 
     // Assert transaction succeeded
     assert!(output.tx_results[0].is_ok());

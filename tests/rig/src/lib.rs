@@ -172,6 +172,11 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<BlockOutput, BootloaderSubsystemError> {
+        let run_config = self.run_config.clone().unwrap_or_default();
+        if !run_config.skip_minting_tokens_to_treasury {
+            self.chain.mint_tokens_to_treasury();
+        }
+
         let should_check_revm_consistency = self.revm_consistency_check_enabled();
         let pre_block_chain = should_check_revm_consistency.then(|| self.chain.clone());
         let transactions_for_revm = should_check_revm_consistency.then(|| transactions.clone());
@@ -189,7 +194,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
                     encoded_txs,
                     self.block_context.clone(),
                     self.da_commitment_scheme,
-                    self.run_config.clone(),
+                    Some(run_config),
                     tracer,
                     validator,
                     oracle_factory.as_ref(),
@@ -199,7 +204,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
                     encoded_txs,
                     self.block_context.clone(),
                     self.da_commitment_scheme,
-                    self.run_config.clone(),
+                    Some(run_config),
                     tracer,
                     validator,
                 )?

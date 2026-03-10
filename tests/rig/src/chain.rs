@@ -572,13 +572,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             do_riscv_run,
             check_storage_diff_hashes,
             check_revm_consistency: _,
-            skip_minting_tokens_to_treasury,
+            skip_minting_tokens_to_treasury: _,
             update_state_after_block_execution,
         } = run_config;
-
-        if !skip_minting_tokens_to_treasury {
-            self.mint_tokens_to_treasury();
-        }
 
         let block_context = block_context.unwrap_or_default();
         let block_metadata = BlockMetadataFromOracle {
