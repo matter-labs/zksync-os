@@ -449,13 +449,13 @@ fn to_auth_list(src: &Option<Vec<AuthorizationListItem>>) -> Vec<SignedAuthoriza
                 address: a.address,
                 nonce: a.nonce.as_u64(),
             };
-            let y = (a.y_parity.as_u64() & 1) == 1;
-            let sig = Signature::from_scalars_and_parity(
-                FixedBytes::from(w3_u256_to_alloy_u256(&a.r)),
-                FixedBytes::from(w3_u256_to_alloy_u256(&a.s)),
-                y,
-            );
-            out.push(auth.into_signed(sig));
+            // Preserve the raw y_parity value to maintain correct RLP encoding
+            // for pre-signed transactions. Invalid values (not 0 or 1) will cause
+            // the auth entry to be silently skipped during recovery per EIP-7702.
+            let y_parity = a.y_parity.as_u64() as u8;
+            let r = w3_u256_to_alloy_u256(&a.r);
+            let s = w3_u256_to_alloy_u256(&a.s);
+            out.push(SignedAuthorization::new_unchecked(auth, y_parity, r, s));
         }
     }
     out
