@@ -54,6 +54,41 @@ pub fn run(
     run_and_get_effective_cycles(img_path, diagnostics, cycles, non_determinism_source).0
 }
 
+pub fn run_from_bytes(
+    img_bytes: &[u8],
+    diagnostics: Option<DiagnosticsConfig>,
+    cycles: usize,
+    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
+) -> [u32; 8] {
+    println!("ZK RISC-V simulator is starting");
+
+    let config = SimulatorConfig {
+        bin: BinarySource::Slice(img_bytes),
+        cycles,
+        entry_point: 0,
+        diagnostics,
+    };
+
+    let run_result =
+        risc_v_simulator::runner::run_simple_with_entry_point_and_non_determimism_source(
+            config,
+            non_determinism_source,
+        );
+
+    risc_v_simulator::cycle::state::output_opcode_stats();
+
+    #[allow(unused_mut, unused_assignments)]
+    let mut _block_effective: Option<u64> = None;
+
+    #[cfg(feature = "cycle_marker")]
+    {
+        _block_effective = cycle_marker::print_cycle_markers();
+    }
+
+    #[allow(deprecated)]
+    run_result.state.registers[10..18].try_into().unwrap()
+}
+
 pub fn run_and_get_effective_cycles(
     img_path: PathBuf,
     diagnostics: Option<DiagnosticsConfig>,
