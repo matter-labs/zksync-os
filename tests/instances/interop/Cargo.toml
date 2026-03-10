@@ -1,0 +1,19 @@
+[package]
+name = "interop"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+rig = { path = "../../rig", features = ["for_tests"] }
+zksync_os_tests_common = { path = "../../common" }
+hex = { workspace = true }
+
+[features]
+e2e_proving = ["rig/e2e_proving"]
+cycle_marker = ["rig/cycle_marker"]

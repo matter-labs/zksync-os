@@ -31,6 +31,7 @@ members = [
     "tests/instances/system_hooks",
     "tests/instances/multiblock_batch",
     "tests/instances/header",
+    "tests/instances/interop",
     "tests/instances/evm",
     "cycle_marker",
     "tests/binary_checker",

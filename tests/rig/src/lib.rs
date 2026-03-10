@@ -348,6 +348,17 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .balance
     }
 
+    /// Returns raw storage slot value for the provided account and key.
+    pub fn get_storage_slot(
+        &mut self,
+        address: &alloy::primitives::Address,
+        key: ruint::aliases::U256,
+    ) -> Option<zk_ee::utils::Bytes32> {
+        self.chain
+            .get_storage_slot(ruint::aliases::B160::from_alloy(address), key)
+            .copied()
+    }
+
     /// Returns execution metadata of the most recently executed block, if any.
     pub fn last_executed_block_info(&self) -> Option<&LastExecutedBlockInfo> {
         self.last_executed_block_info.as_ref()
