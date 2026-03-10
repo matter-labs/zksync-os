@@ -33,7 +33,7 @@ pub const SET_SL_CHAIN_ID_SELECTOR: [u8; 4] = [0x04, 0x02, 0x03, 0xe6];
 /// Selector for
 /// setInteropFee(uint256)
 /// -> 0x08273d8a
-pub const SET_INTEROP_FEE_SELECTOR: [u8; 4] = [0x09, 0x27, 0x3d, 0x8a];
+pub const SET_INTEROP_FEE_SELECTOR: [u8; 4] = [0x08, 0x27, 0x3d, 0x8a];
 
 /// Pairs (destination, selector) that service transactions are allowed
 /// to interact with.
