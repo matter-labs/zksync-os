@@ -526,6 +526,14 @@ where
         .ok_or(internal_error!("mfc+tic"))?;
 
     // First we transfer from treasury
+    // We want to ensure that the simulation of a transaction
+    // never underestimates gas/pubdata compared to the actual execution
+    // of said transaction.
+    // During simulation the gas price is typically set to 0. So we need
+    // to be conservative about operations that incur in gas/pubdata depending
+    // on the value of the fee. For that reason, we always perform the
+    // following transfer on simulation, and avoid compressing the pubdata
+    // for the balance changes resulting from it.
     if to_transfer > U256::ZERO || Config::SIMULATION {
         resources
             .with_infinite_ergs(|inf_resources| {
