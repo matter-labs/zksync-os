@@ -29,7 +29,6 @@ pub struct EthereumLoopOp;
 mod block_data;
 mod block_hashes_cache;
 mod block_header;
-pub mod eip_2935_historical_block_hash;
 pub mod eip_4788_historical_beacon_root;
 pub mod eip_6110_deposit_events_parser;
 pub mod eip_7002_withdrawal_contract;
@@ -49,7 +48,7 @@ pub use self::block_data::*;
 pub use self::block_header::PectraForkHeader;
 pub use self::metadata_op::EthereumBlockMetadata;
 
-pub use eip_2935_historical_block_hash::HISTORY_STORAGE_ADDRESS;
+pub use super::eip_2935_historical_block_hash::HISTORY_STORAGE_ADDRESS;
 pub use eip_4788_historical_beacon_root::BEACON_ROOTS_ADDRESS;
 pub use eip_6110_deposit_events_parser::DEPOSIT_CONTRACT_ADDRESS;
 pub use eip_7002_withdrawal_contract::WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS;

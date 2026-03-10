@@ -1,9 +1,3 @@
-// NOTE: we implement 7002 contract as non-solidity/non-EMV contract as:
-// - there is no GAS opcode in the reference bytecode
-// - whatever will be the gas supplied to the frame - it'll be sufficient to pop as up to upper bound of elements
-// - and to be honest, putting bytecode into execution client is so-so idea, and instead consensus can be instead reached on implementation
-// Bytecode for this contract will anyway exist for requests creation in transactions themselves
-
 use core::fmt::Write;
 use ruint::aliases::B160;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;

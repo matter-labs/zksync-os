@@ -1,10 +1,8 @@
 use zk_ee::{system::IOResultKeeper, types_config::EthereumIOTypesConfig};
 
 use super::*;
-use crate::bootloader::block_flow::ethereum::{
-    eip_2935_historical_block_hash::eip2935_system_part,
-    eip_4788_historical_beacon_root::eip4788_system_part,
-};
+use crate::bootloader::block_flow::eip_2935_historical_block_hash::eip2935_system_part;
+use crate::bootloader::block_flow::ethereum::eip_4788_historical_beacon_root::eip4788_system_part;
 
 impl<S: EthereumLikeTypes<Metadata = EthereumBlockMetadata>> PreTxLoopOp<S> for EthereumPreOp
 where
