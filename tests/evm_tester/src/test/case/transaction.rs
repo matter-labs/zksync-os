@@ -154,7 +154,7 @@ pub fn transaction_from_tx_section(
 pub fn encode_transaction(
     transaction: &Transaction,
     system_context: &ZKsyncOSEVMContext,
-) -> EncodedTx {
+) -> Result<EncodedTx, String> {
     match transaction {
         Transaction::Request(tx) => {
             #[allow(deprecated)]
@@ -262,18 +262,18 @@ pub fn encode_transaction(
                 tx.secret_key.as_slice(),
             )
             .unwrap();
-            helpers::sign_and_encode_transaction_request(request, &wallet)
+            Ok(helpers::sign_and_encode_transaction_request(request, &wallet))
         }
         Transaction::Signed(tx) => {
-            let env = to_alloy_envelope(tx, system_context.chain_id);
+            let env = to_alloy_envelope(tx, system_context.chain_id)?;
             let bytes = encode_envelope_2718(&env);
             let from = tx.common.sender.expect("Tx must have sender");
-            EncodedTx::Rlp(bytes, from)
+            Ok(EncodedTx::Rlp(bytes, from))
         }
     }
 }
 
-pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
+pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> Result<TxEnvelope, String> {
     let nonce = stx.common.nonce.try_into().unwrap();
     let gas_limit = stx.common.gas_limit.try_into().unwrap();
     let value = stx.common.value;
@@ -283,7 +283,7 @@ pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
     let r = FixedBytes::from(stx.r);
     let s = FixedBytes::from(stx.s);
 
-    match stx.ty {
+    let envelope = match stx.ty {
         0 => {
             let (chain_id_opt, parity) = match stx.v {
                 27 | 28 => (None, stx.v == 28),
@@ -292,7 +292,7 @@ pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
                     let p = ((v as u64 - 35) % 2) == 1;
                     (Some(cid), p)
                 }
-                _ => panic!("Invalid value for v in legacy"),
+                _ => return Err("Invalid value for v in legacy".to_string()),
             };
             let gas_price = stx.common.gas_price.unwrap_or_default().try_into().unwrap();
             let tx = TxLegacy {
@@ -354,7 +354,7 @@ pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
         3 => {
             let access_list = to_access_list(&stx.common.access_list);
             let to_addr = match &stx.common.to.0 {
-                None => panic!("4844 requires destination"),
+                None => return Err("EIP-4844 requires destination".to_string()),
                 Some(a) => *a,
             };
             let tx = TxEip4844 {
@@ -384,7 +384,7 @@ pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
             let access_list = to_access_list(&stx.common.access_list);
             let auth_list = to_auth_list(&stx.common.authorization_list);
             let to_addr = match &stx.common.to.0 {
-                None => panic!("7702 requires destination"),
+                None => return Err("EIP-7702 requires destination".to_string()),
                 Some(a) => *a,
             };
             let tx = TxEip7702 {
@@ -409,8 +409,9 @@ pub fn to_alloy_envelope(stx: &SignedTransaction, chain_id: u64) -> TxEnvelope {
             let signed = alloy::consensus::Signed::new_unhashed(tx, sig);
             TxEnvelope::from(signed)
         }
-        _ => panic!("Unsupported tx type"),
-    }
+        _ => return Err(format!("Unsupported tx type: {}", stx.ty)),
+    };
+    Ok(envelope)
 }
 
 fn to_kind(to: &FieldTo) -> alloy::primitives::TxKind {

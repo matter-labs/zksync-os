@@ -33,6 +33,14 @@ use super::{
 };
 
 const BEACON_ROOTS: Address = address!("0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02");
+/// Deposit contract
+const DEPOSIT_CONTRACT: Address = address!("0x00000000219ab540356cBB839Cbe05303d7705Fa");
+/// EIP-7002 withdrawal request system contract
+const WITHDRAWAL_REQUEST_CONTRACT: Address =
+    address!("0x00000961Ef480Eb55e80D19Ad83579a64c007002");
+/// EIP-7251 consolidation request system contract
+const CONSOLIDATION_REQUEST_CONTRACT: Address =
+    address!("0x0000bBDDc7CE488642fb579F8B00f3a590007251");
 
 /// Blob base fee update fraction.
 /// Cancun uses 3338477, Prague (EIP-7840) uses 5007716.
@@ -612,8 +620,11 @@ impl Case {
         let mut expected: Option<String> = None;
         let mut actual: Option<String> = None;
 
-        // Ignore beacon roots address
+        // Ignore system contracts not handled by EVM tester
         self.expected_state.remove(&BEACON_ROOTS);
+        self.expected_state.remove(&DEPOSIT_CONTRACT);
+        self.expected_state.remove(&WITHDRAWAL_REQUEST_CONTRACT);
+        self.expected_state.remove(&CONSOLIDATION_REQUEST_CONTRACT);
 
         // TODO merge with prestate!
         for (address, filler_struct) in self.expected_state {
