@@ -1,4 +1,8 @@
-use alloy::{consensus::Transaction, eips::Typed2718, primitives::TxKind};
+use alloy::{
+    consensus::Transaction,
+    eips::{eip4844::BLOB_GASPRICE_UPDATE_FRACTION, Typed2718},
+    primitives::TxKind,
+};
 use anyhow::{anyhow, bail, Context};
 use reth_revm::context::TxEnv;
 use zksync_os_revm::{transaction::abstraction::ZKsyncTxBuilder, ZKsyncTx};
@@ -14,6 +18,9 @@ pub fn zk_tx_into_revm_tx(
     gas_used_override: Option<u64>,
     force_revert: bool,
 ) -> anyhow::Result<ZKsyncTx<TxEnv>> {
+    let mut blob_hashes = vec![];
+    let mut max_fee_per_blob_gas = 0;
+
     let (
         gas_price,
         gas_priority_fee,
@@ -40,6 +47,13 @@ pub fn zk_tx_into_revm_tx(
                 .unwrap_or_default();
             let gas_limit = ethereum_tx_envelope.gas_limit();
             let nonce = ethereum_tx_envelope.nonce();
+            blob_hashes = ethereum_tx_envelope
+                .blob_versioned_hashes()
+                .map(|hashes| hashes.to_vec())
+                .unwrap_or_default();
+            max_fee_per_blob_gas = ethereum_tx_envelope
+                .max_fee_per_blob_gas()
+                .unwrap_or_default();
 
             (
                 gas_price,
@@ -120,7 +134,8 @@ pub fn zk_tx_into_revm_tx(
         .access_list(access_list)
         .tx_type(Some(tx.ty()))
         .chain_id(chain_id)
-        .blob_hashes(vec![]); // ZkSync transactions don't use blobs yet
+        .blob_hashes(blob_hashes)
+        .max_fee_per_blob_gas(max_fee_per_blob_gas);
 
     if let Some(priority_fee) = gas_priority_fee {
         tx_env_builder = tx_env_builder.gas_priority_fee(Some(priority_fee));
@@ -134,6 +149,22 @@ pub fn zk_tx_into_revm_tx(
         .force_fail(force_revert)
         .build()
         .map_err(|e| anyhow!("Failed to build TxEnv: {e:?}"))
+}
+
+pub const BLOB_BASE_FEE_UPDATE_FRACTION: u128 = BLOB_GASPRICE_UPDATE_FRACTION;
+pub const MIN_BASE_FEE_PER_BLOB_GAS: u64 = 1;
+
+pub fn calculate_excess_blob_gas_from_blob_base_fee(
+    blob_base_fee: u64,
+    blob_base_fee_update_fraction: u128,
+) -> u64 {
+    // Take the logarithm of blob_base_fee:
+    let blob_base_fee_f: f64 = blob_base_fee as f64;
+    if blob_base_fee_f as u64 != blob_base_fee {
+        panic!("Blob base fee is too large to fit into f64");
+    }
+    let excess_blob_gas = (blob_base_fee_f.ln() * (blob_base_fee_update_fraction as f64)).ceil();
+    excess_blob_gas as u64
 }
 
 #[cfg(test)]

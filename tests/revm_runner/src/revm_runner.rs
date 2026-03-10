@@ -2,6 +2,7 @@ use alloy::primitives::U256;
 use alloy::rpc::types::trace::geth::CallFrame;
 use anyhow::{anyhow, bail, Context as AnyhowContext};
 use reth_revm::context::ContextTr;
+use reth_revm::context_interface::block::BlobExcessGasAndPrice;
 use reth_revm::inspector::InspectCommitEvm;
 use reth_revm::{context::TxEnv, db::CacheDB, Context, DatabaseRef};
 use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
@@ -13,7 +14,9 @@ use zksync_os_revm::ZkBuilder;
 use zksync_os_revm::ZkSpecId;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
-use crate::helpers::zk_tx_into_revm_tx;
+use crate::helpers::{
+    calculate_excess_blob_gas_from_blob_base_fee, zk_tx_into_revm_tx, BLOB_BASE_FEE_UPDATE_FRACTION,
+};
 use crate::revm_state_provider::{RevmStateProvider, ViewState};
 use crate::storage_diff_comp::CompareReport;
 
@@ -53,6 +56,20 @@ where
             block_context.block_hashes,
             block_context.block_number.saturating_sub(1),
         );
+
+        let blob_excess_gas_and_price = BlobExcessGasAndPrice::new(
+            calculate_excess_blob_gas_from_blob_base_fee(
+                block_context
+                    .blob_fee
+                    .try_into()
+                    .expect("Blob fee should fit into u64"),
+                BLOB_BASE_FEE_UPDATE_FRACTION,
+            ),
+            BLOB_BASE_FEE_UPDATE_FRACTION
+                .try_into()
+                .expect("Blob base fee update fraction should fit into u64"),
+        );
+
         let mut cache_db = CacheDB::new(state_provider);
         let mut evm = Context::default()
             .with_db(&mut cache_db)
@@ -67,6 +84,7 @@ where
                 block.basefee = block_context.eip1559_basefee.saturating_to();
                 block.gas_limit = block_context.gas_limit;
                 block.prevrandao = Some(block_context.mix_hash.into());
+                block.blob_excess_gas_and_price = Some(blob_excess_gas_and_price);
             })
             .build_zk_with_inspector(TracingInspector::new(TracingInspectorConfig::default_geth()));
 
