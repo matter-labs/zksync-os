@@ -112,6 +112,28 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     preimage_source: PS,
     tx_source: TS,
 ) -> Result<Vec<u32>, ForwardSubsystemError> {
+    let img_bytes = std::fs::read(&zk_os_program_path)
+        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {zk_os_program_path:?}"));
+    generate_proof_input_from_bytes(
+        &img_bytes,
+        block_context,
+        proof_data,
+        da_commitment_scheme,
+        tree,
+        preimage_source,
+        tx_source,
+    )
+}
+
+pub fn generate_proof_input_from_bytes<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
+    zk_os_program_bytes: &[u8],
+    block_context: BlockContext,
+    proof_data: ProofData<StorageCommitment>,
+    da_commitment_scheme: DACommitmentScheme,
+    tree: T,
+    preimage_source: PS,
+    tx_source: TS,
+) -> Result<Vec<u32>, ForwardSubsystemError> {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
@@ -147,7 +169,8 @@ pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource
     let copy_source = ReadWitnessSource::new(oracle);
     let items = copy_source.get_read_items();
 
-    let _proof_output = zksync_os_runner::run(zk_os_program_path, None, 1 << 36, copy_source);
+    let _proof_output =
+        zksync_os_runner::run_from_bytes(zk_os_program_bytes, None, 1 << 36, copy_source);
 
     Ok(std::rc::Rc::try_unwrap(items).unwrap().into_inner())
 }
