@@ -55,6 +55,11 @@ impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
 
 impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1HooksWithOracle<'a, O> {
     fn fe_sqrt_and_assign(&mut self, x: &mut FieldElement) -> bool {
+        // Match default hook semantics: sqrt(0) exists and equals 0.
+        if x.normalizes_to_zero() {
+            return true;
+        }
+
         let input = Bytes32::from_array(x.to_bytes().into());
         // We use different advice params depending on architecture
         // They are mostly the same, main difference is the width of pointers
@@ -110,6 +115,11 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
     }
 
     fn fe_invert_and_assign(&mut self, x: &mut crypto::secp256k1::FieldElement) {
+        // Match default hook semantics: invert(0) == 0.
+        if x.normalizes_to_zero() {
+            return;
+        }
+
         use crate::system_functions::field_ops::FIELD_OPS_ADVISE_QUERY_ID;
         let input = Bytes32::from_array(x.to_bytes().into());
         // We use different advice params depending on architecture
@@ -156,6 +166,11 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
     }
 
     fn scalar_invert_and_assign(&mut self, x: &mut crypto::secp256k1::Scalar) {
+        // Match default hook semantics: invert(0) == 0.
+        if x.is_zero() {
+            return;
+        }
+
         use crate::system_functions::field_ops::FIELD_OPS_ADVISE_QUERY_ID;
         let input = Bytes32::from_array(x.to_repr().into());
         // We use different advice params depending on architecture
