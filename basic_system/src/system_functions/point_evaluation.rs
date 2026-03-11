@@ -41,7 +41,7 @@ pub const POINT_EVAL_PRECOMPILE_SUCCESS_RESPONSE: [u8; 64] = const {
 
     res
 };
-pub const KZG_VERSIONED_HASH_VERSION_BYTE: u8 = 0x01;
+pub use zk_ee::system::VERSIONED_HASH_VERSION_KZG as KZG_VERSIONED_HASH_VERSION_BYTE;
 
 pub fn versioned_hash_for_kzg(data: &[u8]) -> [u8; 32] {
     use crypto::sha256::Digest;
