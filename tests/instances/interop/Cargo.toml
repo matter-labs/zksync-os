@@ -1,5 +1,5 @@
 [package]
-name = "interop"
+name = "interop_tests"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

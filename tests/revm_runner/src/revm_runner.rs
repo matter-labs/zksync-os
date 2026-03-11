@@ -88,7 +88,11 @@ where
             })
             .build_zk_with_inspector(TracingInspector::new(TracingInspectorConfig::default_geth()));
 
-        let revm_txs = Self::build_revm_txs(&transactions, block_output.as_ref())?;
+        let revm_txs = Self::build_revm_txs(
+            &transactions,
+            block_output.as_ref(),
+            block_context.gas_limit,
+        )?;
 
         let mut call_traces = Vec::with_capacity(revm_txs.len());
         let mut invalid_transactions = vec![];
@@ -98,8 +102,8 @@ where
                 Err(err) => {
                     match err {
                         revm::context_interface::result::EVMError::Transaction(e) => {
-                            invalid_transactions.push((idx, e));
-                            continue; // Skip transaction errors - they are expected for invalid transactions
+                            invalid_transactions.push((idx, e.clone()));
+                            panic!("Transaction error: {:?}", e); // Still panic to get the full error details in the test output, but we will ignore it in the comparison
                         }
                         revm::context_interface::result::EVMError::Header(e) => {
                             return Err(anyhow!("Header error: {:?}", e));
@@ -132,6 +136,7 @@ where
     fn build_revm_txs(
         transactions: &[ZKsyncTxEnvelope],
         block_output: Option<&BlockOutput>,
+        block_gas_limit: u64,
     ) -> anyhow::Result<Vec<ZKsyncTx<TxEnv>>> {
         if let Some(block_output) = block_output {
             if transactions.len() != block_output.tx_results.len() {
@@ -159,6 +164,7 @@ where
                         transaction,
                         Some(tx_output.gas_used),
                         !tx_output.is_success(),
+                        block_gas_limit,
                     )
                     .with_context(|| format!("Failed to convert tx #{idx} to REVM tx"))
                 })
@@ -168,7 +174,7 @@ where
                 .iter()
                 .enumerate()
                 .map(|(idx, transaction)| {
-                    zk_tx_into_revm_tx(transaction, None, false)
+                    zk_tx_into_revm_tx(transaction, None, false, block_gas_limit)
                         .with_context(|| format!("Failed to convert tx #{idx} to REVM tx"))
                 })
                 .collect()
