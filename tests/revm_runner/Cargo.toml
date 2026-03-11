@@ -20,16 +20,17 @@ alloy = { workspace = true, default-features = false, features = [
     "serde-bincode-compat",
 ] }
 ruint = { workspace = true, default-features = false, features = ["alloc"] }
-reth-revm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
-reth-storage-api = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.3" }
-revm-inspectors = "0.32.0"
+revm = "=34.0.0"
+revm-inspectors = "0.34.0"
 log = { workspace = true }
 
 zksync-os-revm = { git = "https://github.com/matter-labs/zksync-os-revm", branch = "vv-new-version" }
+#zksync-os-revm = { path = "../../../zksync-os-revm" }
 zksync_os_interface = { workspace = true, default-features = false }
 
 zk_ee = { path = "../../zk_ee" }
 basic_system = { path = "../../basic_system" }
+basic_bootloader = { path = "../../basic_bootloader" }
 forward_system = { path = "../../forward_system" }
 zksync_os_api = { path = "../../api" }
 
