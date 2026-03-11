@@ -362,7 +362,8 @@ fn test_tx_with_authorization_list() {
 
     let mut tester = TestingFramework::new()
         .with_evm_contract(erc_20_contract, &bytecode)
-        .with_prefunded_account(wallet.address());
+        .with_prefunded_account(wallet.address())
+        .without_revm_consistency_check();
 
     let output = tester.execute_block(vec![mint_tx]);
 

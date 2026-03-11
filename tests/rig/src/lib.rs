@@ -282,6 +282,14 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: disables REVM consistency checks for this framework instance.
+    pub fn without_revm_consistency_check(mut self) -> Self {
+        self.run_config
+            .get_or_insert_with(Default::default)
+            .disable_revm_consistency_check();
+        self
+    }
+
     /// Builder: installs a custom oracle factory for forward/proof runs.
     /// Can be used for testing cases with corrupted or malicious oracles
     pub fn with_custom_oracle_factory(
@@ -361,6 +369,14 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     /// Setter: updates run configuration for subsequent block execution.
     pub fn set_run_config(&mut self, run_config: Option<RunConfig>) -> &mut Self {
         self.run_config = run_config;
+        self
+    }
+
+    /// Setter: disables REVM consistency checks for subsequent block executions.
+    pub fn disable_revm_consistency_check(&mut self) -> &mut Self {
+        self.run_config
+            .get_or_insert_with(Default::default)
+            .disable_revm_consistency_check();
         self
     }
 
@@ -582,4 +598,39 @@ pub fn testing_signer(index: u64) -> PrivateKeySigner {
 
 pub fn common_target_address() -> alloy::primitives::Address {
     address!("4242000000000000000000000000000000000000")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{chain::RunConfig, TestingFramework};
+
+    #[test]
+    fn builder_disables_revm_consistency_check() {
+        let tester = TestingFramework::new().without_revm_consistency_check();
+        let run_config = tester.run_config.expect("run config should be set");
+        assert!(!run_config.check_revm_consistency);
+    }
+
+    #[test]
+    fn setter_disables_revm_consistency_check_even_if_run_config_is_none() {
+        let mut tester = TestingFramework::new();
+        tester.set_run_config(None);
+        tester.disable_revm_consistency_check();
+
+        let run_config = tester.run_config.expect("run config should be set");
+        assert!(!run_config.check_revm_consistency);
+    }
+
+    #[test]
+    fn setter_overrides_enabled_revm_consistency_check() {
+        let mut tester = TestingFramework::new().with_run_config({
+            let mut run_config = RunConfig::default();
+            run_config.enable_revm_consistency_check();
+            run_config
+        });
+        tester.disable_revm_consistency_check();
+
+        let run_config = tester.run_config.expect("run config should be set");
+        assert!(!run_config.check_revm_consistency);
+    }
 }

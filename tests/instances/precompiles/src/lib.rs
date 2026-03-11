@@ -22,7 +22,12 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 /// 2. Calls the forwarder contract to call the precompile with the same input and gas limit.
 ///
 /// The second call is just there to check consistency between forward and proof runs.
-fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockOutput {
+fn run_precompile_inner(
+    precompile_id: &str,
+    gas: Option<u64>,
+    input: &[u8],
+    disable_revm_consistency_checker: bool,
+) -> BlockOutput {
     let gas = gas.unwrap_or(1 << 27);
 
     let mut tester = TestingFramework::new();
@@ -70,7 +75,15 @@ fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockO
 
     tester = tester.with_block_context(block_context);
 
+    if disable_revm_consistency_checker {
+        tester = tester.without_revm_consistency_check();
+    }
+
     tester.execute_block(vec![direct_tx, forwarded_tx])
+}
+
+fn run_precompile(precompile_id: &str, gas: Option<u64>, input: &[u8]) -> BlockOutput {
+    run_precompile_inner(precompile_id, gas, input, false)
 }
 
 struct Test {
@@ -80,7 +93,7 @@ struct Test {
     precompile_id: &'static str,
 }
 
-const TESTS: [Test; 115] = [
+const TESTS: [Test; 114] = [
     // ecrecover test vectors
     Test {
         input: "38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e000000000000000000000000000000000000000000000000000000000000001b38d18acb67d25c8bb9942764b62f18e17054f66a817bd4295423adf9ed98873e789d1dd423d25f0772d2748d60f7e4b81bb14d086eba8e8e8efb6dcff8a4ae02",
@@ -1150,7 +1163,10 @@ const TESTS: [Test; 115] = [
         expected: "",
         name: "p256_x_P_plus_5_y_positive",
         precompile_id: "0000000000000000000000000000000000000100"
-    },
+    }
+];
+
+const KZG_TESTS: [Test; 1] = [
     Test {
         input: "016685e172a749f7426a45259a2f0ca6382072faf89dc058fba39ad2792242eb55db09df7484b85d7e2870dc3e526e87b12ef1716bc52ffcf82aa07743a5d4f512d1aa968cf5c88d44a2a5815242082a27f99d2fa816838338b9532bf3cee22d91c1ac59fdf344e2a9098eb2c3699b9652a9a8efc006c4bda8a1d764b4a0fada3c34e72a0cc4d151a6dd137dde534af29517ca718c450eed935603cd5985ee6bbcfbe2da87e24e64be8fa2d81733e0de9b8a11efd7c73f39898d158fd0c4867e",
         expected: "000000000000000000000000000000000000000000000000000000000000100073eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001",
@@ -1158,6 +1174,36 @@ const TESTS: [Test; 115] = [
         precompile_id: "000000000000000000000000000000000000000a",
     },
 ];
+
+#[test]
+fn test_kzg_regression() {
+    for test in KZG_TESTS.iter() {
+        let input = hex::decode(test.input).unwrap();
+        let expected = hex::decode(test.expected).unwrap();
+        dbg!(test.name);
+
+        // TODO: currently the KZG precompile is not enabled in production, so we should skip Revm consistency check
+        let disable_revm_consistency_checker = true;
+        let tx_result = run_precompile_inner(
+            test.precompile_id,
+            None::<u64>,
+            &input,
+            disable_revm_consistency_checker,
+        )
+        .tx_results
+        .first()
+        .unwrap()
+        .clone()
+        .expect("Tx should have succeeded");
+
+        assert_eq!(
+            expected,
+            tx_result.as_returned_bytes(),
+            "{} failed",
+            test.name
+        );
+    }
+}
 
 #[test]
 fn test_precompiles() {
