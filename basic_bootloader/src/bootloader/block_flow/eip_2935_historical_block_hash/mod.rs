@@ -3,9 +3,8 @@ use ruint::aliases::B160;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::system::SystemError;
 use zk_ee::system::AccountDataRequest;
-use zk_ee::system::Computational;
 use zk_ee::system::IOSubsystemExt;
-use zk_ee::system::Resources;
+use zk_ee::system::Resource;
 use zk_ee::system::System;
 use zk_ee::system::{EthereumLikeTypes, IOSubsystem};
 use zk_ee::system_log;
@@ -20,28 +19,25 @@ pub fn eip2935_system_part<S: EthereumLikeTypes>(system: &mut System<S>) -> Resu
 where
     S::IO: IOSubsystemExt,
 {
-    let mut resources = S::Resources::from_native(
-        <S::Resources as Resources>::Native::from_computational(u64::MAX),
-    );
+    let mut resources = S::Resources::FORMAL_INFINITE;
 
-    let props = resources.with_infinite_ergs(|resources| {
-        system.io.read_account_properties(
-            ExecutionEnvironmentType::NoEE,
-            resources,
-            &HISTORY_STORAGE_ADDRESS,
-            AccountDataRequest::empty()
-                .with_nonce()
-                .with_observable_bytecode_len(),
-        )
-    })?;
+    let props = system.io.read_account_properties(
+        ExecutionEnvironmentType::NoEE,
+        &mut resources,
+        &HISTORY_STORAGE_ADDRESS,
+        AccountDataRequest::empty()
+            .with_observable_bytecode_len()
+            .with_is_delegated(),
+    )?;
 
-    let is_contract = props.nonce.0 == 1 && props.observable_bytecode_len.0 > 0;
-    if is_contract == false {
-        // fail silently
+    if !props.is_contract() {
         return Ok(());
     }
 
     let block_number = system.get_block_number();
+    if block_number == 0 {
+        return Err(zk_ee::internal_error!("EIP-2935: block number is 0").into());
+    }
     let parent_hash = system.get_blockhash(block_number - 1)?;
 
     system_log!(system, "EIP-2935 parent hash = {:?}\n", &parent_hash);
@@ -50,15 +46,13 @@ where
     let mut slot = Bytes32::ZERO;
     slot.as_u8_array_mut()[24..32].copy_from_slice(&slot_idx.to_be_bytes());
 
-    resources.with_infinite_ergs(|resources| {
-        system.io.storage_write::<false>(
-            ExecutionEnvironmentType::NoEE,
-            resources,
-            &HISTORY_STORAGE_ADDRESS,
-            &slot,
-            &parent_hash,
-        )
-    })?;
+    system.io.storage_write::<false>(
+        ExecutionEnvironmentType::NoEE,
+        &mut resources,
+        &HISTORY_STORAGE_ADDRESS,
+        &slot,
+        &parent_hash,
+    )?;
 
     Ok(())
 }
