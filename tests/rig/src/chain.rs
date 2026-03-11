@@ -888,7 +888,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                     account_properties.insert(key, props);
                 } else {
                     warn!(
-                        "Account 0x{} is in preimages list, but there is no MTP witness to get it's properties",
+                        "Account 0x{} is in preimages list, but there is no MTP witness to get its properties",
                         hex::encode(el)
                     );
                 }
