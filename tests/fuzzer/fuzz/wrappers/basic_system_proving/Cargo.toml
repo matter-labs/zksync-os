@@ -54,8 +54,8 @@ num-bigint = "*"
 num-traits = "*"
 arbitrary = { version = "1", features = ["derive"] }
 serde_json = "*"
-alloy-rpc-types-debug = { version = "*", default-features = false }
-alloy = { version = "1", features = ["rlp", "full"] }
+alloy-rpc-types-debug = { version = "=1.7.3", default-features = false }
+alloy = { version = "=1.7.3", features = ["rlp", "full"] }
 alloy-rlp = { version = "*" }
 alloy-primitives = { version = "1", features = ["arbitrary"] }
 reqwest = { version = "*", features = ["blocking", "json"] }
