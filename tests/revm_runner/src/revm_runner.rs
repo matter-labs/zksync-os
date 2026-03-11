@@ -45,6 +45,7 @@ where
             .map(|_| ())
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn run_with_call_traces(
         &mut self,
         transactions: Vec<ZKsyncTxEnvelope>,
