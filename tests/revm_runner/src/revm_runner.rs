@@ -52,6 +52,15 @@ where
         block_context: BlockContext,
         block_output: Option<BlockOutput>,
     ) -> anyhow::Result<(Vec<CallFrame>, Vec<(usize, ZKsyncTxError)>)> {
+        let blob_fee: u64 = block_context
+            .blob_fee
+            .try_into()
+            .context("Blob fee should fit into u64")?;
+        let block_basefee: u64 = block_context
+            .eip1559_basefee
+            .try_into()
+            .context("Block base fee should fit into u64")?;
+
         let state_provider = RevmStateProvider::new(
             self.state.clone(),
             block_context.block_hashes,
@@ -59,13 +68,7 @@ where
         );
 
         let blob_excess_gas_and_price = BlobExcessGasAndPrice::new(
-            calculate_excess_blob_gas_from_blob_base_fee(
-                block_context
-                    .blob_fee
-                    .try_into()
-                    .expect("Blob fee should fit into u64"),
-                BLOB_BASE_FEE_UPDATE_FRACTION,
-            ),
+            calculate_excess_blob_gas_from_blob_base_fee(blob_fee, BLOB_BASE_FEE_UPDATE_FRACTION),
             BLOB_BASE_FEE_UPDATE_FRACTION
                 .try_into()
                 .expect("Blob base fee update fraction should fit into u64"),
@@ -82,7 +85,7 @@ where
                 block.number = U256::from(block_context.block_number);
                 block.timestamp = U256::from(block_context.timestamp);
                 block.beneficiary = block_context.coinbase;
-                block.basefee = block_context.eip1559_basefee.saturating_to();
+                block.basefee = block_basefee;
                 block.gas_limit = block_context.gas_limit;
                 block.prevrandao = Some(block_context.mix_hash.into());
                 block.blob_excess_gas_and_price = Some(blob_excess_gas_and_price);
@@ -100,23 +103,21 @@ where
         for (idx, tx) in revm_txs.into_iter().enumerate() {
             let tx_execution = match evm.inspect_tx_commit(tx) {
                 Ok(res) => res,
-                Err(err) => {
-                    match err {
-                        revm::context_interface::result::EVMError::Transaction(e) => {
-                            invalid_transactions.push((idx, e.clone()));
-                            panic!("Transaction error: {:?}", e); // Still panic to get the full error details in the test output, but we will ignore it in the comparison
-                        }
-                        revm::context_interface::result::EVMError::Header(e) => {
-                            return Err(anyhow!("Header error: {:?}", e));
-                        }
-                        revm::context_interface::result::EVMError::Database(e) => {
-                            return Err(anyhow!("Database error: {:?}", e));
-                        }
-                        revm::context_interface::result::EVMError::Custom(e) => {
-                            return Err(anyhow!("Other error: {}", e));
-                        }
+                Err(err) => match err {
+                    revm::context_interface::result::EVMError::Transaction(e) => {
+                        invalid_transactions.push((idx, e.clone()));
+                        continue;
                     }
-                }
+                    revm::context_interface::result::EVMError::Header(e) => {
+                        return Err(anyhow!("Header error: {:?}", e));
+                    }
+                    revm::context_interface::result::EVMError::Database(e) => {
+                        return Err(anyhow!("Database error: {:?}", e));
+                    }
+                    revm::context_interface::result::EVMError::Custom(e) => {
+                        return Err(anyhow!("Other error: {}", e));
+                    }
+                },
             };
             let trace = evm
                 .0
@@ -125,6 +126,17 @@ where
                 .geth_call_traces(Default::default(), tx_execution.gas_used());
             call_traces.push(trace);
             evm.0.inspector.fuse();
+        }
+
+        if block_output.is_some() && !invalid_transactions.is_empty() {
+            let invalid_count = invalid_transactions.len();
+            for (idx, err) in invalid_transactions.iter().take(10) {
+                log::warn!("REVM rejected tx #{idx} that passed ZKsync OS validation: {err:?}");
+            }
+            bail!(
+                "REVM rejected {invalid_count} tx(s) that were accepted by ZKsync OS (first index: #{})",
+                invalid_transactions[0].0
+            );
         }
 
         if let Some(block_output) = block_output.as_ref() {
@@ -148,28 +160,32 @@ where
                 );
             }
 
-            transactions
+            let mut revm_txs = Vec::with_capacity(transactions.len());
+
+            for (idx, (transaction, tx_output_raw)) in transactions
                 .iter()
                 .zip(&block_output.tx_results)
-                // Ignore invalid transactions - they should be skipped
-                .filter(|(_, tx_output_raw)| tx_output_raw.is_ok())
                 .enumerate()
-                .map(|(idx, (transaction, tx_output_raw))| {
-                    let tx_output = tx_output_raw.as_ref().map_err(|e| {
-                        anyhow!(
-                            "Tx #{idx} is invalid in block output and cannot be replayed: {e:?}"
-                        )
-                    })?;
+            {
+                let Ok(tx_output) = tx_output_raw else {
+                    log::debug!(
+                        "Skipping tx #{idx} in REVM replay because ZKsync OS rejected it: {tx_output_raw:?}"
+                    );
+                    continue;
+                };
 
-                    zk_tx_into_revm_tx(
-                        transaction,
-                        Some(tx_output.gas_used),
-                        !tx_output.is_success(),
-                        block_gas_limit,
-                    )
-                    .with_context(|| format!("Failed to convert tx #{idx} to REVM tx"))
-                })
-                .collect()
+                let tx_env = zk_tx_into_revm_tx(
+                    transaction,
+                    Some(tx_output.gas_used),
+                    !tx_output.is_success(),
+                    block_gas_limit,
+                )
+                .with_context(|| format!("Failed to convert tx #{idx} to REVM tx"))?;
+
+                revm_txs.push(tx_env);
+            }
+
+            Ok(revm_txs)
         } else {
             transactions
                 .iter()

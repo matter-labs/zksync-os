@@ -1,6 +1,9 @@
 use alloy::{
     consensus::Transaction,
-    eips::{eip4844::BLOB_GASPRICE_UPDATE_FRACTION, Typed2718},
+    eips::{
+        eip4844::{fake_exponential, BLOB_GASPRICE_UPDATE_FRACTION, BLOB_TX_MIN_BLOB_GASPRICE},
+        Typed2718,
+    },
     primitives::{TxKind, U256},
 };
 use anyhow::{anyhow, bail, Context};
@@ -184,13 +187,50 @@ pub fn calculate_excess_blob_gas_from_blob_base_fee(
     blob_base_fee: u64,
     blob_base_fee_update_fraction: u128,
 ) -> u64 {
-    // Take the logarithm of blob_base_fee:
-    let blob_base_fee_f: f64 = blob_base_fee as f64;
-    if blob_base_fee_f as u64 != blob_base_fee {
-        panic!("Blob base fee is too large to fit into f64");
+    if blob_base_fee <= MIN_BASE_FEE_PER_BLOB_GAS {
+        return 0;
     }
-    let excess_blob_gas = (blob_base_fee_f.ln() * (blob_base_fee_update_fraction as f64)).ceil();
-    excess_blob_gas as u64
+    assert!(
+        blob_base_fee_update_fraction != 0,
+        "blob base fee update fraction cannot be zero"
+    );
+
+    let target_blob_base_fee = blob_base_fee as u128;
+    let mut low = 0u64;
+    let mut high = 1u64;
+
+    while calculate_blob_base_fee_for_excess_blob_gas(high, blob_base_fee_update_fraction)
+        < target_blob_base_fee
+    {
+        if high == u64::MAX {
+            return u64::MAX;
+        }
+        high = high.saturating_mul(2);
+    }
+
+    while low < high {
+        let mid = low + (high - low) / 2;
+        let blob_base_fee_at_mid =
+            calculate_blob_base_fee_for_excess_blob_gas(mid, blob_base_fee_update_fraction);
+        if blob_base_fee_at_mid < target_blob_base_fee {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+
+    low
+}
+
+fn calculate_blob_base_fee_for_excess_blob_gas(
+    excess_blob_gas: u64,
+    blob_base_fee_update_fraction: u128,
+) -> u128 {
+    fake_exponential(
+        BLOB_TX_MIN_BLOB_GASPRICE,
+        excess_blob_gas as u128,
+        blob_base_fee_update_fraction,
+    )
 }
 
 #[cfg(test)]
@@ -214,5 +254,46 @@ mod tests {
         });
         let err = zk_tx_into_revm_tx(&tx, None, false, 30_000_000).unwrap_err();
         assert!(err.to_string().contains("gas_limit"));
+    }
+
+    #[test]
+    fn zero_blob_base_fee_maps_to_zero_excess_blob_gas() {
+        assert_eq!(
+            calculate_excess_blob_gas_from_blob_base_fee(0, BLOB_BASE_FEE_UPDATE_FRACTION),
+            0
+        );
+    }
+
+    #[test]
+    fn excess_blob_gas_inverse_returns_minimum_matching_value() {
+        let test_cases = [0u64, 1, 2, 100_000, 2_314_058, 10_000_000];
+        for excess_blob_gas in test_cases {
+            let blob_base_fee = calculate_blob_base_fee_for_excess_blob_gas(
+                excess_blob_gas,
+                BLOB_BASE_FEE_UPDATE_FRACTION,
+            );
+            let blob_base_fee_u64: u64 = blob_base_fee
+                .try_into()
+                .expect("test vector should fit into u64");
+
+            let recovered_excess_blob_gas = calculate_excess_blob_gas_from_blob_base_fee(
+                blob_base_fee_u64,
+                BLOB_BASE_FEE_UPDATE_FRACTION,
+            );
+
+            let recovered_blob_base_fee = calculate_blob_base_fee_for_excess_blob_gas(
+                recovered_excess_blob_gas,
+                BLOB_BASE_FEE_UPDATE_FRACTION,
+            );
+            assert!(recovered_blob_base_fee >= blob_base_fee);
+
+            if recovered_excess_blob_gas > 0 {
+                let previous_blob_base_fee = calculate_blob_base_fee_for_excess_blob_gas(
+                    recovered_excess_blob_gas - 1,
+                    BLOB_BASE_FEE_UPDATE_FRACTION,
+                );
+                assert!(previous_blob_base_fee < blob_base_fee);
+            }
+        }
     }
 }

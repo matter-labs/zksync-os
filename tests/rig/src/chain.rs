@@ -202,7 +202,9 @@ impl Default for RunConfig {
         let ci_is_true =
             Self::parse_explicit_bool(std::env::var("CI").ok()).is_some_and(|value| value);
         let do_riscv_run = Self::should_do_riscv_run(zksync_risc_v_run, ci_is_true);
-        let check_revm_consistency = std::env::var_os("ZKSYNC_REVM_CONSISTENCY_CHECK").is_some();
+        let check_revm_consistency = Self::should_check_revm_consistency(
+            Self::parse_explicit_bool(std::env::var("ZKSYNC_REVM_CONSISTENCY_CHECK").ok()),
+        );
 
         RunConfig {
             app: Some("for_tests".to_string()),
@@ -232,6 +234,10 @@ impl RunConfig {
 
     fn should_do_riscv_run(zksync_risc_v_run: Option<bool>, ci_is_true: bool) -> bool {
         zksync_risc_v_run == Some(true) || (ci_is_true && zksync_risc_v_run != Some(false))
+    }
+
+    fn should_check_revm_consistency(zksync_revm_consistency: Option<bool>) -> bool {
+        zksync_revm_consistency == Some(true)
     }
 
     pub fn without_riscv_run() -> Self {
@@ -1324,5 +1330,12 @@ mod tests {
         config.disable_riscv_run();
         assert!(!config.do_riscv_run);
         assert!(!config.check_storage_diff_hashes);
+    }
+
+    #[test]
+    fn run_config_should_check_revm_consistency_requires_explicit_true() {
+        assert!(RunConfig::should_check_revm_consistency(Some(true)));
+        assert!(!RunConfig::should_check_revm_consistency(Some(false)));
+        assert!(!RunConfig::should_check_revm_consistency(None));
     }
 }

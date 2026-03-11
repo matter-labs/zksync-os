@@ -4,7 +4,7 @@ use forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use forward_system::run::ReadStorage as ForwardSystemReadStorage;
 use zk_ee::utils::Bytes32;
 use zksync_os_interface::traits::{PreimageSource, ReadStorage};
-use zksync_os_revm_runner::revm_state_provider::ViewState;
+use zksync_os_revm_runner::revm_state_provider::{RevmStateProviderError, ViewState};
 
 use crate::{BlockContext, Chain};
 
@@ -30,9 +30,12 @@ impl<const RANDOMIZED_TREE: bool> ReadStorage for ChainStateView<RANDOMIZED_TREE
 }
 
 impl<const RANDOMIZED_TREE: bool> ViewState for ChainStateView<RANDOMIZED_TREE> {
-    fn get_account(&mut self, address: Address) -> Option<AccountProperties> {
+    fn get_account(
+        &mut self,
+        address: Address,
+    ) -> Result<Option<AccountProperties>, RevmStateProviderError> {
         let address = ruint::aliases::B160::from_alloy(address);
-        self.chain.get_account_properties_maybe(&address)
+        Ok(self.chain.get_account_properties_maybe(&address))
     }
 }
 

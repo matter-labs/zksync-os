@@ -1,4 +1,4 @@
-use alloy::primitives::{Address, B256, U256};
+use alloy::primitives::{Address, B256, KECCAK256_EMPTY, U256};
 use basic_system::system_implementation::flat_storage_model::ACCOUNT_PROPERTIES_STORAGE_ADDRESS;
 use forward_system::run::convert_alloy::IntoAlloy;
 use revm::{bytecode::Bytecode, database::CacheDB, DatabaseRef};
@@ -60,7 +60,7 @@ impl CompareReport {
     {
         // internal maps keyed by (addr, slot)
         let revm_storage = build_revm_storage_map(cache_db)?;
-        let zk_storage = build_zk_storage_map(zksync_storage_writes);
+        let zk_storage = build_zk_storage_map(cache_db, zksync_storage_writes)?;
 
         let revm_accounts = build_revm_accounts(cache_db)?;
         let zk_accounts = build_zk_accounts(zksync_account_diffs);
@@ -239,16 +239,26 @@ where
     Ok(map)
 }
 
-fn build_zk_storage_map(zksync_storage_writes: &[StorageWrite]) -> HashMap<(Address, B256), B256> {
+fn build_zk_storage_map<DB>(
+    cache_db: &CacheDB<DB>,
+    zksync_storage_writes: &[StorageWrite],
+) -> Result<HashMap<(Address, B256), B256>, anyhow::Error>
+where
+    DB: DatabaseRef,
+    DB::Error: std::error::Error + Send + Sync + 'static,
+{
     let mut map = HashMap::new();
     let account_properties_storage_address = ACCOUNT_PROPERTIES_STORAGE_ADDRESS.into_alloy();
     for w in zksync_storage_writes {
         if w.account == account_properties_storage_address {
             continue;
         }
-        map.insert((w.account, w.account_key), w.value); // latest write wins
+        let prev_value = B256::from(cache_db.db.storage_ref(w.account, w.account_key.into())?);
+        if prev_value != w.value {
+            map.insert((w.account, w.account_key), w.value); // latest non-noop write wins
+        }
     }
-    map
+    Ok(map)
 }
 
 fn build_revm_accounts<DB>(
@@ -267,9 +277,10 @@ where
             } else {
                 match code {
                     Bytecode::LegacyAnalyzed(legacy_code) => calculate_bytecode_hash(legacy_code),
-                    _ => {
+                    Bytecode::Eip7702(eip7702) => {
                         return Err(anyhow::anyhow!(
-                            "EIP-7702 bytecode is not supported on Consistency Checker"
+                            "EIP-7702 bytecode is not supported on Consistency Checker (delegated_address={:?})",
+                            eip7702.address()
                         ));
                     }
                 }
@@ -448,7 +459,10 @@ fn compare_accounts(
 
 #[inline]
 fn code_hash_equivalent(a: B256, b: B256) -> bool {
-    a == b
-        || (a == EMPTY_BYTE_CODE_HASH && b == B256::ZERO)
-        || (a == B256::ZERO && b == EMPTY_BYTE_CODE_HASH)
+    a == b || (is_empty_code_hash(a) && is_empty_code_hash(b))
+}
+
+#[inline]
+fn is_empty_code_hash(hash: B256) -> bool {
+    hash == B256::ZERO || hash == EMPTY_BYTE_CODE_HASH || hash == KECCAK256_EMPTY
 }
