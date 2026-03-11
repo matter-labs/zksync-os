@@ -4,8 +4,8 @@ use alloy::{
     primitives::{TxKind, U256},
 };
 use anyhow::{anyhow, bail, Context};
-use revm::{context::TxEnv, context_interface::cfg::gas::calculate_initial_tx_gas};
-use zksync_os_revm::{transaction::abstraction::ZKsyncTxBuilder, ZKsyncTx, ZkSpecId};
+use revm::context::TxEnv;
+use zksync_os_revm::{transaction::abstraction::ZKsyncTxBuilder, ZKsyncTx};
 use zksync_os_tests_common::zksync_tx::{
     encoding::BOOTLOADER_FORMAL_ADDRESS, ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope,
 };
@@ -80,18 +80,7 @@ pub fn zk_tx_into_revm_tx(
         ZKsyncTxEnvelope::ZKsync(zksync_specific_tx_envelope) => {
             match zksync_specific_tx_envelope {
                 ZKsyncSpecificTxEnvelope::L1(zksync_l1_tx) => {
-                    let mut gas_limit = checked_u64(zksync_l1_tx.gas_limit, "L1 tx gas_limit")?;
-                    let intrinsic_gas = calculate_initial_tx_gas(
-                        ZkSpecId::AtlasV3.into_eth_spec(), // TODO make it configurable
-                        zksync_l1_tx.input.as_ref(),
-                        false,
-                        0,
-                        0,
-                        0,
-                    )
-                    .initial_gas;
-                    gas_limit = gas_limit.max(intrinsic_gas);
-
+                    let gas_limit = checked_u64(zksync_l1_tx.gas_limit, "L1 tx gas_limit")?;
                     let nonce = checked_u64(zksync_l1_tx.nonce, "L1 tx nonce")?;
                     (
                         Some(zksync_l1_tx.max_fee_per_gas),
