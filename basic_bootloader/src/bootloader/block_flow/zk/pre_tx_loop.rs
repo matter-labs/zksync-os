@@ -15,7 +15,7 @@ where
     fn pre_op(
         system: &mut System<S>,
         _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
-    ) -> Self::PreTxLoopResult {
+    ) -> Result<Self::PreTxLoopResult, BootloaderSubsystemError> {
         // Create data keeper and seed block intrinsic constants
         let mut block_data = ZKBasicBlockDataKeeper::new();
         block_data.block_computational_native_used = BLOCK_INTRINSIC_NATIVE;
@@ -25,11 +25,11 @@ where
         #[cfg(feature = "eip-2935")]
         {
             use crate::bootloader::block_flow::eip_2935_historical_block_hash::eip2935_system_part;
-            eip2935_system_part(system).expect("must perform EIP-2935");
+            eip2935_system_part(system)?;
         }
         #[cfg(not(feature = "eip-2935"))]
         let _ = system;
 
-        block_data
+        Ok(block_data)
     }
 }

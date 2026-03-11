@@ -13,15 +13,17 @@ where
     fn pre_op(
         system: &mut System<S>,
         _result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>,
-    ) -> Self::PreTxLoopResult {
+    ) -> Result<Self::PreTxLoopResult, BootloaderSubsystemError> {
         // EIP-4788
         let beacon_root_hash = system.metadata.block_level.header.parent_beacon_block_root;
-        eip4788_system_part(system, &beacon_root_hash).expect("must perform EIP-4788");
+        eip4788_system_part(system, &beacon_root_hash)?;
 
         // EIP-2935
-        eip2935_system_part(system).expect("must perform EIP-2935");
+        eip2935_system_part(system)?;
 
         // Create data keeper
-        EthereumBasicTransactionDataKeeper::new_in(system.get_allocator())
+        Ok(EthereumBasicTransactionDataKeeper::new_in(
+            system.get_allocator(),
+        ))
     }
 }
