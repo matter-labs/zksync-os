@@ -6,9 +6,7 @@ use ruint::aliases::B160;
 use zk_ee::{system::validator, utils::Bytes32};
 
 use crate::{utils::L1TxBuilder, Chain, TestingFramework};
-use system_hooks::addresses_constants::{
-    CONTRACT_DEPLOYER_ADDRESS, L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS,
-};
+use system_hooks::addresses_constants::{L1_MESSENGER_ADDRESS, L2_BASE_TOKEN_ADDRESS};
 
 // RUNTIME bytecode
 pub static L1_MESSENGER_BYTECODE: Lazy<Vec<u8>> = Lazy::new(|| {
