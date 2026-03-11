@@ -25,6 +25,7 @@ where
     State: ViewState,
 {
     state: State,
+    spec: ZkSpecId,
 }
 
 impl<State> RevmRunner<State>
@@ -32,7 +33,20 @@ where
     State: ViewState,
 {
     pub fn new(state: State) -> Self {
-        Self { state }
+        Self {
+            state,
+            spec: ZkSpecId::AtlasV3,
+        }
+    }
+
+    pub fn with_spec(mut self, spec: ZkSpecId) -> Self {
+        self.spec = spec;
+        self
+    }
+
+    pub fn set_spec(&mut self, spec: ZkSpecId) -> &mut Self {
+        self.spec = spec;
+        self
     }
 
     pub fn run(
@@ -79,7 +93,7 @@ where
             .with_db(cache_db)
             .modify_cfg_chained(|cfg| {
                 cfg.chain_id = block_context.chain_id;
-                cfg.spec = ZkSpecId::AtlasV3; // TODO: make it configurable
+                cfg.spec = self.spec;
             })
             .modify_block_chained(|block| {
                 block.number = U256::from(block_context.block_number);
