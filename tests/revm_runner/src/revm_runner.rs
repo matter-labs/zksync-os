@@ -11,7 +11,7 @@ use revm::{
 use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
 use zksync_os_interface::types::BlockContext;
 use zksync_os_interface::types::BlockOutput;
-use zksync_os_revm::{DefaultZk, ZKsyncTx, ZkBuilder, ZkContext, ZkSpecId};
+use zksync_os_revm::{DefaultZk, ZKsyncTx, ZKsyncTxError, ZkBuilder, ZkContext, ZkSpecId};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 use crate::helpers::{
@@ -50,7 +50,7 @@ where
         transactions: Vec<ZKsyncTxEnvelope>,
         block_context: BlockContext,
         block_output: Option<BlockOutput>,
-    ) -> anyhow::Result<Vec<CallFrame>> {
+    ) -> anyhow::Result<(Vec<CallFrame>, Vec<(usize, ZKsyncTxError)>)> {
         let state_provider = RevmStateProvider::new(
             self.state.clone(),
             block_context.block_hashes,
@@ -91,8 +91,28 @@ where
         let revm_txs = Self::build_revm_txs(&transactions, block_output.as_ref())?;
 
         let mut call_traces = Vec::with_capacity(revm_txs.len());
-        for tx in revm_txs {
-            let tx_execution = evm.inspect_tx_commit(tx)?;
+        let mut invalid_transactions = vec![];
+        for (idx, tx) in revm_txs.into_iter().enumerate() {
+            let tx_execution = match evm.inspect_tx_commit(tx) {
+                Ok(res) => res,
+                Err(err) => {
+                    match err {
+                        revm::context_interface::result::EVMError::Transaction(e) => {
+                            invalid_transactions.push((idx, e));
+                            continue; // Skip transaction errors - they are expected for invalid transactions
+                        }
+                        revm::context_interface::result::EVMError::Header(e) => {
+                            return Err(anyhow!("Header error: {:?}", e));
+                        }
+                        revm::context_interface::result::EVMError::Database(e) => {
+                            return Err(anyhow!("Database error: {:?}", e));
+                        }
+                        revm::context_interface::result::EVMError::Custom(e) => {
+                            return Err(anyhow!("Other error: {}", e));
+                        }
+                    }
+                }
+            };
             let trace = evm
                 .0
                 .inspector
@@ -106,7 +126,7 @@ where
             Self::compare_state_diffs(evm.0.db_mut(), block_output)?;
         }
 
-        Ok(call_traces)
+        Ok((call_traces, invalid_transactions))
     }
 
     fn build_revm_txs(

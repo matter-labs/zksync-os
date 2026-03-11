@@ -1,12 +1,14 @@
 use alloy::{
     consensus::Transaction,
     eips::{eip4844::BLOB_GASPRICE_UPDATE_FRACTION, Typed2718},
-    primitives::TxKind,
+    primitives::{TxKind, U256},
 };
 use anyhow::{anyhow, bail, Context};
 use revm::context::TxEnv;
 use zksync_os_revm::{transaction::abstraction::ZKsyncTxBuilder, ZKsyncTx};
-use zksync_os_tests_common::zksync_tx::{ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope};
+use zksync_os_tests_common::zksync_tx::{
+    encoding::BOOTLOADER_FORMAL_ADDRESS, ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope,
+};
 
 fn checked_u64(value: u128, field: &str) -> anyhow::Result<u64> {
     u64::try_from(value).with_context(|| format!("{field} does not fit into u64: {value}"))
@@ -20,6 +22,7 @@ pub fn zk_tx_into_revm_tx(
 ) -> anyhow::Result<ZKsyncTx<TxEnv>> {
     let mut blob_hashes = vec![];
     let mut max_fee_per_blob_gas = 0;
+    let mut authorization_list = vec![];
 
     let (
         gas_price,
@@ -53,6 +56,11 @@ pub fn zk_tx_into_revm_tx(
                 .unwrap_or_default();
             max_fee_per_blob_gas = ethereum_tx_envelope
                 .max_fee_per_blob_gas()
+                .unwrap_or_default();
+
+            authorization_list = ethereum_tx_envelope
+                .authorization_list()
+                .map(|list| list.to_vec())
                 .unwrap_or_default();
 
             (
@@ -106,8 +114,22 @@ pub fn zk_tx_into_revm_tx(
                         nonce,
                     )
                 }
-                ZKsyncSpecificTxEnvelope::Service(_) => {
-                    bail!("System transactions are not supported by REVM runner");
+                ZKsyncSpecificTxEnvelope::Service(service_tx) => {
+                    let gas_limit = u64::MAX;
+                    let nonce = 1u64; // Service transactions don't have nonces, but TxEnv requires it
+                    (
+                        Some(0u128),
+                        Some(0u128),
+                        Some(U256::ZERO),
+                        service_tx.input.clone(),
+                        None, // Chain id is not specified in ZKsync specific transactions
+                        Default::default(), // Service transactions don't have access lists
+                        Default::default(), // Service transactions don't mint
+                        None, // Service transactions don't have refund recipients
+                        BOOTLOADER_FORMAL_ADDRESS,
+                        gas_limit,
+                        nonce,
+                    )
                 }
             }
         }
@@ -135,7 +157,8 @@ pub fn zk_tx_into_revm_tx(
         .tx_type(Some(tx.ty()))
         .chain_id(chain_id)
         .blob_hashes(blob_hashes)
-        .max_fee_per_blob_gas(max_fee_per_blob_gas);
+        .max_fee_per_blob_gas(max_fee_per_blob_gas)
+        .authorization_list_signed(authorization_list);
 
     if let Some(priority_fee) = gas_priority_fee {
         tx_env_builder = tx_env_builder.gas_priority_fee(Some(priority_fee));
