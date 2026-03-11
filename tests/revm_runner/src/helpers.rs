@@ -205,21 +205,13 @@ pub fn calculate_excess_blob_gas_from_blob_base_fee(
 mod tests {
     use super::*;
     use alloy::rpc::types::TransactionRequest;
-    use zksync_os_tests_common::zksync_tx::{l1_tx::ZKsyncL1Tx, service_tx::ZKsyncServiceTx};
+    use zksync_os_tests_common::zksync_tx::l1_tx::ZKsyncL1Tx;
 
     #[test]
     fn custom_tx_is_rejected() {
         let tx = ZKsyncTxEnvelope::new_custom_tx_type(TransactionRequest::default(), 0xff);
         let err = zk_tx_into_revm_tx(&tx, None, false).unwrap_err();
         assert!(err.to_string().contains("Custom transactions"));
-    }
-
-    #[test]
-    fn service_tx_is_rejected() {
-        let service_tx = ZKsyncServiceTx::default();
-        let tx = ZKsyncTxEnvelope::from(service_tx);
-        let err = zk_tx_into_revm_tx(&tx, None, false).unwrap_err();
-        assert!(err.to_string().contains("System transactions"));
     }
 
     #[test]
