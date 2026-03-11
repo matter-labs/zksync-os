@@ -19,6 +19,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1Additi
         _allocator: A,
     ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
         let cost_ergs = Ergs(BLS12_381_G1_ADDITION_GAS * ERGS_PER_GAS);
+        // TODO(EVM-1237): add native model
         let cost_native = 0;
         resources.charge(&R::from_ergs_and_native(
             cost_ergs,
@@ -60,6 +61,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2Additi
         _allocator: A,
     ) -> Result<(), zk_ee::system::errors::subsystem::SubsystemError<Bls12PrecompileErrors>> {
         let cost_ergs = Ergs(BLS12_381_G2_ADDITION_GAS * ERGS_PER_GAS);
+        // TODO(EVM-1237): add native model
         let cost_native = 0;
         resources.charge(&R::from_ergs_and_native(
             cost_ergs,

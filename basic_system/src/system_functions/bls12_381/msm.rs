@@ -195,6 +195,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G1MSMPre
             &DISCOUNT_TABLE_G1_MSM,
         );
         let cost_ergs = Ergs(cost * ERGS_PER_GAS);
+        // TODO(EVM-1237): add native model
         let cost_native = 0;
         resources.charge(&R::from_ergs_and_native(
             cost_ergs,
@@ -263,6 +264,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381G2MSMPre
             &DISCOUNT_TABLE_G2_MSM,
         );
         let cost_ergs = Ergs(cost * ERGS_PER_GAS);
+        // TODO(EVM-1237): add native model
         let cost_native = 0;
         resources.charge(&R::from_ergs_and_native(
             cost_ergs,

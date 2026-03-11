@@ -33,6 +33,7 @@ impl<R: Resources> SystemFunction<R, Bls12PrecompileErrors> for Bls12381PairingC
             ((num_pairs as u64) * BLS12_381_PAIRING_PER_PAIR_GAS + BLS12_381_PAIRING_FIXED_GAS)
                 * ERGS_PER_GAS,
         );
+        // TODO(EVM-1237): add native model
         let cost_native = 0;
         resources.charge(&R::from_ergs_and_native(
             cost_ergs,

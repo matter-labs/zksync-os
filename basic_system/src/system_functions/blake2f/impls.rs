@@ -65,6 +65,7 @@ impl<R: Resources> SystemFunction<R, Blake2FPrecompileErrors> for Blake2FPrecomp
         // we will very quickly parse number of round
         let num_rounds = u32::from_be_bytes(input.as_chunks::<4>().0[0]);
         let cost_ergs = Ergs(((num_rounds as u64) * GAS_PER_ROUND) * ERGS_PER_GAS);
+        // TODO(EVM-1237): add native model
         let cost_native = 0;
         resources.charge(&R::from_ergs_and_native(
             cost_ergs,
