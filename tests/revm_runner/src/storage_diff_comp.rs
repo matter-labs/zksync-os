@@ -1,7 +1,7 @@
 use alloy::primitives::{Address, B256, U256};
 use basic_system::system_implementation::flat_storage_model::ACCOUNT_PROPERTIES_STORAGE_ADDRESS;
 use forward_system::run::convert_alloy::IntoAlloy;
-use reth_revm::{bytecode::Bytecode, db::CacheDB, DatabaseRef};
+use revm::{bytecode::Bytecode, database::CacheDB, DatabaseRef};
 use std::collections::{HashMap, HashSet};
 use zksync_os_interface::types::{AccountDiff, StorageWrite};
 

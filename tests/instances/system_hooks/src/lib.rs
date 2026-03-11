@@ -1100,6 +1100,8 @@ fn test_mint_base_token_hook_rejects_non_zero_value() {
     let mint_amount = alloy::primitives::U256::from(3000000000000000000u64);
     let call_value = alloy::primitives::U256::from(1u64);
 
+    tester.set_balance(l2_base_token_address, call_value);
+
     let initial_balance = tester
         .get_account_properties(&l2_base_token_address)
         .balance;

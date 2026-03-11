@@ -4,7 +4,7 @@ use alloy::{
     primitives::TxKind,
 };
 use anyhow::{anyhow, bail, Context};
-use reth_revm::context::TxEnv;
+use revm::context::TxEnv;
 use zksync_os_revm::{transaction::abstraction::ZKsyncTxBuilder, ZKsyncTx};
 use zksync_os_tests_common::zksync_tx::{ZKsyncSpecificTxEnvelope, ZKsyncTxEnvelope};
 

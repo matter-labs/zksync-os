@@ -3,8 +3,8 @@ use basic_system::system_implementation::flat_storage_model::{
     address_into_special_storage_key, AccountProperties, ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
 use forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
-use reth_revm::{
-    db::DBErrorMarker,
+use revm::{
+    database_interface::DBErrorMarker,
     primitives::{StorageKey, StorageValue},
     state::{AccountInfo, Bytecode},
     DatabaseRef,
@@ -104,6 +104,7 @@ where
                     nonce: props.nonce,
                     balance: props.balance,
                     code_hash: internal_code_hash,
+                    account_id: None,
                     code,
                 })
             })

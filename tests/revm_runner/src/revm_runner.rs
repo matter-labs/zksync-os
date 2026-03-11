@@ -1,17 +1,17 @@
 use alloy::primitives::U256;
 use alloy::rpc::types::trace::geth::CallFrame;
 use anyhow::{anyhow, bail, Context as AnyhowContext};
-use reth_revm::context::ContextTr;
-use reth_revm::context_interface::block::BlobExcessGasAndPrice;
-use reth_revm::inspector::InspectCommitEvm;
-use reth_revm::{context::TxEnv, db::CacheDB, Context, DatabaseRef};
+use revm::{
+    context::{ContextTr, TxEnv},
+    context_interface::block::BlobExcessGasAndPrice,
+    database::{CacheDB, EmptyDB},
+    inspector::InspectCommitEvm,
+    DatabaseRef,
+};
 use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
 use zksync_os_interface::types::BlockContext;
 use zksync_os_interface::types::BlockOutput;
-use zksync_os_revm::DefaultZk;
-use zksync_os_revm::ZKsyncTx;
-use zksync_os_revm::ZkBuilder;
-use zksync_os_revm::ZkSpecId;
+use zksync_os_revm::{DefaultZk, ZKsyncTx, ZkBuilder, ZkContext, ZkSpecId};
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 use crate::helpers::{
@@ -70,12 +70,12 @@ where
                 .expect("Blob base fee update fraction should fit into u64"),
         );
 
-        let mut cache_db = CacheDB::new(state_provider);
-        let mut evm = Context::default()
-            .with_db(&mut cache_db)
+        let cache_db = CacheDB::new(state_provider);
+        let mut evm = ZkContext::<EmptyDB>::default()
+            .with_db(cache_db)
             .modify_cfg_chained(|cfg| {
                 cfg.chain_id = block_context.chain_id;
-                cfg.spec = ZkSpecId::AtlasV2; // TODO: make it configurable
+                cfg.spec = ZkSpecId::AtlasV3; // TODO: make it configurable
             })
             .modify_block_chained(|block| {
                 block.number = U256::from(block_context.block_number);

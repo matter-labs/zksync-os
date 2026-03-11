@@ -1,5 +1,5 @@
 use alloy::primitives::B256;
-use reth_revm::bytecode::LegacyAnalyzedBytecode;
+use revm::bytecode::LegacyAnalyzedBytecode;
 
 // ZKsync OS native hash of empty bytecode.
 pub const EMPTY_BYTE_CODE_HASH: B256 = B256::new([
