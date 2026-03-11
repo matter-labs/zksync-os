@@ -13,8 +13,8 @@ pub const INPUT_LEN: usize = 213;
 fn parse_blake2_state(
     input: &[u8; INPUT_LEN - core::mem::size_of::<u32>()],
 ) -> (
-    [u64; BLAKE2S_STATE_WIDTH_IN_U64_WORDS],
-    [u64; BLAKE2S_BLOCK_SIZE_U64_WORDS],
+    [u64; BLAKE2B_STATE_WIDTH_IN_U64_WORDS],
+    [u64; BLAKE2B_BLOCK_SIZE_U64_WORDS],
     (u64, u64),
     u8,
 ) {
@@ -27,11 +27,11 @@ fn parse_blake2_state(
     unsafe {
         let mut src_ptr = input.as_ptr();
         // assume init immedatelly, but use pointers later on to avoid huge stack to stack copy
-        let state: [u64; BLAKE2S_STATE_WIDTH_IN_U64_WORDS] =
+        let state: [u64; BLAKE2B_STATE_WIDTH_IN_U64_WORDS] =
             core::ptr::read_unaligned(src_ptr.cast());
         src_ptr = src_ptr.add(64);
 
-        let message_block: [u64; BLAKE2S_BLOCK_SIZE_U64_WORDS] =
+        let message_block: [u64; BLAKE2B_BLOCK_SIZE_U64_WORDS] =
             core::ptr::read_unaligned(src_ptr.cast());
         src_ptr = src_ptr.add(128);
 
@@ -85,15 +85,15 @@ impl<R: Resources> SystemFunction<R, Blake2FPrecompileErrors> for Blake2FPrecomp
         };
 
         let mut extended_state = unsafe {
-            let mut extended_state: MaybeUninit<[u64; BLAKE2S_EXTENDED_STATE_WIDTH_IN_U64_WORDS]> =
+            let mut extended_state: MaybeUninit<[u64; BLAKE2B_EXTENDED_STATE_WIDTH_IN_U64_WORDS]> =
                 MaybeUninit::uninit();
             extended_state
                 .as_mut_ptr()
-                .cast::<[u64; BLAKE2S_STATE_WIDTH_IN_U64_WORDS]>()
+                .cast::<[u64; BLAKE2B_STATE_WIDTH_IN_U64_WORDS]>()
                 .write(state);
             extended_state
                 .as_mut_ptr()
-                .cast::<[u64; BLAKE2S_STATE_WIDTH_IN_U64_WORDS]>()
+                .cast::<[u64; BLAKE2B_STATE_WIDTH_IN_U64_WORDS]>()
                 .add(1)
                 .write(BLAKE2B_IV);
 
@@ -108,8 +108,8 @@ impl<R: Resources> SystemFunction<R, Blake2FPrecompileErrors> for Blake2FPrecomp
 
         round_function_for_num_rounds(&mut extended_state, &message_block, num_rounds as usize);
 
-        for i in 0..BLAKE2S_STATE_WIDTH_IN_U64_WORDS {
-            state[i] ^= extended_state[i] ^ extended_state[i + BLAKE2S_STATE_WIDTH_IN_U64_WORDS];
+        for i in 0..BLAKE2B_STATE_WIDTH_IN_U64_WORDS {
+            state[i] ^= extended_state[i] ^ extended_state[i + BLAKE2B_STATE_WIDTH_IN_U64_WORDS];
         }
 
         #[cfg(target_endian = "big")]
@@ -121,7 +121,7 @@ impl<R: Resources> SystemFunction<R, Blake2FPrecompileErrors> for Blake2FPrecomp
                 .try_extend(
                     core::slice::from_raw_parts(
                         state.as_ptr().cast::<u8>(),
-                        BLAKE2S_STATE_WIDTH_IN_U64_WORDS * core::mem::size_of::<u64>(),
+                        BLAKE2B_STATE_WIDTH_IN_U64_WORDS * core::mem::size_of::<u64>(),
                     )
                     .iter()
                     .copied(),

@@ -3,9 +3,9 @@ pub fn rotate_right<const AMT: u32>(value: u64) -> u64 {
     value.rotate_right(AMT)
 }
 
-pub(crate) const BLAKE2S_BLOCK_SIZE_U64_WORDS: usize = 16;
-pub(crate) const BLAKE2S_STATE_WIDTH_IN_U64_WORDS: usize = 8;
-pub(crate) const BLAKE2S_EXTENDED_STATE_WIDTH_IN_U64_WORDS: usize = 16;
+pub(crate) const BLAKE2B_BLOCK_SIZE_U64_WORDS: usize = 16;
+pub(crate) const BLAKE2B_STATE_WIDTH_IN_U64_WORDS: usize = 8;
+pub(crate) const BLAKE2B_EXTENDED_STATE_WIDTH_IN_U64_WORDS: usize = 16;
 
 pub const SIGMAS: [[usize; 16]; 10] = [
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
@@ -33,7 +33,7 @@ pub const BLAKE2B_IV: [u64; 8] = [
 
 #[inline(always)]
 pub(crate) fn g_function(
-    v: &mut [u64; BLAKE2S_BLOCK_SIZE_U64_WORDS],
+    v: &mut [u64; BLAKE2B_BLOCK_SIZE_U64_WORDS],
     a: usize,
     b: usize,
     c: usize,
@@ -53,8 +53,8 @@ pub(crate) fn g_function(
 
 #[inline(always)]
 pub fn mixing_function(
-    state: &mut [u64; BLAKE2S_EXTENDED_STATE_WIDTH_IN_U64_WORDS],
-    message_block: &[u64; BLAKE2S_BLOCK_SIZE_U64_WORDS],
+    state: &mut [u64; BLAKE2B_EXTENDED_STATE_WIDTH_IN_U64_WORDS],
+    message_block: &[u64; BLAKE2B_BLOCK_SIZE_U64_WORDS],
     sigma: &[usize; 16],
 ) {
     // mix rows and columns
@@ -137,8 +137,8 @@ pub fn mixing_function(
 
 #[inline(always)]
 pub(crate) fn round_function_for_num_rounds(
-    extended_state: &mut [u64; BLAKE2S_EXTENDED_STATE_WIDTH_IN_U64_WORDS],
-    message_block: &[u64; BLAKE2S_BLOCK_SIZE_U64_WORDS],
+    extended_state: &mut [u64; BLAKE2B_EXTENDED_STATE_WIDTH_IN_U64_WORDS],
+    message_block: &[u64; BLAKE2B_BLOCK_SIZE_U64_WORDS],
     num_rounds: usize,
 ) {
     // full rounds
