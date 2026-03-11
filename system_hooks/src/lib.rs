@@ -40,6 +40,10 @@ use evm_interpreter::ERGS_PER_GAS;
 use zk_ee::common_structs::system_hooks::{HooksStorage, SystemCallHook, SystemEventHook};
 use zk_ee::common_traits::TryExtend;
 use zk_ee::internal_error;
+#[cfg(feature = "blake2f")]
+use zk_ee::system::base_system_functions::Blake2FPrecompileErrors;
+#[cfg(feature = "bls12_381")]
+use zk_ee::system::base_system_functions::Bls12PrecompileErrors;
 #[cfg(feature = "p256_precompile")]
 use zk_ee::system::base_system_functions::P256VerifyErrors;
 use zk_ee::system::errors::internal::InternalError;
@@ -50,9 +54,8 @@ use zk_ee::{
     memory::slice_vec::SliceVec,
     system::{
         base_system_functions::{
-            Blake2FPrecompileErrors, Bls12PrecompileErrors, Bn254AddErrors, Bn254MulErrors,
-            Bn254PairingCheckErrors, ModExpErrors, RipeMd160Errors, Secp256k1ECRecoverErrors,
-            Sha256Errors,
+            Bn254AddErrors, Bn254MulErrors, Bn254PairingCheckErrors, ModExpErrors, RipeMd160Errors,
+            Secp256k1ECRecoverErrors, Sha256Errors,
         },
         errors::subsystem::Subsystem,
         EthereumLikeTypes, System, SystemTypes, *,
