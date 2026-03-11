@@ -50,8 +50,9 @@ use zk_ee::{
     memory::slice_vec::SliceVec,
     system::{
         base_system_functions::{
-            Bn254AddErrors, Bn254MulErrors, Bn254PairingCheckErrors, ModExpErrors, RipeMd160Errors,
-            Secp256k1ECRecoverErrors, Sha256Errors,
+            Blake2FPrecompileErrors, Bls12PrecompileErrors, Bn254AddErrors, Bn254MulErrors,
+            Bn254PairingCheckErrors, ModExpErrors, RipeMd160Errors, Secp256k1ECRecoverErrors,
+            Sha256Errors,
         },
         errors::subsystem::Subsystem,
         EthereumLikeTypes, System, SystemTypes, *,
@@ -59,10 +60,6 @@ use zk_ee::{
 };
 
 pub mod addresses_constants;
-#[cfg(feature = "blake2f")]
-pub mod blake2f;
-#[cfg(feature = "bls12_381")]
-pub mod bls12_381;
 pub mod call_hooks;
 pub mod event_hooks;
 
@@ -173,7 +170,12 @@ where
         Bn254PairingCheckErrors,
     >(hooks, ECPAIRING_HOOK_ADDRESS_LOW)?;
     #[cfg(feature = "blake2f")]
-    crate::blake2f::initialize_blake2f::<S, A>(hooks)?;
+    add_precompile::<
+        _,
+        _,
+        <S::SystemFunctions as SystemFunctions<_>>::Blake2F,
+        Blake2FPrecompileErrors,
+    >(hooks, BLAKE2F_HOOK_ADDRESS_LOW)?;
 
     #[cfg(all(feature = "mock-unsupported-precompiles", not(feature = "blake2f")))]
     add_precompile::<
@@ -212,7 +214,50 @@ where
     }
 
     #[cfg(feature = "bls12_381")]
-    crate::bls12_381::initialize_bls12_381::<S, A>(hooks)?;
+    {
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12G1Add,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_G1ADD_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12G2Add,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_G2ADD_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12G1Msm,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_G1MSM_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12G2Msm,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_G2MSM_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12PairingCheck,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_PAIRING_CHECK_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12MapFpToG1,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_MAP_FP_TO_G1_ADDRESS_LOW)?;
+        add_precompile::<
+            _,
+            _,
+            <S::SystemFunctions as SystemFunctions<_>>::Bls12MapFp2ToG2,
+            Bls12PrecompileErrors,
+        >(hooks, BLS12_MAP_FP2_TO_G2_ADDRESS_LOW)?;
+    }
 
     Ok(())
 }

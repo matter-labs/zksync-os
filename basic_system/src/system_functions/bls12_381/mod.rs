@@ -1,28 +1,14 @@
-use crate::add_precompile;
 use crypto::ark_ec::AffineRepr;
-use evm_interpreter::precompile_addresses::*;
-use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::interface_error;
 use zk_ee::out_of_return_memory;
-
-define_subsystem!(Bls12Precompile,
-  interface Bls12PrecompileInterfaceError
-  {
-      InvalidFieldElement,
-      InvalidG1Point,
-      InvalidG2Point,
-      InvalidInputSize,
-      PointNotInSubgroup,
-  }
-);
+use zk_ee::system::base_system_functions::{
+    Bls12PrecompileErrors, Bls12PrecompileInterfaceError, Bls12PrecompileSubsystemError,
+};
 
 use evm_interpreter::ERGS_PER_GAS;
 
 use crypto::ark_ff::PrimeField;
 use crypto::bls12_381::*;
-use zk_ee::define_subsystem;
-use zk_ee::system::errors::internal::InternalError;
-use zk_ee::system::{EthereumLikeTypes, IOSubsystemExt};
 
 mod addition;
 mod mappings;
@@ -33,43 +19,6 @@ pub use self::addition::{Bls12381G1AdditionPrecompile, Bls12381G2AdditionPrecomp
 pub use self::mappings::{Bls12381G1MappingPrecompile, Bls12381G2MappingPrecompile};
 pub use self::msm::{Bls12381G1MSMPrecompile, Bls12381G2MSMPrecompile};
 pub use self::pairing::Bls12381PairingCheckPrecompile;
-
-pub fn initialize_bls12_381<S: EthereumLikeTypes, A: core::alloc::Allocator + Clone>(
-    hooks: &mut HooksStorage<S, A>,
-) -> Result<(), InternalError>
-where
-    S::IO: IOSubsystemExt,
-{
-    add_precompile::<S, A, Bls12381G1AdditionPrecompile, Bls12PrecompileErrors>(
-        hooks,
-        BLS12_G1ADD_ADDRESS_LOW,
-    )?;
-    add_precompile::<S, A, Bls12381G2AdditionPrecompile, Bls12PrecompileErrors>(
-        hooks,
-        BLS12_G2ADD_ADDRESS_LOW,
-    )?;
-    add_precompile::<S, A, Bls12381G1MSMPrecompile, Bls12PrecompileErrors>(
-        hooks,
-        BLS12_G1MSM_ADDRESS_LOW,
-    )?;
-    add_precompile::<S, A, Bls12381G2MSMPrecompile, Bls12PrecompileErrors>(
-        hooks,
-        BLS12_G2MSM_ADDRESS_LOW,
-    )?;
-    add_precompile::<S, A, Bls12381PairingCheckPrecompile, Bls12PrecompileErrors>(
-        hooks,
-        BLS12_PAIRING_CHECK_ADDRESS_LOW,
-    )?;
-    add_precompile::<S, A, Bls12381G1MappingPrecompile, Bls12PrecompileErrors>(
-        hooks,
-        BLS12_MAP_FP_TO_G1_ADDRESS_LOW,
-    )?;
-    add_precompile::<S, A, Bls12381G2MappingPrecompile, Bls12PrecompileErrors>(
-        hooks,
-        BLS12_MAP_FP2_TO_G2_ADDRESS_LOW,
-    )?;
-    Ok(())
-}
 
 const SCALAR_SERIALIZATION_LEN: usize = 32;
 const FIELD_ELEMENT_SERIALIZATION_LEN: usize = 64;
