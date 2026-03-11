@@ -169,8 +169,12 @@ pub fn generate_proof_input_from_bytes<T: ReadStorageTree, PS: PreimageSource, T
     let copy_source = ReadWitnessSource::new(oracle);
     let items = copy_source.get_read_items();
 
-    let _proof_output =
-        zksync_os_runner::run_from_bytes(zk_os_program_bytes, None, 1 << 36, copy_source);
+    let (_proof_output, _) = zksync_os_runner::run_and_get_effective_cycles_from_bytes(
+        zk_os_program_bytes,
+        None,
+        1 << 36,
+        copy_source,
+    );
 
     Ok(std::rc::Rc::try_unwrap(items).unwrap().into_inner())
 }
