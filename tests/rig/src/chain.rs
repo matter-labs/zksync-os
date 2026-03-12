@@ -198,12 +198,16 @@ pub struct RunConfig {
 
 impl Default for RunConfig {
     fn default() -> Self {
-        let zksync_risc_v_run = Self::parse_explicit_bool(std::env::var("ZKSYNC_RISC_V_RUN").ok());
+        let zksync_risc_v_run =
+            Self::parse_explicit_bool("ZKSYNC_RISC_V_RUN", std::env::var("ZKSYNC_RISC_V_RUN").ok());
         let ci_is_true =
-            Self::parse_explicit_bool(std::env::var("CI").ok()).is_some_and(|value| value);
+            Self::parse_explicit_bool("CI", std::env::var("CI").ok()).is_some_and(|value| value);
         let do_riscv_run = Self::should_do_riscv_run(zksync_risc_v_run, ci_is_true);
         let check_revm_consistency = Self::should_check_revm_consistency(
-            Self::parse_explicit_bool(std::env::var("ZKSYNC_REVM_CONSISTENCY_CHECK").ok()),
+            Self::parse_explicit_bool(
+                "ZKSYNC_REVM_CONSISTENCY_CHECK",
+                std::env::var("ZKSYNC_REVM_CONSISTENCY_CHECK").ok(),
+            ),
         );
 
         RunConfig {
@@ -220,16 +224,33 @@ impl Default for RunConfig {
 }
 
 impl RunConfig {
-    fn parse_explicit_bool(value: Option<String>) -> Option<bool> {
-        value.and_then(|v| {
-            if v.eq_ignore_ascii_case("true") {
-                Some(true)
-            } else if v.eq_ignore_ascii_case("false") {
-                Some(false)
-            } else {
-                None
-            }
-        })
+    fn parse_explicit_bool(var_name: &str, value: Option<String>) -> Option<bool> {
+        let raw_value = value?;
+        let normalized = raw_value.trim();
+
+        if normalized.eq_ignore_ascii_case("true")
+            || normalized.eq_ignore_ascii_case("yes")
+            || normalized.eq_ignore_ascii_case("on")
+            || normalized == "1"
+        {
+            return Some(true);
+        }
+
+        if normalized.eq_ignore_ascii_case("false")
+            || normalized.eq_ignore_ascii_case("no")
+            || normalized.eq_ignore_ascii_case("off")
+            || normalized == "0"
+        {
+            return Some(false);
+        }
+
+        if !normalized.is_empty() {
+            warn!(
+                "Ignoring unsupported value for {var_name}: '{raw_value}'. Supported values: true/false, 1/0, yes/no, on/off"
+            );
+        }
+
+        None
     }
 
     fn should_do_riscv_run(zksync_risc_v_run: Option<bool>, ci_is_true: bool) -> bool {
@@ -1298,26 +1319,60 @@ mod tests {
     }
 
     #[test]
-    fn parse_explicit_bool_parses_only_true_or_false() {
+    fn parse_explicit_bool_parses_common_boolean_aliases() {
         assert_eq!(
-            RunConfig::parse_explicit_bool(Some("true".to_owned())),
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("true".to_owned())),
             Some(true)
         );
         assert_eq!(
-            RunConfig::parse_explicit_bool(Some("TRUE".to_owned())),
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("TRUE".to_owned())),
             Some(true)
         );
         assert_eq!(
-            RunConfig::parse_explicit_bool(Some("false".to_owned())),
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("false".to_owned())),
             Some(false)
         );
         assert_eq!(
-            RunConfig::parse_explicit_bool(Some("FALSE".to_owned())),
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("FALSE".to_owned())),
             Some(false)
         );
-        assert_eq!(RunConfig::parse_explicit_bool(Some("1".to_owned())), None);
-        assert_eq!(RunConfig::parse_explicit_bool(Some("yes".to_owned())), None);
-        assert_eq!(RunConfig::parse_explicit_bool(None), None);
+        assert_eq!(
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("1".to_owned())),
+            Some(true)
+        );
+        assert_eq!(
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("yes".to_owned())),
+            Some(true)
+        );
+        assert_eq!(
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("on".to_owned())),
+            Some(true)
+        );
+        assert_eq!(
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("0".to_owned())),
+            Some(false)
+        );
+        assert_eq!(
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("no".to_owned())),
+            Some(false)
+        );
+        assert_eq!(
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("off".to_owned())),
+            Some(false)
+        );
+        assert_eq!(
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("  true  ".to_owned())),
+            Some(true)
+        );
+        assert_eq!(
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("   ".to_owned())),
+            None
+        );
+        assert_eq!(
+            RunConfig::parse_explicit_bool("TEST_BOOL", Some("maybe".to_owned())),
+            None
+        );
+        assert_eq!(RunConfig::parse_explicit_bool("TEST_BOOL", None), None);
     }
 
     #[test]
