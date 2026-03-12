@@ -177,6 +177,8 @@ impl Default for BlockContext {
 
 #[derive(Clone)]
 pub struct RunConfig {
+    // Runtime execution controls for `Chain` block execution.
+    // Setup conveniences (for example, treasury pre-funding) are owned by `TestingFramework`.
     // Config for the profiler
     pub profiler_config: Option<ProfilerConfig>,
     // If set, the witness will be dumped to the given file path
@@ -192,7 +194,6 @@ pub struct RunConfig {
     // Whether to replay the block in REVM and assert no state divergences.
     // Can be enabled via ZKSYNC_REVM_CONSISTENCY_CHECK env var.
     pub check_revm_consistency: bool,
-    pub skip_minting_tokens_to_treasury: bool,
     pub update_state_after_block_execution: bool,
 }
 
@@ -215,7 +216,6 @@ impl Default for RunConfig {
             do_riscv_run,
             check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
             check_revm_consistency,
-            skip_minting_tokens_to_treasury: false,
             profiler_config: None,
             witness_output_file: None,
             update_state_after_block_execution: true,
@@ -599,7 +599,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             do_riscv_run,
             check_storage_diff_hashes,
             check_revm_consistency: _,
-            skip_minting_tokens_to_treasury: _,
             update_state_after_block_execution,
         } = run_config;
 
@@ -1304,7 +1303,9 @@ fn run_prover(csr_reads: &[u32]) {
 
 #[cfg(test)]
 mod tests {
-    use super::RunConfig;
+    use super::{Chain, RunConfig};
+    use ruint::aliases::U256;
+    use system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
 
     #[test]
     fn run_config_should_do_riscv_run_matches_env_signals() {
@@ -1392,5 +1393,21 @@ mod tests {
         assert!(RunConfig::should_check_revm_consistency(Some(true)));
         assert!(!RunConfig::should_check_revm_consistency(Some(false)));
         assert!(!RunConfig::should_check_revm_consistency(None));
+    }
+
+    #[test]
+    fn chain_run_block_does_not_auto_mint_treasury() {
+        let mut chain = Chain::empty(None);
+        let initial_treasury_balance = chain
+            .get_account_properties(&BASE_TOKEN_HOLDER_ADDRESS)
+            .balance;
+        assert_eq!(initial_treasury_balance, U256::ZERO);
+
+        let _ = chain.run_block(vec![], None, None, Some(RunConfig::without_riscv_run()));
+
+        let final_treasury_balance = chain
+            .get_account_properties(&BASE_TOKEN_HOLDER_ADDRESS)
+            .balance;
+        assert_eq!(final_treasury_balance, U256::ZERO);
     }
 }

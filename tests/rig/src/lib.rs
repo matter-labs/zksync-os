@@ -4,6 +4,8 @@
 //! This crate contains infrastructure to write ZKsync OS integration tests.
 //! It contains `Chain` - in memory chain state structure with methods to run blocks, change state
 //! and few utility methods(in the `utils` module) to encode transactions, load contracts, etc.
+//! `TestingFramework` owns convenience setup behavior (for example, treasury minting),
+//! while `Chain` is intended to remain a neutral in-memory state abstraction.
 //!
 use std::str::FromStr;
 use std::sync::Once;
@@ -94,6 +96,9 @@ pub struct TestingFramework<const RANDOMIZED_TREE: bool = false> {
     block_context: Option<BlockContext>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     run_config: Option<RunConfig>,
+    // Test-setup convenience flag: when false, each block execution pre-funds treasury.
+    // This stays framework-local to keep `Chain` execution APIs neutral.
+    skip_minting_tokens_to_treasury: bool,
     last_executed_block_info: Option<LastExecutedBlockInfo>,
     oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
 }
@@ -108,6 +113,7 @@ impl TestingFramework<true> {
             block_context: None,
             da_commitment_scheme: None,
             run_config: Some(Default::default()),
+            skip_minting_tokens_to_treasury: false,
             last_executed_block_info: None,
             oracle_factory: None,
         }
@@ -130,6 +136,7 @@ impl TestingFramework<false> {
             block_context: None,
             da_commitment_scheme: None,
             run_config: Some(Default::default()),
+            skip_minting_tokens_to_treasury: false,
             last_executed_block_info: None,
             oracle_factory: None,
         }
@@ -173,7 +180,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<BlockOutput, BootloaderSubsystemError> {
         let run_config = self.run_config.clone().unwrap_or_default();
-        if !run_config.skip_minting_tokens_to_treasury {
+        if !self.skip_minting_tokens_to_treasury {
             self.chain.mint_tokens_to_treasury();
         }
 
@@ -282,6 +289,15 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
         self
     }
 
+    /// Builder: disables framework-level automatic treasury minting before block execution.
+    ///
+    /// By default, `TestingFramework` pre-funds treasury before each executed block.
+    /// This toggle is setup-only and intentionally not part of `RunConfig`.
+    pub fn without_minting_tokens_to_treasury(mut self) -> Self {
+        self.skip_minting_tokens_to_treasury = true;
+        self
+    }
+
     /// Builder: disables REVM consistency checks for this framework instance.
     pub fn without_revm_consistency_check(mut self) -> Self {
         self.run_config
@@ -369,6 +385,15 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
     /// Setter: updates run configuration for subsequent block execution.
     pub fn set_run_config(&mut self, run_config: Option<RunConfig>) -> &mut Self {
         self.run_config = run_config;
+        self
+    }
+
+    /// Setter: disables framework-level automatic treasury minting for subsequent block executions.
+    ///
+    /// By default, `TestingFramework` pre-funds treasury before each executed block.
+    /// This toggle is setup-only and intentionally not part of `RunConfig`.
+    pub fn disable_minting_tokens_to_treasury(&mut self) -> &mut Self {
+        self.skip_minting_tokens_to_treasury = true;
         self
     }
 
@@ -603,6 +628,9 @@ pub fn common_target_address() -> alloy::primitives::Address {
 #[cfg(test)]
 mod tests {
     use super::{chain::RunConfig, TestingFramework};
+    use forward_system::run::convert_alloy::IntoAlloy;
+    use ruint::aliases::U256;
+    use system_hooks::addresses_constants::BASE_TOKEN_HOLDER_ADDRESS;
 
     #[test]
     fn builder_disables_revm_consistency_check() {
@@ -632,5 +660,30 @@ mod tests {
 
         let run_config = tester.run_config.expect("run config should be set");
         assert!(!run_config.check_revm_consistency);
+    }
+
+    #[test]
+    fn testing_framework_mints_treasury_by_default() {
+        let treasury = BASE_TOKEN_HOLDER_ADDRESS.into_alloy();
+        let mut tester = TestingFramework::new().with_run_config(RunConfig::without_riscv_run());
+        assert_eq!(tester.get_balance(&treasury), U256::ZERO);
+
+        let _ = tester.execute_block(vec![]);
+
+        let max_treasury_balance = (U256::ONE << 128) - U256::ONE;
+        assert_eq!(tester.get_balance(&treasury), max_treasury_balance);
+    }
+
+    #[test]
+    fn testing_framework_can_disable_automatic_treasury_minting() {
+        let treasury = BASE_TOKEN_HOLDER_ADDRESS.into_alloy();
+        let mut tester = TestingFramework::new()
+            .without_minting_tokens_to_treasury()
+            .with_run_config(RunConfig::without_riscv_run());
+        assert_eq!(tester.get_balance(&treasury), U256::ZERO);
+
+        let _ = tester.execute_block(vec![]);
+
+        assert_eq!(tester.get_balance(&treasury), U256::ZERO);
     }
 }
