@@ -204,12 +204,11 @@ impl Default for RunConfig {
         let ci_is_true =
             Self::parse_explicit_bool("CI", std::env::var("CI").ok()).is_some_and(|value| value);
         let do_riscv_run = Self::should_do_riscv_run(zksync_risc_v_run, ci_is_true);
-        let check_revm_consistency = Self::should_check_revm_consistency(
-            Self::parse_explicit_bool(
+        let check_revm_consistency =
+            Self::should_check_revm_consistency(Self::parse_explicit_bool(
                 "ZKSYNC_REVM_CONSISTENCY_CHECK",
                 std::env::var("ZKSYNC_REVM_CONSISTENCY_CHECK").ok(),
-            ),
-        );
+            ));
 
         RunConfig {
             app: Some("for_tests".to_string()),
