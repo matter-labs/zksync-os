@@ -5,8 +5,8 @@ use super::WordSerializable;
 
 /// Type-erased iterator that owns its data and provides dynamic dispatch.
 ///
-/// This struct enables returning `UsizeSerializable` iterators as boxed trait objects
-/// while maintaining ownership of the underlying data. It uses unsafe lifetime extension
+/// This struct enables returning oracle word iterators as boxed trait objects while
+/// maintaining ownership of the underlying data. It uses unsafe lifetime extension
 /// to create stable references for iterator construction, then manages cleanup automatically.
 pub struct DynUsizeIterator<
     I: 'static + Send + Sync,

@@ -6,109 +6,79 @@ use ruint::aliases::{B160, U256};
 #[test]
 fn test_unit_serialization() {
     let unit = ();
-    assert_eq!(<() as UsizeSerializable>::USIZE_LEN, 0);
-    let mut iter = unit.iter();
+    assert_eq!(unit.word_len(), 0);
+    let mut iter = unit.to_word_vec().into_iter();
     assert_eq!(iter.len(), 0);
     assert_eq!(iter.next(), None);
 
-    // Test deserialization
     let mut empty_iter = core::iter::empty();
-    let _ = <() as UsizeDeserializable>::from_iter(&mut empty_iter).unwrap();
+    let _ = <() as WordDeserializable>::read_words(&mut empty_iter).unwrap();
 }
 
 #[test]
 fn test_bool_serialization() {
-    // Test true
     let val = true;
-    let iter = val.iter();
-    let collected: Vec<_> = iter.collect();
-
-    let mut iter = collected.into_iter();
-    let deserialized = bool::from_iter(&mut iter).unwrap();
+    let mut iter = val.to_word_vec().into_iter();
+    let deserialized = bool::read_words(&mut iter).unwrap();
     assert_eq!(deserialized, true);
 
-    // Test false
     let val = false;
-    let iter = val.iter();
-    let collected: Vec<_> = iter.collect();
-
-    let mut iter = collected.into_iter();
-    let deserialized = bool::from_iter(&mut iter).unwrap();
+    let mut iter = val.to_word_vec().into_iter();
+    let deserialized = bool::read_words(&mut iter).unwrap();
     assert_eq!(deserialized, false);
 }
 
 #[test]
 fn test_u8_serialization() {
     let val = 255u8;
-    assert_eq!(
-        <u8 as UsizeSerializable>::USIZE_LEN,
-        <u64 as UsizeSerializable>::USIZE_LEN
-    );
+    assert_eq!(val.word_len(), 0u64.word_len());
 
-    let iter = val.iter();
-    let collected: Vec<_> = iter.collect();
-
-    let mut iter = collected.into_iter();
-    let deserialized = u8::from_iter(&mut iter).unwrap();
+    let mut iter = val.to_word_vec().into_iter();
+    let deserialized = u8::read_words(&mut iter).unwrap();
     assert_eq!(deserialized, 255);
 }
 
 #[test]
 fn test_u8_overflow_detection() {
-    // Create an iterator with a value too large for u8
     let large_value = 256usize;
     let mut iter = core::iter::once(large_value);
-
-    // This should fail since 256 > u8::MAX
-    let result = u8::from_iter(&mut iter);
+    let result = u8::read_words(&mut iter);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_u32_serialization() {
     let val = 0x12345678u32;
-    assert_eq!(
-        <u32 as UsizeSerializable>::USIZE_LEN,
-        <u64 as UsizeSerializable>::USIZE_LEN
-    );
+    assert_eq!(val.word_len(), 0u64.word_len());
 
-    let iter = val.iter();
-    let collected: Vec<_> = iter.collect();
-
-    let mut iter = collected.into_iter();
-    let deserialized = u32::from_iter(&mut iter).unwrap();
+    let mut iter = val.to_word_vec().into_iter();
+    let deserialized = u32::read_words(&mut iter).unwrap();
     assert_eq!(deserialized, 0x12345678);
 }
 
 #[test]
 fn test_u32_overflow_detection() {
-    // Create an iterator with a value too large for u32
     let large_value = (u32::MAX as u64 + 1) as usize;
     let mut iter = core::iter::once(large_value);
-
-    let result = u32::from_iter(&mut iter);
+    let result = u32::read_words(&mut iter);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_u64_serialization() {
     let val = 0x123456789ABCDEFu64;
-
-    let iter = val.iter();
-    let collected: Vec<_> = iter.collect();
-
-    let mut iter = collected.into_iter();
-    let deserialized = u64::from_iter(&mut iter).unwrap();
+    let mut iter = val.to_word_vec().into_iter();
+    let deserialized = u64::read_words(&mut iter).unwrap();
     assert_eq!(deserialized, 0x123456789ABCDEF);
 }
 
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn test_u64_single_word_on_64bit() {
-    assert_eq!(<u64 as UsizeSerializable>::USIZE_LEN, 1);
+    assert_eq!(0u64.word_len(), 1);
 
     let val = 0x123456789ABCDEFu64;
-    let mut iter = val.iter();
+    let mut iter = val.to_word_vec().into_iter();
     assert_eq!(iter.len(), 1);
     assert_eq!(iter.next(), Some(0x123456789ABCDEF));
     assert_eq!(iter.next(), None);
@@ -117,17 +87,16 @@ fn test_u64_single_word_on_64bit() {
 #[cfg(target_pointer_width = "32")]
 #[test]
 fn test_u64_two_words_on_32bit() {
-    assert_eq!(<u64 as UsizeSerializable>::USIZE_LEN, 2);
+    assert_eq!(0u64.word_len(), 2);
 
     let val = 0x123456789ABCDEFu64;
-    let mut iter = val.iter();
+    let mut iter = val.to_word_vec().into_iter();
     assert_eq!(iter.len(), 2);
 
     let low = iter.next().unwrap();
     let high = iter.next().unwrap();
     assert_eq!(iter.next(), None);
 
-    // Reconstruct the value to verify correct decomposition
     let reconstructed = ((high as u64) << 32) | (low as u64);
     assert_eq!(reconstructed, 0x123456789ABCDEF);
 }
@@ -137,40 +106,29 @@ fn test_u256_serialization() {
     let val = U256::from_str("0x123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF")
         .unwrap();
 
-    let iter = val.iter();
-    let collected: Vec<_> = iter.collect();
-
-    let mut iter = collected.into_iter();
-    let deserialized = U256::from_iter(&mut iter).unwrap();
+    let mut iter = val.to_word_vec().into_iter();
+    let deserialized = U256::read_words(&mut iter).unwrap();
     assert_eq!(deserialized, val);
 }
 
 #[test]
 fn test_u256_length() {
-    assert_eq!(
-        <U256 as UsizeSerializable>::USIZE_LEN,
-        <u64 as UsizeSerializable>::USIZE_LEN * 4
-    );
+    assert_eq!(U256::ZERO.word_len(), 0u64.word_len() * 4);
 }
 
 #[test]
 fn test_b160_serialization() {
     let val = B160::from_str("0x1234567890123456789012345678901234567890").unwrap();
 
-    let iter = val.iter();
-    let collected: Vec<_> = iter.collect();
-
-    let mut iter = collected.into_iter();
-    let deserialized = B160::from_iter(&mut iter).unwrap();
+    let mut iter = val.to_word_vec().into_iter();
+    let deserialized = B160::read_words(&mut iter).unwrap();
     assert_eq!(deserialized, val);
 }
 
 #[test]
 fn test_b160_insufficient_data() {
-    // Create an iterator with insufficient data
     let mut iter = core::iter::once(42usize);
-
-    let result = B160::from_iter(&mut iter);
+    let result = B160::read_words(&mut iter);
     assert!(result.is_err());
 }
 
@@ -214,53 +172,43 @@ fn test_composed_word_serialization_no_chain_needed() {
 
 #[test]
 fn test_bool_invalid_values() {
-    // Test deserialization with invalid bool values
-    let mut iter = core::iter::once(2usize); // Not 0 or 1
-    let result = bool::from_iter(&mut iter);
+    let mut iter = core::iter::once(2usize);
+    let result = bool::read_words(&mut iter);
     assert!(result.is_err());
 
     let mut iter = core::iter::once(42usize);
-    let result = bool::from_iter(&mut iter);
+    let result = bool::read_words(&mut iter);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_architecture_specific_behavior() {
-    // Test that serialization length is consistent with architecture
     #[cfg(target_pointer_width = "32")]
     {
-        assert_eq!(<u64 as UsizeSerializable>::USIZE_LEN, 2);
-        assert_eq!(<U256 as UsizeSerializable>::USIZE_LEN, 8);
+        assert_eq!(0u64.word_len(), 2);
+        assert_eq!(U256::ZERO.word_len(), 8);
     }
 
     #[cfg(target_pointer_width = "64")]
     {
-        assert_eq!(<u64 as UsizeSerializable>::USIZE_LEN, 1);
-        assert_eq!(<U256 as UsizeSerializable>::USIZE_LEN, 4);
+        assert_eq!(0u64.word_len(), 1);
+        assert_eq!(U256::ZERO.word_len(), 4);
     }
 }
 
 #[test]
-fn test_usize_len_consistency() {
-    // Test that USIZE_LEN matches actual iteration length for all types
-
-    assert_eq!(<() as UsizeSerializable>::USIZE_LEN, ().iter().len());
-    assert_eq!(<bool as UsizeSerializable>::USIZE_LEN, true.iter().len());
-    assert_eq!(<u8 as UsizeSerializable>::USIZE_LEN, 255u8.iter().len());
-    assert_eq!(<u32 as UsizeSerializable>::USIZE_LEN, 0u32.iter().len());
-    assert_eq!(<u64 as UsizeSerializable>::USIZE_LEN, 0u64.iter().len());
+fn test_word_len_matches_serialized_len() {
+    assert_eq!(().word_len(), ().to_word_vec().len());
+    assert_eq!(true.word_len(), true.to_word_vec().len());
+    assert_eq!(255u8.word_len(), 255u8.to_word_vec().len());
+    assert_eq!(0u32.word_len(), 0u32.to_word_vec().len());
+    assert_eq!(0u64.word_len(), 0u64.to_word_vec().len());
 
     let u256_val = U256::ZERO;
-    assert_eq!(
-        <U256 as UsizeSerializable>::USIZE_LEN,
-        u256_val.iter().len()
-    );
+    assert_eq!(u256_val.word_len(), u256_val.to_word_vec().len());
 
     let b160_val = B160::ZERO;
-    assert_eq!(
-        <B160 as UsizeSerializable>::USIZE_LEN,
-        b160_val.iter().len()
-    );
+    assert_eq!(b160_val.word_len(), b160_val.to_word_vec().len());
 
     let tuple_val = (0u32, 0u64);
     assert_eq!(WordSerializable::word_len(&tuple_val), tuple_val.to_word_vec().len());
@@ -270,20 +218,16 @@ fn test_usize_len_consistency() {
 }
 
 #[test]
-fn test_word_serializable_to_vec_matches_legacy_iter() {
+fn test_word_serializable_to_vec_matches_word_len() {
     let value =
         U256::from_str("0x123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF")
             .unwrap();
-
-    let legacy: Vec<_> = UsizeSerializable::iter(&value).collect();
     let new_words = WordSerializable::to_word_vec(&value);
-
-    assert_eq!(legacy, new_words);
     assert_eq!(new_words.len(), WordSerializable::word_len(&value));
 }
 
 #[test]
-fn test_word_deserializable_matches_legacy_deserializer() {
+fn test_word_deserializable_roundtrip() {
     let value = B160::from_str("0x1234567890123456789012345678901234567890").unwrap();
     let serialized = WordSerializable::to_word_vec(&value);
     let mut iter = serialized.into_iter();
