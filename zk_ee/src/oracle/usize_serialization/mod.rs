@@ -1,15 +1,6 @@
-//! Type-safe serialization framework for oracle data exchange.
-//! It serves as the core serialization layer for the oracle system, enabling
-//! data exchange between ZKsync OS and external data providers.
-//!
-//! The serialization is based on `usize` sequences for cross-architecture compatibility.
-//!
-//! # Security Considerations
-//!
-//! This module handles endianness and pointer width differences between 32-bit
-//! and 64-bit systems. The serialization format is designed to be deterministic across
-//! architectures, but relies on consistent memory layout assumptions.
+pub use super::word_serialization::*;
 
+<<<<<<< HEAD
 use alloc::vec::Vec;
 use core::mem::MaybeUninit;
 
@@ -446,4 +437,8 @@ impl<T: WordDeserializable> WordDeserializable for Vec<T> {
 
         Ok(out)
     }
+=======
+pub mod dyn_usize_iterator {
+    pub use super::super::word_serialization::dyn_word_iterator::*;
+>>>>>>> 36cf3902 (refactor(serialization): move word implementation module)
 }
