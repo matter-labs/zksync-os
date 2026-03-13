@@ -178,47 +178,38 @@ fn test_b160_insufficient_data() {
 fn test_tuple_serialization() {
     let val = (42u32, 100u64);
 
-    let iter = val.iter();
-    let collected: Vec<_> = iter.collect();
+    let serialized = WordSerializable::to_word_vec(&val);
+    let mut iter = serialized.into_iter();
 
-    let mut iter = collected.into_iter();
-    let deserialized = <(u32, u64)>::from_iter(&mut iter).unwrap();
+    let deserialized = <(u32, u64) as WordDeserializable>::read_words(&mut iter).unwrap();
     assert_eq!(deserialized, (42, 100));
 }
 
 #[test]
 fn test_tuple_length() {
     assert_eq!(
-        <(u32, u64) as UsizeSerializable>::USIZE_LEN,
-        <u32 as UsizeSerializable>::USIZE_LEN + <u64 as UsizeSerializable>::USIZE_LEN
+        WordSerializable::word_len(&(42u32, 100u64)),
+        WordSerializable::word_len(&42u32) + WordSerializable::word_len(&100u64)
     );
 }
 
 #[test]
 fn test_array_length() {
     assert_eq!(
-        <[u32; 5] as UsizeSerializable>::USIZE_LEN,
-        <u32 as UsizeSerializable>::USIZE_LEN * 5
+        WordSerializable::word_len(&[1u32, 2, 3, 4, 5]),
+        WordSerializable::word_len(&1u32) * 5
     );
 }
 
 #[test]
-fn test_exact_size_chain_in_serialization() {
-    let first = 42u32;
-    let second = 100u64;
+fn test_composed_word_serialization_no_chain_needed() {
+    let value = (42u32, 100u64);
+    let serialized = WordSerializable::to_word_vec(&value);
+    assert_eq!(serialized.len(), WordSerializable::word_len(&value));
 
-    let chain = ExactSizeChain::new(first.iter(), second.iter());
-    assert_eq!(
-        chain.len(),
-        <u32 as UsizeSerializable>::USIZE_LEN + <u64 as UsizeSerializable>::USIZE_LEN
-    );
-
-    let collected: Vec<_> = chain.collect();
-    let mut iter = collected.into_iter();
-
-    // Deserialize as tuple
-    let deserialized = <(u32, u64)>::from_iter(&mut iter).unwrap();
-    assert_eq!(deserialized, (42, 100));
+    let mut iter = serialized.into_iter();
+    let deserialized = <(u32, u64) as WordDeserializable>::read_words(&mut iter).unwrap();
+    assert_eq!(deserialized, value);
 }
 
 #[test]
@@ -272,27 +263,17 @@ fn test_usize_len_consistency() {
     );
 
     let tuple_val = (0u32, 0u64);
-    assert_eq!(
-        <(u32, u64) as UsizeSerializable>::USIZE_LEN,
-        tuple_val.iter().len()
-    );
+    assert_eq!(WordSerializable::word_len(&tuple_val), tuple_val.to_word_vec().len());
 
     let array_val = [0u32; 3];
-    assert_eq!(
-        <[u32; 3] as UsizeSerializable>::USIZE_LEN,
-        array_val.iter().len()
-    );
+    assert_eq!(WordSerializable::word_len(&array_val), array_val.to_word_vec().len());
 }
 
 #[test]
 fn test_word_serializable_to_vec_matches_legacy_iter() {
-    let value = (
-        0x1234_5678u32,
-        U256::from_str(
-            "0x123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
-        )
-        .unwrap(),
-    );
+    let value =
+        U256::from_str("0x123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF")
+            .unwrap();
 
     let legacy: Vec<_> = UsizeSerializable::iter(&value).collect();
     let new_words = WordSerializable::to_word_vec(&value);

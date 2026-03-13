@@ -18,7 +18,6 @@ use ruint::aliases::{B160, U256};
 use crate::{
     internal_error,
     system::errors::internal::InternalError,
-    utils::exact_size_chain::{ExactSizeChain, ExactSizeChainN},
 };
 
 pub mod dyn_usize_iterator;
@@ -446,36 +445,62 @@ impl UsizeDeserializable for B160 {
     }
 }
 
-// for convenience - provide a simple case of tuple
-
-impl<T: UsizeSerializable, U: UsizeSerializable> UsizeSerializable for (T, U) {
-    const USIZE_LEN: usize =
-        <T as UsizeSerializable>::USIZE_LEN + <U as UsizeSerializable>::USIZE_LEN;
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
+impl<T: WordSerializable, U: WordSerializable> WordSerializable for (T, U) {
+    fn word_len(&self) -> usize {
         let (t, u) = self;
-        ExactSizeChain::new(UsizeSerializable::iter(t), UsizeSerializable::iter(u))
+        t.word_len() + u.word_len()
+    }
+
+    fn write_words(&self, out: &mut impl WordSink) {
+        let (t, u) = self;
+        t.write_words(out);
+        u.write_words(out);
     }
 }
 
-impl<T: UsizeDeserializable, U: UsizeDeserializable> UsizeDeserializable for (T, U) {
-    const USIZE_LEN: usize =
-        <T as UsizeDeserializable>::USIZE_LEN + <U as UsizeDeserializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let t = <T as UsizeDeserializable>::from_iter(src)?;
-        let u = <U as UsizeDeserializable>::from_iter(src)?;
+impl<T: WordDeserializable, U: WordDeserializable> WordDeserializable for (T, U) {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let t = T::read_words(src)?;
+        let u = U::read_words(src)?;
         Ok((t, u))
     }
 }
 
-impl<T: UsizeSerializable, const N: usize> UsizeSerializable for [T; N] {
-    const USIZE_LEN: usize = <T as UsizeSerializable>::USIZE_LEN * N;
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChainN::<_, _, N>::new(
-            core::iter::empty::<usize>(),
-            core::array::from_fn(|i| Some(UsizeSerializable::iter(&self[i]))),
-        )
+impl<T: WordSerializable, const N: usize> WordSerializable for [T; N] {
+    fn word_len(&self) -> usize {
+        self.iter().map(WordSerializable::word_len).sum()
+    }
+
+    fn write_words(&self, out: &mut impl WordSink) {
+        for element in self {
+            element.write_words(out);
+        }
+    }
+}
+
+impl<T: WordDeserializable, const N: usize> WordDeserializable for [T; N] {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let mut out: [MaybeUninit<T>; N] = unsafe { MaybeUninit::uninit().assume_init() };
+        let mut initialized = 0;
+
+        while initialized < N {
+            match T::read_words(src) {
+                Ok(value) => {
+                    out[initialized].write(value);
+                    initialized += 1;
+                }
+                Err(err) => {
+                    for value in &mut out[..initialized] {
+                        unsafe { value.assume_init_drop() };
+                    }
+                    return Err(err);
+                }
+            }
+        }
+
+        let out = core::mem::ManuallyDrop::new(out);
+        let ptr = (&*out as *const [MaybeUninit<T>; N]).cast::<[T; N]>();
+        Ok(unsafe { ptr.read() })
     }
 }
 
