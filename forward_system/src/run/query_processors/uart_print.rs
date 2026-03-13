@@ -48,6 +48,6 @@ impl OracleQueryProcessor for UARTPrintResponder {
         print!("{}", String::from_utf8_lossy(&string_bytes));
         // println!("UART: {}", String::from_utf8_lossy(&string_bytes));
 
-        DynUsizeIterator::from_constructor((), UsizeSerializable::iter)
+        DynUsizeIterator::from_word_serializable(())
     }
 }
