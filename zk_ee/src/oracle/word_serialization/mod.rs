@@ -36,24 +36,6 @@ impl WordSink for Vec<usize> {
     }
 }
 
-/// Sink that only counts how many words would be written.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct CountingWordSink {
-    len: usize,
-}
-
-impl CountingWordSink {
-    pub const fn len(&self) -> usize {
-        self.len
-    }
-}
-
-impl WordSink for CountingWordSink {
-    fn write_word(&mut self, _word: usize) {
-        self.len += 1;
-    }
-}
-
 /// Serialization into oracle transport words.
 pub trait WordSerializable {
     /// Returns the number of transport words that `write_words()` will emit.
