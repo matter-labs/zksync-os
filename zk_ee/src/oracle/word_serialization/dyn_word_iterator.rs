@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::IntoIter;
+use arrayvec::ArrayVec;
 
 use super::WordSerializable;
 
@@ -45,6 +46,20 @@ impl<I: WordSerializable + 'static + Send + Sync> DynWordIterator<I, IntoIter<us
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         Self::from_constructor(item, |inner_ref| inner_ref.to_word_vec().into_iter())
     }
+}
+
+pub fn boxed_inline_word_iter<const N: usize, I: WordSerializable + 'static + Send + Sync>(
+    item: I,
+) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    if item.word_len() > N {
+        return Box::new(item.to_word_vec().into_iter());
+    }
+
+    let mut words = ArrayVec::<usize, N>::new();
+    item.write_words(&mut words);
+    debug_assert_eq!(words.len(), item.word_len());
+
+    Box::new(words.into_iter())
 }
 
 impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + Send + Sync> Iterator
@@ -157,6 +172,17 @@ mod tests {
         let mut iter = DynWordIterator::from_word_serializable(data);
 
         let expected = data.to_word_vec();
+        assert_eq!(iter.len(), expected.len());
+        assert_eq!(iter.by_ref().collect::<Vec<_>>(), expected);
+        assert_eq!(iter.len(), 0);
+    }
+
+    #[test]
+    fn test_boxed_inline_word_iter() {
+        let data = (42u32, true);
+        let expected = data.to_word_vec();
+        let mut iter = boxed_inline_word_iter::<4, _>(data);
+
         assert_eq!(iter.len(), expected.len());
         assert_eq!(iter.by_ref().collect::<Vec<_>>(), expected);
         assert_eq!(iter.len(), 0);

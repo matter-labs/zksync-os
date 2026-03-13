@@ -63,7 +63,9 @@ impl<PS: PreimageSource> OracleQueryProcessor for GenericPreimageResponder<PS> {
             || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
         {
             let len = preimage.len() as u32;
-            DynWordIterator::from_word_serializable(len)
+            zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<2, _>(
+                len,
+            )
         } else {
             DynWordIterator::from_constructor(preimage, |inner_ref: &'static Vec<u8>| {
                 ReadIterWrapper::from(inner_ref.iter().copied())

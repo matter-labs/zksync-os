@@ -38,7 +38,9 @@ impl OracleQueryProcessor for EthereumTargetBlockHeaderResponder {
 
         match query_id {
             ETHEREUM_TARGET_HEADER_BUFFER_LEN_QUERY_ID => {
-                DynWordIterator::from_word_serializable(self.target_header_encoding.len() as u32)
+                zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<2, _>(
+                    self.target_header_encoding.len() as u32,
+                )
             }
             ETHEREUM_TARGET_HEADER_BUFFER_DATA_QUERY_ID => DynWordIterator::from_constructor(
                 self.target_header_encoding.clone(),

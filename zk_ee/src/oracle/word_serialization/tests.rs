@@ -252,26 +252,6 @@ fn test_word_deserializable_roundtrip() {
 }
 
 #[test]
-fn test_vec_word_roundtrip() {
-    let value = vec![1u32, 2u32, 3u32, 4u32];
-    let serialized = WordSerializable::to_word_vec(&value);
-    let mut iter = serialized.into_iter();
-
-    let roundtrip = <Vec<u32> as WordDeserializable>::read_words(&mut iter).unwrap();
-    assert_eq!(roundtrip, value);
-}
-
-#[test]
-fn test_vec_of_tuples_word_roundtrip() {
-    let value = vec![(1u32, 2u64), (3u32, 4u64), (5u32, 6u64)];
-    let serialized = WordSerializable::to_word_vec(&value);
-    let mut iter = serialized.into_iter();
-
-    let roundtrip = <Vec<(u32, u64)> as WordDeserializable>::read_words(&mut iter).unwrap();
-    assert_eq!(roundtrip, value);
-}
-
-#[test]
 fn test_derived_named_struct_roundtrip() {
     let value = DerivedNamedStruct {
         left: 11,

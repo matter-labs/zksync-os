@@ -88,7 +88,9 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     }
                 } as u32;
 
-                DynWordIterator::from_word_serializable(len)
+                zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<2, _>(
+                    len,
+                )
             }
             TX_DATA_WORDS_QUERY_ID => {
                 let Some(tx) = self.next_tx.take() else {
@@ -108,7 +110,9 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     );
                 };
 
-                DynWordIterator::from_word_serializable(format)
+                zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<2, _>(
+                    format,
+                )
             }
             TX_FROM_QUERY_ID => {
                 let Some(from) = self.next_tx_from.take() else {
@@ -116,7 +120,9 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                         "trying to read next tx from before size query, after seal response or for a zk transaction"
                     );
                 };
-                DynWordIterator::from_word_serializable(from)
+                zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<6, _>(
+                    from,
+                )
             }
             _ => unreachable!(),
         }

@@ -49,7 +49,9 @@ impl OracleQueryProcessor for EthereumCLResponder {
 
         match query_id {
             ETHEREUM_WITHDRAWALS_BUFFER_LEN_QUERY_ID => {
-                DynWordIterator::from_word_serializable(self.withdrawals_list.len() as u32)
+                zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<2, _>(
+                    self.withdrawals_list.len() as u32,
+                )
             }
             ETHEREUM_WITHDRAWALS_BUFFER_DATA_QUERY_ID => {
                 DynWordIterator::from_constructor(self.withdrawals_list.clone(), |inner_ref| {
@@ -60,7 +62,7 @@ impl OracleQueryProcessor for EthereumCLResponder {
                 let input: u32 =
                     u32::read_words(&mut query.into_iter()).expect("must get historical depth");
                 assert!(input < 256);
-                DynWordIterator::from_word_serializable(
+                zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<2, _>(
                     self.parent_headers_encodings_list[input as usize].len() as u32,
                 )
             }
@@ -82,7 +84,9 @@ impl OracleQueryProcessor for EthereumCLResponder {
                     .get(input as usize)
                     .map(|el| crypto::sha3::Keccak256::digest(el).into())
                     .unwrap_or(Bytes32::ZERO);
-                DynWordIterator::from_word_serializable(hash)
+                zk_ee::oracle::word_serialization::dyn_word_iterator::boxed_inline_word_iter::<4, _>(
+                    hash,
+                )
             }
             _ => {
                 unreachable!()
