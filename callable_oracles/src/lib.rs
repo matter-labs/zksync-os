@@ -29,9 +29,8 @@ pub mod field_hints;
 pub mod utils;
 
 use zk_ee::{
-    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
+    oracle::usize_serialization::{WordDeserializable, WordSerializable, WordSink},
     system::errors::internal::InternalError,
-    utils::exact_size_chain::ExactSizeChain,
 };
 
 /// Shared test utilities for callable oracle unit tests.
@@ -79,23 +78,22 @@ pub struct MemoryRegionDescriptionParams {
     pub len: u32,
 }
 
-impl UsizeSerializable for MemoryRegionDescriptionParams {
-    const USIZE_LEN: usize = <u32 as UsizeSerializable>::USIZE_LEN * 2;
+impl WordSerializable for MemoryRegionDescriptionParams {
+    fn word_len(&self) -> usize {
+        <u32 as WordSerializable>::word_len(&self.offset)
+            + <u32 as WordSerializable>::word_len(&self.len)
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            UsizeSerializable::iter(&self.offset),
-            UsizeSerializable::iter(&self.len),
-        )
+    fn write_words(&self, out: &mut impl WordSink) {
+        <u32 as WordSerializable>::write_words(&self.offset, out);
+        <u32 as WordSerializable>::write_words(&self.len, out);
     }
 }
 
-impl UsizeDeserializable for MemoryRegionDescriptionParams {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let offset = <u32 as UsizeDeserializable>::from_iter(src)?;
-        let len = <u32 as UsizeDeserializable>::from_iter(src)?;
+impl WordDeserializable for MemoryRegionDescriptionParams {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let offset = <u32 as WordDeserializable>::read_words(src)?;
+        let len = <u32 as WordDeserializable>::read_words(src)?;
 
         let new = Self { offset, len };
 

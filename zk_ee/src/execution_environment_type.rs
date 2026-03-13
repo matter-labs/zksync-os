@@ -1,5 +1,5 @@
 use crate::internal_error;
-use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use crate::oracle::usize_serialization::{WordDeserializable, WordSerializable, WordSink};
 use crate::system::errors::internal::InternalError;
 
 #[repr(u8)]
@@ -30,19 +30,19 @@ impl ExecutionEnvironmentType {
     }
 }
 
-impl UsizeSerializable for ExecutionEnvironmentType {
-    const USIZE_LEN: usize = <u8 as UsizeSerializable>::USIZE_LEN;
+impl WordSerializable for ExecutionEnvironmentType {
+    fn word_len(&self) -> usize {
+        <u8 as WordSerializable>::word_len(self.u8_value_ref())
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        UsizeSerializable::iter(self.u8_value_ref())
+    fn write_words(&self, out: &mut impl WordSink) {
+        <u8 as WordSerializable>::write_words(self.u8_value_ref(), out);
     }
 }
 
-impl UsizeDeserializable for ExecutionEnvironmentType {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let discr = <u8 as UsizeDeserializable>::from_iter(src)?;
+impl WordDeserializable for ExecutionEnvironmentType {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let discr = <u8 as WordDeserializable>::read_words(src)?;
 
         match discr {
             Self::NO_EE_BYTE => Ok(Self::NoEE),

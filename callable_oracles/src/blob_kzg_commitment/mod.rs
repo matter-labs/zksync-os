@@ -7,7 +7,7 @@ use basic_system::system_functions::point_evaluation::versioned_hash_for_kzg;
 use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
-use zk_ee::oracle::usize_serialization::UsizeSerializable;
+use zk_ee::oracle::usize_serialization::WordSerializable;
 
 use crate::read_u8_words;
 
@@ -50,7 +50,7 @@ impl OracleQueryProcessor for BlobCommitmentAndProofQuery {
         let data = read_memory_as_u8(memory, data_ptr, data_len).unwrap();
         let result = blob_kzg_commitment_and_proof(&data);
 
-        let r = UsizeSerializable::iter(&result).collect::<Vec<_>>();
+        let r = result.to_word_vec();
         let r = Vec::into_boxed_slice(r);
         let n = UsizeSliceIteratorOwned::new(r);
         Box::new(n)
@@ -93,7 +93,7 @@ impl OracleQueryProcessor for NativeBlobCommitmentAndProofQuery {
         let data = read_u8_words(data_ptr as u64, data_len as u64);
         let result = blob_kzg_commitment_and_proof(&data);
 
-        let r = result.iter().collect::<Vec<_>>();
+        let r = result.to_word_vec();
         let r = Vec::into_boxed_slice(r);
         let n = UsizeSliceIteratorOwned::new(r);
         Box::new(n)
