@@ -267,10 +267,11 @@ impl<'external, S: EthereumLikeTypes> ExecutionContext<'_, 'external, S> {
 
         // Only calls to addresses linked to a hook are considered special.
         // Any other call can execute code following the normal flow.
-        let callee_low = external_call_launch_params.external_call.callee.as_limbs()[0] as u16;
         let hook = if external_call_launch_params.external_call.callee.as_uint()
             < SPECIAL_ADDRESS_BOUND.as_uint()
         {
+            // SPECIAL_ADDRESS_BOUND fits in u16, so the truncating cast is safe here.
+            let callee_low = external_call_launch_params.external_call.callee.as_limbs()[0] as u16;
             self.hooks.find_call_hook(callee_low)
         } else {
             None
