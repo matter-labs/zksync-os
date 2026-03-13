@@ -120,28 +120,262 @@ pub trait UsizeDeserializable: Sized {
     }
 }
 
-impl<T: UsizeSerializable> WordSerializable for T {
+impl WordSerializable for () {
     fn word_len(&self) -> usize {
-        self.iter().len()
+        0
+    }
+
+    fn write_words(&self, _out: &mut impl WordSink) {}
+}
+
+impl WordDeserializable for () {
+    fn read_words(_src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        Ok(())
+    }
+}
+
+impl WordSerializable for u8 {
+    fn word_len(&self) -> usize {
+        <u64 as WordSerializable>::word_len(&(*self as u64))
     }
 
     fn write_words(&self, out: &mut impl WordSink) {
-        for word in self.iter() {
-            out.write_word(word);
+        <u64 as WordSerializable>::write_words(&(*self as u64), out);
+    }
+}
+
+impl WordDeserializable for u8 {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let word = <u64 as WordDeserializable>::read_words(src)?;
+        if word > u8::MAX as u64 {
+            return Err(internal_error!("u8 deserialization failed"));
+        }
+        Ok(word as u8)
+    }
+}
+
+impl WordSerializable for bool {
+    fn word_len(&self) -> usize {
+        <u64 as WordSerializable>::word_len(&(*self as u64))
+    }
+
+    fn write_words(&self, out: &mut impl WordSink) {
+        <u64 as WordSerializable>::write_words(&(*self as u64), out);
+    }
+}
+
+impl WordDeserializable for bool {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let word = <u64 as WordDeserializable>::read_words(src)?;
+        if word == false as u64 {
+            Ok(false)
+        } else if word == true as u64 {
+            Ok(true)
+        } else {
+            Err(internal_error!("bool deserialization failed"))
         }
     }
 }
 
-impl<T: UsizeDeserializable> WordDeserializable for T {
+impl WordSerializable for u32 {
+    fn word_len(&self) -> usize {
+        <u64 as WordSerializable>::word_len(&(*self as u64))
+    }
+
+    fn write_words(&self, out: &mut impl WordSink) {
+        <u64 as WordSerializable>::write_words(&(*self as u64), out);
+    }
+}
+
+impl WordDeserializable for u32 {
     fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        Self::from_iter(src)
+        let word = <u64 as WordDeserializable>::read_words(src)?;
+        if word > u32::MAX as u64 {
+            return Err(internal_error!("u32 deserialization failed"));
+        }
+        Ok(word as u32)
+    }
+}
+
+impl WordSerializable for u64 {
+    fn word_len(&self) -> usize {
+        cfg_if::cfg_if!(
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                return 2;
+            } else if #[cfg(target_pointer_width = "64")] {
+                return 1;
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        );
+    }
+
+    fn write_words(&self, out: &mut impl WordSink) {
+        cfg_if::cfg_if!(
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                out.write_word(*self as usize);
+                out.write_word((*self >> 32) as usize);
+            } else if #[cfg(target_pointer_width = "64")] {
+                out.write_word(*self as usize);
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        );
+    }
+}
+
+impl WordDeserializable for u64 {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        cfg_if::cfg_if!(
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                let low = src.next().ok_or(internal_error!("u64 low deserialization failed"))?;
+                let high = src.next().ok_or(internal_error!("u64 high deserialization failed"))?;
+                return Ok(((high as u64) << 32) | (low as u64));
+            } else if #[cfg(target_pointer_width = "64")] {
+                let value = src.next().ok_or(internal_error!("u64 deserialization failed"))?;
+                return Ok(value as u64);
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        );
+    }
+}
+
+impl WordSerializable for U256 {
+    fn word_len(&self) -> usize {
+        <u64 as WordSerializable>::word_len(&0) * 4
+    }
+
+    fn write_words(&self, out: &mut impl WordSink) {
+        cfg_if::cfg_if!(
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                unsafe {
+                    for limb in core::mem::transmute::<Self, [u32; 8]>(*self) {
+                        out.write_word(limb as usize);
+                    }
+                }
+            } else if #[cfg(target_pointer_width = "64")] {
+                for limb in self.as_limbs() {
+                    out.write_word(*limb as usize);
+                }
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        );
+    }
+}
+
+impl WordDeserializable for U256 {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let mut new = MaybeUninit::uninit();
+        unsafe {
+            Self::init_from_words(&mut new, src)?;
+
+            Ok(new.assume_init())
+        }
     }
 
     unsafe fn init_from_words(
         this: &mut MaybeUninit<Self>,
         src: &mut impl ExactSizeIterator<Item = usize>,
     ) -> Result<(), InternalError> {
-        Self::init_from_iter(this, src)
+        let value: &mut U256 = this.write(U256::ZERO);
+
+        cfg_if::cfg_if! {
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                for dst in value.as_limbs_mut() {
+                    let low = src
+                        .next()
+                        .ok_or(internal_error!("u256 limb low deserialization failed"))?;
+                    let high = src
+                        .next()
+                        .ok_or(internal_error!("u256 limb high deserialization failed"))?;
+                    *dst = ((high as u64) << 32) | (low as u64);
+                }
+                Ok(())
+            } else if #[cfg(target_pointer_width = "64")] {
+                for dst in value.as_limbs_mut() {
+                    *dst = src
+                        .next()
+                        .ok_or(internal_error!("u256 limb deserialization failed"))? as u64;
+                }
+                Ok(())
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        }
+    }
+}
+
+impl WordSerializable for B160 {
+    fn word_len(&self) -> usize {
+        cfg_if::cfg_if!(
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                return 6;
+            } else if #[cfg(target_pointer_width = "64")] {
+                return 3;
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        );
+    }
+
+    fn write_words(&self, out: &mut impl WordSink) {
+        cfg_if::cfg_if!(
+            if #[cfg(target_endian = "big")] {
+                compile_error!("unsupported architecture: big endian arch is not supported")
+            } else if #[cfg(target_pointer_width = "32")] {
+                unsafe {
+                    for limb in core::mem::transmute::<Self, [u32; 6]>(*self) {
+                        out.write_word(limb as usize);
+                    }
+                }
+            } else if #[cfg(target_pointer_width = "64")] {
+                for limb in self.as_limbs() {
+                    out.write_word(*limb as usize);
+                }
+            } else {
+                compile_error!("unsupported architecture")
+            }
+        );
+    }
+}
+
+impl WordDeserializable for B160 {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let mut new = MaybeUninit::uninit();
+        unsafe {
+            Self::init_from_words(&mut new, src)?;
+            Ok(new.assume_init())
+        }
+    }
+
+    unsafe fn init_from_words(
+        this: &mut MaybeUninit<Self>,
+        src: &mut impl ExactSizeIterator<Item = usize>,
+    ) -> Result<(), InternalError> {
+        if src.len() < Self::word_len(&B160::ZERO) {
+            return Err(internal_error!("b160 deserialization failed: too short"));
+        }
+        let mut limbs = [0u64; B160::LIMBS];
+        for limb in &mut limbs {
+            *limb = unsafe { <u64 as WordDeserializable>::read_words(src).unwrap_unchecked() };
+        }
+        this.write(B160::from_limbs(limbs));
+
+        Ok(())
     }
 }
 
