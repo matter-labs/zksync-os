@@ -51,6 +51,10 @@ impl<I: WordSerializable + 'static + Send + Sync> DynWordIterator<I, IntoIter<us
 pub fn boxed_inline_word_iter<const N: usize, I: WordSerializable + 'static + Send + Sync>(
     item: I,
 ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+    // Small forward-mode oracle responses are often just a few words long. Keep those
+    // inline in an ArrayVec so the boxed iterator does not have to materialize an
+    // intermediate heap-allocated Vec<usize>. Larger payloads still fall back to the
+    // regular owned Vec path because the trait object must own the serialized words.
     if item.word_len() > N {
         return Box::new(item.to_word_vec().into_iter());
     }

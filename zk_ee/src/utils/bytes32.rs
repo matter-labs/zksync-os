@@ -1,6 +1,6 @@
+use crate::internal_error;
 use crate::oracle::word_serialization::{WordDeserializable, WordSerializable, WordSink};
 use crate::system::errors::internal::InternalError;
-use crate::internal_error;
 use core::mem::MaybeUninit;
 use ruint::aliases::{B160, U256};
 

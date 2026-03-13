@@ -44,16 +44,7 @@ pub const MIN_KEY_LEAF_MARKER_IDX: u64 = 0;
 pub const MAX_KEY_LEAF_MARKER_IDX: u64 = 1;
 
 // Note: all zeroes is well-defined for empty array slot, as we will insert two guardian values upon creation
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    WordSerializable,
-    WordDeserializable,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, WordSerializable, WordDeserializable)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlatStorageLeaf<const N: usize> {
     pub key: Bytes32,
@@ -929,7 +920,13 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable for Le
     fn word_len(&self) -> usize {
         self.index.word_len()
             + self.leaf.word_len()
-            + self.path.as_ref().as_slice().iter().map(|el| el.word_len()).sum::<usize>()
+            + self
+                .path
+                .as_ref()
+                .as_slice()
+                .iter()
+                .map(|el| el.word_len())
+                .sum::<usize>()
     }
 
     fn write_words(&self, out: &mut impl WordSink) {

@@ -12,8 +12,7 @@ use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::{
     oracle::basic_queries::InitialStorageSlotQuery,
     oracle::word_serialization::dyn_word_iterator::DynWordIterator,
-    oracle::word_serialization::WordDeserializable,
-    utils::Bytes32,
+    oracle::word_serialization::WordDeserializable, utils::Bytes32,
 };
 
 /// This processor handles requests related to the storage tree structure,

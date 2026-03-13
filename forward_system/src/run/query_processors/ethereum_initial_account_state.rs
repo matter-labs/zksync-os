@@ -57,7 +57,8 @@ impl OracleQueryProcessor for InMemoryEthereumInitialAccountStateResponder {
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
 
-        let address = B160::read_words(&mut query.into_iter()).expect("must deserialize hash value");
+        let address =
+            B160::read_words(&mut query.into_iter()).expect("must deserialize hash value");
 
         let account = if let Some(data) = self.source.get(&address).copied() {
             data

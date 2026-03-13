@@ -226,17 +226,22 @@ fn test_word_len_matches_serialized_len() {
     assert_eq!(b160_val.word_len(), b160_val.to_word_vec().len());
 
     let tuple_val = (0u32, 0u64);
-    assert_eq!(WordSerializable::word_len(&tuple_val), tuple_val.to_word_vec().len());
+    assert_eq!(
+        WordSerializable::word_len(&tuple_val),
+        tuple_val.to_word_vec().len()
+    );
 
     let array_val = [0u32; 3];
-    assert_eq!(WordSerializable::word_len(&array_val), array_val.to_word_vec().len());
+    assert_eq!(
+        WordSerializable::word_len(&array_val),
+        array_val.to_word_vec().len()
+    );
 }
 
 #[test]
 fn test_word_serializable_to_vec_matches_word_len() {
-    let value =
-        U256::from_str("0x123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF")
-            .unwrap();
+    let value = U256::from_str("0x123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF")
+        .unwrap();
     let new_words = WordSerializable::to_word_vec(&value);
     assert_eq!(new_words.len(), WordSerializable::word_len(&value));
 }

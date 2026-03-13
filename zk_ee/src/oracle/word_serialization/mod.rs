@@ -16,10 +16,7 @@ use core::mem::MaybeUninit;
 use ruint::aliases::{B160, U256};
 pub use word_serialization_derive::{WordDeserializable, WordSerializable};
 
-use crate::{
-    internal_error,
-    system::errors::internal::InternalError,
-};
+use crate::{internal_error, system::errors::internal::InternalError};
 
 pub mod dyn_word_iterator;
 #[cfg(test)]
@@ -372,31 +369,5 @@ impl<T: WordSerializable, const N: usize> WordSerializable for [T; N] {
         for element in self {
             element.write_words(out);
         }
-    }
-}
-
-impl<T: WordDeserializable, const N: usize> WordDeserializable for [T; N] {
-    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let mut out: [MaybeUninit<T>; N] = unsafe { MaybeUninit::uninit().assume_init() };
-        let mut initialized = 0;
-
-        while initialized < N {
-            match T::read_words(src) {
-                Ok(value) => {
-                    out[initialized].write(value);
-                    initialized += 1;
-                }
-                Err(err) => {
-                    for value in &mut out[..initialized] {
-                        unsafe { value.assume_init_drop() };
-                    }
-                    return Err(err);
-                }
-            }
-        }
-
-        let out = core::mem::ManuallyDrop::new(out);
-        let ptr = (&*out as *const [MaybeUninit<T>; N]).cast::<[T; N]>();
-        Ok(unsafe { ptr.read() })
     }
 }

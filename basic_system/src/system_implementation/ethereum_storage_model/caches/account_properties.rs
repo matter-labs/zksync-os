@@ -15,16 +15,7 @@ use zk_ee::{
 pub(crate) const ACCOUNT_LEAF_VALUE_PRE_ENCODING_MAX_LEN: usize = 128;
 
 #[derive(
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    WordSerializable,
-    WordDeserializable,
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, WordSerializable, WordDeserializable,
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EthereumAccountProperties {

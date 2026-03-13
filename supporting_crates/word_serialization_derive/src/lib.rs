@@ -110,7 +110,9 @@ fn add_field_bounds(generics: &mut Generics, fields: &[&Field], trait_bound: syn
     let where_clause = generics.make_where_clause();
     for field in fields {
         let ty = &field.ty;
-        where_clause.predicates.push(parse_quote!(#ty: #trait_bound));
+        where_clause
+            .predicates
+            .push(parse_quote!(#ty: #trait_bound));
     }
 }
 

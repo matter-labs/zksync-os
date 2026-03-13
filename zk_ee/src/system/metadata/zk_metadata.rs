@@ -5,10 +5,11 @@ use super::basic_metadata::{
     BasicBlockMetadata, BasicTransactionMetadata, ZkSpecificPricingMetadata,
 };
 use super::system_metadata::SystemMetadata;
+use crate::oracle::word_serialization::{WordDeserializable, WordSerializable};
 use crate::system::constants::*;
+use crate::system::errors::internal::InternalError;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
 use crate::utils::Bytes32;
-use crate::oracle::word_serialization::{WordDeserializable, WordSerializable};
 use ruint::aliases::{B160, U256};
 
 pub type ZkMetadata = SystemMetadata<
@@ -45,12 +46,22 @@ pub const BLOCK_HASHES_WINDOW_SIZE: usize = 256;
 /// Hash for block number N will be at index [BLOCK_HASHES_WINDOW_SIZE - (current_block_number - N)]
 /// (most recent will be at the end) if N is one of the most recent
 /// BLOCK_HASHES_WINDOW_SIZE blocks.
-#[derive(Clone, Copy, Debug, PartialEq, WordSerializable, WordDeserializable)]
+#[derive(Clone, Copy, Debug, PartialEq, WordSerializable)]
 pub struct BlockHashes(pub [U256; BLOCK_HASHES_WINDOW_SIZE]);
 
 impl Default for BlockHashes {
     fn default() -> Self {
         Self([U256::ZERO; BLOCK_HASHES_WINDOW_SIZE])
+    }
+}
+
+impl WordDeserializable for BlockHashes {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let mut hashes = [U256::ZERO; BLOCK_HASHES_WINDOW_SIZE];
+        for hash in &mut hashes {
+            *hash = U256::read_words(src)?;
+        }
+        Ok(Self(hashes))
     }
 }
 
@@ -83,15 +94,7 @@ impl<'de> serde::Deserialize<'de> for BlockHashes {
 // block number, etc
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    PartialEq,
-    WordSerializable,
-    WordDeserializable,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, WordSerializable, WordDeserializable)]
 pub struct BlockMetadataFromOracle {
     pub eip1559_basefee: U256,
     pub pubdata_price: U256,
