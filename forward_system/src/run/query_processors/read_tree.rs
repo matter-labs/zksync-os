@@ -12,7 +12,7 @@ use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::{
     oracle::basic_queries::InitialStorageSlotQuery,
     oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator,
-    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
+    oracle::usize_serialization::{WordDeserializable, WordSerializable},
     utils::Bytes32,
 };
 
@@ -57,16 +57,18 @@ impl<T: ReadStorageTree> OracleQueryProcessor for ReadTreeResponder<T> {
 
         match query_id {
             PreviousIndexQuery::QUERY_ID => {
-                let key = <PreviousIndexQuery as SimpleOracleQuery>::Input::from_iter(
+                let key = <PreviousIndexQuery as SimpleOracleQuery>::Input::read_words(
                     &mut query.into_iter(),
                 )
                 .expect("must deserialize key");
                 let prev_index = self.tree.prev_tree_index(key);
 
-                DynUsizeIterator::from_constructor(prev_index, UsizeSerializable::iter)
+                DynUsizeIterator::from_constructor(prev_index, |inner_ref| {
+                    inner_ref.to_word_vec().into_iter()
+                })
             }
             ExactIndexQuery::QUERY_ID => {
-                let key = <ExactIndexQuery as SimpleOracleQuery>::Input::from_iter(
+                let key = <ExactIndexQuery as SimpleOracleQuery>::Input::read_words(
                     &mut query.into_iter(),
                 )
                 .expect("must deserialize key");
@@ -75,12 +77,14 @@ impl<T: ReadStorageTree> OracleQueryProcessor for ReadTreeResponder<T> {
                     .tree_index(key)
                     .expect("Reading index for key that is not in the tree");
 
-                DynUsizeIterator::from_constructor(existing, UsizeSerializable::iter)
+                DynUsizeIterator::from_constructor(existing, |inner_ref| {
+                    inner_ref.to_word_vec().into_iter()
+                })
             }
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
                 let StorageAddress { address, key } = <InitialStorageSlotQuery<
                     EthereumIOTypesConfig,
-                > as SimpleOracleQuery>::Input::from_iter(
+                > as SimpleOracleQuery>::Input::read_words(
                     &mut query.into_iter()
                 )
                 .expect("must deserialize the address/slot");
@@ -98,15 +102,20 @@ impl<T: ReadStorageTree> OracleQueryProcessor for ReadTreeResponder<T> {
                             is_new_storage_slot: true,
                         }
                     };
-                DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                DynUsizeIterator::from_constructor(slot_data, |inner_ref| {
+                    inner_ref.to_word_vec().into_iter()
+                })
             }
             PROOF_FOR_INDEX_QUERY_ID => {
-                let index = u64::from_iter(&mut query.into_iter()).expect("must deserialize index");
+                let index =
+                    u64::read_words(&mut query.into_iter()).expect("must deserialize index");
                 let existing = self.tree.merkle_proof(index);
                 let proof = ValueAtIndexProof {
                     proof: ExistingReadProof { existing },
                 };
-                DynUsizeIterator::from_constructor(proof, UsizeSerializable::iter)
+                DynUsizeIterator::from_constructor(proof, |inner_ref| {
+                    inner_ref.to_word_vec().into_iter()
+                })
             }
             _ => unreachable!(),
         }

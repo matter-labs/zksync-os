@@ -5,6 +5,7 @@ use zk_ee::common_structs::ProofData;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::types_config::EthereumIOTypesConfig;
+use zk_ee::oracle::usize_serialization::WordSerializable;
 
 /// This processor provides additional data needed for state validation during proving run:
 /// during proof runs, we need extra data to validate provided inputs against the chain state
@@ -45,6 +46,6 @@ impl OracleQueryProcessor for ZKProofDataResponder {
             .take()
             .expect("io implementer data is none (second read or not set initially)");
 
-        DynUsizeIterator::from_constructor(data, UsizeSerializable::iter)
+        DynUsizeIterator::from_constructor(data, |inner_ref| inner_ref.to_word_vec().into_iter())
     }
 }

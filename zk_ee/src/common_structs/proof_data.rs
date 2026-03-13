@@ -1,7 +1,6 @@
-use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use crate::oracle::usize_serialization::{WordDeserializable, WordSerializable, WordSink};
 use crate::system::errors::internal::InternalError;
 use crate::types_config::EthereumIOTypesConfig;
-use crate::utils::exact_size_chain::ExactSizeChain;
 
 use super::state_root_view::StateRootView;
 
@@ -18,23 +17,21 @@ pub struct ProofData<SR: StateRootView<EthereumIOTypesConfig>> {
     pub last_block_timestamp: u64,
 }
 
-impl<SR: StateRootView<EthereumIOTypesConfig>> UsizeSerializable for ProofData<SR> {
-    const USIZE_LEN: usize =
-        <SR as UsizeSerializable>::USIZE_LEN + <u64 as UsizeSerializable>::USIZE_LEN;
+impl<SR: StateRootView<EthereumIOTypesConfig>> WordSerializable for ProofData<SR> {
+    fn word_len(&self) -> usize {
+        self.state_root_view.word_len() + self.last_block_timestamp.word_len()
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            UsizeSerializable::iter(&self.state_root_view),
-            UsizeSerializable::iter(&self.last_block_timestamp),
-        )
+    fn write_words(&self, out: &mut impl WordSink) {
+        self.state_root_view.write_words(out);
+        self.last_block_timestamp.write_words(out);
     }
 }
 
-impl<SR: StateRootView<EthereumIOTypesConfig>> UsizeDeserializable for ProofData<SR> {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let state_root_view = UsizeDeserializable::from_iter(src)?;
-        let last_block_timestamp = UsizeDeserializable::from_iter(src)?;
+impl<SR: StateRootView<EthereumIOTypesConfig>> WordDeserializable for ProofData<SR> {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let state_root_view = WordDeserializable::read_words(src)?;
+        let last_block_timestamp = WordDeserializable::read_words(src)?;
         let new = Self {
             state_root_view,
             last_block_timestamp,

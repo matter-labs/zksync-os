@@ -88,7 +88,9 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     }
                 } as u32;
 
-                DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+                DynUsizeIterator::from_constructor(len, |inner_ref| {
+                    inner_ref.to_word_vec().into_iter()
+                })
             }
             TX_DATA_WORDS_QUERY_ID => {
                 let Some(tx) = self.next_tx.take() else {
@@ -108,7 +110,9 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                     );
                 };
 
-                DynUsizeIterator::from_constructor(format, UsizeSerializable::iter)
+                DynUsizeIterator::from_constructor(format, |inner_ref| {
+                    inner_ref.to_word_vec().into_iter()
+                })
             }
             TX_FROM_QUERY_ID => {
                 let Some(from) = self.next_tx_from.take() else {
@@ -116,7 +120,9 @@ impl<TS: TxSource> OracleQueryProcessor for TxDataResponder<TS> {
                         "trying to read next tx from before size query, after seal response or for a zk transaction"
                     );
                 };
-                DynUsizeIterator::from_constructor(from, UsizeSerializable::iter)
+                DynUsizeIterator::from_constructor(from, |inner_ref| {
+                    inner_ref.to_word_vec().into_iter()
+                })
             }
             _ => unreachable!(),
         }

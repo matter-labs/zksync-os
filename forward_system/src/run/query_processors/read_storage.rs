@@ -8,7 +8,7 @@ use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::{
     oracle::basic_queries::InitialStorageSlotQuery,
     oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator,
-    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
+    oracle::usize_serialization::{WordDeserializable, WordSerializable},
     utils::Bytes32,
 };
 
@@ -46,7 +46,7 @@ impl<S: ReadStorage> OracleQueryProcessor for ReadStorageResponder<S> {
             InitialStorageSlotQuery::<EthereumIOTypesConfig>::QUERY_ID => {
                 let StorageAddress { address, key } = <InitialStorageSlotQuery<
                     EthereumIOTypesConfig,
-                > as SimpleOracleQuery>::Input::from_iter(
+                > as SimpleOracleQuery>::Input::read_words(
                     &mut query.into_iter()
                 )
                 .expect("must deserialize the address/slot");
@@ -64,7 +64,9 @@ impl<S: ReadStorage> OracleQueryProcessor for ReadStorageResponder<S> {
                             is_new_storage_slot: true,
                         }
                     };
-                DynUsizeIterator::from_constructor(slot_data, UsizeSerializable::iter)
+                DynUsizeIterator::from_constructor(slot_data, |inner_ref| {
+                    inner_ref.to_word_vec().into_iter()
+                })
             }
             _ => unreachable!(),
         }
