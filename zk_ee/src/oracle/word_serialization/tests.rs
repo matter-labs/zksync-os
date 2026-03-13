@@ -3,6 +3,21 @@ use core::str::FromStr;
 use super::*;
 use ruint::aliases::{B160, U256};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, WordSerializable, WordDeserializable)]
+struct DerivedNamedStruct {
+    left: u32,
+    right: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, WordSerializable, WordDeserializable)]
+struct DerivedTupleStruct(u32, bool);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, WordSerializable, WordDeserializable)]
+struct DerivedGenericStruct<T> {
+    value: T,
+    marker: bool,
+}
+
 #[test]
 fn test_unit_serialization() {
     let unit = ();
@@ -253,5 +268,41 @@ fn test_vec_of_tuples_word_roundtrip() {
     let mut iter = serialized.into_iter();
 
     let roundtrip = <Vec<(u32, u64)> as WordDeserializable>::read_words(&mut iter).unwrap();
+    assert_eq!(roundtrip, value);
+}
+
+#[test]
+fn test_derived_named_struct_roundtrip() {
+    let value = DerivedNamedStruct {
+        left: 11,
+        right: 0x1234_5678_9abc_def0,
+    };
+    let serialized = value.to_word_vec();
+    let mut iter = serialized.into_iter();
+
+    let roundtrip = DerivedNamedStruct::read_words(&mut iter).unwrap();
+    assert_eq!(roundtrip, value);
+}
+
+#[test]
+fn test_derived_tuple_struct_roundtrip() {
+    let value = DerivedTupleStruct(77, true);
+    let serialized = value.to_word_vec();
+    let mut iter = serialized.into_iter();
+
+    let roundtrip = DerivedTupleStruct::read_words(&mut iter).unwrap();
+    assert_eq!(roundtrip, value);
+}
+
+#[test]
+fn test_derived_generic_struct_roundtrip() {
+    let value = DerivedGenericStruct {
+        value: B160::from_str("0x1234567890123456789012345678901234567890").unwrap(),
+        marker: false,
+    };
+    let serialized = value.to_word_vec();
+    let mut iter = serialized.into_iter();
+
+    let roundtrip = DerivedGenericStruct::<B160>::read_words(&mut iter).unwrap();
     assert_eq!(roundtrip, value);
 }

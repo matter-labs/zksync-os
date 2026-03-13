@@ -14,6 +14,7 @@ use alloc::vec::Vec;
 use core::mem::MaybeUninit;
 
 use ruint::aliases::{B160, U256};
+pub use word_serialization_derive::{WordDeserializable, WordSerializable};
 
 use crate::{
     internal_error,
@@ -55,6 +56,11 @@ impl WordSink for CountingWordSink {
 
 /// Serialization into oracle transport words.
 pub trait WordSerializable {
+    /// Returns the number of transport words that `write_words()` will emit.
+    ///
+    /// This is not just a convenience helper: the proving-side oracle transport writes
+    /// the payload length before the payload itself, so it must know the word count
+    /// up front without first materializing a temporary buffer.
     fn word_len(&self) -> usize;
 
     fn write_words(&self, out: &mut impl WordSink);

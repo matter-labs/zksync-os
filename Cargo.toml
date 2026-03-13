@@ -21,6 +21,7 @@ members = [
     "supporting_crates/delegated_u256",
     "supporting_crates/u256",
     "supporting_crates/nostd_compression",
+    "supporting_crates/word_serialization_derive",
     "basic_system/src/system_implementation/ethereum_storage_model/supporting_crates/cc-traits",
     "cycle_marker",
     "tests/common",
