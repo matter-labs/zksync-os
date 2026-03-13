@@ -29,8 +29,7 @@ pub mod field_hints;
 pub mod utils;
 
 use zk_ee::{
-    oracle::word_serialization::{WordDeserializable, WordSerializable, WordSink},
-    system::errors::internal::InternalError,
+    oracle::word_serialization::{WordDeserializable, WordSerializable},
 };
 
 /// Shared test utilities for callable oracle unit tests.
@@ -72,33 +71,10 @@ pub mod test_utils {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, WordSerializable, WordDeserializable)]
 pub struct MemoryRegionDescriptionParams {
     pub offset: u32,
     pub len: u32,
-}
-
-impl WordSerializable for MemoryRegionDescriptionParams {
-    fn word_len(&self) -> usize {
-        <u32 as WordSerializable>::word_len(&self.offset)
-            + <u32 as WordSerializable>::word_len(&self.len)
-    }
-
-    fn write_words(&self, out: &mut impl WordSink) {
-        <u32 as WordSerializable>::write_words(&self.offset, out);
-        <u32 as WordSerializable>::write_words(&self.len, out);
-    }
-}
-
-impl WordDeserializable for MemoryRegionDescriptionParams {
-    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let offset = <u32 as WordDeserializable>::read_words(src)?;
-        let len = <u32 as WordDeserializable>::read_words(src)?;
-
-        let new = Self { offset, len };
-
-        Ok(new)
-    }
 }
 
 /// Convert a host-supplied integer address into a raw pointer after the

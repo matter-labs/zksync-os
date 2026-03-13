@@ -44,36 +44,21 @@ pub const MIN_KEY_LEAF_MARKER_IDX: u64 = 0;
 pub const MAX_KEY_LEAF_MARKER_IDX: u64 = 1;
 
 // Note: all zeroes is well-defined for empty array slot, as we will insert two guardian values upon creation
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    WordSerializable,
+    WordDeserializable,
+)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlatStorageLeaf<const N: usize> {
     pub key: Bytes32,
     pub value: Bytes32,
     pub next: u64,
-}
-
-impl<const N: usize> WordSerializable for FlatStorageLeaf<N> {
-    fn word_len(&self) -> usize {
-        self.key.word_len() + self.value.word_len() + self.next.word_len()
-    }
-
-    fn write_words(&self, out: &mut impl WordSink) {
-        self.key.write_words(out);
-        self.value.write_words(out);
-        self.next.write_words(out);
-    }
-}
-
-impl<const N: usize> WordDeserializable for FlatStorageLeaf<N> {
-    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let key = WordDeserializable::read_words(src)?;
-        let value = WordDeserializable::read_words(src)?;
-        let next = WordDeserializable::read_words(src)?;
-
-        let new = Self { key, value, next };
-
-        Ok(new)
-    }
 }
 
 impl<const N: usize> FlatStorageLeaf<N> {
@@ -125,36 +110,11 @@ impl FlatStorageHasher for Blake2sStorageHasher {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, WordSerializable, WordDeserializable)]
 #[cfg_attr(feature = "testing", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlatStorageCommitment<const N: usize> {
     pub root: Bytes32,
     pub next_free_slot: u64, // NOTE: this will effectively be our "next enumeration counter" for pubdata purposes
-}
-
-impl<const N: usize> WordSerializable for FlatStorageCommitment<N> {
-    fn word_len(&self) -> usize {
-        self.root.word_len() + self.next_free_slot.word_len()
-    }
-
-    fn write_words(&self, out: &mut impl WordSink) {
-        self.root.write_words(out);
-        self.next_free_slot.write_words(out);
-    }
-}
-
-impl<const N: usize> WordDeserializable for FlatStorageCommitment<N> {
-    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let root = WordDeserializable::read_words(src)?;
-        let next_free_slot = WordDeserializable::read_words(src)?;
-
-        let new = Self {
-            root,
-            next_free_slot,
-        };
-
-        Ok(new)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1001,125 +961,27 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeseriali
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, WordSerializable, WordDeserializable)]
 pub struct ExistingReadProof<const N: usize, H: FlatStorageHasher, A: Allocator = Global> {
     pub existing: LeafProof<N, H, A>,
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
-    for ExistingReadProof<N, H, A>
-{
-    fn word_len(&self) -> usize {
-        self.existing.word_len()
-    }
-
-    fn write_words(&self, out: &mut impl WordSink) {
-        self.existing.write_words(out);
-    }
-}
-
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
-    for ExistingReadProof<N, H, A>
-{
-    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let existing = WordDeserializable::read_words(src)?;
-
-        Ok(Self { existing })
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, WordSerializable, WordDeserializable)]
 pub struct NewReadProof<const N: usize, H: FlatStorageHasher, A: Allocator = Global> {
     pub previous: LeafProof<N, H, A>,
     pub next: LeafProof<N, H, A>,
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
-    for NewReadProof<N, H, A>
-{
-    fn word_len(&self) -> usize {
-        self.previous.word_len() + self.next.word_len()
-    }
-
-    fn write_words(&self, out: &mut impl WordSink) {
-        self.previous.write_words(out);
-        self.next.write_words(out);
-    }
-}
-
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
-    for NewReadProof<N, H, A>
-{
-    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let previous = WordDeserializable::read_words(src)?;
-        let next = WordDeserializable::read_words(src)?;
-
-        Ok(Self { previous, next })
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, WordSerializable, WordDeserializable)]
 pub struct NewWriteProof<const N: usize, H: FlatStorageHasher, A: Allocator = Global> {
     pub previous: LeafProof<N, H, A>,
     pub next: LeafProof<N, H, A>,
     pub new_insert: LeafProof<N, H, A>,
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
-    for NewWriteProof<N, H, A>
-{
-    fn word_len(&self) -> usize {
-        self.previous.word_len() + self.next.word_len() + self.new_insert.word_len()
-    }
-
-    fn write_words(&self, out: &mut impl WordSink) {
-        self.previous.write_words(out);
-        self.next.write_words(out);
-        self.new_insert.write_words(out);
-    }
-}
-
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
-    for NewWriteProof<N, H, A>
-{
-    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let previous = WordDeserializable::read_words(src)?;
-        let next = WordDeserializable::read_words(src)?;
-        let new_insert = WordDeserializable::read_words(src)?;
-
-        Ok(Self {
-            previous,
-            next,
-            new_insert,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, WordSerializable, WordDeserializable)]
 pub struct ExistingWriteProof<const N: usize, H: FlatStorageHasher, A: Allocator = Global> {
     pub existing: LeafProof<N, H, A>,
-}
-
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
-    for ExistingWriteProof<N, H, A>
-{
-    fn word_len(&self) -> usize {
-        self.existing.word_len()
-    }
-
-    fn write_words(&self, out: &mut impl WordSink) {
-        self.existing.write_words(out);
-    }
-}
-
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
-    for ExistingWriteProof<N, H, A>
-{
-    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let existing = WordDeserializable::read_words(src)?;
-
-        Ok(Self { existing })
-    }
 }
 
 #[repr(u32)]
@@ -1246,32 +1108,9 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeseriali
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, WordSerializable, WordDeserializable)]
 pub struct ValueAtIndexProof<const N: usize, H: FlatStorageHasher, A: Allocator = Global> {
     pub proof: ExistingReadProof<N, H, A>,
-}
-
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
-    for ValueAtIndexProof<N, H, A>
-{
-    fn word_len(&self) -> usize {
-        self.proof.word_len()
-    }
-
-    fn write_words(&self, out: &mut impl WordSink) {
-        self.proof.write_words(out);
-    }
-}
-
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
-    for ValueAtIndexProof<N, H, A>
-{
-    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let proof = WordDeserializable::read_words(src)?;
-        let new = Self { proof };
-
-        Ok(new)
-    }
 }
 
 pub fn verify_proof_for_root<const N: usize, H: FlatStorageHasher, A: Allocator>(
