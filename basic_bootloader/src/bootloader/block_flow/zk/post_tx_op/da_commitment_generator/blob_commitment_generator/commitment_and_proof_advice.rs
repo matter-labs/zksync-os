@@ -34,14 +34,14 @@ impl WordSerializable for KZGCommitmentAndProof {
 
 impl WordDeserializable for KZGCommitmentAndProof {
     fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        const FIELD_USIZE_LEN: usize = 48 / core::mem::size_of::<usize>();
+        const FIELD_WORD_LEN: usize = 48 / core::mem::size_of::<usize>();
         let mut out = Self {
             commitment: [0u8; 48],
             proof: [0u8; 48],
         };
         unsafe {
             let commitment_usize_ptr = out.commitment.as_mut_ptr().cast::<usize>();
-            for i in 0..FIELD_USIZE_LEN {
+            for i in 0..FIELD_WORD_LEN {
                 commitment_usize_ptr
                     .add(i)
                     .write(src.next().ok_or(internal_error!(
@@ -49,7 +49,7 @@ impl WordDeserializable for KZGCommitmentAndProof {
                     ))?);
             }
             let proof_usize_ptr = out.proof.as_mut_ptr().cast::<usize>();
-            for i in 0..FIELD_USIZE_LEN {
+            for i in 0..FIELD_WORD_LEN {
                 proof_usize_ptr
                     .add(i)
                     .write(src.next().ok_or(internal_error!(
