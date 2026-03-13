@@ -1,5 +1,5 @@
 use crate::{
-    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
+    oracle::usize_serialization::{WordDeserializable, WordSerializable},
     utils::Bytes32,
 };
 
@@ -13,45 +13,45 @@ pub trait TryIntoLowAddress {
 pub trait SystemIOTypesConfig: Sized + 'static + Send + Sync {
     // We want to define some associated types for addresses, storage keys, etc.
     // mainly for sizes. We also want to have those interpretable as byte sequences in general.
-    type Address: UsizeSerializable
-        + UsizeDeserializable
+    type Address: WordSerializable
+        + WordDeserializable
         + Clone
         + Copy
         + core::fmt::Debug
         + core::default::Default
         + TryIntoLowAddress;
-    type StorageKey: UsizeSerializable
-        + UsizeDeserializable
+    type StorageKey: WordSerializable
+        + WordDeserializable
         + Clone
         + Copy
         + core::fmt::Debug
         + core::default::Default;
-    type StorageValue: UsizeSerializable
-        + UsizeDeserializable
+    type StorageValue: WordSerializable
+        + WordDeserializable
         + Clone
         + Copy
         + core::fmt::Debug
         + core::default::Default;
-    type NominalTokenValue: UsizeSerializable
-        + UsizeDeserializable
+    type NominalTokenValue: WordSerializable
+        + WordDeserializable
         + Clone
         + Copy
         + core::fmt::Debug
         + core::default::Default;
-    type BytecodeHashValue: UsizeSerializable
-        + UsizeDeserializable
+    type BytecodeHashValue: WordSerializable
+        + WordDeserializable
         + Clone
         + Copy
         + core::fmt::Debug
         + core::default::Default;
     // Events are something to be consumed only in the system itself, and it'll never get passed
     // to the outside environment
-    type EventKey: UsizeSerializable + Clone + Copy + core::fmt::Debug + core::default::Default;
+    type EventKey: WordSerializable + Clone + Copy + core::fmt::Debug + core::default::Default;
     // Signals can be passed to outside environments (like L2 to L1 messages)
-    type SignalingKey: UsizeSerializable + Clone + Copy + core::fmt::Debug + core::default::Default;
+    type SignalingKey: WordSerializable + Clone + Copy + core::fmt::Debug + core::default::Default;
 
     // // and in general under address info we want to have some data
-    // type AddressSpecificInfo: UsizeSerializable + UsizeDeserializable;
+    // type AddressSpecificInfo: WordSerializable + WordDeserializable;
 
     fn static_default_event_key() -> &'static Self::EventKey;
     fn static_default_signaling_key() -> &'static Self::SignalingKey;
