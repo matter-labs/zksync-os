@@ -136,9 +136,11 @@ pub trait SystemIOTypesConfig: Sized + 'static + Send + Sync {
 }
 ```
 
-All associated types must implement `UsizeSerializable` + `UsizeDeserializable` so
+Most associated types must implement `UsizeSerializable` + `UsizeDeserializable` so
 they can be exchanged with the oracle over the `usize`-based serialisation
 interface (see [Oracle Serialisation](#oracle-serialisation)).
+`EventKey` and `SignalingKey` are write-only from the system's perspective and
+therefore only require `UsizeSerializable`.
 
 The only concrete instantiation currently used is `EthereumIOTypesConfig`:
 
@@ -192,9 +194,11 @@ pub trait StorageAccessPolicy<R: Resources, V> {
 }
 ```
 
-For EVM: warm reads cost 100 gas, cold reads add 2100 gas, new slot writes add
-20000 gas. Gas refunds from `SSTORE` (`EIP-3529`) are tracked in the
-`refund_counter` field of `StorageModel`.
+For EVM: warm reads cost 100 gas (`WARM_STORAGE_READ_COST`); cold reads charge an
+additional 2000 gas on top of the warm cost for a 2100 gas total (`COLD_SLOAD_COST`).
+New-slot writes charge an extra 19900 gas (`SSTORE_SET_EXTRA`) after the warm-read
+cost, and cold writes add another 100 gas. Gas refunds from `SSTORE` (`EIP-3529`)
+are tracked in the `refund_counter` field of `StorageModel`.
 
 ## `AccountDataRequest` and the `Maybe` Type
 
@@ -277,9 +281,10 @@ correct packing:
 The trait is implemented for `u8`, `u32`, `u64`, `U256`, `B160`, `Bytes32`,
 tuples, and fixed-size arrays. Little-endian encoding is used throughout.
 
-> **Note**: Deserialization panics on values that cannot be constructed from the
-> provided word count. Callers in the oracle layer must ensure the oracle response
-> length matches the expected `USIZE_LEN` constant before invoking deserialization.
+> **Note**: `UsizeDeserializable::from_iter` returns `Result<_, InternalError>` and
+> propagates an error when the supplied word count does not match `USIZE_LEN`.
+> Callers in the oracle layer must ensure the oracle response length matches the
+> expected `USIZE_LEN` constant.
 
 ## Data Flow: Storage Read
 
@@ -319,7 +324,7 @@ EE calls IOSubsystemExt::read_account_properties(request, address)
         │          │
         │          └─> Read hash at slot (ACCOUNT_PROPERTIES_STORAGE_ADDRESS, address)
         │                │
-        │                └─> oracle.query(GENERIC_PREIMAGE_QUERY_ID, hash)
+        │                └─> oracle.query(FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID, hash)
         │                      │
         │                      ├─ [PROOF_ENV=true] re-verify hash of received preimage
         │                      └─> Deserialise AccountCacheEntry → insert into cache
@@ -356,10 +361,11 @@ is composed of:
 | `account_data_cache` | `NewModelAccountCache` | Caches deserialized account structs for efficient per-field access. |
 
 Account properties are **not** stored directly in the tree. Instead, a
-`keccak256` hash of the serialised account struct is stored at tree slot
+`Blake2s256` hash of the serialised account struct is stored at tree slot
 `(ACCOUNT_PROPERTIES_STORAGE_ADDRESS, address)` (address `0x8003`). The preimage
-is loaded on demand through the oracle. This keeps tree leaves small and allows
-the account encoding to change without changing the tree structure.
+is loaded on demand through the oracle using `FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID`.
+This keeps tree leaves small and allows the account encoding to change without
+changing the tree structure.
 
 The `HistoryMap` ([source](../../../zk_ee/src/common_structs/history_map/mod.rs))
 powers all three caches. It stores a per-key chain of historical values and
