@@ -1,4 +1,7 @@
 use alloc::boxed::Box;
+use alloc::vec::IntoIter;
+
+use super::WordSerializable;
 
 /// Type-erased iterator that owns its data and provides dynamic dispatch.
 ///
@@ -33,6 +36,14 @@ impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + S
 
             item as Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync>
         }
+    }
+}
+
+impl<I: WordSerializable + 'static + Send + Sync> DynUsizeIterator<I, IntoIter<usize>> {
+    pub fn from_word_serializable(
+        item: I,
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+        Self::from_constructor(item, |inner_ref| inner_ref.to_word_vec().into_iter())
     }
 }
 
@@ -138,5 +149,16 @@ mod tests {
         assert_eq!(iter.next(), Some(100));
         assert_eq!(iter.next(), Some(255));
         assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_dyn_usize_iterator_from_word_serializable() {
+        let data = (42u32, 7u64);
+        let mut iter = DynUsizeIterator::from_word_serializable(data);
+
+        let expected = data.to_word_vec();
+        assert_eq!(iter.len(), expected.len());
+        assert_eq!(iter.by_ref().collect::<Vec<_>>(), expected);
+        assert_eq!(iter.len(), 0);
     }
 }

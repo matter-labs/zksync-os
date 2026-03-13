@@ -18,7 +18,7 @@ use zk_ee::oracle::query_ids::INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
 use zk_ee::storage_types::InitialStorageSlotData;
 use zk_ee::storage_types::StorageAddress;
 use zk_ee::utils::Bytes32;
-use zk_ee::oracle::usize_serialization::{WordDeserializable, WordSerializable};
+use zk_ee::oracle::usize_serialization::WordDeserializable;
 
 #[derive(Debug, Clone)]
 // #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,8 +110,6 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
             initial_value: value,
         };
 
-        DynUsizeIterator::from_constructor(initial_value, |inner_ref| {
-            inner_ref.to_word_vec().into_iter()
-        })
+        DynUsizeIterator::from_word_serializable(initial_value)
     }
 }
