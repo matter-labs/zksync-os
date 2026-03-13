@@ -51,10 +51,22 @@ num-bigint = "*"
 num-traits = "*"
 arbitrary = { version = "1", features = ["derive"] }
 serde_json = "*"
-alloy-rpc-types-debug = { version = "*", default-features = false }
-alloy = { version = "1", features = ["rlp", "full"] }
-alloy-rlp = { version = "*" }
-alloy-primitives = { version = "1", features = ["arbitrary"] }
+alloy-rpc-types-debug = { version = "=1.0.41", default-features = false }
+alloy = { version = "=1.0.41", features = ["rlp", "full"] }
+alloy-eips = { version = "=1.0.41" }
+alloy-genesis = { version = "=1.0.41" }
+alloy-json-rpc = { version = "=1.0.41" }
+alloy-pubsub = { version = "=1.0.41" }
+alloy-rlp = { version = "=0.3.13" }
+alloy-primitives = { version = "=1.5.7", features = ["arbitrary"] }
+alloy-rpc-client = { version = "=1.0.41" }
+alloy-serde = { version = "=1.0.41" }
+alloy-signer = { version = "=1.0.41" }
+alloy-transport = { version = "=1.0.41" }
+alloy-transport-http = { version = "=1.0.41" }
+alloy-transport-ipc = { version = "=1.0.41" }
+alloy-transport-ws = { version = "=1.0.41" }
+alloy-tx-macros = { version = "=1.0.41" }
 reqwest = { version = "*", features = ["blocking", "json"] }
 reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git", tag = "v1.8.4" }
 reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git", tag = "v1.8.4" }

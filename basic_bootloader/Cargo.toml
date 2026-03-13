@@ -25,9 +25,9 @@ serde = { version = "1.0", default-features = false, features = ["derive", "allo
 cfg-if = "*"
 
 [dev-dependencies]
-alloy = { version = "1", features = ["rlp", "full"] }
-alloy-rlp = { version = "*" }
-alloy-primitives = { version = "1", features = ["arbitrary"] }
+alloy = { version = "=1.0.41", features = ["rlp", "full"] }
+alloy-rlp = { version = "=0.3.13" }
+alloy-primitives = { version = "=1.5.7", features = ["arbitrary"] }
 
 [features]
 serde = ["dep:serde", "ruint/serde"]

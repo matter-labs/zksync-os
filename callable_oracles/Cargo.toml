@@ -20,7 +20,7 @@ risc_v_simulator = { workspace = true, optional = true }
 num-bigint = { version = "*", optional = true }
 num-traits = { version = "*", optional = true }
 
-alloy-consensus = "1.0.41"
+alloy-consensus = "=1.0.41"
 c-kzg = "2.1.5"
 
 [dev-dependencies]
