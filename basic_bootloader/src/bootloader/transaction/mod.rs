@@ -21,7 +21,7 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::internal_error;
 use zk_ee::oracle::query_ids::{TX_ENCODING_FORMAT_QUERY_ID, TX_FROM_QUERY_ID};
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use zk_ee::oracle::usize_serialization::{WordDeserializable, WordSerializable, WordSink};
+use zk_ee::oracle::word_serialization::{WordDeserializable, WordSerializable, WordSink};
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::system::SystemError;

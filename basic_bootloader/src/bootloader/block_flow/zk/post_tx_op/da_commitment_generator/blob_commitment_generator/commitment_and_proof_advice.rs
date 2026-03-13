@@ -1,5 +1,5 @@
 use zk_ee::internal_error;
-use zk_ee::oracle::usize_serialization::{WordDeserializable, WordSerializable, WordSink};
+use zk_ee::oracle::word_serialization::{WordDeserializable, WordSerializable, WordSink};
 use zk_ee::system::errors::internal::InternalError;
 
 pub const BLOB_COMMITMENT_AND_PROOF_QUERY_ID: u32 =

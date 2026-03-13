@@ -10,7 +10,7 @@ use super::common_structs::{GenericEventContentWithTxRef, GenericLogContentWithT
 use super::errors::internal::InternalError;
 use super::errors::system::SystemError;
 use super::logger::Logger;
-use super::oracle::usize_serialization::{WordDeserializable, WordSerializable};
+use super::oracle::word_serialization::{WordDeserializable, WordSerializable};
 use super::{IOResultKeeper, Resources};
 use crate::common_structs::GenericEventContentRef;
 use crate::define_subsystem;

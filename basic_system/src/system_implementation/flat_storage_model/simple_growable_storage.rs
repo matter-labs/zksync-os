@@ -31,7 +31,7 @@ use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::{internal_error, logger_log};
 use zk_ee::{
     memory::stack_trait::Stack,
-    oracle::usize_serialization::{WordDeserializable, WordSerializable, WordSink},
+    oracle::word_serialization::{WordDeserializable, WordSerializable, WordSink},
     oracle::IOOracle,
     system::{errors::internal::InternalError, logger::Logger},
     types_config::EthereumIOTypesConfig,
@@ -1702,7 +1702,7 @@ mod test {
     use std::{collections::HashMap, ops};
     use zk_ee::common_structs::derive_flat_storage_key;
     use zk_ee::{
-        oracle::usize_serialization::dyn_usize_iterator::DynWordIterator, system::NullLogger,
+        oracle::word_serialization::dyn_word_iterator::DynWordIterator, system::NullLogger,
     };
 
     fn hex_bytes(s: &str) -> Bytes32 {
@@ -1931,8 +1931,8 @@ mod test {
 
         fn raw_query<
             'a,
-            I: zk_ee::oracle::usize_serialization::WordSerializable
-                + zk_ee::oracle::usize_serialization::WordDeserializable,
+            I: zk_ee::oracle::word_serialization::WordSerializable
+                + zk_ee::oracle::word_serialization::WordDeserializable,
         >(
             &'a mut self,
             query_type: u32,

@@ -18,11 +18,12 @@
 pub mod basic_queries;
 pub mod query_ids;
 pub mod simple_oracle_query;
+pub mod word_serialization;
 pub mod usize_serialization;
 
 use crate::internal_error;
 use crate::oracle::query_ids::NEXT_TX_SIZE_QUERY_ID;
-use crate::oracle::usize_serialization::{WordDeserializable, WordSerializable};
+use crate::oracle::word_serialization::{WordDeserializable, WordSerializable};
 use crate::system::errors::internal::InternalError;
 use crate::utils::{Bytes32, UsizeAlignedByteBox};
 use core::alloc::Allocator;

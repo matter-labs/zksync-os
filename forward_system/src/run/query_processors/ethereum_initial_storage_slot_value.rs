@@ -18,7 +18,7 @@ use zk_ee::oracle::query_ids::INITIAL_STORAGE_SLOT_VALUE_QUERY_ID;
 use zk_ee::storage_types::InitialStorageSlotData;
 use zk_ee::storage_types::StorageAddress;
 use zk_ee::utils::Bytes32;
-use zk_ee::oracle::usize_serialization::WordDeserializable;
+use zk_ee::oracle::word_serialization::WordDeserializable;
 
 #[derive(Debug, Clone)]
 // #[derive(Debug, Clone, Serialize, Deserialize)]

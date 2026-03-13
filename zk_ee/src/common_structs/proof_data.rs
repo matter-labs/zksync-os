@@ -1,4 +1,4 @@
-use crate::oracle::usize_serialization::{WordDeserializable, WordSerializable, WordSink};
+use crate::oracle::word_serialization::{WordDeserializable, WordSerializable, WordSink};
 use crate::system::errors::internal::InternalError;
 use crate::types_config::EthereumIOTypesConfig;
 

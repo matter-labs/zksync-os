@@ -7,8 +7,8 @@ use zk_ee::storage_types::StorageAddress;
 use zk_ee::types_config::EthereumIOTypesConfig;
 use zk_ee::{
     oracle::basic_queries::InitialStorageSlotQuery,
-    oracle::usize_serialization::dyn_usize_iterator::DynWordIterator,
-    oracle::usize_serialization::WordDeserializable,
+    oracle::word_serialization::dyn_word_iterator::DynWordIterator,
+    oracle::word_serialization::WordDeserializable,
     utils::Bytes32,
 };
 

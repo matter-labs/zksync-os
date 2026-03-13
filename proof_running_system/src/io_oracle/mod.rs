@@ -1,5 +1,5 @@
 use zk_ee::{
-    oracle::usize_serialization::{WordDeserializable, WordSerializable},
+    oracle::word_serialization::{WordDeserializable, WordSerializable},
     oracle::IOOracle,
     system::errors::internal::InternalError,
 };
@@ -76,7 +76,7 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
             _marker: core::marker::PhantomData<I>,
         }
 
-        impl<I: NonDeterminismCSRSourceImplementation> zk_ee::oracle::usize_serialization::WordSink
+        impl<I: NonDeterminismCSRSourceImplementation> zk_ee::oracle::word_serialization::WordSink
             for CsrWordSink<'_, I>
         {
             fn write_word(&mut self, word: usize) {

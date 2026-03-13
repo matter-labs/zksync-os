@@ -8,7 +8,7 @@ use basic_system::system_implementation::ethereum_storage_model::*;
 use ruint::aliases::B160;
 use std::alloc::Global;
 use vec_trait::VecCtor;
-use zk_ee::oracle::usize_serialization::WordDeserializable;
+use zk_ee::oracle::word_serialization::WordDeserializable;
 use zk_ee::utils::Bytes32;
 
 #[derive(Debug, Clone)]

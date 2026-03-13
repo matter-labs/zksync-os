@@ -7,7 +7,7 @@ use basic_system::system_functions::point_evaluation::versioned_hash_for_kzg;
 use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
 use oracle_provider::RamPeek;
-use zk_ee::oracle::usize_serialization::WordSerializable;
+use zk_ee::oracle::word_serialization::WordSerializable;
 
 use crate::read_u8_words;
 

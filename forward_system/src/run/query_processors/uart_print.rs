@@ -2,7 +2,7 @@ use super::*;
 use oracle_provider::OracleQueryProcessor;
 use zk_ee::{
     oracle::query_ids::UART_QUERY_ID,
-    oracle::usize_serialization::dyn_usize_iterator::DynWordIterator,
+    oracle::word_serialization::dyn_word_iterator::DynWordIterator,
 };
 
 /// This processor handles debug print requests from the RISC-V execution

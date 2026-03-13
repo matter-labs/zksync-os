@@ -36,7 +36,7 @@ use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
 use result_keeper::ProverInputResultKeeper;
 use zk_ee::common_structs::ProofData;
-use zk_ee::oracle::usize_serialization::WordSerializable;
+use zk_ee::oracle::word_serialization::WordSerializable;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
 

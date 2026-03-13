@@ -9,7 +9,7 @@ use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
 use zk_ee::{
     oracle::query_ids::HISTORICAL_BLOCK_HASH_QUERY_ID,
-    oracle::usize_serialization::WordDeserializable,
+    oracle::word_serialization::WordDeserializable,
     utils::{usize_rw::ReadIterWrapper, Bytes32},
 };
 

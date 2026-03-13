@@ -1,6 +1,6 @@
 use oracle_provider::OracleQueryProcessor;
 use serde::{Deserialize, Serialize};
-use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynWordIterator;
+use zk_ee::oracle::word_serialization::dyn_word_iterator::DynWordIterator;
 
 // Oracle query processors for the forward running system.
 // Each processor handles specific types of oracle queries.

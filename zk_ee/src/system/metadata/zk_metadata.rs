@@ -10,7 +10,7 @@ use crate::system::errors::internal::InternalError;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
 use crate::utils::Bytes32;
 use crate::{
-    oracle::usize_serialization::{WordDeserializable, WordSerializable, WordSink},
+    oracle::word_serialization::{WordDeserializable, WordSerializable, WordSink},
 };
 use ruint::aliases::{B160, U256};
 

@@ -5,8 +5,8 @@ use basic_system::system_implementation::ethereum_storage_model::{
     ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID, ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID,
 };
 use basic_system::system_implementation::flat_storage_model::FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID;
-use zk_ee::oracle::usize_serialization::WordDeserializable;
-use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynWordIterator;
+use zk_ee::oracle::word_serialization::WordDeserializable;
+use zk_ee::oracle::word_serialization::dyn_word_iterator::DynWordIterator;
 use zk_ee::utils::usize_rw::ReadIterWrapper;
 use zk_ee::utils::Bytes32;
 

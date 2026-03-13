@@ -29,7 +29,7 @@ pub mod field_hints;
 pub mod utils;
 
 use zk_ee::{
-    oracle::usize_serialization::{WordDeserializable, WordSerializable, WordSink},
+    oracle::word_serialization::{WordDeserializable, WordSerializable, WordSink},
     system::errors::internal::InternalError,
 };
 

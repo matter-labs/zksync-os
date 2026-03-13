@@ -1,6 +1,6 @@
 use super::snapshottable_io::SnapshottableIo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::oracle::usize_serialization::{WordDeserializable, WordSerializable};
+use zk_ee::oracle::word_serialization::{WordDeserializable, WordSerializable};
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::{BalanceSubsystemError, DeconstructionSubsystemError, NonceSubsystemError};
 use zk_ee::utils::Bytes32;

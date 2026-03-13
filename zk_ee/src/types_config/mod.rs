@@ -1,5 +1,5 @@
 use crate::{
-    oracle::usize_serialization::{WordDeserializable, WordSerializable},
+    oracle::word_serialization::{WordDeserializable, WordSerializable},
     utils::Bytes32,
 };
 

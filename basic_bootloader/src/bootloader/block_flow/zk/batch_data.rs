@@ -309,7 +309,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> TxHashesAccumulator for ZKBatchDat
 mod tests {
     use super::*;
     use alloc::alloc::Global;
-    use zk_ee::oracle::usize_serialization::{WordDeserializable, WordSerializable};
+    use zk_ee::oracle::word_serialization::{WordDeserializable, WordSerializable};
     use zk_ee::system::errors::internal::InternalError;
 
     struct DummyOracle;

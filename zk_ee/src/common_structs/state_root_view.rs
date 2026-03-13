@@ -1,4 +1,4 @@
-use crate::oracle::usize_serialization::{WordDeserializable, WordSerializable};
+use crate::oracle::word_serialization::{WordDeserializable, WordSerializable};
 use crate::system::errors::internal::InternalError;
 use crate::system::logger::Logger;
 use crate::{oracle::IOOracle, types_config::SystemIOTypesConfig};
