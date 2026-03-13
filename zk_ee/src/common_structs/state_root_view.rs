@@ -1,4 +1,4 @@
-use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use crate::oracle::usize_serialization::{WordDeserializable, WordSerializable};
 use crate::system::errors::internal::InternalError;
 use crate::system::logger::Logger;
 use crate::{oracle::IOOracle, types_config::SystemIOTypesConfig};
@@ -22,7 +22,7 @@ use crate::common_structs::{WarmStorageKey, WarmStorageValue};
 /// storage updates.
 ///
 pub trait StateRootView<IOTypes: SystemIOTypesConfig>:
-    Clone + UsizeSerializable + UsizeDeserializable + core::fmt::Debug
+    Clone + WordSerializable + WordDeserializable + core::fmt::Debug
 {
     fn verify_and_apply_batch<O: IOOracle, A: Allocator + Clone + Default>(
         &mut self,

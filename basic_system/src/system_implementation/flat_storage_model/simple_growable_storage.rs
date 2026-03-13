@@ -28,11 +28,10 @@ use zk_ee::common_structs::state_root_view::StateRootView;
 use zk_ee::common_structs::{WarmStorageKey, WarmStorageValue};
 use zk_ee::oracle::query_ids::STATE_AND_MERKLE_PATHS_SUBSPACE_MASK;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use zk_ee::utils::exact_size_chain::ExactSizeChain;
 use zk_ee::{internal_error, logger_log};
 use zk_ee::{
     memory::stack_trait::Stack,
-    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable, WordDeserializable, WordSerializable, WordSink},
+    oracle::usize_serialization::{WordDeserializable, WordSerializable, WordSink},
     oracle::IOOracle,
     system::{errors::internal::InternalError, logger::Logger},
     types_config::EthereumIOTypesConfig,
@@ -133,23 +132,21 @@ pub struct FlatStorageCommitment<const N: usize> {
     pub next_free_slot: u64, // NOTE: this will effectively be our "next enumeration counter" for pubdata purposes
 }
 
-impl<const N: usize> UsizeSerializable for FlatStorageCommitment<N> {
-    const USIZE_LEN: usize =
-        <Bytes32 as UsizeSerializable>::USIZE_LEN + <u64 as UsizeSerializable>::USIZE_LEN;
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            UsizeSerializable::iter(&self.root),
-            UsizeSerializable::iter(&self.next_free_slot),
-        )
+impl<const N: usize> WordSerializable for FlatStorageCommitment<N> {
+    fn word_len(&self) -> usize {
+        self.root.word_len() + self.next_free_slot.word_len()
+    }
+
+    fn write_words(&self, out: &mut impl WordSink) {
+        self.root.write_words(out);
+        self.next_free_slot.write_words(out);
     }
 }
 
-impl<const N: usize> UsizeDeserializable for FlatStorageCommitment<N> {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let root = UsizeDeserializable::from_iter(src)?;
-        let next_free_slot = UsizeDeserializable::from_iter(src)?;
+impl<const N: usize> WordDeserializable for FlatStorageCommitment<N> {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let root = WordDeserializable::read_words(src)?;
+        let next_free_slot = WordDeserializable::read_words(src)?;
 
         let new = Self {
             root,

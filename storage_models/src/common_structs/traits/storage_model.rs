@@ -1,6 +1,6 @@
 use super::snapshottable_io::SnapshottableIo;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use zk_ee::oracle::usize_serialization::{WordDeserializable, WordSerializable};
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::{BalanceSubsystemError, DeconstructionSubsystemError, NonceSubsystemError};
 use zk_ee::utils::Bytes32;
@@ -21,7 +21,7 @@ use zk_ee::{
 pub trait StorageModel: Sized + SnapshottableIo {
     type IOTypes: SystemIOTypesConfig;
     type Resources: Resources;
-    type StorageCommitment: Clone + UsizeDeserializable + UsizeSerializable + core::fmt::Debug; // easier to have it here than propagate
+    type StorageCommitment: Clone + WordDeserializable + WordSerializable + core::fmt::Debug; // easier to have it here than propagate
 
     /// Reads a value from contract storage at the given address and key.
     fn storage_read(

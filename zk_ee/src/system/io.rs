@@ -10,7 +10,7 @@ use super::common_structs::{GenericEventContentWithTxRef, GenericLogContentWithT
 use super::errors::internal::InternalError;
 use super::errors::system::SystemError;
 use super::logger::Logger;
-use super::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use super::oracle::usize_serialization::{WordDeserializable, WordSerializable};
 use super::{IOResultKeeper, Resources};
 use crate::common_structs::GenericEventContentRef;
 use crate::define_subsystem;
@@ -558,7 +558,7 @@ pub struct StorageDiffRef<'a, IOTypes: SystemIOTypesConfig> {
 /// - logs
 /// - l2 to l1 logs (if any)
 pub trait IOTeardown<IOTypes: SystemIOTypesConfig>: IOSubsystemExt<IOTypes = IOTypes> {
-    type IOStateCommitment: Clone + UsizeDeserializable + UsizeSerializable + core::fmt::Debug;
+    type IOStateCommitment: Clone + WordDeserializable + WordSerializable + core::fmt::Debug;
 
     /// Writes pending cached state changes to the result keeper.
     fn flush_caches(&mut self, result_keeper: &mut impl IOResultKeeper<EthereumIOTypesConfig>);
