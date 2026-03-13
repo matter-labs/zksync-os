@@ -7,14 +7,25 @@ use zk_ee::{
     oracle::{
         query_ids::ACCOUNT_AND_STORAGE_SUBSPACE_MASK,
         simple_oracle_query::SimpleOracleQuery,
-        word_serialization::{WordDeserializable, WordSerializable, WordSink},
+        word_serialization::{WordDeserializable, WordSerializable},
     },
     utils::Bytes32,
 };
 
 pub(crate) const ACCOUNT_LEAF_VALUE_PRE_ENCODING_MAX_LEN: usize = 128;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    WordSerializable,
+    WordDeserializable,
+)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EthereumAccountProperties {
     pub nonce: u64,
@@ -26,43 +37,6 @@ pub struct EthereumAccountProperties {
 impl Default for EthereumAccountProperties {
     fn default() -> Self {
         Self::EMPTY_ACCOUNT
-    }
-}
-
-impl WordSerializable for EthereumAccountProperties {
-    fn word_len(&self) -> usize {
-        self.nonce.word_len()
-            + self.balance.word_len()
-            + self.storage_root.word_len()
-            + self.bytecode_hash.word_len()
-    }
-
-    fn write_words(&self, out: &mut impl WordSink) {
-        self.nonce.write_words(out);
-        self.balance.write_words(out);
-        self.storage_root.write_words(out);
-        self.bytecode_hash.write_words(out);
-    }
-}
-
-impl WordDeserializable for EthereumAccountProperties {
-    fn read_words(
-        src: &mut impl ExactSizeIterator<Item = usize>,
-    ) -> Result<Self, zk_ee::system::errors::internal::InternalError> {
-        let nonce = WordDeserializable::read_words(src)?;
-        let balance = WordDeserializable::read_words(src)?;
-        let storage_root = WordDeserializable::read_words(src)?;
-        let bytecode_hash = WordDeserializable::read_words(src)?;
-
-        // NOTE: we verify basic computed property
-        let new = Self {
-            nonce,
-            balance,
-            bytecode_hash,
-            storage_root,
-        };
-
-        Ok(new)
     }
 }
 
