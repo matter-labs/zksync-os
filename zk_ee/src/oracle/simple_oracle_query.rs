@@ -1,6 +1,6 @@
 use crate::{
     oracle::{
-        usize_serialization::{WordDeserializable, WordSerializable},
+        word_serialization::{WordDeserializable, WordSerializable},
         IOOracle,
     },
     system::errors::internal::InternalError,

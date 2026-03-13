@@ -7,7 +7,7 @@ use zk_ee::{
     oracle::{
         query_ids::ACCOUNT_AND_STORAGE_SUBSPACE_MASK,
         simple_oracle_query::SimpleOracleQuery,
-        usize_serialization::{WordDeserializable, WordSerializable, WordSink},
+        word_serialization::{WordDeserializable, WordSerializable, WordSink},
     },
     utils::Bytes32,
 };
