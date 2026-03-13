@@ -23,17 +23,16 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::alloc::Allocator;
 use crypto::MiniDigest;
-use either::Either;
 use zk_ee::common_structs::derive_flat_storage_key_with_hasher;
 use zk_ee::common_structs::state_root_view::StateRootView;
 use zk_ee::common_structs::{WarmStorageKey, WarmStorageValue};
 use zk_ee::oracle::query_ids::STATE_AND_MERKLE_PATHS_SUBSPACE_MASK;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
-use zk_ee::utils::exact_size_chain::{ExactSizeChain, ExactSizeChainN};
+use zk_ee::utils::exact_size_chain::ExactSizeChain;
 use zk_ee::{internal_error, logger_log};
 use zk_ee::{
     memory::stack_trait::Stack,
-    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
+    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable, WordDeserializable, WordSerializable, WordSink},
     oracle::IOOracle,
     system::{errors::internal::InternalError, logger::Logger},
     types_config::EthereumIOTypesConfig,
@@ -54,28 +53,23 @@ pub struct FlatStorageLeaf<const N: usize> {
     pub next: u64,
 }
 
-impl<const N: usize> UsizeSerializable for FlatStorageLeaf<N> {
-    const USIZE_LEN: usize =
-        <Bytes32 as UsizeSerializable>::USIZE_LEN * 2 + <u64 as UsizeSerializable>::USIZE_LEN;
+impl<const N: usize> WordSerializable for FlatStorageLeaf<N> {
+    fn word_len(&self) -> usize {
+        self.key.word_len() + self.value.word_len() + self.next.word_len()
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            UsizeSerializable::iter(&self.key),
-            ExactSizeChain::new(
-                UsizeSerializable::iter(&self.value),
-                UsizeSerializable::iter(&self.next),
-            ),
-        )
+    fn write_words(&self, out: &mut impl WordSink) {
+        self.key.write_words(out);
+        self.value.write_words(out);
+        self.next.write_words(out);
     }
 }
 
-impl<const N: usize> UsizeDeserializable for FlatStorageLeaf<N> {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let key = UsizeDeserializable::from_iter(src)?;
-        let value = UsizeDeserializable::from_iter(src)?;
-        let next = UsizeDeserializable::from_iter(src)?;
+impl<const N: usize> WordDeserializable for FlatStorageLeaf<N> {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let key = WordDeserializable::read_words(src)?;
+        let value = WordDeserializable::read_words(src)?;
+        let next = WordDeserializable::read_words(src)?;
 
         let new = Self { key, value, next };
 
@@ -974,37 +968,31 @@ impl<const N: usize, H: FlatStorageHasher, A: Allocator> core::fmt::Debug for Le
     }
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> UsizeSerializable for LeafProof<N, H, A> {
-    const USIZE_LEN: usize = <u64 as UsizeSerializable>::USIZE_LEN
-        + <FlatStorageLeaf<N> as UsizeSerializable>::USIZE_LEN
-        + <Bytes32 as UsizeSerializable>::USIZE_LEN * N;
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable for LeafProof<N, H, A> {
+    fn word_len(&self) -> usize {
+        self.index.word_len()
+            + self.leaf.word_len()
+            + self.path.as_ref().as_slice().iter().map(|el| el.word_len()).sum::<usize>()
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        let it = ExactSizeChain::new(
-            UsizeSerializable::iter(&self.index),
-            ExactSizeChainN::new(
-                UsizeSerializable::iter(&self.leaf),
-                self.path
-                    .each_ref()
-                    .map(|el| Some(UsizeSerializable::iter(el))),
-            ),
-        );
-
-        it
+    fn write_words(&self, out: &mut impl WordSink) {
+        self.index.write_words(out);
+        self.leaf.write_words(out);
+        for el in self.path.as_ref().as_slice() {
+            el.write_words(out);
+        }
     }
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
     for LeafProof<N, H, A>
 {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let index = UsizeDeserializable::from_iter(src)?;
-        let leaf = UsizeDeserializable::from_iter(src)?;
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let index = WordDeserializable::read_words(src)?;
+        let leaf = WordDeserializable::read_words(src)?;
         let mut path = Box::new_in([Bytes32::ZERO; N], A::default());
         for dst in path.iter_mut() {
-            *dst = UsizeDeserializable::from_iter(src)?;
+            *dst = WordDeserializable::read_words(src)?;
         }
 
         Ok(Self {
@@ -1021,23 +1009,23 @@ pub struct ExistingReadProof<const N: usize, H: FlatStorageHasher, A: Allocator 
     pub existing: LeafProof<N, H, A>,
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> UsizeSerializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
     for ExistingReadProof<N, H, A>
 {
-    const USIZE_LEN: usize = <LeafProof<N, H> as UsizeSerializable>::USIZE_LEN;
+    fn word_len(&self) -> usize {
+        self.existing.word_len()
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        UsizeSerializable::iter(&self.existing)
+    fn write_words(&self, out: &mut impl WordSink) {
+        self.existing.write_words(out);
     }
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
     for ExistingReadProof<N, H, A>
 {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let existing = UsizeDeserializable::from_iter(src)?;
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let existing = WordDeserializable::read_words(src)?;
 
         Ok(Self { existing })
     }
@@ -1049,27 +1037,25 @@ pub struct NewReadProof<const N: usize, H: FlatStorageHasher, A: Allocator = Glo
     pub next: LeafProof<N, H, A>,
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> UsizeSerializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
     for NewReadProof<N, H, A>
 {
-    const USIZE_LEN: usize = <LeafProof<N, H, A> as UsizeSerializable>::USIZE_LEN * 2;
+    fn word_len(&self) -> usize {
+        self.previous.word_len() + self.next.word_len()
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            UsizeSerializable::iter(&self.previous),
-            UsizeSerializable::iter(&self.next),
-        )
+    fn write_words(&self, out: &mut impl WordSink) {
+        self.previous.write_words(out);
+        self.next.write_words(out);
     }
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
     for NewReadProof<N, H, A>
 {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let previous = UsizeDeserializable::from_iter(src)?;
-        let next = UsizeDeserializable::from_iter(src)?;
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let previous = WordDeserializable::read_words(src)?;
+        let next = WordDeserializable::read_words(src)?;
 
         Ok(Self { previous, next })
     }
@@ -1082,31 +1068,27 @@ pub struct NewWriteProof<const N: usize, H: FlatStorageHasher, A: Allocator = Gl
     pub new_insert: LeafProof<N, H, A>,
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> UsizeSerializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
     for NewWriteProof<N, H, A>
 {
-    const USIZE_LEN: usize = <LeafProof<N, H, A> as UsizeSerializable>::USIZE_LEN * 3;
+    fn word_len(&self) -> usize {
+        self.previous.word_len() + self.next.word_len() + self.new_insert.word_len()
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            UsizeSerializable::iter(&self.previous),
-            ExactSizeChain::new(
-                UsizeSerializable::iter(&self.next),
-                UsizeSerializable::iter(&self.new_insert),
-            ),
-        )
+    fn write_words(&self, out: &mut impl WordSink) {
+        self.previous.write_words(out);
+        self.next.write_words(out);
+        self.new_insert.write_words(out);
     }
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
     for NewWriteProof<N, H, A>
 {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let previous = UsizeDeserializable::from_iter(src)?;
-        let next = UsizeDeserializable::from_iter(src)?;
-        let new_insert = UsizeDeserializable::from_iter(src)?;
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let previous = WordDeserializable::read_words(src)?;
+        let next = WordDeserializable::read_words(src)?;
+        let new_insert = WordDeserializable::read_words(src)?;
 
         Ok(Self {
             previous,
@@ -1121,23 +1103,23 @@ pub struct ExistingWriteProof<const N: usize, H: FlatStorageHasher, A: Allocator
     pub existing: LeafProof<N, H, A>,
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> UsizeSerializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
     for ExistingWriteProof<N, H, A>
 {
-    const USIZE_LEN: usize = <LeafProof<N, H, A> as UsizeSerializable>::USIZE_LEN;
+    fn word_len(&self) -> usize {
+        self.existing.word_len()
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        UsizeSerializable::iter(&self.existing)
+    fn write_words(&self, out: &mut impl WordSink) {
+        self.existing.write_words(out);
     }
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
     for ExistingWriteProof<N, H, A>
 {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let existing = UsizeDeserializable::from_iter(src)?;
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let existing = WordDeserializable::read_words(src)?;
 
         Ok(Self { existing })
     }
@@ -1155,52 +1137,51 @@ pub enum ReadValueWithProof<const N: usize, H: FlatStorageHasher, A: Allocator =
     } = 1,
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> UsizeSerializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
     for ReadValueWithProof<N, H, A>
 {
-    // worst case
-    const USIZE_LEN: usize = <u32 as UsizeSerializable>::USIZE_LEN
-        + <Bytes32 as UsizeSerializable>::USIZE_LEN
-        + <NewReadProof<N, H, A> as UsizeSerializable>::USIZE_LEN;
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        let it = match self {
-            Self::Existing { proof } => Either::Left(ExactSizeChain::new(
-                UsizeSerializable::iter(&0u32),
-                UsizeSerializable::iter(proof),
-            )),
+    fn word_len(&self) -> usize {
+        match self {
+            Self::Existing { proof } => 0u32.word_len() + proof.word_len(),
             Self::New {
                 requested_key,
                 proof,
-            } => Either::Right(ExactSizeChain::new(
-                UsizeSerializable::iter(&1u32),
-                ExactSizeChain::new(
-                    UsizeSerializable::iter(requested_key),
-                    UsizeSerializable::iter(proof),
-                ),
-            )),
-        };
+            } => 1u32.word_len() + requested_key.word_len() + proof.word_len(),
+        }
+    }
 
-        it
+    fn write_words(&self, out: &mut impl WordSink) {
+        match self {
+            Self::Existing { proof } => {
+                0u32.write_words(out);
+                proof.write_words(out);
+            }
+            Self::New {
+                requested_key,
+                proof,
+            } => {
+                1u32.write_words(out);
+                requested_key.write_words(out);
+                proof.write_words(out);
+            }
+        }
     }
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
     for ReadValueWithProof<N, H, A>
 {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let discr: u32 = UsizeDeserializable::from_iter(src)?;
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let discr: u32 = WordDeserializable::read_words(src)?;
         match discr {
             0 => {
-                let proof = UsizeDeserializable::from_iter(src)?;
+                let proof = WordDeserializable::read_words(src)?;
                 let new = Self::Existing { proof };
                 Ok(new)
             }
             1 => {
-                let requested_key = UsizeDeserializable::from_iter(src)?;
-                let proof = UsizeDeserializable::from_iter(src)?;
+                let requested_key = WordDeserializable::read_words(src)?;
+                let proof = WordDeserializable::read_words(src)?;
 
                 let new = Self::New {
                     requested_key,
@@ -1220,42 +1201,43 @@ pub enum WriteValueWithProof<const N: usize, H: FlatStorageHasher, A: Allocator 
     New { proof: NewWriteProof<N, H, A> } = 1,
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> UsizeSerializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
     for WriteValueWithProof<N, H, A>
 {
-    // worst case
-    const USIZE_LEN: usize = <u32 as UsizeSerializable>::USIZE_LEN
-        + <NewWriteProof<N, H, A> as UsizeSerializable>::USIZE_LEN;
-
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
+    fn word_len(&self) -> usize {
         match self {
-            Self::Existing { proof } => Either::Left(ExactSizeChain::new(
-                UsizeSerializable::iter(&0u32),
-                UsizeSerializable::iter(proof),
-            )),
-            Self::New { proof } => Either::Right(ExactSizeChain::new(
-                UsizeSerializable::iter(&1u32),
-                UsizeSerializable::iter(proof),
-            )),
+            Self::Existing { proof } => 0u32.word_len() + proof.word_len(),
+            Self::New { proof } => 1u32.word_len() + proof.word_len(),
+        }
+    }
+
+    fn write_words(&self, out: &mut impl WordSink) {
+        match self {
+            Self::Existing { proof } => {
+                0u32.write_words(out);
+                proof.write_words(out);
+            }
+            Self::New { proof } => {
+                1u32.write_words(out);
+                proof.write_words(out);
+            }
         }
     }
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
     for WriteValueWithProof<N, H, A>
 {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let discr: u32 = UsizeDeserializable::from_iter(src)?;
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let discr: u32 = WordDeserializable::read_words(src)?;
         match discr {
             0 => {
-                let proof = UsizeDeserializable::from_iter(src)?;
+                let proof = WordDeserializable::read_words(src)?;
                 let new = Self::Existing { proof };
                 Ok(new)
             }
             1 => {
-                let proof = UsizeDeserializable::from_iter(src)?;
+                let proof = WordDeserializable::read_words(src)?;
 
                 let new = Self::New { proof };
                 Ok(new)
@@ -1272,24 +1254,23 @@ pub struct ValueAtIndexProof<const N: usize, H: FlatStorageHasher, A: Allocator 
     pub proof: ExistingReadProof<N, H, A>,
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator> UsizeSerializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator> WordSerializable
     for ValueAtIndexProof<N, H, A>
 {
-    // worst case
-    const USIZE_LEN: usize = <ExistingReadProof<N, H, A> as UsizeSerializable>::USIZE_LEN;
+    fn word_len(&self) -> usize {
+        self.proof.word_len()
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        UsizeSerializable::iter(&self.proof)
+    fn write_words(&self, out: &mut impl WordSink) {
+        self.proof.write_words(out);
     }
 }
 
-impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> UsizeDeserializable
+impl<const N: usize, H: FlatStorageHasher, A: Allocator + Default> WordDeserializable
     for ValueAtIndexProof<N, H, A>
 {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let proof = UsizeDeserializable::from_iter(src)?;
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let proof = WordDeserializable::read_words(src)?;
         let new = Self { proof };
 
         Ok(new)
@@ -1965,16 +1946,12 @@ mod test {
                     ExactIndexQuery::QUERY_ID => {
                         let flat_key = ExactIndexQuery::transmute_input_ref_unchecked(input);
                         let existing = self.get_index_for_existing(&flat_key);
-                        Ok(DynUsizeIterator::from_constructor(existing, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
+                        Ok(DynUsizeIterator::from_word_serializable(existing))
                     }
                     PreviousIndexQuery::QUERY_ID => {
                         let flat_key = PreviousIndexQuery::transmute_input_ref_unchecked(input);
                         let existing = self.get_prev_index(&flat_key);
-                        Ok(DynUsizeIterator::from_constructor(existing, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
+                        Ok(DynUsizeIterator::from_word_serializable(existing))
                     }
                     PROOF_FOR_INDEX_QUERY_ID => {
                         let position = ProofForIndexQuery::<
@@ -1988,9 +1965,7 @@ mod test {
                         let proof = ValueAtIndexProof {
                             proof: ExistingReadProof { existing },
                         };
-                        Ok(DynUsizeIterator::from_constructor(proof, |item_ref| {
-                            UsizeSerializable::iter(item_ref)
-                        }))
+                        Ok(DynUsizeIterator::from_word_serializable(proof))
                     }
                     _ => {
                         panic!("unsupported query type 0x{:08x}", query_type);
