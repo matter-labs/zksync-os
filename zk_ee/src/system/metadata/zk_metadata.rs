@@ -10,8 +10,7 @@ use crate::system::errors::internal::InternalError;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
 use crate::utils::Bytes32;
 use crate::{
-    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
-    utils::exact_size_chain::{ExactSizeChain, ExactSizeChainN},
+    oracle::usize_serialization::{WordDeserializable, WordSerializable, WordSink},
 };
 use ruint::aliases::{B160, U256};
 
@@ -82,24 +81,23 @@ impl<'de> serde::Deserialize<'de> for BlockHashes {
     }
 }
 
-impl UsizeSerializable for BlockHashes {
-    const USIZE_LEN: usize = <U256 as UsizeSerializable>::USIZE_LEN * BLOCK_HASHES_WINDOW_SIZE;
+impl WordSerializable for BlockHashes {
+    fn word_len(&self) -> usize {
+        self.0.as_slice().iter().map(|hash| hash.word_len()).sum()
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChainN::<_, _, BLOCK_HASHES_WINDOW_SIZE>::new(
-            core::iter::empty::<usize>(),
-            core::array::from_fn(|i| Some(self.0[i].iter())),
-        )
+    fn write_words(&self, out: &mut impl WordSink) {
+        for hash in &self.0 {
+            hash.write_words(out);
+        }
     }
 }
 
-impl UsizeDeserializable for BlockHashes {
-    const USIZE_LEN: usize = <U256 as UsizeDeserializable>::USIZE_LEN * BLOCK_HASHES_WINDOW_SIZE;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+impl WordDeserializable for BlockHashes {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
         let mut hashes = [U256::ZERO; BLOCK_HASHES_WINDOW_SIZE];
         for hash in &mut hashes {
-            *hash = U256::from_iter(src)?;
+            *hash = U256::read_words(src)?;
         }
         Ok(Self(hashes))
     }
@@ -221,66 +219,52 @@ impl BlockMetadataFromOracle {
     }
 }
 
-impl UsizeSerializable for BlockMetadataFromOracle {
-    const USIZE_LEN: usize = <U256 as UsizeSerializable>::USIZE_LEN
-        * (5 + BLOCK_HASHES_WINDOW_SIZE)
-        + <u64 as UsizeSerializable>::USIZE_LEN * 5
-        + <B160 as UsizeDeserializable>::USIZE_LEN;
+impl WordSerializable for BlockMetadataFromOracle {
+    fn word_len(&self) -> usize {
+        self.eip1559_basefee.word_len()
+            + self.pubdata_price.word_len()
+            + self.native_price.word_len()
+            + self.block_number.word_len()
+            + self.timestamp.word_len()
+            + self.chain_id.word_len()
+            + self.gas_limit.word_len()
+            + self.pubdata_limit.word_len()
+            + self.coinbase.word_len()
+            + self.block_hashes.word_len()
+            + self.mix_hash.word_len()
+            + self.blob_fee.word_len()
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            ExactSizeChain::new(
-                ExactSizeChain::new(
-                    ExactSizeChain::new(
-                        ExactSizeChain::new(
-                            ExactSizeChain::new(
-                                ExactSizeChain::new(
-                                    ExactSizeChain::new(
-                                        ExactSizeChain::new(
-                                            ExactSizeChain::new(
-                                                ExactSizeChain::new(
-                                                    UsizeSerializable::iter(&self.eip1559_basefee),
-                                                    UsizeSerializable::iter(&self.pubdata_price),
-                                                ),
-                                                UsizeSerializable::iter(&self.native_price),
-                                            ),
-                                            UsizeSerializable::iter(&self.block_number),
-                                        ),
-                                        UsizeSerializable::iter(&self.timestamp),
-                                    ),
-                                    UsizeSerializable::iter(&self.chain_id),
-                                ),
-                                UsizeSerializable::iter(&self.gas_limit),
-                            ),
-                            UsizeSerializable::iter(&self.pubdata_limit),
-                        ),
-                        UsizeSerializable::iter(&self.coinbase),
-                    ),
-                    UsizeSerializable::iter(&self.block_hashes),
-                ),
-                UsizeSerializable::iter(&self.mix_hash),
-            ),
-            UsizeSerializable::iter(&self.blob_fee),
-        )
+    fn write_words(&self, out: &mut impl WordSink) {
+        self.eip1559_basefee.write_words(out);
+        self.pubdata_price.write_words(out);
+        self.native_price.write_words(out);
+        self.block_number.write_words(out);
+        self.timestamp.write_words(out);
+        self.chain_id.write_words(out);
+        self.gas_limit.write_words(out);
+        self.pubdata_limit.write_words(out);
+        self.coinbase.write_words(out);
+        self.block_hashes.write_words(out);
+        self.mix_hash.write_words(out);
+        self.blob_fee.write_words(out);
     }
 }
 
-impl UsizeDeserializable for BlockMetadataFromOracle {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let eip1559_basefee = UsizeDeserializable::from_iter(src)?;
-        let pubdata_price = UsizeDeserializable::from_iter(src)?;
-        let native_price = UsizeDeserializable::from_iter(src)?;
-        let block_number = UsizeDeserializable::from_iter(src)?;
-        let timestamp = UsizeDeserializable::from_iter(src)?;
-        let chain_id = UsizeDeserializable::from_iter(src)?;
-        let gas_limit = UsizeDeserializable::from_iter(src)?;
-        let pubdata_limit = UsizeDeserializable::from_iter(src)?;
-        let coinbase = UsizeDeserializable::from_iter(src)?;
-        let block_hashes = UsizeDeserializable::from_iter(src)?;
-        let mix_hash = UsizeDeserializable::from_iter(src)?;
-        let blob_fee = UsizeDeserializable::from_iter(src)?;
+impl WordDeserializable for BlockMetadataFromOracle {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        let eip1559_basefee = WordDeserializable::read_words(src)?;
+        let pubdata_price = WordDeserializable::read_words(src)?;
+        let native_price = WordDeserializable::read_words(src)?;
+        let block_number = WordDeserializable::read_words(src)?;
+        let timestamp = WordDeserializable::read_words(src)?;
+        let chain_id = WordDeserializable::read_words(src)?;
+        let gas_limit = WordDeserializable::read_words(src)?;
+        let pubdata_limit = WordDeserializable::read_words(src)?;
+        let coinbase = WordDeserializable::read_words(src)?;
+        let block_hashes = WordDeserializable::read_words(src)?;
+        let mix_hash = WordDeserializable::read_words(src)?;
+        let blob_fee = WordDeserializable::read_words(src)?;
 
         let new = Self {
             eip1559_basefee,
@@ -309,9 +293,9 @@ mod tests {
     fn test_serialize_deserialize() {
         let original = BlockMetadataFromOracle::new_for_test();
 
-        let serialized: Vec<usize> = original.iter().collect();
+        let serialized = original.to_word_vec();
         let mut iter = serialized.into_iter();
-        let deserialized = BlockMetadataFromOracle::from_iter(&mut iter).unwrap();
+        let deserialized = BlockMetadataFromOracle::read_words(&mut iter).unwrap();
 
         assert_eq!(original, deserialized);
     }
