@@ -7,9 +7,9 @@ use zk_ee::{
     oracle::{
         query_ids::ACCOUNT_AND_STORAGE_SUBSPACE_MASK,
         simple_oracle_query::SimpleOracleQuery,
-        usize_serialization::{UsizeDeserializable, UsizeSerializable},
+        usize_serialization::{WordDeserializable, WordSerializable, WordSink},
     },
-    utils::{exact_size_chain::ExactSizeChain, Bytes32},
+    utils::Bytes32,
 };
 
 pub(crate) const ACCOUNT_LEAF_VALUE_PRE_ENCODING_MAX_LEN: usize = 128;
@@ -29,36 +29,30 @@ impl Default for EthereumAccountProperties {
     }
 }
 
-impl UsizeSerializable for EthereumAccountProperties {
-    const USIZE_LEN: usize = <u64 as UsizeSerializable>::USIZE_LEN
-        + <U256 as UsizeSerializable>::USIZE_LEN
-        + <Bytes32 as UsizeSerializable>::USIZE_LEN * 2
-        + <bool as UsizeSerializable>::USIZE_LEN;
+impl WordSerializable for EthereumAccountProperties {
+    fn word_len(&self) -> usize {
+        self.nonce.word_len()
+            + self.balance.word_len()
+            + self.storage_root.word_len()
+            + self.bytecode_hash.word_len()
+    }
 
-    fn iter(&self) -> impl ExactSizeIterator<Item = usize> {
-        ExactSizeChain::new(
-            UsizeSerializable::iter(&self.nonce),
-            ExactSizeChain::new(
-                UsizeSerializable::iter(&self.balance),
-                ExactSizeChain::new(
-                    UsizeSerializable::iter(&self.storage_root),
-                    UsizeSerializable::iter(&self.bytecode_hash),
-                ),
-            ),
-        )
+    fn write_words(&self, out: &mut impl WordSink) {
+        self.nonce.write_words(out);
+        self.balance.write_words(out);
+        self.storage_root.write_words(out);
+        self.bytecode_hash.write_words(out);
     }
 }
 
-impl UsizeDeserializable for EthereumAccountProperties {
-    const USIZE_LEN: usize = <Self as UsizeSerializable>::USIZE_LEN;
-
-    fn from_iter(
+impl WordDeserializable for EthereumAccountProperties {
+    fn read_words(
         src: &mut impl ExactSizeIterator<Item = usize>,
     ) -> Result<Self, zk_ee::system::errors::internal::InternalError> {
-        let nonce = UsizeDeserializable::from_iter(src)?;
-        let balance = UsizeDeserializable::from_iter(src)?;
-        let storage_root = UsizeDeserializable::from_iter(src)?;
-        let bytecode_hash = UsizeDeserializable::from_iter(src)?;
+        let nonce = WordDeserializable::read_words(src)?;
+        let balance = WordDeserializable::read_words(src)?;
+        let storage_root = WordDeserializable::read_words(src)?;
+        let bytecode_hash = WordDeserializable::read_words(src)?;
 
         // NOTE: we verify basic computed property
         let new = Self {
