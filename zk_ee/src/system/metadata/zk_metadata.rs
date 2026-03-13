@@ -6,12 +6,9 @@ use super::basic_metadata::{
 };
 use super::system_metadata::SystemMetadata;
 use crate::system::constants::*;
-use crate::system::errors::internal::InternalError;
 use crate::types_config::{EthereumIOTypesConfig, SystemIOTypesConfig};
 use crate::utils::Bytes32;
-use crate::{
-    oracle::word_serialization::{WordDeserializable, WordSerializable, WordSink},
-};
+use crate::oracle::word_serialization::{WordDeserializable, WordSerializable};
 use ruint::aliases::{B160, U256};
 
 pub type ZkMetadata = SystemMetadata<
@@ -48,7 +45,7 @@ pub const BLOCK_HASHES_WINDOW_SIZE: usize = 256;
 /// Hash for block number N will be at index [BLOCK_HASHES_WINDOW_SIZE - (current_block_number - N)]
 /// (most recent will be at the end) if N is one of the most recent
 /// BLOCK_HASHES_WINDOW_SIZE blocks.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, WordSerializable, WordDeserializable)]
 pub struct BlockHashes(pub [U256; BLOCK_HASHES_WINDOW_SIZE]);
 
 impl Default for BlockHashes {
@@ -81,48 +78,34 @@ impl<'de> serde::Deserialize<'de> for BlockHashes {
     }
 }
 
-impl WordSerializable for BlockHashes {
-    fn word_len(&self) -> usize {
-        self.0.as_slice().iter().map(|hash| hash.word_len()).sum()
-    }
-
-    fn write_words(&self, out: &mut impl WordSink) {
-        for hash in &self.0 {
-            hash.write_words(out);
-        }
-    }
-}
-
-impl WordDeserializable for BlockHashes {
-    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let mut hashes = [U256::ZERO; BLOCK_HASHES_WINDOW_SIZE];
-        for hash in &mut hashes {
-            *hash = U256::read_words(src)?;
-        }
-        Ok(Self(hashes))
-    }
-}
-
 // we only need to know limited set of parameters here,
 // those that define "block", like uniform fee for block,
 // block number, etc
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    WordSerializable,
+    WordDeserializable,
+)]
 pub struct BlockMetadataFromOracle {
+    pub eip1559_basefee: U256,
+    pub pubdata_price: U256,
+    pub native_price: U256,
+    pub block_number: u64,
+    pub timestamp: u64,
     // Chain id is temporarily also added here (so that it can be easily passed from the oracle)
     // long term, we have to decide whether we want to keep it here, or add a separate oracle
     // type that would return some 'chain' specific metadata (as this class is supposed to hold block metadata only).
     pub chain_id: u64,
-    pub block_number: u64,
-    pub block_hashes: BlockHashes,
-    pub timestamp: u64,
-    pub eip1559_basefee: U256,
-    pub pubdata_price: U256,
-    pub native_price: U256,
-    pub coinbase: B160,
     pub gas_limit: u64,
     pub pubdata_limit: u64,
+    pub coinbase: B160,
+    pub block_hashes: BlockHashes,
     /// Source of randomness, currently holds the value
     /// of prevRandao.
     pub mix_hash: U256,
@@ -216,72 +199,6 @@ impl BlockMetadataFromOracle {
             mix_hash: U256::ONE,
             blob_fee: U256::ZERO,
         }
-    }
-}
-
-impl WordSerializable for BlockMetadataFromOracle {
-    fn word_len(&self) -> usize {
-        self.eip1559_basefee.word_len()
-            + self.pubdata_price.word_len()
-            + self.native_price.word_len()
-            + self.block_number.word_len()
-            + self.timestamp.word_len()
-            + self.chain_id.word_len()
-            + self.gas_limit.word_len()
-            + self.pubdata_limit.word_len()
-            + self.coinbase.word_len()
-            + self.block_hashes.word_len()
-            + self.mix_hash.word_len()
-            + self.blob_fee.word_len()
-    }
-
-    fn write_words(&self, out: &mut impl WordSink) {
-        self.eip1559_basefee.write_words(out);
-        self.pubdata_price.write_words(out);
-        self.native_price.write_words(out);
-        self.block_number.write_words(out);
-        self.timestamp.write_words(out);
-        self.chain_id.write_words(out);
-        self.gas_limit.write_words(out);
-        self.pubdata_limit.write_words(out);
-        self.coinbase.write_words(out);
-        self.block_hashes.write_words(out);
-        self.mix_hash.write_words(out);
-        self.blob_fee.write_words(out);
-    }
-}
-
-impl WordDeserializable for BlockMetadataFromOracle {
-    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
-        let eip1559_basefee = WordDeserializable::read_words(src)?;
-        let pubdata_price = WordDeserializable::read_words(src)?;
-        let native_price = WordDeserializable::read_words(src)?;
-        let block_number = WordDeserializable::read_words(src)?;
-        let timestamp = WordDeserializable::read_words(src)?;
-        let chain_id = WordDeserializable::read_words(src)?;
-        let gas_limit = WordDeserializable::read_words(src)?;
-        let pubdata_limit = WordDeserializable::read_words(src)?;
-        let coinbase = WordDeserializable::read_words(src)?;
-        let block_hashes = WordDeserializable::read_words(src)?;
-        let mix_hash = WordDeserializable::read_words(src)?;
-        let blob_fee = WordDeserializable::read_words(src)?;
-
-        let new = Self {
-            eip1559_basefee,
-            pubdata_price,
-            native_price,
-            block_number,
-            timestamp,
-            chain_id,
-            gas_limit,
-            pubdata_limit,
-            coinbase,
-            block_hashes,
-            mix_hash,
-            blob_fee,
-        };
-
-        Ok(new)
     }
 }
 
