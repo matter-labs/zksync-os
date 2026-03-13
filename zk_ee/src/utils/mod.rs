@@ -2,7 +2,6 @@ pub mod aligned_vector;
 pub mod bytes32;
 pub mod cheap_clone;
 pub mod convenience;
-pub mod exact_size_chain;
 pub mod integer_utils;
 pub mod stack_linked_list;
 pub mod type_assert;
