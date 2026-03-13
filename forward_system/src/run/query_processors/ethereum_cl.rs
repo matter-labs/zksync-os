@@ -49,10 +49,10 @@ impl OracleQueryProcessor for EthereumCLResponder {
 
         match query_id {
             ETHEREUM_WITHDRAWALS_BUFFER_LEN_QUERY_ID => {
-                DynUsizeIterator::from_word_serializable(self.withdrawals_list.len() as u32)
+                DynWordIterator::from_word_serializable(self.withdrawals_list.len() as u32)
             }
             ETHEREUM_WITHDRAWALS_BUFFER_DATA_QUERY_ID => {
-                DynUsizeIterator::from_constructor(self.withdrawals_list.clone(), |inner_ref| {
+                DynWordIterator::from_constructor(self.withdrawals_list.clone(), |inner_ref| {
                     ReadIterWrapper::from(inner_ref.iter().copied())
                 })
             }
@@ -60,7 +60,7 @@ impl OracleQueryProcessor for EthereumCLResponder {
                 let input: u32 =
                     u32::read_words(&mut query.into_iter()).expect("must get historical depth");
                 assert!(input < 256);
-                DynUsizeIterator::from_word_serializable(
+                DynWordIterator::from_word_serializable(
                     self.parent_headers_encodings_list[input as usize].len() as u32,
                 )
             }
@@ -68,7 +68,7 @@ impl OracleQueryProcessor for EthereumCLResponder {
                 let input: u32 =
                     u32::read_words(&mut query.into_iter()).expect("must get historical depth");
                 assert!(input < 256);
-                DynUsizeIterator::from_constructor(
+                DynWordIterator::from_constructor(
                     self.parent_headers_encodings_list[input as usize].clone(),
                     |inner_ref: &'static Vec<u8>| ReadIterWrapper::from(inner_ref.iter().copied()),
                 )
@@ -82,7 +82,7 @@ impl OracleQueryProcessor for EthereumCLResponder {
                     .get(input as usize)
                     .map(|el| crypto::sha3::Keccak256::digest(el).into())
                     .unwrap_or(Bytes32::ZERO);
-                DynUsizeIterator::from_word_serializable(hash)
+                DynWordIterator::from_word_serializable(hash)
             }
             _ => {
                 unreachable!()

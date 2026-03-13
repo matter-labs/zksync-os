@@ -1702,7 +1702,7 @@ mod test {
     use std::{collections::HashMap, ops};
     use zk_ee::common_structs::derive_flat_storage_key;
     use zk_ee::{
-        oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator, system::NullLogger,
+        oracle::usize_serialization::dyn_usize_iterator::DynWordIterator, system::NullLogger,
     };
 
     fn hex_bytes(s: &str) -> Bytes32 {
@@ -1943,12 +1943,12 @@ mod test {
                     ExactIndexQuery::QUERY_ID => {
                         let flat_key = ExactIndexQuery::transmute_input_ref_unchecked(input);
                         let existing = self.get_index_for_existing(&flat_key);
-                        Ok(DynUsizeIterator::from_word_serializable(existing))
+                        Ok(DynWordIterator::from_word_serializable(existing))
                     }
                     PreviousIndexQuery::QUERY_ID => {
                         let flat_key = PreviousIndexQuery::transmute_input_ref_unchecked(input);
                         let existing = self.get_prev_index(&flat_key);
-                        Ok(DynUsizeIterator::from_word_serializable(existing))
+                        Ok(DynWordIterator::from_word_serializable(existing))
                     }
                     PROOF_FOR_INDEX_QUERY_ID => {
                         let position = ProofForIndexQuery::<
@@ -1962,7 +1962,7 @@ mod test {
                         let proof = ValueAtIndexProof {
                             proof: ExistingReadProof { existing },
                         };
-                        Ok(DynUsizeIterator::from_word_serializable(proof))
+                        Ok(DynWordIterator::from_word_serializable(proof))
                     }
                     _ => {
                         panic!("unsupported query type 0x{:08x}", query_type);

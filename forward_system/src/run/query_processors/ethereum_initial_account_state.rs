@@ -90,6 +90,6 @@ impl OracleQueryProcessor for InMemoryEthereumInitialAccountStateResponder {
             }
         };
 
-        DynUsizeIterator::from_word_serializable(account)
+        DynWordIterator::from_word_serializable(account)
     }
 }

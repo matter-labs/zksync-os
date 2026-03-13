@@ -8,7 +8,7 @@ use super::WordSerializable;
 /// This struct enables returning oracle word iterators as boxed trait objects while
 /// maintaining ownership of the underlying data. It uses unsafe lifetime extension
 /// to create stable references for iterator construction, then manages cleanup automatically.
-pub struct DynUsizeIterator<
+pub struct DynWordIterator<
     I: 'static + Send + Sync,
     IT: ExactSizeIterator<Item = usize> + 'static + Send + Sync,
 > {
@@ -17,7 +17,7 @@ pub struct DynUsizeIterator<
 }
 
 impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + Send + Sync>
-    DynUsizeIterator<I, IT>
+    DynWordIterator<I, IT>
 {
     pub fn from_constructor<FN: FnOnce(&'static I) -> IT>(
         item: I,
@@ -39,7 +39,7 @@ impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + S
     }
 }
 
-impl<I: WordSerializable + 'static + Send + Sync> DynUsizeIterator<I, IntoIter<usize>> {
+impl<I: WordSerializable + 'static + Send + Sync> DynWordIterator<I, IntoIter<usize>> {
     pub fn from_word_serializable(
         item: I,
     ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
@@ -48,7 +48,7 @@ impl<I: WordSerializable + 'static + Send + Sync> DynUsizeIterator<I, IntoIter<u
 }
 
 impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + Send + Sync> Iterator
-    for DynUsizeIterator<I, IT>
+    for DynWordIterator<I, IT>
 {
     type Item = usize;
 
@@ -74,7 +74,7 @@ impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + S
 }
 
 impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + Send + Sync>
-    ExactSizeIterator for DynUsizeIterator<I, IT>
+    ExactSizeIterator for DynWordIterator<I, IT>
 {
     fn len(&self) -> usize {
         self.iterator.as_ref().map(|it| it.len()).unwrap_or(0)
@@ -82,7 +82,7 @@ impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + S
 }
 
 impl<I: 'static + Send + Sync, IT: ExactSizeIterator<Item = usize> + 'static + Send + Sync> Drop
-    for DynUsizeIterator<I, IT>
+    for DynWordIterator<I, IT>
 {
     fn drop(&mut self) {
         // we do not move, so iterating is ok
@@ -95,9 +95,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_dyn_usize_iterator_basic() {
+    fn test_dyn_word_iterator_basic() {
         let data = vec![1, 2, 3, 4, 5];
-        let mut iter = DynUsizeIterator::from_constructor(data, |data| data.iter().copied());
+        let mut iter = DynWordIterator::from_constructor(data, |data| data.iter().copied());
 
         assert_eq!(iter.len(), 5);
         assert_eq!(iter.next(), Some(1));
@@ -108,27 +108,27 @@ mod tests {
     }
 
     #[test]
-    fn test_dyn_usize_iterator_empty() {
+    fn test_dyn_word_iterator_empty() {
         let data = vec![];
-        let mut iter = DynUsizeIterator::from_constructor(data, |data| data.iter().copied());
+        let mut iter = DynWordIterator::from_constructor(data, |data| data.iter().copied());
 
         assert_eq!(iter.len(), 0);
         assert_eq!(iter.next(), None);
     }
 
     #[test]
-    fn test_dyn_usize_iterator_full_consumption() {
+    fn test_dyn_word_iterator_full_consumption() {
         let data = vec![10, 20, 30];
-        let iter = DynUsizeIterator::from_constructor(data, |data| data.iter().copied());
+        let iter = DynWordIterator::from_constructor(data, |data| data.iter().copied());
 
         let collected: Vec<_> = iter.collect();
         assert_eq!(collected, vec![10, 20, 30]);
     }
 
     #[test]
-    fn test_dyn_usize_iterator_length_tracking() {
+    fn test_dyn_word_iterator_length_tracking() {
         let data = vec![1, 2];
-        let mut iter = DynUsizeIterator::from_constructor(data, |data| data.iter().copied());
+        let mut iter = DynWordIterator::from_constructor(data, |data| data.iter().copied());
 
         assert_eq!(iter.len(), 2);
         assert_eq!(iter.next(), Some(1));
@@ -140,9 +140,9 @@ mod tests {
     }
 
     #[test]
-    fn test_dyn_usize_iterator_with_array() {
+    fn test_dyn_word_iterator_with_array() {
         let data = [42, 100, 255];
-        let mut iter = DynUsizeIterator::from_constructor(data, |data| data.iter().copied());
+        let mut iter = DynWordIterator::from_constructor(data, |data| data.iter().copied());
 
         assert_eq!(iter.len(), 3);
         assert_eq!(iter.next(), Some(42));
@@ -152,9 +152,9 @@ mod tests {
     }
 
     #[test]
-    fn test_dyn_usize_iterator_from_word_serializable() {
+    fn test_dyn_word_iterator_from_word_serializable() {
         let data = (42u32, 7u64);
-        let mut iter = DynUsizeIterator::from_word_serializable(data);
+        let mut iter = DynWordIterator::from_word_serializable(data);
 
         let expected = data.to_word_vec();
         assert_eq!(iter.len(), expected.len());

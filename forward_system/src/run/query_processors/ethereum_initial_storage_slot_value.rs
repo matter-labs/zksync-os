@@ -110,6 +110,6 @@ impl OracleQueryProcessor for InMemoryEthereumInitialStorageSlotValueResponder {
             initial_value: value,
         };
 
-        DynUsizeIterator::from_word_serializable(initial_value)
+        DynWordIterator::from_word_serializable(initial_value)
     }
 }

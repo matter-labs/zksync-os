@@ -6,7 +6,7 @@ use basic_system::system_implementation::ethereum_storage_model::{
 };
 use basic_system::system_implementation::flat_storage_model::FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID;
 use zk_ee::oracle::usize_serialization::WordDeserializable;
-use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynUsizeIterator;
+use zk_ee::oracle::usize_serialization::dyn_usize_iterator::DynWordIterator;
 use zk_ee::utils::usize_rw::ReadIterWrapper;
 use zk_ee::utils::Bytes32;
 
@@ -63,9 +63,9 @@ impl<PS: PreimageSource> OracleQueryProcessor for GenericPreimageResponder<PS> {
             || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
         {
             let len = preimage.len() as u32;
-            DynUsizeIterator::from_word_serializable(len)
+            DynWordIterator::from_word_serializable(len)
         } else {
-            DynUsizeIterator::from_constructor(preimage, |inner_ref: &'static Vec<u8>| {
+            DynWordIterator::from_constructor(preimage, |inner_ref: &'static Vec<u8>| {
                 ReadIterWrapper::from(inner_ref.iter().copied())
             })
         }
