@@ -309,7 +309,7 @@ impl<A: alloc::alloc::Allocator, O: IOOracle> TxHashesAccumulator for ZKBatchDat
 mod tests {
     use super::*;
     use alloc::alloc::Global;
-    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use zk_ee::oracle::usize_serialization::{WordDeserializable, WordSerializable};
     use zk_ee::system::errors::internal::InternalError;
 
     struct DummyOracle;
@@ -317,7 +317,7 @@ mod tests {
     impl IOOracle for DummyOracle {
         type RawIterator<'a> = core::iter::Empty<usize>;
 
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+        fn raw_query<'a, I: WordSerializable + WordDeserializable>(
             &'a mut self,
             _query_type: u32,
             _input: &I,

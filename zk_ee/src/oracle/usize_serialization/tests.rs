@@ -283,3 +283,30 @@ fn test_usize_len_consistency() {
         array_val.iter().len()
     );
 }
+
+#[test]
+fn test_word_serializable_to_vec_matches_legacy_iter() {
+    let value = (
+        0x1234_5678u32,
+        U256::from_str(
+            "0x123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+        )
+        .unwrap(),
+    );
+
+    let legacy: Vec<_> = UsizeSerializable::iter(&value).collect();
+    let new_words = WordSerializable::to_word_vec(&value);
+
+    assert_eq!(legacy, new_words);
+    assert_eq!(new_words.len(), WordSerializable::word_len(&value));
+}
+
+#[test]
+fn test_word_deserializable_matches_legacy_deserializer() {
+    let value = B160::from_str("0x1234567890123456789012345678901234567890").unwrap();
+    let serialized = WordSerializable::to_word_vec(&value);
+    let mut iter = serialized.into_iter();
+
+    let roundtrip = <B160 as WordDeserializable>::read_words(&mut iter).unwrap();
+    assert_eq!(roundtrip, value);
+}

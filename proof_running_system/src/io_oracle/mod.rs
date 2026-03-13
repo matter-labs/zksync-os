@@ -1,5 +1,5 @@
 use zk_ee::{
-    oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable},
+    oracle::usize_serialization::{WordDeserializable, WordSerializable},
     oracle::IOOracle,
     system::errors::internal::InternalError,
 };
@@ -57,7 +57,7 @@ impl<I: NonDeterminismCSRSourceImplementation> CsrBasedIOOracle<I> {
 impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<NDS> {
     type RawIterator<'a> = CsrBasedIOOracleIterator<NDS>;
 
-    fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+    fn raw_query<'a, I: WordSerializable + WordDeserializable>(
         &'a mut self,
         query_type: u32,
         input: &I,
@@ -66,18 +66,31 @@ impl<NDS: NonDeterminismCSRSourceImplementation> IOOracle for CsrBasedIOOracle<N
             assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
         }
         NDS::csr_write_impl(query_type as usize);
-        let iter_to_write = UsizeSerializable::iter(input);
         // write length
-        let iterator_len = iter_to_write.len();
-        assert!(iterator_len == <I as UsizeSerializable>::USIZE_LEN);
+        let iterator_len = input.word_len();
         NDS::csr_write_impl(iterator_len);
         // write content
         let mut remaining_len = iterator_len;
-        for value in iter_to_write {
-            assert!(remaining_len != 0);
-            NDS::csr_write_impl(value);
-            remaining_len -= 1;
+        struct CsrWordSink<'a, I: NonDeterminismCSRSourceImplementation> {
+            remaining_len: &'a mut usize,
+            _marker: core::marker::PhantomData<I>,
         }
+
+        impl<I: NonDeterminismCSRSourceImplementation> zk_ee::oracle::usize_serialization::WordSink
+            for CsrWordSink<'_, I>
+        {
+            fn write_word(&mut self, word: usize) {
+                assert!(*self.remaining_len != 0);
+                I::csr_write_impl(word);
+                *self.remaining_len -= 1;
+            }
+        }
+
+        let mut sink = CsrWordSink::<NDS> {
+            remaining_len: &mut remaining_len,
+            _marker: core::marker::PhantomData,
+        };
+        input.write_words(&mut sink);
         assert!(remaining_len == 0);
         // we can expect that length of the result is returned via read
         let remaining_len = NDS::csr_read_impl();

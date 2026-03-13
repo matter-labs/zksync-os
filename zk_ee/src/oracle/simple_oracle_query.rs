@@ -1,6 +1,6 @@
 use crate::{
     oracle::{
-        usize_serialization::{UsizeDeserializable, UsizeSerializable},
+        usize_serialization::{WordDeserializable, WordSerializable},
         IOOracle,
     },
     system::errors::internal::InternalError,
@@ -11,8 +11,8 @@ use crate::{
 ///
 pub trait SimpleOracleQuery: Sized {
     const QUERY_ID: u32;
-    type Input: UsizeSerializable + UsizeDeserializable;
-    type Output: UsizeDeserializable;
+    type Input: WordSerializable + WordDeserializable;
+    type Output: WordDeserializable;
 
     fn get<O: IOOracle>(
         oracle: &mut O,

@@ -10,6 +10,7 @@
 //! and 64-bit systems. The serialization format is designed to be deterministic across
 //! architectures, but relies on consistent memory layout assumptions.
 
+use alloc::vec::Vec;
 use core::mem::MaybeUninit;
 
 use ruint::aliases::{B160, U256};
@@ -23,6 +24,71 @@ use crate::{
 pub mod dyn_usize_iterator;
 #[cfg(test)]
 mod tests;
+
+/// A sink for oracle transport words.
+pub trait WordSink {
+    fn write_word(&mut self, word: usize);
+}
+
+impl WordSink for Vec<usize> {
+    fn write_word(&mut self, word: usize) {
+        self.push(word);
+    }
+}
+
+/// Sink that only counts how many words would be written.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CountingWordSink {
+    len: usize,
+}
+
+impl CountingWordSink {
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl WordSink for CountingWordSink {
+    fn write_word(&mut self, _word: usize) {
+        self.len += 1;
+    }
+}
+
+/// Serialization into oracle transport words.
+pub trait WordSerializable {
+    fn word_len(&self) -> usize;
+
+    fn write_words(&self, out: &mut impl WordSink);
+
+    fn to_word_vec(&self) -> Vec<usize> {
+        let mut out = Vec::with_capacity(self.word_len());
+        self.write_words(&mut out);
+        debug_assert_eq!(out.len(), self.word_len());
+        out
+    }
+}
+
+/// Deserialization from oracle transport words.
+pub trait WordDeserializable: Sized {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError>;
+
+    ///
+    /// # Safety
+    ///
+    /// The correct layout of the serialization is enforced by the `read_words`
+    /// implementation, as long as the data in the external storage is correctly populated. It is a
+    /// UB to read from any location that wasn't populated by this type before.
+    ///
+    unsafe fn init_from_words(
+        this: &mut MaybeUninit<Self>,
+        src: &mut impl ExactSizeIterator<Item = usize>,
+    ) -> Result<(), InternalError> {
+        let new = Self::read_words(src)?;
+        this.write(new);
+
+        Ok(())
+    }
+}
 
 /// Trait for types that can be serialized into a sequence of `usize` values with a known (fixed) length.
 pub trait UsizeSerializable {
@@ -52,6 +118,31 @@ pub trait UsizeDeserializable: Sized {
         this.write(new);
 
         Ok(())
+    }
+}
+
+impl<T: UsizeSerializable> WordSerializable for T {
+    fn word_len(&self) -> usize {
+        self.iter().len()
+    }
+
+    fn write_words(&self, out: &mut impl WordSink) {
+        for word in self.iter() {
+            out.write_word(word);
+        }
+    }
+}
+
+impl<T: UsizeDeserializable> WordDeserializable for T {
+    fn read_words(src: &mut impl ExactSizeIterator<Item = usize>) -> Result<Self, InternalError> {
+        Self::from_iter(src)
+    }
+
+    unsafe fn init_from_words(
+        this: &mut MaybeUninit<Self>,
+        src: &mut impl ExactSizeIterator<Item = usize>,
+    ) -> Result<(), InternalError> {
+        Self::init_from_iter(this, src)
     }
 }
 

@@ -22,7 +22,7 @@ pub mod usize_serialization;
 
 use crate::internal_error;
 use crate::oracle::query_ids::NEXT_TX_SIZE_QUERY_ID;
-use crate::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+use crate::oracle::usize_serialization::{WordDeserializable, WordSerializable};
 use crate::system::errors::internal::InternalError;
 use crate::utils::{Bytes32, UsizeAlignedByteBox};
 use core::alloc::Allocator;
@@ -55,7 +55,7 @@ pub trait IOOracle: 'static + Sized {
     /// Main method to query oracle with typed input.
     /// Returns raw iterator over usize values that can be deserialized.
     ///
-    fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+    fn raw_query<'a, I: WordSerializable + WordDeserializable>(
         &'a mut self,
         query_type: u32,
         input: &I,
@@ -76,13 +76,13 @@ pub trait IOOracle: 'static + Sized {
     /// Convenience method to query oracle.
     /// Returns deserialized output.
     ///
-    fn query_serializable<I: UsizeSerializable + UsizeDeserializable, O: UsizeDeserializable>(
+    fn query_serializable<I: WordSerializable + WordDeserializable, O: WordDeserializable>(
         &mut self,
         query_type: u32,
         input: &I,
     ) -> Result<O, InternalError> {
         let mut it = self.raw_query(query_type, input)?;
-        let result: O = UsizeDeserializable::from_iter(&mut it)?;
+        let result: O = WordDeserializable::read_words(&mut it)?;
 
         // Validate that all data was consumed to detect malformed responses
         if it.next().is_some() {
@@ -97,7 +97,7 @@ pub trait IOOracle: 'static + Sized {
     ///
     /// Returns the requested type. Expects that such query type has trivial input parameters.
     ///
-    fn query_with_empty_input<T: UsizeDeserializable>(
+    fn query_with_empty_input<T: WordDeserializable>(
         &mut self,
         query_type: u32,
     ) -> Result<T, InternalError> {
@@ -148,7 +148,7 @@ pub trait IOOracle: 'static + Sized {
     /// Helper to perform a dynamic query, based on two queries
     /// (one for length and the next one for the actual data).
     ///
-    fn get_bytes_from_query<A: Allocator, I: UsizeSerializable + UsizeDeserializable>(
+    fn get_bytes_from_query<A: Allocator, I: WordSerializable + WordDeserializable>(
         &mut self,
         length_query_id: u32, // must return number of bytes
         body_query_id: u32,   // must return
@@ -187,8 +187,8 @@ pub trait IOResponder {
     fn all_supported_query_ids<'a>(&'a self) -> impl ExactSizeIterator<Item = u32> + 'a;
 
     fn query_serializable_static<
-        I: 'static + UsizeSerializable + UsizeDeserializable,
-        O: 'static + UsizeDeserializable,
+        I: 'static + WordSerializable + WordDeserializable,
+        O: 'static + WordDeserializable,
     >(
         &mut self,
         query_type: u32,

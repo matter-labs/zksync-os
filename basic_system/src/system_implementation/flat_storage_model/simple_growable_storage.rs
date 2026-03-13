@@ -1951,7 +1951,11 @@ mod test {
     impl<const R: bool> IOOracle for TestingTree<R> {
         type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize>>;
 
-        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+        fn raw_query<
+            'a,
+            I: zk_ee::oracle::usize_serialization::WordSerializable
+                + zk_ee::oracle::usize_serialization::WordDeserializable,
+        >(
             &'a mut self,
             query_type: u32,
             input: &I,
