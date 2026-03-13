@@ -39,7 +39,7 @@ use core::num::NonZeroU32;
 /// iterators over `usize` values.
 ///
 /// # Design Notes
-/// - All data exchange uses `usize` sequences for cross-architecture compatibility
+/// - All data exchange uses oracle word sequences for cross-architecture compatibility
 /// - Query types are identified by `u32` IDs organized in namespaced ranges
 ///
 /// # Security Implications
@@ -48,12 +48,12 @@ use core::num::NonZeroU32;
 /// - ZK proof verification (in combination with state and data commitments)
 ///   should ensure data correctness
 pub trait IOOracle: 'static + Sized {
-    /// Iterator type that oracle returns for raw usize values
+    /// Iterator type that oracle returns for raw oracle words
     type RawIterator<'a>: ExactSizeIterator<Item = usize>;
 
     ///
     /// Main method to query oracle with typed input.
-    /// Returns raw iterator over usize values that can be deserialized.
+    /// Returns a raw iterator over oracle words that can be deserialized.
     ///
     fn raw_query<'a, I: WordSerializable + WordDeserializable>(
         &'a mut self,
