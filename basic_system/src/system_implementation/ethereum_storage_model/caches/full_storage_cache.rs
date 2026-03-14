@@ -171,14 +171,11 @@ impl<
             let initial_value_used = item.key_properties().is_value_observed();
             (
                 *item.key(),
-                // Using the WarmStorageValue temporarily till it's outed from the codebase. We're
-                // not actually 'using' it.
                 WarmStorageValue {
                     current_value: *current_record.value(),
                     is_new_storage_slot,
                     initial_value: *initial_record.value(),
                     initial_value_used,
-                    ..Default::default()
                 },
             )
         })
