@@ -6,7 +6,6 @@ pub mod element_with_history;
 use crate::common_structs::history_map::element_with_history::HistoryRecord;
 use crate::internal_error;
 use crate::{system::errors::internal::InternalError, utils::stack_linked_list::StackLinkedList};
-use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
 use core::{alloc::Allocator, fmt::Debug, ops::Bound};
 pub(crate) use element_pool::ElementPool;
@@ -111,19 +110,22 @@ where
         key: &'s K,
         spawn_v: impl FnOnce() -> Result<(V, KP), E>,
     ) -> Result<HistoryMapItemRefMut<'s, K, V, A, KP>, E> {
-        let entry = self.btree.entry(key.clone());
+        if !self.btree.contains_key(key) {
+            // Key not present: initialize a new element and insert it.
+            // The key is only cloned on this cold path (cache miss).
+            let (v, properties) = spawn_v()?;
+            self.btree.insert(
+                key.clone(),
+                ElementWithHistory::new(properties, v, &mut self.records_memory_pool),
+            );
+        }
 
-        let v = match entry {
-            Entry::Occupied(o) => o.into_mut(),
-            Entry::Vacant(vacant_entry) => {
-                let (v, properties) = spawn_v()?;
-                vacant_entry.insert(ElementWithHistory::new(
-                    properties,
-                    v,
-                    &mut self.records_memory_pool,
-                ))
-            }
-        };
+        // INVARIANT: the key is guaranteed to exist — either it was already present
+        // (confirmed by `contains_key` above) or we just inserted it.
+        let v = self
+            .btree
+            .get_mut(key)
+            .expect("key must exist: either pre-existing or just inserted");
 
         Ok(HistoryMapItemRefMut {
             key,
