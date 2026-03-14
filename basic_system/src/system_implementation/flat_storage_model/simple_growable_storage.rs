@@ -2015,11 +2015,6 @@ mod test {
                 current_value: new_value.as_ref().copied().unwrap_or(initial_value),
                 initial_value_used: true,
                 is_new_storage_slot,
-                // The fields below are not used during verification
-                value_at_the_start_of_tx: initial_value,
-                changes_stack_depth: 0,
-                last_accessed_at_tx_number: None,
-                pubdata_diff_bytes: 0,
             };
             (*key, enriched_value)
         });
