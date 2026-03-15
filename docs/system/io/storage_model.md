@@ -166,16 +166,20 @@ Resources are a dual counter pairing two independent budgets:
   analogue but must be bounded for proof generation (e.g. hash operations). This
   prevents DoS via cheap-gas but prover-heavy operations.
 
-The `Resources` trait wraps both:
+The `Resources` trait wraps both (simplified; see source for full definition):
 
 ```rust
-pub trait Resources: Sized + Clone + core::fmt::Debug {
-    const FORMAL_INFINITE: Self;  // Sentinel for unconstrained execution (system paths)
-    fn empty() -> Self;
-    fn charge(&mut self, to_charge: &Self) -> Result<(), SystemError>;
-    fn has_enough(&self, to_spend: &Self) -> bool;
-    fn reclaim(&mut self, to_reclaim: Self);
-    // ...
+pub trait Resources: 'static + Sized + Clone + Debug + PartialEq + Eq + Resource {
+    type Native: Resource + Computational;
+
+    // Constructors for homogeneous values
+    fn from_ergs(ergs: Ergs) -> Self;
+    fn from_native(native: Self::Native) -> Self;
+    fn from_ergs_and_native(ergs: Ergs, native: Self::Native) -> Self;
+
+    // Sentinel for unconstrained execution (system paths)
+    const FORMAL_INFINITE: Self;
+    // ...charge / reclaim / has_enough inherited via Resource...
 }
 ```
 
@@ -210,34 +214,36 @@ time exactly which fields are requested, avoiding over-fetching:
 pub struct AccountDataRequest<T>(PhantomData<T>);
 
 // The Maybe marker types:
-pub struct Just<T>(PhantomData<T>);  // "request this field"
-pub struct Nothing;                   // "don't request this field"
+pub struct Just<T>(pub T);  // "request this field" — carries the actual value
+pub struct Nothing;          // "don't request this field" — zero-size marker
 ```
 
 `AccountData` is parameterised over one `Maybe<T>` per field:
 
 ```rust
 pub struct AccountData<
-    EEVersion,             // Maybe<u8>
+    EEVersion,              // Maybe<u8>
     ObservableBytecodeHash,
     ObservableBytecodeLen,
-    Nonce,                 // Maybe<u64>
+    Nonce,                  // Maybe<u64>
     BytecodeHash,
-    BytecodeLen,           // Maybe<u32>
+    UnpaddedCodeLen,        // Maybe<u32>
     ArtifactsLen,
-    NominalTokenBalance,   // Maybe<U256>
-    Bytecode,              // Maybe<&'static [u8]>
+    NominalTokenBalance,    // Maybe<U256>
+    Bytecode,               // Maybe<&'static [u8]>
     CodeVersion,
-    IsDelegated,           // Maybe<bool>
+    IsDelegated,            // Maybe<bool>
 > { /* fields present only when their type is Just<T> */ }
 ```
 
 A request is built with a builder pattern:
 
 ```rust
+// with_nominal_token_balance is generic over T; the type must be made explicit
+// either via turbofish or by the calling context (e.g. read_account_properties).
 let request = AccountDataRequest::empty()
     .with_nonce()
-    .with_nominal_token_balance();
+    .with_nominal_token_balance::<U256>();
 // The return type encodes exactly these two fields as Just<_>, rest as Nothing.
 ```
 
@@ -392,9 +398,13 @@ trie node on each path), making it unsuitable for efficient proof generation.
    inside a call frame are atomically reverted when `finish_frame(Some(snapshot))`
    is called. This invariant is critical for correct EVM `CALL` reversion.
 
-3. **No panics from external input.** Deserialization of oracle responses and
-   resource charging both return `Result`. Callers must propagate errors rather
-   than `.unwrap()` them.
+3. **Error handling for external input.** Deserialization of oracle responses and
+   resource charging generally return `Result` and callers must propagate errors.
+   However, some internal oracle paths use `assert!` or `.expect()` on
+   oracle-supplied lengths or slot values where the system considers a mismatch
+   to be an unrecoverable invariant violation (e.g. the new-slot initial-value
+   assertion in the storage cache). These paths are execution-environment
+   boundaries and should be reviewed carefully when changing oracle protocols.
 
 4. **`PROOF_ENV` cannot be changed at runtime.** It is a const generic, so it
    is burned in at compile time. The sequencer binary and the prover binary are
