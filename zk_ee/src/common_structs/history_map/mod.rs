@@ -655,6 +655,79 @@ mod tests {
         .unwrap();
     }
 
+    /// Verify that `get_or_insert` does not clone the key on a cache hit (i.e.,
+    /// when the key already exists in the map).  A future refactor that
+    /// reintroduces unconditional cloning will trip this test.
+    #[test]
+    fn get_or_insert_does_not_clone_key_on_hit() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+
+        // A key wrapper that counts how many times Clone::clone() is called.
+        // Ord/PartialOrd are implemented manually (only on `value`) because
+        // Arc<AtomicUsize> does not implement those traits.
+        #[derive(Debug)]
+        struct CountingKey {
+            value: usize,
+            clone_count: Arc<AtomicUsize>,
+        }
+
+        impl PartialEq for CountingKey {
+            fn eq(&self, other: &Self) -> bool {
+                self.value == other.value
+            }
+        }
+        impl Eq for CountingKey {}
+        impl PartialOrd for CountingKey {
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl Ord for CountingKey {
+            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+                self.value.cmp(&other.value)
+            }
+        }
+
+        impl Clone for CountingKey {
+            fn clone(&self) -> Self {
+                self.clone_count.fetch_add(1, Ordering::Relaxed);
+                CountingKey {
+                    value: self.value,
+                    clone_count: Arc::clone(&self.clone_count),
+                }
+            }
+        }
+
+        let clone_count = Arc::new(AtomicUsize::new(0));
+        let key = CountingKey {
+            value: 42,
+            clone_count: Arc::clone(&clone_count),
+        };
+
+        let mut map = HistoryMap::<CountingKey, usize, Global>::new(Global);
+
+        // First call: miss — key must be cloned to insert.
+        map.get_or_insert::<()>(&key, || Ok((1, ()))).unwrap();
+        let clones_after_miss = clone_count.load(Ordering::Relaxed);
+        assert_eq!(
+            clones_after_miss, 1,
+            "expected exactly one clone on cache miss"
+        );
+
+        // Second call: hit — no additional clone should occur.
+        map.get_or_insert::<()>(&key, || Ok((2, ()))).unwrap();
+        let clones_after_hit = clone_count.load(Ordering::Relaxed);
+        assert_eq!(
+            clones_after_hit,
+            1,
+            "expected zero additional clones on cache hit, got {}",
+            clones_after_hit - clones_after_miss
+        );
+    }
+
     #[test]
     fn clear_resets_snapshots() {
         let mut map = HistoryMap::<usize, usize, Global>::new(Global);
