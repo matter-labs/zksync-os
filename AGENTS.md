@@ -77,6 +77,8 @@ The project uses a custom testing rig located in `tests/rig/` with the main abst
 2. Define transactions to execute
 3. Call `execute_block` to execute (typically runs both forward and proof systems, unless configured otherwise)
 
+When adding or modifying tests under `tests/instances/`, read `tests/instances/TESTING.md` first and follow its conventions.
+
 Avoid direct `Chain` usage in test instances unless a low-level path is explicitly needed.
 
 To run rig-based tests without detailed executions logs use:

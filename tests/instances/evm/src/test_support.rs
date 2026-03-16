@@ -4,12 +4,11 @@ use rig::alloy::consensus::TxEip1559;
 use rig::alloy::primitives::{Address, TxKind, U256 as AlloyU256};
 use rig::alloy::signers::local::PrivateKeySigner;
 use rig::constants::{DEFAULT_MAX_FEE, DEFAULT_PRIORITY_FEE, TEST_CHAIN_ID};
-use rig::run_config;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::TestingFramework;
 
 pub(super) fn new_tester() -> TestingFramework<false> {
-    TestingFramework::new().with_run_config(run_config::forward_only())
+    TestingFramework::new()
 }
 
 pub(super) fn call_tx(signer: PrivateKeySigner, to: Address, gas_limit: u64) -> ZKsyncTxEnvelope {

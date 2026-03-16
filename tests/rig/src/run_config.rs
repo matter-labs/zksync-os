@@ -3,7 +3,11 @@
 use crate::chain::RunConfig;
 use std::path::PathBuf;
 
-/// Forward-only run — fastest option, no RISC-V simulation.
+/// Forward-only run with no RISC-V simulation.
+///
+/// This is an escape hatch and should only be used for tests that cannot run
+/// under the RISC-V path at all. Tests should normally rely on the default rig
+/// behavior so RISC-V checks still run when the environment enables them.
 pub fn forward_only() -> RunConfig {
     RunConfig::without_riscv_run()
 }

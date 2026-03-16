@@ -5,13 +5,12 @@ use rig::alloy::primitives::{address, Address, TxKind, U256 as AlloyU256};
 use rig::alloy::signers::local::PrivateKeySigner;
 use rig::constants::*;
 use rig::ruint::aliases::U256;
-use rig::run_config;
 use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::TestingFramework;
 use rig::{assert_tx_rejected, assert_tx_success};
 
 fn new_tester() -> TestingFramework<false> {
-    TestingFramework::new().with_run_config(run_config::forward_only())
+    TestingFramework::new()
 }
 
 #[allow(clippy::too_many_arguments)]
