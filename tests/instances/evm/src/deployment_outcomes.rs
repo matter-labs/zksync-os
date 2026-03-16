@@ -4,12 +4,13 @@ use crate::test_support::{create_tx, new_tester};
 use rig::alloy::primitives::address;
 use rig::alloy::signers::local::PrivateKeySigner;
 use rig::constants::{DEFAULT_BALANCE, DEPLOY_GAS_LIMIT};
+use rig::evm_bytecode::{self, BytecodeBuilder};
 use rig::ruint::aliases::U256;
 use rig::{assert_tx_reverted, assert_tx_success};
 
 #[test]
 fn constructor_revert_fails_deployment() {
-    let init_bytecode = hex::decode("60006000fd").unwrap();
+    let init_bytecode = evm_bytecode::revert();
 
     let signer = PrivateKeySigner::random();
     let sender = signer.address();
@@ -22,7 +23,7 @@ fn constructor_revert_fails_deployment() {
 
 #[test]
 fn zero_length_deployed_code() {
-    let init_bytecode = hex::decode("60006000f3").unwrap();
+    let init_bytecode = BytecodeBuilder::new().return_empty().finish();
 
     let signer = PrivateKeySigner::random();
     let sender = signer.address();

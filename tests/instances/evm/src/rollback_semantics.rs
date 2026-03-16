@@ -4,12 +4,13 @@ use crate::test_support::{call_tx, new_tester};
 use rig::alloy::primitives::address;
 use rig::alloy::signers::local::PrivateKeySigner;
 use rig::constants::{CALL_GAS_LIMIT, DEFAULT_BALANCE};
+use rig::evm_bytecode::{self, BytecodeBuilder};
 use rig::ruint::aliases::U256;
 use rig::{assert_tx_reverted, assert_tx_success};
 
 #[test]
 fn revert_does_not_mutate_storage() {
-    let revert_after_store = hex::decode("61dead60005560006000fd").unwrap();
+    let revert_after_store = evm_bytecode::sstore_u16_then_revert(0, 0xdead);
     let contract = address!("0000000000000000000000000000000000000301");
 
     let signer = PrivateKeySigner::random();
@@ -32,32 +33,21 @@ fn revert_does_not_mutate_storage() {
 
 #[test]
 fn tstore_reverts_on_frame_revert() {
-    let inner_bytecode = hex::decode("600160005d60006000fd").unwrap();
+    let inner_bytecode = evm_bytecode::tstore_u8_then_revert(0, 1);
     let inner_addr = address!("0000000000000000000000000000000000000d11");
 
-    let inner_bytes = inner_addr.into_array();
-    let mut outer_bytecode: Vec<u8> = vec![
-        0x60, 0x00, // out_size
-        0x60, 0x00, // out_offset
-        0x60, 0x00, // in_size
-        0x60, 0x00, // in_offset
-        0x60, 0x00, // value
-        0x73, // push20(inner)
-    ];
-    outer_bytecode.extend_from_slice(&inner_bytes);
-    outer_bytecode.extend_from_slice(&[
-        0x5a, // gas
-        0xf1, // call
-        0x50, // pop(success)
-        0x60, 0x00, // key = 0
-        0x5c, // tload
-        0x60, 0x00, // mem offset
-        0x52, // mstore
-        0x60, 0x20, // size
-        0x60, 0x00, // offset
-        0xf3, // return
-    ]);
     let outer_addr = address!("0000000000000000000000000000000000000d12");
+    let outer_bytecode = BytecodeBuilder::new()
+        .call_simple(inner_addr)
+        .pop()
+        .push0()
+        .tload()
+        .push0()
+        .mstore()
+        .push_u8(0x20)
+        .push0()
+        .return_()
+        .finish();
 
     let signer = PrivateKeySigner::random();
     let sender = signer.address();
@@ -82,20 +72,17 @@ fn tstore_reverts_on_frame_revert() {
 #[test]
 fn selfdestruct_in_reverting_frame_no_effect() {
     let beneficiary = address!("dead000000000000000000000000000000001234");
-    let beneficiary_bytes = beneficiary.into_array();
-    let mut inner_bytecode = vec![0x73u8];
-    inner_bytecode.extend_from_slice(&beneficiary_bytes);
-    inner_bytecode.push(0xff);
-
+    let inner_bytecode = evm_bytecode::selfdestruct(beneficiary);
     let inner_addr = address!("0000000000000000000000000000000000000e01");
 
-    let inner_bytes = inner_addr.into_array();
-    let mut outer_bytecode: Vec<u8> = vec![
-        0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x73,
-    ];
-    outer_bytecode.extend_from_slice(&inner_bytes);
-    outer_bytecode.extend_from_slice(&[0x5a, 0xf1, 0x50, 0x60, 0x00, 0x60, 0x00, 0xfd]);
     let outer_addr = address!("0000000000000000000000000000000000000e02");
+    let outer_bytecode = BytecodeBuilder::new()
+        .call_simple(inner_addr)
+        .pop()
+        .push0()
+        .push0()
+        .revert()
+        .finish();
 
     let signer = PrivateKeySigner::random();
     let sender = signer.address();

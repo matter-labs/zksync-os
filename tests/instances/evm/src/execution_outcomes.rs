@@ -6,12 +6,13 @@ use rig::alloy::signers::local::PrivateKeySigner;
 use rig::constants::{
     CALL_GAS_LIMIT, DEFAULT_BALANCE, DEFAULT_MAX_FEE, DEFAULT_PRIORITY_FEE, TEST_CHAIN_ID,
 };
+use rig::evm_bytecode::{self, BytecodeBuilder};
 use rig::ruint::aliases::U256;
 use rig::{assert_tx_reverted, assert_tx_success};
 
 #[test]
 fn out_of_gas_mid_execution() {
-    let loop_bytecode = hex::decode("5b600056").unwrap();
+    let loop_bytecode = evm_bytecode::infinite_loop();
     let contract = address!("0000000000000000000000000000000000000101");
 
     let signer = PrivateKeySigner::random();
@@ -28,7 +29,7 @@ fn out_of_gas_mid_execution() {
 
 #[test]
 fn explicit_revert_no_data() {
-    let revert_bytecode = hex::decode("60006000fd").unwrap();
+    let revert_bytecode = evm_bytecode::revert();
     let contract = address!("0000000000000000000000000000000000000201");
 
     let signer = PrivateKeySigner::random();
@@ -45,7 +46,7 @@ fn explicit_revert_no_data() {
 
 #[test]
 fn explicit_revert_with_data() {
-    let revert_with_data = hex::decode("63deadbeef6000526004601cfd").unwrap();
+    let revert_with_data = evm_bytecode::revert_with_data(&[0xde, 0xad, 0xbe, 0xef]);
     let contract = address!("0000000000000000000000000000000000000202");
 
     let signer = PrivateKeySigner::random();
@@ -62,7 +63,7 @@ fn explicit_revert_with_data() {
     let tx_out = output.tx_results[0].as_ref().unwrap();
     match &tx_out.execution_result {
         rig::zksync_os_interface::types::ExecutionResult::Revert(data) => {
-            assert_eq!(data, &hex::decode("deadbeef").unwrap());
+            assert_eq!(data, &[0xde, 0xad, 0xbe, 0xef]);
         }
         _ => panic!("expected revert with payload"),
     }
@@ -70,7 +71,7 @@ fn explicit_revert_with_data() {
 
 #[test]
 fn invalid_opcode() {
-    let invalid_bytecode = hex::decode("fe").unwrap();
+    let invalid_bytecode = evm_bytecode::invalid_opcode();
     let contract = address!("0000000000000000000000000000000000000203");
 
     let signer = PrivateKeySigner::random();
@@ -110,17 +111,15 @@ fn call_to_eoa_with_calldata_succeeds() {
 
 #[test]
 fn nested_call_inner_reverts_outer_succeeds() {
-    let inner_revert = hex::decode("60006000fd").unwrap();
+    let inner_revert = evm_bytecode::revert();
     let inner_addr = address!("0000000000000000000000000000000000000205");
 
-    let inner_bytes = inner_addr.into_array();
-    let mut outer_bytecode: Vec<u8> = vec![
-        0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x73,
-    ];
-    outer_bytecode.extend_from_slice(&inner_bytes);
-    outer_bytecode.extend_from_slice(&[0x5a, 0xf1, 0x50, 0x60, 0x00, 0x60, 0x00, 0xf3]);
-
     let outer_addr = address!("0000000000000000000000000000000000000206");
+    let outer_bytecode = BytecodeBuilder::new()
+        .call_simple(inner_addr)
+        .pop()
+        .return_empty()
+        .finish();
 
     let signer = PrivateKeySigner::random();
     let sender = signer.address();
