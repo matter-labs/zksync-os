@@ -29,7 +29,7 @@ These layers are complementary:
 
 ## Default execution model
 
-Default strategy should be paranoidal security-first.
+Default strategy should be paranoid and security-first.
 
 - Instance tests should use the normal rig defaults (all checks) unless there is a concrete reason not to.
 - Do not force `forward_only()` just to make tests faster locally.
