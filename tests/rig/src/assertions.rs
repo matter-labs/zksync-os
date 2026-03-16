@@ -46,7 +46,10 @@ macro_rules! assert_tx_reverted {
     }};
 }
 
-/// Assert that transaction at `$idx` was rejected at the bootloader level.
+/// Assert that transaction at `$idx` did not complete successfully.
+///
+/// This matches the existing rig-level `tx_failed()` helper semantics and
+/// treats both bootloader rejection and EVM reverts as failures.
 #[macro_export]
 macro_rules! assert_tx_failed {
     ($output:expr, $idx:expr) => {{
@@ -58,8 +61,28 @@ macro_rules! assert_tx_failed {
             .unwrap_or_else(|| panic!("assert_tx_failed: no tx at index {idx}"));
         match result {
             Err(_) => {}
+            Ok(tx_out) if !tx_out.is_success() => {}
             Ok(tx_out) => panic!(
-                "assert_tx_failed!(output, {idx}): expected bootloader rejection but tx was processed.\n  output: {tx_out:?}"
+                "assert_tx_failed!(output, {idx}): expected tx failure but tx succeeded.\n  output: {tx_out:?}"
+            ),
+        }
+    }};
+}
+
+/// Assert that transaction at `$idx` was rejected at the bootloader level.
+#[macro_export]
+macro_rules! assert_tx_rejected {
+    ($output:expr, $idx:expr) => {{
+        let output = &$output;
+        let idx: usize = $idx;
+        let result = output
+            .tx_results
+            .get(idx)
+            .unwrap_or_else(|| panic!("assert_tx_rejected: no tx at index {idx}"));
+        match result {
+            Err(_) => {}
+            Ok(tx_out) => panic!(
+                "assert_tx_rejected!(output, {idx}): expected bootloader rejection but tx was processed.\n  output: {tx_out:?}"
             ),
         }
     }};
@@ -84,7 +107,7 @@ macro_rules! assert_all_success {
     }};
 }
 
-/// Assert that `computational_native_used` for transaction `$idx` is less than `$max`.
+/// Assert that `gas_used` for transaction `$idx` is less than `$max`.
 #[macro_export]
 macro_rules! assert_gas_used_lt {
     ($output:expr, $idx:expr, $max:expr) => {{
@@ -97,7 +120,7 @@ macro_rules! assert_gas_used_lt {
             .unwrap_or_else(|| panic!("assert_gas_used_lt: no tx at index {idx}"));
         match result {
             Ok(tx_out) => {
-                let used = tx_out.computational_native_used;
+                let used = tx_out.gas_used;
                 if used >= max {
                     panic!("assert_gas_used_lt!(output, {idx}, {max}): used {used} >= {max}");
                 }
@@ -109,7 +132,7 @@ macro_rules! assert_gas_used_lt {
     }};
 }
 
-/// Assert that `computational_native_used` for transaction `$idx` is greater than `$min`.
+/// Assert that `gas_used` for transaction `$idx` is greater than `$min`.
 #[macro_export]
 macro_rules! assert_gas_used_gt {
     ($output:expr, $idx:expr, $min:expr) => {{
@@ -122,7 +145,7 @@ macro_rules! assert_gas_used_gt {
             .unwrap_or_else(|| panic!("assert_gas_used_gt: no tx at index {idx}"));
         match result {
             Ok(tx_out) => {
-                let used = tx_out.computational_native_used;
+                let used = tx_out.gas_used;
                 if used <= min {
                     panic!("assert_gas_used_gt!(output, {idx}, {min}): used {used} <= {min}");
                 }
@@ -134,7 +157,7 @@ macro_rules! assert_gas_used_gt {
     }};
 }
 
-/// Assert that `computational_native_used` for transaction `$idx` is within `[$min, $max)`.
+/// Assert that `gas_used` for transaction `$idx` is within `[$min, $max)`.
 #[macro_export]
 macro_rules! assert_gas_used_between {
     ($output:expr, $idx:expr, $min:expr, $max:expr) => {{
@@ -148,7 +171,7 @@ macro_rules! assert_gas_used_between {
             .unwrap_or_else(|| panic!("assert_gas_used_between: no tx at index {idx}"));
         match result {
             Ok(tx_out) => {
-                let used = tx_out.computational_native_used;
+                let used = tx_out.gas_used;
                 if used < min || used >= max {
                     panic!(
                         "assert_gas_used_between!(output, {idx}, {min}, {max}): used {used} is not in [{min}, {max})"
@@ -157,6 +180,85 @@ macro_rules! assert_gas_used_between {
             }
             Err(e) => panic!(
                 "assert_gas_used_between!(output, {idx}, {min}, {max}): tx was rejected by bootloader.\n  error: {e:?}"
+            ),
+        }
+    }};
+}
+
+/// Assert that `computational_native_used` for transaction `$idx` is less than `$max`.
+#[macro_export]
+macro_rules! assert_computational_native_used_lt {
+    ($output:expr, $idx:expr, $max:expr) => {{
+        let output = &$output;
+        let idx: usize = $idx;
+        let max: u64 = $max;
+        let result = output.tx_results.get(idx).unwrap_or_else(|| {
+            panic!("assert_computational_native_used_lt: no tx at index {idx}")
+        });
+        match result {
+            Ok(tx_out) => {
+                let used = tx_out.computational_native_used;
+                if used >= max {
+                    panic!(
+                        "assert_computational_native_used_lt!(output, {idx}, {max}): used {used} >= {max}"
+                    );
+                }
+            }
+            Err(e) => panic!(
+                "assert_computational_native_used_lt!(output, {idx}, {max}): tx was rejected by bootloader.\n  error: {e:?}"
+            ),
+        }
+    }};
+}
+
+/// Assert that `computational_native_used` for transaction `$idx` is greater than `$min`.
+#[macro_export]
+macro_rules! assert_computational_native_used_gt {
+    ($output:expr, $idx:expr, $min:expr) => {{
+        let output = &$output;
+        let idx: usize = $idx;
+        let min: u64 = $min;
+        let result = output.tx_results.get(idx).unwrap_or_else(|| {
+            panic!("assert_computational_native_used_gt: no tx at index {idx}")
+        });
+        match result {
+            Ok(tx_out) => {
+                let used = tx_out.computational_native_used;
+                if used <= min {
+                    panic!(
+                        "assert_computational_native_used_gt!(output, {idx}, {min}): used {used} <= {min}"
+                    );
+                }
+            }
+            Err(e) => panic!(
+                "assert_computational_native_used_gt!(output, {idx}, {min}): tx was rejected by bootloader.\n  error: {e:?}"
+            ),
+        }
+    }};
+}
+
+/// Assert that `computational_native_used` for transaction `$idx` is within `[$min, $max)`.
+#[macro_export]
+macro_rules! assert_computational_native_used_between {
+    ($output:expr, $idx:expr, $min:expr, $max:expr) => {{
+        let output = &$output;
+        let idx: usize = $idx;
+        let min: u64 = $min;
+        let max: u64 = $max;
+        let result = output.tx_results.get(idx).unwrap_or_else(|| {
+            panic!("assert_computational_native_used_between: no tx at index {idx}")
+        });
+        match result {
+            Ok(tx_out) => {
+                let used = tx_out.computational_native_used;
+                if used < min || used >= max {
+                    panic!(
+                        "assert_computational_native_used_between!(output, {idx}, {min}, {max}): used {used} is not in [{min}, {max})"
+                    );
+                }
+            }
+            Err(e) => panic!(
+                "assert_computational_native_used_between!(output, {idx}, {min}, {max}): tx was rejected by bootloader.\n  error: {e:?}"
             ),
         }
     }};
@@ -300,4 +402,120 @@ macro_rules! assert_nonce {
             );
         }
     }};
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::alloy::consensus::Header;
+    use crate::alloy::primitives::{Address, Sealable, U256};
+    use crate::zksync_os_interface::error::InvalidTransaction;
+    use crate::zksync_os_interface::types::{
+        BlockOutput, ExecutionOutput, ExecutionResult, TxOutput,
+    };
+
+    fn tx_output(
+        execution_result: ExecutionResult,
+        gas_used: u64,
+        computational_native_used: u64,
+    ) -> TxOutput {
+        TxOutput {
+            execution_result,
+            gas_used,
+            gas_refunded: 0,
+            computational_native_used,
+            native_used: computational_native_used,
+            pubdata_used: 0,
+            contract_address: None,
+            logs: vec![],
+            l2_to_l1_logs: vec![],
+            storage_writes: vec![],
+        }
+    }
+
+    fn block_with_result(result: Result<TxOutput, InvalidTransaction>) -> BlockOutput {
+        BlockOutput {
+            header: Header::default().seal_slow(),
+            tx_results: vec![result],
+            storage_writes: vec![],
+            account_diffs: vec![],
+            published_preimages: vec![],
+            pubdata: vec![],
+            computational_native_used: 0,
+        }
+    }
+
+    #[test]
+    fn assert_tx_failed_accepts_reverted_and_rejected_transactions() {
+        let reverted = block_with_result(Ok(tx_output(
+            ExecutionResult::Revert(vec![]),
+            42,
+            7,
+        )));
+        assert_tx_failed!(reverted, 0);
+
+        let rejected = block_with_result(Err(InvalidTransaction::LackOfFundForMaxFee {
+            fee: U256::from(2_u64),
+            balance: U256::from(1_u64),
+        }));
+        assert_tx_failed!(rejected, 0);
+    }
+
+    #[test]
+    fn assert_tx_rejected_rejects_evm_reverts() {
+        let reverted = block_with_result(Ok(tx_output(
+            ExecutionResult::Revert(vec![]),
+            42,
+            7,
+        )));
+        let panic = std::panic::catch_unwind(|| assert_tx_rejected!(reverted, 0));
+        assert!(panic.is_err(), "reverted tx must not satisfy assert_tx_rejected!");
+    }
+
+    #[test]
+    fn assert_gas_used_macros_check_gas_used_field() {
+        let output = block_with_result(Ok(tx_output(
+            ExecutionResult::Success(ExecutionOutput::Call(vec![])),
+            120,
+            5,
+        )));
+
+        assert_gas_used_lt!(output, 0, 121);
+        assert_gas_used_gt!(output, 0, 119);
+        assert_gas_used_between!(output, 0, 120, 121);
+
+        let wrong_metric = std::panic::catch_unwind(|| assert_gas_used_lt!(output, 0, 100));
+        assert!(
+            wrong_metric.is_err(),
+            "assert_gas_used_* must compare gas_used, not computational_native_used"
+        );
+    }
+
+    #[test]
+    fn assert_computational_native_used_macros_check_native_metric() {
+        let output = block_with_result(Ok(tx_output(
+            ExecutionResult::Success(ExecutionOutput::Call(vec![])),
+            120,
+            5,
+        )));
+
+        assert_computational_native_used_lt!(output, 0, 6);
+        assert_computational_native_used_gt!(output, 0, 4);
+        assert_computational_native_used_between!(output, 0, 5, 6);
+
+        let wrong_metric = std::panic::catch_unwind(|| {
+            assert_computational_native_used_lt!(output, 0, 5)
+        });
+        assert!(
+            wrong_metric.is_err(),
+            "assert_computational_native_used_* must compare computational_native_used"
+        );
+    }
+
+    #[test]
+    fn assert_account_macros_work_with_testing_framework_addresses() {
+        let mut framework = crate::TestingFramework::new().with_balance(Address::ZERO, U256::from(7));
+
+        assert_account_balance!(framework, Address::ZERO, U256::from(7_u64));
+        assert_nonce!(framework, Address::ZERO, 0_u64);
+    }
 }
