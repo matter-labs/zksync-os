@@ -311,7 +311,7 @@ mod test {
     fn test_truncated_eip1559_fails() {
         let mut input = raw_eip1559_chain1();
         // drop the last byte to truncate the signature
-        input.pop();
+        input.truncate(input.len() - 1);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
         let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
         assert!(result.is_err(), "truncated EIP-1559 tx must be rejected");
@@ -321,7 +321,7 @@ mod test {
     #[test]
     fn test_truncated_eip2930_fails() {
         let mut input = raw_eip2930_chain1();
-        input.pop();
+        input.truncate(input.len() - 1);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
         let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
         assert!(result.is_err(), "truncated EIP-2930 tx must be rejected");
@@ -331,7 +331,7 @@ mod test {
     #[test]
     fn test_truncated_legacy_fails() {
         let mut input = raw_legacy_chain1();
-        input.pop();
+        input.truncate(input.len() - 1);
         let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
         let result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
         assert!(result.is_err(), "truncated legacy tx must be rejected");
@@ -349,7 +349,7 @@ mod test {
         // (byte_offset, replacement_value): structural mutations targeting fields
         // that both parsers are expected to validate.
         let mutations: &[(usize, u8)] = &[
-            // Corrupt the outer list length (bytes 2-4 encode payload length)
+            // Corrupt the outer list length (bytes 2-3 encode payload length after the 0xf9 marker)
             (2, 0x00),
             // Flip a byte in the calldata body (should not affect structural validity)
             (100, base[100] ^ 0xff),
