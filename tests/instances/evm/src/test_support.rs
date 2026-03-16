@@ -12,11 +12,7 @@ pub(super) fn new_tester() -> TestingFramework<false> {
     TestingFramework::new().with_run_config(run_config::forward_only())
 }
 
-pub(super) fn call_tx(
-    signer: PrivateKeySigner,
-    to: Address,
-    gas_limit: u64,
-) -> ZKsyncTxEnvelope {
+pub(super) fn call_tx(signer: PrivateKeySigner, to: Address, gas_limit: u64) -> ZKsyncTxEnvelope {
     call_tx_with(
         signer,
         to,

@@ -3,7 +3,9 @@
 use crate::test_support::{call_tx, call_tx_with, new_tester};
 use rig::alloy::primitives::{address, U256 as AlloyU256};
 use rig::alloy::signers::local::PrivateKeySigner;
-use rig::constants::{CALL_GAS_LIMIT, DEFAULT_BALANCE, DEFAULT_MAX_FEE, DEFAULT_PRIORITY_FEE, TEST_CHAIN_ID};
+use rig::constants::{
+    CALL_GAS_LIMIT, DEFAULT_BALANCE, DEFAULT_MAX_FEE, DEFAULT_PRIORITY_FEE, TEST_CHAIN_ID,
+};
 use rig::ruint::aliases::U256;
 use rig::{assert_tx_reverted, assert_tx_success};
 

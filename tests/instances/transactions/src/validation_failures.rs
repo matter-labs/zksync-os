@@ -39,11 +39,7 @@ fn call_tx(
     ZKsyncTxEnvelope::from_eth_tx(tx, signer)
 }
 
-fn create_tx(
-    signer: PrivateKeySigner,
-    gas_limit: u64,
-    init_code: Vec<u8>,
-) -> ZKsyncTxEnvelope {
+fn create_tx(signer: PrivateKeySigner, gas_limit: u64, init_code: Vec<u8>) -> ZKsyncTxEnvelope {
     let tx = TxEip1559 {
         chain_id: TEST_CHAIN_ID,
         nonce: 0,
