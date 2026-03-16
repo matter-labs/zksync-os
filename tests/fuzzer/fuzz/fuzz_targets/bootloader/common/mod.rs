@@ -42,7 +42,7 @@ pub(crate) struct TransactionData {
 }
 
 impl TransactionData {
-    fn to_zk_bytes(&self) -> Vec<u8> {
+    fn to_zk_bytes(&self) -> Option<Vec<u8>> {
         // ABI tx head has 19 words:
         // 14 static fields + 5 dynamic offsets.
         let mut head = Vec::<[u8; 32]>::with_capacity(19);
@@ -63,18 +63,18 @@ impl TransactionData {
         }
 
         let head_size = 19 * 32;
-        abi_push_bytes(&mut head, &mut tail, &self.data, head_size);
-        abi_push_bytes(&mut head, &mut tail, &self.signature, head_size);
-        abi_push_bytes32_array(&mut head, &mut tail, &self.factory_deps, head_size);
-        abi_push_bytes(&mut head, &mut tail, &self.paymaster_input, head_size);
-        abi_push_bytes(&mut head, &mut tail, &self.reserved_dynamic, head_size);
+        abi_push_bytes(&mut head, &mut tail, &self.data, head_size)?;
+        abi_push_bytes(&mut head, &mut tail, &self.signature, head_size)?;
+        abi_push_bytes32_array(&mut head, &mut tail, &self.factory_deps, head_size)?;
+        abi_push_bytes(&mut head, &mut tail, &self.paymaster_input, head_size)?;
+        abi_push_bytes(&mut head, &mut tail, &self.reserved_dynamic, head_size)?;
 
         let mut out = Vec::with_capacity(head_size + tail.len());
         for w in head {
             out.extend_from_slice(&w);
         }
         out.extend_from_slice(&tail);
-        out
+        Some(out)
     }
 }
 
@@ -225,7 +225,9 @@ pub fn mock_oracle_balance(
     )
 }
 
-pub(crate) fn serialize_zksync_transaction<A: Allocator>(tx: &AbiEncodedTransaction<A>) -> Vec<u8> {
+pub(crate) fn serialize_zksync_transaction<A: Allocator>(
+    tx: &AbiEncodedTransaction<A>,
+) -> Option<Vec<u8>> {
     let tx_data = TransactionData::from(tx);
     tx_data.to_zk_bytes()
 }
@@ -251,7 +253,9 @@ pub fn mutate_transaction(data: &mut [u8], size: usize, max_size: usize, seed: u
     tx_data.reserved[2] = U256::ZERO;
     tx_data.reserved[3] = U256::ZERO;
 
-    let serialized_tx = tx_data.to_zk_bytes();
+    let Some(serialized_tx) = tx_data.to_zk_bytes() else {
+        return size;
+    };
     if serialized_tx.len() > max_size || serialized_tx.len() > data.len() {
         return size;
     }
@@ -263,7 +267,9 @@ pub fn mutate_transaction(data: &mut [u8], size: usize, max_size: usize, seed: u
     serialized_tx.len()
 }
 
-fn parse_abi_encoded_transaction(data: &[u8]) -> Result<AbiEncodedTransaction<Global>, ()> {
+pub(crate) fn parse_abi_encoded_transaction(
+    data: &[u8],
+) -> Result<AbiEncodedTransaction<Global>, ()> {
     let buffer = UsizeAlignedByteBox::from_slice_in(data, Global);
     AbiEncodedTransaction::try_from_buffer(buffer)
 }
@@ -352,7 +358,11 @@ fn mutate_u32_field(num: U256, rng: &mut StdRng) -> U256 {
 
 fn mutate_low_bytes(num: U256, bytes_to_mutate: usize, rng: &mut StdRng) -> U256 {
     let mut mutated_bytes = num.to_be_bytes();
-    let start = 32usize.saturating_sub(bytes_to_mutate);
+    let bytes_to_mutate = bytes_to_mutate.min(mutated_bytes.len());
+    if bytes_to_mutate == 0 {
+        return num;
+    }
+    let start = mutated_bytes.len() - bytes_to_mutate;
     let idx = rng.gen_range(start..mutated_bytes.len());
     mutated_bytes[idx] ^= rng.gen::<u8>();
     U256::from_be_bytes(mutated_bytes)
@@ -400,8 +410,8 @@ fn pad32(v: &mut Vec<u8>) {
     }
 }
 
-fn clamp_to_u32(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
+fn checked_u32(value: usize) -> Option<u32> {
+    u32::try_from(value).ok()
 }
 
 // Push a dynamic `bytes` arg: put its offset in head, then tail = len + data + pad
@@ -410,12 +420,13 @@ pub(crate) fn abi_push_bytes(
     tail: &mut Vec<u8>,
     data: &[u8],
     head_size_bytes: usize,
-) {
-    let offset = clamp_to_u32(head_size_bytes + tail.len());
+) -> Option<()> {
+    let offset = checked_u32(head_size_bytes + tail.len())?;
     head.push(enc_u32(offset));
-    tail.extend_from_slice(&enc_u32(clamp_to_u32(data.len())));
+    tail.extend_from_slice(&enc_u32(checked_u32(data.len())?));
     tail.extend_from_slice(data);
     pad32(tail);
+    Some(())
 }
 
 // Push a dynamic `bytes32[]` arg
@@ -424,11 +435,12 @@ pub(crate) fn abi_push_bytes32_array(
     tail: &mut Vec<u8>,
     items: &[[u8; 32]],
     head_size_bytes: usize,
-) {
-    let offset = clamp_to_u32(head_size_bytes + tail.len());
+) -> Option<()> {
+    let offset = checked_u32(head_size_bytes + tail.len())?;
     head.push(enc_u32(offset));
-    tail.extend_from_slice(&enc_u32(clamp_to_u32(items.len())));
+    tail.extend_from_slice(&enc_u32(checked_u32(items.len())?));
     for it in items {
         tail.extend_from_slice(it);
     }
+    Some(())
 }
