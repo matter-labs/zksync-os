@@ -14,7 +14,7 @@ pub struct StorageAccessRecord<IOTypes: SystemIOTypesConfig> {
     pub expected_as_new_in_state: bool,
 }
 
-use crate::common_structs::{WarmStorageKey, WarmStorageValue};
+use crate::common_structs::{StorageSlotKey, StorageSlotValue};
 
 ///
 /// Minimal view of the state root/commitment.
@@ -27,7 +27,7 @@ pub trait StateRootView<IOTypes: SystemIOTypesConfig>:
     fn verify_and_apply_batch<O: IOOracle, A: Allocator + Clone + Default>(
         &mut self,
         oracle: &mut O,
-        source: impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone,
+        source: impl Iterator<Item = (StorageSlotKey, StorageSlotValue)> + Clone,
         allocator: A,
         logger: &mut impl Logger,
     ) -> Result<(), InternalError>;

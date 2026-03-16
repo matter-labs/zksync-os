@@ -9,7 +9,7 @@ use basic_system::system_implementation::flat_storage_model::{
 use basic_system::system_implementation::system::FullIO;
 use core::alloc::Allocator;
 use crypto::blake2s::Blake2s256;
-use zk_ee::common_structs::{ProofData, WarmStorageKey};
+use zk_ee::common_structs::{ProofData, StorageSlotKey};
 use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
@@ -75,7 +75,7 @@ where
         io.flush_caches(result_keeper);
 
         result_keeper.storage_diffs(io.storage.storage_cache.net_diffs_iter().map(|(k, v)| {
-            let WarmStorageKey { address, key } = k;
+            let StorageSlotKey { address, key } = k;
             let value = v.current_value;
             (address, key, value)
         }));

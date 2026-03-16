@@ -26,7 +26,7 @@ use crypto::MiniDigest;
 use either::Either;
 use zk_ee::common_structs::derive_flat_storage_key_with_hasher;
 use zk_ee::common_structs::state_root_view::StateRootView;
-use zk_ee::common_structs::{WarmStorageKey, WarmStorageValue};
+use zk_ee::common_structs::{StorageSlotKey, StorageSlotValue};
 use zk_ee::oracle::query_ids::STATE_AND_MERKLE_PATHS_SUBSPACE_MASK;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::utils::exact_size_chain::{ExactSizeChain, ExactSizeChainN};
@@ -186,7 +186,7 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
     fn verify_and_apply_batch<'a, O: IOOracle, A: Allocator + Clone + Default>(
         &mut self,
         oracle: &mut O,
-        source: impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone,
+        source: impl Iterator<Item = (StorageSlotKey, StorageSlotValue)> + Clone,
         allocator: A,
         logger: &mut impl Logger,
     ) -> Result<(), InternalError> {
@@ -1998,7 +1998,7 @@ mod test {
 
     fn test_verifying_batch_proof(
         tree: &mut TestingTree<false>,
-        entries: &[(WarmStorageKey, Option<Bytes32>)],
+        entries: &[(StorageSlotKey, Option<Bytes32>)],
     ) {
         let mut tree_commitment = FlatStorageCommitment::<TESTING_TREE_HEIGHT> {
             root: *tree.root(),
@@ -2010,7 +2010,7 @@ mod test {
             let initial_value = tree.get_value(&flat_key);
             let is_new_storage_slot = initial_value.is_none();
             let initial_value = initial_value.unwrap_or_default();
-            let enriched_value = WarmStorageValue {
+            let enriched_value = StorageSlotValue {
                 initial_value,
                 current_value: new_value.as_ref().copied().unwrap_or(initial_value),
                 initial_value_used: true,
@@ -2044,19 +2044,19 @@ mod test {
 
     #[test]
     fn verifying_small_batch_proof() {
-        let key_0 = WarmStorageKey {
+        let key_0 = StorageSlotKey {
             address: B160::ZERO,
             key: Bytes32::zero(),
         };
-        let key_1 = WarmStorageKey {
+        let key_1 = StorageSlotKey {
             address: B160::default(),
             key: Bytes32::from_byte_fill(1),
         };
-        let key_2 = WarmStorageKey {
+        let key_2 = StorageSlotKey {
             address: B160::default(),
             key: Bytes32::from_byte_fill(2),
         };
-        let key_f = WarmStorageKey {
+        let key_f = StorageSlotKey {
             address: B160::default(),
             key: Bytes32::from_byte_fill(0x0f),
         };
@@ -2106,21 +2106,21 @@ mod test {
         uniform_bytes().prop_filter("zero", |bytes| !bytes.is_zero())
     }
 
-    fn uniform_full_key() -> impl Strategy<Value = WarmStorageKey> {
+    fn uniform_full_key() -> impl Strategy<Value = StorageSlotKey> {
         let uniform_address =
             proptest::array::uniform20(proptest::num::u8::ANY).prop_map(B160::from_be_bytes);
         (uniform_address, uniform_bytes())
-            .prop_map(|(address, key)| WarmStorageKey { address, key })
+            .prop_map(|(address, key)| StorageSlotKey { address, key })
     }
 
-    fn gen_entries() -> impl Strategy<Value = Vec<(WarmStorageKey, Option<Bytes32>)>> {
+    fn gen_entries() -> impl Strategy<Value = Vec<(StorageSlotKey, Option<Bytes32>)>> {
         let value = proptest::option::of(non_zero_bytes());
         proptest::collection::vec((uniform_full_key(), value), 0..=100)
     }
 
     fn gen_previous_entries(
         size: ops::Range<usize>,
-    ) -> impl Strategy<Value = Vec<(WarmStorageKey, Bytes32)>> {
+    ) -> impl Strategy<Value = Vec<(StorageSlotKey, Bytes32)>> {
         proptest::collection::vec((uniform_full_key(), uniform_bytes()), size)
     }
 

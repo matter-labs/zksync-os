@@ -13,7 +13,7 @@ use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{
-    common_structs::{WarmStorageKey, WarmStorageValue},
+    common_structs::{StorageSlotKey, StorageSlotValue},
     memory::stack_trait::StackFactory,
     system::{errors::system::SystemError, Resources},
     types_config::{EthereumIOTypesConfig, SystemIOTypesConfig},
@@ -36,7 +36,7 @@ pub struct NewStorageWithAccountPropertiesUnderHash<
     const M: usize,
     R: Resources,
     P: StorageAccessPolicy<R, Bytes32>,
->(pub GenericPubdataAwarePlainStorage<WarmStorageKey, Bytes32, A, SF, M, R, P>);
+>(pub GenericPubdataAwarePlainStorage<StorageSlotKey, Bytes32, A, SF, M, R, P>);
 
 impl<
         A: Allocator + Clone,
@@ -57,7 +57,7 @@ impl<
         key: &<Self::IOTypes as SystemIOTypesConfig>::StorageKey,
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageKey, SystemError> {
-        let key = WarmStorageKey {
+        let key = StorageSlotKey {
             address: *address,
             key: *key,
         };
@@ -76,7 +76,7 @@ impl<
         // TODO(EVM-1076): use a different low-level function to avoid creating pubdata
         // and merkle proof obligations until we actually read the value
 
-        let key = WarmStorageKey {
+        let key = StorageSlotKey {
             address: *address,
             key: *key,
         };
@@ -94,7 +94,7 @@ impl<
         new_value: &<Self::IOTypes as SystemIOTypesConfig>::StorageValue,
         oracle: &mut impl IOOracle,
     ) -> Result<<Self::IOTypes as SystemIOTypesConfig>::StorageValue, SystemError> {
-        let key = WarmStorageKey {
+        let key = StorageSlotKey {
             address: *address,
             key: *key,
         };
@@ -123,7 +123,7 @@ impl<
 
         // we just need to create a proper access function
 
-        let key = WarmStorageKey {
+        let key = StorageSlotKey {
             address: ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
             key,
         };
@@ -154,7 +154,7 @@ impl<
 
         let key = address_into_special_storage_key(address);
 
-        let key = WarmStorageKey {
+        let key = StorageSlotKey {
             address: ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
             key,
         };
@@ -218,7 +218,7 @@ impl<
 {
     pub fn iter_as_storage_types(
         &self,
-    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SF, M, R, P>
+    ) -> impl Iterator<Item = (StorageSlotKey, StorageSlotValue)> + Clone + use<'_, A, SF, M, R, P>
     {
         self.0.cache.iter().map(|item| {
             let is_new_storage_slot = item.key_properties().is_new_element();
@@ -227,7 +227,7 @@ impl<
             let initial_record = item.initial();
             (
                 *item.key(),
-                WarmStorageValue {
+                StorageSlotValue {
                     current_value: *current_record.value(),
                     is_new_storage_slot,
                     initial_value: *initial_record.value(),
@@ -243,7 +243,7 @@ impl<
     ///
     pub fn net_accesses_iter(
         &self,
-    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + Clone + use<'_, A, SF, M, R, P>
+    ) -> impl Iterator<Item = (StorageSlotKey, StorageSlotValue)> + Clone + use<'_, A, SF, M, R, P>
     {
         self.iter_as_storage_types()
     }
@@ -253,7 +253,7 @@ impl<
     ///
     pub fn net_diffs_iter(
         &self,
-    ) -> impl Iterator<Item = (WarmStorageKey, WarmStorageValue)> + use<'_, A, SF, M, R, P> {
+    ) -> impl Iterator<Item = (StorageSlotKey, StorageSlotValue)> + use<'_, A, SF, M, R, P> {
         self.iter_as_storage_types()
             .filter(|(_, v)| v.current_value != v.initial_value)
     }

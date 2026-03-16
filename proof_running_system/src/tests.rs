@@ -13,18 +13,18 @@ use talc::Talc;
 use zk_ee::utils::Bytes32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub struct WarmStorageKey {
+pub struct StorageSlotKey {
     pub address: B160,
     pub key: Bytes32,
 }
 
-impl PartialOrd for WarmStorageKey {
+impl PartialOrd for StorageSlotKey {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for WarmStorageKey {
+impl Ord for StorageSlotKey {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         match self.address.as_limbs().cmp(other.address.as_limbs()) {
             core::cmp::Ordering::Equal => self.key.cmp(&other.key),
@@ -68,7 +68,7 @@ struct LeafNode<K, V> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub struct WarmStorageValue {
+pub struct StorageSlotValue {
     pub initial_value: Bytes32,
     pub current_value: Bytes32,
     pub changes_stack_depth: usize,
