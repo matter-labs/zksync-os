@@ -33,17 +33,38 @@ fn revert_does_not_mutate_storage() {
 
 #[test]
 fn tstore_reverts_on_frame_revert() {
-    let inner_bytecode = evm_bytecode::tstore_u8_then_revert(0, 1);
-    let inner_addr = address!("0000000000000000000000000000000000000d11");
-
-    let outer_addr = address!("0000000000000000000000000000000000000d12");
-    let outer_bytecode = BytecodeBuilder::new()
-        .call_simple(inner_addr)
-        .pop()
+    let inner_bytecode = BytecodeBuilder::new()
+        .calldatasize()
+        .push0()
+        .eq()
+        .push_u8(0x0d)
+        .jumpi()
+        .push_u8(1)
+        .push0()
+        .tstore()
+        .push0()
+        .push0()
+        .revert()
+        .jumpdest()
         .push0()
         .tload()
         .push0()
         .mstore()
+        .push_u8(0x20)
+        .push0()
+        .return_()
+        .finish();
+    let inner_addr = address!("0000000000000000000000000000000000000d11");
+
+    let outer_addr = address!("0000000000000000000000000000000000000d12");
+    let outer_bytecode = BytecodeBuilder::new()
+        .push_u8(1)
+        .push0()
+        .mstore8()
+        .call_with_gas(inner_addr, 0, 1, 0, 0)
+        .pop()
+        .call_with_gas(inner_addr, 0, 0, 0, 0x20)
+        .pop()
         .push_u8(0x20)
         .push0()
         .return_()
@@ -65,7 +86,7 @@ fn tstore_reverts_on_frame_revert() {
     let returned = tx_out.as_returned_bytes();
     assert_eq!(
         returned, &[0u8; 32],
-        "transient storage written in a reverted inner frame must be rolled back"
+        "transient storage written in a reverted inner frame must be rolled back before a second call to the same contract"
     );
 }
 

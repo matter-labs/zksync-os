@@ -81,16 +81,51 @@ impl BytecodeBuilder {
         self
     }
 
+    fn push_small(self, value: u8) -> Self {
+        if value == 0 {
+            self.push0()
+        } else {
+            self.push_u8(value)
+        }
+    }
+
     /// Appends a zero-arg, zero-value `CALL` that forwards the current gas.
     ///
     /// Stack setup emitted:
     /// `out_size=0, out_offset=0, in_size=0, in_offset=0, value=0, callee, gas, CALL`
     pub fn call_simple(self, callee: Address) -> Self {
-        self.push0_n(5).push_address(callee).gas().call()
+        self.call_with_gas(callee, 0, 0, 0, 0)
+    }
+
+    /// Appends a zero-value `CALL` that forwards the current gas.
+    ///
+    /// The offsets and sizes are assumed to fit in a single byte because this
+    /// helper is only meant for tiny hand-authored test snippets.
+    pub fn call_with_gas(
+        self,
+        callee: Address,
+        input_offset: u8,
+        input_size: u8,
+        output_offset: u8,
+        output_size: u8,
+    ) -> Self {
+        self.push_small(output_size)
+            .push_small(output_offset)
+            .push_small(input_size)
+            .push_small(input_offset)
+            .push0()
+            .push_address(callee)
+            .gas()
+            .call()
     }
 
     pub fn mstore(mut self) -> Self {
         self.bytes.push(0x52);
+        self
+    }
+
+    pub fn mstore8(mut self) -> Self {
+        self.bytes.push(0x53);
         self
     }
 
@@ -124,8 +159,23 @@ impl BytecodeBuilder {
         self
     }
 
+    pub fn calldatasize(mut self) -> Self {
+        self.bytes.push(0x36);
+        self
+    }
+
+    pub fn eq(mut self) -> Self {
+        self.bytes.push(0x14);
+        self
+    }
+
     pub fn selfdestruct(mut self) -> Self {
         self.bytes.push(0xff);
+        self
+    }
+
+    pub fn jumpi(mut self) -> Self {
+        self.bytes.push(0x57);
         self
     }
 
@@ -242,6 +292,23 @@ mod tests {
                 0x5f, 0x5f, 0x5f, 0x5f, 0x5f, 0x73, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x05, 0x5a, 0xf1,
                 0x50, 0x5f, 0x5f, 0xf3
+            ]
+        );
+    }
+
+    #[test]
+    fn builder_supports_call_with_io_ranges() {
+        let inner = address!("0000000000000000000000000000000000000d11");
+        let bytecode = BytecodeBuilder::new()
+            .call_with_gas(inner, 0, 1, 0, 0x20)
+            .finish();
+
+        assert_eq!(
+            bytecode,
+            vec![
+                0x60, 0x20, 0x5f, 0x60, 0x01, 0x5f, 0x5f, 0x73, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d, 0x11,
+                0x5a, 0xf1
             ]
         );
     }
