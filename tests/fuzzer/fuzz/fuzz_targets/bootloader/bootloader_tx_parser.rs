@@ -26,7 +26,6 @@ fn fuzz(data: &[u8]) {
     let _ = transaction.encoding(transaction.paymaster_input.clone());
     let _ = transaction.encoding(transaction.signature.clone());
     let _ = transaction.len();
-    let _ = transaction.sig_parity_r_s();
     let _ = transaction.calculate_hash(&mut inf_resources);
     let _ = serialize_zksync_transaction(&transaction);
 }
