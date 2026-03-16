@@ -16,7 +16,7 @@ impl BytecodeBuilder {
     }
 
     pub fn push0_n(mut self, count: usize) -> Self {
-        self.bytes.extend(std::iter::repeat(0x5f).take(count));
+        self.bytes.extend(std::iter::repeat_n(0x5f, count));
         self
     }
 
