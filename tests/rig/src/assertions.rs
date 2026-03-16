@@ -446,11 +446,7 @@ mod tests {
 
     #[test]
     fn assert_tx_failed_accepts_reverted_and_rejected_transactions() {
-        let reverted = block_with_result(Ok(tx_output(
-            ExecutionResult::Revert(vec![]),
-            42,
-            7,
-        )));
+        let reverted = block_with_result(Ok(tx_output(ExecutionResult::Revert(vec![]), 42, 7)));
         assert_tx_failed!(reverted, 0);
 
         let rejected = block_with_result(Err(InvalidTransaction::LackOfFundForMaxFee {
@@ -462,13 +458,12 @@ mod tests {
 
     #[test]
     fn assert_tx_rejected_rejects_evm_reverts() {
-        let reverted = block_with_result(Ok(tx_output(
-            ExecutionResult::Revert(vec![]),
-            42,
-            7,
-        )));
+        let reverted = block_with_result(Ok(tx_output(ExecutionResult::Revert(vec![]), 42, 7)));
         let panic = std::panic::catch_unwind(|| assert_tx_rejected!(reverted, 0));
-        assert!(panic.is_err(), "reverted tx must not satisfy assert_tx_rejected!");
+        assert!(
+            panic.is_err(),
+            "reverted tx must not satisfy assert_tx_rejected!"
+        );
     }
 
     #[test]
@@ -502,9 +497,8 @@ mod tests {
         assert_computational_native_used_gt!(output, 0, 4);
         assert_computational_native_used_between!(output, 0, 5, 6);
 
-        let wrong_metric = std::panic::catch_unwind(|| {
-            assert_computational_native_used_lt!(output, 0, 5)
-        });
+        let wrong_metric =
+            std::panic::catch_unwind(|| assert_computational_native_used_lt!(output, 0, 5));
         assert!(
             wrong_metric.is_err(),
             "assert_computational_native_used_* must compare computational_native_used"
@@ -513,7 +507,8 @@ mod tests {
 
     #[test]
     fn assert_account_macros_work_with_testing_framework_addresses() {
-        let mut framework = crate::TestingFramework::new().with_balance(Address::ZERO, U256::from(7));
+        let mut framework =
+            crate::TestingFramework::new().with_balance(Address::ZERO, U256::from(7));
 
         assert_account_balance!(framework, Address::ZERO, U256::from(7_u64));
         assert_nonce!(framework, Address::ZERO, 0_u64);
