@@ -20,6 +20,7 @@ jobs:
     runs-on: [matterlabs-ci-runner-highmem]
     permissions:
       contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,8 +111,13 @@ jobs:
           done
           MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
           pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
-          # Save comparison result to file for the comment workflow
+          # Save comparison to file (for artifact + comment workflow fallback)
           python3 bench_scripts/compare_bench.py "[${pairs}]" > bench_results/comparison.md
+          # Also write to step output for direct comment
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "result<<$EOF" >> $GITHUB_OUTPUT
+          cat bench_results/comparison.md >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
 
       - name: Save PR number
         run: echo "${{ github.event.pull_request.number }}" > bench_results/pr_number.txt
@@ -120,3 +126,15 @@ jobs:
         with:
           name: bench_results
           path: bench_results/
+
+      - name: Comment on PR
+        # For fork PRs the token is read-only, so this will fail.
+        # bench-comment.yml (workflow_run) handles that case.
+        continue-on-error: true
+        uses: thollander/actions-comment-pull-request@fabd468d3a1a0b97feee5f6b9e499eab0dd903f6 # v2.5.0
+        with:
+          message: |
+            ${{ steps.comparison.outputs.result }}
+          comment_tag: vm-performance-changes
+          mode: recreate
+          create_if_not_exists: true
