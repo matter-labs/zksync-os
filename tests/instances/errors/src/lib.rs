@@ -2,17 +2,81 @@
 
 #![cfg(test)]
 
-use rig::alloy::primitives::{address, U256 as AlloyU256};
+use rig::alloy::consensus::TxEip1559;
+use rig::alloy::primitives::{address, Address, TxKind, U256 as AlloyU256};
 use rig::alloy::signers::local::PrivateKeySigner;
-use rig::builder::TxBuilder;
 use rig::constants::*;
 use rig::ruint::aliases::U256;
 use rig::run_config;
 use rig::TestingFramework;
 use rig::{assert_tx_failed, assert_tx_reverted, assert_tx_success};
+use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 fn new_tester() -> TestingFramework<false> {
     TestingFramework::new().with_run_config(run_config::forward_only())
+}
+
+fn call_tx(
+    signer: PrivateKeySigner,
+    to: Address,
+    gas_limit: u64,
+) -> ZKsyncTxEnvelope {
+    call_tx_with(
+        signer,
+        to,
+        0,
+        gas_limit,
+        AlloyU256::ZERO,
+        vec![],
+        DEFAULT_MAX_FEE,
+        DEFAULT_PRIORITY_FEE,
+        TEST_CHAIN_ID,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn call_tx_with(
+    signer: PrivateKeySigner,
+    to: Address,
+    nonce: u64,
+    gas_limit: u64,
+    value: AlloyU256,
+    calldata: Vec<u8>,
+    max_fee_per_gas: u128,
+    max_priority_fee_per_gas: u128,
+    chain_id: u64,
+) -> ZKsyncTxEnvelope {
+    let tx = TxEip1559 {
+        chain_id,
+        nonce,
+        max_fee_per_gas,
+        max_priority_fee_per_gas,
+        gas_limit,
+        to: TxKind::Call(to),
+        value,
+        access_list: Default::default(),
+        input: calldata.into(),
+    };
+    ZKsyncTxEnvelope::from_eth_tx(tx, signer)
+}
+
+fn create_tx(
+    signer: PrivateKeySigner,
+    gas_limit: u64,
+    init_code: Vec<u8>,
+) -> ZKsyncTxEnvelope {
+    let tx = TxEip1559 {
+        chain_id: TEST_CHAIN_ID,
+        nonce: 0,
+        max_fee_per_gas: DEFAULT_MAX_FEE,
+        max_priority_fee_per_gas: DEFAULT_PRIORITY_FEE,
+        gas_limit,
+        to: TxKind::Create,
+        value: AlloyU256::ZERO,
+        access_list: Default::default(),
+        input: init_code.into(),
+    };
+    ZKsyncTxEnvelope::from_eth_tx(tx, signer)
 }
 
 #[test]
@@ -23,11 +87,7 @@ fn out_of_gas_simple_transfer() {
 
     let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
 
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(recipient)
-        .gas_limit(1)
-        .build();
+    let tx = call_tx(signer, recipient, 1);
     let output = tester.execute_block(vec![tx]);
     assert_tx_failed!(output, 0);
 }
@@ -44,11 +104,7 @@ fn out_of_gas_mid_execution() {
         .with_balance(sender, U256::from(DEFAULT_BALANCE))
         .with_evm_contract(contract, &loop_bytecode);
 
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(contract)
-        .gas_limit(25_000)
-        .build();
+    let tx = call_tx(signer, contract, 25_000);
     let output = tester.execute_block(vec![tx]);
     assert_tx_reverted!(output, 0);
 }
@@ -61,12 +117,7 @@ fn out_of_gas_deployment() {
 
     let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
 
-    let tx = TxBuilder::new()
-        .create()
-        .from(signer)
-        .calldata(deploy_bytecode)
-        .gas_limit(5_000)
-        .build();
+    let tx = create_tx(signer, 5_000, deploy_bytecode);
 
     let output = tester.execute_block(vec![tx]);
     assert_tx_failed!(output, 0);
@@ -80,12 +131,17 @@ fn wrong_chain_id_rejected() {
 
     let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
 
-    let tx = TxBuilder::new()
-        .chain_id(1)
-        .from(signer)
-        .to(recipient)
-        .gas_limit(TRANSFER_GAS_LIMIT)
-        .build();
+    let tx = call_tx_with(
+        signer,
+        recipient,
+        0,
+        TRANSFER_GAS_LIMIT,
+        AlloyU256::ZERO,
+        vec![],
+        DEFAULT_MAX_FEE,
+        DEFAULT_PRIORITY_FEE,
+        1,
+    );
     let output = tester.execute_block(vec![tx]);
     assert_tx_failed!(output, 0);
 }
@@ -98,21 +154,31 @@ fn nonce_too_low_rejected() {
 
     let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
 
-    let tx0 = TxBuilder::new()
-        .from(signer.clone())
-        .to(recipient)
-        .nonce(0)
-        .gas_limit(TRANSFER_GAS_LIMIT)
-        .build();
+    let tx0 = call_tx_with(
+        signer.clone(),
+        recipient,
+        0,
+        TRANSFER_GAS_LIMIT,
+        AlloyU256::ZERO,
+        vec![],
+        DEFAULT_MAX_FEE,
+        DEFAULT_PRIORITY_FEE,
+        TEST_CHAIN_ID,
+    );
     let out0 = tester.execute_block(vec![tx0]);
     assert_tx_success!(out0, 0);
 
-    let tx_low = TxBuilder::new()
-        .from(signer)
-        .to(recipient)
-        .nonce(0)
-        .gas_limit(TRANSFER_GAS_LIMIT)
-        .build();
+    let tx_low = call_tx_with(
+        signer,
+        recipient,
+        0,
+        TRANSFER_GAS_LIMIT,
+        AlloyU256::ZERO,
+        vec![],
+        DEFAULT_MAX_FEE,
+        DEFAULT_PRIORITY_FEE,
+        TEST_CHAIN_ID,
+    );
     let out1 = tester.execute_block(vec![tx_low]);
     assert_tx_failed!(out1, 0);
 }
@@ -124,12 +190,17 @@ fn nonce_too_high_rejected() {
     let recipient = address!("0000000000000000000000000000000000000002");
 
     let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(recipient)
-        .nonce(5)
-        .gas_limit(TRANSFER_GAS_LIMIT)
-        .build();
+    let tx = call_tx_with(
+        signer,
+        recipient,
+        5,
+        TRANSFER_GAS_LIMIT,
+        AlloyU256::ZERO,
+        vec![],
+        DEFAULT_MAX_FEE,
+        DEFAULT_PRIORITY_FEE,
+        TEST_CHAIN_ID,
+    );
     let output = tester.execute_block(vec![tx]);
     assert_tx_failed!(output, 0);
 }
@@ -141,12 +212,17 @@ fn insufficient_balance_for_gas_rejected() {
     let recipient = address!("0000000000000000000000000000000000000002");
 
     let mut tester = new_tester().with_balance(sender, U256::from(1u64));
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(recipient)
-        .value(AlloyU256::from(1u64))
-        .gas_limit(TRANSFER_GAS_LIMIT)
-        .build();
+    let tx = call_tx_with(
+        signer,
+        recipient,
+        0,
+        TRANSFER_GAS_LIMIT,
+        AlloyU256::from(1u64),
+        vec![],
+        DEFAULT_MAX_FEE,
+        DEFAULT_PRIORITY_FEE,
+        TEST_CHAIN_ID,
+    );
     let output = tester.execute_block(vec![tx]);
     assert_tx_failed!(output, 0);
 }
@@ -158,13 +234,17 @@ fn max_fee_below_basefee_rejected() {
     let recipient = address!("0000000000000000000000000000000000000002");
 
     let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(recipient)
-        .max_fee(1)
-        .priority_fee(0)
-        .gas_limit(TRANSFER_GAS_LIMIT)
-        .build();
+    let tx = call_tx_with(
+        signer,
+        recipient,
+        0,
+        TRANSFER_GAS_LIMIT,
+        AlloyU256::ZERO,
+        vec![],
+        1,
+        0,
+        TEST_CHAIN_ID,
+    );
     let output = tester.execute_block(vec![tx]);
     assert_tx_failed!(output, 0);
 }
@@ -181,11 +261,7 @@ fn explicit_revert_no_data() {
         .with_balance(sender, U256::from(DEFAULT_BALANCE))
         .with_evm_contract(contract, &revert_bytecode);
 
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(contract)
-        .gas_limit(CALL_GAS_LIMIT)
-        .build();
+    let tx = call_tx(signer, contract, CALL_GAS_LIMIT);
     let output = tester.execute_block(vec![tx]);
     assert_tx_reverted!(output, 0);
 }
@@ -202,11 +278,7 @@ fn explicit_revert_with_data() {
         .with_balance(sender, U256::from(DEFAULT_BALANCE))
         .with_evm_contract(contract, &revert_with_data);
 
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(contract)
-        .gas_limit(CALL_GAS_LIMIT)
-        .build();
+    let tx = call_tx(signer, contract, CALL_GAS_LIMIT);
     let output = tester.execute_block(vec![tx]);
     assert_tx_reverted!(output, 0);
 
@@ -231,11 +303,7 @@ fn invalid_opcode() {
         .with_balance(sender, U256::from(DEFAULT_BALANCE))
         .with_evm_contract(contract, &invalid_bytecode);
 
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(contract)
-        .gas_limit(CALL_GAS_LIMIT)
-        .build();
+    let tx = call_tx(signer, contract, CALL_GAS_LIMIT);
     let output = tester.execute_block(vec![tx]);
     assert_tx_reverted!(output, 0);
 }
@@ -248,12 +316,17 @@ fn call_to_eoa_with_calldata_succeeds() {
 
     let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
 
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(eoa)
-        .calldata(vec![0xca, 0xfe, 0xba, 0xbe])
-        .gas_limit(CALL_GAS_LIMIT)
-        .build();
+    let tx = call_tx_with(
+        signer,
+        eoa,
+        0,
+        CALL_GAS_LIMIT,
+        AlloyU256::ZERO,
+        vec![0xca, 0xfe, 0xba, 0xbe],
+        DEFAULT_MAX_FEE,
+        DEFAULT_PRIORITY_FEE,
+        TEST_CHAIN_ID,
+    );
     let output = tester.execute_block(vec![tx]);
     assert_tx_success!(output, 0);
 }
@@ -280,11 +353,7 @@ fn nested_call_inner_reverts_outer_succeeds() {
         .with_evm_contract(inner_addr, &inner_revert)
         .with_evm_contract(outer_addr, &outer_bytecode);
 
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(outer_addr)
-        .gas_limit(200_000)
-        .build();
+    let tx = call_tx(signer, outer_addr, 200_000);
     let output = tester.execute_block(vec![tx]);
     assert_tx_success!(output, 0);
 }
@@ -297,12 +366,7 @@ fn constructor_revert_fails_deployment() {
     let sender = signer.address();
     let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
 
-    let tx = TxBuilder::new()
-        .create()
-        .from(signer)
-        .calldata(init_bytecode)
-        .gas_limit(DEPLOY_GAS_LIMIT)
-        .build();
+    let tx = create_tx(signer, DEPLOY_GAS_LIMIT, init_bytecode);
     let output = tester.execute_block(vec![tx]);
     assert_tx_reverted!(output, 0);
 }
@@ -315,12 +379,7 @@ fn zero_length_deployed_code() {
     let sender = signer.address();
     let mut tester = new_tester().with_balance(sender, U256::from(DEFAULT_BALANCE));
 
-    let tx = TxBuilder::new()
-        .create()
-        .from(signer)
-        .calldata(init_bytecode)
-        .gas_limit(DEPLOY_GAS_LIMIT)
-        .build();
+    let tx = create_tx(signer, DEPLOY_GAS_LIMIT, init_bytecode);
     let output = tester.execute_block(vec![tx]);
     assert_eq!(output.tx_results.len(), 1);
     assert_tx_success!(output, 0);
@@ -352,11 +411,7 @@ fn revert_does_not_mutate_storage() {
         .with_balance(sender, U256::from(DEFAULT_BALANCE))
         .with_evm_contract(contract, &revert_after_store);
 
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(contract)
-        .gas_limit(CALL_GAS_LIMIT)
-        .build();
+    let tx = call_tx(signer, contract, CALL_GAS_LIMIT);
     let output = tester.execute_block(vec![tx]);
 
     assert_tx_reverted!(output, 0);
@@ -404,11 +459,7 @@ fn tstore_reverts_on_frame_revert() {
         .with_evm_contract(inner_addr, &inner_bytecode)
         .with_evm_contract(outer_addr, &outer_bytecode);
 
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(outer_addr)
-        .gas_limit(CALL_GAS_LIMIT)
-        .build();
+    let tx = call_tx(signer, outer_addr, CALL_GAS_LIMIT);
 
     let output = tester.execute_block(vec![tx]);
     assert_tx_success!(output, 0);
@@ -448,11 +499,7 @@ fn selfdestruct_in_reverting_frame_no_effect() {
         .with_evm_contract(inner_addr, &inner_bytecode)
         .with_evm_contract(outer_addr, &outer_bytecode);
 
-    let tx = TxBuilder::new()
-        .from(signer)
-        .to(outer_addr)
-        .gas_limit(200_000)
-        .build();
+    let tx = call_tx(signer, outer_addr, 200_000);
 
     let output = tester.execute_block(vec![tx]);
     assert_tx_reverted!(output, 0);
