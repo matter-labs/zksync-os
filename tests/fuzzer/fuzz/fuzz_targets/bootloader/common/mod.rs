@@ -357,7 +357,7 @@ fn mutate_u32_field(num: U256, rng: &mut StdRng) -> U256 {
 }
 
 fn mutate_low_bytes(num: U256, bytes_to_mutate: usize, rng: &mut StdRng) -> U256 {
-    let mut mutated_bytes = num.to_be_bytes();
+    let mut mutated_bytes: [u8; 32] = num.to_be_bytes();
     let bytes_to_mutate = bytes_to_mutate.min(mutated_bytes.len());
     if bytes_to_mutate == 0 {
         return num;
