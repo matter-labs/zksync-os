@@ -10,7 +10,7 @@ use evm_interpreter::gas_constants::WARM_STORAGE_READ_COST;
 use evm_interpreter::ERGS_PER_GAS;
 use ruint::aliases::U256;
 use zk_ee::common_structs::history_map::CacheSnapshotId;
-use zk_ee::common_structs::WarmStorageKey;
+use zk_ee::common_structs::StorageSlotKey;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::utils::Bytes32;
 use zk_ee::{

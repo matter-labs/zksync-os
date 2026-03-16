@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use super::*;
 use crate::bootloader::block_flow::post_tx_loop_op::PostTxLoopOp;
 use basic_system::system_implementation::ethereum_storage_model::vec_trait::VecLikeCtor;
-use zk_ee::common_structs::WarmStorageKey;
+use zk_ee::common_structs::StorageSlotKey;
 
 // TODO: move to fork params
 pub const MAX_BLOBS_PER_BLOCK: usize = 9;

@@ -105,7 +105,7 @@ where
         // These two benefit from filter being applied early, so for now it's kept using internal structure
         result_keeper.basic_account_diffs(io.storage.account_cache.net_diffs_iter());
         result_keeper.storage_diffs(io.storage.storage_cache.net_diffs_iter().map(|(k, v)| {
-            let WarmStorageKey { address, key } = k;
+            let StorageSlotKey { address, key } = k;
             let value = v.current_value;
             (address, key, value)
         }));

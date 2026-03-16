@@ -24,7 +24,7 @@ use zk_ee::system::NonceSubsystemError;
 use zk_ee::system::Resources;
 use zk_ee::system::*;
 use zk_ee::{
-    common_structs::{history_map::CacheSnapshotId, WarmStorageKey},
+    common_structs::{history_map::CacheSnapshotId, StorageSlotKey},
     execution_environment_type::ExecutionEnvironmentType,
     system::{
         errors::system::SystemError, logger::Logger, AccountData, AccountDataRequest,
@@ -374,7 +374,7 @@ impl<
     }
 
     type StorageKey<'a>
-        = &'a WarmStorageKey
+        = &'a StorageSlotKey
     where
         Self: 'a;
     type StorageDiff<'a>
