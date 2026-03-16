@@ -34,7 +34,6 @@ members = [
     "tests/instances/interop",
     "tests/instances/evm",
     "tests/revm_runner",
-    "tests/instances/errors",
     "cycle_marker",
     "tests/binary_checker",
     "supporting_crates/delegated_u256",

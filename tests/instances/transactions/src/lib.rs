@@ -23,6 +23,8 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 mod l1_tx_resilience;
 mod native_charging;
+// Pre-execution transaction validation and bootloader rejection paths.
+mod validation_failures;
 
 #[test]
 fn run_base_system() {

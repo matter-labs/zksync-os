@@ -15,6 +15,15 @@ use rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 use rig::BlockContext;
 use rig::{alloy::primitives::address, ruint::aliases::U256, TestingFramework};
 
+mod test_support;
+
+// Constructor/runtime behavior during CREATE.
+mod deployment_outcomes;
+// CALL execution outcomes that are part of normal EVM runtime semantics.
+mod execution_outcomes;
+// State rollback guarantees for reverted frames.
+mod rollback_semantics;
+
 #[test]
 fn test_blockhash() {
     // Check that all the last 256 block hashes are accessible and the previous to that/
