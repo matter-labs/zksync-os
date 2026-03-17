@@ -322,3 +322,42 @@ impl<M: MemorySource> NonDeterminismCSRSource<M> for ReadWitnessSource<M> {
         self.original_source.write_with_memory_access(memory, value);
     }
 }
+
+impl IOOracle for ReadWitnessSource<DummyMemorySource> {
+    type RawIterator<'a> =
+        <ZkEENonDeterminismSource<DummyMemorySource> as IOOracle>::RawIterator<'a>;
+
+    fn raw_query<'a, I>(
+        &'a mut self,
+        query_type: u32,
+        input: &I,
+    ) -> Result<Self::RawIterator<'a>, InternalError>
+    where
+        I: UsizeSerializable + UsizeDeserializable,
+    {
+        let inner = self.original_source.raw_query(query_type, input)?;
+        // First add the length of the iterator.
+        let len = inner.len();
+        {
+            let mut read_items = self.read_items.borrow_mut();
+            // Len is multiplied by 2 to account for 32/64-bit mismatch
+            let len_u32 = u32::try_from(len * 2).expect("iterator length does not fit into u32");
+            read_items.push(len_u32);
+        }
+        let read_items = Rc::clone(&self.read_items);
+        let wrapped: Self::RawIterator<'a> = Box::new(inner.inspect(move |v| {
+            record_usize_as_u32_words(&mut read_items.borrow_mut(), *v);
+        }));
+
+        Ok(wrapped)
+    }
+}
+
+fn record_usize_as_u32_words(dst: &mut Vec<u32>, value: usize) {
+    {
+        let v = value as u64;
+        // LE
+        dst.push((v & 0xFFFF_FFFF) as u32);
+        dst.push((v >> 32) as u32);
+    }
+}
