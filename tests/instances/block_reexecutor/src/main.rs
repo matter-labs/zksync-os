@@ -6,7 +6,7 @@ use alloy::{
     rpc::types::trace::geth::CallFrame,
 };
 use anyhow::{Context, Result};
-use clap::{ArgGroup, Parser};
+use clap::{ArgGroup, Args, Parser, Subcommand};
 use std::{collections::HashMap, path::PathBuf};
 
 mod cache;
@@ -33,26 +33,51 @@ use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[derive(Parser, Debug)]
 #[command(
-    author, version,
-    about = "Re-execute blocks using external RPC",
-    group(ArgGroup::new("block_id").required(true).args(["block_hash", "block_number"])),
+    author,
+    version,
+    about = "Re-execute blocks or simulate transactions using external RPC"
 )]
-struct Args {
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Re-execute a block's transactions
+    Replay {
+        #[command(flatten)]
+        block: BlockArgs,
+    },
+    /// Simulate predefined transactions against a block's state
+    Simulate {
+        #[command(flatten)]
+        block: BlockArgs,
+        /// JSON file with predefined transactions
+        #[arg(long)]
+        transactions_file: PathBuf,
+    },
+}
+
+#[derive(Args, Debug)]
+#[command(group(ArgGroup::new("block_id").required(true).args(["block_hash", "block_number"])))]
+struct BlockArgs {
     /// RPC endpoint URL
     #[arg(long, default_value = "http://localhost:8545")]
     endpoint: String,
 
-    /// Block hash to re-execute (or to identify state for --transactions-file simulation)
+    /// Block hash (unambiguous block reference)
     #[arg(long)]
     block_hash: Option<B256>,
 
-    /// Block number to re-execute (resolved to hash via RPC; uses canonical chain history)
+    /// Block number (resolved to hash via RPC; uses canonical chain history)
     #[arg(long)]
     block_number: Option<u64>,
+}
 
-    /// JSON file with predefined transactions to simulate against the block's state
-    #[arg(long)]
-    transactions_file: Option<PathBuf>,
+enum TxSource {
+    FromBlock,
+    FromFile(PathBuf),
 }
 
 enum ReceiptCheckMode {
@@ -62,17 +87,24 @@ enum ReceiptCheckMode {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
-
+    let cli = Cli::parse();
     rig::init_logger();
 
-    println!("Starting block re-execution");
-    println!("Endpoint: {}", args.endpoint);
+    let (block_args, tx_source) = match cli.command {
+        Command::Replay { block } => (block, TxSource::FromBlock),
+        Command::Simulate {
+            block,
+            transactions_file,
+        } => (block, TxSource::FromFile(transactions_file)),
+    };
 
-    let rpc_client = RpcClient::new(args.endpoint.clone());
-    let block_hash = if let Some(hash) = args.block_hash {
+    run(block_args, tx_source)
+}
+
+fn resolve_block_hash(rpc_client: &RpcClient, args: &BlockArgs) -> Result<B256> {
+    if let Some(hash) = args.block_hash {
         println!("Block hash: {hash:?}");
-        hash
+        Ok(hash)
     } else {
         let block_number = args.block_number.expect("enforced by clap arg group");
         eprintln!(
@@ -85,8 +117,15 @@ fn main() -> Result<()> {
             "Resolved block number {} to block hash {:?}",
             block_number, resolved_hash
         );
-        resolved_hash
-    };
+        Ok(resolved_hash)
+    }
+}
+
+fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
+    println!("Endpoint: {}", block_args.endpoint);
+
+    let rpc_client = RpcClient::new(block_args.endpoint.clone());
+    let block_hash = resolve_block_hash(&rpc_client, &block_args)?;
 
     let block_params_path = block_params_cache_path(block_hash);
     let loaded = load_or_fetch_block_params(&rpc_client, block_hash, &block_params_path)?;
@@ -109,8 +148,8 @@ fn main() -> Result<()> {
     block_context.native_price = block_metadata.result.native_price;
     block_context.pubdata_price = block_metadata.result.pubdata_price_per_byte;
 
-    let (transactions, raw_transactions, receipt_check_mode) =
-        if let Some(path) = args.transactions_file.as_ref() {
+    let (transactions, raw_transactions, receipt_check_mode) = match &tx_source {
+        TxSource::FromFile(path) => {
             let (encoded, raw, tx_hashes) = load_predefined_rlp_transactions(path)?;
             let check_mode = if tx_hashes.iter().any(|hash| hash.is_some()) {
                 ReceiptCheckMode::PredefinedByHash(tx_hashes)
@@ -118,11 +157,13 @@ fn main() -> Result<()> {
                 ReceiptCheckMode::None
             };
             (encoded, raw, check_mode)
-        } else {
+        }
+        TxSource::FromBlock => {
             let raw = block.clone().get_transactions_raw()?;
             let encoded: Vec<EncodedTx> = raw.iter().cloned().map(|tx| tx.encode()).collect();
             (encoded, raw, ReceiptCheckMode::FullBlock)
-        };
+        }
+    };
 
     println!(
         "Block {} has {} transactions",
@@ -146,7 +187,7 @@ fn main() -> Result<()> {
         block_context.timestamp, block_context.gas_limit, block_context.coinbase
     );
 
-    let oracle_factory = rpc_oracle::RpcValueOracleFactory::new(args.endpoint, block_number);
+    let oracle_factory = rpc_oracle::RpcValueOracleFactory::new(block_args.endpoint, block_number);
     let (storage_cache_path, preimages_cache_path) = oracle_cache_paths(block_hash);
     let (cached_storage, cached_preimages) =
         match load_oracle_caches(&storage_cache_path, &preimages_cache_path) {
@@ -230,7 +271,8 @@ fn main() -> Result<()> {
                         Some(receipt) => expected_receipts.push((tx_idx, receipt)),
                         None => {
                             println!(
-                                "RPC returned null for receipt hash {hash:#x}; skipping receipt checks for predefined transaction mode"
+                                "RPC returned null for receipt hash {hash:#x}; \
+                                 skipping receipt checks for predefined transaction mode"
                             );
                             should_skip_check = true;
                             break;
