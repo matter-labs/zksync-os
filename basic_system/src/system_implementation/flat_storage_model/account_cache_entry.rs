@@ -11,8 +11,8 @@ use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, system::SystemError};
 use zk_ee::system::{IOResultKeeper, Resources};
 use zk_ee::types_config::EthereumIOTypesConfig;
-use zk_ee::utils::write_bytes::WriteBytes;
 use zk_ee::utils::Bytes32;
+use zk_ee::utils::write_bytes::WriteBytes;
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
@@ -138,11 +138,7 @@ pub struct AccountProperties {
 pub const fn bytecode_padding_len(deployed_len: usize) -> usize {
     let word = evm_interpreter::BYTECODE_ALIGNMENT;
     let rem = deployed_len % word;
-    if rem == 0 {
-        0
-    } else {
-        word - rem
-    }
+    if rem == 0 { 0 } else { word - rem }
 }
 
 impl AccountProperties {
@@ -205,8 +201,8 @@ impl AccountProperties {
     }
 
     pub fn compute_hash(&self) -> Bytes32 {
-        use crypto::blake2s::Blake2s256;
         use crypto::MiniDigest;
+        use crypto::blake2s::Blake2s256;
         // efficient hashing without copying
         let mut hasher = Blake2s256::new();
         hasher.update(self.versioning_data.into_u64().to_be_bytes());
@@ -389,7 +385,13 @@ impl AccountProperties {
                     })?;
                 // Only publish the raw code bytes (without padding and artifacts),
                 // since artifacts are deterministic from the bytecode.
-                let code_bytes = &bytecode[..r#final.unpadded_code_len as usize];
+                let code_len = r#final.unpadded_code_len as usize;
+                if bytecode.len() < code_len {
+                    return Err(internal_error!(
+                        "Decommitted bytecode shorter than unpadded_code_len"
+                    ));
+                }
+                let code_bytes = &bytecode[..code_len];
                 dst.write(code_bytes);
                 result_keeper.pubdata(code_bytes);
             }
@@ -440,24 +442,24 @@ impl AccountProperties {
 
 #[cfg(test)]
 mod tests {
-    use super::AccountProperties;
+    use super::{bytecode_padding_len, AccountProperties};
     use crate::system_implementation::flat_storage_model::{
         BytecodeAndAccountDataPreimagesStorage, PreimageRequest, VersioningData,
     };
+    use crypto::MiniDigest;
     use crypto::blake2s::Blake2s256;
     use crypto::sha3::Keccak256;
-    use crypto::MiniDigest;
     use ruint::aliases::U256;
     use std::alloc::Global;
     use storage_models::common_structs::PreimageCacheModel;
     use zk_ee::common_structs::PreimageType;
     use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
     use zk_ee::oracle::IOOracle;
+    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
-    use zk_ee::system::errors::internal::InternalError;
     use zk_ee::system::IOResultKeeper;
     use zk_ee::system::Resource;
+    use zk_ee::system::errors::internal::InternalError;
     use zk_ee::types_config::EthereumIOTypesConfig;
     use zk_ee::utils::*;
 
@@ -602,6 +604,87 @@ mod tests {
         expected.extend_from_slice(&bytecode[..code_len]); // only raw code bytes
         expected.extend((code_len as u32).to_be_bytes()); // observable
 
+        assert_eq!(compression, expected);
+    }
+
+    #[test]
+    fn deployment_compression_with_artifacts_test() {
+        let mut initial = AccountProperties::TRIVIAL_VALUE;
+        initial.balance = U256::try_from(0xFF00000000FFu64).unwrap();
+
+        let mut code = vec![1u8, 2, 3, 4, 5];
+        let code_len = code.len();
+        let keccak = Keccak256::digest(&code);
+
+        // Add padding
+        let padding_len = bytecode_padding_len(code_len);
+        code.append(&mut vec![0u8; padding_len]);
+        // Add mock artifacts (jump table)
+        let artifacts = vec![0xAA, 0xBB, 0xCC, 0xDD];
+        let artifacts_len = artifacts.len() as u32;
+        code.extend_from_slice(&artifacts);
+        let full_bytecode = code;
+
+        let blake = Blake2s256::digest(&full_bytecode);
+
+        let mut r#final = AccountProperties::TRIVIAL_VALUE;
+        r#final.versioning_data = VersioningData::empty_deployed();
+        r#final.balance = U256::try_from(0xFF0000000000u64).unwrap();
+        r#final.unpadded_code_len = code_len as u32;
+        r#final.artifacts_len = artifacts_len;
+        r#final.observable_bytecode_len = code_len as u32;
+        r#final.bytecode_hash = blake.into();
+        r#final.observable_bytecode_hash = keccak.into();
+
+        let optimal_length =
+            AccountProperties::diff_compression_length(&initial, &r#final, false, false).unwrap();
+
+        let mut nop_hasher = NopHasher::new();
+        let mut result_keeper = TestResultKeeper { pubdata: vec![] };
+        let mut preimages_cache: BytecodeAndAccountDataPreimagesStorage<
+            BaseResources<DecreasingNative>,
+        > = BytecodeAndAccountDataPreimagesStorage::new_from_parts(Global);
+        let mut resources: BaseResources<DecreasingNative> = BaseResources::FORMAL_INFINITE;
+        preimages_cache
+            .record_preimage::<false>(
+                ExecutionEnvironmentType::EVM,
+                &(PreimageRequest {
+                    hash: r#final.bytecode_hash,
+                    expected_preimage_len_in_bytes: r#final.full_bytecode_len(),
+                    preimage_type: PreimageType::Bytecode,
+                }),
+                &mut resources,
+                &[&full_bytecode],
+            )
+            .unwrap();
+        let mut test_oracle = TestOracle;
+
+        AccountProperties::diff_compression::<false, _, _, _>(
+            &initial,
+            &r#final,
+            false,
+            &mut nop_hasher,
+            &mut result_keeper,
+            &mut preimages_cache,
+            &mut test_oracle,
+        )
+        .unwrap();
+        let compression = result_keeper.pubdata;
+
+        assert_eq!(optimal_length, compression.len() as u32);
+        // Verify only raw code bytes are published (no padding, no artifacts)
+        assert_eq!(
+            compression.len() as u32,
+            1 + 8 + 1 + 2 + 4 + code_len as u32 + 4
+        );
+        let mut expected = vec![0b00000100];
+        expected.extend(r#final.versioning_data.0.to_be_bytes());
+        expected.push(0b00000001); // nonce: add, initial == final == 0
+        expected.push(0b00001010); // balance: sub 0xff
+        expected.push(0xff);
+        expected.extend((code_len as u32).to_be_bytes());
+        expected.extend_from_slice(&full_bytecode[..code_len]); // only raw code bytes
+        expected.extend((code_len as u32).to_be_bytes()); // observable
         assert_eq!(compression, expected);
     }
 }
