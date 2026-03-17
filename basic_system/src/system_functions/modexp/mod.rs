@@ -41,15 +41,15 @@ pub type ModExpAdviceParams = ModExpAdviceParamsGeneric<u32>;
 /// Used for native execution (64-bit)
 pub type ModExpAdviceParams64 = ModExpAdviceParamsGeneric<u64>;
 
-pub mod delegation;
+pub mod advice;
 
 ///
 /// modexp system function implementation.
 ///
-pub struct ModExpImpl<const USE_DELEGATION: bool>;
+pub struct ModExpImpl<const USE_ADVICE: bool>;
 
-impl<R: Resources, const USE_DELEGATION: bool> SystemFunctionExt<R, ModExpErrors>
-    for ModExpImpl<USE_DELEGATION>
+impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, ModExpErrors>
+    for ModExpImpl<USE_ADVICE>
 {
     /// If the input size is less than expected - it will be padded with zeroes.
     /// If the input size is greater - redundant bytes will be ignored.
@@ -74,7 +74,7 @@ impl<R: Resources, const USE_DELEGATION: bool> SystemFunctionExt<R, ModExpErrors
         allocator: A,
     ) -> Result<(), SubsystemError<ModExpErrors>> {
         cycle_marker::wrap_with_resources!("modexp", resources, {
-            modexp_as_system_function_inner::<_, _, _, _, _, USE_DELEGATION>(
+            modexp_as_system_function_inner::<_, _, _, _, _, USE_ADVICE>(
                 input, output, resources, oracle, logger, allocator,
             )
         })
@@ -113,7 +113,7 @@ fn modexp_as_system_function_inner<
     R: Resources,
     // Toggle delegation-based implementation for forward run, to be able
     // to capture oracle queries.
-    const USE_DELEGATION: bool,
+    const USE_ADVICE: bool,
 >(
     input: &[u8],
     dst: &mut D,
@@ -219,7 +219,7 @@ fn modexp_as_system_function_inner<
     // Call the modexp.
 
     #[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
-    let output = self::delegation::modexp(
+    let output = self::advice::modexp(
         base.as_slice(),
         exponent.as_slice(),
         modulus.as_slice(),
@@ -229,8 +229,8 @@ fn modexp_as_system_function_inner<
     );
 
     #[cfg(not(any(all(target_arch = "riscv32", feature = "proving"), test)))]
-    let output = if USE_DELEGATION {
-        self::delegation::modexp(
+    let output = if USE_ADVICE {
+        self::advice::modexp(
             base.as_slice(),
             exponent.as_slice(),
             modulus.as_slice(),

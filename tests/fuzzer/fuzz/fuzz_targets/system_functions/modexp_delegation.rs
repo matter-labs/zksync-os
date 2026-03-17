@@ -2,7 +2,7 @@
 #![feature(allocator_api)]
 
 use arbitrary::{Arbitrary, Unstructured};
-use basic_system::system_functions::modexp::delegation::delegated_modexp_with_naive_advisor;
+use basic_system::system_functions::modexp::advice::delegated_modexp_with_naive_advisor;
 use libfuzzer_sys::fuzz_target;
 use ruint::aliases::U256;
 use std::alloc::Global;

@@ -15,12 +15,6 @@
 pub mod ark_ff_delegation;
 #[allow(clippy::all)]
 #[allow(unused_imports, dead_code)]
-#[cfg(any(
-    all(target_arch = "riscv32", feature = "bigint_ops"),
-    feature = "proving",
-    feature = "testing",
-    test
-))]
 mod bigint_delegation;
 #[allow(unexpected_cfgs)]
 pub mod blake2s;
@@ -65,12 +59,6 @@ pub use crate::ark_ff_delegation::Fp;
 )))]
 pub use ark_ff::Fp;
 
-#[cfg(any(
-    all(target_arch = "riscv32", feature = "bigint_ops"),
-    feature = "proving",
-    feature = "testing",
-    test
-))]
 mod raw_delegation_interface;
 
 pub use blake2 as blake2_ext;
@@ -79,12 +67,6 @@ pub use ark_ec;
 pub use ark_ff;
 pub use ark_serialize;
 
-#[cfg(any(
-    all(target_arch = "riscv32", feature = "bigint_ops"),
-    feature = "proving",
-    feature = "testing",
-    test
-))]
 pub use self::raw_delegation_interface::{
     bigint_op_delegation_raw, bigint_op_delegation_with_carry_bit_raw,
 };

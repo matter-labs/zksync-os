@@ -29,12 +29,12 @@ fn bytereverse(input: &mut [u8]) {
 ///
 /// No std system functions implementations.
 /// All of them are following EVM specs(for precompiles and keccak opcode).
+/// USE_ADVICE const parameter affects only the forward run, as advice
+/// is always used for proving one.
 ///
-pub struct NoStdSystemFunctions<const USE_DELEGATION: bool>;
+pub struct NoStdSystemFunctions<const USE_ADVICE: bool>;
 
-impl<R: Resources, const USE_DELEGATION: bool> SystemFunctions<R>
-    for NoStdSystemFunctions<USE_DELEGATION>
-{
+impl<R: Resources, const USE_ADVICE: bool> SystemFunctions<R> for NoStdSystemFunctions<USE_ADVICE> {
     type Keccak256 = keccak256::Keccak256Impl;
     type Sha256 = sha256::Sha256Impl;
     type Secp256k1AddProjective = MissingSystemFunction;
@@ -49,7 +49,7 @@ impl<R: Resources, const USE_DELEGATION: bool> SystemFunctions<R>
     type PointEvaluation = point_evaluation::PointEvaluationImpl;
 }
 
-impl<R: Resources, const USE_DELEGATION: bool> SystemFunctionsExt<R> for NoStdSystemFunctions<USE_DELEGATION> {
+impl<R: Resources, const USE_ADVICE: bool> SystemFunctionsExt<R> for NoStdSystemFunctions<USE_ADVICE> {
     type Secp256k1ECRecover = ecrecover::EcRecoverImpl;
-    type ModExp = modexp::ModExpImpl<USE_DELEGATION>;
+    type ModExp = modexp::ModExpImpl<USE_ADVICE>;
 }

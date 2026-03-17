@@ -3,7 +3,7 @@
 
 use arbitrary::{Arbitrary, Unstructured};
 use basic_system::system_functions::modexp::ModExpImpl;
-use basic_system_proving::system_functions::modexp::delegation::delegated_modexp_with_naive_advisor;
+use basic_system_proving::system_functions::modexp::advice::delegated_modexp_with_naive_advisor;
 use libfuzzer_sys::fuzz_target;
 use revm::primitives::U256;
 use revm_precompile::modexp::berlin_run;

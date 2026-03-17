@@ -1,4 +1,4 @@
-use crate::ark_ff_delegation::BigInt;
+use crate::BigInt;
 
 pub(crate) mod delegation;
 pub mod u256;
