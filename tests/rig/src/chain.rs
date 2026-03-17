@@ -149,7 +149,7 @@ pub struct Chain<const RANDOMIZED_TREE: bool = false> {
     pub(crate) state_tree: InMemoryTree<RANDOMIZED_TREE>,
     pub preimage_source: InMemoryPreimageSource,
     chain_id: u64,
-    previous_block_number: Option<u64>,
+    previous_block_number: u64,
     block_hashes: [U256; 256],
     block_timestamp: u64,
 }
@@ -312,7 +312,7 @@ impl Chain<false> {
                 inner: HashMap::new(),
             },
             chain_id: chain_id.unwrap_or(37),
-            previous_block_number: None,
+            previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
         }
@@ -335,7 +335,7 @@ impl Chain<true> {
                 inner: HashMap::new(),
             },
             chain_id: chain_id.unwrap_or(37),
-            previous_block_number: None,
+            previous_block_number: 0,
             block_hashes: [U256::ZERO; 256],
             block_timestamp: 0,
         }
@@ -553,11 +553,11 @@ fn assert_block_outputs_match(actual: &BlockOutput, expected: &BlockOutput) {
 
 impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     pub fn set_last_block_number(&mut self, prev: u64) {
-        self.previous_block_number = Some(prev)
+        self.previous_block_number = prev;
     }
 
     pub fn next_block_number(&self) -> u64 {
-        self.previous_block_number.map(|n| n + 1).unwrap_or(0)
+        self.previous_block_number + 1
     }
 
     pub fn chain_id(&self) -> u64 {
@@ -929,7 +929,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         if update_state_after_block_execution {
             // update state
-            self.previous_block_number = Some(self.next_block_number());
+            self.previous_block_number = self.next_block_number();
             self.block_timestamp = block_context.timestamp;
             for i in 0..255 {
                 self.block_hashes[i] = self.block_hashes[i + 1];
