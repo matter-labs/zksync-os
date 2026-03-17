@@ -2,6 +2,12 @@
 #![allow(clippy::precedence)]
 #![allow(clippy::len_zero)]
 
+#[cfg(all(
+    not(target_arch = "riscv32"),
+    not(all(target_pointer_width = "64", target_endian = "little"))
+))]
+compile_error!("ReadWitnessSource host recording requires a 64-bit little-endian host target");
+
 // Hook zk_ee IOOracle to be NonDeterminismCSRSource
 
 use std::cell::RefCell;

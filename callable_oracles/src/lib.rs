@@ -17,6 +17,12 @@
 #![allow(clippy::op_ref)]
 #![allow(clippy::precedence)]
 
+#[cfg(all(
+    not(target_arch = "riscv32"),
+    not(all(target_pointer_width = "64", target_endian = "little"))
+))]
+compile_error!("native callable oracle host helpers require a 64-bit little-endian host target");
+
 pub mod arithmetic;
 pub mod blob_kzg_commitment;
 pub mod field_hints;
@@ -60,22 +66,55 @@ impl UsizeDeserializable for MemoryRegionDescriptionParams {
     }
 }
 
-#[inline(always)]
-unsafe fn read_u64_words(ptr_u64: u64, len_words_u64: u64) -> Vec<u64> {
-    if ptr_u64 == 0 || len_words_u64 == 0 {
-        return vec![];
-    }
-    let addr = ptr_u64 as usize;
-    let len_words = len_words_u64 as usize;
-    core::slice::from_raw_parts(addr as *const u64, len_words).to_vec()
+fn validate_host_pointer(ptr_u64: u64, alignment: usize) -> *const u8 {
+    assert!(ptr_u64 != 0);
+    let addr = usize::try_from(ptr_u64).unwrap();
+    assert!(addr.is_multiple_of(alignment));
+
+    addr as *const u8
+}
+
+fn checked_byte_len(len_units: u64, bytes_per_unit: usize, max_bytes: usize) -> usize {
+    let len_units = usize::try_from(len_units).unwrap();
+    let requested_bytes = len_units.checked_mul(bytes_per_unit).unwrap();
+    assert!(requested_bytes <= max_bytes);
+
+    requested_bytes
 }
 
 #[inline(always)]
-unsafe fn read_u8_words(ptr_u64: u64, len_words_u8: u64) -> Vec<u8> {
-    if ptr_u64 == 0 || len_words_u8 == 0 {
+pub(crate) fn read_u64_words(ptr_u64: u64, len_words_u64: u64, max_bytes: usize) -> Vec<u64> {
+    if len_words_u64 == 0 {
         return vec![];
     }
-    let addr = ptr_u64 as usize;
-    let len_words = len_words_u8 as usize;
-    core::slice::from_raw_parts(addr as *const u8, len_words).to_vec()
+    let ptr = validate_host_pointer(ptr_u64, core::mem::align_of::<u64>());
+    let len_bytes = checked_byte_len(len_words_u64, core::mem::size_of::<u64>(), max_bytes);
+    let len_words = len_bytes / core::mem::size_of::<u64>();
+
+    // Safety: the caller supplied a non-null pointer aligned for `u64`, and
+    // `len_words` was derived from a checked byte-length computation.
+    let words = unsafe { core::slice::from_raw_parts(ptr.cast::<u64>(), len_words) };
+    words.to_vec()
+}
+
+#[inline(always)]
+pub(crate) fn read_u8_words(ptr_u64: u64, len_words_u8: u64, max_bytes: usize) -> Vec<u8> {
+    if len_words_u8 == 0 {
+        return vec![];
+    }
+    let ptr = validate_host_pointer(ptr_u64, core::mem::align_of::<u8>());
+    let len_bytes = checked_byte_len(len_words_u8, core::mem::size_of::<u8>(), max_bytes);
+
+    // Safety: the caller supplied a non-null pointer, and `len_bytes` was
+    // derived from a checked byte-length computation.
+    let bytes = unsafe { core::slice::from_raw_parts(ptr, len_bytes) };
+    bytes.to_vec()
+}
+
+#[inline(always)]
+pub(crate) fn read_host_struct<T>(ptr_u64: u64) -> T {
+    let ptr = validate_host_pointer(ptr_u64, core::mem::align_of::<T>());
+
+    // Safety: the pointer was validated to be non-null and aligned for `T`.
+    unsafe { ptr.cast::<T>().read() }
 }

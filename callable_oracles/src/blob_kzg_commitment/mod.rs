@@ -1,5 +1,6 @@
 use crate::utils::evaluate::read_memory_as_u8;
 use crate::utils::usize_slice_iterator::UsizeSliceIteratorOwned;
+use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::blob_commitment_generator::ENCODABLE_BYTES_PER_BLOB;
 use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::KZGCommitmentAndProof;
 use basic_bootloader::bootloader::block_flow::zk::da_commitment_generator::BLOB_COMMITMENT_AND_PROOF_QUERY_ID;
 use basic_system::system_functions::point_evaluation::versioned_hash_for_kzg;
@@ -7,6 +8,8 @@ use crypto::MiniDigest;
 use oracle_provider::OracleQueryProcessor;
 use risc_v_simulator::abstractions::memory::MemorySource;
 use zk_ee::oracle::usize_serialization::UsizeSerializable;
+
+use crate::read_u8_words;
 
 ///
 /// Query processor, which returns blob kzg commitment and proof for a given data.
@@ -98,14 +101,14 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeBlobCommitmentAndProofQu
         // this query processor supposed to work only on "host" architecture, which is always 64 bit
         const { assert!(8 == core::mem::size_of::<usize>()) };
         let mut it = query.into_iter();
-
-        let data_ptr = it.next().unwrap();
-        let data_len = it.next().unwrap();
+        let data_ptr = it.next().expect("A u64 should've been passed in.");
+        let data_len = it.next().expect("A u64 should've been passed in.");
         assert!(
             it.next().is_none(),
             "Only a pointer and the length are expected."
         );
-        let data = unsafe { crate::read_u8_words(data_ptr as u64, data_len as u64) };
+        assert!(data_len <= ENCODABLE_BYTES_PER_BLOB);
+        let data = read_u8_words(data_ptr as u64, data_len as u64, ENCODABLE_BYTES_PER_BLOB);
         let result = blob_kzg_commitment_and_proof(&data);
 
         let r = result.iter().collect::<Vec<_>>();

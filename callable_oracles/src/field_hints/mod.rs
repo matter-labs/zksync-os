@@ -13,8 +13,8 @@ use zk_ee::oracle::usize_serialization::UsizeSerializable;
 use zk_ee::utils::Bytes32;
 mod impls;
 
-use crate::read_u64_words;
 use crate::utils::evaluate::{read_memory_as_u64, read_struct};
+use crate::{read_host_struct, read_u64_words};
 
 pub struct FieldOpsQuery<M: MemorySource> {
     _marker: std::marker::PhantomData<M>,
@@ -119,24 +119,17 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeFieldOpsQuery<M> {
         debug_assert!(self.supports_query_id(query_id));
 
         let mut it = query.into_iter();
-
         let arg_ptr = it.next().expect("A u64 should've been passed in.");
-
         assert!(it.next().is_none(), "A single ptr should've been passed.");
+        let arg: FieldOpsHint64 = read_host_struct(arg_ptr as u64);
 
-        let arg = unsafe {
-            let p = arg_ptr as *const FieldOpsHint64;
-            core::ptr::read_unaligned(p)
-        };
-
-        let Some(op) = FieldHintOp::parse_u32(arg.op) else {
-            panic!("Unknown field hint op {}", arg.op);
-        };
+        let op = FieldHintOp::parse_u32(arg.op)
+            .unwrap_or_else(|| panic!("Unknown field hint op {}", arg.op));
 
         const { assert!(8 == core::mem::size_of::<usize>()) };
         assert!(arg.src_ptr > 0);
         assert_eq!(arg.src_len_u32_words, 8);
-        let n: Vec<u64> = unsafe { read_u64_words(arg.src_ptr, arg.src_len_u32_words as u64 / 2) };
+        let n: Vec<u64> = read_u64_words(arg.src_ptr, u64::from(arg.src_len_u32_words / 2), 32);
         let n = Bytes32::from_array(
             n.into_iter()
                 .flat_map(|el| el.to_le_bytes())

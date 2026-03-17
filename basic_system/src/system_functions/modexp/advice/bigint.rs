@@ -1,6 +1,12 @@
 // Representation of big integers using primitives that are friendly for our delegations
 extern crate alloc;
 
+#[cfg(all(
+    not(target_arch = "riscv32"),
+    not(all(target_pointer_width = "64", target_endian = "little"))
+))]
+compile_error!("host-side modexp advice handling requires a 64-bit little-endian host target");
+
 use super::super::MODEXP_ADVICE_QUERY_ID;
 use super::u256::*;
 use crate::system_functions::modexp::ModExpAdviceParams64;

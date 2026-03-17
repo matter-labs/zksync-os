@@ -4,11 +4,13 @@ use basic_system::system_functions::modexp::{
 use oracle_provider::OracleQueryProcessor;
 use risc_v_simulator::abstractions::memory::MemorySource;
 
-use crate::read_u64_words;
 use crate::utils::{
     evaluate::{read_memory_as_u64, read_struct},
     usize_slice_iterator::UsizeSliceIteratorOwned,
 };
+use crate::{read_host_struct, read_u64_words};
+
+const HOST_MODEXP_ADVICE_MAX_BYTES: usize = 32 * 1024 * 1024;
 
 struct ArithmeticQueryOutput {
     quotient: Vec<u64>,
@@ -147,27 +149,32 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeArithmeticQuery<M> {
         debug_assert!(self.supports_query_id(query_id));
 
         let mut it = query.into_iter();
-
         let arg_ptr = it.next().expect("A u64 should've been passed in.");
-
         assert!(it.next().is_none(), "A single ptr should've been passed.");
-
-        let arg = unsafe {
-            let p = arg_ptr as *const ModExpAdviceParams64;
-            core::ptr::read_unaligned(p)
-        };
+        let arg: ModExpAdviceParams64 = read_host_struct(arg_ptr as u64);
 
         assert!(arg.a_ptr > 0);
         assert!(arg.a_len > 0);
-
         assert_eq!(arg.b_ptr, 0);
         assert_eq!(arg.b_len, 0);
-
         assert!(arg.modulus_ptr > 0);
         assert!(arg.modulus_len > 0);
 
-        let mut n: Vec<u64> = unsafe { read_u64_words(arg.a_ptr, arg.a_len * 4) };
-        let mut d: Vec<u64> = unsafe { read_u64_words(arg.modulus_ptr, arg.modulus_len * 4) };
+        const MAX_MODEXP_INPUT_LIMBS: u64 =
+            (HOST_MODEXP_ADVICE_MAX_BYTES / (core::mem::size_of::<u64>() * 4)) as u64;
+        assert!(arg.a_len <= MAX_MODEXP_INPUT_LIMBS);
+        assert!(arg.modulus_len <= MAX_MODEXP_INPUT_LIMBS);
+
+        let a_len_u64_words = arg.a_len * 4;
+        let modulus_len_u64_words = arg.modulus_len * 4;
+
+        let mut n: Vec<u64> =
+            read_u64_words(arg.a_ptr, a_len_u64_words, HOST_MODEXP_ADVICE_MAX_BYTES);
+        let mut d: Vec<u64> = read_u64_words(
+            arg.modulus_ptr,
+            modulus_len_u64_words,
+            HOST_MODEXP_ADVICE_MAX_BYTES,
+        );
 
         ruint::algorithms::div(&mut n, &mut d);
 
