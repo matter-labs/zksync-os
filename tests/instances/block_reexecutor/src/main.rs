@@ -362,17 +362,55 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
 
     let mut revm_runner = revm_runner::RevmRunner::new(state_view);
 
-    let (revm_trace, _revm_errors) = revm_runner.run_with_call_traces(
+    let revm_divergency = match revm_runner.run_with_call_traces(
         raw_transactions,
         block_context_interface,
         Some(block_output),
-    )?;
-    let revm_trace_output_path = format!("revm_call_trace_{}.json", block_number);
-    std::fs::write(
-        &revm_trace_output_path,
-        serde_json::to_string_pretty(&revm_trace)?,
-    )?;
-    println!("REVM call trace saved to {}", revm_trace_output_path);
+    ) {
+        Ok((revm_trace, revm_skipped, compare_report)) => {
+            if !revm_skipped.is_empty() {
+                println!(
+                    "REVM skipped {} transaction(s) that failed validation (included in ZKsync OS block as failed)",
+                    revm_skipped.len()
+                );
+            }
+
+            let revm_trace_output_path = format!("revm_call_trace_{}.json", block_number);
+            std::fs::write(
+                &revm_trace_output_path,
+                serde_json::to_string_pretty(&revm_trace)?,
+            )?;
+            println!("REVM call trace saved to {}", revm_trace_output_path);
+
+            if let Some(report) = compare_report {
+                if !report.is_empty() {
+                    report.log_tracing(100);
+                    eprintln!(
+                        "REVM state divergency: {} storage mismatch(es), {} account mismatch(es)",
+                        report.storage.len(),
+                        report.accounts.len()
+                    );
+                    Some(format!(
+                        "REVM consistency mismatch: storage={} account={}",
+                        report.storage.len(),
+                        report.accounts.len()
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        Err(err) => {
+            eprintln!("REVM consistency check failed: {err:#}");
+            Some(format!("{err:#}"))
+        }
+    };
+
+    if let Some(divergency) = revm_divergency {
+        return Err(anyhow::anyhow!("REVM divergency detected: {divergency}"));
+    }
 
     Ok(())
 }
