@@ -47,7 +47,7 @@ where
     S::IO: IOSubsystemExt
         + IOTeardown<S::IOTypes, IOStateCommitment = FlatStorageCommitment<TREE_HEIGHT>>, // IOStateCommitment bound is trivial, most likely needed due to missing associated types equality feature in the current state of the compiler
 {
-    type PostTxLoopOpResult = (O, Bytes32);
+    type PostTxLoopOpResult = (O, Bytes32, public_input::BatchOutput);
     type BlockDataKeeper = ZKBasicBlockDataKeeper<TransactionsRollingKeccakHasher>;
     type BatchDataKeeper = ();
     type BlockHeader = crate::bootloader::block_header::BlockHeader;
@@ -239,17 +239,17 @@ where
                 });
             let state_diffs_hash = state_diffs_hasher.finalize().into();
 
-            #[allow(unused_must_use)]
-            io.oracle
+            let _ = io
+                .oracle
                 .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
                 .expect("must disconnect an oracle before performing arbitrary CSR access");
-            Ok((io.oracle, state_diffs_hash))
+            Ok((io.oracle, state_diffs_hash, batch_output))
         } else {
-            #[allow(unused_must_use)]
-            io.oracle
+            let _ = io
+                .oracle
                 .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
                 .expect("must disconnect an oracle before performing arbitrary CSR access");
-            Ok((io.oracle, public_input_hash))
+            Ok((io.oracle, public_input_hash, batch_output))
         }
     }
 }

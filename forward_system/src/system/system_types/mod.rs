@@ -1,5 +1,6 @@
 use std::alloc::Global;
 
+use basic_bootloader::bootloader::block_flow::TransactionsRollingKeccakHasher;
 use basic_bootloader::bootloader::block_flow::ZKHeaderPostInitOp;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePostTxOpProvingMultiblockBatch;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePostTxOpProvingSingleblockBatch;
@@ -69,9 +70,9 @@ impl<O: IOOracle, const PROOF_ENV: bool> SystemTypes for ForwardSystemTypes<O, P
         PROOF_ENV,
     >;
     /// System functions implementation (contracts, precompiles)
-    type SystemFunctions = NoStdSystemFunctions;
+    type SystemFunctions = NoStdSystemFunctions<PROOF_ENV>;
     /// Extended system functions (same as basic for forward execution)
-    type SystemFunctionsExt = NoStdSystemFunctions;
+    type SystemFunctionsExt = NoStdSystemFunctions<PROOF_ENV>;
     /// Standard library allocator for forward execution
     type Allocator = Global;
     /// Conditional logger based on compilation features
@@ -85,7 +86,7 @@ impl<O: IOOracle, const PROOF_ENV: bool> EthereumLikeTypes for ForwardSystemType
 
 /// STF implementation for sequencing system
 // TODO: fix this
-impl<O: IOOracle, const PROOF_ENV:bool> BasicSTF for ForwardSystemTypes<O, PROOF_ENV> {
+impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O, false> {
     /// ZKsync transaction data tracker with hash accumulators and resource counts
     type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator>;
     /// ZKsync blocks data tracker
@@ -104,35 +105,38 @@ impl<O: IOOracle, const PROOF_ENV:bool> BasicSTF for ForwardSystemTypes<O, PROOF
     type PostTxLoopOp = ZKHeaderStructurePostTxOpSequencing;
 }
 
-// /// STF implementation for prover input generating system
-// impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O, true> {
-//     /// ZKsync transaction data tracker with hash accumulators and resource counts
-//     type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator>;
-//     /// ZKsync blocks data tracker
-//     type BatchDataKeeper = ();
-//     /// Standard ZKsync block header format
-//     type BlockHeader = basic_bootloader::bootloader::block_header::BlockHeader;
-//     /// Post-initialization setup: precompiles and system contracts
-//     type PostSystemInitOp = ZKHeaderPostInitOp;
-//     /// Metadata initialization using ZKsync metadata format
-//     type MetadataOp = zk_ee::system::metadata::zk_metadata::ZkMetadata;
-//     /// Pre-transaction setup: initialize data keeper
-//     type PreTxLoopOp = ZKHeaderStructurePreTxOp<NopTxHashesAccumulator>;
-//     /// Main transaction loop: ZK-specific processing with resource limits
-//     type TxLoopOp = ZKHeaderStructureTxLoop<NopTxHashesAccumulator, ()>;
-//     /// Post-transaction finalization: build header and commit
-//     type PostTxLoopOp = ZKHeaderStructurePostTxOpProvingMultiblockBatch;
-// }
+/// STF implementation for prover input generating system
+impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O, true> {
+    /// ZKsync transaction data tracker with hash accumulators and resource counts
+    type BlockDataKeeper = ZKBasicBlockDataKeeper<TransactionsRollingKeccakHasher>;
+    /// ZKsync blocks data tracker
+    type BatchDataKeeper = ();
+    /// Standard ZKsync block header format
+    type BlockHeader = basic_bootloader::bootloader::block_header::BlockHeader;
+    /// Post-initialization setup: precompiles and system contracts
+    type PostSystemInitOp = ZKHeaderPostInitOp;
+    /// Metadata initialization using ZKsync metadata format
+    type MetadataOp = zk_ee::system::metadata::zk_metadata::ZkMetadata;
+    /// Pre-transaction setup: initialize data keeper
+    type PreTxLoopOp = ZKHeaderStructurePreTxOp<TransactionsRollingKeccakHasher>;
+    /// Main transaction loop: ZK-specific processing with resource limits
+    type TxLoopOp = ZKHeaderStructureTxLoop<TransactionsRollingKeccakHasher, ()>;
+    /// Post-transaction finalization: build header and commit
+    type PostTxLoopOp = ZKHeaderStructurePostTxOpProvingSingleblockBatch<false>;
+}
 
 /// Marker implementation for Ethereum-compatible STF
-impl<O: IOOracle, const PROOF_ENV:bool > EthereumLikeBasicSTF for ForwardSystemTypes<O, PROOF_ENV> {}
+impl<O: IOOracle> EthereumLikeBasicSTF for ForwardSystemTypes<O, true> {}
+impl<O: IOOracle> EthereumLikeBasicSTF for ForwardSystemTypes<O, false> {}
 
 /// Forward execution system used in sequencing mode
 /// Uses dummy memory source for oracle data storage
-pub type ForwardRunningSystem = ForwardSystemTypes<ZkEENonDeterminismSource<DummyMemorySource>, false>;
+pub type ForwardRunningSystem =
+    ForwardSystemTypes<ZkEENonDeterminismSource<DummyMemorySource>, false>;
 
 /// Call simulation system with same configuration as forward execution
-pub type CallSimulationSystem = ForwardSystemTypes<ZkEENonDeterminismSource<DummyMemorySource>, false>;
+pub type CallSimulationSystem =
+    ForwardSystemTypes<ZkEENonDeterminismSource<DummyMemorySource>, false>;
 
 /// Prover input system
 pub type ProverInputSystem =
@@ -144,7 +148,8 @@ pub type ForwardBootloader =
 
 /// Bootloader for call simulation using ZK transaction flow (EOA only)
 pub type CallSimulationBootloader =
-    BasicBootloader<CallSimulationSystem, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>;
+    BasicBootloader<CallSimulationSystem, ZkTransactionFlowOnlyEOA<CallSimulationSystem>>;
 
 /// Bootloader for prover input generation with ZK transaction flow (EOA only)
-pub type ProverInputBootloader = BasicBootloader<ProverInputSystem, ZkTransactionFlowOnlyEOA<ForwardRunningSystem>>;
+pub type ProverInputBootloader =
+    BasicBootloader<ProverInputSystem, ZkTransactionFlowOnlyEOA<ProverInputSystem>>;

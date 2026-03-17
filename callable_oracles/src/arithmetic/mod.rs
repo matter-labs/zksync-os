@@ -16,7 +16,9 @@ struct ArithmeticQueryOutput {
 }
 
 impl ArithmeticQueryOutput {
-    fn into_usize_iterator(self) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
+    fn into_usize_iterator(
+        self,
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         // Trim zeros
         fn strip_leading_zeroes(input: &[u64]) -> &[u64] {
             let mut digits = input.len();
@@ -140,7 +142,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeArithmeticQuery<M> {
         query_id: u32,
         query: Vec<usize>,
         _memory: &M,
-    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
         debug_assert!(self.supports_query_id(query_id));
 
         let mut it = query.into_iter();

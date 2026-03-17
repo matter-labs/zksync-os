@@ -24,10 +24,9 @@ use crate::run::query_processors::{BlockMetadataResponder, DACommitmentSchemeRes
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;
 use crate::system::bootloader::run_prover_input_no_panic;
-use crate::system::system::CallSimulationBootloader;
-use crate::system::system::CallSimulationBootloader;
-use crate::system::system::CallSimulationSystem;
-use crate::system::system::ForwardRunningSystem;
+use crate::system::system_types::CallSimulationBootloader;
+use crate::system::system_types::CallSimulationSystem;
+use crate::system::system_types::ForwardRunningSystem;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
     BasicBootloaderProvingExecutionConfig,
@@ -45,6 +44,7 @@ pub use interface_impl::RunBlockForward;
 pub use tree::LeafProof;
 pub use tree::ReadStorage;
 pub use tree::ReadStorageTree;
+use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 pub use zk_ee::types_config::EthereumIOTypesConfig;
 
@@ -161,6 +161,7 @@ pub fn generate_proof_input<
         copy_source,
         &mut result_keeper,
         &mut tracer,
+        &mut NopTxValidator,
     )
     .map_err(|e| wrap_error!(e))?;
 
@@ -307,9 +308,6 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
             callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
         );
     }
-    oracle.add_external_processor(
-        callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
-    );
     oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
 
     if add_uart {

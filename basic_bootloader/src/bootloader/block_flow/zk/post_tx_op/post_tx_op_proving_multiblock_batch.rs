@@ -184,8 +184,8 @@ where
 
         // we do this query for consistency with block based input generation(there is empty iterator as response to this query)
         // but during proving this request shouldn't have the effect with "u32 array based" oracle
-        #[allow(unused_must_use)]
-        io.oracle
+        let _ = io
+            .oracle
             .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
             .expect("must disconnect an oracle before performing arbitrary CSR access");
 

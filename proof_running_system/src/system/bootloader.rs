@@ -180,7 +180,7 @@ pub fn run_proving_inner<
     logger_log!(L::default(), "IO implementer init is complete");
 
     // Load all transactions from oracle and apply them.
-    let (_oracle, public_input) =
+    let (_oracle, public_input, _batch_output) =
         ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
             oracle,
             &mut (),

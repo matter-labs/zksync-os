@@ -44,7 +44,7 @@ where
 {
     type BlockDataKeeper = EthereumBasicTransactionDataKeeper<S::Allocator, S::Allocator>;
     type BatchDataKeeper = ();
-    type PostTxLoopOpResult = (O, Bytes32);
+    type PostTxLoopOpResult = (O, Bytes32, ());
     type BlockHeader = PectraForkHeader;
 
     fn post_op(
@@ -145,12 +145,12 @@ where
             &metadata.block_level.computed_header_hash
         );
 
-        #[allow(unused_must_use)]
-        io.oracle
+        let _ = io
+            .oracle
             .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
             .expect("must disconnect an oracle before performing arbitrary CSR access");
 
-        Ok((io.oracle, metadata.block_level.computed_header_hash))
+        Ok((io.oracle, metadata.block_level.computed_header_hash, ()))
     }
 }
 

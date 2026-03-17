@@ -1,5 +1,6 @@
 use crate::run::convert_alloy::IntoAlloy;
 use crate::run::TxResultCallback;
+use basic_bootloader::bootloader::block_header::BlockHeader;
 use basic_bootloader::bootloader::result_keeper::{ResultKeeperExt, TxProcessingOutput};
 use ruint::aliases::B160;
 use std::alloc::Global;
@@ -125,12 +126,12 @@ impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesCo
 ///  Result keeper for prover input run.
 ///  Adds pubdata to ForwardRunningResultKeeper
 ///
-pub struct ProverInputResultKeeper<TR: TxResultCallback> {
-    pub forward_running_rk: ForwardRunningResultKeeper<TR>,
+pub struct ProverInputResultKeeper<TR: TxResultCallback, T: 'static + Sized = ()> {
+    pub forward_running_rk: ForwardRunningResultKeeper<TR, T>,
     pub pubdata: Vec<u8>,
 }
 
-impl<TR: TxResultCallback> ProverInputResultKeeper<TR> {
+impl<TR: TxResultCallback, T: 'static + Sized> ProverInputResultKeeper<TR, T> {
     pub fn new(tx_result_callback: TR) -> Self {
         Self {
             forward_running_rk: ForwardRunningResultKeeper::new(tx_result_callback),
@@ -140,7 +141,9 @@ impl<TR: TxResultCallback> ProverInputResultKeeper<TR> {
 }
 
 // Delegate to ForwardRunningResultKeeper, except for pubdata
-impl<TR: TxResultCallback> IOResultKeeper<EthereumIOTypesConfig> for ProverInputResultKeeper<TR> {
+impl<TR: TxResultCallback, T: 'static + Sized> IOResultKeeper<EthereumIOTypesConfig>
+    for ProverInputResultKeeper<TR, T>
+{
     fn events<'a>(
         &mut self,
         iter: impl Iterator<
@@ -182,7 +185,11 @@ impl<TR: TxResultCallback> IOResultKeeper<EthereumIOTypesConfig> for ProverInput
 }
 
 // Delegate to ForwardRunningResultKeeper
-impl<TR: TxResultCallback> ResultKeeperExt for ProverInputResultKeeper<TR> {
+impl<TR: TxResultCallback, T: 'static + Sized> ResultKeeperExt<EthereumIOTypesConfig>
+    for ProverInputResultKeeper<TR, T>
+{
+    type BlockHeader = T;
+
     fn tx_processed(
         &mut self,
         tx_result: Result<
@@ -193,7 +200,7 @@ impl<TR: TxResultCallback> ResultKeeperExt for ProverInputResultKeeper<TR> {
         self.forward_running_rk.tx_processed(tx_result)
     }
 
-    fn block_sealed(&mut self, block_header: BlockHeader) {
+    fn block_sealed(&mut self, block_header: Self::BlockHeader) {
         self.forward_running_rk.block_sealed(block_header)
     }
 
