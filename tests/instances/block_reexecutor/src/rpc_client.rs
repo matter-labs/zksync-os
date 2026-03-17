@@ -4,13 +4,11 @@ use alloy::{
 };
 use anyhow::{anyhow, Result};
 use log::{debug, warn};
-use rig::zksync_os_interface::traits::EncodedTx;
 use ruint::aliases::B160;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{io::Read, str::FromStr, thread, time::Duration};
 use ureq::json;
-use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::l1_tx::ZKsyncL1Tx;
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
 use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
@@ -124,7 +122,7 @@ impl RpcClient {
             "jsonrpc": "2.0"
         });
         let res = self.send(body)?;
-        println!("Raw block metadata response: {}", res);
+        debug!("Raw block metadata response: {}", res);
         let block = serde_json::from_str(&res)?;
         Ok(block)
     }
@@ -355,16 +353,6 @@ impl Block {
         }
     }
 
-    pub fn get_transactions(self) -> Result<Vec<EncodedTx>> {
-        self.tx_values()?
-            .into_iter()
-            .map(|value| {
-                let envelope = parse_tx_value(value)?;
-                Ok(envelope.encode())
-            })
-            .collect()
-    }
-
     pub fn get_transactions_raw(self) -> Result<Vec<ZKsyncTxEnvelope>> {
         self.tx_values()?.into_iter().map(parse_tx_value).collect()
     }
@@ -373,21 +361,21 @@ impl Block {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RpcZKsyncTx {
-    pub initiator: Address,
-    pub to: Address,
+    initiator: Address,
+    to: Address,
     #[serde(with = "alloy::serde::quantity")]
-    pub gas: u64,
-    pub input: Bytes,
+    gas: u64,
+    input: Bytes,
     #[serde(default, with = "alloy::serde::quantity::opt")]
-    pub gas_per_pubdata_byte_limit: Option<u64>,
-    pub max_fee_per_gas: Option<U256>,
-    pub max_priority_fee_per_gas: Option<U256>,
-    pub nonce: Option<U256>,
-    pub value: Option<U256>,
-    pub to_mint: Option<U256>,
-    pub refund_recipient: Option<Address>,
+    gas_per_pubdata_byte_limit: Option<u64>,
+    max_fee_per_gas: Option<U256>,
+    max_priority_fee_per_gas: Option<U256>,
+    nonce: Option<U256>,
+    value: Option<U256>,
+    to_mint: Option<U256>,
+    refund_recipient: Option<Address>,
     #[serde(default)]
-    pub factory_deps: Option<Vec<B256>>,
+    factory_deps: Option<Vec<B256>>,
 }
 
 impl RpcZKsyncTx {

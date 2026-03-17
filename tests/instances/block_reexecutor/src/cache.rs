@@ -5,6 +5,7 @@ use std::{
 
 use alloy::{hex, primitives::B256};
 use anyhow::{Context, Result};
+use log::debug;
 use rig::zk_ee::utils::Bytes32;
 use ruint::aliases::{B160, U256};
 
@@ -323,11 +324,7 @@ fn fetch_historical_block_hashes(rpc_client: &RpcClient, block_number: u64) -> R
     let mut loaded = 0usize;
 
     for depth in 1u64..=256 {
-        println!(
-            "Fetching historical block hash for block #{}, depth {}",
-            block_number - depth,
-            depth
-        );
+        debug!("Fetching historical block hash: depth {depth}");
         let Some(target_block_number) = block_number.checked_sub(depth) else {
             break;
         };

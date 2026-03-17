@@ -28,6 +28,7 @@ use tx_check::{
     filter_supported_receipts,
 };
 use zksync_os_revm_runner::revm_runner;
+use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[derive(Parser, Debug)]
@@ -45,8 +46,8 @@ struct Args {
     #[arg(long)]
     block_hash: Option<B256>,
 
-    /// Block number identifying the state for --transactions-file simulation
-    #[arg(long, requires = "transactions_file")]
+    /// Block number to re-execute (resolved to hash via RPC; uses canonical chain history)
+    #[arg(long)]
     block_number: Option<u64>,
 
     /// JSON file with predefined transactions to simulate against the block's state
@@ -74,6 +75,10 @@ fn main() -> Result<()> {
         hash
     } else {
         let block_number = args.block_number.expect("enforced by clap arg group");
+        eprintln!(
+            "Warning: --block-number resolves via RPC and only accesses the canonical chain history; \
+             use --block-hash for an unambiguous block reference"
+        );
         let block = rpc_client.get_block_by_number(block_number)?;
         let resolved_hash = block.result.header.hash;
         println!(
@@ -114,11 +119,9 @@ fn main() -> Result<()> {
             };
             (encoded, raw, check_mode)
         } else {
-            (
-                block.clone().get_transactions()?,
-                block.clone().get_transactions_raw()?,
-                ReceiptCheckMode::FullBlock,
-            )
+            let raw = block.clone().get_transactions_raw()?;
+            let encoded: Vec<EncodedTx> = raw.iter().cloned().map(|tx| tx.encode()).collect();
+            (encoded, raw, ReceiptCheckMode::FullBlock)
         };
 
     println!(
@@ -286,11 +289,10 @@ fn main() -> Result<()> {
         chain.set_storage_slot(*address, key, val);
     }
 
-    println!("Block execution completed successfully!");
-    println!("Block output: gas_used = {}", block_output.header.gas_used);
-    println!("Block output: transactions = {:?}", block_output.tx_results);
-
-    println!("Block re-execution completed");
+    println!(
+        "Block execution completed: gas_used = {}",
+        block_output.header.gas_used
+    );
 
     let trace: Vec<CallFrame> = tracer
         .transactions
