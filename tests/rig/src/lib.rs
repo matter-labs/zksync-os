@@ -93,6 +93,7 @@ pub struct LastExecutedBlockInfo {
     pub block_output: BlockOutput,
     pub block_extra_stats: BlockExtraStats,
     pub proof_input: Vec<u32>,
+    pub pubdata: Vec<u8>,
 }
 
 pub struct TestingFramework<const RANDOMIZED_TREE: bool = false> {
@@ -104,7 +105,7 @@ pub struct TestingFramework<const RANDOMIZED_TREE: bool = false> {
     // This stays framework-local to keep `Chain` execution APIs neutral.
     skip_minting_tokens_to_treasury: bool,
     last_executed_block_info: Option<LastExecutedBlockInfo>,
-    oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
+    oracle_factory: Option<Box<impl TestingOracleFactory<RANDOMIZED_TREE>>>,
 }
 
 impl TestingFramework<true> {
@@ -199,7 +200,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             .map(ZKsyncTxEnvelope::encode)
             .collect::<Vec<_>>();
 
-        let (block_output, block_extra_stats, proof_input) =
+        let (block_output, block_extra_stats, proof_input, pubdata) =
             if let Some(oracle_factory) = &self.oracle_factory {
                 self.chain.run_block_with_extra_stats_with_oracle_factory(
                     encoded_txs,
@@ -225,6 +226,7 @@ impl<const RANDOMIZED_TREE: bool> TestingFramework<RANDOMIZED_TREE> {
             block_output: block_output.clone(),
             block_extra_stats,
             proof_input,
+            pubdata,
         });
 
         if let (Some(pre_block_chain), Some(transactions), Some(block_context)) = (

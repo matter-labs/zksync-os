@@ -593,7 +593,7 @@ fn test_invalid_tx_does_not_affect_native() {
     let output = tester.execute_block(transactions);
 
     // Assert tx succeeded
-    tester.assert_all_txs_succeeded(&output);
+    tester.assert_all_txs_succeeded(&output.0);
 
     let native_used_reference = output
         .tx_results
@@ -1245,10 +1245,11 @@ fn test_check_pubdata_encoding_version() {
         .with_block_context(block_context);
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
+    let pubdata = tester.last_executed_block_info().pubdata;
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
-    assert_eq!(result.pubdata[0], PUBDATA_ENCODING_VERSION);
+    assert_eq!(pubdata[0], PUBDATA_ENCODING_VERSION);
 }
 
 #[test]
@@ -1288,11 +1289,12 @@ fn test_check_pubdata_has_timestamp() {
         .with_block_context(block_context);
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
+    let pubdata = tester.last_executed_block_info().pubdata;
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
     // Pubdata format is [VERSION(1)][BLOCK_HASH(32)][TIMESTAMP(8)][DIFFS...]
-    let pubdata_timestamp_bytes = &result.pubdata.as_slice()[33..41];
+    let pubdata_timestamp_bytes = &pubdata.as_slice()[33..41];
     let pubdata_timestamp = u64::from_be_bytes(
         pubdata_timestamp_bytes
             .try_into()

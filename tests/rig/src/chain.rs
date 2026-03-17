@@ -683,7 +683,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         run_config: Option<RunConfig>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
-    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
+    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
         let factory = DefaultOracleFactory::<RANDOMIZED_TREE>;
         self.run_inner(
             transactions,
@@ -706,8 +706,8 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         run_config: Option<RunConfig>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
-        oracle_factory: &dyn TestingOracleFactory<RANDOMIZED_TREE>,
-    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
+        oracle_factory: &impl TestingOracleFactory<RANDOMIZED_TREE>,
+    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
         self.run_inner(
             transactions,
             block_context,
@@ -730,7 +730,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         oracle_factory: &impl TestingOracleFactory<RANDOMIZED_TREE>,
         tracer: &mut impl Tracer<ForwardRunningSystem>,
         validator: &mut impl TxValidator<ForwardRunningSystem>,
-    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>), BootloaderSubsystemError> {
+    ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
         let RunConfig {
             profiler_config,
             witness_output_file,
@@ -1004,7 +1004,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         } else {
             prover_input_forward
         };
-        Ok((block_output, stats, proof_input))
+        Ok((block_output, stats, proof_input, pubdata))
     }
 
     pub fn make_eth_block_oracle<M: MemorySource + 'static>(
