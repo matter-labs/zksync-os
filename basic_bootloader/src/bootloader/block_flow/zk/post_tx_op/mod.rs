@@ -21,7 +21,8 @@ pub mod public_input;
 
 /// Version byte for pubdata encoding format.
 /// Version 1: Initial versioned pubdata format
-pub const PUBDATA_ENCODING_VERSION: u8 = 1;
+/// Version 2: Remove artifacts_len and artifacts from pubdata
+pub const PUBDATA_ENCODING_VERSION: u8 = 2;
 
 /// Helper method to write the pubdata to the DA commitment generator and result keeper.
 fn write_pubdata<
