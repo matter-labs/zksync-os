@@ -1,15 +1,15 @@
 // Representation of big integers using primitives that are friendly for our delegations
 extern crate alloc;
 
-#[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
-use super::super::{ModExpAdviceParams, MODEXP_ADVICE_QUERY_ID};
+use super::super::MODEXP_ADVICE_QUERY_ID;
 use super::u256::*;
+use crate::system_functions::modexp::ModExpAdviceParams64;
 use alloc::vec::Vec;
 use core::alloc::Allocator;
 use core::fmt::Debug;
 use core::mem::MaybeUninit;
 use crypto::{bigint_op_delegation_raw, bigint_op_delegation_with_carry_bit_raw, BigIntOps};
-#[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
+use ruint::aliases::U256;
 use zk_ee::oracle::IOOracle;
 
 // There is a small choice to make - either we do exponentiation walking as via LE or BE exponent.
@@ -808,32 +808,32 @@ pub(crate) mod naive_advisor {
     }
 }
 
-#[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
 pub(crate) struct OracleAdvisor<'a, O: IOOracle> {
     pub(crate) inner: &'a mut O,
 }
 
-#[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
 fn write_bigint(
     it: &mut impl ExactSizeIterator<Item = usize>,
     mut to_consume: usize,
     dst: &mut BigintRepr<impl Allocator + Clone>,
 ) {
-    const {
-        assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
-    }
     // NOTE: even if oracle overstates the number of digits (so - iterator length), it is not important
     // as long as caller checks that number of digits is within bounds of soundness
     unsafe {
-        let num_digits = to_consume.next_multiple_of(8) / 8;
+        const BIGINT_DIGIT_USIZE_SIZE: usize = U256::BYTES / core::mem::size_of::<usize>();
+        let num_digits =
+            to_consume.next_multiple_of(BIGINT_DIGIT_USIZE_SIZE) / BIGINT_DIGIT_USIZE_SIZE;
         let dst_capacity = dst.clear_as_capacity_mut();
         for dst in dst_capacity[..num_digits].iter_mut() {
-            let dst: *mut u32 = dst.as_mut_ptr().cast::<[u32; 8]>().cast();
-            for i in 0..8 {
+            let dst: *mut usize = dst
+                .as_mut_ptr()
+                .cast::<[usize; BIGINT_DIGIT_USIZE_SIZE]>()
+                .cast();
+            for i in 0..BIGINT_DIGIT_USIZE_SIZE {
                 if to_consume > 0 {
                     to_consume -= 1;
                     let digit = it.next().unwrap();
-                    dst.add(i).write(digit as u32);
+                    dst.add(i).write(digit);
                 } else {
                     dst.add(i).write(0);
                 }
@@ -844,7 +844,6 @@ fn write_bigint(
     }
 }
 
-#[cfg(any(all(target_arch = "riscv32", feature = "proving"), test))]
 impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
     fn get_reduction_op_advice<A: Allocator + Clone>(
         &mut self,
@@ -853,37 +852,79 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
         quotient_dst: &mut BigintRepr<A>,
         remainder_dst: &mut BigintRepr<A>,
     ) {
-        let arg: ModExpAdviceParams = {
-            let a_len = a.digits;
-            let a_ptr = a.backing.as_ptr();
+        // We use different advice params depending on architecture
+        // Both are mostly the same, main difference is the width of pointers
+        #[cfg(target_arch = "riscv32")]
+        let (mut it, q_len, r_len) = {
+            use crate::system_functions::modexp::ModExpAdviceParams;
+            let arg: ModExpAdviceParams = {
+                let a_len = a.digits;
+                let a_ptr = a.backing.as_ptr();
 
-            let modulus_len = m.digits;
-            let modulus_ptr = m.backing.as_ptr();
+                let modulus_len = m.digits;
+                let modulus_ptr = m.backing.as_ptr();
 
-            assert!(modulus_len > 0);
+                assert!(modulus_len > 0);
 
-            ModExpAdviceParams {
-                op: 0,
-                a_ptr: a_ptr.addr() as u32,
-                a_len: a_len as u32,
-                b_ptr: 0,
-                b_len: 0,
-                modulus_ptr: modulus_ptr.addr() as u32,
-                modulus_len: modulus_len as u32,
-            }
+                ModExpAdviceParams {
+                    op: 0,
+                    a_ptr: a_ptr.addr() as u32,
+                    a_len: a_len as u32,
+                    b_ptr: 0,
+                    b_len: 0,
+                    modulus_ptr: modulus_ptr.addr() as u32,
+                    modulus_len: modulus_len as u32,
+                }
+            };
+            // We assume that oracle's response is well-formed lengths-wise, and we will check value-wise separately
+            let mut it = self
+                .inner
+                .raw_query(
+                    MODEXP_ADVICE_QUERY_ID,
+                    &((&arg as *const ModExpAdviceParams).addr() as u32),
+                )
+                .unwrap();
+            let q_len = it.next().expect("quotient length");
+            let r_len = it.next().expect("remainder length");
+            (it, q_len, r_len)
         };
 
-        // We assume that oracle's response is well-formed lengths-wise, and we will check value-wise separately
-        let mut it = self
-            .inner
-            .raw_query(
-                MODEXP_ADVICE_QUERY_ID,
-                &((&arg as *const ModExpAdviceParams).addr() as u32),
-            )
-            .unwrap();
+        #[cfg(not(target_arch = "riscv32"))]
+        let (mut it, q_len, r_len) = {
+            let arg: ModExpAdviceParams64 = {
+                let a_len = a.digits;
+                let a_ptr = a.backing.as_ptr();
 
-        let q_len = it.next().expect("quotient length");
-        let r_len = it.next().expect("remainder length");
+                let modulus_len = m.digits;
+                let modulus_ptr = m.backing.as_ptr();
+
+                assert!(modulus_len > 0);
+
+                ModExpAdviceParams64 {
+                    op: 0,
+                    a_ptr: a_ptr.addr() as u64,
+                    a_len: a_len as u64,
+                    b_ptr: 0,
+                    b_len: 0,
+                    modulus_ptr: modulus_ptr.addr() as u64,
+                    modulus_len: modulus_len as u64,
+                }
+            };
+            // We assume that oracle's response is well-formed lengths-wise, and we will check value-wise separately
+            let mut it = self
+                .inner
+                .raw_query(
+                    MODEXP_ADVICE_QUERY_ID,
+                    &((&arg as *const ModExpAdviceParams64).addr() as u64),
+                )
+                .unwrap();
+            // Oracle provides lengths as u32, so in this case they are
+            // packed into a single usize
+            let packed_lens = it.next().expect("packed lengths");
+            let q_len = (packed_lens & 0xFFFF_FFFF) as usize;
+            let r_len = (packed_lens >> 32) as usize;
+            (it, q_len / 2, r_len / 2)
+        };
 
         let max_quotient_digits = if a.digits < m.digits {
             0
@@ -894,10 +935,6 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
         };
 
         let max_remainder_digits = m.digits;
-
-        const {
-            assert!(core::mem::size_of::<usize>() == core::mem::size_of::<u32>());
-        }
 
         // check that hint is "sane" in upper bound
 

@@ -25,29 +25,32 @@ pub const MODEXP_ADVICE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x10;
 /// Used to request division advice for big integer operations during modexp
 #[repr(C)]
 #[derive(Debug, Default)]
-pub struct ModExpAdviceParams {
-    pub op: u32,          // Operation type (0 = division)
-    pub a_ptr: u32,       // Pointer to dividend
-    pub a_len: u32,       // Length of dividend in words
-    pub b_ptr: u32,       // Pointer to divisor
-    pub b_len: u32,       // Length of divisor in words
-    pub modulus_ptr: u32, // Pointer to modulus
-    pub modulus_len: u32, // Length of modulus in words
+pub struct ModExpAdviceParamsGeneric<W> {
+    pub op: W,          // Operation type (0 = division)
+    pub a_ptr: W,       // Pointer to dividend
+    pub a_len: W,       // Length of dividend in words
+    pub b_ptr: W,       // Pointer to divisor
+    pub b_len: W,       // Length of divisor in words
+    pub modulus_ptr: W, // Pointer to modulus
+    pub modulus_len: W, // Length of modulus in words
 }
 
-#[cfg(any(
-    all(target_arch = "riscv32", feature = "proving"),
-    test,
-    feature = "testing"
-))]
+/// Used for proving (RISC-V 32-bit)
+pub type ModExpAdviceParams = ModExpAdviceParamsGeneric<u32>;
+
+/// Used for native execution (64-bit)
+pub type ModExpAdviceParams64 = ModExpAdviceParamsGeneric<u64>;
+
 pub mod delegation;
 
 ///
 /// modexp system function implementation.
 ///
-pub struct ModExpImpl;
+pub struct ModExpImpl<const USE_DELEGATION: bool>;
 
-impl<R: Resources> SystemFunctionExt<R, ModExpErrors> for ModExpImpl {
+impl<R: Resources, const USE_DELEGATION: bool> SystemFunctionExt<R, ModExpErrors>
+    for ModExpImpl<USE_DELEGATION>
+{
     /// If the input size is less than expected - it will be padded with zeroes.
     /// If the input size is greater - redundant bytes will be ignored.
     ///
@@ -71,7 +74,9 @@ impl<R: Resources> SystemFunctionExt<R, ModExpErrors> for ModExpImpl {
         allocator: A,
     ) -> Result<(), SubsystemError<ModExpErrors>> {
         cycle_marker::wrap_with_resources!("modexp", resources, {
-            modexp_as_system_function_inner(input, output, resources, oracle, logger, allocator)
+            modexp_as_system_function_inner::<_, _, _, _, _, USE_DELEGATION>(
+                input, output, resources, oracle, logger, allocator,
+            )
         })
     }
 }
@@ -106,6 +111,9 @@ fn modexp_as_system_function_inner<
     D: ?Sized + TryExtend<u8>,
     A: Allocator + Clone,
     R: Resources,
+    // Toggle delegation-based implementation for forward run, to be able
+    // to capture oracle queries.
+    const USE_DELEGATION: bool,
 >(
     input: &[u8],
     dst: &mut D,
@@ -221,12 +229,23 @@ fn modexp_as_system_function_inner<
     );
 
     #[cfg(not(any(all(target_arch = "riscv32", feature = "proving"), test)))]
-    let output = ::modexp::modexp(
-        base.as_slice(),
-        exponent.as_slice(),
-        modulus.as_slice(),
-        allocator,
-    );
+    let output = if USE_DELEGATION {
+        self::delegation::modexp(
+            base.as_slice(),
+            exponent.as_slice(),
+            modulus.as_slice(),
+            oracle,
+            logger,
+            allocator,
+        )
+    } else {
+        ::modexp::modexp(
+            base.as_slice(),
+            exponent.as_slice(),
+            modulus.as_slice(),
+            allocator,
+        )
+    };
 
     if output.len() >= mod_len {
         // truncate
