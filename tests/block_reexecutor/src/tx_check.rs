@@ -131,7 +131,7 @@ fn check_single_tx_against_receipt(
                 receipt.transaction_hash
             ));
         }
-        if receipt_log.data.to_vec() != actual_log.data.data {
+        if receipt_log.data.as_ref() != actual_log.data.data.as_ref() {
             return Err(anyhow::anyhow!(
                 "tx #{idx} (hash={}) log #{log_idx} data mismatch: output=0x{} receipt=0x{}",
                 receipt.transaction_hash,

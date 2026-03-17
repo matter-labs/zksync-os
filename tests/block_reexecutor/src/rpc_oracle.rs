@@ -38,7 +38,9 @@ use rig::basic_system::system_implementation::flat_storage_model::ACCOUNT_PROPER
 /// Oracle responder that fetches initial storage slot values via RPC
 struct RpcStorageResponder {
     client: RpcClient,
-    block_number: u64,
+    /// Block number whose pre-state we query (i.e. state *before* this block).
+    /// RPC calls use `block_number - 1` as the block tag.
+    prev_block_number: u64,
     /// Cache to avoid repeated RPC calls for the same slot
     cache: Arc<Mutex<HashMap<(Bits<160, 3>, Bytes32), Bytes32>>>,
     preimages: Arc<Mutex<HashMap<Bytes32, Vec<u8>>>>,
@@ -47,13 +49,13 @@ struct RpcStorageResponder {
 impl RpcStorageResponder {
     pub fn new(
         endpoint: String,
-        block_number: u64,
+        prev_block_number: u64,
         cache: Arc<Mutex<HashMap<(Bits<160, 3>, Bytes32), Bytes32>>>,
         preimages: Arc<Mutex<HashMap<Bytes32, Vec<u8>>>>,
     ) -> Self {
         Self {
             client: RpcClient::new(endpoint),
-            block_number,
+            prev_block_number,
             cache,
             preimages,
         }
@@ -137,7 +139,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for RpcStorageResponder {
                         .client
                         .get_balance(
                             requested_address.to_be_bytes().into(),
-                            self.block_number - 1,
+                            self.prev_block_number,
                         )
                         .expect("RPC balance fetch failed");
 
@@ -145,7 +147,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for RpcStorageResponder {
                         .client
                         .get_transaction_count(
                             requested_address.to_be_bytes().into(),
-                            self.block_number - 1,
+                            self.prev_block_number,
                         )
                         .expect("RPC nonce fetch failed");
 
@@ -153,7 +155,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for RpcStorageResponder {
                         .client
                         .get_code(
                             requested_address.to_be_bytes().into(),
-                            self.block_number - 1,
+                            self.prev_block_number,
                         )
                         .expect("RPC code fetch failed");
 
@@ -188,7 +190,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for RpcStorageResponder {
                             .get_storage_at(
                                 address.to_be_bytes().into(),
                                 key.into_u256_be(),
-                                self.block_number - 1,
+                                self.prev_block_number,
                             )
                             .expect("RPC storage fetch failed");
                         let bytes32_value = Bytes32::from_u256_be(&value);
@@ -233,7 +235,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for RpcStorageResponder {
 
 pub struct RpcValueOracleFactory {
     endpoint: String,
-    block_number: u64,
+    prev_block_number: u64,
     pub cache: Arc<Mutex<HashMap<(Bits<160, 3>, Bytes32), Bytes32>>>,
     pub preimages: Arc<Mutex<HashMap<Bytes32, Vec<u8>>>>,
 }
@@ -242,7 +244,7 @@ impl RpcValueOracleFactory {
     pub fn new(endpoint: String, block_number: u64) -> Self {
         Self {
             endpoint,
-            block_number,
+            prev_block_number: block_number.saturating_sub(1),
             cache: Arc::new(Mutex::new(HashMap::new())),
             preimages: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -270,7 +272,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
 
         let storage_responder = RpcStorageResponder::new(
             self.endpoint.clone(),
-            self.block_number,
+            self.prev_block_number,
             self.cache.clone(),
             self.preimages.clone(),
         );
