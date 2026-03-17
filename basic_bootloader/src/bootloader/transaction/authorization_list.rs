@@ -17,6 +17,7 @@ use zk_ee::system::Ergs;
 use zk_ee::system::IOSubsystem;
 use zk_ee::system::NonceError;
 use zk_ee::system::Resource;
+use zk_ee::system::SystemFunctionsExt;
 use zk_ee::system::{AccountDataRequest, EthereumLikeTypes, IOSubsystemExt, Resources, System};
 use zk_ee::system_log;
 use zk_ee::{internal_error, wrap_error};
@@ -235,8 +236,10 @@ fn recover_authority<S: EthereumLikeTypes>(
     resources: &mut S::Resources,
     auth_sig_data: (u8, &[u8], &[u8]),
     msg: &[u8; 32],
-) -> Result<Option<B160>, TxError> {
-    use zk_ee::system::SystemFunctions;
+) -> Result<Option<B160>, TxError>
+where
+    S::IO: IOSubsystemExt,
+{
     let mut ecrecover_input = [0u8; 128];
     let (parity, r, s) = auth_sig_data;
     if parity > 1 {
@@ -247,14 +250,18 @@ fn recover_authority<S: EthereumLikeTypes>(
     ecrecover_input[64..96][(32 - r.len())..].copy_from_slice(r);
     ecrecover_input[96..128][(32 - s.len())..].copy_from_slice(s);
     let mut ecrecover_output = ArrayBuilder::default();
+    let mut logger = system.get_logger();
+    let allocator = system.get_allocator();
     // Recover is counted in intrinsic gas
     resources
         .with_infinite_ergs(|inf_ergs| {
-            S::SystemFunctions::secp256k1_ec_recover(
+            S::SystemFunctionsExt::secp256k1_ec_recover(
                 ecrecover_input.as_slice(),
                 &mut ecrecover_output,
                 inf_ergs,
-                system.get_allocator(),
+                system.io.oracle(),
+                &mut logger,
+                allocator,
             )
         })
         .map_err(SystemError::from)?;

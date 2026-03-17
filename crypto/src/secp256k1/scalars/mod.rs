@@ -34,10 +34,8 @@ const ORDER_HEX: &str = "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8
 pub struct Scalar(pub(crate) ScalarInner);
 
 impl Scalar {
-    #[cfg(test)]
-    pub(crate) const ZERO: Self = Self(ScalarInner::ZERO);
-    #[cfg(test)]
-    pub(crate) const ONE: Self = Self(ScalarInner::ONE);
+    pub const ZERO: Self = Self(ScalarInner::ZERO);
+    pub const ONE: Self = Self(ScalarInner::ONE);
     #[cfg(test)]
     const ORDER: Self = Self(ScalarInner::ORDER);
     #[cfg(test)]
@@ -63,7 +61,7 @@ impl Scalar {
         (Self::from_k256_scalar(*r), Self::from_k256_scalar(*s))
     }
 
-    pub(crate) fn to_repr(self) -> FieldBytes {
+    pub fn to_repr(self) -> FieldBytes {
         self.0.to_be_bytes().into()
     }
 
@@ -74,7 +72,7 @@ impl Scalar {
     }
 
     #[inline(always)]
-    pub(crate) fn from_k256_scalar(s: crate::k256::Scalar) -> Self {
+    pub fn from_k256_scalar(s: crate::k256::Scalar) -> Self {
         Self(ScalarInner::from_k256_scalar(s))
     }
 
@@ -96,7 +94,7 @@ impl Scalar {
         self.0.bits_var(offset, count)
     }
 
-    pub(crate) fn is_zero(&self) -> bool {
+    pub fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
 
@@ -156,7 +154,6 @@ impl PartialOrd for Scalar {
     }
 }
 
-#[cfg(test)]
 impl core::ops::Neg for Scalar {
     type Output = Self;
 
@@ -167,7 +164,6 @@ impl core::ops::Neg for Scalar {
     }
 }
 
-#[cfg(test)]
 impl core::ops::Mul for Scalar {
     type Output = Self;
 
@@ -178,7 +174,6 @@ impl core::ops::Mul for Scalar {
     }
 }
 
-#[cfg(test)]
 impl core::ops::Add for Scalar {
     type Output = Self;
 
@@ -189,7 +184,6 @@ impl core::ops::Add for Scalar {
     }
 }
 
-#[cfg(test)]
 impl core::ops::Sub for Scalar {
     type Output = Self;
 

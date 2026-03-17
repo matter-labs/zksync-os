@@ -166,7 +166,6 @@ impl<R: Resources> SystemFunction<R, Secp256r1MulProjectiveErrors> for MissingSy
 pub trait SystemFunctions<R: Resources> {
     type Keccak256: SystemFunction<R, Keccak256Errors>;
     type Sha256: SystemFunction<R, Sha256Errors>;
-    type Secp256k1ECRecover: SystemFunction<R, Secp256k1ECRecoverErrors>;
     type Secp256k1AddProjective: SystemFunction<R, Secp256k1AddProjectiveErrors>;
     type Secp256k1MulProjective: SystemFunction<R, Secp256k1MulProjectiveErrors>;
     type Secp256r1AddProjective: SystemFunction<R, Secp256r1AddProjectiveErrors>;
@@ -194,15 +193,6 @@ pub trait SystemFunctions<R: Resources> {
         allocator: A,
     ) -> Result<(), SubsystemError<Sha256Errors>> {
         Self::Sha256::execute(input, output, resources, allocator)
-    }
-
-    fn secp256k1_ec_recover<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
-        input: &[u8],
-        output: &mut D,
-        resources: &mut R,
-        allocator: A,
-    ) -> Result<(), SubsystemError<Secp256k1ECRecoverErrors>> {
-        Self::Secp256k1ECRecover::execute(input, output, resources, allocator)
     }
 
     fn secp256k1_add_projective<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
@@ -297,7 +287,24 @@ pub trait SystemFunctions<R: Resources> {
 }
 
 pub trait SystemFunctionsExt<R: Resources> {
+    type Secp256k1ECRecover: SystemFunctionExt<R, Secp256k1ECRecoverErrors>;
     type ModExp: SystemFunctionExt<R, ModExpErrors>;
+
+    fn secp256k1_ec_recover<
+        O: IOOracle,
+        L: Logger,
+        D: TryExtend<u8> + ?Sized,
+        A: core::alloc::Allocator + Clone,
+    >(
+        input: &[u8],
+        output: &mut D,
+        resources: &mut R,
+        oracle: &mut O,
+        logger: &mut L,
+        allocator: A,
+    ) -> Result<(), SubsystemError<Secp256k1ECRecoverErrors>> {
+        Self::Secp256k1ECRecover::execute(input, output, resources, oracle, logger, allocator)
+    }
 
     fn mod_exp<
         O: IOOracle,

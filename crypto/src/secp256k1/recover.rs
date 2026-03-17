@@ -11,27 +11,30 @@ use super::{
         ECMultContext, ECMULT_TABLE_SIZE_A, ECMULT_TABLE_SIZE_G, WINDOW_A, WINDOW_G, WNAF_BITS,
     },
     field::FieldElement,
+    hooks::Secp256k1Hooks,
     points::{Affine, AffineStorage, Jacobian},
     scalars::Scalar,
     Secp256k1Err,
 };
 
 #[cfg(feature = "secp256k1-static-context")]
-pub fn recover(
+pub fn recover<H: Secp256k1Hooks>(
     message: &crate::k256::Scalar,
     signature: &crate::k256::ecdsa::Signature,
     recovery_id: &crate::k256::ecdsa::RecoveryId,
+    hooks: &mut H,
 ) -> Result<Affine, Secp256k1Err> {
     use super::context::ECRECOVER_CONTEXT;
 
-    recover_with_context(message, signature, recovery_id, &ECRECOVER_CONTEXT)
+    recover_with_context(message, signature, recovery_id, &ECRECOVER_CONTEXT, hooks)
 }
 
-pub fn recover_with_context(
+pub fn recover_with_context<H: Secp256k1Hooks>(
     message: &crate::k256::Scalar,
     signature: &crate::k256::ecdsa::Signature,
     recovery_id: &crate::k256::ecdsa::RecoveryId,
     context: &ECMultContext,
+    hooks: &mut H,
 ) -> Result<Affine, Secp256k1Err> {
     let (mut sigr, mut sigs) = Scalar::from_signature(signature);
     let message = Scalar::from_k256_scalar(*message);
@@ -52,17 +55,17 @@ pub fn recover_with_context(
     }
 
     let is_odd = recovery_id.is_y_odd();
-    let x = Affine::decompress(&brx, is_odd).ok_or(Secp256k1Err::InvalidParams)?;
+    let x = Affine::decompress(&brx, is_odd, hooks).ok_or(Secp256k1Err::InvalidParams)?;
 
     let xj = x.to_jacobian();
 
-    sigr.invert_in_place();
+    hooks.scalar_invert_and_assign(&mut sigr);
     sigs *= sigr;
 
     sigr *= message;
     sigr.negate_in_place();
 
-    let mut pk = ecmult(&xj, &sigs, &sigr, context).to_affine();
+    let mut pk = ecmult(&xj, &sigs, &sigr, context).to_affine(hooks);
     pk.normalize_in_place();
 
     if pk.is_infinity() {
@@ -74,7 +77,7 @@ pub fn recover_with_context(
 
 /// Compute na*a+ng*g where g is the generator.
 /// Algorithm adapted from https://github.com/bitcoin-core/secp256k1/blob/master/src/ecmult_impl.h#L237
-fn ecmult(a: &Jacobian, na: &Scalar, ng: &Scalar, context: &ECMultContext) -> Jacobian {
+pub fn ecmult(a: &Jacobian, na: &Scalar, ng: &Scalar, context: &ECMultContext) -> Jacobian {
     let mut z = FieldElement::ONE;
 
     let mut prea: [Affine; ECMULT_TABLE_SIZE_A] = [Affine::DEFAULT; ECMULT_TABLE_SIZE_A];
@@ -377,6 +380,7 @@ fn table_verify(n: i32, w: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::ecmult;
+    use crate::secp256k1::hooks::DefaultSecp256k1Hooks;
     use crate::secp256k1::scalars::Scalar;
     use crate::secp256k1::{context::ECRECOVER_CONTEXT, test_vectors::MUL_TEST_VECTORS};
     use crate::secp256k1::{
@@ -398,7 +402,7 @@ mod tests {
             &Scalar::ZERO,
             &ECRECOVER_CONTEXT,
         )
-        .to_affine();
+        .to_affine(&mut DefaultSecp256k1Hooks);
 
         assert!(res.is_infinity());
     }
@@ -413,7 +417,7 @@ mod tests {
             &Scalar::ONE,
             &ECRECOVER_CONTEXT,
         )
-        .to_affine();
+        .to_affine(&mut DefaultSecp256k1Hooks);
 
         res.normalize_in_place();
 
@@ -430,7 +434,7 @@ mod tests {
             &Scalar::from_u128(3),
             &ECRECOVER_CONTEXT,
         )
-        .to_affine();
+        .to_affine(&mut DefaultSecp256k1Hooks);
 
         assert_eq!(res, ECRECOVER_CONTEXT.pre_g[1].to_affine())
     }
@@ -444,7 +448,7 @@ mod tests {
             &Scalar::from_u128(5),
             &ECRECOVER_CONTEXT,
         )
-        .to_affine();
+        .to_affine(&mut DefaultSecp256k1Hooks);
 
         assert_eq!(res, ECRECOVER_CONTEXT.pre_g[2].to_affine());
     }
@@ -456,7 +460,7 @@ mod tests {
         let mut t = ECRECOVER_CONTEXT.pre_g[2].to_affine().to_jacobian();
         t.add_ge_in_place(ECRECOVER_CONTEXT.pre_g[1].to_affine(), None);
 
-        let t = t.to_affine();
+        let t = t.to_affine(&mut DefaultSecp256k1Hooks);
 
         // 0*infinity + 8*G = 8*G
         let res = ecmult(
@@ -465,7 +469,7 @@ mod tests {
             &Scalar::from_u128(8),
             &ECRECOVER_CONTEXT,
         )
-        .to_affine();
+        .to_affine(&mut DefaultSecp256k1Hooks);
 
         assert_eq!(res, t);
     }
@@ -479,7 +483,7 @@ mod tests {
             &Scalar::ZERO,
             &ECRECOVER_CONTEXT,
         )
-        .to_affine();
+        .to_affine(&mut DefaultSecp256k1Hooks);
 
         assert_eq!(res, Affine::GENERATOR);
     }
@@ -493,12 +497,12 @@ mod tests {
             &Scalar::ONE,
             &ECRECOVER_CONTEXT,
         )
-        .to_affine();
+        .to_affine(&mut DefaultSecp256k1Hooks);
 
         let mut expected = Affine::GENERATOR.to_jacobian();
         expected.double_in_place(None);
 
-        assert_eq!(res, expected.to_affine())
+        assert_eq!(res, expected.to_affine(&mut DefaultSecp256k1Hooks))
     }
 
     #[cfg(feature = "secp256k1-static-context")]
@@ -510,7 +514,7 @@ mod tests {
             &Scalar::from_u128(2),
             &ECRECOVER_CONTEXT,
         )
-        .to_affine();
+        .to_affine(&mut DefaultSecp256k1Hooks);
 
         assert_eq!(res, ECRECOVER_CONTEXT.pre_g[1].to_affine());
     }
@@ -524,7 +528,7 @@ mod tests {
             &Scalar::ONE,
             &ECRECOVER_CONTEXT,
         )
-        .to_affine();
+        .to_affine(&mut DefaultSecp256k1Hooks);
 
         res.normalize_in_place();
 
@@ -540,14 +544,14 @@ mod tests {
                 &Scalar::ZERO,
                 &k,
                 &ECRECOVER_CONTEXT
-            ).to_affine();
+            ).to_affine(&mut DefaultSecp256k1Hooks);
 
             let res2 = ecmult(
                 &Affine::GENERATOR.to_jacobian(),
                 &k,
                 &Scalar::ZERO,
                 &ECRECOVER_CONTEXT
-            ).to_affine();
+            ).to_affine(&mut DefaultSecp256k1Hooks);
 
             prop_assert_eq!(res1, res2);
         })
@@ -559,8 +563,8 @@ mod tests {
         for (k, x, y) in MUL_TEST_VECTORS {
             let k = Scalar::from_repr(k.clone().into());
 
-            let computed_ctx =
-                ecmult(&Jacobian::INFINITY, &Scalar::ZERO, &k, &ECRECOVER_CONTEXT).to_affine();
+            let computed_ctx = ecmult(&Jacobian::INFINITY, &Scalar::ZERO, &k, &ECRECOVER_CONTEXT)
+                .to_affine(&mut DefaultSecp256k1Hooks);
 
             let computed = ecmult(
                 &Affine::GENERATOR.to_jacobian(),
@@ -568,7 +572,7 @@ mod tests {
                 &Scalar::ZERO,
                 &ECRECOVER_CONTEXT,
             )
-            .to_affine();
+            .to_affine(&mut DefaultSecp256k1Hooks);
 
             let expected = Affine {
                 x: FieldElement::from_bytes_unchecked(x),
@@ -643,7 +647,9 @@ mod tests {
         s: [u8; 32],
         rec_id: u8,
     ) -> Result<Affine, super::Secp256k1Err> {
+        use crate::secp256k1::hooks::DefaultSecp256k1Hooks;
         use k256::ecdsa::{RecoveryId, Signature};
+
         use {
             k256::elliptic_curve::ops::Reduce,
             k256::{ecdsa::hazmat::bits2field, Scalar},
@@ -656,6 +662,11 @@ mod tests {
             &bits2field::<k256::Secp256k1>(&digest).unwrap(),
         );
 
-        super::recover(&message, &signature, &recovery_id)
+        super::recover(
+            &message,
+            &signature,
+            &recovery_id,
+            &mut DefaultSecp256k1Hooks,
+        )
     }
 }

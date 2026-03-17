@@ -1,0 +1,30 @@
+[package]
+name = "callable_oracles_forward"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "../../../../../callable_oracles/src/lib.rs"
+
+[dependencies]
+zk_ee = { package = "zk_ee_forward", path = "../zk_ee_forward" }
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+crypto = { package = "crypto_forward", path = "../crypto_forward", default-features = false }
+oracle_provider = { package = "oracle_provider_forward", path = "../oracle_provider_forward" }
+basic_system = { package = "basic_system_forward", path = "../basic_system_forward" }
+basic_bootloader = { package = "basic_bootloader_forward", path = "../basic_bootloader_forward", default-features = false }
+
+
+risc_v_simulator = { git = "https://github.com/matter-labs/zksync-airbender", tag = "v0.4.3", optional = true }
+num-bigint = { version = "*", optional = true }
+num-traits = { version = "*", optional = true }
+
+alloy-consensus = "1.0.41"
+c-kzg = "2.1.5"
+
+[dev-dependencies]
+hex = "*"
+
+[features]
+default = ["evaluate"]
+evaluate = ["risc_v_simulator", "num-bigint", "num-traits"]

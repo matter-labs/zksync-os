@@ -1,6 +1,7 @@
 use crate::k256::{elliptic_curve::subtle::Choice, CompressedPoint, EncodedPoint, FieldBytes};
 
 use crate::secp256k1::field::{FieldElement, FieldElementConst};
+use crate::secp256k1::hooks::Secp256k1Hooks;
 
 use super::{jacobian::JacobianConst, AffineStorage, Jacobian};
 
@@ -132,7 +133,11 @@ impl Affine {
         self.infinity || (self.x.normalizes_to_zero() && self.y.normalizes_to_zero())
     }
 
-    pub(crate) fn decompress(x_bytes: &FieldBytes, y_is_odd: bool) -> Option<Self> {
+    pub(crate) fn decompress<H: Secp256k1Hooks>(
+        x_bytes: &FieldBytes,
+        y_is_odd: bool,
+        hooks: &mut H,
+    ) -> Option<Self> {
         #[allow(deprecated)]
         let len = x_bytes.as_slice().len();
         debug_assert!(len == 32);
@@ -141,7 +146,7 @@ impl Affine {
         x_bytes.as_slice().try_into().ok().and_then(|x| {
             let x = FieldElement::from_bytes(x)?;
             let mut ret = Affine::DEFAULT;
-            if ret.set_xo(&x, y_is_odd) {
+            if ret.set_xo(&x, y_is_odd, hooks) {
                 Some(ret)
             } else {
                 None
@@ -149,13 +154,19 @@ impl Affine {
         })
     }
 
-    fn set_xo(&mut self, x: &FieldElement, y_is_odd: bool) -> bool {
+    #[allow(dead_code)]
+    fn set_xo<H: Secp256k1Hooks>(
+        &mut self,
+        x: &FieldElement,
+        y_is_odd: bool,
+        hooks: &mut H,
+    ) -> bool {
         self.y = *x;
         self.y.square_in_place();
         self.y *= x;
         self.y += 7;
 
-        let ret = self.y.sqrt_in_place();
+        let ret = hooks.fe_sqrt_and_assign(&mut self.y);
         self.y.normalize_in_place();
 
         if self.y.is_odd() != y_is_odd {
@@ -257,7 +268,11 @@ impl proptest::arbitrary::Arbitrary for Affine {
 
         any::<FieldElement>().prop_map(|x| {
             let mut ret = Affine::DEFAULT;
-            ret.set_xo(&x, true);
+            ret.set_xo(
+                &x,
+                true,
+                &mut crate::secp256k1::hooks::DefaultSecp256k1Hooks,
+            );
 
             ret
         })
@@ -269,7 +284,7 @@ impl proptest::arbitrary::Arbitrary for Affine {
 #[cfg(test)]
 mod tests {
     use super::Affine;
-
+    use crate::secp256k1::hooks::DefaultSecp256k1Hooks;
     use proptest::{prop_assert_eq, proptest};
 
     #[test]
@@ -278,14 +293,14 @@ mod tests {
         let x = g.x;
         let y_is_odd = false;
         let mut a = Affine::DEFAULT;
-        a.set_xo(&x, y_is_odd);
+        a.set_xo(&x, y_is_odd, &mut DefaultSecp256k1Hooks);
         assert_eq!(a, g);
     }
 
     #[test]
     fn jacobian_round_trip() {
         proptest!(|(x: Affine)| {
-            prop_assert_eq!(x.to_jacobian().to_affine(), x);
+            prop_assert_eq!(x.to_jacobian().to_affine(&mut DefaultSecp256k1Hooks), x);
         });
     }
 }

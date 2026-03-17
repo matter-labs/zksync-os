@@ -1,44 +1,62 @@
 use super::*;
 use crate::cost_constants::{ECRECOVER_COST_ERGS, ECRECOVER_NATIVE_COST};
+use crypto::secp256k1::hooks::DefaultSecp256k1Hooks;
+use field_ops::Secp256k1HooksWithOracle;
 use zk_ee::common_traits::TryExtend;
+use zk_ee::oracle::IOOracle;
 use zk_ee::out_of_return_memory;
-use zk_ee::system::base_system_functions::{Secp256k1ECRecoverErrors, SystemFunction};
+use zk_ee::system::base_system_functions::Secp256k1ECRecoverErrors;
 use zk_ee::system::errors::{subsystem::SubsystemError, system::SystemError};
-use zk_ee::system::Computational;
+use zk_ee::system::{Computational, SystemFunctionExt};
 
 ///
 /// ecrecover system function implementation.
 ///
-pub struct EcRecoverImpl;
+pub struct EcRecoverImpl<const USE_ADVICE: bool = { cfg!(target_arch = "riscv32") }>;
 
-impl<R: Resources> SystemFunction<R, Secp256k1ECRecoverErrors> for EcRecoverImpl {
+impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Secp256k1ECRecoverErrors>
+    for EcRecoverImpl<USE_ADVICE>
+{
     /// If the input size is less than expected - it will be padded with zeroes.
     /// If the input size is greater - redundant bytes will be ignored.
     /// If the input is invalid(v != 27|28 or failed to recover signer) returns `Ok(0)`.
     ///
     /// Returns `OutOfGas` if not enough resources provided.
-    fn execute<D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
+    fn execute<O: IOOracle, L, D: TryExtend<u8> + ?Sized, A: core::alloc::Allocator + Clone>(
         input: &[u8],
         output: &mut D,
         resources: &mut R,
+        oracle: &mut O,
+        _logger: &mut L,
         _allocator: A,
     ) -> Result<(), SubsystemError<Secp256k1ECRecoverErrors>> {
         Ok(cycle_marker::wrap_with_resources!(
             "ecrecover",
             resources,
-            { ecrecover_as_system_function_inner(input, output, resources) }
+            {
+                ecrecover_as_system_function_inner::<_, _, _, _, USE_ADVICE>(
+                    input,
+                    output,
+                    resources,
+                    Some(oracle),
+                )
+            }
         )?)
     }
 }
 
+// if the oracle is provided, it will be used for field operations
 fn ecrecover_as_system_function_inner<
+    O: IOOracle,
     S: ?Sized + MinimalByteAddressableSlice,
     D: ?Sized + TryExtend<u8>,
     R: Resources,
+    const USE_ADVICE: bool,
 >(
     src: &S,
     dst: &mut D,
     resources: &mut R,
+    oracle: Option<&mut O>,
 ) -> Result<(), SystemError> {
     resources.charge(&R::from_ergs_and_native(
         ECRECOVER_COST_ERGS,
@@ -68,7 +86,9 @@ fn ecrecover_as_system_function_inner<
             return Ok(());
         }
 
-        let Ok(pk_bytes) = ecrecover_inner(digest, r, s, rec_id) else {
+        let oracle = if USE_ADVICE { oracle } else { None };
+
+        let Ok(pk_bytes) = ecrecover_inner(digest, r, s, rec_id, oracle) else {
             return Ok(());
         };
 
@@ -85,11 +105,12 @@ fn ecrecover_as_system_function_inner<
     Ok(())
 }
 
-pub fn ecrecover_inner(
+pub fn ecrecover_inner<O: IOOracle>(
     digest: &[u8; 32],
     r: &[u8; 32],
     s: &[u8; 32],
     rec_id: u8,
+    oracle: Option<&mut O>,
 ) -> Result<crypto::k256::EncodedPoint, ()> {
     use crypto::k256::{
         ecdsa::{hazmat::bits2field, RecoveryId, Signature},
@@ -104,7 +125,22 @@ pub fn ecrecover_inner(
         &bits2field::<crypto::k256::Secp256k1>(digest).map_err(|_| ())?,
     );
 
-    let Ok(pk) = crypto::secp256k1::recover(&message, &signature, &recovery_id) else {
+    let res = match oracle {
+        Some(oracle) => crypto::secp256k1::recover(
+            &message,
+            &signature,
+            &recovery_id,
+            &mut Secp256k1HooksWithOracle::new(oracle),
+        ),
+        None => crypto::secp256k1::recover(
+            &message,
+            &signature,
+            &recovery_id,
+            &mut DefaultSecp256k1Hooks,
+        ),
+    };
+
+    let Ok(pk) = res else {
         return Err(());
     };
 
@@ -117,6 +153,7 @@ pub fn ecrecover_inner(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::system_implementation::flat_storage_model::TestingTree;
     use hex;
     use zk_ee::reference_implementations::BaseResources;
     use zk_ee::reference_implementations::DecreasingNative;
@@ -140,8 +177,13 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner(input.as_slice(), &mut pubkey, &mut resources)
-            .expect("ecrecover");
+        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
+            input.as_slice(),
+            &mut pubkey,
+            &mut resources,
+            None,
+        )
+        .expect("ecrecover");
         assert_eq!(pubkey.len(), 32, "Size should be 32");
         assert_eq!(
             pubkey, expected_pubkey,
@@ -156,8 +198,13 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner(input.as_slice(), &mut pubkey, &mut resources)
-            .expect("ecrecover");
+        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
+            input.as_slice(),
+            &mut pubkey,
+            &mut resources,
+            None,
+        )
+        .expect("ecrecover");
         assert_eq!(pubkey.len(), 0, "Size should be 0");
     }
 
@@ -173,8 +220,13 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner(input.as_slice(), &mut pubkey, &mut resources)
-            .expect("ecrecover");
+        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
+            input.as_slice(),
+            &mut pubkey,
+            &mut resources,
+            None,
+        )
+        .expect("ecrecover");
         assert_eq!(pubkey.len(), 0, "Size should be 0 in case of error");
     }
 
@@ -190,8 +242,13 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner(input.as_slice(), &mut pubkey, &mut resources)
-            .expect("ecrecover");
+        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
+            input.as_slice(),
+            &mut pubkey,
+            &mut resources,
+            None,
+        )
+        .expect("ecrecover");
         assert_eq!(pubkey.len(), 0, "Size should be 0 in case of error");
     }
 
@@ -213,9 +270,13 @@ mod test {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 99, 249, 114, 95, 16, 115, 88, 201, 17, 91, 201,
             216, 108, 114, 221, 88, 35, 233, 177, 230,
         ];
-
-        ecrecover_as_system_function_inner(input.as_slice(), &mut pubkey, &mut resources)
-            .expect("ecrecover");
+        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
+            input.as_slice(),
+            &mut pubkey,
+            &mut resources,
+            None,
+        )
+        .expect("ecrecover");
         assert_eq!(pubkey.len(), 32, "Size should be 32");
         assert_eq!(
             pubkey, expected_pubkey,

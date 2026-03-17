@@ -1,9 +1,10 @@
 use super::Scalar;
 
 impl Scalar {
+    // Note: try to use the hook version whenever possible
     // using addition chain from
     // https://briansmith.org/ecc-inversion-addition-chains-01#secp256k1_scalar_inversion
-    pub(crate) fn invert_in_place(&mut self) {
+    pub(crate) fn invert_in_place_inner(&mut self) {
         let x_1 = *self;
         self.pow2k_in_place(1);
         let x_10 = *self;
@@ -104,12 +105,12 @@ mod tests {
     fn test_invert() {
         proptest!(|(x: Scalar)| {
             let mut a = x;
-            a.invert_in_place();
-            a.invert_in_place();
+            a.invert_in_place_inner();
+            a.invert_in_place_inner();
             prop_assert_eq!(a, x);
 
             a = x;
-            a.invert_in_place();
+            a.invert_in_place_inner();
             a *= x;
 
             if x.is_zero() {
