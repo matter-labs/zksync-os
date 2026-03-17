@@ -53,6 +53,7 @@ use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::NopTxValidator;
 use zk_ee::system::validator::TxValidator;
 use zk_ee::utils::Bytes32;
+use zksync_os_interface::error::InvalidTransaction;
 use zksync_os_interface::traits::EncodedTx;
 use zksync_os_interface::traits::TxListSource;
 use zksync_os_interface::types::{
@@ -551,6 +552,13 @@ fn assert_block_outputs_match(actual: &BlockOutput, expected: &BlockOutput) {
     }
 }
 
+fn has_validator_filtered_tx(block_output: &BlockOutput) -> bool {
+    block_output
+        .tx_results
+        .iter()
+        .any(|tx_result| matches!(tx_result, Err(InvalidTransaction::FilteredByValidator)))
+}
+
 impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
     pub fn set_last_block_number(&mut self, prev: u64) {
         self.previous_block_number = prev;
@@ -900,7 +908,16 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let block_output: BlockOutput = result_keeper.into();
         let pubdata = result_keeper_prover_input.pubdata.clone();
         let prover_input_block_output: BlockOutput = result_keeper_prover_input.into();
-        assert_block_outputs_match(&block_output, &prover_input_block_output);
+        let has_filtered_by_validator = has_validator_filtered_tx(&block_output);
+        if has_filtered_by_validator {
+            warn!(
+                "Skipping forward/prover-input output equivalence checks because the custom \
+                 validator filtered at least one transaction, and prover-input replay uses \
+                 NopTxValidator"
+            );
+        } else {
+            assert_block_outputs_match(&block_output, &prover_input_block_output);
+        }
 
         trace!(
             "{}Block output:{} \n{:#?}",
@@ -1036,7 +1053,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 run_prover(items.borrow().as_slice());
             }
 
-            assert_eq!(prover_input_forward, proof_input);
+            if has_filtered_by_validator {
+                warn!(
+                    "Skipping native/proof witness equality checks because the custom validator \
+                     filtered at least one transaction, and proof replay does not use it"
+                );
+            } else {
+                assert_eq!(prover_input_forward, proof_input);
+            }
             prover_input_forward
         } else {
             prover_input_forward
