@@ -150,13 +150,13 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
 
     let (transactions, raw_transactions, receipt_check_mode) = match &tx_source {
         TxSource::FromFile(path) => {
-            let (encoded, raw, tx_hashes) = load_predefined_rlp_transactions(path)?;
-            let check_mode = if tx_hashes.iter().any(|hash| hash.is_some()) {
-                ReceiptCheckMode::PredefinedByHash(tx_hashes)
+            let predefined = load_predefined_rlp_transactions(path)?;
+            let check_mode = if predefined.tx_hashes.iter().any(|hash| hash.is_some()) {
+                ReceiptCheckMode::PredefinedByHash(predefined.tx_hashes)
             } else {
                 ReceiptCheckMode::None
             };
-            (encoded, raw, check_mode)
+            (predefined.encoded, predefined.raw, check_mode)
         }
         TxSource::FromBlock => {
             let raw = block.clone().get_transactions_raw()?;
@@ -457,9 +457,13 @@ fn normalize_call_frame_for_geth_output(mut frame: CallFrame) -> CallFrame {
     frame
 }
 
-fn load_predefined_rlp_transactions(
-    path: &PathBuf,
-) -> Result<(Vec<EncodedTx>, Vec<ZKsyncTxEnvelope>, Vec<Option<B256>>)> {
+struct PredefinedTransactions {
+    encoded: Vec<EncodedTx>,
+    raw: Vec<ZKsyncTxEnvelope>,
+    tx_hashes: Vec<Option<B256>>,
+}
+
+fn load_predefined_rlp_transactions(path: &PathBuf) -> Result<PredefinedTransactions> {
     let bytes = std::fs::read(path)
         .with_context(|| format!("failed to read predefined txs file {:?}", path))?;
     let encoded_txs: Vec<PredefinedTxJson> = serde_json::from_slice(&bytes)
@@ -512,7 +516,11 @@ fn load_predefined_rlp_transactions(
         hash_count
     );
 
-    Ok((rig_txs, revm_txs, tx_hashes))
+    Ok(PredefinedTransactions {
+        encoded: rig_txs,
+        raw: revm_txs,
+        tx_hashes,
+    })
 }
 
 #[derive(Debug, serde::Deserialize)]

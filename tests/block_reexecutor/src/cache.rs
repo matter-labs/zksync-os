@@ -152,10 +152,13 @@ pub fn load_or_fetch_block_params(
     })
 }
 
+pub type StorageCache = HashMap<(B160, Bytes32), Bytes32>;
+pub type PreimagesCache = HashMap<Bytes32, Vec<u8>>;
+
 pub fn load_oracle_caches(
     storage_path: &Path,
     preimages_path: &Path,
-) -> Result<(HashMap<(B160, Bytes32), Bytes32>, HashMap<Bytes32, Vec<u8>>)> {
+) -> Result<(StorageCache, PreimagesCache)> {
     let mut storage_cache = HashMap::new();
     let mut preimages_cache = HashMap::new();
 
@@ -192,8 +195,8 @@ pub fn load_oracle_caches(
 pub fn save_oracle_caches(
     storage_path: &Path,
     preimages_path: &Path,
-    storage: &HashMap<(B160, Bytes32), Bytes32>,
-    preimages: &HashMap<Bytes32, Vec<u8>>,
+    storage: &StorageCache,
+    preimages: &PreimagesCache,
 ) -> Result<()> {
     let cache_dir = storage_path
         .parent()
