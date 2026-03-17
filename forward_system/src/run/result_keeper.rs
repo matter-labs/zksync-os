@@ -147,7 +147,7 @@ impl<TR: TxResultCallback> IOResultKeeper<EthereumIOTypesConfig> for ProverInput
             Item = GenericEventContentWithTxRef<'a, MAX_EVENT_TOPICS, EthereumIOTypesConfig>,
         >,
     ) {
-        // Have to reimplement, as delegating it causes an ICE...
+        // TODO: delegating here causes an ICE. We reimplement this method.
         self.forward_running_rk.events = iter
             .map(|e| GenericEventContent {
                 tx_number: e.tx_number,

@@ -920,6 +920,8 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
                 .unwrap();
             // Oracle provides lengths as u32, so in this case they are
             // packed into a single usize
+            // Note lengths are in 32-bit words, so we have to divide
+            // by 2 on 64-bit arch.
             let packed_lens = it.next().expect("packed lengths");
             let q_len = (packed_lens & 0xFFFF_FFFF) as usize;
             let r_len = (packed_lens >> 32) as usize;

@@ -4,6 +4,7 @@ use basic_system::system_functions::modexp::{
 use oracle_provider::OracleQueryProcessor;
 use risc_v_simulator::abstractions::memory::MemorySource;
 
+use crate::read_u64_words;
 use crate::utils::{
     evaluate::{read_memory_as_u64, read_struct},
     usize_slice_iterator::UsizeSliceIteratorOwned,
@@ -114,6 +115,9 @@ impl<M: MemorySource> OracleQueryProcessor<M> for ArithmeticQuery<M> {
 /// Works in a similar way as the ArithmeticQuery, but with
 /// 64 bit pointers. Importantly, the query response is the
 /// same.
+///
+/// This processor explicitly reads the process memory
+/// using a raw pointer to get the input.
 pub struct NativeArithmeticQuery<M: MemorySource> {
     _marker: std::marker::PhantomData<M>,
 }
@@ -170,14 +174,4 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeArithmeticQuery<M> {
         }
         .into_usize_iterator()
     }
-}
-
-#[inline(always)]
-unsafe fn read_u64_words(ptr_u64: u64, len_words_u64: u64) -> Vec<u64> {
-    if ptr_u64 == 0 || len_words_u64 == 0 {
-        return vec![];
-    }
-    let addr = ptr_u64 as usize;
-    let len_words = len_words_u64 as usize;
-    core::slice::from_raw_parts(addr as *const u64, len_words).to_vec()
 }

@@ -63,6 +63,58 @@ impl<M: MemorySource> OracleQueryProcessor<M> for BlobCommitmentAndProofQuery<M>
     }
 }
 
+/// Query processor to be used for prover input native run
+/// Works in a similar way as the NativeBlobCommitmentAndProof, but with
+/// 64 bit pointers. Importantly, the query response is the
+/// same.
+///
+/// This processor explicitly reads the process memory
+/// using a raw pointer to get the input.
+pub struct NativeBlobCommitmentAndProofQuery<M: MemorySource> {
+    _marker: std::marker::PhantomData<M>,
+}
+
+impl<M: MemorySource> Default for NativeBlobCommitmentAndProofQuery<M> {
+    fn default() -> Self {
+        Self {
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<M: MemorySource> OracleQueryProcessor<M> for NativeBlobCommitmentAndProofQuery<M> {
+    fn supported_query_ids(&self) -> Vec<u32> {
+        vec![BLOB_COMMITMENT_AND_PROOF_QUERY_ID]
+    }
+
+    fn process_buffered_query(
+        &mut self,
+        query_id: u32,
+        query: Vec<usize>,
+        _memory: &M,
+    ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static> {
+        debug_assert!(self.supports_query_id(query_id));
+
+        // this query processor supposed to work only on "host" architecture, which is always 64 bit
+        const { assert!(8 == core::mem::size_of::<usize>()) };
+        let mut it = query.into_iter();
+
+        let data_ptr = it.next().unwrap();
+        let data_len = it.next().unwrap();
+        assert!(
+            it.next().is_none(),
+            "Only a pointer and the length are expected."
+        );
+        let data = unsafe { crate::read_u8_words(data_ptr as u64, data_len as u64) };
+        let result = blob_kzg_commitment_and_proof(&data);
+
+        let r = result.iter().collect::<Vec<_>>();
+        let r = Vec::into_boxed_slice(r);
+        let n = UsizeSliceIteratorOwned::new(r);
+        Box::new(n)
+    }
+}
+
 ///
 /// Calculate kzg commitment and proof at the point `blake2s(versioned_hash & data)` for blob created from passed data.
 ///

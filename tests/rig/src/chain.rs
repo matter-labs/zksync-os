@@ -70,7 +70,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         proof_data: Option<ProofData<FlatStorageCommitment<TREE_HEIGHT>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
-        use_native_modexp_oracle: bool,
+        use_native_callable_oracles: bool,
     ) -> ZkEENonDeterminismSource<M>;
 }
 
