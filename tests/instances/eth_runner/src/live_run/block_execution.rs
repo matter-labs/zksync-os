@@ -61,13 +61,13 @@ pub fn run_block(
         receipts,
         call,
     } = block_traces;
-    
+
     info!("\n ===================");
     info!("Running block: {block_number}");
 
     // Extract block hash before block is moved by get_transactions()
     let block_hash = U256::from_be_bytes(block.result.header.hash.0);
-    
+
     let block_context = block.get_block_context();
     let (transactions, skipped, calls_unsupported_precompile) =
         block.get_transactions(&call, single_tx);
@@ -80,7 +80,7 @@ pub fn run_block(
         warn!("Skipping block {block_number}, as it calls to an unsupported precompile");
         return Ok(BlockStatus::Success);
     }
-    
+
     // Set block hash for future blocks to use
     db.set_block_hash(block_number, block_hash)?;
     info!("Transactions to run: {}", transactions.len());
@@ -122,7 +122,7 @@ pub fn run_block(
         suffix.push_str("_witness");
         std::path::Path::new(&dir).join(suffix)
     });
-    
+
     let run_config = rig::chain::RunConfig {
         witness_output_file: output_path,
         do_riscv_run: !only_forward,
@@ -130,9 +130,9 @@ pub fn run_block(
         check_storage_diff_hashes: true,
         ..Default::default()
     };
-    
+
     let execution_start = Instant::now();
-    
+
     // Wrap execution in panic handler to catch panics
     let execution_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
         chain.run_block_with_extra_stats(
@@ -144,8 +144,8 @@ pub fn run_block(
             &mut NopTxValidator::default(),
         )
     }));
-    
-    let (output, stats, _prover_input) = match execution_result {
+
+    let (output, stats, _prover_input, _pubdata) = match execution_result {
         std::result::Result::Ok(std::result::Result::Ok(result)) => result,
         std::result::Result::Ok(std::result::Result::Err(e)) => {
             return Err(anyhow!("Block execution failed: {e:?}"));
@@ -159,12 +159,12 @@ pub fn run_block(
             } else {
                 format!("Panic occurred (payload type: {:?})", panic_payload.type_id())
             };
-            
+
             error!("Block {block_number} panicked during execution: {panic_msg}");
             return Err(anyhow!("Block {block_number} panicked during execution: {panic_msg}"));
         }
     };
-    
+
     let execution_time = execution_start.elapsed();
 
     info!("Actual gas used: {}", output.header.gas_used);
@@ -217,7 +217,7 @@ pub fn run_block(
         .collect();
 
     db.set_block_resource_infos(block_number, resource_infos)?;
-    
+
     // Flush once after all writes are batched
     let flush_start = Instant::now();
     db.flush()?;
@@ -227,9 +227,9 @@ pub fn run_block(
     let post_check_start = Instant::now();
     let post_check_result = post_check(output, receipts, diff_trace, prestate_cache);
     let post_check_time = post_check_start.elapsed();
-    
+
     let total_time = block_start.elapsed();
-    
+
     // Log timing breakdown
     info!("=== Block {} Timing Breakdown ===", block_number);
     // Fetch time is 0 since traces are prefetched
@@ -257,7 +257,7 @@ pub fn run_block(
             db.flush()?;
             let post_flush_time = post_flush_start.elapsed();
             let post_db_write_time = post_db_write_start.elapsed();
-            debug!("Post-check DB writes: {:.2}ms (flush: {:.2}ms)", 
+            debug!("Post-check DB writes: {:.2}ms (flush: {:.2}ms)",
                 post_db_write_time.as_secs_f64() * 1000.0,
                 post_flush_time.as_secs_f64() * 1000.0
             );
@@ -269,13 +269,13 @@ pub fn run_block(
             // Always save of them for now, even when already cached.
             // TODO: avoid persisting when read from cache.
             db.set_block_traces(block_number, &traces_clone)?;
-            
+
             // Flush status and traces writes
             let post_flush_start = Instant::now();
             db.flush()?;
             let post_flush_time = post_flush_start.elapsed();
             let post_db_write_time = post_db_write_start.elapsed();
-            debug!("Post-check DB writes: {:.2}ms (flush: {:.2}ms)", 
+            debug!("Post-check DB writes: {:.2}ms (flush: {:.2}ms)",
                 post_db_write_time.as_secs_f64() * 1000.0,
                 post_flush_time.as_secs_f64() * 1000.0
             );
