@@ -3,6 +3,7 @@ use basic_bootloader::bootloader::config::BasicBootloaderExecutionConfig;
 use basic_bootloader::bootloader::errors::BootloaderSubsystemError;
 use basic_bootloader::bootloader::result_keeper::ResultKeeperExt;
 use oracle_provider::DummyMemorySource;
+use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
 use zk_ee::system::tracer::Tracer;
 use zk_ee::system::validator::TxValidator;
@@ -42,4 +43,13 @@ pub fn run_forward_no_panic<Config: BasicBootloaderExecutionConfig>(
 ) -> Result<(), BootloaderSubsystemError> {
     ForwardBootloader::run_prepared::<Config>(oracle, &mut (), result_keeper, tracer, validator)
         .map(|_| ())
+}
+
+pub fn run_prover_input_no_panic<Config: BasicBootloaderExecutionConfig>(
+    oracle: ReadWitnessSource<DummyMemorySource>,
+    result_keeper: &mut impl ResultKeeperExt,
+    tracer: &mut impl Tracer<ProverInputSystem>,
+) -> Result<Vec<u32>, BootloaderSubsystemError> {
+    ProverInputBootloader::run_prepared::<Config>(oracle, result_keeper, tracer)
+        .map(|o| o.0.get_read_items().borrow().clone())
 }
