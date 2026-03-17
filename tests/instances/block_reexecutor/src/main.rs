@@ -6,7 +6,7 @@ use alloy::{
     rpc::types::trace::geth::CallFrame,
 };
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 use std::{collections::HashMap, path::PathBuf};
 
 mod cache;
@@ -31,26 +31,25 @@ use zksync_os_revm_runner::revm_runner;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Re-execute blocks using external RPC")]
+#[command(
+    author, version,
+    about = "Re-execute blocks using external RPC",
+    group(ArgGroup::new("block_id").required(true).args(["block_hash", "block_number"])),
+)]
 struct Args {
     /// RPC endpoint URL
     #[arg(long, default_value = "http://localhost:8545")]
     endpoint: String,
 
-    /// Block hash to re-execute (required in default mode)
+    /// Block hash to re-execute (or to identify state for --transactions-file simulation)
     #[arg(long)]
     block_hash: Option<B256>,
 
-    /// Block number (required when --transactions-file is set)
-    #[arg(long)]
+    /// Block number identifying the state for --transactions-file simulation
+    #[arg(long, requires = "transactions_file")]
     block_number: Option<u64>,
 
-    /// Enable verbose logging
-    #[arg(long, short)]
-    verbose: bool,
-
-    /// Optional JSON file with predefined transactions encoded as `EncodedTx::Rlp`.
-    /// When set, these txs are executed against the state at `--block-number`.
+    /// JSON file with predefined transactions to simulate against the block's state
     #[arg(long)]
     transactions_file: Option<PathBuf>,
 }
@@ -68,14 +67,13 @@ fn main() -> Result<()> {
 
     println!("Starting block re-execution");
     println!("Endpoint: {}", args.endpoint);
-    println!("Block hash: {:?}", args.block_hash);
-    println!("Block number: {:?}", args.block_number);
 
     let rpc_client = RpcClient::new(args.endpoint.clone());
-    let block_hash = if args.transactions_file.is_some() {
-        let block_number = args
-            .block_number
-            .context("--block-number is required when --transactions-file is set")?;
+    let block_hash = if let Some(hash) = args.block_hash {
+        println!("Block hash: {hash:?}");
+        hash
+    } else {
+        let block_number = args.block_number.expect("enforced by clap arg group");
         let block = rpc_client.get_block_by_number(block_number)?;
         let resolved_hash = block.result.header.hash;
         println!(
@@ -83,9 +81,6 @@ fn main() -> Result<()> {
             block_number, resolved_hash
         );
         resolved_hash
-    } else {
-        args.block_hash
-            .context("--block-hash is required unless --transactions-file is set")?
     };
 
     let block_params_path = block_params_cache_path(block_hash);
