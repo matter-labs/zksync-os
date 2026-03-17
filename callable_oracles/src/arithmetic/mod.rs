@@ -185,3 +185,49 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeArithmeticQuery<M> {
         .into_usize_iterator()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oracle_provider::DummyMemorySource;
+
+    #[test]
+    fn native_arithmetic_query_processes_valid_query() {
+        let mut dividend = vec![10u64, 0, 0, 0];
+        let mut modulus = vec![3u64, 0, 0, 0];
+        let arg = ModExpAdviceParams64 {
+            op: 0,
+            a_ptr: dividend.as_mut_ptr().addr() as u64,
+            a_len: 1,
+            b_ptr: 0,
+            b_len: 0,
+            modulus_ptr: modulus.as_mut_ptr().addr() as u64,
+            modulus_len: 1,
+        };
+
+        let output: Vec<usize> = NativeArithmeticQuery::<DummyMemorySource>::default()
+            .process_buffered_query(
+                MODEXP_ADVICE_QUERY_ID,
+                vec![(&arg as *const ModExpAdviceParams64).addr()],
+                &DummyMemorySource,
+            )
+            .collect();
+
+        assert_eq!(output.len(), 3);
+        let packed_lens = output[0] as u64;
+        assert_eq!(packed_lens as u32, 2);
+        assert_eq!((packed_lens >> 32) as u32, 2);
+        assert_eq!(output[1], 3);
+        assert_eq!(output[2], 1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn native_arithmetic_query_rejects_null_query_pointer() {
+        let _ = NativeArithmeticQuery::<DummyMemorySource>::default().process_buffered_query(
+            MODEXP_ADVICE_QUERY_ID,
+            vec![0],
+            &DummyMemorySource,
+        );
+    }
+}

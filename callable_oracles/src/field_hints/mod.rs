@@ -157,3 +157,41 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeFieldOpsQuery<M> {
         }
     }
 }
+
+#[cfg(test)]
+mod native_query_tests {
+    use super::*;
+    use oracle_provider::DummyMemorySource;
+
+    #[test]
+    fn native_field_ops_query_processes_valid_query() {
+        let mut input = [0u8; 32];
+        input[31] = 1;
+        let hint = FieldOpsHint64 {
+            op: FieldHintOp::Secp256k1BaseFieldInverse as u32,
+            src_ptr: input.as_ptr().addr() as u64,
+            src_len_u32_words: 8,
+        };
+
+        let output: Vec<usize> = NativeFieldOpsQuery::<DummyMemorySource>::default()
+            .process_buffered_query(
+                FIELD_OPS_ADVISE_QUERY_ID,
+                vec![(&hint as *const FieldOpsHint64).addr()],
+                &DummyMemorySource,
+            )
+            .collect();
+
+        assert_eq!(output.len(), 4);
+        assert!(output.iter().any(|word| *word != 0));
+    }
+
+    #[test]
+    #[should_panic]
+    fn native_field_ops_query_rejects_null_query_pointer() {
+        let _ = NativeFieldOpsQuery::<DummyMemorySource>::default().process_buffered_query(
+            FIELD_OPS_ADVISE_QUERY_ID,
+            vec![0],
+            &DummyMemorySource,
+        );
+    }
+}

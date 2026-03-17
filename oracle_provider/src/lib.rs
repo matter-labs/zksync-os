@@ -367,3 +367,46 @@ fn record_usize_as_u32_words(dst: &mut Vec<u32>, value: usize) {
         dst.push((v >> 32) as u32);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEST_QUERY_ID: u32 = 0x1234_5678;
+
+    struct FixedResponseProcessor;
+
+    impl OracleQueryProcessor<DummyMemorySource> for FixedResponseProcessor {
+        fn supported_query_ids(&self) -> Vec<u32> {
+            vec![TEST_QUERY_ID]
+        }
+
+        fn process_buffered_query(
+            &mut self,
+            query_id: u32,
+            query: Vec<usize>,
+            _memory: &DummyMemorySource,
+        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            assert_eq!(query_id, TEST_QUERY_ID);
+            assert_eq!(query, vec![7usize]);
+            Box::new(vec![0x1122_3344_5566_7788usize, 0x99aa_bbcc_ddee_ff00usize].into_iter())
+        }
+    }
+
+    #[test]
+    fn read_witness_source_records_length_and_words() {
+        let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
+        oracle.add_external_processor(FixedResponseProcessor);
+
+        let mut source = ReadWitnessSource::new(oracle);
+        let response: Vec<usize> = source.raw_query(TEST_QUERY_ID, &7u64).unwrap().collect();
+        assert_eq!(
+            response,
+            vec![0x1122_3344_5566_7788usize, 0x99aa_bbcc_ddee_ff00usize]
+        );
+        assert_eq!(
+            *source.get_read_items().borrow(),
+            vec![4, 0x5566_7788, 0x1122_3344, 0xddee_ff00, 0x99aa_bbcc,]
+        );
+    }
+}
