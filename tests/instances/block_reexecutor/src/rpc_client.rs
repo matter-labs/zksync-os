@@ -11,6 +11,9 @@ use serde_json::Value;
 use std::{io::Read, str::FromStr, thread, time::Duration};
 use ureq::json;
 use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
+use zksync_os_tests_common::zksync_tx::l1_tx::ZKsyncL1Tx;
+use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
+use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// Simple RPC client with the basic methods we need
@@ -244,11 +247,9 @@ impl RpcClient {
     }
 }
 
-use alloy::eips::Typed2718;
-
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Block {
-    pub result: alloy::rpc::types::Block<alloy::rpc::types::Transaction, alloy::rpc::types::Header>,
+    pub result: alloy::rpc::types::Block<Value, alloy::rpc::types::Header>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -339,40 +340,135 @@ impl Block {
         }
     }
 
-    pub fn get_transactions(self) -> Vec<EncodedTx> {
-        self.result
-            .transactions
-            .into_transactions()
-            .filter_map(|tx| {
-                let transaction_type = tx.ty();
-                let supported_tx_type = transaction_type <= 2;
-                if supported_tx_type {
-                    Some(tx.encode())
-                } else {
-                    warn!("Skipping unsupported transaction of type {transaction_type:?}");
-                    None
-                }
+    pub fn tx_count(&self) -> usize {
+        match &self.result.transactions {
+            alloy::rpc::types::BlockTransactions::Full(txs) => txs.len(),
+            alloy::rpc::types::BlockTransactions::Hashes(hashes) => hashes.len(),
+            alloy::rpc::types::BlockTransactions::Uncle => 0,
+        }
+    }
+
+    fn tx_values(self) -> Result<Vec<Value>> {
+        match self.result.transactions {
+            alloy::rpc::types::BlockTransactions::Full(txs) => Ok(txs),
+            _ => Err(anyhow!("expected full transaction objects in block")),
+        }
+    }
+
+    pub fn get_transactions(self) -> Result<Vec<EncodedTx>> {
+        self.tx_values()?
+            .into_iter()
+            .map(|value| {
+                let envelope = parse_tx_value(value)?;
+                Ok(envelope.encode())
             })
             .collect()
     }
 
-    pub fn get_transactions_raw(self) -> Vec<ZKsyncTxEnvelope> {
-        self.result
-            .transactions
-            .into_transactions()
-            .filter_map(|tx| {
-                let transaction_type = tx.ty();
-                let supported_tx_type = transaction_type <= 2;
-                if supported_tx_type {
-                    #[allow(deprecated)]
-                    let signer = *tx.as_recovered().signer();
-                    let envelope: TxEnvelope = tx.into();
-                    Some(ZKsyncTxEnvelope::Ethereum(envelope, Address::from(signer)))
-                } else {
-                    warn!("Skipping unsupported transaction of type {transaction_type:?}");
-                    None
-                }
-            })
-            .collect()
+    pub fn get_transactions_raw(self) -> Result<Vec<ZKsyncTxEnvelope>> {
+        self.tx_values()?.into_iter().map(parse_tx_value).collect()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RpcZKsyncTx {
+    pub initiator: Address,
+    pub to: Address,
+    #[serde(with = "alloy::serde::quantity")]
+    pub gas: u64,
+    pub input: Bytes,
+    #[serde(default, with = "alloy::serde::quantity::opt")]
+    pub gas_per_pubdata_byte_limit: Option<u64>,
+    pub max_fee_per_gas: Option<U256>,
+    pub max_priority_fee_per_gas: Option<U256>,
+    pub nonce: Option<U256>,
+    pub value: Option<U256>,
+    pub to_mint: Option<U256>,
+    pub refund_recipient: Option<Address>,
+    #[serde(default)]
+    pub factory_deps: Option<Vec<B256>>,
+}
+
+impl RpcZKsyncTx {
+    fn into_l1_tx(self) -> Result<ZKsyncL1Tx> {
+        Ok(ZKsyncL1Tx {
+            from: self.initiator,
+            to: self.to,
+            gas_limit: self.gas as u128,
+            gas_per_pubdata_byte_limit: self.gas_per_pubdata_byte_limit.unwrap_or(0) as u128,
+            max_fee_per_gas: u256_to_u128(self.max_fee_per_gas.unwrap_or_default())?,
+            max_priority_fee_per_gas: u256_to_u128(
+                self.max_priority_fee_per_gas.unwrap_or_default(),
+            )?,
+            nonce: u256_to_u128(self.nonce.unwrap_or_default())?,
+            value: self.value.unwrap_or_default(),
+            to_mint: self.to_mint.unwrap_or_default(),
+            refund_recipient: self.refund_recipient.unwrap_or_default(),
+            input: self.input,
+            factory_deps: self.factory_deps.unwrap_or_default(),
+        })
+    }
+
+    fn into_upgrade_tx(self) -> Result<ZKsyncUpgradeTx> {
+        Ok(ZKsyncUpgradeTx {
+            from: self.initiator,
+            to: self.to,
+            gas_limit: self.gas as u128,
+            gas_per_pubdata_byte_limit: self.gas_per_pubdata_byte_limit.unwrap_or(0) as u128,
+            max_fee_per_gas: u256_to_u128(self.max_fee_per_gas.unwrap_or_default())?,
+            max_priority_fee_per_gas: u256_to_u128(
+                self.max_priority_fee_per_gas.unwrap_or_default(),
+            )?,
+            nonce: u256_to_u128(self.nonce.unwrap_or_default())?,
+            value: self.value.unwrap_or_default(),
+            to_mint: self.to_mint.unwrap_or_default(),
+            refund_recipient: self.refund_recipient.unwrap_or_default(),
+            input: self.input,
+            factory_deps: self.factory_deps.unwrap_or_default(),
+        })
+    }
+}
+
+fn u256_to_u128(value: U256) -> Result<u128> {
+    value
+        .try_into()
+        .map_err(|_| anyhow!("U256 value {} does not fit in u128", value))
+}
+
+fn parse_tx_value(value: Value) -> Result<ZKsyncTxEnvelope> {
+    let tx_type_str = value
+        .get("type")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("transaction missing 'type' field"))?;
+
+    let tx_type = u8::from_str_radix(tx_type_str.trim_start_matches("0x"), 16)
+        .map_err(|_| anyhow!("invalid tx type: {}", tx_type_str))?;
+
+    match tx_type {
+        0x00..=0x04 => {
+            let tx: alloy::rpc::types::Transaction = serde_json::from_value(value)?;
+            #[allow(deprecated)]
+            let signer = *tx.as_recovered().signer();
+            let envelope: TxEnvelope = tx.into();
+            Ok(ZKsyncTxEnvelope::Ethereum(envelope, Address::from(signer)))
+        }
+        ZKsyncL1Tx::TX_TYPE => {
+            let rpc_tx: RpcZKsyncTx = serde_json::from_value(value)?;
+            Ok(ZKsyncTxEnvelope::from(rpc_tx.into_l1_tx()?))
+        }
+        ZKsyncUpgradeTx::TX_TYPE => {
+            let rpc_tx: RpcZKsyncTx = serde_json::from_value(value)?;
+            Ok(ZKsyncTxEnvelope::from(rpc_tx.into_upgrade_tx()?))
+        }
+        ZKsyncServiceTx::TX_TYPE => {
+            let rpc_tx: RpcZKsyncTx = serde_json::from_value(value)?;
+            Ok(ZKsyncTxEnvelope::from(ZKsyncServiceTx {
+                to: rpc_tx.to,
+                input: rpc_tx.input,
+                salt: 0,
+            }))
+        }
+        _ => Err(anyhow!("unsupported transaction type: 0x{:02x}", tx_type)),
     }
 }

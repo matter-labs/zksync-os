@@ -1,4 +1,4 @@
-use alloy::{eips::Typed2718, hex, primitives::U256};
+use alloy::{hex, primitives::U256};
 use anyhow::Result;
 use rig::zksync_os_interface::types::BlockOutput;
 
@@ -8,35 +8,16 @@ pub fn filter_supported_receipts(
     block: &Block,
     receipts: Vec<TransactionReceipt>,
 ) -> Result<Vec<TransactionReceipt>> {
-    let block_txs: Vec<_> = block
-        .clone()
-        .result
-        .transactions
-        .into_transactions()
-        .collect();
-    if block_txs.len() != receipts.len() {
+    let block_tx_count = block.tx_count();
+    if block_tx_count != receipts.len() {
         return Err(anyhow::anyhow!(
             "receipt count mismatch: block has {} txs, RPC returned {} receipts",
-            block_txs.len(),
+            block_tx_count,
             receipts.len()
         ));
     }
 
-    let filtered = block_txs
-        .into_iter()
-        .zip(receipts)
-        .filter_map(
-            |(tx, receipt)| {
-                if tx.ty() <= 2 {
-                    Some(receipt)
-                } else {
-                    None
-                }
-            },
-        )
-        .collect();
-
-    Ok(filtered)
+    Ok(receipts)
 }
 
 pub fn check_tx_outputs_against_receipts(

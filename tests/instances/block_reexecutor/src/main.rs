@@ -120,8 +120,8 @@ fn main() -> Result<()> {
             (encoded, raw, check_mode)
         } else {
             (
-                block.clone().get_transactions(),
-                block.clone().get_transactions_raw(),
+                block.clone().get_transactions()?,
+                block.clone().get_transactions_raw()?,
                 ReceiptCheckMode::FullBlock,
             )
         };

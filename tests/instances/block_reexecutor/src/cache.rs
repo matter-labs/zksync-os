@@ -63,13 +63,7 @@ pub fn load_or_fetch_block_params(
 ) -> Result<LoadedBlockParams> {
     match load_block_params_cache(cache_path, block_hash) {
         Ok(Some(cached)) => {
-            let cached_block_tx_count = cached
-                .block
-                .clone()
-                .result
-                .transactions
-                .into_transactions()
-                .count();
+            let cached_block_tx_count = cached.block.tx_count();
             if cached.receipts.len() != cached_block_tx_count {
                 eprintln!(
                     "Block params cache is stale (receipt count mismatch: receipts={}, txs={}), refetching",
