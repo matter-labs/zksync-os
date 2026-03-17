@@ -23,17 +23,22 @@ use crate::run::query_processors::ZKProofDataResponder;
 use crate::run::query_processors::{BlockMetadataResponder, DACommitmentSchemeResponder};
 use crate::run::result_keeper::ForwardRunningResultKeeper;
 use crate::system::bootloader::run_forward;
-use crate::system::system_types::CallSimulationBootloader;
-use crate::system::system_types::CallSimulationSystem;
-use crate::system::system_types::ForwardRunningSystem;
+use crate::system::bootloader::run_prover_input_no_panic;
+use crate::system::system::CallSimulationBootloader;
+use crate::system::system::CallSimulationBootloader;
+use crate::system::system::CallSimulationSystem;
+use crate::system::system::ForwardRunningSystem;
 use basic_bootloader::bootloader::config::{
     BasicBootloaderCallSimulationConfig, BasicBootloaderForwardSimulationConfig,
+    BasicBootloaderProvingExecutionConfig,
 };
 use errors::ForwardSubsystemError;
 use oracle_provider::MemorySource;
 use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
+use result_keeper::ProverInputResultKeeper;
 use zk_ee::common_structs::ProofData;
+use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::tracer::Tracer;
 
 pub use interface_impl::RunBlockForward;
@@ -47,7 +52,6 @@ pub use preimage_source::PreimageSource;
 use zk_ee::wrap_error;
 use zksync_os_interface::traits::EncodedTx;
 
-use std::path::PathBuf;
 pub use tx_result_callback::TxResultCallback;
 pub use tx_source::NextTxResponse;
 pub use tx_source::TxSource;
@@ -102,38 +106,20 @@ pub fn run_block<T: ReadStorageTree, PS: PreimageSource, TS: TxSource, TR: TxRes
     Ok(result_keeper.into())
 }
 
-// TODO(EVM-1184): we should run it on native arch and it should return pubdata and other outputs via result keeper
-pub fn generate_proof_input<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
-    zk_os_program_path: PathBuf,
+pub fn generate_proof_input<
+    T: ReadStorageTree,
+    PS: PreimageSource,
+    TS: TxSource,
+    TR: TxResultCallback,
+>(
     block_context: BlockContext,
     proof_data: ProofData<StorageCommitment>,
     da_commitment_scheme: DACommitmentScheme,
     tree: T,
     preimage_source: PS,
     tx_source: TS,
-) -> Result<Vec<u32>, ForwardSubsystemError> {
-    let img_bytes = std::fs::read(&zk_os_program_path)
-        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {zk_os_program_path:?}"));
-    generate_proof_input_from_bytes(
-        &img_bytes,
-        block_context,
-        proof_data,
-        da_commitment_scheme,
-        tree,
-        preimage_source,
-        tx_source,
-    )
-}
-
-pub fn generate_proof_input_from_bytes<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
-    zk_os_program_bytes: &[u8],
-    block_context: BlockContext,
-    proof_data: ProofData<StorageCommitment>,
-    da_commitment_scheme: DACommitmentScheme,
-    tree: T,
-    preimage_source: PS,
-    tx_source: TS,
-) -> Result<Vec<u32>, ForwardSubsystemError> {
+    tx_result_callback: TR,
+) -> Result<(Vec<u32>, BlockOutput), ForwardSubsystemError> {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };
@@ -164,20 +150,21 @@ pub fn generate_proof_input_from_bytes<T: ReadStorageTree, PS: PreimageSource, T
         callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
     );
     oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
-    oracle.add_external_processor(UARTPrintResponder);
 
     // We'll wrap the source, to collect all the reads.
     let copy_source = ReadWitnessSource::new(oracle);
-    let items = copy_source.get_read_items();
 
-    let (_proof_output, _) = zksync_os_runner::run_and_get_effective_cycles_from_bytes(
-        zk_os_program_bytes,
-        None,
-        1 << 36,
+    let mut tracer = NopTracer::default();
+    let mut result_keeper = ProverInputResultKeeper::new(tx_result_callback);
+
+    let prover_input = run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
         copy_source,
-    );
+        &mut result_keeper,
+        &mut tracer,
+    )
+    .map_err(|e| wrap_error!(e))?;
 
-    Ok(std::rc::Rc::try_unwrap(items).unwrap().into_inner())
+    Ok((prover_input, result_keeper.into()))
 }
 
 // TODO(EVM-1184): in future we should generate input per batch
