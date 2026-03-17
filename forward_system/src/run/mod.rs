@@ -150,7 +150,7 @@ pub fn generate_proof_input<
     oracle.add_external_processor(
         callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery::default(),
     );
-    oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
+    oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery::default());
 
     // We'll wrap the source, to collect all the reads.
     let copy_source = ReadWitnessSource::new(oracle);
@@ -305,13 +305,15 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
         oracle.add_external_processor(
             callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery::default(),
         );
+        oracle
+            .add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery::default());
     } else {
         oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
         oracle.add_external_processor(
             callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
         );
+        oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
     }
-    oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery::default());
 
     if add_uart {
         let uart_responder = UARTPrintResponder;

@@ -76,6 +76,10 @@ impl<A: Allocator + Clone> BigintRepr<A> {
         self.backing.spare_capacity_mut()
     }
 
+    /// # Safety
+    ///
+    /// `digits` must not exceed `self.backing.capacity()`, and the first
+    /// `digits` elements of `self.backing` must have been fully initialized.
     pub(crate) unsafe fn set_num_digits(&mut self, digits: usize) {
         self.backing.set_len(digits);
         self.digits = digits;
@@ -812,6 +816,8 @@ pub(crate) struct OracleAdvisor<'a, O: IOOracle> {
     pub(crate) inner: &'a mut O,
 }
 
+const BIGINT_DIGIT_USIZE_SIZE: usize = U256::BYTES / core::mem::size_of::<usize>();
+
 fn write_bigint(
     it: &mut impl ExactSizeIterator<Item = usize>,
     mut to_consume: usize,
@@ -819,8 +825,9 @@ fn write_bigint(
 ) {
     // NOTE: even if oracle overstates the number of digits (so - iterator length), it is not important
     // as long as caller checks that number of digits is within bounds of soundness
+    // Safety: we only write initialized `usize` chunks into spare capacity and
+    // then set the number of initialized big-int digits accordingly.
     unsafe {
-        const BIGINT_DIGIT_USIZE_SIZE: usize = U256::BYTES / core::mem::size_of::<usize>();
         let num_digits =
             to_consume.next_multiple_of(BIGINT_DIGIT_USIZE_SIZE) / BIGINT_DIGIT_USIZE_SIZE;
         let dst_capacity = dst.clear_as_capacity_mut();
@@ -925,6 +932,10 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
             let packed_lens = it.next().expect("packed lengths");
             let q_len = (packed_lens & 0xFFFF_FFFF) as usize;
             let r_len = (packed_lens >> 32) as usize;
+            assert!(
+                q_len.is_multiple_of(2) && r_len.is_multiple_of(2),
+                "oracle returned an odd number of u32 words"
+            );
             (it, q_len / 2, r_len / 2)
         };
 
@@ -940,8 +951,14 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
 
         // check that hint is "sane" in upper bound
 
-        assert!(q_len.next_multiple_of(8) / 8 <= max_quotient_digits);
-        assert!(r_len.next_multiple_of(8) / 8 <= max_remainder_digits);
+        assert!(
+            q_len.next_multiple_of(BIGINT_DIGIT_USIZE_SIZE) / BIGINT_DIGIT_USIZE_SIZE
+                <= max_quotient_digits
+        );
+        assert!(
+            r_len.next_multiple_of(BIGINT_DIGIT_USIZE_SIZE) / BIGINT_DIGIT_USIZE_SIZE
+                <= max_remainder_digits
+        );
 
         write_bigint(&mut it, q_len, quotient_dst);
         write_bigint(&mut it, r_len, remainder_dst);

@@ -439,7 +439,6 @@ mod tests {
             storage_writes: vec![],
             account_diffs: vec![],
             published_preimages: vec![],
-            pubdata: vec![],
             computational_native_used: 0,
         }
     }
