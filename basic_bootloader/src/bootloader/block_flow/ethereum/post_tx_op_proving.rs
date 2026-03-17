@@ -18,6 +18,7 @@ use chain_check::ChainChecker;
 use core::alloc::Allocator;
 use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
+use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::system::Resources;
@@ -143,6 +144,11 @@ where
             "Finished processing block hash {:?}\n",
             &metadata.block_level.computed_header_hash
         );
+
+        #[allow(unused_must_use)]
+        io.oracle
+            .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
+            .expect("must disconnect an oracle before performing arbitrary CSR access");
 
         Ok((io.oracle, metadata.block_level.computed_header_hash))
     }

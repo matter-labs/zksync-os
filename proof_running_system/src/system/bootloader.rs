@@ -6,7 +6,6 @@ use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use zk_ee::logger_log;
 use zk_ee::memory::ZSTAllocator;
-use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::validator::NopTxValidator;
@@ -181,7 +180,7 @@ pub fn run_proving_inner<
     logger_log!(L::default(), "IO implementer init is complete");
 
     // Load all transactions from oracle and apply them.
-    let (mut oracle, public_input) =
+    let (_oracle, public_input) =
         ProvingBootloader::<O, L>::run_prepared::<BasicBootloaderProvingExecutionConfig>(
             oracle,
             &mut (),
@@ -190,13 +189,6 @@ pub fn run_proving_inner<
             &mut NopTxValidator,
         )
         .expect("Tried to prove a failing batch");
-
-    // disconnect oracle before returning, if some other post-logic is needed that doesn't use Oracle trait
-    // TODO: check this is the intended behaviour (ignoring the result)
-    #[allow(unused_must_use)]
-    oracle
-        .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
-        .expect("must disconnect an oracle before performing arbitrary CSR access");
 
     unsafe { core::mem::transmute(public_input) }
 }
@@ -225,12 +217,6 @@ pub fn run_proving_inner<
             &mut NopTxValidator,
         )
         .expect("Tried to prove a failing batch");
-        // we do this query for consistency with block based input generation(there is empty iterator as response to this query)
-        // but during proving this request shouldn't have the effect with "u32 array based" oracle
-        #[allow(unused_must_use)]
-        oracle
-            .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
-            .expect("must disconnect an oracle before performing arbitrary CSR access");
     }
 
     let public_input = zk_ee::utils::Bytes32::from_array(

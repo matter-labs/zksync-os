@@ -14,6 +14,7 @@ use zk_ee::common_structs::{derive_flat_storage_key_with_hasher, ProofData, Warm
 use zk_ee::logger_log;
 use zk_ee::memory::stack_trait::StackFactory;
 use zk_ee::oracle::basic_queries::ZKProofDataQuery;
+use zk_ee::oracle::query_ids::DISCONNECT_ORACLE_QUERY_ID;
 use zk_ee::oracle::simple_oracle_query::SimpleOracleQuery;
 use zk_ee::oracle::IOOracle;
 use zk_ee::system::metadata::basic_metadata::BasicBlockMetadata;
@@ -237,8 +238,17 @@ where
                     state_diffs_hasher.update(value.current_value.as_u8_ref());
                 });
             let state_diffs_hash = state_diffs_hasher.finalize().into();
+
+            #[allow(unused_must_use)]
+            io.oracle
+                .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
+                .expect("must disconnect an oracle before performing arbitrary CSR access");
             Ok((io.oracle, state_diffs_hash))
         } else {
+            #[allow(unused_must_use)]
+            io.oracle
+                .raw_query_with_empty_input(DISCONNECT_ORACLE_QUERY_ID)
+                .expect("must disconnect an oracle before performing arbitrary CSR access");
             Ok((io.oracle, public_input_hash))
         }
     }
