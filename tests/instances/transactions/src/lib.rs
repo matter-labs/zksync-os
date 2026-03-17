@@ -593,7 +593,7 @@ fn test_invalid_tx_does_not_affect_native() {
     let output = tester.execute_block(transactions);
 
     // Assert tx succeeded
-    tester.assert_all_txs_succeeded(&output.0);
+    tester.assert_all_txs_succeeded(&output);
 
     let native_used_reference = output
         .tx_results
@@ -1245,7 +1245,11 @@ fn test_check_pubdata_encoding_version() {
         .with_block_context(block_context);
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
-    let pubdata = tester.last_executed_block_info().pubdata;
+    let pubdata = tester
+        .last_executed_block_info()
+        .expect("must have last executed block info")
+        .pubdata
+        .clone();
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 
@@ -1289,7 +1293,11 @@ fn test_check_pubdata_has_timestamp() {
         .with_block_context(block_context);
     // Check tx succeeds
     let result = tester.execute_block(vec![tx]);
-    let pubdata = tester.last_executed_block_info().pubdata;
+    let pubdata = tester
+        .last_executed_block_info()
+        .expect("must have last executed block info")
+        .pubdata
+        .clone();
     let res0 = result.tx_results.first().expect("Must have a tx result");
     assert!(res0.as_ref().is_ok(), "Tx should succeed");
 

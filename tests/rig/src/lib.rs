@@ -105,7 +105,7 @@ pub struct TestingFramework<const RANDOMIZED_TREE: bool = false> {
     // This stays framework-local to keep `Chain` execution APIs neutral.
     skip_minting_tokens_to_treasury: bool,
     last_executed_block_info: Option<LastExecutedBlockInfo>,
-    oracle_factory: Option<Box<impl TestingOracleFactory<RANDOMIZED_TREE>>>,
+    oracle_factory: Option<Box<dyn TestingOracleFactory<RANDOMIZED_TREE>>>,
 }
 
 impl TestingFramework<true> {

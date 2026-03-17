@@ -76,7 +76,7 @@ pub fn ecrecover(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Sec
 pub fn ecrecover_with_oracle(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Secp256k1ECRecoverErrors>> {
     use callable_oracles::field_hints::NativeFieldOpsQuery;
     use oracle_provider::{DummyMemorySource, ZkEENonDeterminismSource};
-    
+
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
     let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
