@@ -3,7 +3,10 @@
 
 use std::alloc::Global;
 
-use alloy::consensus::{SignableTransaction, TxEip1559, TxEip2930, TxEnvelope, TxLegacy};
+use alloy::consensus::{
+    SignableTransaction, TxEip1559, TxEip2930, TxEip4844, TxEip7702, TxEnvelope, TxLegacy,
+};
+use alloy::eips::eip2718::Encodable2718;
 use alloy::network::TxSignerSync;
 use alloy::primitives::{Address, Bytes, TxKind, U256};
 use alloy::signers::local::PrivateKeySigner;
@@ -54,6 +57,25 @@ enum TxParams {
         max_priority_fee: u64,
         gas_limit: u64,
         to: Option<[u8; 20]>,
+        value: u64,
+        data: Vec<u8>,
+    },
+    Eip4844 {
+        nonce: u64,
+        max_fee: u64,
+        max_priority_fee: u64,
+        gas_limit: u64,
+        to: [u8; 20],
+        value: u64,
+        data: Vec<u8>,
+        max_fee_per_blob_gas: u64,
+    },
+    Eip7702 {
+        nonce: u64,
+        max_fee: u64,
+        max_priority_fee: u64,
+        gas_limit: u64,
+        to: [u8; 20],
         value: u64,
         data: Vec<u8>,
     },
@@ -145,49 +167,70 @@ fn build_and_encode(params: &TxParams) -> Option<Vec<u8>> {
             let sig = SIGNER.sign_transaction_sync(&mut tx).ok()?;
             TxEnvelope::Eip1559(tx.into_signed(sig))
         }
+        TxParams::Eip4844 {
+            nonce,
+            max_fee,
+            max_priority_fee,
+            gas_limit,
+            to,
+            value,
+            data,
+            max_fee_per_blob_gas,
+        } => {
+            let mut tx = TxEip4844 {
+                chain_id: 1,
+                nonce: *nonce,
+                max_fee_per_gas: *max_fee as u128,
+                max_priority_fee_per_gas: *max_priority_fee as u128,
+                gas_limit: *gas_limit,
+                to: Address::from(*to),
+                value: U256::from(*value),
+                input: Bytes::from(data.to_vec()),
+                access_list: Default::default(),
+                max_fee_per_blob_gas: *max_fee_per_blob_gas as u128,
+                blob_versioned_hashes: Vec::new(),
+            };
+            let sig = SIGNER.sign_transaction_sync(&mut tx).ok()?;
+            TxEnvelope::Eip4844(tx.into_signed(sig).into())
+        }
+        TxParams::Eip7702 {
+            nonce,
+            max_fee,
+            max_priority_fee,
+            gas_limit,
+            to,
+            value,
+            data,
+        } => {
+            let mut tx = TxEip7702 {
+                chain_id: 1,
+                nonce: *nonce,
+                max_fee_per_gas: *max_fee as u128,
+                max_priority_fee_per_gas: *max_priority_fee as u128,
+                gas_limit: *gas_limit,
+                to: Address::from(*to),
+                value: U256::from(*value),
+                input: Bytes::from(data.to_vec()),
+                access_list: Default::default(),
+                authorization_list: Vec::new(),
+            };
+            let sig = SIGNER.sign_transaction_sync(&mut tx).ok()?;
+            TxEnvelope::Eip7702(tx.into_signed(sig))
+        }
     };
 
-    let mut out = Vec::new();
-    encode_envelope_2718(&envelope, &mut out);
-    Some(out)
-}
-
-/// Encode a TxEnvelope in EIP-2718 format (matching the codebase's proven encoding approach).
-fn encode_envelope_2718(env: &TxEnvelope, out: &mut Vec<u8>) {
-    use alloy::rlp::Encodable;
-    match env {
-        TxEnvelope::Legacy(signed) => {
-            signed.rlp_encode(out);
-        }
-        TxEnvelope::Eip2930(signed) => {
-            out.push(0x01);
-            signed.rlp_encode(out);
-        }
-        TxEnvelope::Eip1559(signed) => {
-            out.push(0x02);
-            signed.rlp_encode(out);
-        }
-        TxEnvelope::Eip4844(signed) => {
-            out.push(0x03);
-            signed.rlp_encode(out);
-        }
-        TxEnvelope::Eip7702(signed) => {
-            out.push(0x04);
-            signed.rlp_encode(out);
-        }
-    }
+    Some(envelope.encoded_2718())
 }
 
 /// Apply byte-level mutations to encoded transaction bytes.
 fn apply_mutations(data: &mut Vec<u8>, mutations: &[Mutation]) {
     for mutation in mutations {
-        if data.is_empty() {
-            break;
-        }
         match mutation {
             Mutation::FlipBit { position, bit } => {
-                let pos = *position as usize % data.len();
-                data[pos] ^= 1 << (*bit % 8);
+                if !data.is_empty() {
+                    let pos = *position as usize % data.len();
+                    data[pos] ^= 1 << (*bit % 8);
+                }
             }
             Mutation::InsertByte { position, byte } => {
                 if data.len() < 65536 {
@@ -196,12 +239,16 @@ fn apply_mutations(data: &mut Vec<u8>, mutations: &[Mutation]) {
                 }
             }
             Mutation::DeleteByte { position } => {
-                let pos = *position as usize % data.len();
-                data.remove(pos);
+                if !data.is_empty() {
+                    let pos = *position as usize % data.len();
+                    data.remove(pos);
+                }
             }
             Mutation::ReplaceByte { position, byte } => {
-                let pos = *position as usize % data.len();
-                data[pos] = *byte;
+                if !data.is_empty() {
+                    let pos = *position as usize % data.len();
+                    data[pos] = *byte;
+                }
             }
             Mutation::Truncate { keep } => {
                 let keep = (*keep as usize).min(data.len());
@@ -226,24 +273,24 @@ fn fuzz(input: FuzzInput) {
     // Try parsing with the Alloy reference implementation.
     let mut alloy_cursor: &[u8] = &encoded;
     let alloy_result: Result<TxEnvelope, _> = TxEnvelope::decode(&mut alloy_cursor);
-    let alloy_ok = alloy_result.is_ok() && alloy_cursor.is_empty();
+    let alloy_fully_consumed = alloy_cursor.is_empty();
 
-    // If both parsers accept, the signing hash must agree.
-    if let (Ok(our_tx), true) = (&our_result, alloy_ok) {
-        let mut cursor2: &[u8] = &encoded;
-        let env = TxEnvelope::decode(&mut cursor2).unwrap();
-        let alloy_hash = match env {
-            TxEnvelope::Legacy(signed) => signed.tx().signature_hash(),
-            TxEnvelope::Eip2930(signed) => signed.tx().signature_hash(),
-            TxEnvelope::Eip1559(signed) => signed.tx().signature_hash(),
-            TxEnvelope::Eip4844(signed) => signed.tx().signature_hash(),
-            TxEnvelope::Eip7702(signed) => signed.tx().signature_hash(),
-        };
-        assert_eq!(
-            our_tx.hash_for_signature_verification().as_u8_array(),
-            alloy_hash.0,
-            "Signing hash mismatch between our parser and Alloy"
-        );
+    // If both parsers accept (and Alloy consumed all input), the signing hash must agree.
+    if let (Ok(our_tx), Ok(ref env)) = (&our_result, &alloy_result) {
+        if alloy_fully_consumed {
+            let alloy_hash = match env {
+                TxEnvelope::Legacy(signed) => signed.tx().signature_hash(),
+                TxEnvelope::Eip2930(signed) => signed.tx().signature_hash(),
+                TxEnvelope::Eip1559(signed) => signed.tx().signature_hash(),
+                TxEnvelope::Eip4844(signed) => signed.tx().signature_hash(),
+                TxEnvelope::Eip7702(signed) => signed.tx().signature_hash(),
+            };
+            assert_eq!(
+                our_tx.hash_for_signature_verification().as_u8_array(),
+                alloy_hash.0,
+                "Signing hash mismatch between our parser and Alloy"
+            );
+        }
     }
 }
 
