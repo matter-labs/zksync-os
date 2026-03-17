@@ -69,7 +69,7 @@ pub fn p256_verify(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<P
 pub fn ecrecover(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Secp256k1ECRecoverErrors>> {
     let allocator = std::alloc::Global;
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
-    EcRecoverImpl::execute(&src, dst, &mut resource, &mut DummyOracle, &mut NullLogger, allocator)
+    EcRecoverImpl::<false>::execute(&src, dst, &mut resource, &mut DummyOracle, &mut NullLogger, allocator)
 }
 
 /// ecrecover using native field operations oracle (for comparing oracle vs non-oracle paths)
@@ -81,7 +81,7 @@ pub fn ecrecover_with_oracle(src: &[u8], dst: &mut Vec<u8>) -> Result<(), Subsys
     let mut resource = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
     let mut oracle = ZkEENonDeterminismSource::<DummyMemorySource>::default();
     oracle.add_external_processor(NativeFieldOpsQuery::<DummyMemorySource>::default());
-    EcRecoverImpl::execute(&src, dst, &mut resource, &mut oracle, &mut NullLogger, allocator)
+    EcRecoverImpl::<true>::execute(&src, dst, &mut resource, &mut oracle, &mut NullLogger, allocator)
 }
 
 pub fn pairing(src: &[u8], dst: &mut Vec<u8>) -> Result<(), SubsystemError<Bn254PairingCheckErrors>> {

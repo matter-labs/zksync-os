@@ -12,9 +12,11 @@ use zk_ee::system::{Computational, SystemFunctionExt};
 ///
 /// ecrecover system function implementation.
 ///
-pub struct EcRecoverImpl;
+pub struct EcRecoverImpl<const USE_ADVICE: bool = { cfg!(target_arch = "riscv32") }>;
 
-impl<R: Resources> SystemFunctionExt<R, Secp256k1ECRecoverErrors> for EcRecoverImpl {
+impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Secp256k1ECRecoverErrors>
+    for EcRecoverImpl<USE_ADVICE>
+{
     /// If the input size is less than expected - it will be padded with zeroes.
     /// If the input size is greater - redundant bytes will be ignored.
     /// If the input is invalid(v != 27|28 or failed to recover signer) returns `Ok(0)`.
@@ -31,8 +33,14 @@ impl<R: Resources> SystemFunctionExt<R, Secp256k1ECRecoverErrors> for EcRecoverI
         Ok(cycle_marker::wrap_with_resources!(
             "ecrecover",
             resources,
-            // TODO: reconsider if we actually want to use the oracle based version here
-            { ecrecover_as_system_function_inner(input, output, resources, Some(oracle)) }
+            {
+                ecrecover_as_system_function_inner::<_, _, _, _, USE_ADVICE>(
+                    input,
+                    output,
+                    resources,
+                    Some(oracle),
+                )
+            }
         )?)
     }
 }
@@ -43,6 +51,7 @@ fn ecrecover_as_system_function_inner<
     S: ?Sized + MinimalByteAddressableSlice,
     D: ?Sized + TryExtend<u8>,
     R: Resources,
+    const USE_ADVICE: bool,
 >(
     src: &S,
     dst: &mut D,
@@ -77,12 +86,7 @@ fn ecrecover_as_system_function_inner<
             return Ok(());
         }
 
-        // on forward run we do not support oracle-based hooks
-        let oracle = if cfg!(target_arch = "riscv32") {
-            oracle
-        } else {
-            None
-        };
+        let oracle = if USE_ADVICE { oracle } else { None };
 
         let Ok(pk_bytes) = ecrecover_inner(digest, r, s, rec_id, oracle) else {
             return Ok(());
@@ -173,7 +177,7 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _>(
+        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
             input.as_slice(),
             &mut pubkey,
             &mut resources,
@@ -194,7 +198,7 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _>(
+        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
             input.as_slice(),
             &mut pubkey,
             &mut resources,
@@ -216,7 +220,7 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _>(
+        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
             input.as_slice(),
             &mut pubkey,
             &mut resources,
@@ -238,7 +242,7 @@ mod test {
 
         let mut resources = <BaseResources<DecreasingNative> as Resource>::FORMAL_INFINITE;
 
-        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _>(
+        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
             input.as_slice(),
             &mut pubkey,
             &mut resources,
@@ -266,7 +270,7 @@ mod test {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 99, 249, 114, 95, 16, 115, 88, 201, 17, 91, 201,
             216, 108, 114, 221, 88, 35, 233, 177, 230,
         ];
-        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _>(
+        ecrecover_as_system_function_inner::<TestingTree<false>, _, _, _, false>(
             input.as_slice(),
             &mut pubkey,
             &mut resources,

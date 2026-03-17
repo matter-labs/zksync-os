@@ -51,7 +51,7 @@ fn fuzz(data: &[u8]) {
 
     let mut dst = dst.clone();
 
-    let _ = EcRecoverImpl::execute(
+    let _ = EcRecoverImpl::<false>::execute(
         &src.as_slice()[0..n],
         &mut dst,
         &mut resource,
