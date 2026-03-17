@@ -2,7 +2,7 @@
 
 use crypto::secp256k1::{FieldElement, Scalar};
 use zk_ee::{
-    oracle::{query_ids::ADVICE_SUBSPACE_MASK, IOOracle},
+    oracle::{query_ids::ADVICE_SUBSPACE_MASK, usize_serialization::UsizeDeserializable, IOOracle},
     utils::Bytes32,
 };
 
@@ -61,36 +61,8 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
         }
 
         let input = Bytes32::from_array(x.to_bytes().into());
-        // We use different advice params depending on architecture
-        // They are mostly the same, main difference is the width of pointers
-        #[cfg(target_arch = "riscv32")]
-        let (sqrt_candidate, is_quadratic_non_residue): (Bytes32, bool) = {
-            let hint_request = FieldOpsHint {
-                op: FieldHintOp::Secp256k1BaseFieldSqrt as u32,
-                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u32,
-                src_len_u32_words: 8,
-            };
-            self.oracle
-                .query_serializable(
-                    FIELD_OPS_ADVISE_QUERY_ID,
-                    &((&hint_request as *const FieldOpsHint).addr() as u32),
-                )
-                .unwrap()
-        };
-        #[cfg(not(target_arch = "riscv32"))]
-        let (sqrt_candidate, is_quadratic_non_residue): (Bytes32, bool) = {
-            let hint_request = FieldOpsHint64 {
-                op: FieldHintOp::Secp256k1BaseFieldSqrt as u32,
-                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u64,
-                src_len_u32_words: 8,
-            };
-            self.oracle
-                .query_serializable(
-                    FIELD_OPS_ADVISE_QUERY_ID,
-                    &((&hint_request as *const FieldOpsHint64).addr() as u64),
-                )
-                .unwrap()
-        };
+        let (sqrt_candidate, is_quadratic_non_residue): (Bytes32, bool) =
+            self.query_field_op(FieldHintOp::Secp256k1BaseFieldSqrt, &input);
 
         // Answer must be a valid field element
         let fe = FieldElement::from_bytes(sqrt_candidate.as_u8_array_ref()).unwrap();
@@ -120,38 +92,8 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
             return;
         }
 
-        use crate::system_functions::field_ops::FIELD_OPS_ADVISE_QUERY_ID;
         let input = Bytes32::from_array(x.to_bytes().into());
-        // We use different advice params depending on architecture
-        // They are mostly the same, main difference is the width of pointers
-        #[cfg(target_arch = "riscv32")]
-        let inv: Bytes32 = {
-            let hint_request = FieldOpsHint {
-                op: FieldHintOp::Secp256k1BaseFieldInverse as u32,
-                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u32,
-                src_len_u32_words: 8,
-            };
-            self.oracle
-                .query_serializable(
-                    FIELD_OPS_ADVISE_QUERY_ID,
-                    &((&hint_request as *const FieldOpsHint).addr() as u32),
-                )
-                .unwrap()
-        };
-        #[cfg(not(target_arch = "riscv32"))]
-        let inv: Bytes32 = {
-            let hint_request = FieldOpsHint64 {
-                op: FieldHintOp::Secp256k1BaseFieldInverse as u32,
-                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u64,
-                src_len_u32_words: 8,
-            };
-            self.oracle
-                .query_serializable(
-                    FIELD_OPS_ADVISE_QUERY_ID,
-                    &((&hint_request as *const FieldOpsHint64).addr() as u64),
-                )
-                .unwrap()
-        };
+        let inv: Bytes32 = self.query_field_op(FieldHintOp::Secp256k1BaseFieldInverse, &input);
 
         // answer must be a field element
         let inv = FieldElement::from_bytes(inv.as_u8_array_ref()).unwrap();
@@ -171,38 +113,10 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
             return;
         }
 
-        use crate::system_functions::field_ops::FIELD_OPS_ADVISE_QUERY_ID;
         let input = Bytes32::from_array(x.to_repr().into());
-        // We use different advice params depending on architecture
-        // They are mostly the same, main difference is the width of pointers
-        #[cfg(target_arch = "riscv32")]
-        let inverse: Bytes32 = {
-            let hint_request = FieldOpsHint {
-                op: FieldHintOp::Secp256k1ScalarFieldInverse as u32,
-                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u32,
-                src_len_u32_words: 8,
-            };
-            self.oracle
-                .query_serializable(
-                    FIELD_OPS_ADVISE_QUERY_ID,
-                    &((&hint_request as *const FieldOpsHint).addr() as u32),
-                )
-                .unwrap()
-        };
-        #[cfg(not(target_arch = "riscv32"))]
-        let inverse: Bytes32 = {
-            let hint_request = FieldOpsHint64 {
-                op: FieldHintOp::Secp256k1ScalarFieldInverse as u32,
-                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u64,
-                src_len_u32_words: 8,
-            };
-            self.oracle
-                .query_serializable(
-                    FIELD_OPS_ADVISE_QUERY_ID,
-                    &((&hint_request as *const FieldOpsHint64).addr() as u64),
-                )
-                .unwrap()
-        };
+        let inverse: Bytes32 =
+            self.query_field_op(FieldHintOp::Secp256k1ScalarFieldInverse, &input);
+
         // answer is must be a field element
         use crypto::k256::elliptic_curve::scalar::FromUintUnchecked;
         use crypto::k256::elliptic_curve::Curve;
@@ -218,6 +132,42 @@ impl<'a, O: IOOracle> crypto::secp256k1::hooks::Secp256k1Hooks for Secp256k1Hook
         assert!(t.is_zero());
 
         *x = inverse;
+    }
+}
+
+impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
+    fn query_field_op<R: UsizeDeserializable>(&mut self, op: FieldHintOp, input: &Bytes32) -> R {
+        // We use different advice params depending on architecture
+        // They are mostly the same, main difference is the width of pointers
+        #[cfg(target_arch = "riscv32")]
+        let r: R = {
+            let hint_request = FieldOpsHint {
+                op: op as u32,
+                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u32,
+                src_len_u32_words: 8,
+            };
+            self.oracle
+                .query_serializable(
+                    FIELD_OPS_ADVISE_QUERY_ID,
+                    &((&hint_request as *const FieldOpsHint).addr() as u32),
+                )
+                .unwrap()
+        };
+        #[cfg(not(target_arch = "riscv32"))]
+        let r: R = {
+            let hint_request = FieldOpsHint64 {
+                op: op as u32,
+                src_ptr: input.as_u8_array_ref().as_ptr().addr() as u64,
+                src_len_u32_words: 8,
+            };
+            self.oracle
+                .query_serializable(
+                    FIELD_OPS_ADVISE_QUERY_ID,
+                    &((&hint_request as *const FieldOpsHint64).addr() as u64),
+                )
+                .unwrap()
+        };
+        r
     }
 }
 
