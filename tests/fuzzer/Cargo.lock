@@ -3477,6 +3477,7 @@ name = "fuzzer-fuzz"
 version = "0.0.0"
 dependencies = [
  "alloy",
+ "alloy-rlp",
  "arbitrary",
  "ark-bn254 0.4.0",
  "ark-ec 0.4.2",
@@ -9168,6 +9169,7 @@ dependencies = [
 [[package]]
 name = "zksync-os-revm"
 version = "0.1.0"
+source = "git+https://github.com/matter-labs/zksync-os-revm?rev=237fd5a#237fd5a5a97468443a47d658298efd420d3e63d8"
 dependencies = [
  "auto_impl",
  "revm 34.0.0",
