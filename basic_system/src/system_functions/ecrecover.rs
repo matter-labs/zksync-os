@@ -12,7 +12,7 @@ use zk_ee::system::{Computational, SystemFunctionExt};
 ///
 /// ecrecover system function implementation.
 ///
-pub struct EcRecoverImpl<const USE_ADVICE: bool = { cfg!(target_arch = "riscv32") }>;
+pub struct EcRecoverImpl<const USE_ADVICE: bool>;
 
 impl<R: Resources, const USE_ADVICE: bool> SystemFunctionExt<R, Secp256k1ECRecoverErrors>
     for EcRecoverImpl<USE_ADVICE>

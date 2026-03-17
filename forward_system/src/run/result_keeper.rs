@@ -1,6 +1,5 @@
 use crate::run::convert_alloy::IntoAlloy;
 use crate::run::TxResultCallback;
-use basic_bootloader::bootloader::block_header::BlockHeader;
 use basic_bootloader::bootloader::result_keeper::{ResultKeeperExt, TxProcessingOutput};
 use ruint::aliases::B160;
 use std::alloc::Global;

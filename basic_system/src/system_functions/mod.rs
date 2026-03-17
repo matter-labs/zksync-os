@@ -49,7 +49,9 @@ impl<R: Resources, const USE_ADVICE: bool> SystemFunctions<R> for NoStdSystemFun
     type PointEvaluation = point_evaluation::PointEvaluationImpl;
 }
 
-impl<R: Resources, const USE_ADVICE: bool> SystemFunctionsExt<R> for NoStdSystemFunctions<USE_ADVICE> {
-    type Secp256k1ECRecover = ecrecover::EcRecoverImpl;
+impl<R: Resources, const USE_ADVICE: bool> SystemFunctionsExt<R>
+    for NoStdSystemFunctions<USE_ADVICE>
+{
+    type Secp256k1ECRecover = ecrecover::EcRecoverImpl<USE_ADVICE>;
     type ModExp = modexp::ModExpImpl<USE_ADVICE>;
 }

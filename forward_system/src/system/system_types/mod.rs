@@ -2,7 +2,6 @@ use std::alloc::Global;
 
 use basic_bootloader::bootloader::block_flow::TransactionsRollingKeccakHasher;
 use basic_bootloader::bootloader::block_flow::ZKHeaderPostInitOp;
-use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePostTxOpProvingMultiblockBatch;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePostTxOpProvingSingleblockBatch;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructurePreTxOp;
 use basic_bootloader::bootloader::block_flow::ZKHeaderStructureTxLoop;
