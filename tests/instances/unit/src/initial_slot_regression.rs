@@ -166,7 +166,7 @@ impl InvalidInitialValueOracleFactory {
 }
 
 impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
-    fn create_forward_oracle(
+    fn create_oracle<M: MemorySource + 'static>(
         &self,
         block_metadata: BlockMetadataFromOracle,
         state_tree: InMemoryTree<false>,
@@ -175,28 +175,7 @@ impl TestingOracleFactory<false> for InvalidInitialValueOracleFactory {
         proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
         da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
-    ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
-        self.build_oracle(
-            block_metadata,
-            state_tree,
-            preimage_source,
-            tx_source,
-            proof_data,
-            da_commitment_scheme,
-        )
-    }
-
-    fn create_proof_oracle(
-        &self,
-        block_metadata: BlockMetadataFromOracle,
-        state_tree: InMemoryTree<false>,
-        preimage_source: InMemoryPreimageSource,
-        tx_source: TxListSource,
-        proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
-        da_commitment_scheme: Option<DACommitmentScheme>,
-        _add_uart: bool,
-    ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
-    {
+    ) -> ZkEENonDeterminismSource<M> {
         self.build_oracle(
             block_metadata,
             state_tree,

@@ -159,7 +159,7 @@ pub fn generate_proof_input_from_bytes<T: ReadStorageTree, PS: PreimageSource, T
     oracle.add_external_processor(da_commitment_scheme_responder);
     oracle.add_external_processor(preimage_responder);
     oracle.add_external_processor(tree_responder);
-    oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
+    oracle.add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery::default());
     oracle.add_external_processor(
         callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
     );
@@ -256,6 +256,7 @@ pub fn make_oracle_for_proofs_and_dumps<
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
+    use_native_modexp_oracle: bool,
 ) -> ZkEENonDeterminismSource<M> {
     make_oracle_for_proofs_and_dumps_for_init_data(
         block_context,
@@ -265,6 +266,7 @@ pub fn make_oracle_for_proofs_and_dumps<
         proof_data,
         da_commitment_scheme,
         add_uart,
+        use_native_modexp_oracle,
     )
 }
 
@@ -281,6 +283,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     proof_data: Option<ProofData<StorageCommitment>>,
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
+    use_native_modexp_oracle: bool,
 ) -> ZkEENonDeterminismSource<M> {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
@@ -305,7 +308,12 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     oracle.add_external_processor(tree_responder);
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
-    oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
+    if use_native_modexp_oracle {
+        oracle
+            .add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery::default());
+    } else {
+        oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery::default());
+    }
     oracle.add_external_processor(
         callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery::default(),
     );

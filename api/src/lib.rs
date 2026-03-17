@@ -36,6 +36,7 @@ pub fn run_block_generate_witness(
         Some(proof_data),
         Some(da_commitment_scheme),
         false,
+        false,
     );
 
     // We'll wrap the source, to collect all the reads.
