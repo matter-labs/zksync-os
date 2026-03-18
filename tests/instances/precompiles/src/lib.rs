@@ -1,5 +1,4 @@
 #![cfg(test)]
-#![feature(assert_matches)]
 
 use rig::alloy::consensus::TxLegacy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
