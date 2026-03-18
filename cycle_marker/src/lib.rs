@@ -59,10 +59,8 @@ pub fn start(_label: &'static str) {
     #[cfg(target_arch = "riscv32")]
     {
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -79,10 +77,8 @@ pub fn end(_label: &'static str) {
     #[cfg(target_arch = "riscv32")]
     {
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
