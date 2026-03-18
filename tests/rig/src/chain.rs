@@ -1497,43 +1497,34 @@ pub fn is_account_properties_address(address: &B160) -> bool {
 
 #[cfg(feature = "e2e_proving")]
 fn run_prover(csr_reads: &[u32]) {
-    use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
-    use std::alloc::Global;
-    use std::io::Read;
-
-    let mut file = File::open(get_zksync_os_img_path(&None)).expect("must open provided file");
-    let mut buffer = vec![];
-    file.read_to_end(&mut buffer).expect("must read the file");
-    let mut binary = vec![];
-    for el in buffer.as_chunks::<4>().0.iter() {
-        binary.push(u32::from_le_bytes(*el));
-    }
-
+    use execution_utils::unrolled::prove_unrolled_for_machine_configuration_into_program_proof;
     use prover_examples::prover::worker::Worker;
     use prover_examples::setups;
+    use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
+    use riscv_transpiler::common_constants::rom::ROM_BYTE_SIZE;
+    use riscv_transpiler::cycle::IMStandardIsaConfigWithUnsignedMulDiv;
 
-    setups::pad_bytecode_for_proving(&mut binary);
+    let img_path = get_zksync_os_img_path(&None);
+    let text_path = img_path.with_extension("text");
 
-    let worker = Worker::new_with_num_threads(8);
+    let (_, binary_u32) = setups::read_and_pad_binary(&img_path);
+    let (_, text_u32) = setups::read_and_pad_binary(&text_path);
 
-    let main_circuit_precomputations =
-        setups::get_main_riscv_circuit_setup::<Global, Global>(&binary, &worker);
-
-    let delegation_precomputations =
-        setups::all_delegation_circuits_precomputations::<Global, Global>(&worker);
-
-    // TODO: fix
     let mut non_determinism_source = QuasiUARTSource::default();
     for word in csr_reads {
         non_determinism_source.oracle.push_back(*word);
     }
 
-    let _ = prover_examples::prove_image_execution(
-        32,
-        &binary,
+    let worker = Worker::new_with_num_threads(8);
+
+    let _proof = prove_unrolled_for_machine_configuration_into_program_proof::<
+        IMStandardIsaConfigWithUnsignedMulDiv,
+    >(
+        &binary_u32,
+        &text_u32,
+        1 << 36,
         non_determinism_source,
-        &main_circuit_precomputations,
-        &delegation_precomputations,
+        ROM_BYTE_SIZE,
         &worker,
     );
 
