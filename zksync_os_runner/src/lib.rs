@@ -102,25 +102,39 @@ fn run_inner(
         RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(bin_words, RAM_SIZE);
     let mut state = State::initial_with_counters(DelegationsCounters::default());
 
-    let _reached_end = VM::<DelegationsCounters>::run_basic_unrolled::<_, _, _>(
-        &mut state,
-        &mut ram,
-        &mut (),
-        &tape,
-        cycles,
-        &mut non_determinism_source,
-    );
-
-    let cycles_executed = (state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP;
-
     #[allow(unused_mut, unused_assignments)]
     let mut block_effective = None;
 
-    // TODO: re-enable once airbender PR #237 merges (CycleMarkerHooks)
-    // #[cfg(feature = "cycle_marker")]
-    // {
-    //     block_effective = cycle_marker::print_cycle_markers();
-    // }
+    #[cfg(feature = "cycle_marker")]
+    {
+        use cycle_marker::CycleMarkerHooks;
+
+        let (_reached_end, cycle_markers) = CycleMarkerHooks::with(|| {
+            VM::<DelegationsCounters, CycleMarkerHooks>::run_basic_unrolled::<_, _, _>(
+                &mut state,
+                &mut ram,
+                &mut (),
+                &tape,
+                cycles,
+                &mut non_determinism_source,
+            )
+        });
+        block_effective = cycle_marker::print_cycle_markers(cycle_markers);
+    }
+
+    #[cfg(not(feature = "cycle_marker"))]
+    {
+        let _reached_end = VM::<DelegationsCounters>::run_basic_unrolled::<_, _, _>(
+            &mut state,
+            &mut ram,
+            &mut (),
+            &tape,
+            cycles,
+            &mut non_determinism_source,
+        );
+    }
+
+    let cycles_executed = (state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP;
 
     // our convention is to return 32 bytes placed into registers x10-x17
     let output: [u32; 8] = std::array::from_fn(|i| state.registers[10 + i].value);

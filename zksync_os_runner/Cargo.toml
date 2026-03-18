@@ -18,5 +18,4 @@ cycle_marker = { path = "../cycle_marker" }
 
 [features]
 flamegraph = ["riscv_transpiler/flamegraph"]
-# TODO: re-enable once airbender PR #237 merges and adds cycle_marker feature to riscv_transpiler
-# cycle_marker = ["riscv_transpiler/cycle_marker", "cycle_marker/use_riscv_transpiler"]
+cycle_marker = ["cycle_marker/use_riscv_transpiler"]
