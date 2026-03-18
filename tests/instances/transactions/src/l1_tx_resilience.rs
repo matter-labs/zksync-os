@@ -14,7 +14,7 @@
 use rig::alloy::primitives::address;
 use rig::ruint::aliases::U256;
 use rig::utils::L1TxBuilder;
-use rig::{alloy, TestingFramework};
+use rig::{alloy, tx_succeeded, TestingFramework};
 
 use super::common_target_address;
 
@@ -141,5 +141,69 @@ fn test_l1_tx_intrinsic_gas_overflow() {
     assert!(
         res.is_success(),
         "This L1 transaction with gas overflow should not be reverted"
+    );
+}
+
+/// PoC test: verify that the pre-L1-tx contract call to L2AssetTracker
+/// does not interfere with normal L1 transaction processing.
+///
+/// The pre-call targets an address with no deployed code, so it completes
+/// as a no-op. This test validates that the call mechanism (resources, frames,
+/// caches) works correctly and does not break the main L1 tx execution.
+#[test]
+fn test_l1_tx_pre_call_does_not_break_execution() {
+    let sender = address!("1234567890123456789012345678901234567890");
+    let recipient = address!("2222567890123456789012345678901234567890");
+    let value = alloy::primitives::U256::from(1_000_000u64);
+
+    let tx = L1TxBuilder::new()
+        .from(sender)
+        .to(recipient)
+        .input(Vec::new())
+        .value(value)
+        .to_mint(value)
+        .gas_price(0)
+        .gas_limit(200_000)
+        .nonce(0)
+        .build();
+
+    let mut tester = TestingFramework::new()
+        .without_revm_consistency_check()
+        .with_balance(sender, U256::from(u64::MAX));
+
+    let output = tester.execute_block(vec![tx]);
+    assert!(
+        tx_succeeded(&output, 0),
+        "L1 tx must succeed despite the pre-call"
+    );
+}
+
+/// PoC test: verify that a value-bearing L1 deposit transaction succeeds
+/// with the pre-call mechanism in place.
+#[test]
+fn test_l1_tx_deposit_with_pre_call() {
+    let sender = address!("aabb000000000000000000000000000000000000");
+    let recipient = address!("ccdd000000000000000000000000000000000000");
+    let deposit_value = alloy::primitives::U256::from(5_000_000_000u64);
+
+    let tx = L1TxBuilder::new()
+        .from(sender)
+        .to(recipient)
+        .input(Vec::new())
+        .value(deposit_value)
+        .to_mint(deposit_value)
+        .gas_price(0)
+        .gas_limit(300_000)
+        .nonce(0)
+        .build();
+
+    let mut tester = TestingFramework::new()
+        .without_revm_consistency_check()
+        .with_balance(sender, U256::from(u64::MAX));
+
+    let output = tester.execute_block(vec![tx]);
+    assert!(
+        tx_succeeded(&output, 0),
+        "L1 deposit tx must succeed with pre-call"
     );
 }

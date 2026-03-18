@@ -18,6 +18,7 @@ use crate::require_internal;
 use arrayvec::ArrayVec;
 use core::fmt::Write;
 use ruint::aliases::{B160, U256};
+use system_hooks::addresses_constants::L2_ASSET_TRACKER_ADDRESS;
 use zk_ee::common_structs::system_hooks::HooksStorage;
 use zk_ee::execution_environment_type::ExecutionEnvironmentType;
 use zk_ee::system::errors::root_cause::GetRootCause;
@@ -473,7 +474,7 @@ fn execute_l1_transaction_and_notify_result<
 >(
     system: &mut System<S>,
     system_functions: &mut HooksStorage<S, S::Allocator>,
-    memories: RunnerMemoryBuffers<'a>,
+    mut memories: RunnerMemoryBuffers<'a>,
     transaction: &AbiEncodedTransaction<S::Allocator>,
     from: B160,
     to: B160,
@@ -524,6 +525,40 @@ where
     let to_transfer = total_deposited
         .checked_sub(max_fee_commitment)
         .ok_or(internal_error!("mfc+tic"))?;
+
+    // PoC: Make a contract call to L2AssetTracker before the L1 tx execution.
+    // This call happens BEFORE any balance changes, matching the Solidity
+    // invariant that the asset tracker is notified before totalSupply/balances
+    // change. The call is inside the outer frame so it rolls back if the main
+    // tx reverts.
+    //
+    // Uses FORMAL_INFINITE resources since this is bootloader-level overhead.
+    // A real implementation would encode the proper function selector and
+    // arguments (e.g., handleFinalizeBaseTokenBridgingOnL2(chainId, amount))
+    // and would need to account for native resource consumption.
+    {
+        let pre_call_resources = S::Resources::FORMAL_INFINITE;
+        let pre_call_result =
+            BasicBootloader::<S, ZkTransactionFlowOnlyEOA<S>>::run_single_interaction(
+                system,
+                system_functions,
+                memories.reborrow(),
+                &[], // empty calldata — real impl would encode function selector + args
+                &from,
+                &L2_ASSET_TRACKER_ADDRESS,
+                pre_call_resources,
+                &U256::ZERO, // no value transfer
+                true,        // make frame for rollback isolation
+                tracer,
+                validator,
+            )?;
+        let pre_call_failed = pre_call_result.result.failed();
+        if pre_call_failed {
+            system_log!(system, "Pre-L1-tx call to L2AssetTracker reverted\n");
+        } else {
+            system_log!(system, "Pre-L1-tx call to L2AssetTracker succeeded\n");
+        }
+    }
 
     // First we transfer from treasury
     // We want to ensure that the simulation of a transaction
