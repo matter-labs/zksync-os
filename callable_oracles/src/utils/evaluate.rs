@@ -55,7 +55,8 @@ pub fn read_memory_as_u64(
 ) -> Result<Vec<u64>, ()> {
     let mut len_u32_words = len_u64_words * 2;
 
-    let (_, of) = offset.overflowing_add(len_u32_words);
+    let byte_len = len_u32_words.checked_mul(4).ok_or(())?;
+    let (_, of) = offset.overflowing_add(byte_len);
     if of == true {
         return Err(());
     }

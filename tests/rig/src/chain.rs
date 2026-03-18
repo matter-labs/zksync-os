@@ -971,12 +971,19 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let copy_source = ReadWitnessSource::new(oracle);
             let items = copy_source.get_read_items();
 
-            if flamegraph_output.is_some() {
-                warn!("flamegraph_output is set but flamegraph support requires the `flamegraph` feature on zksync_os_runner; ignoring");
-            }
-
             let now = std::time::Instant::now();
-            let (proof_output, block_effective) = {
+            let (proof_output, block_effective) = if flamegraph_output.is_some() {
+                let img_path = get_zksync_os_img_path(&app);
+                let sym_path = get_zksync_os_sym_path(&app);
+                let output = zksync_os_runner::run_default_with_flamegraph_path(
+                    img_path,
+                    sym_path,
+                    1 << 36,
+                    copy_source,
+                    flamegraph_output,
+                );
+                (output, None)
+            } else {
                 zksync_os_runner::run_and_get_effective_cycles(
                     get_zksync_os_img_path(&app),
                     1 << 36,
@@ -1479,7 +1486,6 @@ pub fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {
     get_zksync_os_path(app_name, "bin")
 }
 
-#[allow(dead_code)]
 fn get_zksync_os_sym_path(app_name: &Option<String>) -> PathBuf {
     get_zksync_os_path(app_name, "elf")
 }
