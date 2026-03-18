@@ -293,13 +293,11 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
     if use_native_callable_oracles {
-        oracle
-            .add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery);
+        oracle.add_external_processor(callable_oracles::arithmetic::NativeArithmeticQuery);
         oracle.add_external_processor(
             callable_oracles::blob_kzg_commitment::NativeBlobCommitmentAndProofQuery,
         );
-        oracle
-            .add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery);
+        oracle.add_external_processor(callable_oracles::field_hints::NativeFieldOpsQuery);
     } else {
         oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery);
         oracle.add_external_processor(
@@ -401,9 +399,8 @@ pub fn run_block_with_oracle_dump_ext<
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
     oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery);
-    oracle.add_external_processor(
-        callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery,
-    );
+    oracle
+        .add_external_processor(callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery);
     oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery);
     oracle.add_external_processor(UARTPrintResponder);
 
@@ -451,9 +448,8 @@ pub fn run_block_from_oracle_dump<
     oracle.add_external_processor(zk_proof_data_responder);
     oracle.add_external_processor(da_commitment_scheme_responder);
     oracle.add_external_processor(callable_oracles::arithmetic::ArithmeticQuery);
-    oracle.add_external_processor(
-        callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery,
-    );
+    oracle
+        .add_external_processor(callable_oracles::blob_kzg_commitment::BlobCommitmentAndProofQuery);
     oracle.add_external_processor(callable_oracles::field_hints::FieldOpsQuery);
 
     let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
