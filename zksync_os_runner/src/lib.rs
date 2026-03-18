@@ -1,43 +1,58 @@
 #![feature(allocator_api)]
 #![allow(incomplete_features)]
 
-use prover_examples::prover::VectorMemoryImplWithRom;
-use risc_v_simulator::sim::BinarySource;
-use risc_v_simulator::{
-    abstractions::{memory::VectorMemoryImpl, non_determinism::NonDeterminismCSRSource},
-    cycle::IMStandardIsaConfig,
-    sim::{DiagnosticsConfig, ProfilerConfig, SimulatorConfig},
+use common_constants::rom::ROM_SECOND_WORD_BITS;
+use common_constants::{INITIAL_TIMESTAMP, TIMESTAMP_STEP};
+use riscv_transpiler::ir::{preprocess_bytecode, FullUnsignedMachineDecoderConfig};
+use riscv_transpiler::vm::{
+    DelegationsCounters, NonDeterminismCSRSource, RamWithRomRegion, SimpleTape, State, VM,
 };
-use std::{alloc::Global, io::Read, path::PathBuf};
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+/// Total RAM size (1 GiB address space).
+const RAM_SIZE: usize = 1 << 30;
+
+/// Flamegraph profiling configuration.
+#[cfg(feature = "flamegraph")]
+pub use riscv_transpiler::vm::FlamegraphConfig as VmFlamegraphConfig;
+#[cfg(feature = "flamegraph")]
+pub use riscv_transpiler::vm::VmFlamegraphProfiler;
 
 pub fn run_default_with_flamegraph_path(
     bin_path: PathBuf,
     sym_path: PathBuf,
     cycles: usize,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
-    diagnostics_path: Option<PathBuf>,
+    non_determinism_source: impl NonDeterminismCSRSource,
+    flamegraph_path: Option<PathBuf>,
 ) -> [u32; 8] {
-    let diag_config = diagnostics_path.map(|path| {
-        let mut d = DiagnosticsConfig::new(sym_path);
-
-        d.profiler_config = {
-            let mut p = ProfilerConfig::new(path);
-
-            p.frequency_recip = 1;
-            p.reverse_graph = false;
-
-            Some(p)
-        };
-
-        d
-    });
-    run(bin_path, diag_config, cycles, non_determinism_source)
+    if let Some(_path) = flamegraph_path {
+        #[cfg(feature = "flamegraph")]
+        {
+            let text_path = bin_path.with_extension("text");
+            let (bin_words, text_words) = load_bin_and_text(&bin_path, &text_path);
+            return run_with_flamegraph(
+                &bin_words,
+                &text_words,
+                cycles,
+                non_determinism_source,
+                sym_path,
+                _path,
+            )
+            .0;
+        }
+        #[cfg(not(feature = "flamegraph"))]
+        {
+            let _ = sym_path;
+            panic!("flamegraph support requires the `flamegraph` feature on riscv_transpiler");
+        }
+    }
+    run(bin_path, cycles, non_determinism_source)
 }
 
 ///
 /// Runs zkOS on RISC-V (proof running) with given params:
 /// `img_path` - path to ZKsync OS binary file (for example "zksync_os/for_tests.bin")
-/// `diagnostics` - optional diagnostics config, can be used to enable profiler.
 /// `cycles` - limit for number of cycles.
 /// `non_determinism_source` - non-determinism source used to read values from outside
 ///  (inside risc-v can be accessed via special system register read). In practice used to get all the block data - txs, metadata, storage values, etc.
@@ -46,141 +61,200 @@ pub fn run_default_with_flamegraph_path(
 ///
 pub fn run(
     img_path: PathBuf,
-    diagnostics: Option<DiagnosticsConfig>,
     cycles: usize,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
+    non_determinism_source: impl NonDeterminismCSRSource,
 ) -> [u32; 8] {
-    run_and_get_effective_cycles(img_path, diagnostics, cycles, non_determinism_source).0
-}
-
-fn run_and_get_effective_cycles_inner(
-    img_source: BinarySource,
-    diagnostics: Option<DiagnosticsConfig>,
-    cycles: usize,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
-) -> ([u32; 8], Option<u64>) {
-    println!("ZK RISC-V simulator is starting");
-
-    let config = SimulatorConfig {
-        bin: img_source,
-        cycles,
-        entry_point: 0,
-        diagnostics,
-    };
-
-    let run_result =
-        risc_v_simulator::runner::run_simple_with_entry_point_and_non_determimism_source(
-            config,
-            non_determinism_source,
-        );
-
-    risc_v_simulator::cycle::state::output_opcode_stats();
-
-    #[allow(unused_mut, unused_assignments)]
-    let mut block_effective = None;
-
-    #[cfg(feature = "cycle_marker")]
-    {
-        block_effective = cycle_marker::print_cycle_markers();
-    }
-
-    // our convention is to return 32 bytes placed into registers x10-x17
-
-    // TODO: move to new simulator
-    #[allow(deprecated)]
-    (
-        run_result.state.registers[10..18].try_into().unwrap(),
-        block_effective,
-    )
+    run_and_get_effective_cycles(img_path, cycles, non_determinism_source).0
 }
 
 pub fn run_and_get_effective_cycles_from_bytes(
     img_bytes: &[u8],
-    diagnostics: Option<DiagnosticsConfig>,
+    text_bytes: &[u8],
     cycles: usize,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
+    non_determinism_source: impl NonDeterminismCSRSource,
 ) -> ([u32; 8], Option<u64>) {
-    run_and_get_effective_cycles_inner(
-        BinarySource::Slice(img_bytes),
-        diagnostics,
-        cycles,
-        non_determinism_source,
-    )
+    let bin_words = bytes_to_u32_words(img_bytes);
+    let text_words = bytes_to_u32_words(text_bytes);
+    run_inner(&bin_words, &text_words, cycles, non_determinism_source)
 }
 
 pub fn run_and_get_effective_cycles(
     img_path: PathBuf,
-    diagnostics: Option<DiagnosticsConfig>,
     cycles: usize,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImpl>,
+    non_determinism_source: impl NonDeterminismCSRSource,
 ) -> ([u32; 8], Option<u64>) {
-    // Check that the bin file is present and readable.
-    let mut file = std::fs::File::open(img_path.clone())
-        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {img_path:?}"));
-    let mut buffer = vec![];
-    file.read_to_end(&mut buffer).expect("must read the file");
+    let text_path = img_path.with_extension("text");
+    let (bin_words, text_words) = load_bin_and_text(&img_path, &text_path);
+    run_inner(&bin_words, &text_words, cycles, non_determinism_source)
+}
 
-    run_and_get_effective_cycles_inner(
-        BinarySource::Path(img_path),
-        diagnostics,
+fn run_inner(
+    bin_words: &[u32],
+    text_words: &[u32],
+    cycles: usize,
+    mut non_determinism_source: impl NonDeterminismCSRSource,
+) -> ([u32; 8], Option<u64>) {
+    println!("ZK RISC-V transpiler is starting");
+
+    let instructions = preprocess_bytecode::<FullUnsignedMachineDecoderConfig>(text_words);
+    let tape = SimpleTape::new(&instructions);
+    let mut ram =
+        RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(bin_words, RAM_SIZE);
+    let mut state = State::initial_with_counters(DelegationsCounters::default());
+
+    let _reached_end = VM::<DelegationsCounters>::run_basic_unrolled::<_, _, _>(
+        &mut state,
+        &mut ram,
+        &mut (),
+        &tape,
         cycles,
-        non_determinism_source,
-    )
+        &mut non_determinism_source,
+    );
+
+    let cycles_executed = (state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP;
+
+    #[allow(unused_mut, unused_assignments)]
+    let mut block_effective = None;
+
+    // TODO: re-enable once airbender PR #237 merges (CycleMarkerHooks)
+    // #[cfg(feature = "cycle_marker")]
+    // {
+    //     block_effective = cycle_marker::print_cycle_markers();
+    // }
+
+    // our convention is to return 32 bytes placed into registers x10-x17
+    let output: [u32; 8] = std::array::from_fn(|i| state.registers[10 + i].value);
+
+    (output, block_effective.or(Some(cycles_executed)))
+}
+
+#[cfg(feature = "flamegraph")]
+fn run_with_flamegraph(
+    bin_words: &[u32],
+    text_words: &[u32],
+    cycles: usize,
+    mut non_determinism_source: impl NonDeterminismCSRSource,
+    sym_path: PathBuf,
+    output_path: PathBuf,
+) -> ([u32; 8], Option<u64>) {
+    let instructions = preprocess_bytecode::<FullUnsignedMachineDecoderConfig>(text_words);
+    let tape = SimpleTape::new(&instructions);
+    let mut ram =
+        RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(bin_words, RAM_SIZE);
+    let mut state = State::initial_with_counters(DelegationsCounters::default());
+
+    let mut config = VmFlamegraphConfig::new(sym_path, output_path);
+    config.frequency_recip = 1;
+    config.reverse_graph = false;
+    let mut profiler =
+        VmFlamegraphProfiler::new(config).expect("failed to initialize flamegraph profiler");
+
+    let _reached_end =
+        VM::<DelegationsCounters>::run_basic_unrolled_with_flamegraph::<_, _, _>(
+            &mut state,
+            &mut ram,
+            &mut (),
+            &tape,
+            cycles,
+            &mut non_determinism_source,
+            &mut profiler,
+        )
+        .expect("flamegraph execution failed");
+
+    let cycles_executed = (state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP;
+    let output: [u32; 8] = std::array::from_fn(|i| state.registers[10 + i].value);
+    (output, Some(cycles_executed))
 }
 
 pub fn simulate_witness_tracing(
     img_path: PathBuf,
-    non_determinism_source: impl NonDeterminismCSRSource<VectorMemoryImplWithRom>,
+    mut non_determinism_source: impl NonDeterminismCSRSource,
 ) {
-    println!("ZK RISC-V simulator is starting");
+    println!("ZK RISC-V transpiler witness tracing is starting");
 
-    // Check that the bin file is present and readable.
-    let mut file = std::fs::File::open(img_path.clone())
-        .unwrap_or_else(|_| panic!("ZKsync OS bin file missing: {img_path:?}"));
-    let mut buffer = vec![];
-    file.read_to_end(&mut buffer).expect("must read the file");
+    let text_path = img_path.with_extension("text");
+    let (bin_words, text_words) = load_bin_and_text(&img_path, &text_path);
 
-    let num_instances_upper_bound = 1 << 14;
-    let binary = execution_utils::get_padded_binary(&buffer);
+    let instructions = preprocess_bytecode::<FullUnsignedMachineDecoderConfig>(&text_words);
+    let tape = SimpleTape::new(&instructions);
+    let mut ram =
+        RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(&bin_words, RAM_SIZE);
+    let mut state = State::initial_with_counters(DelegationsCounters::default());
 
-    let worker = prover_examples::prover::worker::Worker::new();
+    // Run with a snapshotter to trace witness generation, measuring throughput.
+    let cycles_upper_bound = 1 << 36;
+    let mut snapshotter = riscv_transpiler::vm::SimpleSnapshotter::<
+        DelegationsCounters,
+        { ROM_SECOND_WORD_BITS },
+    >::new_with_cycle_limit(cycles_upper_bound, state);
 
     let now = std::time::Instant::now();
-    let (all_witness_instances, _, _, _) =
-        prover_examples::trace_execution_for_gpu::<_, IMStandardIsaConfig, Global>(
-            num_instances_upper_bound,
-            &binary,
-            non_determinism_source,
-            1 << 22,
-            &worker,
-        );
-    let elapsed = now.elapsed();
-    let cycles_upper_bound =
-        all_witness_instances.len() * all_witness_instances[0].num_cycles_chunk_size;
-    let speed = (cycles_upper_bound as f64) / elapsed.as_secs_f64() / 1_000_000f64;
-    println!(
-        "Simulator witness gen speed is roughly {speed} MHz: ran {cycles_upper_bound} cycles over {elapsed:?}"
+    let _reached_end = VM::<DelegationsCounters>::run_basic_unrolled::<_, _, _>(
+        &mut state,
+        &mut ram,
+        &mut snapshotter,
+        &tape,
+        cycles_upper_bound,
+        &mut non_determinism_source,
     );
+    let elapsed = now.elapsed();
+
+    let cycles_executed =
+        ((state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP) as usize;
+    let speed = (cycles_executed as f64) / elapsed.as_secs_f64() / 1_000_000f64;
+    let num_snapshots = snapshotter.snapshots.len();
+    println!(
+        "Witness gen speed is roughly {speed:.1} MHz: ran {cycles_executed} cycles ({num_snapshots} snapshots) over {elapsed:?}"
+    );
+}
+
+// -- Helpers --
+
+fn load_bin_and_text(bin_path: &Path, text_path: &Path) -> (Vec<u32>, Vec<u32>) {
+    let bin_words = read_file_as_u32_words(bin_path);
+    let text_words = read_file_as_u32_words(text_path);
+    (bin_words, text_words)
+}
+
+fn read_file_as_u32_words(path: &Path) -> Vec<u32> {
+    let mut file = std::fs::File::open(path)
+        .unwrap_or_else(|_| panic!("file missing: {}", path.display()));
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .unwrap_or_else(|_| panic!("failed to read: {}", path.display()));
+    bytes_to_u32_words(&bytes)
+}
+
+fn bytes_to_u32_words(bytes: &[u8]) -> Vec<u32> {
+    assert!(
+        bytes.len() % 4 == 0,
+        "binary length {} is not a multiple of 4",
+        bytes.len()
+    );
+    bytes
+        .chunks_exact(4)
+        .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+        .collect()
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
+    use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
     use std::str::FromStr;
 
     #[test]
     /// Quick test that uses the .bin file that computes the n-th fibonacci number.
     fn quick_runner() {
+        let bin_path = PathBuf::from_str("generated/dynamic_fibonacci.bin").unwrap();
+        if !bin_path.exists() {
+            eprintln!("skipping quick_runner: generated binary not found");
+            return;
+        }
         let mut non_determinism_source = QuasiUARTSource::default();
         // Get 11th fibonacci number.
         non_determinism_source.oracle.push_back(11);
-        let output = run(
-            PathBuf::from_str("generated/dynamic_fibonacci.bin").unwrap(),
-            None,
-            1 << 25,
-            non_determinism_source,
-        );
+        let output = run(bin_path, 1 << 25, non_determinism_source);
         assert_eq!(output, [233u32, 11, 0, 0, 0, 0, 0, 0])
     }
 }
