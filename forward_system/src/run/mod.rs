@@ -32,7 +32,6 @@ use basic_bootloader::bootloader::config::{
     BasicBootloaderProvingExecutionConfig,
 };
 use errors::ForwardSubsystemError;
-use oracle_provider::MemorySource;
 use oracle_provider::ReadWitnessSource;
 use oracle_provider::ZkEENonDeterminismSource;
 use result_keeper::ProverInputResultKeeper;
@@ -238,7 +237,6 @@ pub fn make_oracle_for_proofs_and_dumps<
     T: ReadStorageTree,
     PS: PreimageSource,
     TS: TxSource,
-    M: MemorySource + 'static,
 >(
     block_context: BlockContext,
     tree: T,
@@ -248,7 +246,7 @@ pub fn make_oracle_for_proofs_and_dumps<
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
     use_native_callable_oracles: bool,
-) -> ZkEENonDeterminismSource<M> {
+) -> ZkEENonDeterminismSource {
     make_oracle_for_proofs_and_dumps_for_init_data(
         block_context,
         tree,
@@ -265,7 +263,6 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     T: ReadStorageTree,
     PS: PreimageSource,
     TS: TxSource,
-    M: MemorySource + 'static,
 >(
     block_context: BlockContext,
     tree: T,
@@ -275,7 +272,7 @@ pub fn make_oracle_for_proofs_and_dumps_for_init_data<
     da_commitment_scheme: Option<DACommitmentScheme>,
     add_uart: bool,
     use_native_callable_oracles: bool,
-) -> ZkEENonDeterminismSource<M> {
+) -> ZkEENonDeterminismSource {
     let block_metadata_responder = BlockMetadataResponder {
         block_metadata: block_context,
     };

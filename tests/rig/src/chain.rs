@@ -35,10 +35,7 @@ use forward_system::system::system_types::ethereum::EthereumStorageSystemTypes;
 use forward_system::system::system_types::ForwardRunningSystem;
 use log::warn;
 use log::{debug, info, trace};
-use oracle_provider::MemorySource;
-use oracle_provider::{DummyMemorySource, ReadWitnessSource, ZkEENonDeterminismSource};
-use risc_v_simulator::abstractions::memory::VectorMemoryImpl;
-use risc_v_simulator::sim::{DiagnosticsConfig, ProfilerConfig};
+use oracle_provider::{ReadWitnessSource, ZkEENonDeterminismSource};
 use ruint::aliases::{B160, B256, U256};
 use std::alloc::Global;
 use std::collections::HashMap;
@@ -73,7 +70,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
         use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<DummyMemorySource>;
+    ) -> ZkEENonDeterminismSource;
 
     #[allow(clippy::too_many_arguments)]
     fn create_proof_oracle(
@@ -86,7 +83,7 @@ pub trait TestingOracleFactory<const RANDOMIZED_TREE: bool> {
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
         use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<VectorMemoryImpl>;
+    ) -> ZkEENonDeterminismSource;
 }
 
 /// Default oracle factory that uses the existing make_oracle_for_proofs_and_dumps function
@@ -105,7 +102,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
         use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<DummyMemorySource> {
+    ) -> ZkEENonDeterminismSource {
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
             state_tree,
@@ -128,7 +125,7 @@ impl<const RANDOMIZED_TREE: bool> TestingOracleFactory<RANDOMIZED_TREE>
         da_commitment_scheme: Option<DACommitmentScheme>,
         add_uart: bool,
         use_native_callable_oracles: bool,
-    ) -> ZkEENonDeterminismSource<VectorMemoryImpl> {
+    ) -> ZkEENonDeterminismSource {
         forward_system::run::make_oracle_for_proofs_and_dumps(
             block_metadata,
             state_tree,
@@ -190,7 +187,7 @@ pub struct RunConfig {
     // Runtime execution controls for `Chain` block execution.
     // Setup conveniences (for example, treasury pre-funding) are owned by `TestingFramework`.
     // Config for the profiler
-    pub profiler_config: Option<ProfilerConfig>,
+    pub flamegraph_output: Option<PathBuf>,
     // If set, the witness will be dumped to the given file path
     pub witness_output_file: Option<PathBuf>,
     // Name of risc-v binary to use
@@ -225,7 +222,7 @@ impl Default for RunConfig {
             do_riscv_run,
             check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
             check_revm_consistency,
-            profiler_config: None,
+            flamegraph_output: None,
             witness_output_file: None,
             update_state_after_block_execution: true,
         }
@@ -777,7 +774,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         validator: &mut impl TxValidator<ForwardRunningSystem>,
     ) -> Result<(BlockOutput, BlockExtraStats, Vec<u32>, Vec<u8>), BootloaderSubsystemError> {
         let RunConfig {
-            profiler_config,
+            flamegraph_output,
             witness_output_file,
             app,
             do_riscv_run,
@@ -974,17 +971,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             let copy_source = ReadWitnessSource::new(oracle);
             let items = copy_source.get_read_items();
 
-            let diagnostics_config = profiler_config.map(|cfg| {
-                let mut diagnostics_cfg = DiagnosticsConfig::new(get_zksync_os_sym_path(&app));
-                diagnostics_cfg.profiler_config = Some(cfg);
-                diagnostics_cfg
-            });
+            if flamegraph_output.is_some() {
+                warn!("flamegraph_output is set but flamegraph support requires the `flamegraph` feature on zksync_os_runner; ignoring");
+            }
 
             let now = std::time::Instant::now();
             let (proof_output, block_effective) = {
                 zksync_os_runner::run_and_get_effective_cycles(
                     get_zksync_os_img_path(&app),
-                    diagnostics_config,
                     1 << 36,
                     copy_source,
                 )
@@ -1068,12 +1062,12 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         Ok((block_output, stats, proof_input, pubdata))
     }
 
-    pub fn make_eth_block_oracle<M: MemorySource + 'static>(
+    pub fn make_eth_block_oracle(
         transactions: Vec<EncodedTx>,
         witness: alloy_rpc_types_debug::ExecutionWitness,
         block_header: Header,
         withdrawals: Vec<u8>,
-    ) -> ZkEENonDeterminismSource<M> {
+    ) -> ZkEENonDeterminismSource {
         use crypto::MiniDigest;
         use std::collections::BTreeMap;
 
@@ -1273,10 +1267,9 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let proof_input = if only_forward {
             None
         } else {
-            let (proof_output, block_effective) = {
+            let (_proof_output, _block_effective) = {
                 zksync_os_runner::run_and_get_effective_cycles(
                     get_zksync_os_img_path(&app),
-                    None,
                     1 << 36,
                     copy_source,
                 )
@@ -1486,6 +1479,7 @@ pub fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {
     get_zksync_os_path(app_name, "bin")
 }
 
+#[allow(dead_code)]
 fn get_zksync_os_sym_path(app_name: &Option<String>) -> PathBuf {
     get_zksync_os_path(app_name, "elf")
 }
@@ -1497,7 +1491,7 @@ pub fn is_account_properties_address(address: &B160) -> bool {
 
 #[cfg(feature = "e2e_proving")]
 fn run_prover(csr_reads: &[u32]) {
-    use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
+    use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
     use std::alloc::Global;
     use std::io::Read;
 

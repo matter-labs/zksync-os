@@ -19,13 +19,8 @@ pub fn with_riscv_simulation() -> RunConfig {
 
 /// RISC-V simulation run that also writes a flamegraph SVG to `path`.
 pub fn with_profiler(path: impl Into<PathBuf>) -> RunConfig {
-    use crate::ProfilerConfig;
-
     let mut config = with_riscv_simulation();
-    let mut profiler_config = ProfilerConfig::new(path.into());
-    // Keep sampling aligned with existing run_block_generate_witness defaults.
-    profiler_config.frequency_recip = 10;
-    config.profiler_config = Some(profiler_config);
+    config.flamegraph_output = Some(path.into());
     config
 }
 
