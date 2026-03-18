@@ -303,6 +303,7 @@ impl TestingOracleFactory<false> for RpcValueOracleFactory {
         _da_commitment_scheme: Option<DACommitmentScheme>,
         _add_uart: bool,
     ) -> ZkEENonDeterminismSource<VectorMemoryImpl> {
-        unimplemented!("block reexecutor does not use proof oracle")
+        // Note: block reexecutor does not use proof oracle
+        ZkEENonDeterminismSource::default()
     }
 }
