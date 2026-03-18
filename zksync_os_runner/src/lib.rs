@@ -44,7 +44,7 @@ pub fn run_default_with_flamegraph_path(
         #[cfg(not(feature = "flamegraph"))]
         {
             let _ = sym_path;
-            panic!("flamegraph support requires the `flamegraph` feature on riscv_transpiler");
+            eprintln!("warning: flamegraph_output is set but the `flamegraph` feature is not enabled; running without profiling");
         }
     }
     run(bin_path, cycles, non_determinism_source)
