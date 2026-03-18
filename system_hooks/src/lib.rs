@@ -49,12 +49,14 @@ use zk_ee::{
     system::{
         base_system_functions::{
             Bn254AddErrors, Bn254MulErrors, Bn254PairingCheckErrors, ModExpErrors,
-            P256VerifyErrors, RipeMd160Errors, Secp256k1ECRecoverErrors, Sha256Errors,
+            RipeMd160Errors, Secp256k1ECRecoverErrors, Sha256Errors,
         },
         errors::subsystem::Subsystem,
         EthereumLikeTypes, System, SystemTypes, *,
     },
 };
+#[cfg(feature = "p256_precompile")]
+use zk_ee::system::base_system_functions::P256VerifyErrors;
 
 pub mod addresses_constants;
 pub mod call_hooks;
