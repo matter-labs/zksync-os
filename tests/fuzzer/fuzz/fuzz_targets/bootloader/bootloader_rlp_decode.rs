@@ -275,22 +275,33 @@ fn fuzz(input: FuzzInput) {
     let alloy_result: Result<TxEnvelope, _> = TxEnvelope::decode(&mut alloy_cursor);
     let alloy_fully_consumed = alloy_cursor.is_empty();
 
-    // If both parsers accept (and Alloy consumed all input), the signing hash must agree.
+    let alloy_ok = alloy_result.is_ok() && alloy_fully_consumed;
+    let our_ok = our_result.is_ok();
+
+    // Divergence: one side accepts while the other rejects.
+    assert!(
+        !(our_ok && !alloy_ok),
+        "Our parser accepted but Alloy rejected (or had trailing bytes)"
+    );
+    assert!(
+        !(!our_ok && alloy_ok),
+        "Alloy accepted but our parser rejected"
+    );
+
+    // Both accepted — signing hashes must agree.
     if let (Ok(our_tx), Ok(ref env)) = (&our_result, &alloy_result) {
-        if alloy_fully_consumed {
-            let alloy_hash = match env {
-                TxEnvelope::Legacy(signed) => signed.tx().signature_hash(),
-                TxEnvelope::Eip2930(signed) => signed.tx().signature_hash(),
-                TxEnvelope::Eip1559(signed) => signed.tx().signature_hash(),
-                TxEnvelope::Eip4844(signed) => signed.tx().signature_hash(),
-                TxEnvelope::Eip7702(signed) => signed.tx().signature_hash(),
-            };
-            assert_eq!(
-                our_tx.hash_for_signature_verification().as_u8_array(),
-                alloy_hash.0,
-                "Signing hash mismatch between our parser and Alloy"
-            );
-        }
+        let alloy_hash = match env {
+            TxEnvelope::Legacy(signed) => signed.tx().signature_hash(),
+            TxEnvelope::Eip2930(signed) => signed.tx().signature_hash(),
+            TxEnvelope::Eip1559(signed) => signed.tx().signature_hash(),
+            TxEnvelope::Eip4844(signed) => signed.tx().signature_hash(),
+            TxEnvelope::Eip7702(signed) => signed.tx().signature_hash(),
+        };
+        assert_eq!(
+            our_tx.hash_for_signature_verification().as_u8_array(),
+            alloy_hash.0,
+            "Signing hash mismatch between our parser and Alloy"
+        );
     }
 }
 
