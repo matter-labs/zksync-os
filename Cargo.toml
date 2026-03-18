@@ -64,14 +64,14 @@ categories = ["cryptography"]
 zksync_os_evm_errors = { git = "https://github.com/matter-labs/zksync-os-interface", branch = "alocascio-prover-input-gen", default-features =  false }
 zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interface", branch = "alocascio-prover-input-gen" }
 
-riscv_transpiler = { path = "../zksync-airbender/riscv_transpiler" }
-blake2s_u32 = { path = "../zksync-airbender/blake2s_u32", default-features = false }
-common_constants = { path = "../zksync-airbender/common_constants" }
-prover_examples = { path = "../zksync-airbender/circuit_defs/prover_examples" }
-execution_utils = { path = "../zksync-airbender/execution_utils" }
-prover = { path = "../zksync-airbender/prover" }
-cli = { path = "../zksync-airbender/tools/cli" }
-gpu_prover = { path = "../zksync-airbender/gpu_prover" }
+riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", default-features = false }
+common_constants = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+prover_examples = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+execution_utils = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+prover = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+cli = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
+gpu_prover = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
 
 ruint = { version = "1.16", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
