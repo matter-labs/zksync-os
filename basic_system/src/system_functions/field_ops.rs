@@ -364,9 +364,7 @@ mod tests {
             }
         }
 
-        fn create_lying_oracle(
-            corruption: Corruption,
-        ) -> ZkEENonDeterminismSource {
+        fn create_lying_oracle(corruption: Corruption) -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(LyingFieldOpsQuery::new(corruption));
             oracle
@@ -375,8 +373,7 @@ mod tests {
         fn create_sqrt_existence_lying_oracle() -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(
-                LyingFieldOpsQuery::new(Corruption::ReturnZero)
-                    .with_sqrt_existence_lie(),
+                LyingFieldOpsQuery::new(Corruption::ReturnZero).with_sqrt_existence_lie(),
             );
             oracle
         }

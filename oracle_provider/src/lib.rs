@@ -18,8 +18,8 @@ use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable}
 use zk_ee::system::errors::internal::InternalError;
 use zk_ee::{internal_error, oracle::IOOracle};
 
-pub use riscv_transpiler::vm::RamPeek;
 use riscv_transpiler::vm::NonDeterminismCSRSource;
+pub use riscv_transpiler::vm::RamPeek;
 
 pub struct DummyMemorySource;
 
@@ -46,7 +46,6 @@ pub struct ZkEENonDeterminismSource {
     /// Mapping from query_id to processor that is handling it (represented as index in processors vector above).
     ranges: BTreeMap<u32, usize>,
 }
-
 
 impl ZkEENonDeterminismSource {
     #[track_caller]
@@ -306,13 +305,13 @@ impl NonDeterminismCSRSource for ReadWitnessSource {
     }
 
     fn write_with_memory_access_dyn(&mut self, ram: &dyn RamPeek, value: u32) {
-        self.original_source.write_with_memory_access_dyn(ram, value);
+        self.original_source
+            .write_with_memory_access_dyn(ram, value);
     }
 }
 
 impl IOOracle for ReadWitnessSource {
-    type RawIterator<'a> =
-        <ZkEENonDeterminismSource as IOOracle>::RawIterator<'a>;
+    type RawIterator<'a> = <ZkEENonDeterminismSource as IOOracle>::RawIterator<'a>;
 
     fn raw_query<'a, I>(
         &'a mut self,

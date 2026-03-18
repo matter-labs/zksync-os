@@ -159,11 +159,10 @@ mod tests {
     #[test]
     #[should_panic]
     fn native_blob_query_rejects_null_pointer() {
-        let _ = NativeBlobCommitmentAndProofQuery::default()
-            .process_buffered_query(
-                BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
-                vec![0, 1],
-                &DummyMemorySource,
-            );
+        let _ = NativeBlobCommitmentAndProofQuery::default().process_buffered_query(
+            BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
+            vec![0, 1],
+            &DummyMemorySource,
+        );
     }
 }

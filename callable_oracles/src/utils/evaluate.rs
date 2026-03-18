@@ -2,11 +2,7 @@ use core::mem::MaybeUninit;
 
 use oracle_provider::RamPeek;
 
-pub fn read_memory_as_u8(
-    memory: &dyn RamPeek,
-    offset: u32,
-    len: u32,
-) -> Result<Vec<u8>, ()> {
+pub fn read_memory_as_u8(memory: &dyn RamPeek, offset: u32, len: u32) -> Result<Vec<u8>, ()> {
     let (_, of) = offset.overflowing_add(len);
     if of == true {
         return Err(());

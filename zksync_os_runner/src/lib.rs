@@ -163,17 +163,16 @@ fn run_with_flamegraph(
     let mut profiler =
         VmFlamegraphProfiler::new(config).expect("failed to initialize flamegraph profiler");
 
-    let _reached_end =
-        VM::<DelegationsCounters>::run_basic_unrolled_with_flamegraph::<_, _, _>(
-            &mut state,
-            &mut ram,
-            &mut (),
-            &tape,
-            cycles,
-            &mut non_determinism_source,
-            &mut profiler,
-        )
-        .expect("flamegraph execution failed");
+    let _reached_end = VM::<DelegationsCounters>::run_basic_unrolled_with_flamegraph::<_, _, _>(
+        &mut state,
+        &mut ram,
+        &mut (),
+        &tape,
+        cycles,
+        &mut non_determinism_source,
+        &mut profiler,
+    )
+    .expect("flamegraph execution failed");
 
     let cycles_executed = (state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP;
     let output: [u32; 8] = std::array::from_fn(|i| state.registers[10 + i].value);
@@ -213,8 +212,7 @@ pub fn simulate_witness_tracing(
     );
     let elapsed = now.elapsed();
 
-    let cycles_executed =
-        ((state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP) as usize;
+    let cycles_executed = ((state.timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP) as usize;
     let speed = (cycles_executed as f64) / elapsed.as_secs_f64() / 1_000_000f64;
     let num_snapshots = snapshotter.snapshots.len();
     println!(
@@ -231,8 +229,8 @@ fn load_bin_and_text(bin_path: &Path, text_path: &Path) -> (Vec<u32>, Vec<u32>) 
 }
 
 fn read_file_as_u32_words(path: &Path) -> Vec<u32> {
-    let mut file = std::fs::File::open(path)
-        .unwrap_or_else(|_| panic!("file missing: {}", path.display()));
+    let mut file =
+        std::fs::File::open(path).unwrap_or_else(|_| panic!("file missing: {}", path.display()));
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)
         .unwrap_or_else(|_| panic!("failed to read: {}", path.display()));

@@ -233,11 +233,7 @@ pub fn generate_batch_proof_input(
     proof_input
 }
 
-pub fn make_oracle_for_proofs_and_dumps<
-    T: ReadStorageTree,
-    PS: PreimageSource,
-    TS: TxSource,
->(
+pub fn make_oracle_for_proofs_and_dumps<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(
     block_context: BlockContext,
     tree: T,
     preimage_source: PS,

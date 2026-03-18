@@ -129,16 +129,13 @@ impl<O: IOOracle> EthereumLikeBasicSTF for ForwardSystemTypes<O, false> {}
 
 /// Forward execution system used in sequencing mode
 /// Uses dummy memory source for oracle data storage
-pub type ForwardRunningSystem =
-    ForwardSystemTypes<ZkEENonDeterminismSource, false>;
+pub type ForwardRunningSystem = ForwardSystemTypes<ZkEENonDeterminismSource, false>;
 
 /// Call simulation system with same configuration as forward execution
-pub type CallSimulationSystem =
-    ForwardSystemTypes<ZkEENonDeterminismSource, false>;
+pub type CallSimulationSystem = ForwardSystemTypes<ZkEENonDeterminismSource, false>;
 
 /// Prover input system
-pub type ProverInputSystem =
-    ForwardSystemTypes<oracle_provider::ReadWitnessSource, true>;
+pub type ProverInputSystem = ForwardSystemTypes<oracle_provider::ReadWitnessSource, true>;
 
 /// Bootloader for forward execution using ZK transaction flow (EOA only)
 pub type ForwardBootloader =
