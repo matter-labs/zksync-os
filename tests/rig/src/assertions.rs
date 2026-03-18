@@ -440,6 +440,7 @@ mod tests {
             account_diffs: vec![],
             published_preimages: vec![],
             computational_native_used: 0,
+            pubdata_used: 0,
         }
     }
 

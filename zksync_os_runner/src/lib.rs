@@ -261,8 +261,9 @@ mod test {
     /// Quick test that uses the .bin file that computes the n-th fibonacci number.
     fn quick_runner() {
         let bin_path = PathBuf::from_str("generated/dynamic_fibonacci.bin").unwrap();
-        if !bin_path.exists() {
-            eprintln!("skipping quick_runner: generated binary not found");
+        let text_path = bin_path.with_extension("text");
+        if !bin_path.exists() || !text_path.exists() {
+            eprintln!("skipping quick_runner: generated binary/text not found");
             return;
         }
         let mut non_determinism_source = QuasiUARTSource::default();
