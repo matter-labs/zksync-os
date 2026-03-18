@@ -11,8 +11,8 @@ use zk_ee::oracle::IOOracle;
 use zk_ee::system::errors::{internal::InternalError, runtime::RuntimeError, system::SystemError};
 use zk_ee::system::{IOResultKeeper, Resources};
 use zk_ee::types_config::EthereumIOTypesConfig;
-use zk_ee::utils::Bytes32;
 use zk_ee::utils::write_bytes::WriteBytes;
+use zk_ee::utils::Bytes32;
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
@@ -138,7 +138,11 @@ pub struct AccountProperties {
 pub const fn bytecode_padding_len(deployed_len: usize) -> usize {
     let word = evm_interpreter::BYTECODE_ALIGNMENT;
     let rem = deployed_len % word;
-    if rem == 0 { 0 } else { word - rem }
+    if rem == 0 {
+        0
+    } else {
+        word - rem
+    }
 }
 
 impl AccountProperties {
@@ -201,8 +205,8 @@ impl AccountProperties {
     }
 
     pub fn compute_hash(&self) -> Bytes32 {
-        use crypto::MiniDigest;
         use crypto::blake2s::Blake2s256;
+        use crypto::MiniDigest;
         // efficient hashing without copying
         let mut hasher = Blake2s256::new();
         hasher.update(self.versioning_data.into_u64().to_be_bytes());
@@ -446,20 +450,20 @@ mod tests {
     use crate::system_implementation::flat_storage_model::{
         BytecodeAndAccountDataPreimagesStorage, PreimageRequest, VersioningData,
     };
-    use crypto::MiniDigest;
     use crypto::blake2s::Blake2s256;
     use crypto::sha3::Keccak256;
+    use crypto::MiniDigest;
     use ruint::aliases::U256;
     use std::alloc::Global;
     use storage_models::common_structs::PreimageCacheModel;
     use zk_ee::common_structs::PreimageType;
     use zk_ee::execution_environment_type::ExecutionEnvironmentType;
-    use zk_ee::oracle::IOOracle;
     use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use zk_ee::oracle::IOOracle;
     use zk_ee::reference_implementations::{BaseResources, DecreasingNative};
+    use zk_ee::system::errors::internal::InternalError;
     use zk_ee::system::IOResultKeeper;
     use zk_ee::system::Resource;
-    use zk_ee::system::errors::internal::InternalError;
     use zk_ee::types_config::EthereumIOTypesConfig;
     use zk_ee::utils::*;
 
