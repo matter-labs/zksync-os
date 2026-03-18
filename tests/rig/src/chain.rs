@@ -1501,7 +1501,6 @@ fn run_prover(csr_reads: &[u32]) {
     use prover_examples::prover::worker::Worker;
     use prover_examples::setups;
     use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
-    use riscv_transpiler::common_constants::rom::ROM_BYTE_SIZE;
     use riscv_transpiler::cycle::IMStandardIsaConfigWithUnsignedMulDiv;
 
     let img_path = get_zksync_os_img_path(&None);
@@ -1524,7 +1523,7 @@ fn run_prover(csr_reads: &[u32]) {
         &text_u32,
         1 << 36,
         non_determinism_source,
-        ROM_BYTE_SIZE,
+        1 << 30, // RAM bound (1 GiB address space)
         &worker,
     );
 
