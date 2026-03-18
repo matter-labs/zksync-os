@@ -33,6 +33,7 @@ impl RamPeek for DummyMemorySource {
 /// Structure that is responsible for buffering incoming queries till the end,
 /// and then dispatching them to various responders. When constructed it checks
 /// that responders do not try to serve the same query ID.
+#[derive(Default)]
 pub struct ZkEENonDeterminismSource {
     query_buffer: Option<QueryBuffer>,
     current_query_id: Option<u32>,
@@ -46,20 +47,6 @@ pub struct ZkEENonDeterminismSource {
     ranges: BTreeMap<u32, usize>,
 }
 
-impl Default for ZkEENonDeterminismSource {
-    fn default() -> Self {
-        Self {
-            query_buffer: None,
-            current_query_id: None,
-            current_iterator: None,
-            iterator_len_to_indicate: None,
-            high_half: None,
-            is_connected_to_external_oracle: false,
-            processors: Vec::new(),
-            ranges: BTreeMap::new(),
-        }
-    }
-}
 
 impl ZkEENonDeterminismSource {
     #[track_caller]

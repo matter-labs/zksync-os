@@ -227,7 +227,7 @@ fn read_file_as_u32_words(path: &Path) -> Vec<u32> {
 
 fn bytes_to_u32_words(bytes: &[u8]) -> Vec<u32> {
     assert!(
-        bytes.len() % 4 == 0,
+        bytes.len().is_multiple_of(4),
         "binary length {} is not a multiple of 4",
         bytes.len()
     );

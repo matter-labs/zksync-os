@@ -4,7 +4,6 @@
 #![allow(incomplete_features)]
 #![feature(vec_push_within_capacity)]
 #![feature(slice_swap_unchecked)]
-#![feature(ptr_as_ref_unchecked)]
 #![allow(clippy::new_without_default)]
 #![allow(clippy::needless_lifetimes)]
 #![allow(clippy::needless_borrow)]
