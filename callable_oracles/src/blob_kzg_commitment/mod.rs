@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn native_blob_query_processes_valid_query() {
         let data = [1u8, 2, 3, 4, 5];
-        let output: Vec<usize> = NativeBlobCommitmentAndProofQuery::default()
+        let output: Vec<usize> = NativeBlobCommitmentAndProofQuery
             .process_buffered_query(
                 BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
                 vec![data.as_ptr().addr(), data.len()],
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn native_blob_query_rejects_null_pointer() {
-        let _ = NativeBlobCommitmentAndProofQuery::default().process_buffered_query(
+        let _ = NativeBlobCommitmentAndProofQuery.process_buffered_query(
             BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
             vec![0, 1],
             &DummyMemorySource,

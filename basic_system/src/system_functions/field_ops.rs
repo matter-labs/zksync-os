@@ -181,7 +181,7 @@ mod tests {
 
     fn create_oracle_with_field_ops() -> ZkEENonDeterminismSource {
         let mut oracle = ZkEENonDeterminismSource::default();
-        oracle.add_external_processor(NativeFieldOpsQuery::default());
+        oracle.add_external_processor(NativeFieldOpsQuery);
         oracle
     }
 
@@ -311,7 +311,7 @@ mod tests {
         impl LyingFieldOpsQuery {
             fn new(corruption: Corruption) -> Self {
                 Self {
-                    inner: callable_oracles::field_hints::NativeFieldOpsQuery::default(),
+                    inner: callable_oracles::field_hints::NativeFieldOpsQuery,
                     corruption,
                     lie_about_sqrt_existence: false,
                 }

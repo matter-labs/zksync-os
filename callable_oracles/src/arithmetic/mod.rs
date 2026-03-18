@@ -187,7 +187,7 @@ mod tests {
             modulus_len: 1,
         };
 
-        let output: Vec<usize> = NativeArithmeticQuery::default()
+        let output: Vec<usize> = NativeArithmeticQuery
             .process_buffered_query(
                 MODEXP_ADVICE_QUERY_ID,
                 vec![(&arg as *const ModExpAdviceParams64).addr()],
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn native_arithmetic_query_rejects_null_query_pointer() {
-        let _ = NativeArithmeticQuery::default().process_buffered_query(
+        let _ = NativeArithmeticQuery.process_buffered_query(
             MODEXP_ADVICE_QUERY_ID,
             vec![0],
             &DummyMemorySource,

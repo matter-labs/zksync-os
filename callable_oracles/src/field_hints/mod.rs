@@ -155,7 +155,7 @@ mod native_query_tests {
             src_len_u32_words: 8,
         };
 
-        let output: Vec<usize> = NativeFieldOpsQuery::default()
+        let output: Vec<usize> = NativeFieldOpsQuery
             .process_buffered_query(
                 FIELD_OPS_ADVISE_QUERY_ID,
                 vec![(&hint as *const FieldOpsHint64).addr()],
@@ -170,7 +170,7 @@ mod native_query_tests {
     #[test]
     #[should_panic]
     fn native_field_ops_query_rejects_null_query_pointer() {
-        let _ = NativeFieldOpsQuery::default().process_buffered_query(
+        let _ = NativeFieldOpsQuery.process_buffered_query(
             FIELD_OPS_ADVISE_QUERY_ID,
             vec![0],
             &DummyMemorySource,
