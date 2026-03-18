@@ -1,5 +1,4 @@
 #![cfg(test)]
-#![feature(assert_matches)]
 
 use rig::alloy::consensus::TxLegacy;
 use rig::utils::{calldata_for_forwarder, FORWARDER_BYTECODE};
@@ -14,7 +13,17 @@ use rig::{
     ruint::aliases::U256,
     TestingFramework,
 };
-use std::assert_matches::assert_matches;
+/// Replacement for std::assert_matches::assert_matches which is unavailable on this nightly.
+macro_rules! assert_matches {
+    ($expression:expr, $pattern:pat $(,)?) => {
+        assert!(
+            matches!($expression, $pattern),
+            "assertion failed: `{:?}` does not match `{}`",
+            $expression,
+            stringify!($pattern)
+        )
+    };
+}
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// Performs two calls:
