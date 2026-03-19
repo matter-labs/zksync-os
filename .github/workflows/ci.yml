@@ -43,7 +43,7 @@ jobs:
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
-              run: cargo test --release -j 1
+              run: cargo test --release -j 3 -- --test-threads=1
     test_revm_consistency:
         name: revm consistency checker tests
         runs-on: [matterlabs-ci-runner-high-performance]

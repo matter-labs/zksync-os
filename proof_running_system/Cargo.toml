@@ -48,7 +48,6 @@ production = ["basic_bootloader/eip-7702", "system_hooks/p256_precompile"]
 # Features used for tests.
 # Note: cycle_marker is intentionally excluded — binaries with marker CSRs
 # cannot be proved (the transpiler replayer rejects them by design).
-# Enable cycle_marker separately for benchmarking builds.
 for_tests = ["production", "state-diffs-pi", "basic_bootloader/eip-4844"]
 
 # Features used for eth_runner
