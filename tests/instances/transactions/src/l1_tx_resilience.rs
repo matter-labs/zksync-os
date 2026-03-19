@@ -167,9 +167,7 @@ fn test_l1_tx_pre_call_does_not_break_execution() {
         .nonce(0)
         .build();
 
-    let mut tester = TestingFramework::new()
-        .without_revm_consistency_check()
-        .with_balance(sender, U256::from(u64::MAX));
+    let mut tester = TestingFramework::new().with_balance(sender, U256::from(u64::MAX));
 
     let output = tester.execute_block(vec![tx]);
     assert!(
@@ -197,9 +195,7 @@ fn test_l1_tx_deposit_with_pre_call() {
         .nonce(0)
         .build();
 
-    let mut tester = TestingFramework::new()
-        .without_revm_consistency_check()
-        .with_balance(sender, U256::from(u64::MAX));
+    let mut tester = TestingFramework::new().with_balance(sender, U256::from(u64::MAX));
 
     let output = tester.execute_block(vec![tx]);
     assert!(
