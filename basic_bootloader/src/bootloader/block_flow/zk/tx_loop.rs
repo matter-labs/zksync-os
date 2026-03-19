@@ -33,8 +33,10 @@ where
 
         let mut is_first_tx = true;
         // Service blocks are blocks that only contain service transactions.
-        // Service transactions can only be included in service blocks.
+        // Service transactions can only be included in service blocks,
+        // unless the first tx in the block was an upgrade tx.
         let mut is_service_block = false;
+        let mut first_tx_was_upgrade = false;
 
         // TODO use preallocated data buffer?
 
@@ -131,7 +133,12 @@ where
                                 &mut is_service_block,
                                 is_first_tx,
                                 tx_processing_result.is_service_tx,
+                                first_tx_was_upgrade,
                             )?;
+
+                            if is_first_tx && tx_processing_result.is_upgrade_tx {
+                                first_tx_was_upgrade = true;
+                            }
 
                             // Do not update the accumulators yet, we may need to revert the transaction
                             let next_block_gas_used =

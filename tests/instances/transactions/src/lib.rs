@@ -1444,6 +1444,42 @@ fn test_service_block_invariants() {
         .expect_err("Service block with non service tx should fail");
 }
 
+/// Service transactions are allowed after an upgrade tx in the first block.
+#[test]
+fn test_service_tx_allowed_after_upgrade_tx() {
+    let target_address = L2_INTEROP_ROOT_STORAGE_ADDRESS.to_be_bytes::<20>();
+
+    // Create a contract that always succeeds for the upgrade tx
+    let contract_address = address!("0000000000000000000000000000000000010003");
+    let success_bytecode = hex::decode("60006000f3").unwrap(); // PUSH1 0, PUSH1 0, RETURN
+    let mut tester = TestingFramework::new().with_evm_contract(contract_address, &success_bytecode);
+
+    let upgrade_tx = ZKsyncTxEnvelope::from(ZKsyncUpgradeTx {
+        from: address!("1234000000000000000000000000000000000000"),
+        to: contract_address,
+        gas_limit: 100_000u128,
+        ..Default::default()
+    });
+
+    let service_tx = ZKsyncTxEnvelope::from(ZKsyncServiceTx {
+        to: alloy::primitives::Address::from_slice(&target_address),
+        input: ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR.into(),
+        salt: 0,
+    });
+
+    let block_context = BlockContext {
+        eip1559_basefee: U256::from(1000),
+        ..Default::default()
+    };
+    tester = tester.with_block_context(block_context);
+
+    let result = tester.execute_block(vec![upgrade_tx, service_tx]);
+    assert!(
+        result.tx_results.iter().all(|res| res.is_ok()),
+        "Upgrade tx followed by service tx should succeed"
+    );
+}
+
 /// Regression test for: Skip nonce check on simulation
 #[test]
 fn test_simulation_skips_nonce_check() {

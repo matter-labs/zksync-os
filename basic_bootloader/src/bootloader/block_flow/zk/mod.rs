@@ -95,12 +95,14 @@ where
 
 /// Check the service block invariants:
 /// 1. If the first tx is a service tx, then the block is a service block
-/// 2. Service transactions can only be processed in service blocks
+/// 2. Service transactions can only be processed in service blocks,
+///    unless the first tx in the block was an upgrade tx
 /// 3. Non-service transactions cannot be processed in service blocks
 fn check_for_service_block_invariants(
     is_service_block: &mut bool,
     is_first_tx: bool,
     is_service_tx: bool,
+    first_tx_was_upgrade: bool,
 ) -> Result<(), InternalError> {
     //  1. If the first tx is a service tx, then the block is a service block
     if is_first_tx && is_service_tx {
@@ -112,8 +114,9 @@ fn check_for_service_block_invariants(
             return Err(internal_error!("Non-service tx in service block"));
         }
     } else {
-        // 2. Service transactions can only be processed in service blocks
-        if is_service_tx {
+        // 2. Service transactions can only be processed in service blocks,
+        //    unless the first tx in the block was an upgrade tx
+        if is_service_tx && !first_tx_was_upgrade {
             return Err(internal_error!("Service tx in non-service block"));
         }
     }
