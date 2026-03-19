@@ -21,6 +21,7 @@ use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_interface::types::{BlockOutput, ExecutionOutput, ExecutionResult};
 use rig::{testing_signer, BlockContext, TestingFramework};
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
+use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 use bytecodes::{
@@ -424,6 +425,35 @@ fn test_set_sl_chain_id_first_block_batch() {
 fn test_set_sl_chain_id_not_first_block_batch_fails() {
     // TODO(EVM-1227): port this assertion once tests can compare batch-level commitment/state
     // between forward and proving paths for a multiblock batch.
+}
+
+/// An upgrade tx followed by a setSettlementLayerChainId service tx in the
+/// same block should succeed.
+#[test]
+fn test_set_sl_chain_id_after_upgrade_tx() {
+    // Deploy system context contracts so the service tx actually executes,
+    // plus a trivial success contract for the upgrade tx target.
+    let upgrade_target = address!("0000000000000000000000000000000000010003");
+    let success_bytecode = hex::decode("60006000f3").unwrap(); // RETURN(0,0)
+
+    let mut tester = with_system_context_contracts(TestingFramework::new())
+        .with_evm_contract(upgrade_target, &success_bytecode);
+
+    let upgrade_tx = ZKsyncTxEnvelope::from(ZKsyncUpgradeTx {
+        from: address!("1234000000000000000000000000000000000000"),
+        to: upgrade_target,
+        gas_limit: 100_000u128,
+        ..Default::default()
+    });
+
+    let service_tx = set_sl_chain_id_tx(U256::from(42), 0);
+
+    let result = tester.execute_block(vec![upgrade_tx, service_tx]);
+    assert!(
+        result.tx_results.iter().all(|res| res.is_ok()),
+        "Upgrade tx followed by set SL chain ID service tx should succeed"
+    );
+    assert_eq!(read_sl_chain_id_slot(&mut tester), U256::from(42));
 }
 
 #[test]
