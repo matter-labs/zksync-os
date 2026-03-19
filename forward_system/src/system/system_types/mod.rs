@@ -84,7 +84,6 @@ impl<O: IOOracle, const PROOF_ENV: bool> SystemTypes for ForwardSystemTypes<O, P
 impl<O: IOOracle, const PROOF_ENV: bool> EthereumLikeTypes for ForwardSystemTypes<O, PROOF_ENV> {}
 
 /// STF implementation for sequencing system
-// TODO: fix this
 impl<O: IOOracle> BasicSTF for ForwardSystemTypes<O, false> {
     /// ZKsync transaction data tracker with hash accumulators and resource counts
     type BlockDataKeeper = ZKBasicBlockDataKeeper<NopTxHashesAccumulator>;
