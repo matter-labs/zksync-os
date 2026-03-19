@@ -19,7 +19,7 @@ concurrency:
 jobs:
     tests:
         name: tests
-        runs-on: [matterlabs-ci-runner-high-performance]
+        runs-on: [matterlabs-ci-runner-highmem]
         steps:
             - uses: actions/checkout@v3
             - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -43,7 +43,7 @@ jobs:
             - name: Compile
               run: cargo test --release --no-run
             - name: Run rust tests
-              run: cargo test --release -j 3 -- --test-threads=1
+              run: cargo test --release -j 3
     test_revm_consistency:
         name: revm consistency checker tests
         runs-on: [matterlabs-ci-runner-high-performance]
