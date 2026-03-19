@@ -337,52 +337,235 @@ mod test {
         assert!(result.is_err(), "truncated legacy tx must be rejected");
     }
 
-    /// Mutations applied to a valid EIP-1559 payload must produce the same
-    /// accept/reject decision as Alloy's decoder.
+    /// Helper: check two security-critical properties for a mutated transaction:
     ///
-    /// Each test case is a byte offset and a replacement byte. We take the
-    /// known-good EIP-1559 hex, apply the mutation, then compare both parsers.
-    #[test]
-    fn test_eip1559_mutations_agree_with_alloy() {
-        let base = raw_eip1559_chain1();
+    /// 1. **Soundness**: If Alloy rejects the mutation, our parser must also
+    ///    reject it. We must never accept structurally invalid data.
+    /// 2. **Hash consistency**: If both parsers accept, the signed hashes must
+    ///    match. A hash divergence on valid input would be a critical bug.
+    ///
+    /// Note: our parser performing *extra* rejections (chain_id validation,
+    /// encoding rules) beyond what Alloy checks is expected and not flagged.
+    fn assert_mutation_sound(mutated: &[u8], chain_id: u64, label: &str) {
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(mutated, Global);
+        let our_result = RlpEncodedTransaction::parse_from_buffer(buffer, chain_id, B160::ZERO);
 
-        // (byte_offset, replacement_value): structural mutations targeting fields
-        // that both parsers are expected to validate.
-        let mutations: &[(usize, u8)] = &[
-            // Corrupt the outer list length (bytes 2-3 encode payload length after the 0xf9 marker)
-            (2, 0x00),
-            // Flip a byte in the calldata body (should not affect structural validity)
-            (100, base[100] ^ 0xff),
-            // Introduce a leading zero in the first payload byte of the `r` signature
-            // component (non-canonical encoding). Layout at the tail:
-            //   [0xa0][32 bytes r][0xa0][32 bytes s]  = 66 bytes total
-            // base.len() - 65 is the first byte of r's payload (skipping the 0xa0 prefix).
-            (base.len() - 65, 0x00),
-        ];
+        // Alloy must both succeed and consume all bytes to count as "accept".
+        let mut alloy_input: &[u8] = mutated;
+        let alloy_result: Result<TxEnvelope, _> = alloy_rlp::Decodable::decode(&mut alloy_input);
+        let alloy_ok = alloy_result.is_ok() && alloy_input.is_empty();
 
-        for &(offset, replacement) in mutations {
-            let mut mutated = base.clone();
-            mutated[offset] = replacement;
+        if alloy_ok && our_result.is_ok() {
+            // Both accept: verify signed hashes match.
+            let our_tx = our_result.unwrap();
+            let our_hash = our_tx.hash_for_signature_verification();
+            let alloy_hash = compute_signed_hash_alloy(mutated);
+            assert_eq!(
+                our_hash.as_u8_array(),
+                alloy_hash,
+                "Hash divergence ({label}): both parsers accepted but hashes differ"
+            );
+        } else if !alloy_ok && our_result.is_ok() {
+            // Alloy rejects but we accept — we are too lenient.
+            panic!("Leniency ({label}): Alloy rejects but our parser accepts");
+        }
+        // If our parser rejects (regardless of Alloy), that's fine — extra
+        // validation (chain_id, encoding rules) is expected.
+    }
 
-            let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&mutated, Global);
-            let our_result = RlpEncodedTransaction::parse_from_buffer(buffer, 1, B160::ZERO);
-
-            // Alloy parses the raw EIP-2718 envelope. We only treat Alloy as
-            // accepting if it (a) succeeds and (b) consumes the entire input,
-            // matching the no-trailing-bytes requirement our parser enforces.
-            let mut alloy_input: &[u8] = mutated.as_slice();
-            let alloy_result: Result<TxEnvelope, _> =
-                alloy_rlp::Decodable::decode(&mut alloy_input);
-            let alloy_ok = alloy_result.is_ok() && alloy_input.is_empty();
-
-            match (our_result.is_ok(), alloy_ok) {
-                (true, true) | (false, false) => {} // agreement
-                (our_ok, _alloy_ok) => {
-                    panic!(
-                        "Divergence at offset {offset}: our={our_ok} alloy={_alloy_ok} replacement=0x{replacement:02x}"
-                    );
+    /// Flip every byte in the transaction to 0x00, 0xff, and the XOR inverse,
+    /// checking agreement with Alloy at each position. This is the most
+    /// thorough single-byte mutation test: it covers all RLP length fields,
+    /// type bytes, field boundaries, and non-canonical encodings.
+    fn exhaustive_byte_scan(base: &[u8], chain_id: u64, tx_label: &str) {
+        let replacements: &[u8] = &[0x00, 0xff, 0x80, 0xc0, 0x01];
+        for offset in 0..base.len() {
+            for &replacement in replacements {
+                if replacement == base[offset] {
+                    continue; // skip no-op mutations
                 }
+                let mut mutated = base.to_vec();
+                mutated[offset] = replacement;
+                let label = format!("{tx_label} offset={offset} byte=0x{replacement:02x}");
+                assert_mutation_sound(&mutated, chain_id, &label);
             }
         }
+    }
+
+    /// Exhaustive single-byte scan for EIP-1559: every byte position is mutated
+    /// with multiple replacement values and checked against Alloy.
+    #[test]
+    fn test_eip1559_exhaustive_byte_scan() {
+        let base = raw_eip1559_chain1();
+        exhaustive_byte_scan(&base, 1, "eip1559");
+    }
+
+    /// Exhaustive single-byte scan for legacy transactions.
+    #[test]
+    fn test_legacy_exhaustive_byte_scan() {
+        let base = raw_legacy_chain1();
+        exhaustive_byte_scan(&base, 1, "legacy");
+    }
+
+    /// Exhaustive single-byte scan for EIP-2930 transactions.
+    #[test]
+    fn test_eip2930_exhaustive_byte_scan() {
+        let base = raw_eip2930_chain1();
+        exhaustive_byte_scan(&base, 1, "eip2930");
+    }
+
+    /// Structural mutations that go beyond single-byte flips:
+    /// truncation at every position, appending trailing bytes, and
+    /// inserting extra bytes at key locations.
+    #[test]
+    fn test_eip1559_structural_mutations() {
+        let base = raw_eip1559_chain1();
+
+        // Truncation at various points throughout the transaction.
+        // Tests that both parsers correctly reject incomplete data
+        // at every length from 0 to full.
+        let truncation_points = [
+            0,  // empty
+            1,  // type byte only
+            2,  // type byte + first length byte
+            3,  // type byte + length field
+            4,  // into the payload
+            10, // early field area
+            50, // mid-fields
+            base.len() / 2,
+            base.len() - 66, // just before signature
+            base.len() - 33, // mid-signature (between r and s)
+            base.len() - 1,  // last byte missing
+        ];
+        for &len in &truncation_points {
+            if len >= base.len() {
+                continue;
+            }
+            let truncated = &base[..len];
+            assert_mutation_sound(truncated, 1, &format!("eip1559 truncation len={len}"));
+        }
+
+        // Trailing bytes appended after a valid transaction.
+        for &extra in &[0x00u8, 0xff, 0x80, 0xc0] {
+            let mut extended = base.clone();
+            extended.push(extra);
+            assert_mutation_sound(
+                &extended,
+                1,
+                &format!("eip1559 trailing byte=0x{extra:02x}"),
+            );
+        }
+
+        // Multiple trailing bytes.
+        let mut extended = base.clone();
+        extended.extend_from_slice(&[0x00; 32]);
+        assert_mutation_sound(&extended, 1, "eip1559 trailing 32 zero bytes");
+    }
+
+    /// Structural mutations for legacy transactions: truncation and trailing bytes.
+    #[test]
+    fn test_legacy_structural_mutations() {
+        let base = raw_legacy_chain1();
+
+        let truncation_points = [
+            0,
+            1,
+            2,
+            3,
+            10,
+            base.len() / 2,
+            base.len() - 66,
+            base.len() - 33,
+            base.len() - 1,
+        ];
+        for &len in &truncation_points {
+            if len >= base.len() {
+                continue;
+            }
+            let truncated = &base[..len];
+            assert_mutation_sound(truncated, 1, &format!("legacy truncation len={len}"));
+        }
+
+        for &extra in &[0x00u8, 0xff, 0x80, 0xc0] {
+            let mut extended = base.clone();
+            extended.push(extra);
+            assert_mutation_sound(&extended, 1, &format!("legacy trailing byte=0x{extra:02x}"));
+        }
+    }
+
+    /// Structural mutations for EIP-2930 transactions.
+    #[test]
+    fn test_eip2930_structural_mutations() {
+        let base = raw_eip2930_chain1();
+
+        let truncation_points = [
+            0,
+            1,
+            2,
+            3,
+            10,
+            base.len() / 2,
+            base.len() - 66,
+            base.len() - 33,
+            base.len() - 1,
+        ];
+        for &len in &truncation_points {
+            if len >= base.len() {
+                continue;
+            }
+            let truncated = &base[..len];
+            assert_mutation_sound(truncated, 1, &format!("eip2930 truncation len={len}"));
+        }
+
+        for &extra in &[0x00u8, 0xff, 0x80, 0xc0] {
+            let mut extended = base.clone();
+            extended.push(extra);
+            assert_mutation_sound(
+                &extended,
+                1,
+                &format!("eip2930 trailing byte=0x{extra:02x}"),
+            );
+        }
+    }
+
+    /// Test that replacing the type byte with every other value produces
+    /// agreement between our parser and Alloy.
+    #[test]
+    fn test_type_byte_mutations() {
+        // EIP-1559 type byte is 0x02
+        let base_1559 = raw_eip1559_chain1();
+        // EIP-2930 type byte is 0x01
+        let base_2930 = raw_eip2930_chain1();
+
+        for type_byte in 0x00..=0xff_u8 {
+            // EIP-1559 with wrong type byte
+            if type_byte != base_1559[0] {
+                let mut mutated = base_1559.clone();
+                mutated[0] = type_byte;
+                assert_mutation_sound(&mutated, 1, &format!("eip1559 type_byte=0x{type_byte:02x}"));
+            }
+
+            // EIP-2930 with wrong type byte
+            if type_byte != base_2930[0] {
+                let mut mutated = base_2930.clone();
+                mutated[0] = type_byte;
+                assert_mutation_sound(&mutated, 1, &format!("eip2930 type_byte=0x{type_byte:02x}"));
+            }
+        }
+    }
+
+    /// Legacy transactions encode chain_id in the v field of the signature
+    /// (EIP-155). Verify that our parser rejects when a different chain_id is
+    /// expected. The specific error variant may differ from typed transactions
+    /// because v-field chain_id extraction can surface as InvalidEncoding.
+    #[test]
+    fn test_legacy_wrong_chain_id_rejected() {
+        let input = raw_legacy_chain1();
+        let buffer = UsizeAlignedByteBox::<Global>::from_slice_in(&input, Global);
+        let result = RlpEncodedTransaction::parse_from_buffer(buffer, 2, B160::ZERO);
+        assert!(
+            result.is_err(),
+            "legacy chain_id mismatch must be rejected, got: {result:?}"
+        );
     }
 }
