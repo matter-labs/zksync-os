@@ -1521,7 +1521,7 @@ fn run_prover(csr_reads: &[u32]) {
     >(
         &binary_u32,
         &text_u32,
-        1 << 36,
+        1 << 24,
         non_determinism_source,
         1 << 30, // RAM bound (1 GiB address space)
         &worker,
