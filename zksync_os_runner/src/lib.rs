@@ -195,7 +195,7 @@ pub fn simulate_witness_tracing(
     let mut state = State::initial_with_counters(DelegationsCounters::default());
 
     // Run with a snapshotter to trace witness generation, measuring throughput.
-    let cycles_upper_bound = 1 << 36;
+    let cycles_upper_bound = 1 << 24;
     let mut snapshotter = riscv_transpiler::vm::SimpleSnapshotter::<
         DelegationsCounters,
         { ROM_SECOND_WORD_BITS },

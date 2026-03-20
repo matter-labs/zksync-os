@@ -174,18 +174,17 @@ mod tests {
     use std::collections::BTreeMap;
 
     use oracle_provider::DummyMemorySource;
-    use risc_v_simulator::abstractions::memory::{AccessType, MemorySource};
-    use risc_v_simulator::cycle::status_registers::TrapReason;
+    use oracle_provider::RamPeek;
 
     #[derive(Default)]
     struct TestMemorySource {
-        words: BTreeMap<u64, u32>,
+        words: BTreeMap<u32, u32>,
     }
 
     impl TestMemorySource {
         fn insert_u32(&mut self, address: u32, value: u32) {
             assert!(address.is_multiple_of(4));
-            self.words.insert(address as u64, value);
+            self.words.insert(address, value);
         }
 
         fn insert_u64_words(&mut self, address: u32, values: &[u64]) {
@@ -214,26 +213,9 @@ mod tests {
         }
     }
 
-    impl MemorySource for TestMemorySource {
-        fn get(&self, phys_address: u64, _access_type: AccessType, trap: &mut TrapReason) -> u32 {
-            if let Some(value) = self.words.get(&phys_address).copied() {
-                *trap = TrapReason::NoTrap;
-                value
-            } else {
-                *trap = TrapReason::LoadAccessFault;
-                0
-            }
-        }
-
-        fn set(
-            &mut self,
-            phys_address: u64,
-            value: u32,
-            _access_type: AccessType,
-            trap: &mut TrapReason,
-        ) {
-            self.words.insert(phys_address, value);
-            *trap = TrapReason::NoTrap;
+    impl RamPeek for TestMemorySource {
+        fn peek_word(&self, address: u32) -> u32 {
+            self.words.get(&address).copied().unwrap_or(0)
         }
     }
 
@@ -316,7 +298,7 @@ mod tests {
         memory.insert_u64_words(GUEST_DIVIDEND_ADDR, &dividend);
         memory.insert_u64_words(GUEST_MODULUS_ADDR, &modulus);
 
-        let riscv_output: Vec<usize> = ArithmeticQuery::<TestMemorySource>::default()
+        let riscv_output: Vec<usize> = ArithmeticQuery
             .process_buffered_query(
                 MODEXP_ADVICE_QUERY_ID,
                 vec![GUEST_ARG_ADDR as usize],
@@ -333,7 +315,7 @@ mod tests {
             modulus_ptr: modulus.as_mut_ptr().addr() as u64,
             modulus_len: MODULUS_DIGITS as u64,
         };
-        let native_output: Vec<usize> = NativeArithmeticQuery::<DummyMemorySource>::default()
+        let native_output: Vec<usize> = NativeArithmeticQuery
             .process_buffered_query(
                 MODEXP_ADVICE_QUERY_ID,
                 vec![(&host_arg as *const ModExpAdviceParams64).addr()],
