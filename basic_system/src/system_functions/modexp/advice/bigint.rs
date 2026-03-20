@@ -972,3 +972,54 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
         assert!(it.next().is_none());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::alloc::Global;
+
+    use super::*;
+    use zk_ee::oracle::usize_serialization::{UsizeDeserializable, UsizeSerializable};
+    use zk_ee::system::errors::internal::InternalError;
+
+    struct PackedLengthOracle {
+        packed_lens: usize,
+    }
+
+    impl IOOracle for PackedLengthOracle {
+        type RawIterator<'a> = Box<dyn ExactSizeIterator<Item = usize> + 'static>;
+
+        fn raw_query<'a, I: UsizeSerializable + UsizeDeserializable>(
+            &'a mut self,
+            query_type: u32,
+            _input: &I,
+        ) -> Result<Self::RawIterator<'a>, InternalError> {
+            assert_eq!(query_type, MODEXP_ADVICE_QUERY_ID);
+            Ok(Box::new([self.packed_lens].into_iter()))
+        }
+    }
+
+    fn assert_odd_word_count_panics(packed_lens: usize) {
+        super::super::u256::init();
+
+        let dividend = BigintRepr::from_big_endian_with_double_capacity(&[0xA5; 96], Global);
+        let modulus = BigintRepr::from_big_endian_with_double_capacity(&[0x5A; 64], Global);
+        let mut quotient = BigintRepr::with_capacity_in(4, Global);
+        let mut remainder = BigintRepr::with_capacity_in(4, Global);
+        let mut oracle = PackedLengthOracle { packed_lens };
+        let mut advisor = OracleAdvisor { inner: &mut oracle };
+
+        advisor.get_reduction_op_advice(&dividend, &modulus, &mut quotient, &mut remainder);
+    }
+
+    #[test]
+    #[should_panic(expected = "oracle returned an odd number of u32 words")]
+    fn oracle_advisor_rejects_odd_quotient_word_count() {
+        assert_odd_word_count_panics(3 | (4 << 32));
+    }
+
+    #[test]
+    #[should_panic(expected = "oracle returned an odd number of u32 words")]
+    fn oracle_advisor_rejects_odd_remainder_word_count() {
+        assert_odd_word_count_panics(4 | (3 << 32));
+    }
+}
