@@ -32,11 +32,10 @@ where
         cycle_marker::start!("run_tx_loop");
 
         let mut is_first_tx = true;
-        // Service blocks are blocks that only contain service transactions.
-        // Service transactions can only be included in service blocks,
-        // unless the first tx in the block was an upgrade tx.
+        // Service blocks are blocks that only contain service transactions,
+        // optionally prefixed by a single upgrade tx.
         let mut is_service_block = false;
-        let mut first_tx_was_upgrade = false;
+        let mut can_start_service_block_after_upgrade = false;
 
         // TODO use preallocated data buffer?
 
@@ -129,16 +128,12 @@ where
                             );
 
                             // Check for service block invariants
-                            check_for_service_block_invariants(
-                                &mut is_service_block,
+                            let starts_service_block = check_for_service_block_invariants(
+                                is_service_block,
                                 is_first_tx,
                                 tx_processing_result.is_service_tx,
-                                first_tx_was_upgrade,
+                                can_start_service_block_after_upgrade,
                             )?;
-
-                            if is_first_tx && tx_processing_result.is_upgrade_tx {
-                                first_tx_was_upgrade = true;
-                            }
 
                             // Do not update the accumulators yet, we may need to revert the transaction
                             let next_block_gas_used =
@@ -172,6 +167,18 @@ where
                                     next_block_computational_native_used;
                                 block_data.block_pubdata_used = next_block_pubdata_used;
                                 block_data.block_blob_gas_used = next_block_blob_gas_used;
+
+                                if starts_service_block {
+                                    is_service_block = true;
+                                    can_start_service_block_after_upgrade = false;
+                                } else if is_first_tx && tx_processing_result.is_upgrade_tx {
+                                    can_start_service_block_after_upgrade = true;
+                                } else if can_start_service_block_after_upgrade
+                                    && !tx_processing_result.is_service_tx
+                                {
+                                    can_start_service_block_after_upgrade = false;
+                                }
+
                                 is_first_tx = false;
 
                                 // Finish the frame opened before processing the tx

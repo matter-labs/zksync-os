@@ -93,32 +93,34 @@ where
     }
 }
 
-/// Check the service block invariants:
-/// 1. If the first tx is a service tx, then the block is a service block
-/// 2. Service transactions can only be processed in service blocks,
-///    unless the first tx in the block was an upgrade tx
-/// 3. Non-service transactions cannot be processed in service blocks
+/// Check the service block invariants.
+///
+/// Returns `true` if the accepted transaction starts a service block.
+///
+/// A block may become a service block in two cases:
+/// 1. the first accepted tx is a service tx
+/// 2. the first accepted tx was an upgrade tx and no other non-service tx was
+///    accepted after it
+///
+/// Once a block is a service block, only service txs may follow.
 fn check_for_service_block_invariants(
-    is_service_block: &mut bool,
+    is_service_block: bool,
     is_first_tx: bool,
     is_service_tx: bool,
-    first_tx_was_upgrade: bool,
-) -> Result<(), InternalError> {
-    //  1. If the first tx is a service tx, then the block is a service block
-    if is_first_tx && is_service_tx {
-        *is_service_block = true;
-    }
-    if *is_service_block {
-        if !is_service_tx {
-            // 3. Non-service transactions cannot be processed in service blocks
-            return Err(internal_error!("Non-service tx in service block"));
+    can_start_service_block_after_upgrade: bool,
+) -> Result<bool, InternalError> {
+    let starts_service_block =
+        is_service_tx && (is_first_tx || can_start_service_block_after_upgrade);
+
+    if is_service_tx {
+        if is_service_block || starts_service_block {
+            Ok(starts_service_block)
+        } else {
+            Err(internal_error!("Service tx in non-service block"))
         }
+    } else if is_service_block {
+        Err(internal_error!("Non-service tx in service block"))
     } else {
-        // 2. Service transactions can only be processed in service blocks,
-        //    unless the first tx in the block was an upgrade tx
-        if is_service_tx && !first_tx_was_upgrade {
-            return Err(internal_error!("Service tx in non-service block"));
-        }
+        Ok(false)
     }
-    Ok(())
 }
