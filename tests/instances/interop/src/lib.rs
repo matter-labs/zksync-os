@@ -456,6 +456,38 @@ fn test_set_sl_chain_id_after_upgrade_tx() {
     assert_eq!(read_sl_chain_id_slot(&mut tester), U256::from(42));
 }
 
+/// Once a service tx follows an upgrade tx, the block must remain service-only.
+#[test]
+fn test_l2_tx_after_service_tx_after_upgrade_fails() {
+    let wallet = testing_signer(0);
+    let upgrade_target = address!("0000000000000000000000000000000000010003");
+    let success_bytecode = hex::decode("60006000f3").unwrap(); // RETURN(0,0)
+
+    let mut tester = with_system_context_contracts(TestingFramework::new())
+        .with_evm_contract(upgrade_target, &success_bytecode)
+        .with_prefunded_account(wallet.address());
+
+    let upgrade_tx = ZKsyncTxEnvelope::from(ZKsyncUpgradeTx {
+        from: address!("1234000000000000000000000000000000000000"),
+        to: upgrade_target,
+        gas_limit: 100_000u128,
+        ..Default::default()
+    });
+
+    let error = tester
+        .execute_block_no_panic(vec![
+            upgrade_tx,
+            set_sl_chain_id_tx(U256::from(42), 0),
+            simple_tx(0),
+        ])
+        .expect_err("block with [upgrade, service, l2] should fail");
+    let error_debug = format!("{error:?}");
+    assert!(
+        error_debug.contains("Non-service tx in service block"),
+        "expected service isolation error, got: {error_debug}"
+    );
+}
+
 #[test]
 fn test_set_interop_fee_updates_slot_and_emits_event() {
     let mut tester = with_interop_center_contract(TestingFramework::new())
