@@ -244,6 +244,19 @@ impl Affine {
         )
     }
 
+    /// Returns raw x||y coordinate bytes (64 bytes) without the 0x04 prefix byte
+    /// and without the constant-time infinity check of `to_encoded_point`.
+    ///
+    /// The caller must ensure the point is not at infinity before calling this.
+    pub fn to_xy_bytes(self) -> [u8; 64] {
+        let x_bytes = self.x.to_bytes();
+        let y_bytes = self.y.to_bytes();
+        let mut result = [0u8; 64];
+        result[..32].copy_from_slice(&x_bytes);
+        result[32..].copy_from_slice(&y_bytes);
+        result
+    }
+
     pub fn to_bytes(self) -> CompressedPoint {
         let encoded = self.to_encoded_point(true);
         let mut result = CompressedPoint::default();
