@@ -193,6 +193,10 @@ impl<Native: Resource + Computational> Resources for BaseResources<Native> {
         self.ergs = old_ergs;
         o
     }
+
+    fn charge_native_only(&mut self, native: &Native) -> Result<(), SystemError> {
+        self.native.charge(native)
+    }
 }
 
 #[cfg(test)]

@@ -142,7 +142,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             self.instruction_pointer += 1;
             let result = self
                 .gas
-                .spend_gas_and_native(0, STEP_NATIVE_COST)
+                .spend_native_only(STEP_NATIVE_COST)
                 .and_then(|_| match opcode {
                     opcodes::CREATE => self.create::<false>(system, external_call_dest, tracer),
                     opcodes::CREATE2 => self.create::<true>(system, external_call_dest, tracer),

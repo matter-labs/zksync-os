@@ -169,4 +169,12 @@ pub trait Resources:
     ///   system.do_something(inf_resources,...)
     /// )
     fn with_infinite_ergs<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R;
+
+    /// Charge only the native resource, leaving ergs unchanged.
+    /// More efficient than `charge(&Self::from_native(...))` when only native
+    /// needs to be deducted.
+    fn charge_native_only(&mut self, native: &Self::Native) -> Result<(), SystemError> {
+        let cost = Self::from_native(native.clone());
+        self.charge(&cost)
+    }
 }

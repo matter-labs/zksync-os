@@ -74,6 +74,17 @@ impl<S: EthereumLikeTypes> Gas<S> {
     }
 
     #[inline(always)]
+    /// Spend only the "native" (proving) resource, without touching gas/ergs.
+    /// More efficient than `spend_gas_and_native(0, native)` as it skips the
+    /// ergs multiplication and ergs charge entirely.
+    pub(crate) fn spend_native_only(&mut self, native: u64) -> Result<(), ExitCode> {
+        use zk_ee::system::Computational;
+        let native_cost = Computational::from_computational(native);
+        self.resources.charge_native_only(&native_cost)?;
+        Ok(())
+    }
+
+    #[inline(always)]
     /// Spend gas and "native" (proving) resource. This double accounting approach is used to keep track of actual proving cost
     pub(crate) fn spend_gas_and_native(&mut self, gas: u64, native: u64) -> Result<(), ExitCode> {
         use zk_ee::system::Computational;
