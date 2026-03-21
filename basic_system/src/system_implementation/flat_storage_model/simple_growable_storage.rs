@@ -212,22 +212,25 @@ impl<const N: usize> StateRootView<EthereumIOTypesConfig> for FlatStorageCommitm
             A,
         >::new_in(allocator.clone());
 
-        // If there was no IO, just return
-        if source.clone().next().is_none() {
+        // Single pass to count new writes and check emptiness
+        // (replaces 2 of 4 source.clone() calls)
+        let mut num_new_writes = 0usize;
+        let mut is_empty = true;
+        for (_, v) in source.clone() {
+            is_empty = false;
+            if v.current_value != v.initial_value && v.is_new_storage_slot {
+                num_new_writes += 1;
+            }
+        }
+        if is_empty {
             return Ok(());
         }
 
         let reads_iter = source
             .clone()
             .filter(|(_, v)| v.current_value == v.initial_value);
-        let writes_iter = source
-            .clone()
-            .filter(|(_, v)| v.current_value != v.initial_value);
-
-        let num_new_writes = source
-            .clone()
-            .filter(|(_, v)| v.current_value != v.initial_value && v.is_new_storage_slot)
-            .count();
+        // Consume source directly instead of cloning for writes
+        let writes_iter = source.filter(|(_, v)| v.current_value != v.initial_value);
 
         let mut new_writes = Vec::with_capacity_in(num_new_writes, allocator.clone());
 
