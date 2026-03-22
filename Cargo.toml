@@ -113,6 +113,9 @@ lto = true
 codegen-units = 1
 debug = true
 
+[profile.bench]
+debug = true
+
 [patch.crates-io]
 #zksync_os_evm_errors = { path = "../zksync-os-interface/crates/evm-errors" }
 #zksync_os_interface = { path = "../zksync-os-interface/crates/interface" }

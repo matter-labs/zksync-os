@@ -27,7 +27,7 @@ Core crates and responsibilities:
 - `api/`: API interfaces and abstractions used by the sequencer and other integrations
 - `cycle_marker/`: performance and cycle tracking utilities
 - `zksync_os/`: RISC-V binary target (built separately, excluded from workspace)
-- `zksync_os_runner/`: executes RISC-V binaries via simulator, returns program output
+- `zksync_os_runner/`: executes RISC-V binaries via transpiler, returns program output
 
 Reference docs:
 - `docs/overview.md`
