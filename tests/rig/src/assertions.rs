@@ -433,13 +433,19 @@ mod tests {
     }
 
     fn block_with_result(result: Result<TxOutput, InvalidTransaction>) -> BlockOutput {
+        let pubdata_used = result.as_ref().map(|o| o.pubdata_used).unwrap_or_default();
+        let computational_native_used = result
+            .as_ref()
+            .map(|o| o.computational_native_used)
+            .unwrap_or_default();
         BlockOutput {
             header: Header::default().seal_slow(),
             tx_results: vec![result],
             storage_writes: vec![],
             account_diffs: vec![],
             published_preimages: vec![],
-            computational_native_used: 0,
+            computational_native_used,
+            pubdata_used,
         }
     }
 
