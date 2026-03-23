@@ -616,6 +616,8 @@ where
         check_enough_resources_for_pubdata(system, native_per_pubdata, resources, None)?;
     let execution_result = if !enough {
         system_log!(system, "Not enough gas for pubdata after execution\n");
+        // Burn all remaining ergs.
+        resources.exhaust_ergs();
         execution_result.to_reverted()
     } else {
         execution_result
