@@ -7,15 +7,23 @@ use alloy::primitives::TxKind;
 use rig::alloy::consensus::TxEip7702;
 use rig::alloy::primitives::{address, b256};
 use rig::alloy::rpc::types::{AccessList, AccessListItem, TransactionRequest};
+use rig::basic_bootloader::bootloader::block_flow::public_input::BatchOutput;
 use rig::basic_bootloader::bootloader::block_flow::zk::PUBDATA_ENCODING_VERSION;
+use rig::basic_bootloader::bootloader::block_flow::{
+    TransactionsRollingKeccakHasher, TxHashesAccumulator,
+};
 use rig::basic_bootloader::bootloader::transaction::rlp_encoded::transaction_types::service_tx::ADD_INTEROP_ROOTS_IN_BATCH_SELECTOR;
+use rig::crypto::sha3::Keccak256;
+use rig::crypto::MiniDigest;
 use rig::forward_system::run::convert_alloy::{FromAlloy, IntoAlloy};
 use rig::ruint::aliases::{B160, U256};
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::zksync_os_interface::error::InvalidTransaction;
+use rig::zksync_os_interface::traits::EncodedTx;
 use rig::{alloy, common_target_address, testing_signer, TestingFramework};
 use rig::{utils::*, BlockContext};
 use std::str::FromStr;
+use zksync_os_tests_common::zksync_tx::encoding::ZKsyncOsEncodable;
 use zksync_os_tests_common::zksync_tx::service_tx::ZKsyncServiceTx;
 use zksync_os_tests_common::zksync_tx::upgrade_tx::ZKsyncUpgradeTx;
 use zksync_os_tests_common::zksync_tx::ZKsyncSpecificTxEnvelope;
@@ -27,6 +35,36 @@ mod native_charging;
 mod storage_charging;
 // Pre-execution transaction validation and bootloader rejection paths.
 mod validation_failures;
+
+fn last_prover_input_batch_output<const RANDOMIZED_TREE: bool>(
+    tester: &TestingFramework<RANDOMIZED_TREE>,
+) -> &BatchOutput {
+    &tester
+        .last_executed_block_info()
+        .expect("must have last executed block info")
+        .prover_input_batch_output
+}
+
+fn l1_tx_hash(tx: ZKsyncTxEnvelope) -> rig::zk_ee::utils::Bytes32 {
+    let EncodedTx::Abi(encoded_tx) = tx.encode() else {
+        panic!("priority transaction should be ABI encoded");
+    };
+
+    let mut hasher = Keccak256::new();
+    hasher.update(U256::from(0x20).to_be_bytes::<32>());
+    hasher.update(&encoded_tx);
+    hasher.finalize().into()
+}
+
+fn expected_priority_operations_hash(
+    priority_txs: impl IntoIterator<Item = ZKsyncTxEnvelope>,
+) -> rig::zk_ee::utils::Bytes32 {
+    let mut accumulator = TransactionsRollingKeccakHasher::empty();
+    for tx in priority_txs {
+        accumulator.add_tx_hash(&l1_tx_hash(tx));
+    }
+    accumulator.finish().0
+}
 
 #[test]
 fn run_base_system() {
@@ -143,8 +181,8 @@ fn run_base_system() {
         deployment_tx,
         transfer_to_eoa_tx,
         mint2_tx,
-        l1_l2_transfer,
-        l1_l2_erc_transfer,
+        l1_l2_transfer.clone(),
+        l1_l2_erc_transfer.clone(),
     ];
 
     let bytecode = hex::decode(ERC_20_BYTECODE).unwrap();
@@ -168,6 +206,13 @@ fn run_base_system() {
         }
         success
     }));
+
+    let pi_batch_output = last_prover_input_batch_output(&tester);
+    assert_eq!(pi_batch_output.number_of_layer_1_txs, U256::from(2u64));
+    assert_eq!(
+        pi_batch_output.priority_operations_hash,
+        expected_priority_operations_hash([l1_l2_transfer, l1_l2_erc_transfer]),
+    );
 }
 
 #[test]
@@ -1702,7 +1747,8 @@ fn test_l1_simulation_zero_gas_price_gas_used_matches_execution_leftover_balance
         .gas_limit(gas_limit)
         .value(value)
         .to_mint(simulation_total_deposited)
-        .build();
+        .build()
+        .into();
 
     let simulation_l1_tx = match &simulation_tx {
         ZKsyncTxEnvelope::ZKsync(ZKsyncSpecificTxEnvelope::L1(tx)) => tx,
@@ -1720,7 +1766,8 @@ fn test_l1_simulation_zero_gas_price_gas_used_matches_execution_leftover_balance
         .gas_limit(gas_limit)
         .value(value)
         .to_mint(execution_total_deposited)
-        .build();
+        .build()
+        .into();
 
     let execution_l1_tx = match &execution_tx {
         ZKsyncTxEnvelope::ZKsync(ZKsyncSpecificTxEnvelope::L1(tx)) => tx,
@@ -1883,8 +1930,7 @@ fn test_treasury_based_token_distribution_regression() {
         .gas_price(gas_price.into())
         .gas_limit(gas_limit.into())
         .value(value_to_transfer)
-        .build()
-        .into();
+        .build();
 
     let block_context = BlockContext {
         coinbase: B160::from_alloy(coinbase),
@@ -1982,8 +2028,7 @@ fn test_treasury_insufficient_balance_failure() {
         .gas_price(gas_price.into())
         .gas_limit(gas_limit.into())
         .value(value_to_transfer)
-        .build()
-        .into();
+        .build();
 
     // Ensure we rely on treasury balance, not auto-minting.
     tester = tester.without_minting_tokens_to_treasury();

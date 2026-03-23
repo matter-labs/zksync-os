@@ -20,7 +20,9 @@ use rig::utils::L1TxBuilder;
 use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
 use rig::{alloy, TestingFramework};
 
-use super::common_target_address;
+use super::{
+    common_target_address, expected_priority_operations_hash, last_prover_input_batch_output,
+};
 
 sol! {
     /// L1 messenger `sendToL1(bytes)` — emits the data as an L2→L1 message
@@ -52,7 +54,7 @@ fn test_l1_tx_gas_limit_below_intrinsic() {
 
     // The block should complete without panicking (no internal error)
     let mut tester = TestingFramework::new().with_balance(from, U256::from(u64::MAX));
-    let result = tester.execute_block_no_panic(vec![tx]);
+    let result = tester.execute_block_no_panic(vec![tx.clone()]);
     assert!(
         result.is_ok(),
         "Block should complete without internal error, got: {:?}",
@@ -71,6 +73,13 @@ fn test_l1_tx_gas_limit_below_intrinsic() {
     // The execution doesn't fail, as it doesn't consume non-intrinsic gas
     let tx_output = tx_result.as_ref().unwrap();
     assert!(tx_output.is_success(), "Transaction should succeed");
+
+    let pi_batch_output = last_prover_input_batch_output(&tester);
+    assert_eq!(pi_batch_output.number_of_layer_1_txs, U256::ONE);
+    assert_eq!(
+        pi_batch_output.priority_operations_hash,
+        expected_priority_operations_hash([tx]),
+    );
 }
 
 /// Test that an L1 transaction with an absurdly high gas price is processed
