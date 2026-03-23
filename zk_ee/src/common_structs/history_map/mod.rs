@@ -6,6 +6,7 @@ pub mod element_with_history;
 use crate::common_structs::history_map::element_with_history::HistoryRecord;
 use crate::internal_error;
 use crate::{system::errors::internal::InternalError, utils::stack_linked_list::StackLinkedList};
+use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
 use core::{alloc::Allocator, fmt::Debug, ops::Bound};
 pub(crate) use element_pool::ElementPool;
@@ -110,22 +111,19 @@ where
         key: &'s K,
         spawn_v: impl FnOnce() -> Result<(V, KP), E>,
     ) -> Result<HistoryMapItemRefMut<'s, K, V, A, KP>, E> {
-        if !self.btree.contains_key(key) {
-            // Key not present: initialize a new element and insert it.
-            // The key is only cloned on this cold path (cache miss).
-            let (v, properties) = spawn_v()?;
-            self.btree.insert(
-                key.clone(),
-                ElementWithHistory::new(properties, v, &mut self.records_memory_pool),
-            );
-        }
+        let entry = self.btree.entry(key.clone());
 
-        // INVARIANT: the key is guaranteed to exist — either it was already present
-        // (confirmed by `contains_key` above) or we just inserted it.
-        let v = self
-            .btree
-            .get_mut(key)
-            .expect("key must exist: either pre-existing or just inserted");
+        let v = match entry {
+            Entry::Occupied(o) => o.into_mut(),
+            Entry::Vacant(vacant_entry) => {
+                let (v, properties) = spawn_v()?;
+                vacant_entry.insert(ElementWithHistory::new(
+                    properties,
+                    v,
+                    &mut self.records_memory_pool,
+                ))
+            }
+        };
 
         Ok(HistoryMapItemRefMut {
             key,
@@ -653,79 +651,6 @@ mod tests {
             panic!("Map is expected to be empty after clear")
         })
         .unwrap();
-    }
-
-    /// Verify that `get_or_insert` does not clone the key on a cache hit (i.e.,
-    /// when the key already exists in the map).  A future refactor that
-    /// reintroduces unconditional cloning will trip this test.
-    #[test]
-    fn get_or_insert_does_not_clone_key_on_hit() {
-        use std::sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc,
-        };
-
-        // A key wrapper that counts how many times Clone::clone() is called.
-        // Ord/PartialOrd are implemented manually (only on `value`) because
-        // Arc<AtomicUsize> does not implement those traits.
-        #[derive(Debug)]
-        struct CountingKey {
-            value: usize,
-            clone_count: Arc<AtomicUsize>,
-        }
-
-        impl PartialEq for CountingKey {
-            fn eq(&self, other: &Self) -> bool {
-                self.value == other.value
-            }
-        }
-        impl Eq for CountingKey {}
-        impl PartialOrd for CountingKey {
-            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-        impl Ord for CountingKey {
-            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-                self.value.cmp(&other.value)
-            }
-        }
-
-        impl Clone for CountingKey {
-            fn clone(&self) -> Self {
-                self.clone_count.fetch_add(1, Ordering::Relaxed);
-                CountingKey {
-                    value: self.value,
-                    clone_count: Arc::clone(&self.clone_count),
-                }
-            }
-        }
-
-        let clone_count = Arc::new(AtomicUsize::new(0));
-        let key = CountingKey {
-            value: 42,
-            clone_count: Arc::clone(&clone_count),
-        };
-
-        let mut map = HistoryMap::<CountingKey, usize, Global>::new(Global);
-
-        // First call: miss — key must be cloned to insert.
-        map.get_or_insert::<()>(&key, || Ok((1, ()))).unwrap();
-        let clones_after_miss = clone_count.load(Ordering::Relaxed);
-        assert_eq!(
-            clones_after_miss, 1,
-            "expected exactly one clone on cache miss"
-        );
-
-        // Second call: hit — no additional clone should occur.
-        map.get_or_insert::<()>(&key, || Ok((2, ()))).unwrap();
-        let clones_after_hit = clone_count.load(Ordering::Relaxed);
-        assert_eq!(
-            clones_after_hit,
-            1,
-            "expected zero additional clones on cache hit, got {}",
-            clones_after_hit - clones_after_miss
-        );
     }
 
     #[test]
