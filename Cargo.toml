@@ -61,8 +61,8 @@ keywords = ["blockchain", "zksync", "zk", "risc-v"]
 categories = ["cryptography"]
 
 [workspace.dependencies]
-zksync_os_evm_errors = { git = "https://github.com/matter-labs/zksync-os-interface", branch = "alocascio-prover-input-gen", default-features =  false }
-zksync_os_interface = { git = "https://github.com/matter-labs/zksync-os-interface", branch = "alocascio-prover-input-gen" }
+zksync_os_evm_errors = { version = "0.1.0", default-features =  false }
+zksync_os_interface = {  version = "0.1.0" }
 
 riscv_transpiler = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev" }
 blake2s_u32 = { git = "https://github.com/matter-labs/zksync-airbender", branch = "dev", default-features = false }
