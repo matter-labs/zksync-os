@@ -105,8 +105,8 @@ pub struct FullIO<
 | `A` | `Allocator + Clone + Default` | Memory allocator. In forward mode this is the global allocator (`Global`). In proving mode it is a custom bump allocator that avoids the standard `malloc`. |
 | `R` | `Resources` | Dual resource counter (ergs + native). Tracks gas charges (`Ergs`) and prover-complexity charges (`Native`) in a single structure. |
 | `P` | `StorageAccessPolicy<R, Bytes32>` | EE-specific cost policy for storage access. Provides warm/cold read and write costs. The EVM policy lives in `basic_system`. |
-| `SF` | `StackFactory<N>` | Factory for fixed-capacity stack structures used by transient storage, event storage, log storage, etc. |
-| `N` | `const usize` | Stack depth bound (number of nested frames). |
+| `SF` | `StackFactory<N>` | Factory for creating stack data structures. Different environments use different implementations: forward mode uses `VecStackFactory` (Vec-backed, dynamically resized), proving mode uses `LVStackFactory` (linked list of fixed-size `ArrayVec<T, N>` chunks for deterministic memory access). |
+| `N` | `const usize` | Compile-time configuration for the stack implementation. In proving mode this is the chunk capacity for skip-list nodes (e.g. `N=32`). In forward mode (Vec-backed) it is unused. |
 | `O` | `IOOracle` | Non-determinism source. In forward mode this wraps a database connection. In proving mode it uses CSR reads on the RISC-V target. |
 | `M` | `StorageModel<IOTypes = EthereumIOTypesConfig, Resources = R, InitData = P, Allocator = A>` | The pluggable persistent storage backend (e.g. `FlatTreeWithAccountsUnderHashesStorageModel`). |
 | `PROOF_ENV` | `const bool` | Compile-time flag. When `true`, the system is running inside the ZK proof (RISC-V). Enables additional proof-correctness checks such as re-hashing bytecode against the stored hash and verifying account preimage hashes. |
@@ -377,15 +377,6 @@ The `HistoryMap` ([source](../../../zk_ee/src/common_structs/history_map/mod.rs)
 powers all three caches. It stores a per-key chain of historical values and
 supports O(1) snapshot and rollback via a global event log plus per-entry
 version pointers.
-
-## Ethereum Storage Model: `EthereumStorageModel`
-
-An alternative storage model
-([source](../../../basic_system/src/system_implementation/ethereum_storage_model/mod.rs))
-that uses a Merkle Patricia Trie (MPT) with RLP encoding, as in mainnet Ethereum.
-It is used for Ethereum compatibility testing (EVM spec tests). It is not used in
-production: the MPT requires a large number of preimage oracle queries (one per
-trie node on each path), making it unsuitable for efficient proof generation.
 
 ## Security Notes
 
