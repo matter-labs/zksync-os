@@ -236,6 +236,60 @@ fn test_l2_tx_not_enough_native_for_pubdata_uses_full_gas_limit() {
     );
 }
 
+#[test]
+fn test_l1_tx_not_enough_native_for_pubdata_burns_all_gas() {
+    let wallet = testing_signer(0);
+    let from = wallet.address();
+    let gas_limit = 500_000u64;
+    let bytecode = hex::decode(
+        "602a600052600160005560016001556001600255600160035560016004556001600555600160065560016007556001600855600160095560206000f3",
+    )
+    .unwrap();
+
+    let make_tx = |gas_per_pubdata_byte_limit| {
+        let tx: ZKsyncTxEnvelope = L1TxBuilder::new()
+            .from(from)
+            .to(TO)
+            .gas_price(1000)
+            .gas_limit(gas_limit.into())
+            .gas_per_pubdata_byte_limit(gas_per_pubdata_byte_limit)
+            .build()
+            .into();
+        tx
+    };
+
+    // Control execution should succeed, so the failing case below is specific to
+    // charging for execution pubdata.
+    let mut control_tester = TestingFramework::new()
+        .with_evm_contract(TO, &bytecode)
+        .with_balance(from, U256::from(1_000_000_000_000_000_u64));
+    let control_output = control_tester.execute_block(vec![make_tx(1)]);
+    let control_tx = control_output.tx_results[0]
+        .as_ref()
+        .expect("Control tx should be processed");
+    assert!(
+        control_tx.is_success(),
+        "Control tx must succeed with a low pubdata price"
+    );
+
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(TO, &bytecode)
+        .with_balance(from, U256::from(1_000_000_000_000_000_u64));
+    let output = tester.execute_block(vec![make_tx(1_500)]);
+    let tx_result = output.tx_results[0]
+        .as_ref()
+        .expect("Tx should be processed even when reverted");
+
+    assert!(
+        !tx_result.is_success(),
+        "Tx should revert when L1 pubdata charging exceeds the remaining native budget"
+    );
+    assert_eq!(
+        tx_result.gas_used, gas_limit,
+        "L1 tx reverted by post-execution pubdata charging must consume full gas limit"
+    );
+}
+
 // Test with a avg cycles/gas ratio, should succeed
 #[test]
 fn test_l2_tx_avg_ratio() {
