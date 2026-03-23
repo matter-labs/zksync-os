@@ -152,7 +152,7 @@ fn run_base_system() {
         ZKsyncTxEnvelope::from_eth_tx(mint_tx, wallet.clone())
     };
 
-    let l1_l2_transfer = {
+    let l1_l2_transfer: ZKsyncTxEnvelope = {
         L1TxBuilder::new()
             .from(address!("1234000000000000000000000000000000000000"))
             .to(common_target_address())
@@ -160,19 +160,17 @@ fn run_base_system() {
             .gas_price(10_000)
             .gas_limit(21_000)
             .build()
-            .into()
     };
 
-    let l1_l2_erc_transfer = {
+    let l1_l2_erc_transfer: ZKsyncTxEnvelope = {
         L1TxBuilder::new()
             .from(wallet.address())
             .to(to)
-            .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap().into())
+            .input(hex::decode(ERC_20_TRANSFER_CALLDATA).unwrap())
             .gas_price(10_000)
             .gas_limit(40_000)
             .nonce(3)
             .build()
-            .into()
     };
 
     let transactions = vec![
@@ -574,16 +572,14 @@ fn test_invalid_tx_does_not_bump_tx_counter() {
             hex::decode("51cff8d9000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
                 .unwrap();
 
-        let tx = L1TxBuilder::new()
+        L1TxBuilder::new()
             .from(l1_messenger_contract)
             .to(l1_messenger_hook)
             .input(withdrawal_calldata)
             .gas_price(1000)
             .gas_limit(500_000)
             .nonce(0)
-            .build();
-
-        tx.into()
+            .build()
     };
 
     let transactions = vec![mint_tx_1, withdrawal_tx];
@@ -868,7 +864,7 @@ fn test_balance_overflow_protection() {
     let output = tester.execute_block(vec![overflow_fee_tx, overflow_total_tx]);
 
     assert!(
-        output.tx_results.get(0).unwrap().is_err(),
+        output.tx_results.first().unwrap().is_err(),
         "Transaction with fee overflow should fail"
     );
     assert!(
@@ -1747,8 +1743,7 @@ fn test_l1_simulation_zero_gas_price_gas_used_matches_execution_leftover_balance
         .gas_limit(gas_limit)
         .value(value)
         .to_mint(simulation_total_deposited)
-        .build()
-        .into();
+        .build();
 
     let simulation_l1_tx = match &simulation_tx {
         ZKsyncTxEnvelope::ZKsync(ZKsyncSpecificTxEnvelope::L1(tx)) => tx,
@@ -1766,8 +1761,7 @@ fn test_l1_simulation_zero_gas_price_gas_used_matches_execution_leftover_balance
         .gas_limit(gas_limit)
         .value(value)
         .to_mint(execution_total_deposited)
-        .build()
-        .into();
+        .build();
 
     let execution_l1_tx = match &execution_tx {
         ZKsyncTxEnvelope::ZKsync(ZKsyncSpecificTxEnvelope::L1(tx)) => tx,

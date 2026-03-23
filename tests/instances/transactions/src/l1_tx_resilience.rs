@@ -43,14 +43,13 @@ fn test_l1_tx_gas_limit_below_intrinsic() {
 
     // Create an L1 transaction with gas limit below intrinsic gas (21000)
     // The intrinsic gas for L1 txs is L1_TX_INTRINSIC_L2_GAS = 21_000
-    let tx = L1TxBuilder::new()
+    let tx: rig::zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope = L1TxBuilder::new()
         .from(from)
         .to(to)
         .gas_price(15_000)
         .gas_limit(20_000)
         .value(alloy::primitives::U256::from(100))
-        .build()
-        .into();
+        .build();
 
     // The block should complete without panicking (no internal error)
     let mut tester = TestingFramework::new().with_balance(from, U256::from(u64::MAX));
@@ -107,8 +106,7 @@ fn test_l1_tx_gas_price_overflow_native_per_gas() {
         .gas_price(overflow_gas_price)
         .gas_limit(100_000)
         .value(alloy::primitives::U256::from(100))
-        .build()
-        .into();
+        .build();
 
     let mut tester =
         TestingFramework::new().with_balance(from, U256::from(1_000_000_000_000_000_u64));
@@ -144,9 +142,8 @@ fn test_l1_tx_intrinsic_gas_overflow() {
         .gas_price(1000)
         .gas_limit(200000) // Gas limit that should not be sufficient for the input data
         .value(alloy::primitives::U256::from(100))
-        .input(vec![0u8; 50_000].into()) // Very large input data to increase intrinsic cost
-        .build()
-        .into();
+        .input(vec![0u8; 50_000]) // Very large input data to increase intrinsic cost
+        .build();
 
     // Test L1 transaction - this triggers the overflow scenario
     let mut tester =
