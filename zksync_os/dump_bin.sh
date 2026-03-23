@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests}"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking}"
 TYPE=""
 
 # Parse --type argument
@@ -51,6 +51,12 @@ case "$TYPE" in
     ;;
   for-tests)
     FEATURES="$FEATURES,for_tests"
+    BIN_NAME="for_tests.bin"
+    ELF_NAME="for_tests.elf"
+    TEXT_NAME="for_tests.text"
+    ;;
+  for-tests-benchmarking)
+    FEATURES="$FEATURES,for_tests,benchmarking"
     BIN_NAME="for_tests.bin"
     ELF_NAME="for_tests.elf"
     TEXT_NAME="for_tests.text"

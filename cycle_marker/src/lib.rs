@@ -244,7 +244,9 @@ pub fn print_cycle_markers(cm: CycleMarker) -> Option<u64> {
     assert_eq!(
         cm.markers.len(),
         labels.len(),
-        "cycle marker count ({}) does not match label count ({})",
+        "cycle marker count ({}) does not match label count ({}). \
+         If markers is 0, the RISC-V binary was likely built without the cycle_marker feature \
+         (use `dump_bin.sh --type for-tests-benchmarking`).",
         cm.markers.len(),
         labels.len(),
     );
