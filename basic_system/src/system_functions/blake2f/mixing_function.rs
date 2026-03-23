@@ -51,88 +51,93 @@ pub(crate) fn g_function(
     v[b] = rotate_right::<63>(v[b] ^ v[c]);
 }
 
+/// Apply one Blake2B mixing round.
+///
+/// All sigma permutation values are in 0..16 (verified by the `SIGMAS` constant definition),
+/// and `message_block` is `[u64; 16]`, so every index is in bounds. Safe indexing is used;
+/// the compiler can statically prove these accesses are within bounds because both the sigma
+/// entries and the array length are compile-time constants.
 #[inline(always)]
 pub fn mixing_function(
     state: &mut [u64; BLAKE2B_EXTENDED_STATE_WIDTH_IN_U64_WORDS],
     message_block: &[u64; BLAKE2B_BLOCK_SIZE_U64_WORDS],
     sigma: &[usize; 16],
 ) {
-    // mix rows and columns
-    unsafe {
-        g_function(
-            state,
-            0,
-            4,
-            8,
-            12,
-            *message_block.get_unchecked(sigma[0]),
-            *message_block.get_unchecked(sigma[1]),
-        );
-        g_function(
-            state,
-            1,
-            5,
-            9,
-            13,
-            *message_block.get_unchecked(sigma[2]),
-            *message_block.get_unchecked(sigma[3]),
-        );
-        g_function(
-            state,
-            2,
-            6,
-            10,
-            14,
-            *message_block.get_unchecked(sigma[4]),
-            *message_block.get_unchecked(sigma[5]),
-        );
-        g_function(
-            state,
-            3,
-            7,
-            11,
-            15,
-            *message_block.get_unchecked(sigma[6]),
-            *message_block.get_unchecked(sigma[7]),
-        );
+    // Column step
+    g_function(
+        state,
+        0,
+        4,
+        8,
+        12,
+        message_block[sigma[0]],
+        message_block[sigma[1]],
+    );
+    g_function(
+        state,
+        1,
+        5,
+        9,
+        13,
+        message_block[sigma[2]],
+        message_block[sigma[3]],
+    );
+    g_function(
+        state,
+        2,
+        6,
+        10,
+        14,
+        message_block[sigma[4]],
+        message_block[sigma[5]],
+    );
+    g_function(
+        state,
+        3,
+        7,
+        11,
+        15,
+        message_block[sigma[6]],
+        message_block[sigma[7]],
+    );
 
-        g_function(
-            state,
-            0,
-            5,
-            10,
-            15,
-            *message_block.get_unchecked(sigma[8]),
-            *message_block.get_unchecked(sigma[9]),
-        );
-        g_function(
-            state,
-            1,
-            6,
-            11,
-            12,
-            *message_block.get_unchecked(sigma[10]),
-            *message_block.get_unchecked(sigma[11]),
-        );
-        g_function(
-            state,
-            2,
-            7,
-            8,
-            13,
-            *message_block.get_unchecked(sigma[12]),
-            *message_block.get_unchecked(sigma[13]),
-        );
-        g_function(
-            state,
-            3,
-            4,
-            9,
-            14,
-            *message_block.get_unchecked(sigma[14]),
-            *message_block.get_unchecked(sigma[15]),
-        );
-    }
+    // Diagonal step
+    g_function(
+        state,
+        0,
+        5,
+        10,
+        15,
+        message_block[sigma[8]],
+        message_block[sigma[9]],
+    );
+    g_function(
+        state,
+        1,
+        6,
+        11,
+        12,
+        message_block[sigma[10]],
+        message_block[sigma[11]],
+    );
+    g_function(
+        state,
+        2,
+        7,
+        8,
+        13,
+        message_block[sigma[12]],
+        message_block[sigma[13]],
+    );
+    g_function(
+        state,
+        3,
+        4,
+        9,
+        14,
+        message_block[sigma[14]],
+        message_block[sigma[15]],
+    );
 }
 
 #[inline(always)]

@@ -66,6 +66,10 @@ fn ln_without_floats(a: usize) -> usize {
     (log2(a) * 69 / 100) as usize
 }
 
+/// Pippenger multi-scalar multiplication.
+///
+/// Invariant: `bases.len() == bigints.len()` (asserted at entry).
+/// All indexing below is bounded by `size` which equals both lengths.
 fn msm<G: CurveGroup, A: core::alloc::Allocator + Clone>(
     bases: &[G::Affine],
     mut bigints: Vec<<Fr as PrimeField>::BigInt, A>,
@@ -76,20 +80,16 @@ fn msm<G: CurveGroup, A: core::alloc::Allocator + Clone>(
 
     const NUM_BITS: usize = 256;
 
-    // let's special-case for "short" invocations
+    // Special-case for small inputs: double-and-add over all bits.
     if size < 4 {
-        // it'll amortize largely over final projective -> affine, and doubling loop
         let mut acc = G::ZERO;
         for bit in (0..NUM_BITS).rev() {
             let word_idx = bit / 64;
             let bit_idx = bit % 64;
-            unsafe {
-                core::hint::assert_unchecked(bases.len() == bigints.len());
-            }
 
-            for i in 0..size {
-                if bigints[i].0[word_idx] & 1 << bit_idx > 0 {
-                    acc += &bases[i];
+            for (base, bigint) in bases.iter().zip(bigints.iter()) {
+                if bigint.0[word_idx] & 1 << bit_idx > 0 {
+                    acc += base;
                 }
             }
             if bit > 0 {
@@ -123,19 +123,15 @@ fn msm<G: CurveGroup, A: core::alloc::Allocator + Clone>(
     for window_idx in 0..num_windows {
         let last_window = window_idx == num_windows - 1;
 
-        unsafe {
-            core::hint::assert_unchecked(bases.len() == bigints.len());
-        }
-        for i in 0..bases.len() {
-            let bigint = &mut bigints[i];
-            // get window
+        for (base, bigint) in bases.iter().zip(bigints.iter_mut()) {
+            // Extract lowest c bits as the bucket index.
             let scalar: u64 = bigint.as_ref()[0] & lowest_bits_mask;
 
             use core::ops::ShrAssign;
             bigint.shr_assign(c as u32);
 
             if scalar != 0 {
-                reusable_buckets[(scalar - 1) as usize] += &bases[i];
+                reusable_buckets[(scalar - 1) as usize] += base;
             }
         }
 
