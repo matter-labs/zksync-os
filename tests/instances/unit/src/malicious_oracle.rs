@@ -145,6 +145,60 @@ mod block_metadata {
     }
 }
 
+mod tx_encoding_format {
+    //! Unit tests for transaction encoding format oracle validation.
+    //!
+    //! TxEncodingFormat::from_iter validates the oracle-provided encoding format byte.
+    //! Only values 0 (Abi) and 1 (Rlp) are valid. Invalid values should be rejected
+    //! with an internal error rather than panicking.
+
+    use rig::basic_bootloader::bootloader::transaction::TxEncodingFormat;
+    use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
+
+    #[test]
+    fn test_tx_encoding_format_accepts_abi() {
+        let mut iter = [0usize].into_iter();
+        let result = TxEncodingFormat::from_iter(&mut iter);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_tx_encoding_format_accepts_rlp() {
+        let mut iter = [1usize].into_iter();
+        let result = TxEncodingFormat::from_iter(&mut iter);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_tx_encoding_format_rejects_invalid_value_2() {
+        let mut iter = [2usize].into_iter();
+        let result = TxEncodingFormat::from_iter(&mut iter);
+        assert!(
+            result.is_err(),
+            "TxEncodingFormat should reject value 2 (only 0=Abi and 1=Rlp are valid)"
+        );
+    }
+
+    #[test]
+    fn test_tx_encoding_format_rejects_invalid_value_255() {
+        let mut iter = [255usize].into_iter();
+        let result = TxEncodingFormat::from_iter(&mut iter);
+        assert!(result.is_err(), "TxEncodingFormat should reject value 255");
+    }
+
+    #[test]
+    fn test_tx_encoding_format_rejects_large_value() {
+        // Values that would be truncated to u8 — the from_iter first deserializes
+        // as u8, so large usize values test the u8 deserialization path too.
+        let mut iter = [256usize].into_iter();
+        let result = TxEncodingFormat::from_iter(&mut iter);
+        assert!(
+            result.is_err(),
+            "TxEncodingFormat should reject value 256 (overflows u8)"
+        );
+    }
+}
+
 mod da_commitment_scheme {
     //! Unit tests for DA commitment scheme validation.
     //!
