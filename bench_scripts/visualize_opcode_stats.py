@@ -2,7 +2,7 @@
 
 Reads the joined per-execution CSVs to produce:
   1. Total cycle consumption bar chart (top opcodes)
-  2. Per-opcode scatter plots (gas vs cycles) for top consumers
+  2. Sorted cycles/gas ratio curves per opcode (top consumers)
   3. Outlier analysis report
 
 Usage:
@@ -13,7 +13,6 @@ import os
 import sys
 import argparse
 import csv
-import math
 
 try:
     import matplotlib
@@ -50,10 +49,6 @@ def load_all(joined_dir):
         if rows:
             data[name] = rows
     return data
-
-
-def ratio(num, den):
-    return num / den if den > 0 else 0.0
 
 
 def percentile(sorted_vals, p):
@@ -96,47 +91,71 @@ def plot_total_cycles(data, out_path, top_n=25):
     return [t[0] for t in totals]
 
 
-def plot_opcode_scatter(name, rows, out_path):
-    """Scatter plot: gas vs cycles for a single opcode, with outlier highlighting."""
-    gas = [r["gas"] for r in rows]
-    cycles = [r["cycles"] for r in rows]
-    cpg = sorted([r["cpg"] for r in rows if r["cpg"] > 0])
+def plot_sorted_cpg(data, opcodes, out_path):
+    """Plot sorted cycles/gas ratios for each opcode on a single chart.
 
-    if not cpg:
+    X axis: execution index (sorted by cycles/gas ascending)
+    Y axis: cycles/gas ratio
+    Each opcode is a separate line — shows the full distribution shape.
+    """
+    fig, ax = plt.subplots(figsize=(14, 8))
+    colors = plt.cm.tab20.colors
+
+    for idx, name in enumerate(opcodes):
+        if name not in data:
+            continue
+        cpg = sorted([r["cpg"] for r in data[name] if r["gas"] > 0])
+        if not cpg:
+            continue
+        # Normalize x to [0, 1] so opcodes with different counts are comparable
+        n = len(cpg)
+        xs = [i / (n - 1) if n > 1 else 0.5 for i in range(n)]
+        color = colors[idx % len(colors)]
+        p50 = percentile(cpg, 50)
+        ax.plot(xs, cpg, color=color, linewidth=1.5, alpha=0.8,
+                label=f"{name} (n={n}, p50={p50:.0f})")
+
+    ax.set_xlabel("Percentile (fraction of executions)")
+    ax.set_ylabel("Cycles / Gas")
+    ax.set_title("Sorted Cycles/Gas Ratios by Opcode")
+    ax.set_yscale("log")
+    ax.legend(fontsize=7, loc="upper left", ncol=2)
+    ax.grid(alpha=0.3, which="both")
+    ax.set_xlim(0, 1)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+
+
+def plot_sorted_cpg_detail(name, rows, out_path):
+    """Per-opcode sorted cycles/gas curve with p50/p95/p99 annotations."""
+    cpg = sorted([r["cpg"] for r in rows if r["gas"] > 0])
+    if len(cpg) < 3:
         return
+
+    n = len(cpg)
+    xs = [i / (n - 1) if n > 1 else 0.5 for i in range(n)]
 
     p50 = percentile(cpg, 50)
     p95 = percentile(cpg, 95)
     p99 = percentile(cpg, 99)
+    max_val = cpg[-1]
 
-    # Color points by severity
-    colors = []
-    for r in rows:
-        c = r["cpg"] if r["gas"] > 0 else 0
-        if c >= p99:
-            colors.append("#d62728")  # red — p99+
-        elif c >= p95:
-            colors.append("#ff7f0e")  # orange — p95-p99
-        else:
-            colors.append("#1f77b4")  # blue — normal
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(xs, cpg, color="#4C72B0", linewidth=1.5)
+    ax.fill_between(xs, cpg, alpha=0.15, color="#4C72B0")
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.scatter(gas, cycles, c=colors, alpha=0.6, s=20, edgecolors="none")
+    # Annotate percentiles
+    for pct, val, color in [(50, p50, "green"), (95, p95, "orange"), (99, p99, "red")]:
+        ax.axhline(val, color=color, linestyle="--", linewidth=0.8, alpha=0.7)
+        ax.text(0.02, val, f"p{pct}={val:.1f}", fontsize=8, color=color,
+                va="bottom")
 
-    # Draw ratio reference lines
-    max_gas = max(gas) if gas else 1
-    for label, val, style in [("p50", p50, "--"), ("p95", p95, ":"), ("p99", p99, "-.")]:
-        if val > 0 and val < 1e6:
-            xs = [0, max_gas]
-            ys = [0, max_gas * val]
-            ax.plot(xs, ys, style, color="gray", alpha=0.5, linewidth=1,
-                    label=f"{label} c/g={val:.1f}")
-
-    ax.set_xlabel("Gas")
-    ax.set_ylabel("Cycles")
-    ax.set_title(f"{name} — Gas vs Cycles (n={len(rows)})")
-    ax.legend(fontsize=7, loc="upper left")
-    ax.grid(alpha=0.2)
+    ax.set_xlabel("Percentile (fraction of executions)")
+    ax.set_ylabel("Cycles / Gas")
+    ax.set_title(f"{name} — Sorted Cycles/Gas (n={n}, max={max_val:.1f})")
+    ax.grid(alpha=0.3)
+    ax.set_xlim(0, 1)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close()
@@ -158,13 +177,8 @@ def analyze_outliers(data, top_n=15):
         if p50 == 0:
             continue
 
-        # Ratio of worst case to median
         severity = max_cpg / p50
 
-        # Count of p99+ outliers
-        n_outliers = sum(1 for c in cpg if c >= p99)
-
-        # Find the actual worst execution
         worst = max((r for r in rows if r["gas"] > 0), key=lambda r: r["cpg"], default=None)
 
         if worst and severity > 1.5:
@@ -176,7 +190,6 @@ def analyze_outliers(data, top_n=15):
                 "p99_cpg": p99,
                 "max_cpg": max_cpg,
                 "severity": severity,
-                "n_outliers": n_outliers,
                 "worst_gas": worst["gas"],
                 "worst_native": worst["native"],
                 "worst_cycles": worst["cycles"],
@@ -193,8 +206,8 @@ def write_outlier_report(outliers, out_path):
         f.write("Opcodes sorted by worst-case / median cycles/gas ratio (severity).\n")
         f.write("High severity = the worst execution is disproportionately expensive relative to typical.\n\n")
 
-        f.write(f"| Opcode | Count | p50 c/g | p95 c/g | p99 c/g | max c/g | severity | worst execution |\n")
-        f.write(f"|--------|-------|---------|---------|---------|---------|----------|------------------|\n")
+        f.write("| Opcode | Count | p50 c/g | p95 c/g | p99 c/g | max c/g | severity | worst execution |\n")
+        f.write("|--------|-------|---------|---------|---------|---------|----------|------------------|\n")
 
         for o in outliers:
             worst = f"gas={o['worst_gas']}, cycles={o['worst_cycles']}, native={o['worst_native']}"
@@ -217,7 +230,7 @@ def main():
     parser = argparse.ArgumentParser(description="Visualize per-opcode benchmarking stats")
     parser.add_argument("joined_dir", help="Directory with per-execution .csv files")
     parser.add_argument("--out-dir", default=".", help="Output directory for charts")
-    parser.add_argument("--top", type=int, default=12, help="Number of top opcodes for scatter plots")
+    parser.add_argument("--top", type=int, default=12, help="Number of top opcodes for detail plots")
     args = parser.parse_args()
 
     data = load_all(args.joined_dir)
@@ -231,22 +244,25 @@ def main():
     top_opcodes = plot_total_cycles(data, os.path.join(args.out_dir, "total_cycles.png"))
     print(f"  -> {args.out_dir}/total_cycles.png")
 
-    # 2. Per-opcode scatter plots for top consumers
-    scatter_dir = os.path.join(args.out_dir, "scatter")
-    os.makedirs(scatter_dir, exist_ok=True)
+    # 2. Combined sorted cycles/gas curves
+    plot_sorted_cpg(data, top_opcodes[:args.top], os.path.join(args.out_dir, "sorted_cpg.png"))
+    print(f"  -> {args.out_dir}/sorted_cpg.png")
+
+    # 3. Per-opcode detail curves for top consumers
+    detail_dir = os.path.join(args.out_dir, "detail")
+    os.makedirs(detail_dir, exist_ok=True)
     for name in top_opcodes[:args.top]:
         if name in data:
-            out = os.path.join(scatter_dir, f"{name}.png")
-            plot_opcode_scatter(name, data[name], out)
+            out = os.path.join(detail_dir, f"{name}.png")
+            plot_sorted_cpg_detail(name, data[name], out)
             print(f"  -> {out}")
 
-    # 3. Outlier analysis
+    # 4. Outlier analysis
     outliers = analyze_outliers(data)
     report_path = os.path.join(args.out_dir, "outlier_report.md")
     write_outlier_report(outliers, report_path)
     print(f"  -> {report_path}")
 
-    # Print summary to stdout too
     if outliers:
         print(f"\nTop outliers (worst/median severity):")
         for o in outliers[:10]:
