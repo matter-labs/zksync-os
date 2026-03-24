@@ -13,7 +13,7 @@ use rig::{
     ruint::aliases::U256,
     TestingFramework,
 };
-use std::assert_matches;
+use std::assert_matches::assert_matches;
 use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
 
 /// Performs two calls:
