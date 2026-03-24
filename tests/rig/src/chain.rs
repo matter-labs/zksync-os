@@ -812,16 +812,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let da_commitment_scheme =
             da_commitment_scheme.unwrap_or(DACommitmentScheme::BlobsAndPubdataKeccak256);
-        let oracle = oracle_factory.create_proof_oracle(
-            block_metadata,
-            self.state_tree.clone(),
-            self.preimage_source.clone(),
-            tx_source.clone(),
-            Some(proof_data),
-            Some(da_commitment_scheme),
-            true,
-            false,
-        );
 
         let forward_oracle = oracle_factory.create_forward_oracle(
             block_metadata,
@@ -845,20 +835,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             true,
         );
 
-        #[cfg(feature = "simulate_witness_gen")]
-        let source_for_witness_bench = {
-            oracle_factory.create_proof_oracle(
-                block_metadata,
-                self.state_tree.clone(),
-                self.preimage_source.clone(),
-                tx_source.clone(),
-                Some(proof_data),
-                Some(da_commitment_scheme),
-                false,
-                false,
-            )
-        };
-
         // forward run
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
@@ -876,20 +852,13 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let copy_source = ReadWitnessSource::new(prover_input_oracle);
         let mut tracer = NopTracer::default();
         let mut validator = NopTxValidator;
-        let prover_input_forward = {
-            // Avoid capturing markers from the second run, as it would duplicate them.
-            #[cfg(feature = "cycle_marker")]
-            let snapshot = cycle_marker::snapshot();
-            let result = run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
+        let prover_input_forward =
+            run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
                 copy_source,
                 &mut result_keeper_prover_input,
                 &mut tracer,
                 &mut validator,
-            );
-            #[cfg(feature = "cycle_marker")]
-            cycle_marker::revert(snapshot);
-            result?
-        };
+            )?;
 
         if let Some(path) = witness_output_file {
             let mut file = File::create(&path).expect("should create file");
@@ -966,28 +935,39 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             }
         }
 
-        let proof_input = if do_riscv_run {
-            // We'll wrap the source, to collect all the reads.
-            let copy_source = ReadWitnessSource::new(oracle);
-            let items = copy_source.get_read_items();
+        if do_riscv_run {
+            let dist_dir = get_zksync_os_dist_dir(&app);
+
+            // dump csr reads if env var set
+            if let Ok(output_csr) = std::env::var("CSR_READS_DUMP") {
+                // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
+                let mut file = File::create(&output_csr).expect("Failed to create csr reads file");
+                // Write each u32 as an 8-character hexadecimal string without newlines
+                for num in prover_input_forward.iter() {
+                    write!(file, "{num:08X}").expect("Failed to write to file");
+                }
+                debug!(
+                    "Successfully wrote {} u32 csr reads elements to file: {}",
+                    prover_input_forward.len(),
+                    output_csr
+                );
+            }
 
             let now = std::time::Instant::now();
             let (proof_output, block_effective) = if flamegraph_output.is_some() {
-                let img_path = get_zksync_os_img_path(&app);
                 let sym_path = get_zksync_os_sym_path(&app);
-                let output = zksync_os_runner::run_default_with_flamegraph_path(
-                    img_path,
+                zksync_os_runner::run_default_with_flamegraph_path(
+                    dist_dir,
                     sym_path,
                     1 << 36,
-                    copy_source,
+                    &prover_input_forward,
                     flamegraph_output,
-                );
-                (output, None)
+                )
             } else {
                 zksync_os_runner::run_and_get_effective_cycles(
-                    get_zksync_os_img_path(&app),
+                    dist_dir,
                     1 << 36,
-                    copy_source,
+                    &prover_input_forward,
                 )
             };
 
@@ -996,31 +976,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 now.elapsed()
             );
             stats.effective_used = block_effective;
-
-            #[cfg(feature = "simulate_witness_gen")]
-            {
-                zksync_os_runner::simulate_witness_tracing(
-                    get_zksync_os_img_path(&None),
-                    source_for_witness_bench,
-                )
-            }
-
-            // dump csr reads if env var set
-            if let Ok(output_csr) = std::env::var("CSR_READS_DUMP") {
-                // Save the read elements into a file - that can be later read with the tools/cli from zksync-airbender.
-                let mut file = File::create(&output_csr).expect("Failed to create csr reads file");
-                // Write each u32 as an 8-character hexadecimal string without newlines
-                for num in items.borrow().iter() {
-                    write!(file, "{num:08X}").expect("Failed to write to file");
-                }
-                debug!(
-                    "Successfully wrote {} u32 csr reads elements to file: {}",
-                    items.borrow().len(),
-                    output_csr
-                );
-            }
-
-            let proof_input = items.borrow().iter().copied().collect::<Vec<u32>>();
 
             debug!(
                 "{}Proof running output{} = 0x",
@@ -1051,22 +1006,10 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
                 assert_eq!(proof_output_u8, forward_storage_diff_hash);
 
                 #[cfg(feature = "e2e_proving")]
-                run_prover(items.borrow().as_slice());
+                run_prover(&prover_input_forward);
             }
-
-            if has_filtered_by_validator {
-                warn!(
-                    "Skipping native/proof witness equality checks because the custom validator \
-                     filtered at least one transaction, and proof replay does not use it"
-                );
-            } else {
-                assert_eq!(prover_input_forward, proof_input);
-            }
-            prover_input_forward
-        } else {
-            prover_input_forward
-        };
-        Ok((block_output, stats, proof_input, pubdata))
+        }
+        Ok((block_output, stats, prover_input_forward, pubdata))
     }
 
     pub fn make_eth_block_oracle(
@@ -1266,22 +1209,35 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             &mut nop_validator,
         )
         .expect("must succeed");
-        let oracle = Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
-
-        let copy_source = ReadWitnessSource::new(oracle);
-        let items = copy_source.get_read_items();
-
         let proof_input = if only_forward {
             None
         } else {
-            let (_proof_output, _block_effective) = {
+            // Prover-input forward run to record non-determinism input words
+            let prover_input_oracle =
+                Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
+            let copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let mut pi_result_keeper = ProverInputResultKeeper::new(NoopTxCallback);
+            let mut pi_tracer = NopTracer::default();
+            let mut pi_validator = NopTxValidator;
+            let prover_input_words = run_prover_input_no_panic::<
+                basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig,
+            >(
+                copy_source,
+                &mut pi_result_keeper,
+                &mut pi_tracer,
+                &mut pi_validator,
+            )
+            .expect("prover-input forward run must succeed");
+
+            // RISC-V simulation using pre-recorded input
+            let dist_dir = get_zksync_os_dist_dir(&app);
+            let (_proof_output, _block_effective) =
                 zksync_os_runner::run_and_get_effective_cycles(
-                    get_zksync_os_img_path(&app),
+                    dist_dir,
                     1 << 36,
-                    copy_source,
-                )
-            };
-            Some(items.borrow().iter().copied().collect::<Vec<u32>>())
+                    &prover_input_words,
+                );
+            Some(prover_input_words)
         };
         (Some(result_keeper), proof_input)
     }
@@ -1470,18 +1426,21 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 }
 
 // bunch of internal utility methods
-fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
+fn get_zksync_os_dist_dir(app_name: &Option<String>) -> PathBuf {
     let app = app_name.as_deref().unwrap_or("for_tests");
-    let filename = format!("app.{extension}");
-    let zksync_os_path = std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
+    std::env::var("OVERRIDE_ZKSYNC_OS_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
                 .join("zksync_os")
                 .join("dist")
                 .join(app)
-        });
-    zksync_os_path.join(filename)
+        })
+}
+
+fn get_zksync_os_path(app_name: &Option<String>, extension: &str) -> PathBuf {
+    let filename = format!("app.{extension}");
+    get_zksync_os_dist_dir(app_name).join(filename)
 }
 
 pub fn get_zksync_os_img_path(app_name: &Option<String>) -> PathBuf {
@@ -1498,38 +1457,20 @@ pub fn is_account_properties_address(address: &B160) -> bool {
 }
 
 #[cfg(feature = "e2e_proving")]
-fn run_prover(csr_reads: &[u32]) {
-    use execution_utils::unrolled::prove_unrolled_for_machine_configuration_into_program_proof;
-    use prover_examples::prover::worker::Worker;
-    use prover_examples::setups;
-    use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
-    use riscv_transpiler::cycle::IMStandardIsaConfigWithUnsignedMulDiv;
+fn run_prover(input_words: &[u32]) {
+    use airbender_host::{Program, Prover};
 
-    let img_path = get_zksync_os_img_path(&None);
-    let text_path = img_path.with_extension("text");
+    let dist_dir = get_zksync_os_dist_dir(&None);
+    let program = Program::load(&dist_dir).expect("failed to load program");
+    let prover = program
+        .cpu_prover()
+        .with_cycles(1 << 24)
+        .build()
+        .expect("failed to build prover");
 
-    let (_, binary_u32) = setups::read_and_pad_binary(&img_path);
-    let (_, text_u32) = setups::read_and_pad_binary(&text_path);
+    let result = prover.prove(input_words).expect("proving failed");
 
-    let mut non_determinism_source = QuasiUARTSource::default();
-    for word in csr_reads {
-        non_determinism_source.oracle.push_back(*word);
-    }
-
-    let worker = Worker::new_with_num_threads(8);
-
-    let _proof = prove_unrolled_for_machine_configuration_into_program_proof::<
-        IMStandardIsaConfigWithUnsignedMulDiv,
-    >(
-        &binary_u32,
-        &text_u32,
-        1 << 24,
-        non_determinism_source,
-        1 << 30, // RAM bound (1 GiB address space)
-        &worker,
-    );
-
-    info!("block proved successfully");
+    info!("block proved successfully in {} cycles", result.cycles);
 }
 
 #[cfg(test)]

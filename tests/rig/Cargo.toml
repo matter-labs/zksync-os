@@ -11,7 +11,6 @@ categories.workspace = true
 
 [dependencies]
 basic_bootloader = { path = "../../basic_bootloader" }
-riscv_transpiler = { workspace = true }
 basic_system = { path = "../../basic_system" }
 evm_interpreter = { path = "../../evm_interpreter" }
 forward_system = { path = "../../forward_system" }
@@ -25,8 +24,7 @@ cycle_marker = { path = "../../cycle_marker", optional = true }
 zksync_os_api = { path = "../../api" }
 zksync_os_interface = { workspace = true }
 cli = { workspace =  true, optional = true }
-prover_examples = { workspace = true, optional = true }
-execution_utils = { workspace = true, optional = true }
+airbender-host = { workspace = true, optional = true }
 gpu_prover = { workspace = true, optional = true }
 
 zksync_os_tests_common = { path = "../common" }
@@ -45,10 +43,9 @@ once_cell = { workspace = true }
 default = ["testing"]
 testing = []
 airbender_cli = ["cli"]
-e2e_proving = ["prover_examples", "execution_utils"]
+e2e_proving = ["airbender-host"]
 no_print = ["forward_system/no_print"]
 cycle_marker = ["dep:cycle_marker", "zksync_os_runner/cycle_marker", "zk_ee/cycle_marker", "evm_interpreter/cycle_marker", "basic_system/cycle_marker", "basic_bootloader/cycle_marker"]
-simulate_witness_gen = []
 unlimited_native = ["forward_system/unlimited_native"]
 gpu = ["cli/gpu", "gpu_prover"]
 production = ["forward_system/production"]
