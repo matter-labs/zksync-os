@@ -100,7 +100,6 @@ log = "0.4.22"
 env_logger = "0.11.6"
 once_cell = "1.20.3"
 
-
 # zerocopy 0.8.29 introduced a compilation issue, remove this
 # when the compilation issue is resolved
 zerocopy = { version = "=0.8.28" }

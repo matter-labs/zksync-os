@@ -1,6 +1,6 @@
 #![cfg_attr(target_arch = "riscv32", no_std)]
 
-//! Markers to capture basic RISC-V transpiler measurements for
+//! Markers to capture basic RISC-V simulator measurements for
 //! a block of rust code.
 //!
 //! Should be used through the macro:
@@ -53,14 +53,16 @@ pub fn log_marker(msg: &str) {
 }
 
 /// Start a marker. For RISC-V this will use a special CSR to
-/// let the transpiler know that we need a new marker.
+/// let the simulator know that we need a new marker.
 /// For forward run this will just collect the label.
 pub fn start(_label: &'static str) {
     #[cfg(target_arch = "riscv32")]
     {
         unsafe {
+            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, x0",
+                "csrrw x0, 0x7ff, {rd}",
+                rd = in(reg) word,
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -71,14 +73,16 @@ pub fn start(_label: &'static str) {
 }
 
 /// End a marker. For RISC-V this will use a special CSR to
-/// let the transpiler know that we need a new marker.
+/// let the simulator know that we need a new marker.
 /// For forward run this will just collect the label.
 pub fn end(_label: &'static str) {
     #[cfg(target_arch = "riscv32")]
     {
         unsafe {
+            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, x0",
+                "csrrw x0, 0x7ff, {rd}",
+                rd = in(reg) word,
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -154,82 +158,9 @@ macro_rules! wrap_with_resources {
     }};
 }
 
-// Snapshotting mechanism, used for tests
-// We run multiple native runs of the program, so labels can be duplicated.
-// This is a way to ignore some of those side effects.
-#[cfg(not(target_arch = "riscv32"))]
-pub struct Snapshot {
-    labels_len: usize,
-    #[cfg(feature = "log_to_file")]
-    file_len: u64,
-}
+#[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
+pub use airbender_host::{CycleMarker, Mark};
 
-#[cfg(target_arch = "riscv32")]
-pub struct Snapshot;
-
-#[cfg(not(target_arch = "riscv32"))]
-pub fn snapshot() -> Snapshot {
-    let labels_len = LABELS.with(|l| l.borrow().len());
-
-    #[cfg(feature = "log_to_file")]
-    let file_len = MARKER_FILE.with(|f| {
-        use std::io::Seek;
-        use std::io::SeekFrom;
-
-        let mut file = f.borrow_mut();
-        // Get current position; writing always appends, so this is effectively the "index"
-        file.seek(SeekFrom::Current(0))
-            .expect("Failed to seek marker file")
-    });
-
-    Snapshot {
-        labels_len,
-        #[cfg(feature = "log_to_file")]
-        file_len,
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-pub fn snapshot() -> Snapshot {
-    Snapshot
-}
-
-#[cfg(not(target_arch = "riscv32"))]
-pub fn revert(snap: Snapshot) {
-    // Restore LABELS length
-    LABELS.with(|l| {
-        let mut v = l.borrow_mut();
-        if v.len() > snap.labels_len {
-            v.truncate(snap.labels_len);
-        }
-    });
-
-    // Restore file length/position if logging to file
-    #[cfg(feature = "log_to_file")]
-    {
-        use std::io::{Seek, SeekFrom};
-
-        MARKER_FILE.with(|f| {
-            let mut file = f.borrow_mut();
-            file.set_len(snap.file_len)
-                .expect("Failed to truncate marker file");
-            file.seek(SeekFrom::Start(snap.file_len))
-                .expect("Failed to seek marker file");
-        });
-    }
-}
-
-#[cfg(target_arch = "riscv32")]
-pub fn revert(_: Snapshot) {}
-
-/// Re-export the transpiler's cycle marker types for use by the runner.
-#[cfg(feature = "use_riscv_transpiler")]
-pub use riscv_transpiler::cycle::{CycleMarker, CycleMarkerHooks, Mark};
-
-/// Process collected cycle markers from a transpiler run, pairing them
-/// with the labels collected during the forward run.
-///
-/// Returns the "effective cycles" for the block-wide label if found.
 #[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
 pub fn print_cycle_markers(cm: CycleMarker) -> Option<u64> {
     const BLAKE_DELEGATION_ID: u32 = 1991;
@@ -237,19 +168,10 @@ pub fn print_cycle_markers(cm: CycleMarker) -> Option<u64> {
     const BLAKE_DELEGATION_COEFF: u64 = 16;
     const BIGINT_DELEGATION_COEFF: u64 = 4;
     const BLOCK_WIDE_LABEL: &str = "run_prepared";
-
     let labels = LABELS.with(|l| std::mem::take(&mut *l.borrow_mut()));
     use std::collections::HashMap;
 
-    assert_eq!(
-        cm.markers.len(),
-        labels.len(),
-        "cycle marker count ({}) does not match label count ({}). \
-         If markers is 0, the RISC-V binary was likely built without the cycle_marker feature \
-         (use `dump_bin.sh --type for-tests-benchmarking`).",
-        cm.markers.len(),
-        labels.len(),
-    );
+    assert_eq!(cm.markers.len(), labels.len());
 
     let mut label_nonces: HashMap<&'static str, u64> = HashMap::new();
     let mut marker_map: HashMap<(&'static str, u64), (Mark, Mark)> = HashMap::new();
