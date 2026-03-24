@@ -303,7 +303,7 @@ pub fn print_cycle_markers() -> CycleMarkerResults {
             self.samples.sort_unstable();
             let mid = self.samples.len() / 2;
             if self.samples.len() % 2 == 0 {
-                (self.samples[mid - 1] + self.samples[mid]) / 2
+                ((self.samples[mid - 1] as u128 + self.samples[mid] as u128) / 2) as u64
             } else {
                 self.samples[mid]
             }

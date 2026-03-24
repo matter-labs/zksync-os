@@ -34,7 +34,7 @@ impl OpcodeStats {
         samples.sort_unstable();
         let mid = samples.len() / 2;
         if samples.len().is_multiple_of(2) {
-            (samples[mid - 1] + samples[mid]) / 2
+            ((samples[mid - 1] as u128 + samples[mid] as u128) / 2) as u64
         } else {
             samples[mid]
         }
