@@ -239,6 +239,9 @@ pub struct OpcodeCycleStats {
     pub name: &'static str,
     pub total_cycles: u64,
     pub count: u64,
+    pub min_cycles: u64,
+    pub max_cycles: u64,
+    pub median_cycles: u64,
 }
 
 /// Results from processing cycle markers.
@@ -269,7 +272,44 @@ pub fn print_cycle_markers() -> CycleMarkerResults {
 
     // Opcode-level markers: aggregate by label name.
     // OpcodeStart/OpcodeEnd pairs are always adjacent (leaf-level, no nesting).
-    let mut opcode_aggregated: HashMap<&'static str, (u64, u64)> = HashMap::new();
+    struct OpcodeAcc {
+        total: u64,
+        count: u64,
+        min: u64,
+        max: u64,
+        samples: Vec<u64>,
+    }
+    impl OpcodeAcc {
+        fn new() -> Self {
+            Self {
+                total: 0,
+                count: 0,
+                min: u64::MAX,
+                max: 0,
+                samples: Vec::new(),
+            }
+        }
+        fn record(&mut self, cycles: u64) {
+            self.total += cycles;
+            self.count += 1;
+            self.min = self.min.min(cycles);
+            self.max = self.max.max(cycles);
+            self.samples.push(cycles);
+        }
+        fn median(&mut self) -> u64 {
+            if self.samples.is_empty() {
+                return 0;
+            }
+            self.samples.sort_unstable();
+            let mid = self.samples.len() / 2;
+            if self.samples.len() % 2 == 0 {
+                (self.samples[mid - 1] + self.samples[mid]) / 2
+            } else {
+                self.samples[mid]
+            }
+        }
+    }
+    let mut opcode_aggregated: HashMap<&'static str, OpcodeAcc> = HashMap::new();
     let mut pending_opcode_start: Option<Mark> = None;
 
     log_marker("\n=== Cycle markers:");
@@ -281,9 +321,10 @@ pub fn print_cycle_markers() -> CycleMarkerResults {
             Label::OpcodeEnd(name) => {
                 if let Some(start_mark) = pending_opcode_start.take() {
                     let diff = mark.diff(&start_mark);
-                    let entry = opcode_aggregated.entry(name).or_insert((0, 0));
-                    entry.0 += diff.cycles;
-                    entry.1 += 1;
+                    opcode_aggregated
+                        .entry(name)
+                        .or_insert_with(OpcodeAcc::new)
+                        .record(diff.cycles);
                 }
             }
             Label::Start(name) => {
@@ -347,10 +388,16 @@ pub fn print_cycle_markers() -> CycleMarkerResults {
     // Collect and sort opcode stats
     let mut opcode_cycle_stats: Vec<OpcodeCycleStats> = opcode_aggregated
         .into_iter()
-        .map(|(name, (total_cycles, count))| OpcodeCycleStats {
-            name,
-            total_cycles,
-            count,
+        .map(|(name, mut acc)| {
+            let median = acc.median();
+            OpcodeCycleStats {
+                name,
+                total_cycles: acc.total,
+                count: acc.count,
+                min_cycles: if acc.count > 0 { acc.min } else { 0 },
+                max_cycles: acc.max,
+                median_cycles: median,
+            }
         })
         .collect();
     opcode_cycle_stats.sort_by(|a, b| b.total_cycles.cmp(&a.total_cycles));
@@ -358,14 +405,20 @@ pub fn print_cycle_markers() -> CycleMarkerResults {
     if !opcode_cycle_stats.is_empty() {
         log_marker("\n=== Per-opcode cycle stats:");
         log_marker(&format!(
-            "{:<20} {:>12} {:>14} {:>10}",
-            "opcode", "count", "total_cycles", "avg_cycles"
+            "{:<20} {:>12} {:>14} {:>10} {:>10} {:>10} {:>10}",
+            "opcode", "count", "total_cycles", "avg", "median", "min", "max"
         ));
         for stat in &opcode_cycle_stats {
             let avg = stat.total_cycles as f64 / stat.count as f64;
             log_marker(&format!(
-                "{:<20} {:>12} {:>14} {:>10.1}",
-                stat.name, stat.count, stat.total_cycles, avg
+                "{:<20} {:>12} {:>14} {:>10.1} {:>10} {:>10} {:>10}",
+                stat.name,
+                stat.count,
+                stat.total_cycles,
+                avg,
+                stat.median_cycles,
+                stat.min_cycles,
+                stat.max_cycles
             ));
         }
         log_marker("==================");
