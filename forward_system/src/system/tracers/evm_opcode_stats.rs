@@ -2,7 +2,7 @@ use std::io::Write;
 use std::marker::PhantomData;
 use std::path::Path;
 
-use evm_interpreter::{opcodes::OPCODE_JUMPMAP, ERGS_PER_GAS};
+use evm_interpreter::{opcodes, opcodes::OPCODE_JUMPMAP, ERGS_PER_GAS};
 use zk_ee::{
     execution_environment_type::ExecutionEnvironmentType,
     system::{
@@ -111,14 +111,28 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodeStatsTracer<S> {
         opcode: u8,
         frame_state: &impl EvmFrameInterface<S>,
     ) {
+        let stat = &mut self.stats[opcode as usize];
+        stat.count += 1;
+
+        // CALL-like and CREATE opcodes move all resources to the call request
+        // via take_resources(), so the after-step resources are 0 and the delta
+        // would be meaningless. Only record count for these opcodes.
+        match opcode {
+            opcodes::CALL
+            | opcodes::STATICCALL
+            | opcodes::DELEGATECALL
+            | opcodes::CALLCODE
+            | opcodes::CREATE
+            | opcodes::CREATE2 => return,
+            _ => {}
+        }
+
         let gas_after = frame_state.resources().ergs().0 / ERGS_PER_GAS;
         let native_after = frame_state.resources().native().as_u64();
 
         let gas_used = self.gas_before.saturating_sub(gas_after);
         let native_used = self.native_before.saturating_sub(native_after);
 
-        let stat = &mut self.stats[opcode as usize];
-        stat.count += 1;
         stat.total_gas += gas_used;
         stat.total_native += native_used;
     }
