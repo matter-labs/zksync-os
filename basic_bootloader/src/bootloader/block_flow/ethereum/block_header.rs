@@ -24,12 +24,22 @@ use super::utils::fake_exponential;
 use crate::bootloader::transaction::rlp_encoded::rlp::minimal_rlp_parser;
 
 pub const MIN_BASE_FEE_PER_BLOB_GAS: u64 = 1;
-pub const BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE: u64 = 5007716;
-pub const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE;
+#[cfg(not(feature = "eip-7918"))]
+pub const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 5007716;
+#[cfg(feature = "eip-7918")]
+pub const BLOB_BASE_FEE_UPDATE_FRACTION: u64 = 11684671;
 
+#[cfg(not(feature = "eip-7918"))]
 const MAX_BLOBS_PER_BLOCK: usize = 9;
+#[cfg(feature = "eip-7918")]
+const MAX_BLOBS_PER_BLOCK: usize = 21;
+#[cfg(not(feature = "eip-7918"))]
 const TARGET_BLOBS_PER_BLOCK: u64 = 6;
+#[cfg(feature = "eip-7918")]
+const TARGET_BLOBS_PER_BLOCK: u64 = 14;
 const TARGET_BLOB_GAS_PER_BLOCK: u64 = GAS_PER_BLOB * TARGET_BLOBS_PER_BLOCK;
+#[cfg(feature = "eip-7918")]
+const BLOB_BASE_COST: u64 = 1 << 13;
 
 const PECTRA_EL_FORK_BLOCK_NUMBER: u64 = 22431084;
 
@@ -442,10 +452,38 @@ impl ChainChecker for PectraForkHeader {
                     assert_eq!(expected_base_fee_per_gas, self.base_fee_per_gas);
                 }
 
-                // EIP-4844
+                // EIP-4844 / EIP-7918: excess blob gas calculation
                 {
-                    let t = historical_header.excess_blob_gas + historical_header.blob_gas_used;
-                    let excess_blob_gas = t.saturating_sub(TARGET_BLOB_GAS_PER_BLOCK);
+                    #[cfg(not(feature = "eip-7918"))]
+                    let excess_blob_gas = {
+                        let t = historical_header.excess_blob_gas + historical_header.blob_gas_used;
+                        t.saturating_sub(TARGET_BLOB_GAS_PER_BLOCK)
+                    };
+                    #[cfg(feature = "eip-7918")]
+                    let excess_blob_gas = {
+                        let parent_excess = historical_header.excess_blob_gas;
+                        let parent_used = historical_header.blob_gas_used;
+                        if parent_excess + parent_used < TARGET_BLOB_GAS_PER_BLOCK {
+                            0
+                        } else {
+                            let computed_blob_base_fee = fake_exponential(
+                                U256::from(MIN_BASE_FEE_PER_BLOB_GAS),
+                                &U256::from(parent_excess),
+                                &U256::from(BLOB_BASE_FEE_UPDATE_FRACTION),
+                            );
+                            if U256::from(BLOB_BASE_COST)
+                                * U256::from(historical_header.base_fee_per_gas)
+                                > U256::from(GAS_PER_BLOB) * computed_blob_base_fee
+                            {
+                                parent_excess
+                                    + parent_used
+                                        * (MAX_BLOBS_PER_BLOCK as u64 - TARGET_BLOBS_PER_BLOCK)
+                                        / MAX_BLOBS_PER_BLOCK as u64
+                            } else {
+                                parent_excess + parent_used - TARGET_BLOB_GAS_PER_BLOCK
+                            }
+                        }
+                    };
                     assert_eq!(self.excess_blob_gas, excess_blob_gas);
                 }
             }
