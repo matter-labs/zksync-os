@@ -1,6 +1,5 @@
 [package]
 name = "cycle_marker"
-version = "0.1.0"
 edition = "2024"
 authors.workspace = true
 homepage.workspace = true
@@ -10,8 +9,10 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-riscv_transpiler = { workspace = true, optional = true }
+airbender-host = { workspace = true, optional = true }
 
 [features]
-use_riscv_transpiler = ["riscv_transpiler"]
+use_riscv_transpiler = ["airbender-host"]
+# Backward-compatible alias; will be removed once zksync_os_runner is migrated.
+use_risc_v_simulator = ["use_riscv_transpiler"]
 log_to_file = []
