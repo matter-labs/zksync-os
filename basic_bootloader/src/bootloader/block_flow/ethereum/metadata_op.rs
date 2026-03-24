@@ -4,7 +4,7 @@ use zk_ee::{
     oracle::IOOracle,
     system::{
         errors::internal::InternalError, metadata::system_metadata::SystemMetadata, SystemTypes,
-        MAX_BLOBS_PER_BLOCK, MAX_BLOCK_GAS_LIMIT,
+        MAX_BLOBS_PER_TX, MAX_BLOCK_GAS_LIMIT,
     },
     types_config::EthereumIOTypesConfig,
 };
@@ -19,7 +19,7 @@ use super::{
 pub type EthereumBlockMetadata = SystemMetadata<
     EthereumIOTypesConfig,
     HeaderAndHistory,
-    EthereumTransactionMetadata<{ MAX_BLOBS_PER_BLOCK }>,
+    EthereumTransactionMetadata<{ MAX_BLOBS_PER_TX }>,
 >;
 
 impl<S: SystemTypes<Metadata = EthereumBlockMetadata>> MetadataInitOp<S> for EthereumMetadataOp {
