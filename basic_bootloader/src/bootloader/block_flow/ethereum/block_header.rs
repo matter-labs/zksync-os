@@ -213,6 +213,16 @@ impl HeaderAndHistory {
             allocator,
         )?;
         let target_header_buffer = target_header_buffer.expect("target header is not empty slice");
+
+        // EIP-7934: reject blocks whose RLP encoding exceeds 8 MiB
+        #[cfg(feature = "eip-7934")]
+        {
+            const EIP_7934_MAX_RLP_BLOCK_SIZE: usize = 8 * 1024 * 1024;
+            if target_header_buffer.len() > EIP_7934_MAX_RLP_BLOCK_SIZE {
+                return Err(internal_error!("block RLP size exceeds EIP-7934 limit"));
+            }
+        }
+
         let target_header =
             PectraForkHeaderReflection::decode_list_full(target_header_buffer.as_slice())
                 .map_err(|_| internal_error!("must parse target header from bytes"))?;
