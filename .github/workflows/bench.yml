@@ -113,6 +113,14 @@ jobs:
           pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
           # Save comparison to file (for artifact + comment workflow fallback)
           python3 bench_scripts/compare_bench.py "[${pairs}]" > bench_results/comparison.md
+          # Compare per-opcode stats (gas/native/ratios). Produces no output
+          # if base branch lacks opcode stats or nothing changed.
+          for dir in tests/instances/eth_runner/blocks/*; do
+            blk=$(basename "$dir")
+            python3 bench_scripts/compare_opcode_stats.py \
+              "base_block_${blk}.out" "head_block_${blk}.out" "block_${blk}" \
+              >> bench_results/comparison.md 2>/dev/null || true
+          done
           # Also write to step output for direct comment
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "result<<$EOF" >> $GITHUB_OUTPUT
