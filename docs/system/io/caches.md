@@ -76,4 +76,18 @@ For snapshotting, it uses a [`history_map`](../../../zk_ee/src/common_structs/hi
 
 ## Storage cache
 
-The [storage cache](../../../basic_system/src/system_implementation/flat_storage_model/storage_cache.rs) is just the general cache for the slots stored in the tree. It uses the same history map implementation as the previous one for snapshotting.
+The [storage cache](../../../basic_system/src/system_implementation/flat_storage_model/storage_cache.rs) is the general cache for the slots stored in the tree. It is implemented as a thin wrapper ([`NewStorageWithAccountPropertiesUnderHash`](../../../basic_system/src/system_implementation/flat_storage_model/storage_cache.rs)) around the generic pubdata-aware cache described below.
+
+### `GenericPubdataAwarePlainStorage`
+
+[Source](../../../basic_system/src/system_implementation/caches/generic_pubdata_aware_plain_storage.rs)
+
+This is the core cache implementation, generic over key type `K`, value type `V`, allocator, and a `StorageAccessPolicy`. It handles:
+
+- **Oracle materialisation**: on the first access to a key, queries the oracle via `InitialStorageSlotQuery` to fetch the initial value. Validates that new slots (`is_new_storage_slot == true`) have a trivial (zero) initial value — a malicious oracle returning non-zero for a new slot triggers an assertion.
+- **Cold/warm tracking**: each cache element carries a `StorageElementMetadata` with the last transaction ID that touched it. The first read in a transaction is "cold" (charged extra via `StorageAccessPolicy`); subsequent reads are "warm".
+- **EVM gas refund accounting**: maintains a `NonEmptyHistoryCounter` of EVM refunds. The counter participates in frame snapshots so that refunds from reverted calls are correctly discarded.
+- **Pubdata awareness**: the storage model computes pubdata costs from the diff between initial and current values. The cache exposes `net_diffs_iter()` (changed slots) and `net_accesses_iter()` (all accessed slots) so the upper layer can derive pubdata obligations.
+- **Snapshotting**: delegates to a `HistoryMap` for cache entries and a `NonEmptyHistoryCounter` for refunds. Both are snapshotted together via `StorageSnapshotId`.
+
+The `StorageAccessPolicy` trait (parameterised by `P`) controls how gas/ergs are charged for cold and warm reads. This allows the same cache implementation to work under different pricing models.
