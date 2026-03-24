@@ -179,6 +179,20 @@ fn modexp_as_system_function_inner<
         return Err(interface_error!(ModExpInterfaceError::InvalidInputLength));
     };
 
+    // EIP-7823: reject inputs where any length exceeds 1024 bytes
+    #[cfg(feature = "eip-7823-modexp-limit")]
+    {
+        const EIP_7823_LENGTH_LIMIT: usize = 1024;
+        if base_len > EIP_7823_LENGTH_LIMIT
+            || exp_len > EIP_7823_LENGTH_LIMIT
+            || mod_len > EIP_7823_LENGTH_LIMIT
+        {
+            return Err(interface_error!(
+                ModExpInterfaceError::InputLengthExceedsLimit
+            ));
+        }
+    }
+
     // Used to extract ADJUSTED_EXPONENT_LENGTH.
     let exp_highp_len = core::cmp::min(exp_len, 32);
 
