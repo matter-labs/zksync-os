@@ -5,11 +5,12 @@ use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
 use crate::prestate::{populate_prestate, DiffTrace, PrestateTrace};
 use crate::receipts::{BlockReceipts, TransactionReceipt};
+use rig::forward_system::system::system_types::ForwardRunningSystem;
+use rig::forward_system::system::tracers::evm_opcode_stats::EvmOpcodeStatsTracer;
 use rig::log::info;
 use rig::*;
 use std::fs::{self, File};
 use std::io::BufReader;
-use zk_ee::system::tracer::NopTracer;
 use zk_ee::system::validator::NopTxValidator;
 use zksync_os_interface::traits::EncodedTx;
 
@@ -54,18 +55,28 @@ fn run<const RANDOMIZED: bool>(
         check_storage_diff_hashes: true,
         ..Default::default()
     };
+    let mut tracer = EvmOpcodeStatsTracer::<ForwardRunningSystem>::default();
     let (output, stats, _) = chain
         .run_block_with_extra_stats(
             transactions,
             Some(block_context),
             None,
             Some(run_config),
-            &mut NopTracer::default(),
+            &mut tracer,
             &mut NopTxValidator::default(),
         )
         .unwrap();
 
     let _ratio = compute_ratio(stats);
+
+    tracer.print_stats();
+
+    if let Ok(path) = std::env::var("OPCODE_STATS_PATH") {
+        tracer
+            .write_csv(std::path::Path::new(&path))
+            .expect("Failed to write opcode stats CSV");
+        info!("Opcode stats written to {path}");
+    }
 
     post_check(output, receipts, diff_trace, prestate_cache).unwrap();
 
