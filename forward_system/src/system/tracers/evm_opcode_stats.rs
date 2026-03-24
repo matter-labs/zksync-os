@@ -14,15 +14,71 @@ use zk_ee::{
     types_config::SystemIOTypesConfig,
 };
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct OpcodeStats {
     pub count: u64,
     pub total_gas: u64,
     pub total_native: u64,
+    /// Per-execution gas values for min/max/median computation.
+    /// Empty for CALL-like opcodes where gas delta is unreliable.
+    pub gas_samples: Vec<u64>,
+    /// Per-execution native values for min/max/median computation.
+    pub native_samples: Vec<u64>,
+}
+
+impl OpcodeStats {
+    fn median(samples: &mut [u64]) -> u64 {
+        if samples.is_empty() {
+            return 0;
+        }
+        samples.sort_unstable();
+        let mid = samples.len() / 2;
+        if samples.len() % 2 == 0 {
+            (samples[mid - 1] + samples[mid]) / 2
+        } else {
+            samples[mid]
+        }
+    }
+
+    pub fn gas_median(&mut self) -> u64 {
+        Self::median(&mut self.gas_samples)
+    }
+
+    pub fn native_median(&mut self) -> u64 {
+        Self::median(&mut self.native_samples)
+    }
+
+    pub fn gas_min(&self) -> u64 {
+        self.gas_samples.iter().copied().min().unwrap_or(0)
+    }
+
+    pub fn gas_max(&self) -> u64 {
+        self.gas_samples.iter().copied().max().unwrap_or(0)
+    }
+
+    pub fn native_min(&self) -> u64 {
+        self.native_samples.iter().copied().min().unwrap_or(0)
+    }
+
+    pub fn native_max(&self) -> u64 {
+        self.native_samples.iter().copied().max().unwrap_or(0)
+    }
+}
+
+fn is_call_like(opcode: u8) -> bool {
+    matches!(
+        opcode,
+        opcodes::CALL
+            | opcodes::STATICCALL
+            | opcodes::DELEGATECALL
+            | opcodes::CALLCODE
+            | opcodes::CREATE
+            | opcodes::CREATE2
+    )
 }
 
 pub struct EvmOpcodeStatsTracer<S: SystemTypes> {
-    pub stats: [OpcodeStats; 256],
+    pub stats: Vec<OpcodeStats>,
     gas_before: u64,
     native_before: u64,
     _marker: PhantomData<S>,
@@ -30,8 +86,10 @@ pub struct EvmOpcodeStatsTracer<S: SystemTypes> {
 
 impl<S: SystemTypes> Default for EvmOpcodeStatsTracer<S> {
     fn default() -> Self {
+        let mut stats = Vec::with_capacity(256);
+        stats.resize_with(256, OpcodeStats::default);
         Self {
-            stats: [OpcodeStats::default(); 256],
+            stats,
             gas_before: 0,
             native_before: 0,
             _marker: PhantomData,
@@ -40,35 +98,65 @@ impl<S: SystemTypes> Default for EvmOpcodeStatsTracer<S> {
 }
 
 impl<S: SystemTypes> EvmOpcodeStatsTracer<S> {
-    pub fn print_stats(&self) {
+    pub fn print_stats(&mut self) {
         println!("=== EVM Opcode Stats:");
         println!(
-            "{:<20} {:>12} {:>14} {:>14} {:>10} {:>10}",
-            "opcode", "count", "total_gas", "total_native", "avg_gas", "avg_native"
+            "{:<16} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
+            "opcode",
+            "count",
+            "avg_gas",
+            "med_gas",
+            "min_gas",
+            "max_gas",
+            "avg_native",
+            "med_native",
+            "min_native",
+            "max_native",
         );
-        for (i, stat) in self.stats.iter().enumerate() {
+        for (i, stat) in self.stats.iter_mut().enumerate() {
             if stat.count == 0 {
                 continue;
             }
             let name = OPCODE_JUMPMAP[i].unwrap_or("UNKNOWN");
+            if is_call_like(i as u8) {
+                println!(
+                    "{:<16} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
+                    name, stat.count, "-", "-", "-", "-", "-", "-", "-", "-",
+                );
+                continue;
+            }
             let avg_gas = stat.total_gas as f64 / stat.count as f64;
             let avg_native = stat.total_native as f64 / stat.count as f64;
+            let gas_med = stat.gas_median();
+            let native_med = stat.native_median();
             println!(
-                "{:<20} {:>12} {:>14} {:>14} {:>10.1} {:>10.1}",
-                name, stat.count, stat.total_gas, stat.total_native, avg_gas, avg_native
+                "{:<16} {:>10} {:>10.1} {:>10} {:>10} {:>10} {:>10.1} {:>10} {:>10} {:>10}",
+                name,
+                stat.count,
+                avg_gas,
+                gas_med,
+                stat.gas_min(),
+                stat.gas_max(),
+                avg_native,
+                native_med,
+                stat.native_min(),
+                stat.native_max(),
             );
         }
         println!("==================");
     }
 
-    pub fn write_csv(&self, path: &Path) -> std::io::Result<()> {
+    pub fn write_csv(&mut self, path: &Path) -> std::io::Result<()> {
         let mut f = std::fs::File::create(path)?;
         writeln!(
             f,
-            "opcode,opcode_hex,count,total_gas,total_native,avg_gas,avg_native,native_per_gas"
+            "opcode,opcode_hex,count,\
+             avg_gas,median_gas,min_gas,max_gas,\
+             avg_native,median_native,min_native,max_native,\
+             native_per_gas"
         )?;
-        for (i, stat) in self.stats.iter().enumerate() {
-            if stat.count == 0 {
+        for (i, stat) in self.stats.iter_mut().enumerate() {
+            if stat.count == 0 || is_call_like(i as u8) {
                 continue;
             }
             let name = OPCODE_JUMPMAP[i].unwrap_or("UNKNOWN");
@@ -79,16 +167,26 @@ impl<S: SystemTypes> EvmOpcodeStatsTracer<S> {
             } else {
                 0.0
             };
+            let gas_med = stat.gas_median();
+            let gas_min = stat.gas_min();
+            let gas_max = stat.gas_max();
+            let native_med = stat.native_median();
+            let native_min = stat.native_min();
+            let native_max = stat.native_max();
             writeln!(
                 f,
-                "{},{:#04x},{},{},{},{:.2},{:.2},{:.2}",
+                "{},{:#04x},{},{:.2},{},{},{},{:.2},{},{},{},{:.2}",
                 name,
                 i,
                 stat.count,
-                stat.total_gas,
-                stat.total_native,
                 avg_gas,
+                gas_med,
+                gas_min,
+                gas_max,
                 avg_native,
+                native_med,
+                native_min,
+                native_max,
                 native_per_gas,
             )?;
         }
@@ -117,14 +215,8 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodeStatsTracer<S> {
         // CALL-like and CREATE opcodes move all resources to the call request
         // via take_resources(), so the after-step resources are 0 and the delta
         // would be meaningless. Only record count for these opcodes.
-        match opcode {
-            opcodes::CALL
-            | opcodes::STATICCALL
-            | opcodes::DELEGATECALL
-            | opcodes::CALLCODE
-            | opcodes::CREATE
-            | opcodes::CREATE2 => return,
-            _ => {}
+        if is_call_like(opcode) {
+            return;
         }
 
         let gas_after = frame_state.resources().ergs().0 / ERGS_PER_GAS;
@@ -135,6 +227,8 @@ impl<S: EthereumLikeTypes> EvmTracer<S> for EvmOpcodeStatsTracer<S> {
 
         stat.total_gas += gas_used;
         stat.total_native += native_used;
+        stat.gas_samples.push(gas_used);
+        stat.native_samples.push(native_used);
     }
 
     #[inline(always)]
