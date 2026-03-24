@@ -149,4 +149,17 @@ impl<S: EthereumLikeTypes> Interpreter<'_, S> {
         *op2 = op2.arithmetic_shr(shift);
         Ok(())
     }
+
+    #[cfg(feature = "clz")]
+    pub fn clz(&mut self) -> InstructionResult {
+        self.gas
+            .spend_gas_and_native(gas_constants::LOW, CLZ_NATIVE_COST)?;
+        let op = self.stack.top_mut()?;
+        *op = if op.is_zero() {
+            U256::from(256)
+        } else {
+            U256::from(op.leading_zeros())
+        };
+        Ok(())
+    }
 }
