@@ -109,7 +109,7 @@ do_compare() {
         exit 1
     fi
     if [ ! -d "$CURRENT_DIR" ]; then
-        echo "ERROR: No current results found. Run 'scripts/bench.sh run' first."
+        echo "ERROR: No current results found. Run 'bench_scripts/bench.sh run' first."
         exit 1
     fi
 

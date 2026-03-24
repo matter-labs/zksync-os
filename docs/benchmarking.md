@@ -8,8 +8,11 @@ ZKsync OS performance is measured in **effective RISC-V cycles**, not wall-clock
 effective_cycles = raw_risc_v_cycles
                  + 16 × blake_delegations
                  + 4  × bigint_delegations
-                 + 1  × other_delegations
 ```
+
+The repository currently uses two closely related metrics:
+- `cycle_marker::print_cycle_markers()` and `zksync_os_runner::run_and_get_effective_cycles()` use the formula above.
+- `bench_scripts/compare_bench.py` derives its `Eff` column from `.bench` files using the same Blake/BigInt weights, and also adds `+1` for every other delegation type recorded in the marker output.
 
 ## Quick Start
 
@@ -62,7 +65,7 @@ The comparison output is a markdown table with columns:
 - **Base/Head Blake** — number of Blake2 delegation calls.
 - **Base/Head Bigint** — number of BigInt delegation calls.
 
-Focus on the **effective cycles** column. A reduction there directly translates to cheaper proving.
+`Base/Head Eff` is the comparison-script metric described above. Focus on that column when comparing two `.bench` files, and keep in mind it is slightly broader than the simulator-returned block effective value.
 
 ## How It Works
 
@@ -96,9 +99,9 @@ The block-wide marker is `"run_prepared"` — this is what produces the overall 
 1. Build RISC-V binary with `benchmarking` feature enabled
 2. Run block replay through RISC-V simulator (`zksync_os_runner`)
 3. Simulator records cycle counts at each CSR marker
-4. `cycle_marker::print_cycle_markers()` computes effective cycles per label
+4. `cycle_marker::print_cycle_markers()` computes effective cycles for the block-wide marker using Blake/BigInt delegation weights
 5. Results written to file at `MARKER_PATH` (default: `markers.bench`)
-6. Python scripts parse and compare `.bench` files
+6. Python scripts parse and compare `.bench` files, adding `+1` for other delegation types in the comparison report
 
 ### Output File Format
 

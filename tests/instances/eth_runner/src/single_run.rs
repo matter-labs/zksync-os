@@ -82,6 +82,12 @@ pub fn single_run(
     flamegraph: Option<String>,
 ) -> anyhow::Result<()> {
     use std::path::Path;
+
+    anyhow::ensure!(
+        witness_output_dir.is_none() || flamegraph.is_none(),
+        "--witness-output-dir and --flamegraph cannot be used together"
+    );
+
     let dir = Path::new(&block_dir);
     let block = fs::read_to_string(dir.join("block.json"))?;
     // TODO: ensure there are no calls to unsupported precompiles
