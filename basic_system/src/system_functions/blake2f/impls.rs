@@ -38,13 +38,13 @@ fn parse_blake2_state(
     }
 
     let mut state = [0u64; BLAKE2B_STATE_WIDTH_IN_U64_WORDS];
-    for i in 0..BLAKE2B_STATE_WIDTH_IN_U64_WORDS {
-        state[i] = read_u64_le(input, i * 8);
+    for (i, word) in state.iter_mut().enumerate() {
+        *word = read_u64_le(input, i * 8);
     }
 
     let mut message_block = [0u64; BLAKE2B_BLOCK_SIZE_U64_WORDS];
-    for i in 0..BLAKE2B_BLOCK_SIZE_U64_WORDS {
-        message_block[i] = read_u64_le(input, 64 + i * 8);
+    for (i, word) in message_block.iter_mut().enumerate() {
+        *word = read_u64_le(input, 64 + i * 8);
     }
 
     let t0 = read_u64_le(input, 192);
@@ -111,7 +111,8 @@ impl<R: Resources> SystemFunction<R, Blake2FPrecompileErrors> for Blake2FPrecomp
         }
 
         // Serialize state back to little-endian bytes (matches Blake2B wire format on LE targets).
-        let mut result_bytes = [0u8; BLAKE2B_STATE_WIDTH_IN_U64_WORDS * core::mem::size_of::<u64>()];
+        let mut result_bytes =
+            [0u8; BLAKE2B_STATE_WIDTH_IN_U64_WORDS * core::mem::size_of::<u64>()];
         for (i, word) in state.iter().enumerate() {
             result_bytes[i * 8..(i + 1) * 8].copy_from_slice(&word.to_le_bytes());
         }
