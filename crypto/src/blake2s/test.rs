@@ -7,10 +7,15 @@
 
 // Afterwards, you can run the tests below.
 
+// These tests require pre-built RISC-V binaries and are run in dedicated CI jobs
+// (blake_tests, crypto_test). They are ignored by default so `cargo test --release`
+// in other jobs doesn't fail due to missing binaries.
+
 #[test]
+#[ignore]
 pub fn run_naive_test() {
     let results = zksync_os_runner::run(
-        "src/blake2s/test_program/app_native_blake.bin".into(),
+        "src/blake2s/test_program/dist/app_native_blake".into(),
         1 << 25,
         &[],
     );
@@ -19,9 +24,10 @@ pub fn run_naive_test() {
 }
 
 #[test]
+#[ignore]
 pub fn run_extended_delegation_test() {
     let results = zksync_os_runner::run(
-        "src/blake2s/test_program/app_extended_delegation_blake.bin".into(),
+        "src/blake2s/test_program/dist/app_extended_delegation_blake".into(),
         1 << 25,
         &[],
     );

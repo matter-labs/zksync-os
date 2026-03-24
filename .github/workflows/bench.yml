@@ -8,6 +8,7 @@ permissions: read-all
 env:
     ZKSYNC_RISC_V_RUN: true
     CI: true
+    ZKSYNC_USE_CUDA_STUBS: true
 
 # Cancel previous runs that might be caused by appbin update
 concurrency:
@@ -58,13 +59,19 @@ jobs:
       - name: Install Python dependencies
         run: pip3 install matplotlib
 
-      - name: Compile for RISC-V
-        working-directory: ./zksync_os
+      - name: Setup
         run: |
-          rustup target add riscv32i-unknown-none-elf
+          rustup set profile minimal
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
           rustup component add rust-src
+
+      - name: Install cargo-airbender
+        run: cargo +nightly-2026-02-10 install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
+
+      - name: Compile for RISC-V
+        working-directory: ./zksync_os
+        run: |
           # Build for_tests binary with cycle markers for benchmarking.
           # Fall back to plain for-tests on older base branches that lack this type.
           ./dump_bin.sh --type for-tests-benchmarking || ./dump_bin.sh --type for-tests
@@ -81,7 +88,7 @@ jobs:
             MARKER_PATH=$(pwd)/base_block_${blk}.bench \
             cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > base_block_${blk}.out
           done
-          MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+          OVERRIDE_ZKSYNC_OS_PATH=$(pwd)/zksync_os/dist/for_tests_benchmarking MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
 
       - name: checkout PR
         run: |
@@ -90,10 +97,6 @@ jobs:
       - name: Recompile for RISC-V
         working-directory: ./zksync_os
         run: |
-          rustup target add riscv32i-unknown-none-elf
-          cargo install cargo-binutils
-          rustup component add llvm-tools-preview
-          rustup component add rust-src
           ./dump_bin.sh --type for-tests-benchmarking || ./dump_bin.sh --type for-tests
           ./dump_bin.sh --type evm-replay-benchmarking
 
@@ -118,7 +121,7 @@ jobs:
               pairs="${pairs},(\"block_${blk}\", \"base_block_${blk}.bench\", \"head_block_${blk}.bench\", \"process_block\")"
             fi
           done
-          MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
+          OVERRIDE_ZKSYNC_OS_PATH=$(pwd)/zksync_os/dist/for_tests_benchmarking MARKER_PATH=$(pwd)/head_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
           pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
           # Save comparison to file (for artifact + comment workflow fallback)
           python3 bench_scripts/compare_bench.py "[${pairs}]" > bench_results/comparison.md

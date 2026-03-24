@@ -10,6 +10,7 @@ env:
     CARGO_INCREMENTAL: 0
     ZKSYNC_RISC_V_RUN: true
     CI: true
+    ZKSYNC_USE_CUDA_STUBS: true
 
 # Cancel previous runs that might be caused by appbin update
 concurrency:
@@ -31,13 +32,11 @@ jobs:
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
+            - name: Install cargo-airbender
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile
@@ -58,13 +57,11 @@ jobs:
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
+            - name: Install cargo-airbender
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
-                  rustup target add riscv32i-unknown-none-elf
-                  cargo install cargo-binutils
-                  rustup component add llvm-tools-preview
-                  rustup component add rust-src
                   ./dump_bin.sh --type for-tests
                   ./dump_bin.sh --type multiblock-batch
             - name: Compile
@@ -82,10 +79,18 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
+                  cargo install cargo-binutils
+                  rustup component add llvm-tools-preview
+                  rustup component add rust-src
+            - name: Install cargo-airbender
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
+            - name: Compile blake test program for RISC-V
+              working-directory: ./crypto/src/blake2s/test_program
+              run: ./dump_bin.sh
             - name: Run crypto tests 10 times with overflow checks
               run: |
                   for i in {1..10}; do
-                    RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto --quiet || exit 1
+                    RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto --quiet -- --include-ignored || exit 1
                   done
     evm_state_tests:
         name: EF EVM state tests
@@ -117,13 +122,13 @@ jobs:
               with:
                   rustflags: ""
             - name: Setup
-              working-directory: ./zksync_os
               run: |
                   rustup set profile minimal
-                  rustup target add riscv32i-unknown-none-elf
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
+            - name: Install cargo-airbender
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
             - name: Compile for RISC-V
               working-directory: ./zksync_os
               run: |
@@ -143,13 +148,14 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
-              run: |
-                  rustup target add riscv32i-unknown-none-elf
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
+            - name: Install cargo-airbender
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
+            - name: Compile for RISC-V
+              working-directory: ./zksync_os
+              run: |
                   ./dump_bin.sh --type for-tests
             - name: Run proving test
               # Runs with e2e_proving feature
@@ -166,13 +172,14 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
-              run: |
-                  rustup target add riscv32i-unknown-none-elf
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
+            - name: Install cargo-airbender
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
+            - name: Compile for RISC-V
+              working-directory: ./zksync_os
+              run: |
                   ./dump_bin.sh --type eth-stf
             - name: Run ethereum block
               working-directory: ./tests/instances/eth_runner
@@ -189,18 +196,19 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
-                  rustup target add riscv32i-unknown-none-elf
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
+            - name: Install cargo-airbender
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
             - name: Compile for RISC-V
               working-directory: ./crypto/src/blake2s/test_program
-              run: ./dump_bin.sh --type for-tests
+              run: ./dump_bin.sh
             - name: Run proving test
               working-directory: ./crypto/src/blake2s
               run: |
-                  cargo test --release run_naive_test
-                  cargo test --release run_extended_delegation_test
+                  cargo test --release run_naive_test -- --include-ignored
+                  cargo test --release run_extended_delegation_test -- --include-ignored
 
     formatting:
         name: cargo fmt
@@ -245,13 +253,17 @@ jobs:
             - uses: actions-rust-lang/setup-rust-toolchain@v1
               with:
                   rustflags: ""
-            - name: Compile for RISC-V
-              working-directory: ./zksync_os
+            - name: Setup
               run: |
-                  rustup target add riscv32i-unknown-none-elf
+                  rustup set profile minimal
                   cargo install cargo-binutils
                   rustup component add llvm-tools-preview
                   rustup component add rust-src
+            - name: Install cargo-airbender
+              run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
+            - name: Compile for RISC-V
+              working-directory: ./zksync_os
+              run: |
                   ./dump_bin.sh --type for-tests
             - name: Run regression tests
               working-directory: ./tests/fuzzer
