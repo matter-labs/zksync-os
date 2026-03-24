@@ -10,6 +10,7 @@ permissions: read-all
 env:
     ZKSYNC_RISC_V_RUN: true
     CI: true
+    ZKSYNC_USE_CUDA_STUBS: true
 
 jobs:
     build-fuzz-targets:
