@@ -23,7 +23,7 @@ pub type ZkMetadata = SystemMetadata<
 pub struct TxLevelMetadata<IOTypes: SystemIOTypesConfig> {
     pub tx_origin: IOTypes::Address,
     pub tx_gas_price: U256,
-    pub blobs: arrayvec::ArrayVec<Bytes32, { MAX_BLOBS_PER_BLOCK }>,
+    pub blobs: arrayvec::ArrayVec<Bytes32, { MAX_BLOBS_PER_TX }>,
     pub verified_fri_statements: arrayvec::ArrayVec<Bytes32, { MAX_FRI_STATEMENTS_PER_TX }>,
 }
 
@@ -172,9 +172,15 @@ impl BasicBlockMetadata<EthereumIOTypesConfig> for BlockMetadataFromOracle {
     }
 
     fn individual_tx_gas_limit(&self) -> u64 {
-        // Currently we don't have a separate individual tx gas limit,
-        // so we return the block gas limit here.
-        self.gas_limit
+        #[cfg(feature = "eip-7825")]
+        {
+            const EIP_7825_SINGLE_TX_GAS_LIMIT: u64 = 1 << 24;
+            core::cmp::min(self.gas_limit, EIP_7825_SINGLE_TX_GAS_LIMIT)
+        }
+        #[cfg(not(feature = "eip-7825"))]
+        {
+            self.gas_limit
+        }
     }
 
     fn eip1559_basefee(&self) -> U256 {
