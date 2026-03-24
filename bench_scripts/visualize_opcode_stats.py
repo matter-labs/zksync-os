@@ -257,18 +257,7 @@ def main():
             plot_sorted_cpg_detail(name, data[name], out)
             print(f"  -> {out}")
 
-    # 4. Outlier analysis
-    outliers = analyze_outliers(data)
-    report_path = os.path.join(args.out_dir, "outlier_report.md")
-    write_outlier_report(outliers, report_path)
-    print(f"  -> {report_path}")
-
-    if outliers:
-        print(f"\nTop outliers (worst/median severity):")
-        for o in outliers[:10]:
-            print(f"  {o['opcode']:<16} {o['severity']:>6.1f}x  "
-                  f"(p50={o['p50_cpg']:.1f}, max={o['max_cpg']:.1f} c/g, "
-                  f"worst: gas={o['worst_gas']} cycles={o['worst_cycles']})")
+    print("Done.")
 
 
 if __name__ == "__main__":
