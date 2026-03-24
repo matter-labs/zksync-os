@@ -23,6 +23,7 @@ use zk_ee::system::errors::root_cause::RootCause;
 use zk_ee::system::errors::runtime::RuntimeError;
 use zk_ee::system::errors::subsystem::SubsystemError;
 use zk_ee::system::logger::Logger;
+use zk_ee::system::MAX_BLOBS_PER_TX;
 use zk_ee::system::MAX_EVENT_TOPICS;
 use zk_ee::system::*;
 use zk_ee::system_log;
@@ -186,7 +187,7 @@ pub struct EthereumTxContext<S: EthereumLikeTypes> {
     pub tx_gas_limit: u64,
     pub gas_used: u64,
     pub blob_gas_used: u64,
-    pub tx_level_metadata: EthereumTransactionMetadata<{ MAX_BLOBS_PER_BLOCK }>,
+    pub tx_level_metadata: EthereumTransactionMetadata<{ MAX_BLOBS_PER_TX }>,
 }
 
 impl<S: EthereumLikeTypes> core::fmt::Debug for EthereumTxContext<S> {
