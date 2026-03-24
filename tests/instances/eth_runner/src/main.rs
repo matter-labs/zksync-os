@@ -69,6 +69,9 @@ enum Command {
         chain_id: Option<u64>,
         #[arg(long)]
         single_tx: Option<u64>,
+        /// If set, generates a flamegraph SVG at the given path
+        #[arg(long)]
+        flamegraph: Option<String>,
     },
     // Export block ratios from DB
     ExportRatios {
@@ -101,6 +104,7 @@ fn main() -> anyhow::Result<()> {
             witness_output_dir,
             chain_id,
             single_tx,
+            flamegraph,
         } => crate::single_run::single_run(
             block_dir,
             block_hashes,
@@ -108,6 +112,7 @@ fn main() -> anyhow::Result<()> {
             witness_output_dir,
             chain_id,
             single_tx,
+            flamegraph,
         ),
         Command::LiveRun {
             start_block,
