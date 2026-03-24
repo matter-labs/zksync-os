@@ -12,7 +12,6 @@ categories.workspace = true
 [dependencies]
 rig = { path = "../../rig", features = ["for_tests"] }
 zksync_os_runner = { path = "../../../zksync_os_runner"}
-riscv_transpiler = { workspace = true }
 hex = { workspace = true }
 
 [features]
