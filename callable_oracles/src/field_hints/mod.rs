@@ -129,7 +129,7 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeFieldOpsQuery<M> {
         const { assert!(8 == core::mem::size_of::<usize>()) };
         assert!(arg.src_ptr > 0);
         assert_eq!(arg.src_len_u32_words, 8);
-        let n: Vec<u64> = read_u64_words(arg.src_ptr, u64::from(arg.src_len_u32_words / 2), 32);
+        let n: Vec<u64> = read_u64_words(arg.src_ptr, u64::from(arg.src_len_u32_words / 2));
         let n = Bytes32::from_array(
             n.into_iter()
                 .flat_map(|el| el.to_le_bytes())

@@ -74,21 +74,18 @@ fn validate_host_pointer(ptr_u64: u64, alignment: usize) -> *const u8 {
     addr as *const u8
 }
 
-fn checked_byte_len(len_units: u64, bytes_per_unit: usize, max_bytes: usize) -> usize {
+fn checked_byte_len(len_units: u64, bytes_per_unit: usize) -> usize {
     let len_units = usize::try_from(len_units).unwrap();
-    let requested_bytes = len_units.checked_mul(bytes_per_unit).unwrap();
-    assert!(requested_bytes <= max_bytes);
-
-    requested_bytes
+    len_units.checked_mul(bytes_per_unit).unwrap()
 }
 
 #[inline(always)]
-pub(crate) fn read_u64_words(ptr_u64: u64, len_words_u64: u64, max_bytes: usize) -> Vec<u64> {
+pub(crate) fn read_u64_words(ptr_u64: u64, len_words_u64: u64) -> Vec<u64> {
     if len_words_u64 == 0 {
         return vec![];
     }
     let ptr = validate_host_pointer(ptr_u64, core::mem::align_of::<u64>());
-    let len_bytes = checked_byte_len(len_words_u64, core::mem::size_of::<u64>(), max_bytes);
+    let len_bytes = checked_byte_len(len_words_u64, core::mem::size_of::<u64>());
     let len_words = len_bytes / core::mem::size_of::<u64>();
 
     // Safety: the caller supplied a non-null pointer aligned for `u64`, and
@@ -98,12 +95,12 @@ pub(crate) fn read_u64_words(ptr_u64: u64, len_words_u64: u64, max_bytes: usize)
 }
 
 #[inline(always)]
-pub(crate) fn read_u8_words(ptr_u64: u64, len_words_u8: u64, max_bytes: usize) -> Vec<u8> {
+pub(crate) fn read_u8_words(ptr_u64: u64, len_words_u8: u64) -> Vec<u8> {
     if len_words_u8 == 0 {
         return vec![];
     }
     let ptr = validate_host_pointer(ptr_u64, core::mem::align_of::<u8>());
-    let len_bytes = checked_byte_len(len_words_u8, core::mem::size_of::<u8>(), max_bytes);
+    let len_bytes = checked_byte_len(len_words_u8, core::mem::size_of::<u8>());
 
     // Safety: the caller supplied a non-null pointer, and `len_bytes` was
     // derived from a checked byte-length computation.
