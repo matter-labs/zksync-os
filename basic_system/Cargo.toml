@@ -37,6 +37,9 @@ proving = ["crypto/proving"]
 # Used for proving multi block batch within 1 run
 multiblock-batch = []
 state-diffs-pi = []
+eip-7823-modexp-limit = []
+modexp-repricing = []
+fusaka = ["eip-7823-modexp-limit", "modexp-repricing"]
 
 [dev-dependencies]
 hex = { workspace = true }

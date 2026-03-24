@@ -54,6 +54,8 @@ eth_stf = ["forward_system/eth_stf"]
 evm_tester = ["forward_system/evm_tester"]
 pectra = ["forward_system/pectra"]
 evm_tester_pectra = ["forward_system/evm_tester_pectra"]
+fusaka = ["forward_system/fusaka"]
+evm_tester_fusaka = ["forward_system/evm_tester_fusaka"]
 # Features used for legacy evm_tester. Only defined in forward system,
 # as the legacy evm_tester does not perform a proof run.
 evm_tester_legacy = ["forward_system/evm_tester_legacy"]
