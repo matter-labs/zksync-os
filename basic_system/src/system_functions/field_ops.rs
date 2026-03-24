@@ -139,7 +139,7 @@ impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
     fn query_field_op<R: UsizeDeserializable>(&mut self, op: FieldHintOp, input: &Bytes32) -> R {
         // We use different advice params depending on architecture
         // They are mostly the same, main difference is the width of pointers
-        #[cfg(target_arch = "riscv32")]
+        #[cfg(target_pointer_width = "32")]
         let r: R = {
             let hint_request = FieldOpsHint {
                 op: op as u32,
@@ -153,7 +153,7 @@ impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
                 )
                 .unwrap()
         };
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(target_pointer_width = "64")]
         let r: R = {
             let hint_request = FieldOpsHint64 {
                 op: op as u32,

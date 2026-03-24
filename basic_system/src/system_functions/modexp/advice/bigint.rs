@@ -867,7 +867,7 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
     ) {
         // We use different advice params depending on architecture
         // Both are mostly the same, main difference is the width of pointers
-        #[cfg(target_arch = "riscv32")]
+        #[cfg(target_pointer_width = "32")]
         let (mut it, q_len, r_len) = {
             use crate::system_functions::modexp::ModExpAdviceParams;
             let arg: ModExpAdviceParams = {
@@ -902,7 +902,7 @@ impl<'a, O: IOOracle> ModexpAdvisor for OracleAdvisor<'a, O> {
             (it, q_len, r_len)
         };
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(target_pointer_width = "64")]
         let (mut it, q_len, r_len) = {
             let arg: ModExpAdviceParams64 = {
                 let a_len = a.digits;
