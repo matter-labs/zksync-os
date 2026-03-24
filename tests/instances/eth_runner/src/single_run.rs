@@ -78,6 +78,13 @@ fn run<const RANDOMIZED: bool>(
         info!("Opcode stats written to {path}");
     }
 
+    if let Ok(dir) = std::env::var("OPCODE_SAMPLES_DIR") {
+        tracer
+            .dump_samples(std::path::Path::new(&dir))
+            .expect("Failed to dump opcode samples");
+        info!("Opcode samples dumped to {dir}");
+    }
+
     post_check(output, receipts, diff_trace, prestate_cache).unwrap();
 
     Ok(())

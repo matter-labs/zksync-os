@@ -385,6 +385,23 @@ pub fn print_cycle_markers() -> CycleMarkerResults {
         cm.delegation_counter
     ));
 
+    // Dump per-execution cycle samples if requested via env var
+    if let Ok(dir) = std::env::var("OPCODE_CYCLE_SAMPLES_DIR") {
+        let dir = std::path::Path::new(&dir);
+        std::fs::create_dir_all(dir).expect("Failed to create cycle samples dir");
+        for (name, acc) in &opcode_aggregated {
+            if acc.samples.is_empty() {
+                continue;
+            }
+            let path = dir.join(format!("{}.cycles", name));
+            let mut f = std::fs::File::create(path).expect("Failed to create cycle samples file");
+            use std::io::Write;
+            for &c in &acc.samples {
+                writeln!(f, "{}", c).expect("Failed to write cycle sample");
+            }
+        }
+    }
+
     // Collect and sort opcode stats
     let mut opcode_cycle_stats: Vec<OpcodeCycleStats> = opcode_aggregated
         .into_iter()

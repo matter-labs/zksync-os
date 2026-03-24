@@ -65,6 +65,17 @@ impl OpcodeStats {
     }
 }
 
+impl OpcodeStats {
+    /// Dump per-execution samples to a file: one line per execution with "gas,native".
+    /// Samples are in execution order — the Kth line is the Kth execution.
+    pub fn dump_samples(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        for (g, n) in self.gas_samples.iter().zip(self.native_samples.iter()) {
+            writeln!(writer, "{},{}", g, n)?;
+        }
+        Ok(())
+    }
+}
+
 fn is_call_like(opcode: u8) -> bool {
     matches!(
         opcode,
@@ -189,6 +200,23 @@ impl<S: SystemTypes> EvmOpcodeStatsTracer<S> {
                 native_max,
                 native_per_gas,
             )?;
+        }
+        Ok(())
+    }
+
+    /// Dump per-execution samples to a directory.
+    /// Creates one file per opcode: `<dir>/<OPCODE>.samples` with "gas,native" per line.
+    /// Files are in execution order so line K = Kth execution.
+    pub fn dump_samples(&self, dir: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(dir)?;
+        for (i, stat) in self.stats.iter().enumerate() {
+            if stat.gas_samples.is_empty() {
+                continue;
+            }
+            let name = OPCODE_JUMPMAP[i].unwrap_or("UNKNOWN");
+            let path = dir.join(format!("{}.samples", name));
+            let mut f = std::fs::File::create(path)?;
+            stat.dump_samples(&mut f)?;
         }
         Ok(())
     }
