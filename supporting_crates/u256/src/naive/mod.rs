@@ -250,6 +250,10 @@ impl U256 {
         self.0.bit_len()
     }
 
+    pub fn leading_zeros(&self) -> usize {
+        self.0.leading_zeros()
+    }
+
     #[inline(always)]
     /// # Safety
     /// `into` must be 32 byte aligned and point to 32 bytes of accessible memory
