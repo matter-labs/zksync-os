@@ -215,7 +215,7 @@ def build_tree(frames):
     visually).
     """
     if not frames:
-        return []
+        return {}, {}, {}, {}
 
     # Sort by y descending (root/shallowest first), then by x
     frames.sort(key=lambda f: (-f[4], f[3]))
@@ -223,7 +223,9 @@ def build_tree(frames):
     # Find the y-step between levels
     ys = sorted(set(f[4] for f in frames), reverse=True)
     if len(ys) < 2:
-        return frames
+        frame_lookup = {(f[4], f[3]): f for f in frames}
+        self_costs = {k: f[1] for k, f in frame_lookup.items()}
+        return frame_lookup, {}, {}, self_costs
     y_step = ys[0] - ys[1]  # positive step downward from parent to child
 
     # Build lookup: y -> list of frames sorted by x

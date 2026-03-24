@@ -69,8 +69,9 @@ enum Command {
         chain_id: Option<u64>,
         #[arg(long)]
         single_tx: Option<u64>,
-        /// If set, generates a flamegraph SVG at the given path
-        #[arg(long)]
+        /// If set, generates a flamegraph SVG at the given path.
+        /// Cannot be used together with --witness-output-dir.
+        #[arg(long, conflicts_with = "witness_output_dir")]
         flamegraph: Option<String>,
     },
     // Export block ratios from DB
