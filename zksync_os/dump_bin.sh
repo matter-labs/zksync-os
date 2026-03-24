@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking}"
+USAGE="Usage: $0 --type {singleblock-batch|singleblock-batch-logging-enabled|debug-in-simulator|evm-replay|evm-replay-benchmarking|eth-stf|multiblock-batch|multiblock-batch-logging-enabled|evm-tester|for-tests|for-tests-benchmarking|for-tests-logging-enabled}"
 TYPE=""
 
 # Parse --type argument
@@ -20,76 +20,59 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-# Base features and output names
-FEATURES="proving"
+# Base features
+BASE_FEATURES="proving"
 
-# Adjust for server modes
+# Map --type to APP_NAME and FEATURES
 case "$TYPE" in
   singleblock-batch)
-    FEATURES="$FEATURES,production"
-    BIN_NAME="singleblock_batch.bin"
-    ELF_NAME="singleblock_batch.elf"
-    TEXT_NAME="singleblock_batch.text"
+    APP_NAME="singleblock_batch"
+    FEATURES="$BASE_FEATURES,production"
     ;;
   singleblock-batch-logging-enabled)
-    FEATURES="$FEATURES,production,print_debug_info"
-    BIN_NAME="singleblock_batch_logging_enabled.bin"
-    ELF_NAME="singleblock_batch_logging_enabled.elf"
-    TEXT_NAME="singleblock_batch_logging_enabled.text"
+    APP_NAME="singleblock_batch_logging_enabled"
+    FEATURES="$BASE_FEATURES,production,print_debug_info"
     ;;
   multiblock-batch)
-    FEATURES="$FEATURES,production,multiblock-batch"
-    BIN_NAME="multiblock_batch.bin"
-    ELF_NAME="multiblock_batch.elf"
-    TEXT_NAME="multiblock_batch.text"
+    APP_NAME="multiblock_batch"
+    FEATURES="$BASE_FEATURES,production,multiblock-batch"
     ;;
   multiblock-batch-logging-enabled)
-    FEATURES="$FEATURES,production,multiblock-batch,print_debug_info"
-    BIN_NAME="multiblock_batch_logging_enabled.bin"
-    ELF_NAME="multiblock_batch_logging_enabled.elf"
-    TEXT_NAME="multiblock_batch_logging_enabled.text"
+    APP_NAME="multiblock_batch_logging_enabled"
+    FEATURES="$BASE_FEATURES,production,multiblock-batch,print_debug_info"
     ;;
   for-tests)
-    FEATURES="$FEATURES,for_tests"
-    BIN_NAME="for_tests.bin"
-    ELF_NAME="for_tests.elf"
-    TEXT_NAME="for_tests.text"
+    APP_NAME="for_tests"
+    FEATURES="$BASE_FEATURES,for_tests"
     ;;
   for-tests-benchmarking)
-    FEATURES="$FEATURES,for_tests,benchmarking"
-    BIN_NAME="for_tests.bin"
-    ELF_NAME="for_tests.elf"
-    TEXT_NAME="for_tests.text"
+    APP_NAME="for_tests_benchmarking"
+    FEATURES="$BASE_FEATURES,for_tests,benchmarking"
     ;;
   for-tests-logging-enabled)
-    FEATURES="$FEATURES,for_tests,print_debug_info"
-    BIN_NAME="for_tests.bin"
-    ELF_NAME="for_tests.elf"
-    TEXT_NAME="for_tests.text"
+    APP_NAME="for_tests_logging_enabled"
+    FEATURES="$BASE_FEATURES,for_tests,print_debug_info"
     ;;
   evm-replay)
-    FEATURES="$FEATURES,eth_runner"
-    BIN_NAME="evm_replay.bin"
-    ELF_NAME="evm_replay.elf"
-    TEXT_NAME="evm_replay.text"
+    APP_NAME="evm_replay"
+    FEATURES="$BASE_FEATURES,eth_runner"
     ;;
   eth-stf)
-    FEATURES="$FEATURES,eth_runner,eth_stf"
-    BIN_NAME="eth_stf.bin"
-    ELF_NAME="eth_stf.elf"
-    TEXT_NAME="eth_stf.text"
+    APP_NAME="eth_stf"
+    FEATURES="$BASE_FEATURES,eth_runner,eth_stf"
     ;;
   evm-replay-benchmarking)
-    FEATURES="$FEATURES,eth_runner,benchmarking"
-    BIN_NAME="evm_replay.bin"
-    ELF_NAME="evm_replay.elf"
-    TEXT_NAME="evm_replay.text"
+    APP_NAME="evm_replay_benchmarking"
+    FEATURES="$BASE_FEATURES,eth_runner,benchmarking"
     ;;
   evm-tester)
-    FEATURES="$FEATURES,evm_tester"
-    BIN_NAME="evm_tester.bin"
-    ELF_NAME="evm_tester.elf"
-    TEXT_NAME="evm_tester.text"
+    APP_NAME="evm_tester"
+    FEATURES="$BASE_FEATURES,evm_tester"
+    ;;
+  "")
+    echo "Missing --type argument"
+    echo "$USAGE"
+    exit 2
     ;;
   *)
     echo "Invalid --type: $TYPE"
@@ -98,19 +81,17 @@ case "$TYPE" in
     ;;
 esac
 
-# Clean up only the artifacts for this mode
-rm -f "$BIN_NAME" "$ELF_NAME" "$TEXT_NAME"
+DIST_DIR="dist/$APP_NAME"
 
-# Build
-cargo build --features "$FEATURES" --release
+# Clean up previous artifacts for this app
+rm -rf "$DIST_DIR"
 
-# Produce and rename outputs
-cargo objcopy --features "$FEATURES" --release -- -O binary "$BIN_NAME"
-cargo objcopy --features "$FEATURES" --release -- -R .text "$ELF_NAME"
-cargo objcopy --features "$FEATURES" --release -- -O binary --only-section=.text "$TEXT_NAME"
+# Build via cargo airbender — outputs go to dist/<APP_NAME>/app.{bin,elf,text} + manifest.toml
+cargo airbender build --app-name "$APP_NAME" --release -- --features "$FEATURES"
 
 # Summary
 echo "Built [$TYPE] with features: $FEATURES"
-echo "→ $BIN_NAME"
-echo "→ $ELF_NAME"
-echo "→ $TEXT_NAME"
+echo "-> $DIST_DIR/app.bin"
+echo "-> $DIST_DIR/app.elf"
+echo "-> $DIST_DIR/app.text"
+echo "-> $DIST_DIR/manifest.toml"
