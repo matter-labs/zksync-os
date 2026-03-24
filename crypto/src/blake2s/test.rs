@@ -10,7 +10,7 @@
 #[test]
 pub fn run_naive_test() {
     let results = zksync_os_runner::run(
-        "src/blake2s/test_program/dist/app_native_blake/app.bin".into(),
+        "src/blake2s/test_program/dist/app_native_blake".into(),
         1 << 25,
         &[],
     );
@@ -21,7 +21,7 @@ pub fn run_naive_test() {
 #[test]
 pub fn run_extended_delegation_test() {
     let results = zksync_os_runner::run(
-        "src/blake2s/test_program/dist/app_extended_delegation_blake/app.bin".into(),
+        "src/blake2s/test_program/dist/app_extended_delegation_blake".into(),
         1 << 25,
         &[],
     );

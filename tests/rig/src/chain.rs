@@ -1247,22 +1247,27 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let proof_input = if only_forward {
             None
         } else {
-            // Prover-input forward run to record non-determinism input words
+            // Record non-determinism input words by running the forward
+            // ETH-like config with ReadWitnessSource wrapping the oracle.
             let prover_input_oracle =
                 Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
             let copy_source = ReadWitnessSource::new(prover_input_oracle);
-            let mut pi_result_keeper = ProverInputResultKeeper::new(NoopTxCallback);
+            let items = copy_source.get_read_items();
+            let mut pi_result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
             let mut pi_tracer = NopTracer::default();
             let mut pi_validator = NopTxValidator;
-            let prover_input_words = run_prover_input_no_panic::<
-                basic_bootloader::bootloader::config::BasicBootloaderProvingExecutionConfig,
-            >(
+            BasicBootloader::<
+                EthereumStorageSystemTypes<_>,
+                EthereumTransactionFlow<EthereumStorageSystemTypes<_>>,
+            >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
                 copy_source,
+                &mut (),
                 &mut pi_result_keeper,
                 &mut pi_tracer,
                 &mut pi_validator,
             )
             .expect("prover-input forward run must succeed");
+            let prover_input_words: Vec<u32> = items.borrow().iter().copied().collect();
 
             // RISC-V simulation using pre-recorded input
             let dist_dir = get_zksync_os_dist_dir(&app);
