@@ -36,5 +36,7 @@ detailed_errors = []
 prevrandao = []
 delegation = ["u256/delegation"]
 pectra-blobs = []
+fusaka-blobs = []
+eip-7825 = []
 
 [dev-dependencies]
