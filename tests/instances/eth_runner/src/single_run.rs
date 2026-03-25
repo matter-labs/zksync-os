@@ -5,13 +5,17 @@ use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
 use crate::prestate::{populate_prestate, DiffTrace, PrestateTrace};
 use crate::receipts::{BlockReceipts, TransactionReceipt};
+use rig::chain::BlockExtraStats;
+use rig::forward_system::system::system_types::ForwardRunningSystem;
+use rig::forward_system::system::tracers::evm_opcode_stats::EvmOpcodeStatsTracer;
 use rig::log::info;
 use rig::*;
 use std::fs::{self, File};
 use std::io::BufReader;
-use zk_ee::system::tracer::NopTracer;
+use zk_ee::system::tracer::{NopTracer, Tracer};
 use zk_ee::system::validator::NopTxValidator;
 use zksync_os_interface::traits::EncodedTx;
+use zksync_os_interface::types::BlockOutput;
 
 #[allow(clippy::too_many_arguments)]
 fn run<const RANDOMIZED: bool>(
@@ -27,6 +31,7 @@ fn run<const RANDOMIZED: bool>(
     block_hashes: Option<BlockHashes>,
     witness_output_dir: Option<String>,
     flamegraph: Option<String>,
+    opcode_stats: bool,
 ) -> anyhow::Result<()> {
     chain.set_last_block_number(block_number - 1);
 
@@ -54,16 +59,43 @@ fn run<const RANDOMIZED: bool>(
         check_storage_diff_hashes: true,
         ..Default::default()
     };
-    let (output, stats, _) = chain
-        .run_block_with_extra_stats(
+
+    let (output, stats) = if opcode_stats {
+        let mut tracer = EvmOpcodeStatsTracer::<ForwardRunningSystem>::default();
+        let result = run_with_tracer(
+            &mut chain,
             transactions,
-            Some(block_context),
-            None,
-            Some(run_config),
+            block_context,
+            run_config,
+            &mut tracer,
+        );
+
+        tracer.print_stats();
+
+        if let Ok(path) = std::env::var("OPCODE_STATS_PATH") {
+            tracer
+                .write_csv(std::path::Path::new(&path))
+                .expect("Failed to write opcode stats CSV");
+            info!("Opcode stats written to {path}");
+        }
+
+        if let Ok(dir) = std::env::var("OPCODE_SAMPLES_DIR") {
+            tracer
+                .dump_samples(std::path::Path::new(&dir))
+                .expect("Failed to dump opcode samples");
+            info!("Opcode samples dumped to {dir}");
+        }
+
+        result
+    } else {
+        run_with_tracer(
+            &mut chain,
+            transactions,
+            block_context,
+            run_config,
             &mut NopTracer::default(),
-            &mut NopTxValidator::default(),
         )
-        .unwrap();
+    };
 
     let _ratio = compute_ratio(stats);
 
@@ -72,6 +104,28 @@ fn run<const RANDOMIZED: bool>(
     Ok(())
 }
 
+fn run_with_tracer<const RANDOMIZED: bool>(
+    chain: &mut Chain<RANDOMIZED>,
+    transactions: Vec<EncodedTx>,
+    block_context: BlockContext,
+    run_config: rig::chain::RunConfig,
+    tracer: &mut impl Tracer<ForwardRunningSystem>,
+) -> (BlockOutput, BlockExtraStats) {
+    let (output, stats, _) = chain
+        .run_block_with_extra_stats(
+            transactions,
+            Some(block_context),
+            None,
+            Some(run_config),
+            tracer,
+            &mut NopTxValidator::default(),
+        )
+        .unwrap();
+
+    (output, stats)
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn single_run(
     block_dir: String,
     block_hashes: Option<String>,
@@ -80,6 +134,7 @@ pub fn single_run(
     chain_id: Option<u64>,
     single_tx: Option<u64>,
     flamegraph: Option<String>,
+    opcode_stats: bool,
 ) -> anyhow::Result<()> {
     use std::path::Path;
 
@@ -166,6 +221,7 @@ pub fn single_run(
             block_hashes,
             witness_output_dir,
             flamegraph,
+            opcode_stats,
         )
     } else {
         let chain = Chain::empty(Some(1));
@@ -182,6 +238,7 @@ pub fn single_run(
             block_hashes,
             witness_output_dir,
             flamegraph,
+            opcode_stats,
         )
     }
 }

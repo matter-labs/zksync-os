@@ -140,6 +140,7 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
             );
 
             self.instruction_pointer += 1;
+            cycle_marker::opcode_start!();
             let result = self
                 .gas
                 .spend_gas_and_native(0, STEP_NATIVE_COST)
@@ -297,6 +298,9 @@ impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
                     opcodes::BLOBBASEFEE => self.blobbasefee(system),
                     x => Err(EvmError::InvalidOpcode(x).into()),
                 });
+            cycle_marker::opcode_end!(
+                crate::opcodes::OPCODE_JUMPMAP[opcode as usize].unwrap_or("UNKNOWN")
+            );
 
             tracer.evm_tracer().after_evm_interpreter_execution_step(
                 opcode,

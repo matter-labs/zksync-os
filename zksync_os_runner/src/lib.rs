@@ -81,7 +81,8 @@ fn run_and_get_effective_cycles_inner(
 
     #[cfg(feature = "cycle_marker")]
     {
-        block_effective = cycle_marker::print_cycle_markers();
+        let results = cycle_marker::print_cycle_markers();
+        block_effective = results.block_effective;
     }
 
     // our convention is to return 32 bytes placed into registers x10-x17

@@ -16,12 +16,28 @@
 //!
 //! Traces are dumped to a file, the path can be set using the
 //! MARKER_PATH environment variable.
+//!
+//! ## Per-opcode cycle tracking
+//!
+//! For EVM opcode benchmarking, use the opcode-specific macros:
+//!
+//! cycle_marker::opcode_start!();
+//! // ... opcode execution ...
+//! cycle_marker::opcode_end!(label);
+//!
+//! These are separated from block-level markers and aggregated by label
+//! in `print_cycle_markers`. On RISC-V they use the same CSR mechanism.
 
-/// Labels can be at the start or end of a code block
+/// Labels can be at the start or end of a code block.
+/// OpcodeStart/OpcodeEnd are for per-EVM-opcode cycle tracking —
+/// they use the same CSR mechanism on RISC-V but are aggregated
+/// (summed by label) rather than matched individually.
 #[allow(dead_code)]
 enum Label {
     Start(&'static str),
     End(&'static str),
+    OpcodeStart,
+    OpcodeEnd(&'static str),
 }
 
 #[cfg(not(target_arch = "riscv32"))]
@@ -92,6 +108,48 @@ pub fn end(_label: &'static str) {
     LABELS.with_borrow_mut(|v| v.push(Label::End(_label)))
 }
 
+/// Start an opcode-level cycle marker. Uses the same CSR mechanism as `start()`
+/// on RISC-V. On the host side, recorded as `OpcodeStart` for aggregation.
+pub fn start_opcode() {
+    #[cfg(target_arch = "riscv32")]
+    {
+        // SAFETY: CSR write to simulator-intercepted register 0x7ff. No memory access,
+        // no stack effect, flags preserved. Mirrors the pattern in `start()`/`end()`.
+        unsafe {
+            let word = 0;
+            core::arch::asm!(
+                "csrrw x0, 0x7ff, {rd}",
+                rd = in(reg) word,
+                options(nomem, nostack, preserves_flags)
+            )
+        }
+    }
+
+    #[cfg(not(target_arch = "riscv32"))]
+    LABELS.with_borrow_mut(|v| v.push(Label::OpcodeStart))
+}
+
+/// End an opcode-level cycle marker. Uses the same CSR mechanism as `end()`
+/// on RISC-V. On the host side, recorded as `OpcodeEnd` with label for aggregation.
+pub fn end_opcode(_label: &'static str) {
+    #[cfg(target_arch = "riscv32")]
+    {
+        // SAFETY: CSR write to simulator-intercepted register 0x7ff. No memory access,
+        // no stack effect, flags preserved. Mirrors the pattern in `start()`/`end()`.
+        unsafe {
+            let word = 0;
+            core::arch::asm!(
+                "csrrw x0, 0x7ff, {rd}",
+                rd = in(reg) word,
+                options(nomem, nostack, preserves_flags)
+            )
+        }
+    }
+
+    #[cfg(not(target_arch = "riscv32"))]
+    LABELS.with_borrow_mut(|v| v.push(Label::OpcodeEnd(_label)))
+}
+
 #[macro_export]
 macro_rules! start {
     ($label:expr) => {
@@ -108,6 +166,26 @@ macro_rules! end {
         #[cfg(feature = "cycle_marker")]
         {
             $crate::end($label);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! opcode_start {
+    () => {
+        #[cfg(feature = "cycle_marker")]
+        {
+            $crate::start_opcode();
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! opcode_end {
+    ($label:expr) => {
+        #[cfg(feature = "cycle_marker")]
+        {
+            $crate::end_opcode($label);
         }
     };
 }
@@ -158,8 +236,27 @@ macro_rules! wrap_with_resources {
     }};
 }
 
+/// Per-opcode aggregated cycle statistics.
 #[cfg(all(feature = "use_risc_v_simulator", not(target_arch = "riscv32")))]
-pub fn print_cycle_markers() -> Option<u64> {
+#[derive(Debug, Clone)]
+pub struct OpcodeCycleStats {
+    pub name: &'static str,
+    pub total_cycles: u64,
+    pub count: u64,
+    pub min_cycles: u64,
+    pub max_cycles: u64,
+    pub median_cycles: u64,
+}
+
+/// Results from processing cycle markers.
+#[cfg(all(feature = "use_risc_v_simulator", not(target_arch = "riscv32")))]
+pub struct CycleMarkerResults {
+    pub block_effective: Option<u64>,
+    pub opcode_cycle_stats: Vec<OpcodeCycleStats>,
+}
+
+#[cfg(all(feature = "use_risc_v_simulator", not(target_arch = "riscv32")))]
+pub fn print_cycle_markers() -> CycleMarkerResults {
     const BLAKE_DELEGATION_ID: u32 = 1991;
     const BIGINT_DELEGATION_ID: u32 = 1994;
     const BLAKE_DELEGATION_COEFF: u64 = 16;
@@ -172,13 +269,72 @@ pub fn print_cycle_markers() -> Option<u64> {
 
     assert_eq!(cm.markers.len(), labels.len());
 
+    // Block-level markers: use existing nonce-based matching
     let mut label_nonces: HashMap<&'static str, u64> = HashMap::new();
     let mut marker_map: HashMap<(&'static str, u64), (Mark, Mark)> = HashMap::new();
     let mut start_counts: HashMap<(&'static str, u64), Mark> = HashMap::new();
 
+    // Opcode-level markers: aggregate by label name.
+    // OpcodeStart/OpcodeEnd pairs are always adjacent (leaf-level, no nesting).
+    struct OpcodeAcc {
+        total: u64,
+        count: u64,
+        min: u64,
+        max: u64,
+        samples: Vec<u64>,
+    }
+    impl OpcodeAcc {
+        fn new() -> Self {
+            Self {
+                total: 0,
+                count: 0,
+                min: u64::MAX,
+                max: 0,
+                samples: Vec::new(),
+            }
+        }
+        fn record(&mut self, cycles: u64) {
+            self.total += cycles;
+            self.count += 1;
+            self.min = self.min.min(cycles);
+            self.max = self.max.max(cycles);
+            self.samples.push(cycles);
+        }
+        fn median(&mut self) -> u64 {
+            if self.samples.is_empty() {
+                return 0;
+            }
+            self.samples.sort_unstable();
+            let mid = self.samples.len() / 2;
+            if self.samples.len() % 2 == 0 {
+                ((self.samples[mid - 1] as u128 + self.samples[mid] as u128) / 2) as u64
+            } else {
+                self.samples[mid]
+            }
+        }
+    }
+    let mut opcode_aggregated: HashMap<&'static str, OpcodeAcc> = HashMap::new();
+    let mut pending_opcode_start: Option<Mark> = None;
+
     log_marker("\n=== Cycle markers:");
     for (label, mark) in labels.into_iter().zip(cm.markers.into_iter()) {
         match label {
+            Label::OpcodeStart => {
+                debug_assert!(
+                    pending_opcode_start.is_none(),
+                    "Consecutive OpcodeStart without OpcodeEnd — previous start marker lost"
+                );
+                pending_opcode_start = Some(mark);
+            }
+            Label::OpcodeEnd(name) => {
+                if let Some(start_mark) = pending_opcode_start.take() {
+                    let diff = mark.diff(&start_mark);
+                    opcode_aggregated
+                        .entry(name)
+                        .or_insert_with(OpcodeAcc::new)
+                        .record(diff.cycles);
+                }
+            }
             Label::Start(name) => {
                 let nonce = label_nonces
                     .entry(name)
@@ -197,7 +353,7 @@ pub fn print_cycle_markers() -> Option<u64> {
             }
         }
     }
-    for ((name, _), _) in start_counts {
+    for ((name, _), _) in &start_counts {
         eprintln!("Warning: start label '{}' has no end", name);
     }
     let mut markers: Vec<(&'static str, (Mark, Mark))> = marker_map
@@ -215,10 +371,6 @@ pub fn print_cycle_markers() -> Option<u64> {
             label, diff.cycles, diff.delegations
         ));
         if label == BLOCK_WIDE_LABEL {
-            // We compute effective cycles for the block execution.
-            // That is: raw cycles plus the delegation counts, weighted by
-            // the delegation coefficients (derived from the circuits
-            // geometry)
             block_effective = Some(
                 diff.cycles
                     + BLAKE_DELEGATION_COEFF
@@ -240,5 +392,65 @@ pub fn print_cycle_markers() -> Option<u64> {
         "Total delegations: {:?}\n==================",
         cm.delegation_counter
     ));
-    block_effective
+
+    // Dump per-execution cycle samples if requested via env var
+    if let Ok(dir) = std::env::var("OPCODE_CYCLE_SAMPLES_DIR") {
+        let dir = std::path::Path::new(&dir);
+        std::fs::create_dir_all(dir).expect("Failed to create cycle samples dir");
+        for (name, acc) in &opcode_aggregated {
+            if acc.samples.is_empty() {
+                continue;
+            }
+            let path = dir.join(format!("{}.cycles", name));
+            let mut f = std::fs::File::create(path).expect("Failed to create cycle samples file");
+            use std::io::Write;
+            for &c in &acc.samples {
+                writeln!(f, "{}", c).expect("Failed to write cycle sample");
+            }
+        }
+    }
+
+    // Collect and sort opcode stats
+    let mut opcode_cycle_stats: Vec<OpcodeCycleStats> = opcode_aggregated
+        .into_iter()
+        .map(|(name, mut acc)| {
+            let median = acc.median();
+            OpcodeCycleStats {
+                name,
+                total_cycles: acc.total,
+                count: acc.count,
+                min_cycles: if acc.count > 0 { acc.min } else { 0 },
+                max_cycles: acc.max,
+                median_cycles: median,
+            }
+        })
+        .collect();
+    opcode_cycle_stats.sort_by(|a, b| b.total_cycles.cmp(&a.total_cycles));
+
+    if !opcode_cycle_stats.is_empty() {
+        log_marker("\n=== Per-opcode cycle stats:");
+        log_marker(&format!(
+            "{:<20} {:>12} {:>14} {:>10} {:>10} {:>10} {:>10}",
+            "opcode", "count", "total_cycles", "avg", "median", "min", "max"
+        ));
+        for stat in &opcode_cycle_stats {
+            let avg = stat.total_cycles as f64 / stat.count as f64;
+            log_marker(&format!(
+                "{:<20} {:>12} {:>14} {:>10.1} {:>10} {:>10} {:>10}",
+                stat.name,
+                stat.count,
+                stat.total_cycles,
+                avg,
+                stat.median_cycles,
+                stat.min_cycles,
+                stat.max_cycles
+            ));
+        }
+        log_marker("==================");
+    }
+
+    CycleMarkerResults {
+        block_effective,
+        opcode_cycle_stats,
+    }
 }
