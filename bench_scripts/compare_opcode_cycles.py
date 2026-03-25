@@ -72,9 +72,10 @@ def compare(base_stats, head_stats):
         h_count = h.get("count", 0)
 
         med_changed = b_med != h_med
+        total_changed = b_total != h_total
         count_changed = b_count != h_count
 
-        if not (med_changed or count_changed):
+        if not (med_changed or total_changed or count_changed):
             continue
 
         rows.append({
