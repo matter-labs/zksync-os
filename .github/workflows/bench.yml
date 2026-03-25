@@ -125,6 +125,15 @@ jobs:
               "base_block_${blk}.out" "head_block_${blk}.out" "block_${blk}" \
               >> bench_results/comparison.md 2>/dev/null || true
           done
+          # Compare per-opcode RISC-V cycles (and cycles/gas ratios) from
+          # .bench + .out files.
+          for dir in tests/instances/eth_runner/blocks/*; do
+            blk=$(basename "$dir")
+            python3 bench_scripts/compare_opcode_cycles.py \
+              "base_block_${blk}.bench" "head_block_${blk}.bench" "block_${blk}" \
+              --gas-stats "base_block_${blk}.out" "head_block_${blk}.out" \
+              >> bench_results/comparison.md 2>/dev/null || true
+          done
           # Also write to step output for direct comment
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "result<<$EOF" >> $GITHUB_OUTPUT
