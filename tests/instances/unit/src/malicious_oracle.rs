@@ -1378,4 +1378,237 @@ mod custom_oracle_factories {
             "Forward mode should not crash with false is_new flag — proving mode catches this"
         );
     }
+
+    // ---- Corrupted preimage responder: returns wrong bytes for targeted hashes ----
+
+    /// Oracle query processor that returns corrupted preimage data for targeted hashes.
+    /// Unlike MaliciousPreimageResponder (which blocks/panics), this responder returns
+    /// data that is the correct LENGTH but has wrong content, causing a hash mismatch
+    /// in the preimage validation path.
+    ///
+    /// In forward mode, the hash mismatch is detected via `debug_assert` only (stripped
+    /// in release builds). In proving mode (PROOF_ENV=true), the hard check returns
+    /// `internal_error!("Account hash mismatch")` or `internal_error!("Bytecode hash mismatch")`.
+    struct CorruptedPreimageResponder {
+        preimage_source: InMemoryPreimageSource,
+        /// Hashes for which preimage data will be corrupted (bytes XOR'd with 0xFF)
+        corrupted_hashes: Vec<Bytes32>,
+    }
+
+    impl CorruptedPreimageResponder {
+        fn new(preimage_source: InMemoryPreimageSource, corrupted_hashes: Vec<Bytes32>) -> Self {
+            Self {
+                preimage_source,
+                corrupted_hashes,
+            }
+        }
+    }
+
+    impl CorruptedPreimageResponder {
+        const SUPPORTED_QUERY_IDS: &[u32] = &[
+            rig::basic_system::system_implementation::flat_storage_model::FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID,
+            rig::basic_system::system_implementation::ethereum_storage_model::ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID,
+            rig::basic_system::system_implementation::ethereum_storage_model::ETHEREUM_BYTECODE_PREIMAGE_QUERY_ID,
+            rig::basic_system::system_implementation::ethereum_storage_model::ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID,
+            rig::basic_system::system_implementation::ethereum_storage_model::ETHEREUM_MPT_PREIMAGE_WORDS_QUERY_ID,
+        ];
+    }
+
+    impl<M: MemorySource> OracleQueryProcessor<M> for CorruptedPreimageResponder {
+        fn supported_query_ids(&self) -> Vec<u32> {
+            Self::SUPPORTED_QUERY_IDS.to_vec()
+        }
+
+        fn supports_query_id(&self, query_id: u32) -> bool {
+            Self::SUPPORTED_QUERY_IDS.contains(&query_id)
+        }
+
+        fn process_buffered_query(
+            &mut self,
+            query_id: u32,
+            query: Vec<usize>,
+            _memory: &M,
+        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            use rig::zk_ee::oracle::usize_serialization::UsizeDeserializable;
+
+            assert!(Self::SUPPORTED_QUERY_IDS.contains(&query_id));
+
+            let hash =
+                Bytes32::from_iter(&mut query.into_iter()).expect("must deserialize hash value");
+
+            let is_corrupted = self.corrupted_hashes.iter().any(|h| *h == hash);
+
+            let preimage = if hash.is_zero() {
+                vec![]
+            } else {
+                let mut data = self.preimage_source.get_preimage(hash).unwrap_or_else(|| {
+                    panic!(
+                        "must know a preimage for hash {} for query ID 0x{:016x}",
+                        hex::encode(hash.as_u8_array_ref()),
+                        query_id
+                    )
+                });
+                if is_corrupted && !data.is_empty() {
+                    // Corrupt the data by flipping bits in the first byte.
+                    // The length stays the same, but the content no longer matches the hash.
+                    data[0] ^= 0xFF;
+                }
+                data
+            };
+
+            use rig::basic_system::system_implementation::ethereum_storage_model::{
+                ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID,
+                ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID,
+            };
+            if query_id == ETHEREUM_BYTECODE_LENGTH_FROM_PREIMAGE_QUERY_ID
+                || query_id == ETHEREUM_MPT_PREIMAGE_BYTE_LEN_QUERY_ID
+            {
+                // Length queries return the correct length even for corrupted preimages.
+                // The corruption is in the content, not the metadata.
+                let len = preimage.len() as u32;
+                DynUsizeIterator::from_constructor(len, UsizeSerializable::iter)
+            } else {
+                DynUsizeIterator::from_constructor(preimage, |inner_ref| {
+                    ReadIterWrapper::from(inner_ref.iter().copied())
+                })
+            }
+        }
+    }
+
+    /// Custom oracle factory that corrupts preimage data for targeted hashes.
+    struct CorruptedPreimageOracleFactory {
+        corrupted_hashes: Vec<Bytes32>,
+    }
+
+    impl CorruptedPreimageOracleFactory {
+        fn new(corrupted_hashes: Vec<Bytes32>) -> Self {
+            Self { corrupted_hashes }
+        }
+
+        fn build_oracle<M: MemorySource + 'static>(
+            &self,
+            block_metadata: BlockMetadataFromOracle,
+            state_tree: InMemoryTree<false>,
+            preimage_source: InMemoryPreimageSource,
+            tx_source: TxListSource,
+            proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+            da_commitment_scheme: Option<DACommitmentScheme>,
+        ) -> ZkEENonDeterminismSource<M> {
+            let mut oracle = ZkEENonDeterminismSource::default();
+            oracle.add_external_processor(BlockMetadataResponder { block_metadata });
+            oracle.add_external_processor(
+                rig::forward_system::run::query_processors::TxDataResponder {
+                    tx_source,
+                    next_tx: None,
+                    next_tx_format: None,
+                    next_tx_from: None,
+                },
+            );
+            oracle.add_external_processor(CorruptedPreimageResponder::new(
+                preimage_source,
+                self.corrupted_hashes.clone(),
+            ));
+            oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
+            oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
+            oracle.add_external_processor(DACommitmentSchemeResponder {
+                da_commitment_scheme,
+            });
+            oracle
+        }
+    }
+
+    impl TestingOracleFactory<false> for CorruptedPreimageOracleFactory {
+        fn create_forward_oracle(
+            &self,
+            block_metadata: BlockMetadataFromOracle,
+            state_tree: InMemoryTree<false>,
+            preimage_source: InMemoryPreimageSource,
+            tx_source: TxListSource,
+            proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+            da_commitment_scheme: Option<DACommitmentScheme>,
+            _add_uart: bool,
+        ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+            self.build_oracle(
+                block_metadata,
+                state_tree,
+                preimage_source,
+                tx_source,
+                proof_data,
+                da_commitment_scheme,
+            )
+        }
+
+        fn create_proof_oracle(
+            &self,
+            block_metadata: BlockMetadataFromOracle,
+            state_tree: InMemoryTree<false>,
+            preimage_source: InMemoryPreimageSource,
+            tx_source: TxListSource,
+            proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+            da_commitment_scheme: Option<DACommitmentScheme>,
+            _add_uart: bool,
+        ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
+        {
+            self.build_oracle(
+                block_metadata,
+                state_tree,
+                preimage_source,
+                tx_source,
+                proof_data,
+                da_commitment_scheme,
+            )
+        }
+    }
+
+    /// Verifies that corrupted preimage data (hash mismatch) is detected in debug mode.
+    ///
+    /// The `expose_preimage` function validates preimage hashes:
+    /// - In PROOF_ENV (proving mode): hard error on mismatch
+    /// - In forward mode: `debug_assert` only (stripped in release builds)
+    ///
+    /// This test corrupts the bytecode preimage for a deployed contract and verifies
+    /// the debug_assert fires. Only runs in debug builds; in release mode the corruption
+    /// goes undetected in forward mode (proving mode catches it via the hard check).
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic]
+    fn test_corrupted_bytecode_preimage_detected_in_debug() {
+        let mut tester = TestingFramework::new().with_run_config(rig::run_config::forward_only());
+        let wallet = tester.random_signer();
+
+        let contract_address =
+            rig::alloy::primitives::address!("1000000000000000000000000000000000000001");
+
+        // Simple contract: PUSH1 0x00 PUSH1 0x00 RETURN (returns empty)
+        let simple_bytecode = hex::decode("60006000f3").unwrap();
+
+        tester = tester
+            .with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64))
+            .with_evm_contract(contract_address, &simple_bytecode);
+
+        // Get the bytecode hash to target for corruption
+        let account_props = tester.get_account_properties(&contract_address);
+        let bytecode_hash = account_props.bytecode_hash;
+
+        let corrupted_factory = CorruptedPreimageOracleFactory::new(vec![bytecode_hash]);
+        tester = tester.with_custom_oracle_factory(corrupted_factory);
+
+        let tx = {
+            let tx = TxEip2930 {
+                chain_id: 37u64,
+                nonce: 0,
+                gas_price: 1000,
+                gas_limit: 100_000,
+                to: TxKind::Call(contract_address),
+                value: Default::default(),
+                input: Default::default(),
+                access_list: Default::default(),
+            };
+            ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
+        };
+
+        // In debug mode, the debug_assert in expose_preimage should catch the
+        // hash mismatch and panic. In release mode, this would silently pass.
+        let _result = tester.execute_block(vec![tx]);
+    }
 }
