@@ -205,7 +205,8 @@ def format_table(rows, has_gas, label=""):
     for r in rows:
         count_s = f"{r['h_count']}"
         if r['b_count'] != r['h_count']:
-            count_s += fmt_pct(pct(r['b_count'], r['h_count']))
+            count_pct = pct(r['b_count'], r['h_count'])
+            count_s += fmt_pct(count_pct) if count_pct != float("inf") else " (new)"
 
         med_s = fmt_val_pct(r['b_med'], r['h_med'])
         total_s = fmt_val_pct(r['b_total'], r['h_total'])
