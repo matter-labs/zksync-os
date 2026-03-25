@@ -1,6 +1,6 @@
 #![cfg_attr(target_arch = "riscv32", no_std)]
 
-//! Markers to capture basic RISC-V simulator measurements for
+//! Markers to capture basic RISC-V transpiler measurements for
 //! a block of rust code.
 //!
 //! Should be used through the macro:
@@ -69,16 +69,14 @@ pub fn log_marker(msg: &str) {
 }
 
 /// Start a marker. For RISC-V this will use a special CSR to
-/// let the simulator know that we need a new marker.
+/// let the transpiler know that we need a new marker.
 /// For forward run this will just collect the label.
 pub fn start(_label: &'static str) {
     #[cfg(target_arch = "riscv32")]
     {
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -89,16 +87,14 @@ pub fn start(_label: &'static str) {
 }
 
 /// End a marker. For RISC-V this will use a special CSR to
-/// let the simulator know that we need a new marker.
+/// let the transpiler know that we need a new marker.
 /// For forward run this will just collect the label.
 pub fn end(_label: &'static str) {
     #[cfg(target_arch = "riscv32")]
     {
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -232,8 +228,15 @@ macro_rules! wrap_with_resources {
     }};
 }
 
-#[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
-pub use airbender_host::{CycleMarker, Mark};
+// Snapshotting mechanism, used for tests
+// We run multiple native runs of the program, so labels can be duplicated.
+// This is a way to ignore some of those side effects.
+#[cfg(not(target_arch = "riscv32"))]
+pub struct Snapshot {
+    labels_len: usize,
+    #[cfg(feature = "log_to_file")]
+    file_len: u64,
+}
 
 #[cfg(target_arch = "riscv32")]
 pub struct Snapshot;
@@ -295,7 +298,7 @@ pub fn revert(_: Snapshot) {}
 
 /// Re-export the transpiler's cycle marker types for use by the runner.
 #[cfg(feature = "use_riscv_transpiler")]
-pub use riscv_transpiler::cycle::{CycleMarker, CycleMarkerHooks, Mark};
+pub use airbender_host::{CycleMarker, Mark};
 
 /// Per-opcode aggregated cycle statistics.
 #[cfg(all(feature = "use_riscv_transpiler", not(target_arch = "riscv32")))]
@@ -332,7 +335,15 @@ pub fn print_cycle_markers(cm: CycleMarker) -> CycleMarkerResults {
     let labels = LABELS.with(|l| std::mem::take(&mut *l.borrow_mut()));
     use std::collections::HashMap;
 
-    assert_eq!(cm.markers.len(), labels.len());
+    assert_eq!(
+        cm.markers.len(),
+        labels.len(),
+        "cycle marker count ({}) does not match label count ({}). \
+         If markers is 0, the RISC-V binary was likely built without the cycle_marker feature \
+         (use `dump_bin.sh --type for-tests-benchmarking`).",
+        cm.markers.len(),
+        labels.len(),
+    );
 
     // Block-level markers: use existing nonce-based matching
     let mut label_nonces: HashMap<&'static str, u64> = HashMap::new();

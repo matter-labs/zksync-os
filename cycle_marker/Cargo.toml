@@ -13,6 +13,4 @@ airbender-host = { workspace = true, optional = true }
 
 [features]
 use_riscv_transpiler = ["airbender-host"]
-# Backward-compatible alias; will be removed once zksync_os_runner is migrated.
-use_risc_v_simulator = ["use_riscv_transpiler"]
 log_to_file = []
