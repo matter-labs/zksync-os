@@ -544,7 +544,7 @@ where
             .as_u64()
             .saturating_add(context.resources.intrinsic_computational_native_charged);
 
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         cycle_marker::log_marker(
             format!(
                 "Spent ergs for [process_transaction]: {}",
@@ -552,7 +552,7 @@ where
             )
             .as_str(),
         );
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(not(feature = "proving_env"))]
         cycle_marker::log_marker(
             format!("Spent native for [process_transaction]: {computational_native_used}").as_str(),
         );
