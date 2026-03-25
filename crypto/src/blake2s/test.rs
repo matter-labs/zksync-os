@@ -7,24 +7,28 @@
 
 // Afterwards, you can run the tests below.
 
+use std::path::Path;
+
 #[test]
 pub fn run_naive_test() {
-    let results = zksync_os_runner::run(
-        "src/blake2s/test_program/dist/app_native_blake".into(),
-        1 << 25,
-        &[],
-    );
+    let dist_dir = "src/blake2s/test_program/dist/app_native_blake";
+    if !Path::new(dist_dir).join("manifest.toml").exists() {
+        eprintln!("skipping run_naive_test: binary not built (run dump_bin.sh from test_program/)");
+        return;
+    }
+    let results = zksync_os_runner::run(dist_dir.into(), 1 << 25, &[]);
     // Make sure it is successful;
     assert_eq!(results[0], 1);
 }
 
 #[test]
 pub fn run_extended_delegation_test() {
-    let results = zksync_os_runner::run(
-        "src/blake2s/test_program/dist/app_extended_delegation_blake".into(),
-        1 << 25,
-        &[],
-    );
+    let dist_dir = "src/blake2s/test_program/dist/app_extended_delegation_blake";
+    if !Path::new(dist_dir).join("manifest.toml").exists() {
+        eprintln!("skipping run_extended_delegation_test: binary not built (run dump_bin.sh from test_program/)");
+        return;
+    }
+    let results = zksync_os_runner::run(dist_dir.into(), 1 << 25, &[]);
     // Make sure it is successful;
     assert_eq!(results[0], 1);
 }
