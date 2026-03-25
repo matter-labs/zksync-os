@@ -1,4 +1,4 @@
 # If changed, also change reproduce/Dockerfile
 [toolchain]
-channel = "nightly-2026-02-13"
+channel = "nightly-2026-02-10"
 components = ["rust-src"]

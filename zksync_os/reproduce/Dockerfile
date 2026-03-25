@@ -27,7 +27,7 @@ ENV PATH=/opt/cargo/bin:$PATH
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git build-essential libssl-dev pkg-config \
  && rm -rf /var/lib/apt/lists/*
-RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2026-02-13 --profile minimal
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2026-02-10 --profile minimal
 ENV ZKSYNC_USE_CUDA_STUBS=true
 RUN rustup component add rust-src \
  && cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
