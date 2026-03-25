@@ -90,7 +90,7 @@ jobs:
             - name: Run crypto tests 10 times with overflow checks
               run: |
                   for i in {1..10}; do
-                    RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto --quiet || exit 1
+                    RUSTFLAGS="-C overflow-checks=on -C debug-assertions=on" cargo test -p crypto --quiet -- --include-ignored || exit 1
                   done
     evm_state_tests:
         name: EF EVM state tests
@@ -207,8 +207,8 @@ jobs:
             - name: Run proving test
               working-directory: ./crypto/src/blake2s
               run: |
-                  cargo test --release run_naive_test
-                  cargo test --release run_extended_delegation_test
+                  cargo test --release run_naive_test -- --include-ignored
+                  cargo test --release run_extended_delegation_test -- --include-ignored
 
     formatting:
         name: cargo fmt

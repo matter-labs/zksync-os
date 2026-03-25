@@ -30,6 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2026-02-10 --profile minimal
 ENV ZKSYNC_USE_CUDA_STUBS=true
 RUN rustup component add rust-src \
+ && rustup component add llvm-tools-preview \
+ && cargo install cargo-binutils \
  && cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
 
 

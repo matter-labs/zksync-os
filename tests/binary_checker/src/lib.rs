@@ -41,7 +41,7 @@ mod tests {
     #[test]
     #[ignore = "runs only on CI / explicit opt-in"]
     fn verify_default_binaries() {
-        verify_binary("singleblock_batch.text");
-        verify_binary("multiblock_batch.text")
+        verify_binary("dist/singleblock_batch/app.text");
+        verify_binary("dist/multiblock_batch/app.text")
     }
 }

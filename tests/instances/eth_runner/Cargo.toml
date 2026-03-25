@@ -29,7 +29,6 @@ reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"] }
 zstd = "0.13"
 
 [features]
-simulate_witness_gen = ["rig/simulate_witness_gen"]
 proving = ["rig/airbender_cli"]
 gpu = ["rig/gpu"]
 default = []
