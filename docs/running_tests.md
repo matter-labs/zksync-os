@@ -74,7 +74,7 @@ Re-generate a report from the last test run without re-running tests:
 coverage_scripts/coverage.sh report html
 ```
 
-Results are saved to `coverage_results/` (gitignored). Some crates are excluded from the test run due to local compilation issues (`evm_interpreter`, `basic_system`), but their code is still covered when exercised by integration tests from other packages.
+Results are saved to `coverage_results/` (gitignored). Some crates are excluded from the test run due to local compilation issues (`evm_interpreter`, `basic_system`) or missing resources (`multiblock_batch_tests`, which requires a pre-built RISC-V binary), but their code is still covered when exercised by integration tests from other packages.
 
 ## EVM tester
 

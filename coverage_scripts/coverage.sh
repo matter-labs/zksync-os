@@ -67,7 +67,7 @@ build_exclude_args() {
 # Regex to exclude test infrastructure source files from coverage reports.
 # These directories contain test harnesses and test instances, not production code.
 # The pattern matches the directory component in both absolute and relative paths.
-IGNORE_REGEX="/tests/"
+IGNORE_REGEX="/(tests|scripts)/"
 
 collect_coverage() {
     mkdir -p "$RESULTS_DIR"
@@ -87,18 +87,27 @@ collect_coverage() {
     echo "    (skipping tests: ${SKIP_TESTS[*]})"
     # --no-fail-fast: continue running tests even if some crates fail, so
     # coverage data from passing crates is still collected.
+    # Note: we intentionally do NOT pass --features rig/no_print because
+    # the workspace contains many crates that don't depend on 'rig', and
+    # Cargo rejects unknown features when used with --workspace.
     # shellcheck disable=SC2086
+    local test_exit=0
     cargo llvm-cov --no-report --no-fail-fast --workspace $exclude_args \
-        --features rig/no_print \
-        -- "${skip_args[@]}" 2>&1 || true
-    echo "==> Coverage data collected."
+        -- "${skip_args[@]}" 2>&1 || test_exit=$?
+
+    if [ "$test_exit" -ne 0 ]; then
+        echo "==> Warning: test run exited with status $test_exit (some tests may have failed)."
+        echo "    Coverage data from passing tests was still collected."
+    else
+        echo "==> Coverage data collected successfully."
+    fi
 }
 
 report_summary() {
     echo "==> Generating per-crate coverage summary..."
     cargo llvm-cov report --json \
         --ignore-filename-regex "$IGNORE_REGEX" \
-        > "$RESULTS_DIR/coverage.json" 2>/dev/null
+        > "$RESULTS_DIR/coverage.json"
 
     python3 "$SCRIPT_DIR/parse_coverage.py" \
         --workspace-root "$REPO_ROOT" \
@@ -112,7 +121,7 @@ report_html() {
     echo "==> Generating HTML coverage report..."
     cargo llvm-cov report --html \
         --output-dir "$RESULTS_DIR/html" \
-        --ignore-filename-regex "$IGNORE_REGEX" 2>/dev/null
+        --ignore-filename-regex "$IGNORE_REGEX"
 
     echo "HTML report: $RESULTS_DIR/html/index.html"
 }
@@ -121,7 +130,7 @@ report_lcov() {
     echo "==> Generating LCOV coverage file..."
     cargo llvm-cov report --lcov \
         --output-path "$RESULTS_DIR/lcov.info" \
-        --ignore-filename-regex "$IGNORE_REGEX" 2>/dev/null
+        --ignore-filename-regex "$IGNORE_REGEX"
 
     echo "LCOV file: $RESULTS_DIR/lcov.info"
 }
