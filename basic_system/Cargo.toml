@@ -33,30 +33,5 @@ paste = { workspace = true }
 testing = ["zk_ee/testing", "evm_interpreter/testing", "serde", "ruint/serde", "rand", "crypto/testing", "num-bigint", "num-traits"]
 default = ["testing"]
 cycle_marker = ["cycle_marker/log_to_file"]
-proving = ["crypto/proving"]
+proving = ["crypto/proving", "zk_ee/proving_env"]
 delegation = ["zk_ee/delegation", "evm_interpreter/delegation", "storage_models/delegation"]
-# The finish method will just return inputs, so outputs can be processed outside bootloader
-# Used for proving multi block batch within 1 run
-multiblock-batch = []
-state-diffs-pi = []
-
-[dev-dependencies]
-hex = { workspace = true }
-proptest = { workspace = true }
-crypto = { workspace = true, features = ["secp256k1-static-context", "testing"] }
-num-bigint = { workspace = true, default-features = true }
-num-traits = { workspace = true, default-features = true }
-callable_oracles = { path = "../callable_oracles" }
-oracle_provider = { path = "../oracle_provider" }
-arbitrary = { version = "1", features = ["derive"] }
-serde_json = { workspace = true }
-alloy-rpc-types-debug = { workspace = true }
-alloy = { workspace = true, features = ["rlp", "full"] }
-alloy-rlp = { workspace = true }
-alloy-primitives = { workspace = true, features = ["arbitrary"] }
-reqwest = { workspace = true, features = ["blocking", "json"] }
-reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git", tag = "v1.8.4" }
-reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git", tag = "v1.8.4" }
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }

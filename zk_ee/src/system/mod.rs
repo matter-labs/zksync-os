@@ -446,8 +446,8 @@ define_subsystem!(NextTx,
 );
 
 /// Logging macros for the system.
-/// TODO: debug implementation for ruint types uses global alloc, which panics in ZKsync OS
-#[cfg(any(not(target_arch = "riscv32"), feature = "global-alloc"))]
+/// TODO: debug implementation for ruint types uses global alloc, which panics in the proving environment
+#[cfg(any(not(feature = "proving_env"), feature = "global-alloc"))]
 #[macro_export]
 macro_rules! logger_log {
     ($logger:expr, $($arg:tt)*) => {{
@@ -455,8 +455,8 @@ macro_rules! logger_log {
     }};
 }
 
-// No-op only if riscv32 AND no allocator feature
-#[cfg(all(target_arch = "riscv32", not(feature = "global-alloc")))]
+// No-op in proving environment without global allocator
+#[cfg(all(feature = "proving_env", not(feature = "global-alloc")))]
 #[macro_export]
 macro_rules! logger_log {
     ($logger:expr, $($arg:tt)*) => {{

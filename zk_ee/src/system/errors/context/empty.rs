@@ -1,4 +1,4 @@
-#![cfg(target_arch = "riscv32")]
+#![cfg(feature = "proving_env")]
 
 use super::{
     element::{NamedContextElement, ValueVisibility},
@@ -48,9 +48,9 @@ impl IErrorContext for ErrorContext {
     }
 }
 
-/// On RISC-V, this macro ignores all the context elements, guaranteeing that
-/// the context will not be constructed and all the expressions used to
-/// construct it will be ignored.
+/// In the proving environment, this macro ignores all the context elements,
+/// guaranteeing that the context will not be constructed and all the
+/// expressions used to construct it will be ignored.
 #[macro_export]
 macro_rules! error_ctx {
     { $($tt:tt)* } => {{
