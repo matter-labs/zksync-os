@@ -497,7 +497,7 @@ mod tests {
             },
         };
 
-        // Normal expressions should always be evaluated (on non-RISC-V)
+        // Normal expressions should always be evaluated (in forward mode / non-proving environment)
         #[cfg(not(feature = "proving_env"))]
         assert_eq!(NORMAL_CALL_COUNT.load(Ordering::Relaxed), 1);
 

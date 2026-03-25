@@ -16,7 +16,7 @@ use zk_ee::system::{
 use zk_ee::system::{CallResult, IOSubsystemExt, SystemFunctions};
 use zk_ee::system_log;
 use zk_ee::types_config::SystemIOTypesConfig;
-use zk_ee::utils::cheap_clone::CheapCloneRiscV;
+use zk_ee::utils::cheap_clone::CheapCloneProvingEnv;
 
 impl<'ee, S: EthereumLikeTypes> Interpreter<'ee, S> {
     /// Keeps executing instructions (steps) from the system, until it hits a yield point -
