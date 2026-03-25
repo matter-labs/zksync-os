@@ -27,7 +27,7 @@ use zk_ee::{
         },
         CallModifier, Resources, System,
     },
-    utils::cheap_clone::CheapCloneRiscV as _,
+    utils::cheap_clone::CheapCloneProvingEnv as _,
 };
 
 ///
