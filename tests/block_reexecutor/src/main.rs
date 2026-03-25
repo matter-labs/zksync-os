@@ -233,6 +233,7 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
         witness_output_file: None,
         app: None,
         do_riscv_run: false,
+        do_prover_input_run: false,
         update_state_after_block_execution: false,
         check_revm_consistency: false,
         check_storage_diff_hashes: false,
@@ -241,7 +242,7 @@ fn run(block_args: BlockArgs, tx_source: TxSource) -> Result<()> {
     let mut tracer = CallTracer::default();
     let mut validator = NopTxValidator;
 
-    let (block_output, _block_extra_stats, _proof_input) = chain
+    let (block_output, _block_extra_stats, _proof_input, _pubdata) = chain
         .run_block_with_extra_stats_with_oracle_factory(
             transactions,
             Some(block_context.clone()),
