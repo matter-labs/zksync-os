@@ -194,6 +194,8 @@ pub struct RunConfig {
     pub app: Option<String>,
     // Run RISC-V simulation
     pub do_riscv_run: bool,
+    // Run the prover input generation stop. Must be enabled if [do_riscv_run] is enabled.
+    pub do_prover_input_run: bool,
     // Whether to check that storage diff hashes from forward and proof runs match
     // Only to be used when state-diffs-pi feature is enabled in the binary and
     // do_riscv_run is true
@@ -220,6 +222,7 @@ impl Default for RunConfig {
         RunConfig {
             app: Some("for_tests".to_string()),
             do_riscv_run,
+            do_prover_input_run: true,
             check_storage_diff_hashes: do_riscv_run, // Enable storage diff hash checks when doing RISC-V run
             check_revm_consistency,
             flamegraph_output: None,
@@ -778,6 +781,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             witness_output_file,
             app,
             do_riscv_run,
+            do_prover_input_run,
             check_storage_diff_hashes,
             check_revm_consistency: _,
             update_state_after_block_execution,
@@ -834,17 +838,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             false,
         );
 
-        let prover_input_oracle = oracle_factory.create_forward_oracle(
-            block_metadata,
-            self.state_tree.clone(),
-            self.preimage_source.clone(),
-            tx_source.clone(),
-            Some(proof_data),
-            Some(da_commitment_scheme),
-            false,
-            true,
-        );
-
         #[cfg(feature = "simulate_witness_gen")]
         let source_for_witness_bench = {
             oracle_factory.create_proof_oracle(
@@ -871,50 +864,72 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             validator,
         )?;
 
-        let mut result_keeper_prover_input = ProverInputResultKeeper::new(NoopTxCallback);
-
-        let copy_source = ReadWitnessSource::new(prover_input_oracle);
-        let mut tracer = NopTracer::default();
-        let mut validator = NopTxValidator;
-        let prover_input_forward = {
-            // Avoid capturing markers from the second run, as it would duplicate them.
-            #[cfg(feature = "cycle_marker")]
-            let snapshot = cycle_marker::snapshot();
-            let result = run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
-                copy_source,
-                &mut result_keeper_prover_input,
-                &mut tracer,
-                &mut validator,
-            );
-            #[cfg(feature = "cycle_marker")]
-            cycle_marker::revert(snapshot);
-            result?
-        };
-
-        if let Some(path) = witness_output_file {
-            let mut file = File::create(&path).expect("should create file");
-            let witness: Vec<u8> = prover_input_forward
-                .iter()
-                .flat_map(|x| x.to_be_bytes())
-                .collect();
-            let hex = hex::encode(witness);
-            file.write_all(hex.as_bytes())
-                .expect("should write to file");
-        }
-
         let block_output: BlockOutput = result_keeper.into();
-        let pubdata = result_keeper_prover_input.pubdata.clone();
-        let prover_input_block_output: BlockOutput = result_keeper_prover_input.into();
-        let has_filtered_by_validator = has_validator_filtered_tx(&block_output);
-        if has_filtered_by_validator {
-            warn!(
-                "Skipping forward/prover-input output equivalence checks because the custom \
+
+        let (prover_input_forward, pubdata, has_filtered_by_validator) = if do_prover_input_run {
+            let mut result_keeper_prover_input = ProverInputResultKeeper::new(NoopTxCallback);
+
+            let prover_input_oracle = oracle_factory.create_forward_oracle(
+                block_metadata,
+                self.state_tree.clone(),
+                self.preimage_source.clone(),
+                tx_source.clone(),
+                Some(proof_data),
+                Some(da_commitment_scheme),
+                false,
+                true,
+            );
+            let copy_source = ReadWitnessSource::new(prover_input_oracle);
+            let mut tracer = NopTracer::default();
+            let mut validator = NopTxValidator;
+            let prover_input_forward = {
+                // Avoid capturing markers from the second run, as it would duplicate them.
+                #[cfg(feature = "cycle_marker")]
+                let snapshot = cycle_marker::snapshot();
+                let result = run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
+                    copy_source,
+                    &mut result_keeper_prover_input,
+                    &mut tracer,
+                    &mut validator,
+                );
+                #[cfg(feature = "cycle_marker")]
+                cycle_marker::revert(snapshot);
+                result?
+            };
+
+            if let Some(path) = witness_output_file {
+                let mut file = File::create(&path).expect("should create file");
+                let witness: Vec<u8> = prover_input_forward
+                    .iter()
+                    .flat_map(|x| x.to_be_bytes())
+                    .collect();
+                let hex = hex::encode(witness);
+                file.write_all(hex.as_bytes())
+                    .expect("should write to file");
+            }
+
+            let pubdata = result_keeper_prover_input.pubdata.clone();
+            let prover_input_block_output: BlockOutput = result_keeper_prover_input.into();
+            let has_filtered_by_validator = has_validator_filtered_tx(&block_output);
+            if has_filtered_by_validator {
+                warn!(
+                    "Skipping forward/prover-input output equivalence checks because the custom \
                  validator filtered at least one transaction, and prover-input replay uses \
                  NopTxValidator"
-            );
+                );
+            } else {
+                assert_block_outputs_match(&block_output, &prover_input_block_output);
+            }
+            (prover_input_forward, pubdata, has_filtered_by_validator)
         } else {
-            assert_block_outputs_match(&block_output, &prover_input_block_output);
-        }
+            // We use the forward prover input run outputs to validate the risc-v run,
+            // so we check consistency in config
+            assert!(
+                !do_riscv_run,
+                "Native prover input run should be performed if risc v run is enabled"
+            );
+            (vec![], vec![], false)
+        };
 
         trace!(
             "{}Block output:{} \n{:#?}",

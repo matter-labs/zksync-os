@@ -327,7 +327,8 @@ impl IOOracle for ReadWitnessSource {
         {
             let mut read_items = self.read_items.borrow_mut();
             // Len is multiplied by 2 to account for 32/64-bit mismatch
-            let len_u32 = u32::try_from(len * 2).expect("iterator length does not fit into u32");
+            let len_u32 = u32::try_from(len.checked_mul(2).expect("response length overflow"))
+                .expect("iterator length does not fit into u32");
             read_items.push(len_u32);
         }
         let read_items = Rc::clone(&self.read_items);

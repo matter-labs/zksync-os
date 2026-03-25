@@ -66,7 +66,7 @@ impl<T: ReadStorageTree> OracleQueryProcessor for ReadTreeResponder<T> {
                 DynUsizeIterator::from_constructor(prev_index, UsizeSerializable::iter)
             }
             ExactIndexQuery::QUERY_ID => {
-                let key = <PreviousIndexQuery as SimpleOracleQuery>::Input::from_iter(
+                let key = <ExactIndexQuery as SimpleOracleQuery>::Input::from_iter(
                     &mut query.into_iter(),
                 )
                 .expect("must deserialize key");

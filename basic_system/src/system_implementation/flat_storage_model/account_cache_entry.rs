@@ -244,7 +244,6 @@ impl AccountProperties {
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256(initial.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?, r#final.nonce.try_into().map_err(|_| internal_error!("u64 into U256"))?) as u32 // nonce diff
                     + ValueDiffCompressionStrategy::optimal_compression_length_u256_optional(initial.balance, r#final.balance, not_compress_balance) as u32 // balance diff
                     + 32 // bytecode hash
-                    + 4 // artifacts len
                     + 4 // observable bytecode len
             } else {
                 1u32 // metadata byte
@@ -253,8 +252,7 @@ impl AccountProperties {
                     +
                     ValueDiffCompressionStrategy::optimal_compression_length_u256_optional(initial.balance, r#final.balance, not_compress_balance) as u32 // balance diff
                     + 4 // unpadded code len
-                    + 4 // artifacts len
-                    + r#final.full_bytecode_len() // bytecode
+                    + r#final.unpadded_code_len // bytecode (without padding and artifacts)
                     + 4 // observable bytecode len
             })
         } else {
@@ -299,14 +297,14 @@ impl AccountProperties {
     ///
     /// For account data we have following encoding formats(index encoded in the 5 most significant bits of the metadata byte, 3 less significant == 4):
     /// 0(full data): `versioning_data(8 BE bytes) & nonce_diff(using storage value strategy)
-    /// & balance_diff & unpadded_code_len(4 BE bytes) &  artifacts_len (4 BE bytes) &
-    /// & bytecode & observable_len (4 BE bytes)`
+    /// & balance_diff & unpadded_code_len(4 BE bytes) & bytecode(unpadded_code_len bytes) & observable_len (4 BE bytes)`
     /// 1: `nonce_diff (using storage value strategy)`
     /// 2: `balance_diff (using storage value strategy)`
     /// 3: `nonce_diff (using storage value strategy) & balance_diff (using storage value strategy)`
-    /// 4. `versioning_data(8 BE bytes) & nonce_diff(using storage value strategy) & balance_diff & bytecode_hash (32 bytes) & artifacts_len (4 BE bytes) & observable_len (4 BE bytes)`
+    /// 4. `versioning_data(8 BE bytes) & nonce_diff(using storage value strategy) & balance_diff & bytecode_hash (32 bytes) & observable_len (4 BE bytes)`
     ///
     /// The last format(4) created for force deployments during protocol upgrades. We publish only bytecode hash, but it's guaranteed by the governance that bytecode will be published separately.
+    /// Note: artifacts (jump table, etc.) are not published in pubdata — they are deterministic from the bytecode.
     ///
     pub fn diff_compression<
         const PROOF_ENV: bool,
@@ -367,8 +365,6 @@ impl AccountProperties {
             } else {
                 dst.write(&r#final.unpadded_code_len.to_be_bytes());
                 result_keeper.pubdata(&r#final.unpadded_code_len.to_be_bytes());
-                dst.write(&r#final.artifacts_len.to_be_bytes());
-                result_keeper.pubdata(&r#final.artifacts_len.to_be_bytes());
                 let preimage_type = PreimageRequest {
                     hash: r#final.bytecode_hash,
                     expected_preimage_len_in_bytes: r#final.full_bytecode_len(),
@@ -391,8 +387,17 @@ impl AccountProperties {
                         }
                         SystemError::LeafDefect(i) => i,
                     })?;
-                dst.write(bytecode);
-                result_keeper.pubdata(bytecode);
+                // Only publish the raw code bytes (without padding and artifacts),
+                // since artifacts are deterministic from the bytecode.
+                let code_len = r#final.unpadded_code_len as usize;
+                if bytecode.len() < code_len {
+                    return Err(internal_error!(
+                        "Decommitted bytecode shorter than unpadded_code_len"
+                    ));
+                }
+                let code_bytes = &bytecode[..code_len];
+                dst.write(code_bytes);
+                result_keeper.pubdata(code_bytes);
             }
             dst.write(&r#final.observable_bytecode_len.to_be_bytes());
             result_keeper.pubdata(&r#final.observable_bytecode_len.to_be_bytes());
@@ -441,7 +446,7 @@ impl AccountProperties {
 
 #[cfg(test)]
 mod tests {
-    use super::AccountProperties;
+    use super::{bytecode_padding_len, AccountProperties};
     use crate::system_implementation::flat_storage_model::{
         BytecodeAndAccountDataPreimagesStorage, PreimageRequest, VersioningData,
     };
@@ -587,13 +592,12 @@ mod tests {
         // 8 bytes versioning data
         // 1 byte nonce diff
         // 2 bytes balance diff
-        // 4 bytes bytecode len
-        // bytecode
+        // 4 bytes unpadded code len
+        // bytecode (unpadded_code_len bytes, without padding and artifacts)
         // 4 bytes observable bytecode len
-        // 4 bytes artifacts len
         assert_eq!(
             compression.len() as u32,
-            1 + 8 + 1 + 2 + 4 + bytecode.len() as u32 + 4 + 4
+            1 + 8 + 1 + 2 + 4 + code_len as u32 + 4
         );
         let mut expected = vec![0b00000100];
         expected.extend(r#final.versioning_data.0.to_be_bytes());
@@ -601,10 +605,90 @@ mod tests {
         expected.push(0b00001010); // balance: sub 0xff
         expected.push(0xff); // balance: sub 0xff
         expected.extend((code_len as u32).to_be_bytes());
-        expected.extend([0, 0, 0, 0]); // arifacts len
-        expected.extend_from_slice(&bytecode);
+        expected.extend_from_slice(&bytecode[..code_len]); // only raw code bytes
         expected.extend((code_len as u32).to_be_bytes()); // observable
 
+        assert_eq!(compression, expected);
+    }
+
+    #[test]
+    fn deployment_compression_with_artifacts_test() {
+        let mut initial = AccountProperties::TRIVIAL_VALUE;
+        initial.balance = U256::try_from(0xFF00000000FFu64).unwrap();
+
+        let mut code = vec![1u8, 2, 3, 4, 5];
+        let code_len = code.len();
+        let keccak = Keccak256::digest(&code);
+
+        // Add padding
+        let padding_len = bytecode_padding_len(code_len);
+        code.append(&mut vec![0u8; padding_len]);
+        // Add mock artifacts (jump table)
+        let artifacts = vec![0xAA, 0xBB, 0xCC, 0xDD];
+        let artifacts_len = artifacts.len() as u32;
+        code.extend_from_slice(&artifacts);
+        let full_bytecode = code;
+
+        let blake = Blake2s256::digest(&full_bytecode);
+
+        let mut r#final = AccountProperties::TRIVIAL_VALUE;
+        r#final.versioning_data = VersioningData::empty_deployed();
+        r#final.balance = U256::try_from(0xFF0000000000u64).unwrap();
+        r#final.unpadded_code_len = code_len as u32;
+        r#final.artifacts_len = artifacts_len;
+        r#final.observable_bytecode_len = code_len as u32;
+        r#final.bytecode_hash = blake.into();
+        r#final.observable_bytecode_hash = keccak.into();
+
+        let optimal_length =
+            AccountProperties::diff_compression_length(&initial, &r#final, false, false).unwrap();
+
+        let mut nop_hasher = NopHasher::new();
+        let mut result_keeper = TestResultKeeper { pubdata: vec![] };
+        let mut preimages_cache: BytecodeAndAccountDataPreimagesStorage<
+            BaseResources<DecreasingNative>,
+        > = BytecodeAndAccountDataPreimagesStorage::new_from_parts(Global);
+        let mut resources: BaseResources<DecreasingNative> = BaseResources::FORMAL_INFINITE;
+        preimages_cache
+            .record_preimage::<false>(
+                ExecutionEnvironmentType::EVM,
+                &(PreimageRequest {
+                    hash: r#final.bytecode_hash,
+                    expected_preimage_len_in_bytes: r#final.full_bytecode_len(),
+                    preimage_type: PreimageType::Bytecode,
+                }),
+                &mut resources,
+                &[&full_bytecode],
+            )
+            .unwrap();
+        let mut test_oracle = TestOracle;
+
+        AccountProperties::diff_compression::<false, _, _, _>(
+            &initial,
+            &r#final,
+            false,
+            &mut nop_hasher,
+            &mut result_keeper,
+            &mut preimages_cache,
+            &mut test_oracle,
+        )
+        .unwrap();
+        let compression = result_keeper.pubdata;
+
+        assert_eq!(optimal_length, compression.len() as u32);
+        // Verify only raw code bytes are published (no padding, no artifacts)
+        assert_eq!(
+            compression.len() as u32,
+            1 + 8 + 1 + 2 + 4 + code_len as u32 + 4
+        );
+        let mut expected = vec![0b00000100];
+        expected.extend(r#final.versioning_data.0.to_be_bytes());
+        expected.push(0b00000001); // nonce: add, initial == final == 0
+        expected.push(0b00001010); // balance: sub 0xff
+        expected.push(0xff);
+        expected.extend((code_len as u32).to_be_bytes());
+        expected.extend_from_slice(&full_bytecode[..code_len]); // only raw code bytes
+        expected.extend((code_len as u32).to_be_bytes()); // observable
         assert_eq!(compression, expected);
     }
 }

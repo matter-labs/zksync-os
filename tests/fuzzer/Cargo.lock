@@ -3654,6 +3654,7 @@ name = "fuzzer-fuzz"
 version = "0.0.0"
 dependencies = [
  "alloy",
+ "alloy-rlp",
  "arbitrary",
  "ark-bn254 0.4.0",
  "ark-ec 0.4.2",

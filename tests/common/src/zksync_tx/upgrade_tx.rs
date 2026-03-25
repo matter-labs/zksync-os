@@ -33,7 +33,7 @@ pub struct ZKsyncUpgradeTx {
 
 impl ZKsyncUpgradeTx {
     /// Canonical 2718 type byte for upgrade txs.
-    const TX_TYPE: u8 = 0x7e;
+    pub const TX_TYPE: u8 = 0x7e;
 }
 
 impl Typed2718 for ZKsyncUpgradeTx {

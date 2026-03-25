@@ -21,7 +21,8 @@ pub mod public_input;
 
 /// Version byte for pubdata encoding format.
 /// Version 1: Initial versioned pubdata format
-pub const PUBDATA_ENCODING_VERSION: u8 = 1;
+/// Version 2: Remove artifacts_len and artifacts from pubdata
+pub const PUBDATA_ENCODING_VERSION: u8 = 2;
 
 /// Helper method to write the pubdata to the DA commitment generator and result keeper.
 fn write_pubdata<
@@ -216,6 +217,41 @@ pub fn read_multichain_root<
         &root_slot,
     )
     .expect("must read MessageRoot multichain root")
+}
+
+///
+/// Reads values that must consume the oracle in the same order in both proving
+/// flows.
+///
+pub fn read_batch_context_inputs<
+    A: Allocator + Clone + Default,
+    R: Resources,
+    P: StorageAccessPolicy<R, Bytes32> + Default,
+    SF: StackFactory<N>,
+    const N: usize,
+    O: IOOracle,
+    const PROOF_ENV: bool,
+>(
+    io: &mut FullIO<
+        A,
+        R,
+        P,
+        SF,
+        N,
+        O,
+        FlatTreeWithAccountsUnderHashesStorageModel<A, R, P, SF, N, PROOF_ENV>,
+        PROOF_ENV,
+    >,
+) -> (Bytes32, U256) {
+    let multichain_root = read_multichain_root(io);
+    let settlement_layer_chain_id = read_settlement_layer_chain_id(io);
+    if let Some(new_settlement_layer_chain_id) = io.new_settlement_layer_chain_id_storage.value() {
+        // If the SL chain id was updated, make sure the updated one matches
+        // the one read from storage.
+        assert_eq!(new_settlement_layer_chain_id, &settlement_layer_chain_id);
+    }
+
+    (multichain_root, settlement_layer_chain_id)
 }
 
 ///

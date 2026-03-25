@@ -9,7 +9,7 @@ use zk_ee::{
 pub const FIELD_OPS_ADVISE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x11;
 
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct GenericFieldOpsHint<W> {
     pub op: u32,
     pub src_ptr: W,
@@ -139,7 +139,7 @@ impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
     fn query_field_op<R: UsizeDeserializable>(&mut self, op: FieldHintOp, input: &Bytes32) -> R {
         // We use different advice params depending on architecture
         // They are mostly the same, main difference is the width of pointers
-        #[cfg(target_arch = "riscv32")]
+        #[cfg(target_pointer_width = "32")]
         let r: R = {
             let hint_request = FieldOpsHint {
                 op: op as u32,
@@ -153,7 +153,7 @@ impl<'a, O: IOOracle> Secp256k1HooksWithOracle<'a, O> {
                 )
                 .unwrap()
         };
-        #[cfg(not(target_arch = "riscv32"))]
+        #[cfg(target_pointer_width = "64")]
         let r: R = {
             let hint_request = FieldOpsHint64 {
                 op: op as u32,
@@ -181,7 +181,7 @@ mod tests {
 
     fn create_oracle_with_field_ops() -> ZkEENonDeterminismSource {
         let mut oracle = ZkEENonDeterminismSource::default();
-        oracle.add_external_processor(NativeFieldOpsQuery);
+        oracle.add_external_processor(NativeFieldOpsQuery::default());
         oracle
     }
 
@@ -311,7 +311,7 @@ mod tests {
         impl LyingFieldOpsQuery {
             fn new(corruption: Corruption) -> Self {
                 Self {
-                    inner: callable_oracles::field_hints::NativeFieldOpsQuery,
+                    inner: callable_oracles::field_hints::NativeFieldOpsQuery::default(),
                     corruption,
                     lie_about_sqrt_existence: false,
                 }
@@ -364,7 +364,9 @@ mod tests {
             }
         }
 
-        fn create_lying_oracle(corruption: Corruption) -> ZkEENonDeterminismSource {
+        fn create_lying_oracle(
+            corruption: Corruption,
+        ) -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(LyingFieldOpsQuery::new(corruption));
             oracle
@@ -373,7 +375,8 @@ mod tests {
         fn create_sqrt_existence_lying_oracle() -> ZkEENonDeterminismSource {
             let mut oracle = ZkEENonDeterminismSource::default();
             oracle.add_external_processor(
-                LyingFieldOpsQuery::new(Corruption::ReturnZero).with_sqrt_existence_lie(),
+                LyingFieldOpsQuery::new(Corruption::ReturnZero)
+                    .with_sqrt_existence_lie(),
             );
             oracle
         }

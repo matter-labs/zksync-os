@@ -23,6 +23,7 @@ basic_bootloader = { path = "../../../basic_bootloader" }
 system_hooks = { path = "../../../system_hooks" }
 zk_ee = { path = "../../../zk_ee" }
 alloy = { version = "=1.7.3", features = ["full", "eip712"]}
+alloy-rlp = "0.3.13"
 fuzzer = { path = "../../fuzzer"}
 rig = { path = "../../rig" }
 crypto = { path = "../../../crypto"}
@@ -189,6 +190,13 @@ bench = false
 [[bin]]
 name = "bootloader_execute_frame"
 path = "fuzz_targets/bootloader/bootloader_execute_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bootloader_rlp_decode"
+path = "fuzz_targets/bootloader/bootloader_rlp_decode.rs"
 test = false
 doc = false
 bench = false

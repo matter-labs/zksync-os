@@ -18,7 +18,7 @@ pub struct ZKsyncServiceTx {
 
 impl ZKsyncServiceTx {
     /// Canonical 2718 type byte for service txs.
-    const TX_TYPE: u8 = 0x7d;
+    pub const TX_TYPE: u8 = 0x7d;
 }
 
 impl Typed2718 for ZKsyncServiceTx {

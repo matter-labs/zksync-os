@@ -34,6 +34,7 @@ Reference docs:
 - `docs/bootloader/bootloader.md`
 - `docs/system/system.md`
 - `docs/da_commitment_schemes.md`
+- `docs/benchmarking.md`
 
 ## Build and Test
 Prerequisites (one-time):
@@ -105,6 +106,10 @@ cd tests/evm_tester && cargo run --bin evm-tester --release --features zksync_os
 #### Unit tests
 Unit tests should be specified in a tests module defined within the module file being tested.
 The tests module should be defined at the bottom after all the existing code to test.
+
+## Benchmarking
+
+When working on performance optimizations, always run benchmarks to verify the impact. See `docs/benchmarking.md` for setup, commands, and A/B comparison workflow.
 
 ## Agent Working Rules
 

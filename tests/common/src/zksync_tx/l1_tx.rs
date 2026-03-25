@@ -33,7 +33,7 @@ pub struct ZKsyncL1Tx {
 
 impl ZKsyncL1Tx {
     /// Canonical 2718 type byte for L1 priority txs.
-    const TX_TYPE: u8 = 0x7f;
+    pub const TX_TYPE: u8 = 0x7f;
 }
 
 impl Typed2718 for ZKsyncL1Tx {
