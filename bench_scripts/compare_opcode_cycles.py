@@ -10,10 +10,12 @@ security-relevant metric: a spike means an opcode is underpriced relative to
 its proving cost and could be a DoS vector.
 
 Usage:
-    python compare_opcode_cycles.py <base.bench> <head.bench> [label]
     python compare_opcode_cycles.py <base.bench> <head.bench> [label] \\
-        --gas-stats <base.out> <head.out>
+        [--gas-stats <base.out> <head.out>]
+    python compare_opcode_cycles.py <b1.bench> <h1.bench> <b2.bench> <h2.bench> ... \\
+        [--gas-stats <b1.out> <h1.out> <b2.out> <h2.out> ...]
 
+When multiple file pairs are given, stats are aggregated across all pairs.
 Exits 0 with no output if either side has no stats or nothing changed.
 """
 
@@ -73,12 +75,60 @@ def parse_gas_stats(filename):
             continue
         try:
             stats[name] = {
+                "count": int(parts[1]),
                 "med_gas": int(parts[3]),
                 "min_gas": int(parts[4]),
             }
         except (ValueError, IndexError):
             continue
     return stats
+
+
+def aggregate_cycle_stats(all_stats):
+    """Aggregate cycle stats dicts, summing counts/totals across benchmark files."""
+    combined = {}
+    for stats in all_stats:
+        for op, s in stats.items():
+            if op not in combined:
+                combined[op] = {
+                    "count": 0,
+                    "total_cycles": 0,
+                    "_weighted_med": 0,
+                    "min_cycles": s["min_cycles"],
+                    "max_cycles": s["max_cycles"],
+                }
+            c = combined[op]
+            c["count"] += s["count"]
+            c["total_cycles"] += s["total_cycles"]
+            c["_weighted_med"] += s["med_cycles"] * s["count"]
+            c["min_cycles"] = min(c["min_cycles"], s["min_cycles"])
+            c["max_cycles"] = max(c["max_cycles"], s["max_cycles"])
+    for c in combined.values():
+        c["med_cycles"] = round(c["_weighted_med"] / c["count"]) if c["count"] > 0 else 0
+        del c["_weighted_med"]
+    return combined
+
+
+def aggregate_gas_stats(all_stats):
+    """Aggregate gas stats dicts, taking min of min_gas and weighted avg of med_gas."""
+    combined = {}
+    for stats in all_stats:
+        for op, s in stats.items():
+            if op not in combined:
+                combined[op] = {
+                    "_total_count": 0,
+                    "_weighted_med": 0,
+                    "min_gas": s["min_gas"],
+                }
+            c = combined[op]
+            c["_total_count"] += s["count"]
+            c["_weighted_med"] += s["med_gas"] * s["count"]
+            c["min_gas"] = min(c["min_gas"], s["min_gas"])
+    for c in combined.values():
+        c["med_gas"] = round(c["_weighted_med"] / c["_total_count"]) if c["_total_count"] > 0 else 0
+        del c["_weighted_med"]
+        del c["_total_count"]
+    return combined
 
 
 def pct(old, new):
@@ -203,8 +253,8 @@ def format_table(rows, has_gas, label=""):
             "|--------|-------|----------------|------------------|"
         )
 
-    # Sort by absolute total cycle change descending (biggest impact first)
-    rows.sort(key=lambda r: abs(r["h_total"] - r["b_total"]), reverse=True)
+    # Sort by head total cycles descending (biggest cost first)
+    rows.sort(key=lambda r: r["h_total"], reverse=True)
 
     for r in rows:
         count_s = f"{r['h_count']}"
@@ -232,41 +282,61 @@ def format_table(rows, has_gas, label=""):
 
 
 def main():
-    # Parse args: <base.bench> <head.bench> [label] [--gas-stats <base.out> <head.out>]
     args = sys.argv[1:]
     if len(args) < 2:
         print(
             "Usage: python compare_opcode_cycles.py <base.bench> <head.bench> [label] "
-            "[--gas-stats <base.out> <head.out>]",
+            "[--gas-stats <base.out> <head.out>]\n"
+            "       python compare_opcode_cycles.py <b1.bench> <h1.bench> ... "
+            "[--gas-stats <b1.out> <h1.out> ...]",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    base_bench = args[0]
-    head_bench = args[1]
-
+    # Split args into bench files, gas-stats files, and optional label
+    bench_args = []
+    gas_args = []
     label = ""
-    base_out = None
-    head_out = None
-
-    i = 2
+    current = bench_args
+    i = 0
     while i < len(args):
-        if args[i] == "--gas-stats" and i + 2 < len(args):
-            base_out = args[i + 1]
-            head_out = args[i + 2]
-            i += 3
+        if args[i] == "--gas-stats":
+            current = gas_args
+            i += 1
+        elif args[i] == "--label" and i + 1 < len(args):
+            label = args[i + 1]
+            i += 2
         else:
-            label = args[i]
+            current.append(args[i])
             i += 1
 
-    base_cycles = parse_cycle_stats(base_bench)
-    head_cycles = parse_cycle_stats(head_bench)
+    # Backward compat: odd positional arg count means last is a label
+    if len(bench_args) % 2 == 1:
+        label = bench_args.pop()
+
+    if len(bench_args) < 2 or len(bench_args) % 2 != 0:
+        print("Error: need even number of bench files (base/head pairs)", file=sys.stderr)
+        sys.exit(1)
+
+    # Parse and aggregate all pairs
+    all_base = [parse_cycle_stats(bench_args[j]) for j in range(0, len(bench_args), 2)]
+    all_head = [parse_cycle_stats(bench_args[j]) for j in range(1, len(bench_args), 2)]
+    base_cycles = aggregate_cycle_stats(all_base)
+    head_cycles = aggregate_cycle_stats(all_head)
 
     if not base_cycles or not head_cycles:
         sys.exit(0)
 
-    base_gas = parse_gas_stats(base_out) if base_out else {}
-    head_gas = parse_gas_stats(head_out) if head_out else {}
+    base_gas = {}
+    head_gas = {}
+    if gas_args:
+        if len(gas_args) % 2 != 0:
+            print("Error: --gas-stats needs even number of files", file=sys.stderr)
+            sys.exit(1)
+        all_base_gas = [parse_gas_stats(gas_args[j]) for j in range(0, len(gas_args), 2)]
+        all_head_gas = [parse_gas_stats(gas_args[j]) for j in range(1, len(gas_args), 2)]
+        base_gas = aggregate_gas_stats(all_base_gas)
+        head_gas = aggregate_gas_stats(all_head_gas)
 
     rows, has_gas = compare(base_cycles, head_cycles, base_gas, head_gas)
     if not rows:

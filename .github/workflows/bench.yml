@@ -117,23 +117,23 @@ jobs:
           pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
           # Save comparison to file (for artifact + comment workflow fallback)
           python3 bench_scripts/compare_bench.py "[${pairs}]" > bench_results/comparison.md
-          # Compare per-opcode stats (gas/native/ratios). Produces no output
-          # if base branch lacks opcode stats or nothing changed.
+          # Collect file lists for aggregated per-opcode comparison
+          stats_args=""
+          cycle_args=""
+          gas_args=""
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
-            python3 bench_scripts/compare_opcode_stats.py \
-              "base_block_${blk}.out" "head_block_${blk}.out" "block_${blk}" \
-              >> bench_results/comparison.md 2>/dev/null || true
+            stats_args="$stats_args base_block_${blk}.out head_block_${blk}.out"
+            cycle_args="$cycle_args base_block_${blk}.bench head_block_${blk}.bench"
+            gas_args="$gas_args base_block_${blk}.out head_block_${blk}.out"
           done
-          # Compare per-opcode RISC-V cycles (and cycles/gas ratios) from
-          # .bench + .out files.
-          for dir in tests/instances/eth_runner/blocks/*; do
-            blk=$(basename "$dir")
-            python3 bench_scripts/compare_opcode_cycles.py \
-              "base_block_${blk}.bench" "head_block_${blk}.bench" "block_${blk}" \
-              --gas-stats "base_block_${blk}.out" "head_block_${blk}.out" \
-              >> bench_results/comparison.md 2>/dev/null || true
-          done
+          # Aggregated per-opcode EVM stats (gas/native/ratios)
+          python3 bench_scripts/compare_opcode_stats.py $stats_args \
+            >> bench_results/comparison.md 2>/dev/null || true
+          # Aggregated per-opcode RISC-V cycles (and cycles/gas ratios)
+          python3 bench_scripts/compare_opcode_cycles.py $cycle_args \
+            --gas-stats $gas_args \
+            >> bench_results/comparison.md 2>/dev/null || true
           # Also write to step output for direct comment
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "result<<$EOF" >> $GITHUB_OUTPUT
