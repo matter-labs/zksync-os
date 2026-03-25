@@ -305,6 +305,29 @@ mod tests {
     }
 
     #[test]
+    fn riscv_arithmetic_query_dividend_fewer_digits_than_modulus() {
+        // a=5 (1 DelegatedU256 digit), m=2^64+3 (2 DelegatedU256 digits)
+        // 5 < 2^64+3, so q=0, r=5
+        let (q, r) = run_riscv_division(&[5, 0, 0, 0], &[3, 0, 0, 0, 1, 0, 0, 0]);
+        assert!(q.is_empty(), "quotient should be zero (stripped)");
+        assert_eq!(r, vec![5]);
+    }
+
+    #[test]
+    fn riscv_arithmetic_query_multi_digit_quotient() {
+        // 2^128 / 3 = 0x55555555555555555555555555555555 remainder 1
+        let (q, r) = run_riscv_division(&[0, 0, 1, 0], &[3, 0, 0, 0]);
+        assert_eq!(q, vec![0x5555555555555555, 0x5555555555555555]);
+        assert_eq!(r, vec![1]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn riscv_arithmetic_query_division_by_zero() {
+        let _ = run_riscv_division(&[10, 0, 0, 0], &[0, 0, 0, 0]);
+    }
+
+    #[test]
     fn native_arithmetic_query_processes_valid_query() {
         let mut dividend = vec![10u64, 0, 0, 0];
         let mut modulus = vec![3u64, 0, 0, 0];
