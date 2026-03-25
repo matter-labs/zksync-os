@@ -74,7 +74,7 @@ jobs:
         run: |
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
-            MARKER_PATH=$(pwd)/base_block_${blk}.bench cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" > base_block_${blk}.out
+            MARKER_PATH=$(pwd)/base_block_${blk}.bench cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > base_block_${blk}.out
           done
           MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
 
@@ -100,7 +100,11 @@ jobs:
           pairs=""
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
-            MARKER_PATH=$(pwd)/head_block_${blk}.bench cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" > head_block_${blk}.out
+            OPCODE_SAMPLES_DIR=$(pwd)/opcode_samples/head_${blk} \
+            OPCODE_CYCLE_SAMPLES_DIR=$(pwd)/opcode_cycles/head_${blk} \
+            OPCODE_STATS_PATH=$(pwd)/bench_results/head_block_${blk}_opcode_stats.csv \
+            MARKER_PATH=$(pwd)/head_block_${blk}.bench \
+            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > head_block_${blk}.out
             python3 bench_scripts/parse_opcodes.py base_block_${blk}.out bench_results/base_block_${blk}.csv bench_results/base_block_${blk}.png
             python3 bench_scripts/parse_opcodes.py head_block_${blk}.out bench_results/head_block_${blk}.csv bench_results/head_block_${blk}.png
             if [ -z "$pairs" ]; then
@@ -113,11 +117,45 @@ jobs:
           pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
           # Save comparison to file (for artifact + comment workflow fallback)
           python3 bench_scripts/compare_bench.py "[${pairs}]" > bench_results/comparison.md
+          # Compare per-opcode stats (gas/native/ratios). Produces no output
+          # if base branch lacks opcode stats or nothing changed.
+          for dir in tests/instances/eth_runner/blocks/*; do
+            blk=$(basename "$dir")
+            python3 bench_scripts/compare_opcode_stats.py \
+              "base_block_${blk}.out" "head_block_${blk}.out" "block_${blk}" \
+              >> bench_results/comparison.md 2>/dev/null || true
+          done
           # Also write to step output for direct comment
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "result<<$EOF" >> $GITHUB_OUTPUT
           cat bench_results/comparison.md >> $GITHUB_OUTPUT
           echo "$EOF" >> $GITHUB_OUTPUT
+
+      - name: Collect per-opcode artifacts
+        shell: bash
+        run: |
+          for dir in tests/instances/eth_runner/blocks/*; do
+            blk=$(basename "$dir")
+            # Combined gas+native+cycles stats CSV
+            python3 bench_scripts/join_opcode_stats.py \
+              head_block_${blk}.out head_block_${blk}.bench \
+              --csv bench_results/head_block_${blk}_joined_stats.csv 2>/dev/null || true
+            # Per-execution joined CSVs
+            if [ -d "opcode_samples/head_${blk}" ] && [ -d "opcode_cycles/head_${blk}" ]; then
+              python3 bench_scripts/join_samples.py \
+                opcode_samples/head_${blk} opcode_cycles/head_${blk} \
+                --out-dir bench_results/per_opcode/block_${blk} 2>/dev/null || true
+            fi
+          done
+          # Generate visualization charts
+          for dir in tests/instances/eth_runner/blocks/*; do
+            blk=$(basename "$dir")
+            if [ -d "bench_results/per_opcode/block_${blk}" ]; then
+              python3 bench_scripts/visualize_opcode_stats.py \
+                bench_results/per_opcode/block_${blk} \
+                --out-dir bench_results/per_opcode/block_${blk}/charts 2>/dev/null || true
+            fi
+          done
 
       - name: Save PR number
         run: echo "${{ github.event.pull_request.number }}" > bench_results/pr_number.txt

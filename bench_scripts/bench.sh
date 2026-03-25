@@ -47,7 +47,7 @@ run_block() {
     cargo run --manifest-path "$ETH_RUNNER_MANIFEST" \
         --release -j 3 \
         --features "$FEATURES" \
-        -- single-run --block-dir "$block_dir" \
+        -- single-run --block-dir "$block_dir" --opcode-stats \
         > "$output_dir/block_${blk}.out" 2>&1
 }
 
