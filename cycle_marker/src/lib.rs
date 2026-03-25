@@ -112,10 +112,8 @@ pub fn start_opcode() {
         // SAFETY: CSR write to simulator-intercepted register 0x7ff. No memory access,
         // no stack effect, flags preserved. Mirrors the pattern in `start()`/`end()`.
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
@@ -133,10 +131,8 @@ pub fn end_opcode(_label: &'static str) {
         // SAFETY: CSR write to simulator-intercepted register 0x7ff. No memory access,
         // no stack effect, flags preserved. Mirrors the pattern in `start()`/`end()`.
         unsafe {
-            let word = 0;
             core::arch::asm!(
-                "csrrw x0, 0x7ff, {rd}",
-                rd = in(reg) word,
+                "csrrw x0, 0x7ff, x0",
                 options(nomem, nostack, preserves_flags)
             )
         }
