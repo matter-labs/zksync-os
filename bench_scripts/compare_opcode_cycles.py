@@ -14,7 +14,7 @@ Usage:
     python compare_opcode_cycles.py <base.bench> <head.bench> [label] \\
         --gas-stats <base.out> <head.out>
 
-Exits 0 with no output if nothing changed or base has no stats.
+Exits 0 with no output if either side has no stats or nothing changed.
 """
 
 import sys
@@ -94,7 +94,8 @@ def fmt_pct(val):
 
 
 def ratio(num, den):
-    return num / den if den > 0 else 0.0
+    """Return num/den, or None if den is zero."""
+    return num / den if den > 0 else None
 
 
 def compare(base_cycles, head_cycles, base_gas, head_gas):
@@ -114,14 +115,15 @@ def compare(base_cycles, head_cycles, base_gas, head_gas):
         b_count = bc.get("count", 0)
         h_count = hc.get("count", 0)
 
-        # Cycles/gas ratios (when gas data available)
-        b_med_cg = 0.0
-        h_med_cg = 0.0
-        b_worst_cg = 0.0
-        h_worst_cg = 0.0
-        if has_gas:
-            bg = base_gas.get(op, {})
-            hg = head_gas.get(op, {})
+        # Cycles/gas ratios (only when both sides have gas data for this opcode)
+        b_med_cg = None
+        h_med_cg = None
+        b_worst_cg = None
+        h_worst_cg = None
+        bg = base_gas.get(op) if has_gas else None
+        hg = head_gas.get(op) if has_gas else None
+        has_gas_op = bg is not None and hg is not None
+        if has_gas_op:
             b_med_cg = ratio(b_med, bg.get("med_gas", 0))
             h_med_cg = ratio(h_med, hg.get("med_gas", 0))
             b_worst_cg = ratio(bc.get("max_cycles", 0), bg.get("min_gas", 0))
@@ -131,8 +133,10 @@ def compare(base_cycles, head_cycles, base_gas, head_gas):
         total_changed = b_total != h_total
         count_changed = b_count != h_count
         # Use small tolerance for float ratio comparison
-        cg_changed = has_gas and abs(b_med_cg - h_med_cg) > 0.05
-        worst_changed = has_gas and abs(b_worst_cg - h_worst_cg) > 0.05
+        cg_changed = (has_gas_op and b_med_cg is not None and h_med_cg is not None
+                      and abs(b_med_cg - h_med_cg) > 0.05)
+        worst_changed = (has_gas_op and b_worst_cg is not None and h_worst_cg is not None
+                         and abs(b_worst_cg - h_worst_cg) > 0.05)
 
         if not (med_changed or total_changed or count_changed
                 or cg_changed or worst_changed):
@@ -154,17 +158,17 @@ def compare(base_cycles, head_cycles, base_gas, head_gas):
     return rows, has_gas
 
 
-def fmt_val_pct(base, head, is_new=False):
+def fmt_val_pct(base, head):
     """Format a head value with % change from base."""
-    if is_new:
-        return f"{head:,} (new)"
     p = pct(base, head)
     s = fmt_pct(p) if p != float("inf") else " (new)"
     return f"{head:,}{s}"
 
 
 def fmt_ratio_pct(base, head):
-    """Format a float ratio with % change."""
+    """Format a float ratio with % change. Returns 'n/a' if either is None."""
+    if base is None or head is None:
+        return "n/a"
     p = pct(base, head)
     s = fmt_pct(p) if p != float("inf") else " (new)"
     return f"{head:.1f}{s}"
