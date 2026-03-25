@@ -79,6 +79,8 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
+                  cargo install cargo-binutils
+                  rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
               run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
@@ -122,6 +124,8 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
+                  cargo install cargo-binutils
+                  rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
               run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
@@ -144,6 +148,8 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
+                  cargo install cargo-binutils
+                  rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
               run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
@@ -166,6 +172,8 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
+                  cargo install cargo-binutils
+                  rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
               run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
@@ -188,6 +196,8 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
+                  cargo install cargo-binutils
+                  rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
               run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
@@ -246,6 +256,8 @@ jobs:
             - name: Setup
               run: |
                   rustup set profile minimal
+                  cargo install cargo-binutils
+                  rustup component add llvm-tools-preview
                   rustup component add rust-src
             - name: Install cargo-airbender
               run: cargo install cargo-airbender --git https://github.com/matter-labs/airbender-platform --locked
