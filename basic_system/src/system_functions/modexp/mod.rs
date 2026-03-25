@@ -24,7 +24,7 @@ pub const MODEXP_ADVICE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x10;
 /// Parameters for modular exponentiation oracle query
 /// Used to request division advice for big integer operations during modexp
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct ModExpAdviceParamsGeneric<W> {
     pub op: W,          // Operation type (0 = division)
     pub a_ptr: W,       // Pointer to dividend

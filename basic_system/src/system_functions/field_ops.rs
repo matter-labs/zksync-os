@@ -9,7 +9,7 @@ use zk_ee::{
 pub const FIELD_OPS_ADVISE_QUERY_ID: u32 = ADVICE_SUBSPACE_MASK | 0x11;
 
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct GenericFieldOpsHint<W> {
     pub op: u32,
     pub src_ptr: W,

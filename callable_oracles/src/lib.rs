@@ -120,7 +120,7 @@ pub(crate) fn read_u8_words(ptr_u64: u64, len_words_u8: u64) -> Vec<u8> {
 }
 
 #[inline(always)]
-pub(crate) fn read_host_struct<T>(ptr_u64: u64) -> T {
+pub(crate) fn read_host_struct<T: Copy>(ptr_u64: u64) -> T {
     let ptr = validate_host_pointer(ptr_u64, core::mem::align_of::<T>());
 
     // Safety: `ptr` was validated to be non-null and aligned for `T`. The

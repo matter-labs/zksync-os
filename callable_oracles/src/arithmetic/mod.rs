@@ -158,8 +158,11 @@ impl<M: MemorySource> OracleQueryProcessor<M> for NativeArithmeticQuery<M> {
         assert!(arg.modulus_ptr > 0);
         assert!(arg.modulus_len > 0);
 
-        let a_len_u64_words = arg.a_len * 4;
-        let modulus_len_u64_words = arg.modulus_len * 4;
+        let a_len_u64_words = arg.a_len.checked_mul(4).expect("a_len overflow");
+        let modulus_len_u64_words = arg
+            .modulus_len
+            .checked_mul(4)
+            .expect("modulus_len overflow");
 
         let mut n: Vec<u64> = read_u64_words(arg.a_ptr, a_len_u64_words);
         let mut d: Vec<u64> = read_u64_words(arg.modulus_ptr, modulus_len_u64_words);
