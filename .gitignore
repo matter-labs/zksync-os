@@ -21,5 +21,8 @@ tests/instances/**/*.bench
 bench_results/
 bench_scripts/__pycache__/
 
+coverage_results/
+coverage_scripts/__pycache__/
+
 .DS_Store
 .idea
