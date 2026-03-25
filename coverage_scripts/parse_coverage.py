@@ -19,12 +19,11 @@ import argparse
 import json
 import os
 import sys
-from pathlib import Path
 
 
 # Workspace member directory prefixes that contain test infrastructure,
 # not production code. These are excluded from the coverage summary.
-TEST_INFRA_PREFIXES = ("tests/", "scripts/")
+TEST_INFRA_PREFIXES = ("tests", "scripts")
 
 
 def load_workspace_members(
@@ -65,7 +64,7 @@ def load_workspace_members(
         label = member.rstrip("/").split("/")[-1]
         prefix = member.rstrip("/") + "/"
 
-        if any(member.startswith(tip) for tip in TEST_INFRA_PREFIXES):
+        if any(member == tip or member.startswith(tip + "/") for tip in TEST_INFRA_PREFIXES):
             test_infra.append((prefix, label))
         else:
             production.append((prefix, label))
@@ -84,11 +83,14 @@ def map_file_to_crate(
     norm = filename.replace("\\", "/")
 
     for prefix, label in members:
-        if prefix in norm:
-            # Find the prefix position and check it starts at a path boundary
-            idx = norm.find(prefix)
-            if idx >= 0:
-                return label
+        idx = norm.find(prefix)
+        if idx < 0:
+            continue
+        # Ensure the match starts at a path boundary (start of string or
+        # preceded by '/') to avoid substring mismatches, e.g. "api/" in
+        # "some_api/".
+        if idx == 0 or norm[idx - 1] == "/":
+            return label
 
     return "(other)"
 
