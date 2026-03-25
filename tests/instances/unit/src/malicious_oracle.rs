@@ -605,7 +605,12 @@ mod custom_oracle_factories {
             let preimage = if hash.is_zero() {
                 vec![]
             } else if self.blocked_hashes.iter().any(|h| *h == hash) {
-                // MALICIOUS: refuse to provide preimage for blocked hashes
+                // MALICIOUS: refuse to provide preimage for blocked hashes.
+                // Note: this panic originates in the test responder, simulating the
+                // GenericPreimageResponder's behavior when a preimage is unknown.
+                // The system's hash-level preimage validation (in expose_preimage)
+                // only runs in PROOF_ENV mode; in forward mode (release), preimage
+                // hashes are checked via debug_assert only.
                 panic!(
                     "must know a preimage for hash {} for query ID 0x{:016x}",
                     hex::encode(hash.as_u8_array_ref()),
@@ -1326,9 +1331,12 @@ mod custom_oracle_factories {
     /// does not crash the system in forward mode. The wrong is_new flag corrupts pubdata
     /// accounting (a concern for proving mode), but forward execution should still complete.
     /// This test documents the forward-mode behavior for this attack vector.
+    ///
+    /// Forward-only: The custom oracle factory only overrides the storage slot responder
+    /// and does not handle tree-index queries needed by the RISC-V proving path.
     #[test]
     fn test_malicious_oracle_false_existing_slot_does_not_crash() {
-        let mut tester = TestingFramework::new();
+        let mut tester = TestingFramework::new().with_run_config(rig::run_config::forward_only());
         let wallet = tester.random_signer();
 
         let contract_address =
