@@ -111,7 +111,7 @@ fn run_with_tracer<const RANDOMIZED: bool>(
     run_config: rig::chain::RunConfig,
     tracer: &mut impl Tracer<ForwardRunningSystem>,
 ) -> (BlockOutput, BlockExtraStats) {
-    let (output, stats, _) = chain
+    let (output, stats, _, _) = chain
         .run_block_with_extra_stats(
             transactions,
             Some(block_context),
