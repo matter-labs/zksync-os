@@ -1612,3 +1612,265 @@ mod custom_oracle_factories {
         let _result = tester.execute_block(vec![tx]);
     }
 }
+
+mod callable_oracle_tests {
+    //! Tests for callable oracle processors (ModExp arithmetic, Blob KZG commitment).
+    //!
+    //! Callable oracles provide computational advice to the proving system. They are
+    //! registered as external processors in ZkEENonDeterminismSource and queried
+    //! during RISC-V proof execution. In forward mode, the system computes these
+    //! operations directly without querying callable oracles.
+    //!
+    //! These tests validate the callable oracle processors themselves using
+    //! VectorMemoryImpl, which allows testing the full oracle query path (memory read,
+    //! computation, response serialization) without RISC-V simulation. A malicious
+    //! oracle factory integration test is included to demonstrate the custom factory
+    //! pattern for callable oracle testing.
+
+    use rig::callable_oracles::arithmetic::ArithmeticQuery;
+    use rig::callable_oracles::blob_kzg_commitment::blob_kzg_commitment_and_proof;
+    use rig::oracle_provider::OracleQueryProcessor;
+    use rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl;
+
+    use rig::alloy::consensus::TxEip2930;
+    use rig::alloy::primitives::{TxKind, U256};
+    use rig::basic_system::system_functions::modexp::MODEXP_ADVICE_QUERY_ID;
+    use rig::basic_system::system_implementation::flat_storage_model::{
+        FlatStorageCommitment, TREE_HEIGHT,
+    };
+    use rig::chain::TestingOracleFactory;
+    use rig::forward_system::run::query_processors::{
+        BlockMetadataResponder, DACommitmentSchemeResponder, GenericPreimageResponder,
+        ReadTreeResponder, TxDataResponder, ZKProofDataResponder,
+    };
+    use rig::forward_system::run::test_impl::{InMemoryPreimageSource, InMemoryTree};
+    use rig::oracle_provider::{MemorySource, ZkEENonDeterminismSource};
+    use rig::zk_ee::common_structs::{da_commitment_scheme::DACommitmentScheme, ProofData};
+    use rig::zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
+    use rig::zksync_os_interface::traits::TxListSource;
+    use rig::{common_target_address, TestingFramework};
+    use zksync_os_tests_common::zksync_tx::ZKsyncTxEnvelope;
+
+    /// A malicious arithmetic oracle that returns deliberately wrong division results.
+    /// When queried for modexp advice, it corrupts the quotient by adding 1 to each word,
+    /// which will cause the verification step (q * modulus + r == dividend) to fail.
+    struct MaliciousArithmeticQuery<M: MemorySource> {
+        inner: ArithmeticQuery<M>,
+    }
+
+    impl<M: MemorySource> Default for MaliciousArithmeticQuery<M> {
+        fn default() -> Self {
+            Self {
+                inner: ArithmeticQuery::default(),
+            }
+        }
+    }
+
+    impl<M: MemorySource> OracleQueryProcessor<M> for MaliciousArithmeticQuery<M> {
+        fn supported_query_ids(&self) -> Vec<u32> {
+            self.inner.supported_query_ids()
+        }
+
+        fn process_buffered_query(
+            &mut self,
+            query_id: u32,
+            query: Vec<usize>,
+            memory: &M,
+        ) -> Box<dyn ExactSizeIterator<Item = usize> + 'static + Send + Sync> {
+            // Get the correct result first
+            let correct: Vec<usize> = self
+                .inner
+                .process_buffered_query(query_id, query, memory)
+                .collect();
+
+            // Corrupt the quotient: add 1 to the first quotient word (index 1, after header)
+            let mut corrupted = correct;
+            if corrupted.len() > 1 {
+                corrupted[1] = corrupted[1].wrapping_add(1);
+            }
+
+            Box::new(corrupted.into_iter())
+        }
+    }
+
+    /// Custom oracle factory that replaces the ArithmeticQuery with a malicious version.
+    /// In forward mode, this has no effect (callable oracles aren't queried).
+    /// In RISC-V mode, the malicious arithmetic oracle will return wrong modexp results,
+    /// and the verification in the modpow delegation should catch the discrepancy.
+    struct MaliciousCallableOracleFactory;
+
+    impl TestingOracleFactory<false> for MaliciousCallableOracleFactory {
+        fn create_forward_oracle(
+            &self,
+            block_metadata: BlockMetadataFromOracle,
+            state_tree: InMemoryTree<false>,
+            preimage_source: InMemoryPreimageSource,
+            tx_source: TxListSource,
+            proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+            da_commitment_scheme: Option<DACommitmentScheme>,
+            _add_uart: bool,
+        ) -> ZkEENonDeterminismSource<rig::oracle_provider::DummyMemorySource> {
+            let mut oracle = ZkEENonDeterminismSource::default();
+            oracle.add_external_processor(BlockMetadataResponder { block_metadata });
+            oracle.add_external_processor(TxDataResponder {
+                tx_source,
+                next_tx: None,
+                next_tx_format: None,
+                next_tx_from: None,
+            });
+            oracle.add_external_processor(GenericPreimageResponder { preimage_source });
+            oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
+            oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
+            oracle.add_external_processor(DACommitmentSchemeResponder {
+                da_commitment_scheme,
+            });
+            // Register malicious arithmetic oracle — not queried in forward mode
+            oracle.add_external_processor(MaliciousArithmeticQuery::<
+                rig::oracle_provider::DummyMemorySource,
+            >::default());
+            oracle
+        }
+
+        fn create_proof_oracle(
+            &self,
+            block_metadata: BlockMetadataFromOracle,
+            state_tree: InMemoryTree<false>,
+            preimage_source: InMemoryPreimageSource,
+            tx_source: TxListSource,
+            proof_data: Option<ProofData<FlatStorageCommitment<{ TREE_HEIGHT }>>>,
+            da_commitment_scheme: Option<DACommitmentScheme>,
+            _add_uart: bool,
+        ) -> ZkEENonDeterminismSource<rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl>
+        {
+            let mut oracle = ZkEENonDeterminismSource::default();
+            oracle.add_external_processor(BlockMetadataResponder { block_metadata });
+            oracle.add_external_processor(TxDataResponder {
+                tx_source,
+                next_tx: None,
+                next_tx_format: None,
+                next_tx_from: None,
+            });
+            oracle.add_external_processor(GenericPreimageResponder { preimage_source });
+            oracle.add_external_processor(ReadTreeResponder { tree: state_tree });
+            oracle.add_external_processor(ZKProofDataResponder { data: proof_data });
+            oracle.add_external_processor(DACommitmentSchemeResponder {
+                da_commitment_scheme,
+            });
+            // Register malicious arithmetic oracle — WILL be queried in RISC-V mode
+            oracle.add_external_processor(MaliciousArithmeticQuery::<
+                rig::risc_v_simulator::abstractions::memory::VectorMemoryImpl,
+            >::default());
+            oracle
+        }
+    }
+
+    /// Test that the MaliciousArithmeticQuery actually produces wrong results.
+    /// This verifies the malicious oracle implementation itself works correctly
+    /// (i.e., it corrupts the output).
+    #[test]
+    fn test_malicious_arithmetic_query_corrupts_output() {
+        let params_addr: u32 = 0x100;
+        let a_addr: u32 = 0x200;
+        let m_addr: u32 = 0x400;
+        let mem_bytes = 0x800;
+
+        let mut memory = VectorMemoryImpl::new_for_byte_size(mem_bytes);
+
+        // ModExpAdviceParams: 10 / 3
+        memory.populate(params_addr, 0); // op
+        memory.populate(params_addr + 4, a_addr); // a_ptr
+        memory.populate(params_addr + 8, 1); // a_len (1 digit)
+        memory.populate(params_addr + 12, 0); // b_ptr
+        memory.populate(params_addr + 16, 0); // b_len
+        memory.populate(params_addr + 20, m_addr); // modulus_ptr
+        memory.populate(params_addr + 24, 1); // modulus_len
+
+        // dividend = 10
+        memory.populate(a_addr, 10);
+        // modulus = 3
+        memory.populate(m_addr, 3);
+
+        // Get correct result
+        let mut correct_oracle = ArithmeticQuery::<VectorMemoryImpl>::default();
+        let correct: Vec<usize> = correct_oracle
+            .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![params_addr as usize], &memory)
+            .collect();
+
+        // Get malicious result
+        let mut malicious_oracle = MaliciousArithmeticQuery::<VectorMemoryImpl>::default();
+        let malicious: Vec<usize> = malicious_oracle
+            .process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![params_addr as usize], &memory)
+            .collect();
+
+        // Verify the malicious oracle corrupted the output
+        assert_ne!(
+            correct, malicious,
+            "Malicious oracle should produce different output from correct oracle"
+        );
+        // Header should be the same (lengths unchanged)
+        assert_eq!(correct[0], malicious[0], "Header should be unchanged");
+        // Quotient should be corrupted
+        assert_ne!(correct[1], malicious[1], "Quotient should be corrupted");
+    }
+
+    /// Integration test: register a malicious callable oracle factory and execute a block.
+    /// In forward mode, callable oracles are not queried, so this test passes — it
+    /// demonstrates that forward mode does not depend on callable oracle correctness.
+    /// In RISC-V mode (CI with ZKSYNC_RISC_V_RUN=true), the modexp precompile would
+    /// query the malicious oracle and the verification should catch the wrong result.
+    #[test]
+    fn test_malicious_callable_oracle_factory_forward_mode() {
+        let mut tester = TestingFramework::new();
+        let wallet = tester.random_signer();
+        tester = tester.with_balance(wallet.address(), U256::from(1_000_000_000_000_000_u64));
+
+        let tx = {
+            let tx = TxEip2930 {
+                chain_id: 37u64,
+                nonce: 0,
+                gas_price: 1000,
+                gas_limit: 21_000,
+                to: TxKind::Call(common_target_address()),
+                value: Default::default(),
+                input: Default::default(),
+                access_list: Default::default(),
+            };
+            ZKsyncTxEnvelope::from_eth_tx(tx, wallet)
+        };
+
+        let factory = MaliciousCallableOracleFactory;
+        tester = tester
+            .with_custom_oracle_factory(factory)
+            .with_run_config(rig::run_config::forward_only());
+
+        // In forward mode, callable oracles are not used, so execution should
+        // succeed even with a malicious arithmetic oracle registered.
+        let result = tester.execute_block_no_panic(vec![tx]);
+        assert!(
+            result.is_ok(),
+            "Forward mode should not depend on callable oracle correctness"
+        );
+    }
+
+    /// Test that the blob_kzg_commitment_and_proof function produces valid output
+    /// via the direct (non-oracle) path. This validates the computation that would
+    /// be verified against oracle results in proving mode.
+    #[test]
+    fn test_blob_kzg_commitment_computation_consistency() {
+        let data = b"test blob data for commitment verification";
+        let result = blob_kzg_commitment_and_proof(data);
+
+        // Verify output has correct structure
+        assert_eq!(
+            result.commitment.len(),
+            48,
+            "KZG commitment should be 48 bytes"
+        );
+        assert_eq!(result.proof.len(), 48, "KZG proof should be 48 bytes");
+
+        // Verify determinism
+        let result2 = blob_kzg_commitment_and_proof(data);
+        assert_eq!(result.commitment, result2.commitment);
+        assert_eq!(result.proof, result2.proof);
+    }
+}

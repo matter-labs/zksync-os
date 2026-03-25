@@ -232,6 +232,78 @@ mod tests {
         words
     }
 
+    /// Helper: write a ModExpAdviceParams struct and data into TestMemorySource, then run the
+    /// RISC-V oracle query. Returns (quotient_u64_words, remainder_u64_words).
+    fn run_riscv_division(dividend_u64: &[u64], modulus_u64: &[u64]) -> (Vec<u64>, Vec<u64>) {
+        let a_digits = dividend_u64.len().div_ceil(4);
+        let m_digits = modulus_u64.len().div_ceil(4);
+        let a_u64_count = a_digits * 4;
+
+        const PARAMS_ADDR: u32 = 0x100;
+        const A_ADDR: u32 = 0x200;
+        let m_addr: u32 = A_ADDR + (a_u64_count as u32) * 8;
+
+        let mut memory = TestMemorySource::default();
+        memory.insert_modexp_params(
+            PARAMS_ADDR,
+            ModExpAdviceParams {
+                op: 0,
+                a_ptr: A_ADDR,
+                a_len: a_digits as u32,
+                b_ptr: 0,
+                b_len: 0,
+                modulus_ptr: m_addr,
+                modulus_len: m_digits as u32,
+            },
+        );
+        memory.insert_u64_words(A_ADDR, dividend_u64);
+        memory.insert_u64_words(m_addr, modulus_u64);
+
+        let result: Vec<usize> = ArithmeticQuery
+            .process_buffered_query(
+                MODEXP_ADVICE_QUERY_ID,
+                vec![PARAMS_ADDR as usize],
+                &memory,
+            )
+            .collect();
+
+        assert!(!result.is_empty(), "Expected at least a header word");
+        let header = result[0] as u64;
+        let q_len_u32 = (header & 0xFFFF_FFFF) as usize;
+        let r_len_u32 = (header >> 32) as usize;
+        let q_len = q_len_u32 / 2;
+        let r_len = r_len_u32 / 2;
+        assert_eq!(result.len(), 1 + q_len + r_len);
+
+        let quotient: Vec<u64> = result[1..1 + q_len].iter().map(|&x| x as u64).collect();
+        let remainder: Vec<u64> = result[1 + q_len..].iter().map(|&x| x as u64).collect();
+        (quotient, remainder)
+    }
+
+    #[test]
+    fn riscv_arithmetic_query_basic_division() {
+        // 10 / 3 = q=3, r=1
+        let (q, r) = run_riscv_division(&[10, 0, 0, 0], &[3, 0, 0, 0]);
+        assert_eq!(q, vec![3]);
+        assert_eq!(r, vec![1]);
+    }
+
+    #[test]
+    fn riscv_arithmetic_query_exact_division() {
+        // 15 / 5 = q=3, r=0
+        let (q, r) = run_riscv_division(&[15, 0, 0, 0], &[5, 0, 0, 0]);
+        assert_eq!(q, vec![3]);
+        assert!(r.is_empty(), "remainder should be zero (stripped)");
+    }
+
+    #[test]
+    fn riscv_arithmetic_query_dividend_smaller_than_modulus() {
+        // 2 / 7 = q=0, r=2
+        let (q, r) = run_riscv_division(&[2, 0, 0, 0], &[7, 0, 0, 0]);
+        assert!(q.is_empty(), "quotient should be zero (stripped)");
+        assert_eq!(r, vec![2]);
+    }
+
     #[test]
     fn native_arithmetic_query_processes_valid_query() {
         let mut dividend = vec![10u64, 0, 0, 0];
@@ -323,6 +395,28 @@ mod tests {
         assert!(r_len.is_multiple_of(2));
         assert!(q_len > 2, "quotient should span multiple u64 limbs");
         assert!(r_len > 2, "remainder should span multiple u64 limbs");
+    }
+
+    #[test]
+    #[should_panic(expected = "A u32 should've been passed in")]
+    fn arithmetic_query_panics_on_empty_query() {
+        let memory = TestMemorySource::default();
+        let _ = ArithmeticQuery.process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![], &memory);
+    }
+
+    #[test]
+    #[should_panic(expected = "A single RISC-V ptr should've been passed")]
+    fn arithmetic_query_panics_on_extra_args() {
+        let memory = TestMemorySource::default();
+        let _ =
+            ArithmeticQuery.process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![0x100, 0x200], &memory);
+    }
+
+    #[test]
+    #[should_panic]
+    fn arithmetic_query_panics_on_misaligned_pointer() {
+        let memory = TestMemorySource::default();
+        let _ = ArithmeticQuery.process_buffered_query(MODEXP_ADVICE_QUERY_ID, vec![0x101], &memory);
     }
 
     #[test]

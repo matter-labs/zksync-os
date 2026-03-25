@@ -141,6 +141,32 @@ pub fn blob_kzg_commitment_and_proof(data: &[u8]) -> KZGCommitmentAndProof {
 mod tests {
     use super::*;
     use oracle_provider::DummyMemorySource;
+    use oracle_provider::RamPeek;
+    use std::collections::BTreeMap;
+    use zk_ee::oracle::usize_serialization::UsizeSerializable;
+
+    #[derive(Default)]
+    struct TestMemorySource {
+        words: BTreeMap<u32, u32>,
+    }
+
+    impl TestMemorySource {
+        fn write_bytes(&mut self, offset: u32, data: &[u8]) {
+            for (i, chunk) in data.chunks(4).enumerate() {
+                let mut word = [0u8; 4];
+                word[..chunk.len()].copy_from_slice(chunk);
+                let val = u32::from_le_bytes(word);
+                let addr = offset + (i as u32) * 4;
+                self.words.insert(addr, val);
+            }
+        }
+    }
+
+    impl RamPeek for TestMemorySource {
+        fn peek_word(&self, address: u32) -> u32 {
+            self.words.get(&address).copied().unwrap_or(0)
+        }
+    }
 
     #[test]
     fn native_blob_query_processes_valid_query() {
@@ -157,12 +183,82 @@ mod tests {
     }
 
     #[test]
+    fn blob_kzg_commitment_deterministic() {
+        let data = b"hello blob commitment test data";
+        let result1 = blob_kzg_commitment_and_proof(data);
+        let result2 = blob_kzg_commitment_and_proof(data);
+        assert_eq!(result1.commitment, result2.commitment);
+        assert_eq!(result1.proof, result2.proof);
+    }
+
+    #[test]
+    fn blob_kzg_commitment_different_data() {
+        let result1 = blob_kzg_commitment_and_proof(b"data1");
+        let result2 = blob_kzg_commitment_and_proof(b"data2");
+        assert_ne!(
+            result1.commitment, result2.commitment,
+            "different data should produce different commitments"
+        );
+    }
+
+    #[test]
+    fn blob_kzg_commitment_empty_data() {
+        let result = blob_kzg_commitment_and_proof(b"");
+        assert_eq!(result.commitment.len(), 48);
+        assert_eq!(result.proof.len(), 48);
+    }
+
+    #[test]
+    fn riscv_blob_kzg_oracle_via_memory() {
+        let data = b"test blob data for oracle query";
+        let data_addr: u32 = 0x100;
+        let mut memory = TestMemorySource::default();
+        memory.write_bytes(data_addr, data);
+
+        let result: Vec<usize> = BlobCommitmentAndProofQuery
+            .process_buffered_query(
+                BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
+                vec![data_addr as usize, data.len() as usize],
+                &memory,
+            )
+            .collect();
+
+        assert!(!result.is_empty(), "Oracle should return non-empty result");
+
+        let expected = blob_kzg_commitment_and_proof(data);
+        let expected_serialized: Vec<usize> = expected.iter().collect();
+        assert_eq!(result, expected_serialized);
+    }
+
+    #[test]
     #[should_panic]
     fn native_blob_query_rejects_null_pointer() {
         let _ = NativeBlobCommitmentAndProofQuery.process_buffered_query(
             BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
             vec![0, 1],
             &DummyMemorySource,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "RISC-V ptr and len should've been passed")]
+    fn blob_kzg_oracle_panics_on_extra_args() {
+        let memory = TestMemorySource::default();
+        let _ = BlobCommitmentAndProofQuery.process_buffered_query(
+            BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
+            vec![0x100, 10, 42],
+            &memory,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn blob_kzg_oracle_panics_on_misaligned_pointer() {
+        let memory = TestMemorySource::default();
+        let _ = BlobCommitmentAndProofQuery.process_buffered_query(
+            BLOB_COMMITMENT_AND_PROOF_QUERY_ID,
+            vec![0x101, 10],
+            &memory,
         );
     }
 }
