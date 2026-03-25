@@ -113,6 +113,8 @@ pub fn end(_label: &'static str) {
 pub fn start_opcode() {
     #[cfg(target_arch = "riscv32")]
     {
+        // SAFETY: CSR write to simulator-intercepted register 0x7ff. No memory access,
+        // no stack effect, flags preserved. Mirrors the pattern in `start()`/`end()`.
         unsafe {
             let word = 0;
             core::arch::asm!(
@@ -132,6 +134,8 @@ pub fn start_opcode() {
 pub fn end_opcode(_label: &'static str) {
     #[cfg(target_arch = "riscv32")]
     {
+        // SAFETY: CSR write to simulator-intercepted register 0x7ff. No memory access,
+        // no stack effect, flags preserved. Mirrors the pattern in `start()`/`end()`.
         unsafe {
             let word = 0;
             core::arch::asm!(
@@ -316,6 +320,10 @@ pub fn print_cycle_markers() -> CycleMarkerResults {
     for (label, mark) in labels.into_iter().zip(cm.markers.into_iter()) {
         match label {
             Label::OpcodeStart => {
+                debug_assert!(
+                    pending_opcode_start.is_none(),
+                    "Consecutive OpcodeStart without OpcodeEnd — previous start marker lost"
+                );
                 pending_opcode_start = Some(mark);
             }
             Label::OpcodeEnd(name) => {

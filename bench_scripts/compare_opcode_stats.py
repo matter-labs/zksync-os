@@ -33,9 +33,9 @@ def parse_opcode_stats(filename):
         if len(parts) < 10:
             continue
         name = parts[0]
-        # Skip CALL-like opcodes that show "-"
-        if parts[1] == "-":
-            stats[name] = {"count": int(parts[1]) if parts[1] != "-" else 0}
+        # Skip CALL-like opcodes that show "-" for gas/native columns
+        if parts[2] == "-":
+            stats[name] = {"count": int(parts[1])}
             continue
         try:
             stats[name] = {

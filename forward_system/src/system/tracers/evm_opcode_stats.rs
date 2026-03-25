@@ -27,25 +27,26 @@ pub struct OpcodeStats {
 }
 
 impl OpcodeStats {
-    fn median(samples: &mut [u64]) -> u64 {
+    fn median(samples: &[u64]) -> u64 {
         if samples.is_empty() {
             return 0;
         }
-        samples.sort_unstable();
-        let mid = samples.len() / 2;
-        if samples.len().is_multiple_of(2) {
-            ((samples[mid - 1] as u128 + samples[mid] as u128) / 2) as u64
+        let mut sorted = samples.to_vec();
+        sorted.sort_unstable();
+        let mid = sorted.len() / 2;
+        if sorted.len().is_multiple_of(2) {
+            ((sorted[mid - 1] as u128 + sorted[mid] as u128) / 2) as u64
         } else {
-            samples[mid]
+            sorted[mid]
         }
     }
 
-    pub fn gas_median(&mut self) -> u64 {
-        Self::median(&mut self.gas_samples)
+    pub fn gas_median(&self) -> u64 {
+        Self::median(&self.gas_samples)
     }
 
-    pub fn native_median(&mut self) -> u64 {
-        Self::median(&mut self.native_samples)
+    pub fn native_median(&self) -> u64 {
+        Self::median(&self.native_samples)
     }
 
     pub fn gas_min(&self) -> u64 {
@@ -109,7 +110,7 @@ impl<S: SystemTypes> Default for EvmOpcodeStatsTracer<S> {
 }
 
 impl<S: SystemTypes> EvmOpcodeStatsTracer<S> {
-    pub fn print_stats(&mut self) {
+    pub fn print_stats(&self) {
         println!("=== EVM Opcode Stats:");
         println!(
             "{:<16} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
@@ -124,7 +125,7 @@ impl<S: SystemTypes> EvmOpcodeStatsTracer<S> {
             "min_native",
             "max_native",
         );
-        for (i, stat) in self.stats.iter_mut().enumerate() {
+        for (i, stat) in self.stats.iter().enumerate() {
             if stat.count == 0 {
                 continue;
             }
@@ -157,7 +158,7 @@ impl<S: SystemTypes> EvmOpcodeStatsTracer<S> {
         println!("==================");
     }
 
-    pub fn write_csv(&mut self, path: &Path) -> std::io::Result<()> {
+    pub fn write_csv(&self, path: &Path) -> std::io::Result<()> {
         let mut f = std::fs::File::create(path)?;
         writeln!(
             f,
@@ -166,7 +167,7 @@ impl<S: SystemTypes> EvmOpcodeStatsTracer<S> {
              avg_native,median_native,min_native,max_native,\
              native_per_gas"
         )?;
-        for (i, stat) in self.stats.iter_mut().enumerate() {
+        for (i, stat) in self.stats.iter().enumerate() {
             if stat.count == 0 || is_call_like(i as u8) {
                 continue;
             }

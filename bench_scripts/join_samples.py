@@ -85,9 +85,9 @@ def process_opcode(name, tracer_samples, cycle_samples, out_dir):
     native_per_gas_values.sort()
 
     def percentile(sorted_vals, p):
-        idx = int(len(sorted_vals) * p / 100)
-        idx = min(idx, len(sorted_vals) - 1)
-        return sorted_vals[idx]
+        # Nearest-rank method: rank = ceil(p/100 * N), 1-indexed
+        rank = max(1, -(-len(sorted_vals) * p // 100))  # ceiling division
+        return sorted_vals[min(rank, len(sorted_vals)) - 1]
 
     return {
         "name": name,
