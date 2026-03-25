@@ -1,13 +1,5 @@
 use super::db::{BlockStatus, BlockTraces, Database, ResourceInfo};
 use super::utils;
-use alloy::primitives::U256;
-use anyhow::{anyhow, Result};
-use rig::log::{debug, error, info, warn};
-use rig::Chain;
-use std::panic::AssertUnwindSafe;
-use std::time::Instant;
-use zk_ee::system::tracer::NopTracer;
-use rig::zk_ee::system::validator::NopTxValidator;
 use crate::calltrace::CallTrace;
 use crate::native_model::compute_ratio;
 use crate::post_check::post_check;
@@ -16,13 +8,22 @@ use crate::{
     prestate::{DiffTrace, PrestateTrace},
     receipts::TransactionReceipt,
 };
+use alloy::primitives::U256;
+use anyhow::{anyhow, Result};
+use rig::log::{debug, error, info, warn};
+use rig::zk_ee::system::validator::NopTxValidator;
+use rig::Chain;
 use std::collections::HashSet;
+use std::panic::AssertUnwindSafe;
+use std::time::Instant;
+use zk_ee::system::tracer::NopTracer;
 
 /// Filters out items at indices that are in the skipped set.
 ///
 /// Used to remove skipped transactions from receipts, traces, and other collections.
 fn filter_skipped<T>(items: Vec<T>, skipped: &HashSet<usize>) -> Vec<T> {
-    items.into_iter()
+    items
+        .into_iter()
         .enumerate()
         .filter_map(|(i, x)| if skipped.contains(&i) { None } else { Some(x) })
         .collect()
@@ -157,11 +158,16 @@ pub fn run_block(
             } else if let Some(s) = panic_payload.downcast_ref::<&str>() {
                 s.to_string()
             } else {
-                format!("Panic occurred (payload type: {:?})", panic_payload.type_id())
+                format!(
+                    "Panic occurred (payload type: {:?})",
+                    panic_payload.type_id()
+                )
             };
 
             error!("Block {block_number} panicked during execution: {panic_msg}");
-            return Err(anyhow!("Block {block_number} panicked during execution: {panic_msg}"));
+            return Err(anyhow!(
+                "Block {block_number} panicked during execution: {panic_msg}"
+            ));
         }
     };
 
@@ -234,15 +240,48 @@ pub fn run_block(
     info!("=== Block {} Timing Breakdown ===", block_number);
     // Fetch time is 0 since traces are prefetched
     let fetch_time = std::time::Duration::ZERO;
-    info!("  Fetch traces:     {:6.2}ms ({:5.1}%)", fetch_time.as_secs_f64() * 1000.0, fetch_time.as_secs_f64() / total_time.as_secs_f64() * 100.0);
-    info!("  Setup:             {:6.2}ms ({:5.1}%)", setup_time.as_secs_f64() * 1000.0, setup_time.as_secs_f64() / total_time.as_secs_f64() * 100.0);
-    info!("    - DB hash read: {:6.2}ms", db_hash_time.as_secs_f64() * 1000.0);
-    info!("    - Prestate:     {:6.2}ms", prestate_time.as_secs_f64() * 1000.0);
-    info!("  Execution:         {:6.2}ms ({:5.1}%)", execution_time.as_secs_f64() * 1000.0, execution_time.as_secs_f64() / total_time.as_secs_f64() * 100.0);
-    info!("  Post-check:        {:6.2}ms ({:5.1}%)", post_check_time.as_secs_f64() * 1000.0, post_check_time.as_secs_f64() / total_time.as_secs_f64() * 100.0);
-    info!("  DB writes:         {:6.2}ms ({:5.1}%)", db_write_time.as_secs_f64() * 1000.0, db_write_time.as_secs_f64() / total_time.as_secs_f64() * 100.0);
-    info!("    - Flush:         {:6.2}ms ({:5.1}% of DB writes)", flush_time.as_secs_f64() * 1000.0, flush_time.as_secs_f64() / db_write_time.as_secs_f64() * 100.0);
-    info!("  Total:             {:6.2}ms", total_time.as_secs_f64() * 1000.0);
+    info!(
+        "  Fetch traces:     {:6.2}ms ({:5.1}%)",
+        fetch_time.as_secs_f64() * 1000.0,
+        fetch_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
+    );
+    info!(
+        "  Setup:             {:6.2}ms ({:5.1}%)",
+        setup_time.as_secs_f64() * 1000.0,
+        setup_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
+    );
+    info!(
+        "    - DB hash read: {:6.2}ms",
+        db_hash_time.as_secs_f64() * 1000.0
+    );
+    info!(
+        "    - Prestate:     {:6.2}ms",
+        prestate_time.as_secs_f64() * 1000.0
+    );
+    info!(
+        "  Execution:         {:6.2}ms ({:5.1}%)",
+        execution_time.as_secs_f64() * 1000.0,
+        execution_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
+    );
+    info!(
+        "  Post-check:        {:6.2}ms ({:5.1}%)",
+        post_check_time.as_secs_f64() * 1000.0,
+        post_check_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
+    );
+    info!(
+        "  DB writes:         {:6.2}ms ({:5.1}%)",
+        db_write_time.as_secs_f64() * 1000.0,
+        db_write_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
+    );
+    info!(
+        "    - Flush:         {:6.2}ms ({:5.1}% of DB writes)",
+        flush_time.as_secs_f64() * 1000.0,
+        flush_time.as_secs_f64() / db_write_time.as_secs_f64() * 100.0
+    );
+    info!(
+        "  Total:             {:6.2}ms",
+        total_time.as_secs_f64() * 1000.0
+    );
     info!("===================================");
 
     match post_check_result {
@@ -257,7 +296,8 @@ pub fn run_block(
             db.flush()?;
             let post_flush_time = post_flush_start.elapsed();
             let post_db_write_time = post_db_write_start.elapsed();
-            debug!("Post-check DB writes: {:.2}ms (flush: {:.2}ms)",
+            debug!(
+                "Post-check DB writes: {:.2}ms (flush: {:.2}ms)",
                 post_db_write_time.as_secs_f64() * 1000.0,
                 post_flush_time.as_secs_f64() * 1000.0
             );
@@ -275,7 +315,8 @@ pub fn run_block(
             db.flush()?;
             let post_flush_time = post_flush_start.elapsed();
             let post_db_write_time = post_db_write_start.elapsed();
-            debug!("Post-check DB writes: {:.2}ms (flush: {:.2}ms)",
+            debug!(
+                "Post-check DB writes: {:.2}ms (flush: {:.2}ms)",
                 post_db_write_time.as_secs_f64() * 1000.0,
                 post_flush_time.as_secs_f64() * 1000.0
             );

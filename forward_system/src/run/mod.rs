@@ -203,14 +203,16 @@ pub fn generate_batch_proof_input(
                 );
                 let disconnect_marker_idx = block_proof_input.len() - 1;
                 assert_eq!(
-                    block_proof_input[disconnect_marker_idx],
-                    0,
+                    block_proof_input[disconnect_marker_idx], 0,
                     "expected disconnect query to have an empty response marker"
                 );
                 let advice_start_idx = disconnect_marker_idx - advice_words;
                 trimmed_blocks_proof_inputs.push(
-                    [&block_proof_input[..advice_start_idx], &block_proof_input[disconnect_marker_idx..]]
-                        .concat(),
+                    [
+                        &block_proof_input[..advice_start_idx],
+                        &block_proof_input[disconnect_marker_idx..],
+                    ]
+                    .concat(),
                 );
             }
             let mut blobs_advice = Vec::with_capacity(25 * blobs_data.len().div_ceil(31 * 4096));

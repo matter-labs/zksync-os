@@ -1,18 +1,17 @@
 use anyhow::Result;
-mod db;
-mod rpc;
-mod utils;
-mod statistics;
-mod prefetch;
 mod block_execution;
+mod db;
 mod error_handling;
+mod prefetch;
+mod rpc;
+mod statistics;
+mod utils;
 use block_execution::GpuSharedState;
 use db::{BlockStatus, BlockTraces, Database};
 use rig::log::{debug, info, warn};
+use statistics::RunStatistics;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
-use statistics::RunStatistics;
-
 
 pub fn live_run(
     start_block: u64,
@@ -28,17 +27,17 @@ pub fn live_run(
     backup_endpoint: Option<String>,
 ) -> Result<()> {
     let run_start = Instant::now();
-    
+
     // Install panic hook (with or without webhook)
     utils::install_panic_hook(webhook.clone());
-    
+
     let init_start = Instant::now();
     let db = Database::init(db_path)?;
     assert!(start_block <= end_block);
     utils::fetch_block_hashes(start_block, &db, &endpoint)?;
     let chain_id = rpc::get_chain_id(&endpoint)?;
     let init_time = init_start.elapsed();
-    
+
     info!("=== Live Run Started ===");
     info!("Blocks: {} to {}", start_block, end_block);
     info!("Initialization: {:.2}ms", init_time.as_secs_f64() * 1000.0);
@@ -69,11 +68,11 @@ pub fn live_run(
     let mut prefetch_cache = std::collections::HashMap::<u64, BlockTraces>::new();
     let mut next_block_to_prefetch = start_block;
     let mut stopped_early = false;
-    
+
     for n in start_block..=end_block {
         // Update current block number for panic handler
         utils::CURRENT_BLOCK_NUMBER.store(n, Ordering::Relaxed);
-        
+
         // Prefetch next batch if cache is empty
         prefetch::prefetch_next_batch(
             &mut next_block_to_prefetch,
@@ -85,7 +84,7 @@ pub fn live_run(
             &mut stats.total_blocks_prefetched,
             skip_successful,
         )?;
-        
+
         // Check if we should skip this block
         // Remove from prefetch cache first to prevent cache from stalling
         if let std::result::Result::Ok(Some(status)) = db.get_block_status(n) {
@@ -97,7 +96,7 @@ pub fn live_run(
                 continue;
             }
         }
-        
+
         // Get traces from prefetch cache or fetch if not available
         let block_traces = if let Some(traces) = prefetch_cache.remove(&n) {
             stats.prefetch_hits += 1;
@@ -117,7 +116,7 @@ pub fn live_run(
                 None => continue, // Block skipped due to trace fetch failure
             }
         };
-        
+
         // Process block sequentially
         let block_start = Instant::now();
         let primary_result = block_execution::run_block(
@@ -134,7 +133,7 @@ pub fn live_run(
         );
         let block_time = block_start.elapsed();
         stats.total_block_time += block_time;
-        
+
         // Retry block execution with backup endpoint if primary execution failed
         let result = match primary_result {
             Ok(BlockStatus::Success) => Ok(BlockStatus::Success),
@@ -157,19 +156,28 @@ pub fn live_run(
                 }
             }
         };
-        
+
         // Handle result (update stats, send webhooks, check failures)
         // If max failures reached, break out of loop gracefully
-        if let Err(e) = error_handling::handle_block_result(result, n, chain_id, webhook.as_ref(), &mut stats) {
+        if let Err(e) =
+            error_handling::handle_block_result(result, n, chain_id, webhook.as_ref(), &mut stats)
+        {
             warn!("Stopping execution: {e}");
             stopped_early = true;
             break;
         }
     }
-    
+
     let total_time = run_start.elapsed();
-    statistics::log_run_statistics(start_block, end_block, chain_id, init_time, total_time, &stats);
-    
+    statistics::log_run_statistics(
+        start_block,
+        end_block,
+        chain_id,
+        init_time,
+        total_time,
+        &stats,
+    );
+
     if let Some(webhook) = webhook.as_ref() {
         let machine_info = utils::get_machine_info();
         let (emoji, status_msg) = if stopped_early {
