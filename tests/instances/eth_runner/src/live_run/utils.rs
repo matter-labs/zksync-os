@@ -1,8 +1,8 @@
 use super::db::Database;
 use alloy::primitives::U256;
 use anyhow::{anyhow, Context, Result};
-use rig::log::{debug, info};
 use reqwest::blocking::Client;
+use rig::log::{debug, info};
 use std::backtrace::Backtrace;
 use std::panic;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -30,20 +30,20 @@ pub fn send_slack(webhook: &str, text: &str) -> Result<()> {
 /// Returns hostname, process number, and PID from environment variables and system.
 pub fn get_machine_info() -> String {
     let mut info = Vec::new();
-    
+
     // Hostname from environment variable
     if let std::result::Result::Ok(hostname) = std::env::var("HOSTNAME") {
         info.push(format!("Hostname: {}", hostname));
     }
-    
+
     // Process number from environment variable
     if let std::result::Result::Ok(proc_num) = std::env::var("PROC_NUM") {
         info.push(format!("Process Number: {}", proc_num));
     }
-    
+
     // Process info
     info.push(format!("PID: {}", std::process::id()));
-    
+
     info.join("\n")
 }
 
@@ -56,7 +56,7 @@ pub fn install_panic_hook(webhook: Option<String>) {
         let current_block = CURRENT_BLOCK_NUMBER.load(Ordering::Relaxed);
         let machine_info = get_machine_info();
         let backtrace = Backtrace::force_capture();
-        
+
         let msg = format!(
             ":rotating_light: eth-runner panicked\n\
             \n\
@@ -70,15 +70,19 @@ pub fn install_panic_hook(webhook: Option<String>) {
             \n\
             *Backtrace:*\n\
             {}",
-            if current_block == 0 { "Unknown".to_string() } else { current_block.to_string() },
+            if current_block == 0 {
+                "Unknown".to_string()
+            } else {
+                current_block.to_string()
+            },
             machine_info,
             info,
             backtrace
         );
-        
+
         // Always print to stderr
         info!("{msg}");
-        
+
         // Only send to Slack if webhook is provided
         if let Some(webhook_url) = &webhook {
             let _ = send_slack(webhook_url, &msg);
@@ -91,9 +95,9 @@ pub fn install_panic_hook(webhook: Option<String>) {
 /// Persists them in DB. Uses batched RPC call to fetch all missing hashes in a single request.
 pub fn fetch_block_hashes(start_block: u64, db: &Database, endpoint: &str) -> Result<()> {
     use super::rpc;
-    
+
     let first = start_block.saturating_sub(N_PREV_BLOCKS as u64);
-    
+
     // Collect all block numbers that need to be fetched
     let mut blocks_to_fetch = Vec::new();
     for n in first..start_block {
@@ -103,18 +107,21 @@ pub fn fetch_block_hashes(start_block: u64, db: &Database, endpoint: &str) -> Re
             debug!("Block hash for {n} already in DB, skipping");
         }
     }
-    
+
     if blocks_to_fetch.is_empty() {
         debug!("All block hashes already in DB, skipping fetch");
         return Ok(());
     }
-    
-    debug!("Fetching {} block hashes in batched RPC call", blocks_to_fetch.len());
-    
+
+    debug!(
+        "Fetching {} block hashes in batched RPC call",
+        blocks_to_fetch.len()
+    );
+
     // Fetch all missing hashes in a single batched RPC call
     let hashes = rpc::get_block_hashes_batch(endpoint, &blocks_to_fetch)
         .context(format!("Failed to fetch block hashes in batch"))?;
-    
+
     // Save all hashes to DB
     let blocks_count = blocks_to_fetch.len();
     for block_num in blocks_to_fetch {
@@ -122,16 +129,22 @@ pub fn fetch_block_hashes(start_block: u64, db: &Database, endpoint: &str) -> Re
             db.set_block_hash(block_num, U256::from_be_bytes(hash.0))?;
             debug!("Saved block hash for block {block_num}: {hash:#x}");
         } else {
-            return Err(anyhow!("Missing hash for block {block_num} in batched response"));
+            return Err(anyhow!(
+                "Missing hash for block {block_num} in batched response"
+            ));
         }
     }
-    
+
     // Flush all block hash writes after batching
     let flush_start = Instant::now();
     db.flush()?;
     let flush_time = flush_start.elapsed();
-    debug!("Flushed {} block hashes in {:.2}ms", blocks_count, flush_time.as_secs_f64() * 1000.0);
-    
+    debug!(
+        "Flushed {} block hashes in {:.2}ms",
+        blocks_count,
+        flush_time.as_secs_f64() * 1000.0
+    );
+
     Ok(())
 }
 
@@ -154,4 +167,3 @@ pub fn get_block_hashes_array(block_number: u64, db: &Database) -> Result<[U256;
     }
     Ok(hashes)
 }
-

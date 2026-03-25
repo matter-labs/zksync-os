@@ -119,7 +119,8 @@ fn run_inner(
                 &mut non_determinism_source,
             )
         });
-        block_effective = cycle_marker::print_cycle_markers(cycle_markers);
+        let results = cycle_marker::print_cycle_markers(cycle_markers);
+        block_effective = results.block_effective;
     }
 
     #[cfg(not(feature = "cycle_marker"))]

@@ -136,8 +136,11 @@ cargo run --manifest-path tests/instances/eth_runner/Cargo.toml \
   --release -j 3 \
   --features rig/no_print,rig/cycle_marker,rig/unlimited_native \
   -- single-run --block-dir tests/instances/eth_runner/blocks/19299001 \
+  --opcode-stats \
   > result.out
 ```
+
+Omit `--opcode-stats` when only block-level cycle benchmarks are needed — it adds per-opcode tracing overhead.
 
 Available blocks: `19299001`, `22244135`, `23292836` (in `tests/instances/eth_runner/blocks/`).
 
@@ -178,13 +181,48 @@ python3 bench_scripts/parse_flamegraph.py block_19299001.svg block_19299001.txt
 python3 bench_scripts/parse_opcodes.py result.out opcodes.csv opcodes.png
 ```
 
+### Per-Opcode Benchmarking
+
+The benchmark flow collects per-opcode gas, native resource, and RISC-V cycle stats. The forward-mode run uses `EvmOpcodeStatsTracer` (enabled via `--opcode-stats`) to record gas/native per opcode execution (with min/max/median). The RISC-V run records per-opcode cycles via `cycle_marker` opcode markers.
+
+**Quick run with all data:**
+```bash
+OPCODE_SAMPLES_DIR=$(pwd)/samples \
+OPCODE_CYCLE_SAMPLES_DIR=$(pwd)/cycle_samples \
+OPCODE_STATS_PATH=$(pwd)/opcode_stats.csv \
+bash bench_scripts/bench.sh quick
+```
+
+The `.out` file contains the per-opcode stats table (gas/native with min/max/median). The `.bench` file contains per-opcode cycle stats. Setting the env vars also dumps per-execution sample files for detailed analysis.
+
+**Join per-execution samples to get actual cycles/gas ratios:**
+```bash
+python3 bench_scripts/join_samples.py samples/ cycle_samples/ --summary --out-dir joined/
+```
+
+Produces per-execution `(gas, native, cycles, cycles/gas, native/gas)` CSVs per opcode and a summary table with p50/p95/p99/max ratios.
+
+**Visualize:**
+```bash
+python3 bench_scripts/visualize_opcode_stats.py joined/ --out-dir charts/
+```
+
+Produces: total cycle consumption bar chart, sorted cycles/gas ratio curves per opcode, and per-opcode detail plots with percentile annotations.
+
+**Compare per-opcode stats between base and head:**
+```bash
+python3 bench_scripts/compare_opcode_stats.py base_block.out head_block.out "label"
+```
+
+Outputs a compact diff table only when gas/native stats change. Used by CI to add opcode stats diffs to PR comments.
+
 ## CI Integration
 
 The CI workflow (`.github/workflows/bench.yml`) runs the full comparison automatically on every PR. It:
 1. Checks out the merge-base of the PR
 2. Builds RISC-V binaries and runs all block + precompile benchmarks
 3. Checks out the PR branch and repeats
-4. Posts a comparison table as a PR comment
+4. Posts a comparison table as a PR comment (cycle benchmarks + per-opcode stats diff if changed)
 
 ## Important Notes
 
@@ -207,4 +245,8 @@ The CI workflow (`.github/workflows/bench.yml`) runs the full comparison automat
 | `bench_scripts/compare_bench.py` | Compares base vs head `.bench` files |
 | `bench_scripts/parse_flamegraph.py` | Converts flamegraph SVG to text summary with self-cost and call stacks |
 | `bench_scripts/parse_opcodes.py` | Parses opcode frequency from simulator output |
+| `bench_scripts/compare_opcode_stats.py` | Compares per-opcode gas/native stats between base and head |
+| `bench_scripts/join_samples.py` | Joins per-execution tracer + cycle samples, computes ratios |
+| `bench_scripts/visualize_opcode_stats.py` | Generates charts from joined per-execution data |
+| `forward_system/src/system/tracers/evm_opcode_stats.rs` | Per-opcode gas/native stats tracer |
 | `.github/workflows/bench.yml` | CI benchmarking pipeline |

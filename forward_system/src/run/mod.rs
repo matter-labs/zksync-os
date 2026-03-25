@@ -177,10 +177,11 @@ pub fn generate_proof_input<
 /// Important: da_commitment_scheme should correspond to one used for blocks proof input generation.
 ///
 pub fn generate_batch_proof_input(
-    mut blocks_proof_inputs: Vec<&[u32]>,
+    blocks_proof_inputs: Vec<&[u32]>,
     da_commitment_scheme: DACommitmentScheme,
     blocks_pubdata: Vec<&[u8]>,
 ) -> Vec<u32> {
+    let mut trimmed_blocks_proof_inputs = Vec::with_capacity(blocks_proof_inputs.len());
     let blobs_advice = match da_commitment_scheme {
         DACommitmentScheme::BlobsZKsyncOS => {
             let total_pubdata_length: usize = blocks_pubdata
@@ -190,11 +191,28 @@ pub fn generate_batch_proof_input(
             let mut blobs_data = Vec::with_capacity(total_pubdata_length + 31);
             blobs_data.extend_from_slice(&(total_pubdata_length as u64).to_be_bytes());
             blobs_data.extend_from_slice(&[0u8; 23]); // pad to 31
-            for (i, block_pubdata) in blocks_pubdata.into_iter().enumerate() {
+            for (block_proof_input, block_pubdata) in
+                blocks_proof_inputs.iter().zip(blocks_pubdata.into_iter())
+            {
                 blobs_data.extend_from_slice(block_pubdata);
-                let length_without_advice = blocks_proof_inputs[i].len()
-                    - (block_pubdata.len() + 31).div_ceil(31 * 4096) * 25;
-                blocks_proof_inputs[i] = &blocks_proof_inputs[i][..length_without_advice];
+                let advice_words = (block_pubdata.len() + 31).div_ceil(31 * 4096) * 25;
+                assert!(
+                    block_proof_input.len() > advice_words,
+                    "block proof input is too short to contain blob advice and disconnect marker"
+                );
+                let disconnect_marker_idx = block_proof_input.len() - 1;
+                assert_eq!(
+                    block_proof_input[disconnect_marker_idx], 0,
+                    "expected disconnect query to have an empty response marker"
+                );
+                let advice_start_idx = disconnect_marker_idx - advice_words;
+                trimmed_blocks_proof_inputs.push(
+                    [
+                        &block_proof_input[..advice_start_idx],
+                        &block_proof_input[disconnect_marker_idx..],
+                    ]
+                    .concat(),
+                );
             }
             let mut blobs_advice = Vec::with_capacity(25 * blobs_data.len().div_ceil(31 * 4096));
             for blob_data in blobs_data.chunks(31 * 4096) {
@@ -215,22 +233,53 @@ pub fn generate_batch_proof_input(
             }
             blobs_advice
         }
-        _ => vec![],
+        _ => {
+            trimmed_blocks_proof_inputs.extend(
+                blocks_proof_inputs
+                    .into_iter()
+                    .map(|block_proof_input| block_proof_input.to_vec()),
+            );
+            vec![]
+        }
     };
     let mut proof_input = Vec::with_capacity(
-        blocks_proof_inputs
+        trimmed_blocks_proof_inputs
             .iter()
             .map(|block_proof_input| block_proof_input.len())
             .sum::<usize>()
             + 1
             + blobs_advice.len(),
     );
-    proof_input.push(blocks_proof_inputs.len() as u32);
-    for block_proof_input in blocks_proof_inputs {
-        proof_input.extend_from_slice(block_proof_input);
+    proof_input.push(trimmed_blocks_proof_inputs.len() as u32);
+    for block_proof_input in trimmed_blocks_proof_inputs {
+        proof_input.extend_from_slice(block_proof_input.as_slice());
     }
     proof_input.extend_from_slice(blobs_advice.as_slice());
     proof_input
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generate_batch_proof_input;
+    use zk_ee::common_structs::DACommitmentScheme;
+
+    #[test]
+    fn preserves_disconnect_marker_when_replacing_blob_advice() {
+        let block_proof_input = vec![11, 12, 24];
+        let mut block_proof_input = block_proof_input
+            .into_iter()
+            .chain(100..124)
+            .collect::<Vec<_>>();
+        block_proof_input.push(0);
+
+        let batch_input = generate_batch_proof_input(
+            vec![block_proof_input.as_slice()],
+            DACommitmentScheme::BlobsZKsyncOS,
+            vec![&[1, 2, 3]],
+        );
+
+        assert_eq!(&batch_input[..4], &[1, 11, 12, 0]);
+    }
 }
 
 pub fn make_oracle_for_proofs_and_dumps<T: ReadStorageTree, PS: PreimageSource, TS: TxSource>(

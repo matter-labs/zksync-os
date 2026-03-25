@@ -73,6 +73,10 @@ enum Command {
         /// Cannot be used together with --witness-output-dir.
         #[arg(long, conflicts_with = "witness_output_dir")]
         flamegraph: Option<String>,
+        /// Enable per-opcode EVM statistics collection.
+        /// Adds overhead; omit when only block-level benchmarks are needed.
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        opcode_stats: bool,
     },
     // Export block ratios from DB
     ExportRatios {
@@ -106,6 +110,7 @@ fn main() -> anyhow::Result<()> {
             chain_id,
             single_tx,
             flamegraph,
+            opcode_stats,
         } => crate::single_run::single_run(
             block_dir,
             block_hashes,
@@ -114,6 +119,7 @@ fn main() -> anyhow::Result<()> {
             chain_id,
             single_tx,
             flamegraph,
+            opcode_stats,
         ),
         Command::LiveRun {
             start_block,
