@@ -136,8 +136,11 @@ cargo run --manifest-path tests/instances/eth_runner/Cargo.toml \
   --release -j 3 \
   --features rig/no_print,rig/cycle_marker,rig/unlimited_native \
   -- single-run --block-dir tests/instances/eth_runner/blocks/19299001 \
+  --opcode-stats \
   > result.out
 ```
+
+Omit `--opcode-stats` when only block-level cycle benchmarks are needed — it adds per-opcode tracing overhead.
 
 Available blocks: `19299001`, `22244135`, `23292836` (in `tests/instances/eth_runner/blocks/`).
 
@@ -180,7 +183,7 @@ python3 bench_scripts/parse_opcodes.py result.out opcodes.csv opcodes.png
 
 ### Per-Opcode Benchmarking
 
-The benchmark flow collects per-opcode gas, native resource, and RISC-V cycle stats. The forward-mode run uses `EvmOpcodeStatsTracer` to record gas/native per opcode execution (with min/max/median). The RISC-V run records per-opcode cycles via `cycle_marker` opcode markers.
+The benchmark flow collects per-opcode gas, native resource, and RISC-V cycle stats. The forward-mode run uses `EvmOpcodeStatsTracer` (enabled via `--opcode-stats`) to record gas/native per opcode execution (with min/max/median). The RISC-V run records per-opcode cycles via `cycle_marker` opcode markers.
 
 **Quick run with all data:**
 ```bash
