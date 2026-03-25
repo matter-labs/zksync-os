@@ -126,6 +126,7 @@ def format_table(rows, label=""):
             f"| {r['b_total']:,} | {r['h_total']:,}{total_pct_s} |"
         )
 
+    lines.append("")  # trailing blank line to separate from next section
     return "\n".join(lines)
 
 
@@ -144,8 +145,8 @@ def main():
     base_stats = parse_cycle_stats(base_file)
     head_stats = parse_cycle_stats(head_file)
 
-    # If base has no stats (old branch), silently exit
-    if not base_stats:
+    # If either side has no stats (old branch or broken build), silently exit
+    if not base_stats or not head_stats:
         sys.exit(0)
 
     rows = compare(base_stats, head_stats)
