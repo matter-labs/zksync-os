@@ -828,20 +828,6 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             false,
         );
 
-        #[cfg(feature = "simulate_witness_gen")]
-        let source_for_witness_bench = {
-            oracle_factory.create_proof_oracle(
-                block_metadata,
-                self.state_tree.clone(),
-                self.preimage_source.clone(),
-                tx_source.clone(),
-                Some(proof_data),
-                Some(da_commitment_scheme),
-                false,
-                false,
-            )
-        };
-
         // forward run
         let mut result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
 
@@ -856,7 +842,7 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
 
         let block_output: BlockOutput = result_keeper.into();
 
-        let (prover_input_forward, pubdata, has_filtered_by_validator) = if do_prover_input_run {
+        let (prover_input_forward, pubdata, _has_filtered_by_validator) = if do_prover_input_run {
             let mut result_keeper_prover_input = ProverInputResultKeeper::new(NoopTxCallback);
 
             let prover_input_oracle = oracle_factory.create_forward_oracle(
@@ -990,13 +976,14 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
             }
 
             let now = std::time::Instant::now();
-            let (proof_output, block_effective) = if let Some(fg_options) = flamegraph {
-                zksync_os_runner::run_with_flamegraph(
-                    get_zksync_os_img_path(&app),
-                    get_zksync_os_sym_path(&app),
+            let (proof_output, block_effective) = if let Some(fg_path) = flamegraph_output {
+                let sym_path = get_zksync_os_sym_path(&app);
+                zksync_os_runner::run_default_with_flamegraph_path(
+                    dist_dir,
+                    sym_path,
                     1 << 36,
-                    copy_source,
-                    fg_options,
+                    &prover_input_forward,
+                    Some(fg_path),
                 )
             } else {
                 zksync_os_runner::run_and_get_effective_cycles(
@@ -1247,27 +1234,22 @@ impl<const RANDOMIZED_TREE: bool> Chain<RANDOMIZED_TREE> {
         let proof_input = if only_forward {
             None
         } else {
-            // Record non-determinism input words by running the forward
-            // ETH-like config with ReadWitnessSource wrapping the oracle.
+            // Record non-determinism input words using the proving config
+            // (must match what the RISC-V binary expects).
             let prover_input_oracle =
                 Self::make_eth_block_oracle(transactions, witness, block_header, withdrawals);
             let copy_source = ReadWitnessSource::new(prover_input_oracle);
-            let items = copy_source.get_read_items();
-            let mut pi_result_keeper = ForwardRunningResultKeeper::new(NoopTxCallback);
+            let mut pi_result_keeper = ProverInputResultKeeper::new(NoopTxCallback);
             let mut pi_tracer = NopTracer::default();
             let mut pi_validator = NopTxValidator;
-            BasicBootloader::<
-                EthereumStorageSystemTypes<_>,
-                EthereumTransactionFlow<EthereumStorageSystemTypes<_>>,
-            >::run_prepared::<BasicBootloaderForwardETHLikeConfig>(
-                copy_source,
-                &mut (),
-                &mut pi_result_keeper,
-                &mut pi_tracer,
-                &mut pi_validator,
-            )
-            .expect("prover-input forward run must succeed");
-            let prover_input_words: Vec<u32> = items.borrow().iter().copied().collect();
+            let prover_input_words =
+                run_prover_input_no_panic::<BasicBootloaderProvingExecutionConfig>(
+                    copy_source,
+                    &mut pi_result_keeper,
+                    &mut pi_tracer,
+                    &mut pi_validator,
+                )
+                .expect("prover-input forward run must succeed");
 
             // RISC-V simulation using pre-recorded input
             let dist_dir = get_zksync_os_dist_dir(&app);
