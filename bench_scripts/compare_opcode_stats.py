@@ -9,8 +9,20 @@ Exits 0 with no output if nothing changed or base has no stats.
 Prints a compact markdown table only when differences exist.
 """
 
-import sys
+import os
 import re
+import sys
+
+
+def median_int(values):
+    """Return the true median of integer samples."""
+    if not values:
+        return 0
+    sorted_vals = sorted(values)
+    mid = len(sorted_vals) // 2
+    if len(sorted_vals) % 2 == 0:
+        return (sorted_vals[mid - 1] + sorted_vals[mid]) // 2
+    return sorted_vals[mid]
 
 
 def parse_opcode_stats(filename):
@@ -54,6 +66,62 @@ def parse_opcode_stats(filename):
         except (ValueError, IndexError):
             continue
     return stats
+
+
+def load_tracer_samples(samples_dir):
+    """Load per-opcode gas/native samples from a directory."""
+    stats = {}
+    try:
+        entries = os.listdir(samples_dir)
+    except OSError:
+        return stats
+
+    for name in entries:
+        if not name.endswith(".samples"):
+            continue
+        opcode = name[:-len(".samples")]
+        rows = []
+        with open(os.path.join(samples_dir, name)) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                gas, native = line.split(",")
+                rows.append((int(gas), int(native)))
+        if rows:
+            stats[opcode] = rows
+    return stats
+
+
+def aggregate_sampled_opcode_stats(sample_dirs):
+    """Aggregate exact per-execution gas/native samples across runs."""
+    combined = {}
+    for samples_dir in sample_dirs:
+        for op, rows in load_tracer_samples(samples_dir).items():
+            entry = combined.setdefault(op, {"gas": [], "native": []})
+            for gas, native in rows:
+                entry["gas"].append(gas)
+                entry["native"].append(native)
+
+    result = {}
+    for op, samples in combined.items():
+        gas_samples = samples["gas"]
+        native_samples = samples["native"]
+        if not gas_samples:
+            continue
+        result[op] = {
+            "count": len(gas_samples),
+            "avg_gas": sum(gas_samples) / len(gas_samples),
+            "med_gas": median_int(gas_samples),
+            "min_gas": min(gas_samples),
+            "max_gas": max(gas_samples),
+            "avg_native": sum(native_samples) / len(native_samples),
+            "med_native": median_int(native_samples),
+            "min_native": min(native_samples),
+            "max_native": max(native_samples),
+            "total_native": sum(native_samples),
+        }
+    return result
 
 
 def aggregate_opcode_stats(all_stats):
@@ -113,6 +181,16 @@ def aggregate_opcode_stats(all_stats):
     return combined
 
 
+def overlay_sampled_stats(base_stats, sampled_stats):
+    """Replace aggregate summaries with exact sample-backed metrics when available."""
+    merged = dict(base_stats)
+    for op, sample_stats in sampled_stats.items():
+        existing = dict(merged.get(op, {}))
+        existing.update(sample_stats)
+        merged[op] = existing
+    return merged
+
+
 def pct(old, new):
     if old == 0:
         return 0.0 if new == 0 else float("inf")
@@ -170,8 +248,8 @@ def compare(base_stats, head_stats):
             "h_med_native": h_med_native,
             "b_ratio": b_ratio,
             "h_ratio": h_ratio,
-            "b_total_native": b_count * b_avg_native,
-            "h_total_native": h_count * h_avg_native,
+            "b_total_native": b.get("total_native", b_count * b_avg_native),
+            "h_total_native": h.get("total_native", h_count * h_avg_native),
         })
     return rows
 
@@ -219,11 +297,19 @@ def main():
     args = sys.argv[1:]
     if len(args) < 2:
         print(
-            "Usage: python compare_opcode_stats.py <base.out> <head.out> [label]\n"
-            "       python compare_opcode_stats.py <b1.out> <h1.out> <b2.out> <h2.out> ...",
+            "Usage: python compare_opcode_stats.py <base.out> <head.out> [label] "
+            "[--sample-dirs <base_dir> <head_dir>]\n"
+            "       python compare_opcode_stats.py <b1.out> <h1.out> <b2.out> <h2.out> ... "
+            "[--sample-dirs <b1_dir> <h1_dir> ...]",
             file=sys.stderr,
         )
         sys.exit(1)
+
+    sample_args = []
+    if "--sample-dirs" in args:
+        idx = args.index("--sample-dirs")
+        sample_args = args[idx + 1 :]
+        args = args[:idx]
 
     label = ""
     # Backward compat: odd arg count means last is a label
@@ -239,6 +325,17 @@ def main():
     all_head = [parse_opcode_stats(args[j]) for j in range(1, len(args), 2)]
     base_stats = aggregate_opcode_stats(all_base)
     head_stats = aggregate_opcode_stats(all_head)
+
+    if sample_args:
+        if len(sample_args) % 2 != 0:
+            print("Error: --sample-dirs needs even number of directories", file=sys.stderr)
+            sys.exit(1)
+        base_stats = overlay_sampled_stats(
+            base_stats, aggregate_sampled_opcode_stats(sample_args[0::2])
+        )
+        head_stats = overlay_sampled_stats(
+            head_stats, aggregate_sampled_opcode_stats(sample_args[1::2])
+        )
 
     # If base has no stats (old branch), silently exit
     if not base_stats:
