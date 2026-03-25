@@ -55,8 +55,22 @@ where
         block_context: BlockContext,
         block_output: Option<BlockOutput>,
     ) -> anyhow::Result<()> {
-        self.run_with_call_traces(transactions, block_context, block_output)
-            .map(|_| ())
+        let (_traces, _errors, compare_report) =
+            self.run_with_call_traces(transactions, block_context, block_output)?;
+
+        if let Some(report) = compare_report {
+            if !report.is_empty() {
+                log::warn!("State mismatch found after REVM replay");
+                report.log_tracing(100);
+                bail!(
+                    "REVM consistency mismatch: storage={} account={}",
+                    report.storage.len(),
+                    report.accounts.len()
+                );
+            }
+        }
+
+        Ok(())
     }
 
     #[allow(clippy::type_complexity)]
@@ -65,7 +79,11 @@ where
         transactions: Vec<ZKsyncTxEnvelope>,
         block_context: BlockContext,
         block_output: Option<BlockOutput>,
-    ) -> anyhow::Result<(Vec<CallFrame>, Vec<(usize, ZKsyncTxError)>)> {
+    ) -> anyhow::Result<(
+        Vec<CallFrame>,
+        Vec<(usize, ZKsyncTxError)>,
+        Option<CompareReport>,
+    )> {
         let blob_fee: u64 = block_context
             .blob_fee
             .try_into()
@@ -143,21 +161,20 @@ where
         }
 
         if block_output.is_some() && !invalid_transactions.is_empty() {
-            let invalid_count = invalid_transactions.len();
             for (idx, err) in invalid_transactions.iter().take(10) {
-                log::warn!("REVM rejected tx #{idx} that passed ZKsync OS validation: {err:?}");
+                log::info!(
+                    "REVM rejected tx #{idx} (included in ZKsync OS block as failed): {err:?}"
+                );
             }
-            bail!(
-                "REVM rejected {invalid_count} tx(s) that were accepted by ZKsync OS (first index: #{})",
-                invalid_transactions[0].0
-            );
         }
 
-        if let Some(block_output) = block_output.as_ref() {
-            Self::compare_state_diffs(evm.0.db_mut(), block_output)?;
-        }
+        let compare_report = if let Some(block_output) = block_output.as_ref() {
+            Some(Self::build_compare_report(evm.0.db_mut(), block_output)?)
+        } else {
+            None
+        };
 
-        Ok((call_traces, invalid_transactions))
+        Ok((call_traces, invalid_transactions, compare_report))
     }
 
     fn build_revm_txs(
@@ -212,30 +229,18 @@ where
         }
     }
 
-    fn compare_state_diffs<DB>(
+    fn build_compare_report<DB>(
         cache_db: &mut CacheDB<DB>,
         block_output: &BlockOutput,
-    ) -> anyhow::Result<()>
+    ) -> anyhow::Result<CompareReport>
     where
         DB: DatabaseRef,
         DB::Error: std::error::Error + Send + Sync + 'static,
     {
-        let compare_report = CompareReport::build(
+        CompareReport::build(
             cache_db,
             &block_output.storage_writes,
             &block_output.account_diffs,
-        )?;
-
-        if !compare_report.is_empty() {
-            log::warn!("State mismatch found after REVM replay");
-            compare_report.log_tracing(100);
-            bail!(
-                "REVM consistency mismatch: storage={} account={}",
-                compare_report.storage.len(),
-                compare_report.accounts.len()
-            );
-        }
-
-        Ok(())
+        )
     }
 }

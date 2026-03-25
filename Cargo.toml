@@ -33,6 +33,7 @@ members = [
     "tests/instances/header",
     "tests/instances/interop",
     "tests/instances/evm",
+    "tests/block_reexecutor",
     "tests/revm_runner",
     "cycle_marker",
     "tests/binary_checker",

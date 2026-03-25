@@ -94,7 +94,7 @@ where
             &mut io,
         );
 
-        let multichain_root = read_multichain_root(&mut io);
+        let (multichain_root, settlement_layer_chain_id) = read_batch_context_inputs(&mut io);
 
         let mut full_root_hasher = crypto::sha3::Keccak256::new();
         full_root_hasher.update(io.logs_storage.tree_root().as_u8_ref());
@@ -116,15 +116,6 @@ where
             io.interop_root_storage.iter(),
             &mut crypto::sha3::Keccak256::new(),
         );
-
-        let settlement_layer_chain_id = read_settlement_layer_chain_id(&mut io);
-        if let Some(new_settlement_layer_chain_id) =
-            io.new_settlement_layer_chain_id_storage.value()
-        {
-            // If the SL chain id was updated, make sure the updated one matches
-            // the one read from storage
-            assert_eq!(new_settlement_layer_chain_id, &settlement_layer_chain_id)
-        }
 
         let (mut state_commitment, last_block_timestamp) = {
             let proof_data: ProofData<FlatStorageCommitment<TREE_HEIGHT>> =

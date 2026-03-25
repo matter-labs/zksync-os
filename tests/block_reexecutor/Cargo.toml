@@ -1,0 +1,23 @@
+[package]
+name = "block_reexecutor"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+rig = { path = "../rig", features = ["production"] }
+zksync_os_revm_runner = { path = "../revm_runner" }
+zksync_os_tests_common = { path = "../common" }
+alloy = { workspace = true, features = ["full"] }
+ruint = { workspace = true, default-features = false, features = ["alloc"] }
+anyhow = "1"
+clap = { version = "4.4", features = ["derive"] }
+log = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+ureq = { version = "2", features = ["json"] }

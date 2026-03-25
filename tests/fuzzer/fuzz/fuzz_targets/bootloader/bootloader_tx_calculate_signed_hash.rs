@@ -1,18 +1,10 @@
 #![no_main]
 #![feature(allocator_api)]
 
-
-use basic_bootloader::bootloader::transaction::AbiEncodedTransaction;
-use rig::forward_system::system::system_types::ForwardRunningSystem;
-use zk_ee::reference_implementations::BaseResources;
-use zk_ee::reference_implementations::DecreasingNative;
-use zk_ee::system::metadata::zk_metadata::BlockMetadataFromOracle;
-use zk_ee::system::Resource;
-use zk_ee::system::System;
-
-use common::mock_oracle;
-use common::mutate_transaction;
+use basic_bootloader::bootloader::transaction::Transaction;
+use common::{mutate_transaction, parse_abi_encoded_transaction};
 use libfuzzer_sys::{fuzz_mutator, fuzz_target};
+
 mod common;
 
 fuzz_mutator!(|data: &mut [u8], size: usize, max_size: usize, seed: u32| {
@@ -20,15 +12,13 @@ fuzz_mutator!(|data: &mut [u8], size: usize, max_size: usize, seed: u32| {
 });
 
 fn fuzz(data: &[u8]) {
-    let mut data = data.to_owned();
-    let Ok(tx) = AbiEncodedTransaction::try_from_slice(&mut data) else {
+    let Ok(tx) = parse_abi_encoded_transaction(data) else {
         // Input is not valid
         return;
     };
-    let mut inf_resources = BaseResources::<DecreasingNative>::FORMAL_INFINITE;
-    let (metadata, oracle) = mock_oracle();
-    let chain_id = BlockMetadataFromOracle::new_for_test().chain_id;
-    let _ = tx.calculate_signed_hash(chain_id, &mut inf_resources);
+
+    let mut transaction = Transaction::Abi(tx);
+    let _ = transaction.signed_hash();
 }
 
 fuzz_target!(|data: &[u8]| {

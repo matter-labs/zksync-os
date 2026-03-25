@@ -26,6 +26,7 @@ fn run<const RANDOMIZED: bool>(
     calltrace: CallTrace,
     block_hashes: Option<BlockHashes>,
     witness_output_dir: Option<String>,
+    flamegraph: Option<String>,
 ) -> anyhow::Result<()> {
     chain.set_last_block_number(block_number - 1);
 
@@ -40,8 +41,14 @@ fn run<const RANDOMIZED: bool>(
         suffix.push_str("_witness");
         std::path::Path::new(&dir).join(suffix)
     });
+    let profiler_config = flamegraph.map(|path| {
+        let mut pc = rig::ProfilerConfig::new(std::path::PathBuf::from(path));
+        pc.frequency_recip = 1;
+        pc
+    });
     let run_config = rig::chain::RunConfig {
         witness_output_file: output_path,
+        profiler_config,
         do_riscv_run: true,
         app: Some("evm_replay".to_string()),
         check_storage_diff_hashes: true,
@@ -72,8 +79,15 @@ pub fn single_run(
     witness_output_dir: Option<String>,
     chain_id: Option<u64>,
     single_tx: Option<u64>,
+    flamegraph: Option<String>,
 ) -> anyhow::Result<()> {
     use std::path::Path;
+
+    anyhow::ensure!(
+        witness_output_dir.is_none() || flamegraph.is_none(),
+        "--witness-output-dir and --flamegraph cannot be used together"
+    );
+
     let dir = Path::new(&block_dir);
     let block = fs::read_to_string(dir.join("block.json"))?;
     // TODO: ensure there are no calls to unsupported precompiles
@@ -151,6 +165,7 @@ pub fn single_run(
             calltrace,
             block_hashes,
             witness_output_dir,
+            flamegraph,
         )
     } else {
         let chain = Chain::empty(Some(1));
@@ -166,6 +181,7 @@ pub fn single_run(
             calltrace,
             block_hashes,
             witness_output_dir,
+            flamegraph,
         )
     }
 }
