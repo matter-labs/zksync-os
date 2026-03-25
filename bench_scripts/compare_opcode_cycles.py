@@ -1,11 +1,18 @@
 """Compare per-opcode RISC-V cycle stats between base and head benchmark runs.
 
-Reads the '=== Per-opcode cycle stats:' section from .bench files produced
-by cycle_marker::print_cycle_markers() and outputs a compact markdown table
-showing median cycle changes per opcode.
+Reads per-opcode cycle stats from .bench files and (optionally) gas stats from
+.out files to produce a compact markdown table showing:
+  - Median and total cycle changes per opcode
+  - Median and worst-case cycles/gas ratio changes (when .out files provided)
+
+The worst-case cycles/gas ratio (max_cycles / min_gas) is the most
+security-relevant metric: a spike means an opcode is underpriced relative to
+its proving cost and could be a DoS vector.
 
 Usage:
     python compare_opcode_cycles.py <base.bench> <head.bench> [label]
+    python compare_opcode_cycles.py <base.bench> <head.bench> [label] \\
+        --gas-stats <base.out> <head.out>
 
 Exits 0 with no output if nothing changed or base has no stats.
 """
@@ -44,6 +51,36 @@ def parse_cycle_stats(filename):
     return stats
 
 
+def parse_gas_stats(filename):
+    """Parse '=== EVM Opcode Stats:' from .out file (gas columns only)."""
+    stats = {}
+    try:
+        with open(filename) as f:
+            text = f.read()
+    except FileNotFoundError:
+        return stats
+
+    match = re.search(r"=== EVM Opcode Stats:\n(.+?)\n={5,}", text, re.DOTALL)
+    if not match:
+        return stats
+
+    for line in match.group(1).strip().splitlines()[1:]:
+        parts = line.split()
+        if len(parts) < 10:
+            continue
+        name = parts[0]
+        if parts[2] == "-":  # CALL-like opcodes
+            continue
+        try:
+            stats[name] = {
+                "med_gas": int(parts[3]),
+                "min_gas": int(parts[4]),
+            }
+        except (ValueError, IndexError):
+            continue
+    return stats
+
+
 def pct(old, new):
     if old == 0:
         return 0.0 if new == 0 else float("inf")
@@ -56,41 +93,84 @@ def fmt_pct(val):
     return f" ({val:+.1f}%)"
 
 
-def compare(base_stats, head_stats):
-    """Return list of rows for opcodes with changed cycle counts."""
-    all_opcodes = sorted(set(base_stats) | set(head_stats))
-    rows = []
-    for op in all_opcodes:
-        b = base_stats.get(op, {})
-        h = head_stats.get(op, {})
+def ratio(num, den):
+    return num / den if den > 0 else 0.0
 
-        b_med = b.get("med_cycles", 0)
-        h_med = h.get("med_cycles", 0)
-        b_total = b.get("total_cycles", 0)
-        h_total = h.get("total_cycles", 0)
-        b_count = b.get("count", 0)
-        h_count = h.get("count", 0)
+
+def compare(base_cycles, head_cycles, base_gas, head_gas):
+    """Return list of rows for opcodes with changed cycle counts or ratios."""
+    all_opcodes = sorted(set(base_cycles) | set(head_cycles))
+    has_gas = bool(base_gas) and bool(head_gas)
+    rows = []
+
+    for op in all_opcodes:
+        bc = base_cycles.get(op, {})
+        hc = head_cycles.get(op, {})
+
+        b_med = bc.get("med_cycles", 0)
+        h_med = hc.get("med_cycles", 0)
+        b_total = bc.get("total_cycles", 0)
+        h_total = hc.get("total_cycles", 0)
+        b_count = bc.get("count", 0)
+        h_count = hc.get("count", 0)
+
+        # Cycles/gas ratios (when gas data available)
+        b_med_cg = 0.0
+        h_med_cg = 0.0
+        b_worst_cg = 0.0
+        h_worst_cg = 0.0
+        if has_gas:
+            bg = base_gas.get(op, {})
+            hg = head_gas.get(op, {})
+            b_med_cg = ratio(b_med, bg.get("med_gas", 0))
+            h_med_cg = ratio(h_med, hg.get("med_gas", 0))
+            b_worst_cg = ratio(bc.get("max_cycles", 0), bg.get("min_gas", 0))
+            h_worst_cg = ratio(hc.get("max_cycles", 0), hg.get("min_gas", 0))
 
         med_changed = b_med != h_med
         total_changed = b_total != h_total
         count_changed = b_count != h_count
+        # Use small tolerance for float ratio comparison
+        cg_changed = has_gas and abs(b_med_cg - h_med_cg) > 0.05
+        worst_changed = has_gas and abs(b_worst_cg - h_worst_cg) > 0.05
 
-        if not (med_changed or total_changed or count_changed):
+        if not (med_changed or total_changed or count_changed
+                or cg_changed or worst_changed):
             continue
 
         rows.append({
             "op": op,
-            "b_count": b_count,
             "h_count": h_count,
+            "b_count": b_count,
             "b_med": b_med,
             "h_med": h_med,
             "b_total": b_total,
             "h_total": h_total,
+            "b_med_cg": b_med_cg,
+            "h_med_cg": h_med_cg,
+            "b_worst_cg": b_worst_cg,
+            "h_worst_cg": h_worst_cg,
         })
-    return rows
+    return rows, has_gas
 
 
-def format_table(rows, label=""):
+def fmt_val_pct(base, head, is_new=False):
+    """Format a head value with % change from base."""
+    if is_new:
+        return f"{head:,} (new)"
+    p = pct(base, head)
+    s = fmt_pct(p) if p != float("inf") else " (new)"
+    return f"{head:,}{s}"
+
+
+def fmt_ratio_pct(base, head):
+    """Format a float ratio with % change."""
+    p = pct(base, head)
+    s = fmt_pct(p) if p != float("inf") else " (new)"
+    return f"{head:.1f}{s}"
+
+
+def format_table(rows, has_gas, label=""):
     """Format comparison rows as a compact markdown table."""
     if not rows:
         return ""
@@ -101,12 +181,23 @@ def format_table(rows, label=""):
         title += f" ({label})"
     lines.append(title)
     lines.append("")
-    lines.append(
-        "| Opcode | Count | Base Med Cycles | Head Med Cycles (%) | Base Total | Head Total (%) |"
-    )
-    lines.append(
-        "|--------|-------|-----------------|---------------------|------------|----------------|"
-    )
+
+    if has_gas:
+        lines.append(
+            "| Opcode | Count | Med Cycles (%) | Total Cycles (%) "
+            "| Med Cyc/Gas (%) | Worst Cyc/Gas (%) |"
+        )
+        lines.append(
+            "|--------|-------|----------------|------------------"
+            "|-----------------|-------------------|"
+        )
+    else:
+        lines.append(
+            "| Opcode | Count | Med Cycles (%) | Total Cycles (%) |"
+        )
+        lines.append(
+            "|--------|-------|----------------|------------------|"
+        )
 
     # Sort by absolute total cycle change descending (biggest impact first)
     rows.sort(key=lambda r: abs(r["h_total"] - r["b_total"]), reverse=True)
@@ -116,45 +207,67 @@ def format_table(rows, label=""):
         if r['b_count'] != r['h_count']:
             count_s += fmt_pct(pct(r['b_count'], r['h_count']))
 
-        med_pct = pct(r['b_med'], r['h_med'])
-        med_pct_s = fmt_pct(med_pct) if med_pct != float("inf") else " (new)"
+        med_s = fmt_val_pct(r['b_med'], r['h_med'])
+        total_s = fmt_val_pct(r['b_total'], r['h_total'])
 
-        total_pct = pct(r['b_total'], r['h_total'])
-        total_pct_s = fmt_pct(total_pct) if total_pct != float("inf") else " (new)"
-
-        lines.append(
-            f"| `{r['op']}` | {count_s} | {r['b_med']:,} | {r['h_med']:,}{med_pct_s} "
-            f"| {r['b_total']:,} | {r['h_total']:,}{total_pct_s} |"
-        )
+        if has_gas:
+            med_cg_s = fmt_ratio_pct(r['b_med_cg'], r['h_med_cg'])
+            worst_cg_s = fmt_ratio_pct(r['b_worst_cg'], r['h_worst_cg'])
+            lines.append(
+                f"| `{r['op']}` | {count_s} | {med_s} | {total_s} "
+                f"| {med_cg_s} | {worst_cg_s} |"
+            )
+        else:
+            lines.append(
+                f"| `{r['op']}` | {count_s} | {med_s} | {total_s} |"
+            )
 
     lines.append("")  # trailing blank line to separate from next section
     return "\n".join(lines)
 
 
 def main():
-    if len(sys.argv) < 3:
+    # Parse args: <base.bench> <head.bench> [label] [--gas-stats <base.out> <head.out>]
+    args = sys.argv[1:]
+    if len(args) < 2:
         print(
-            "Usage: python compare_opcode_cycles.py <base.bench> <head.bench> [label]",
+            "Usage: python compare_opcode_cycles.py <base.bench> <head.bench> [label] "
+            "[--gas-stats <base.out> <head.out>]",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    base_file = sys.argv[1]
-    head_file = sys.argv[2]
-    label = sys.argv[3] if len(sys.argv) > 3 else ""
+    base_bench = args[0]
+    head_bench = args[1]
 
-    base_stats = parse_cycle_stats(base_file)
-    head_stats = parse_cycle_stats(head_file)
+    label = ""
+    base_out = None
+    head_out = None
 
-    # If either side has no stats (old branch or broken build), silently exit
-    if not base_stats or not head_stats:
+    i = 2
+    while i < len(args):
+        if args[i] == "--gas-stats" and i + 2 < len(args):
+            base_out = args[i + 1]
+            head_out = args[i + 2]
+            i += 3
+        else:
+            label = args[i]
+            i += 1
+
+    base_cycles = parse_cycle_stats(base_bench)
+    head_cycles = parse_cycle_stats(head_bench)
+
+    if not base_cycles or not head_cycles:
         sys.exit(0)
 
-    rows = compare(base_stats, head_stats)
+    base_gas = parse_gas_stats(base_out) if base_out else {}
+    head_gas = parse_gas_stats(head_out) if head_out else {}
+
+    rows, has_gas = compare(base_cycles, head_cycles, base_gas, head_gas)
     if not rows:
         sys.exit(0)
 
-    print(format_table(rows, label))
+    print(format_table(rows, has_gas, label))
 
 
 if __name__ == "__main__":
