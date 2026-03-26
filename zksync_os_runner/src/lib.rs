@@ -13,43 +13,6 @@ use std::path::{Path, PathBuf};
 /// Total RAM size (1 GiB address space).
 const RAM_SIZE: usize = 1 << 30;
 
-/// Flamegraph profiling configuration.
-#[cfg(feature = "flamegraph")]
-pub use riscv_transpiler::vm::FlamegraphConfig as VmFlamegraphConfig;
-#[cfg(feature = "flamegraph")]
-pub use riscv_transpiler::vm::VmFlamegraphProfiler;
-
-pub fn run_default_with_flamegraph_path(
-    bin_path: PathBuf,
-    sym_path: PathBuf,
-    cycles: usize,
-    non_determinism_source: impl NonDeterminismCSRSource,
-    flamegraph_path: Option<PathBuf>,
-) -> [u32; 8] {
-    if let Some(_path) = flamegraph_path {
-        #[cfg(feature = "flamegraph")]
-        {
-            let text_path = bin_path.with_extension("text");
-            let (bin_words, text_words) = load_bin_and_text(&bin_path, &text_path);
-            return run_with_flamegraph(
-                &bin_words,
-                &text_words,
-                cycles,
-                non_determinism_source,
-                sym_path,
-                _path,
-            )
-            .0;
-        }
-        #[cfg(not(feature = "flamegraph"))]
-        {
-            let _ = sym_path;
-            eprintln!("warning: flamegraph_output is set but the `flamegraph` feature is not enabled; running without profiling");
-        }
-    }
-    run(bin_path, cycles, non_determinism_source)
-}
-
 ///
 /// Runs zkOS on RISC-V (proof running) with given params:
 /// `img_path` - path to ZKsync OS binary file (for example "zksync_os/for_tests.bin")
@@ -144,21 +107,25 @@ fn run_inner(
 }
 
 #[cfg(feature = "flamegraph")]
-fn run_with_flamegraph(
-    bin_words: &[u32],
-    text_words: &[u32],
+pub fn run_with_flamegraph(
+    img_path: PathBuf,
+    sym_path: PathBuf,
     cycles: usize,
     mut non_determinism_source: impl NonDeterminismCSRSource,
-    sym_path: PathBuf,
     output_path: PathBuf,
 ) -> ([u32; 8], Option<u64>) {
-    let instructions = preprocess_bytecode::<FullUnsignedMachineDecoderConfig>(text_words);
+    use riscv_transpiler::vm::{FlamegraphConfig, VmFlamegraphProfiler};
+
+    let text_path = img_path.with_extension("text");
+    let (bin_words, text_words) = load_bin_and_text(&img_path, &text_path);
+
+    let instructions = preprocess_bytecode::<FullUnsignedMachineDecoderConfig>(&text_words);
     let tape = SimpleTape::new(&instructions);
     let mut ram =
-        RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(bin_words, RAM_SIZE);
+        RamWithRomRegion::<{ ROM_SECOND_WORD_BITS }>::from_rom_content(&bin_words, RAM_SIZE);
     let mut state = State::initial_with_counters(DelegationsCounters::default());
 
-    let mut config = VmFlamegraphConfig::new(sym_path, output_path);
+    let mut config = FlamegraphConfig::new(sym_path, output_path);
     config.frequency_recip = 1;
     config.reverse_graph = false;
     let mut profiler =
