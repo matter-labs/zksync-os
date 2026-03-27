@@ -264,7 +264,7 @@ pub fn selfdestruct(beneficiary: Address) -> Vec<u8> {
 /// Builds bytecode that measures gas cost of `BALANCE` on `target` and stores
 /// the result in storage slot 0.
 ///
-/// Layout: GAS | PUSH20 target | BALANCE | POP | GAS | SWAP1 | SUB | PUSH0 | SSTORE | STOP
+/// Layout: GAS | PUSH20 target | BALANCE | POP | GAS | SWAP1 | SUB | PUSH0 | SSTORE
 ///
 /// The stored value equals the gas consumed between the two GAS snapshots,
 /// which includes PUSH20(3) + BALANCE(100 or 2600) + POP(2) + GAS(2) overhead.

@@ -1030,8 +1030,8 @@ fn test_l1_messenger_gas_charging() {
     let gas_used =
         call_address_and_measure_gas_cost(l1_messenger_address, sender, 0, calldata, vec![]);
 
-    // Verify that gas was charged - this should include the hook gas cost + keccak + LOG costs
-    // The hook should charge keccak256 costs + LOG costs
+    // Gas charged by the L1Messenger system contract's EVM bytecode (keccak + LOG costs).
+    // The hook itself charges 0 ergs.
     assert_eq!(gas_used, 9202);
 }
 

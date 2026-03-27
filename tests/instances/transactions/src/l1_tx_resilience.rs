@@ -182,45 +182,29 @@ fn test_l1_tx_fee_independent_of_block_base_fee() {
     let sender = address!("1234000000000000000000000000000000000000");
     let recipient = common_target_address();
 
-    // Run with base_fee == 0
-    let mut tester_zero = TestingFramework::new()
-        .with_balance(sender, U256::from(1_000_000_000_000u64))
-        .with_block_context(super::BlockContext {
-            eip1559_basefee: U256::ZERO,
-            ..super::BlockContext::default()
-        });
+    let run_l1_tx_with_base_fee = |base_fee: u64| -> u64 {
+        let mut tester = TestingFramework::new()
+            .with_balance(sender, U256::from(1_000_000_000_000u64))
+            .with_block_context(super::BlockContext {
+                eip1559_basefee: U256::from(base_fee),
+                ..super::BlockContext::default()
+            });
 
-    let tx_zero = L1TxBuilder::new()
-        .from(sender)
-        .to(recipient)
-        .gas_price(1000)
-        .gas_limit(200_000)
-        .nonce(0)
-        .build();
+        let tx = L1TxBuilder::new()
+            .from(sender)
+            .to(recipient)
+            .gas_price(1000)
+            .gas_limit(200_000)
+            .nonce(0)
+            .build();
 
-    let output_zero = tester_zero.execute_block(vec![tx_zero]);
-    assert!(tx_succeeded(&output_zero, 0));
-    let gas_used_zero = output_zero.tx_results[0].as_ref().unwrap().gas_used;
+        let output = tester.execute_block(vec![tx]);
+        assert!(tx_succeeded(&output, 0));
+        output.tx_results[0].as_ref().unwrap().gas_used
+    };
 
-    // Run with base_fee == 5000 (higher than the tx gas_price)
-    let mut tester_high = TestingFramework::new()
-        .with_balance(sender, U256::from(1_000_000_000_000u64))
-        .with_block_context(super::BlockContext {
-            eip1559_basefee: U256::from(5000u64),
-            ..super::BlockContext::default()
-        });
-
-    let tx_high = L1TxBuilder::new()
-        .from(sender)
-        .to(recipient)
-        .gas_price(1000)
-        .gas_limit(200_000)
-        .nonce(0)
-        .build();
-
-    let output_high = tester_high.execute_block(vec![tx_high]);
-    assert!(tx_succeeded(&output_high, 0));
-    let gas_used_high = output_high.tx_results[0].as_ref().unwrap().gas_used;
+    let gas_used_zero = run_l1_tx_with_base_fee(0);
+    let gas_used_high = run_l1_tx_with_base_fee(5000);
 
     // L1->L2 txs use their own gas_price, so gas_used should be identical
     // regardless of block base_fee
