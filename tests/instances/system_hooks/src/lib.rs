@@ -6,6 +6,7 @@
 use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::primitives::Address;
+use rig::evm_bytecode;
 use rig::ruint::aliases::B160;
 use rig::ruint::aliases::U256;
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
@@ -1231,4 +1232,88 @@ fn test_event_hooks_empty_topics() {
             success
         }));
     }
+}
+
+/// Measures the gas cost of BALANCE on `target` by deploying a probe contract,
+/// executing it, and reading the stored gas measurement from slot 0.
+fn measure_balance_gas_cost(target: Address) -> u64 {
+    let probe_address = address!("cccccccccccccccccccccccccccccccccccccccc");
+    let sender = address!("dddddddddddddddddddddddddddddddddddddddd");
+    let bytecode = evm_bytecode::balance_gas_probe(target);
+
+    let mut tester = TestingFramework::new()
+        .with_evm_contract(probe_address, &bytecode)
+        .with_balance(
+            sender,
+            alloy::primitives::U256::from(1_000_000_000_000_000_u64),
+        );
+
+    let tx = L1TxBuilder::new()
+        .from(sender)
+        .to(probe_address)
+        .input(Vec::new())
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .nonce(0)
+        .build();
+
+    let output = tester.execute_block(vec![tx]);
+    assert!(tx_succeeded(&output, 0), "probe tx must succeed");
+
+    let slot = tester
+        .get_storage_slot(&probe_address, U256::ZERO)
+        .expect("slot 0 must be written");
+    slot.into_u256_be().as_limbs()[0]
+}
+
+/// EVM precompiles (0x01..0x0a) must be warm at transaction start.
+/// System hook addresses (0x7001, 0x7002, 0x7100) must be cold.
+#[test]
+fn test_precompiles_warm_hooks_cold_at_tx_start() {
+    // Overhead between the two GAS snapshots: PUSH20(3) + POP(2) + GAS(2) = 7
+    const OVERHEAD: u64 = 7;
+    const WARM_BALANCE: u64 = 100 + OVERHEAD;
+    const COLD_BALANCE: u64 = 2600 + OVERHEAD;
+
+    // EVM precompiles should be warm
+    let ecrecover = address!("0000000000000000000000000000000000000001");
+    let sha256 = address!("0000000000000000000000000000000000000002");
+    let identity = address!("0000000000000000000000000000000000000004");
+
+    assert_eq!(
+        measure_balance_gas_cost(ecrecover),
+        WARM_BALANCE,
+        "ecrecover (0x01) must be warm"
+    );
+    assert_eq!(
+        measure_balance_gas_cost(sha256),
+        WARM_BALANCE,
+        "sha256 (0x02) must be warm"
+    );
+    assert_eq!(
+        measure_balance_gas_cost(identity),
+        WARM_BALANCE,
+        "identity (0x04) must be warm"
+    );
+
+    // System hook addresses should be cold
+    let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
+    let set_bytecode_hook = address!("0000000000000000000000000000000000007002");
+    let mint_hook = address!("0000000000000000000000000000000000007100");
+
+    assert_eq!(
+        measure_balance_gas_cost(l1_messenger_hook),
+        COLD_BALANCE,
+        "l1_messenger hook (0x7001) must be cold"
+    );
+    assert_eq!(
+        measure_balance_gas_cost(set_bytecode_hook),
+        COLD_BALANCE,
+        "set_bytecode hook (0x7002) must be cold"
+    );
+    assert_eq!(
+        measure_balance_gas_cost(mint_hook),
+        COLD_BALANCE,
+        "mint hook (0x7100) must be cold"
+    );
 }
