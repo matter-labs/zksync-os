@@ -1298,10 +1298,11 @@ fn test_precompiles_warm_hooks_cold_at_tx_start() {
         "identity (0x04) must be warm"
     );
 
-    // System hook addresses should be cold
+    // System hook addresses should be cold (these were incorrectly warmed before the A1 fix)
     let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
     let set_bytecode_hook = address!("0000000000000000000000000000000000007002");
     let mint_hook = address!("0000000000000000000000000000000000007100");
+    let contract_deployer = address!("0000000000000000000000000000000000008006");
 
     assert_eq!(
         measure_balance_gas_cost(l1_messenger_hook),
@@ -1317,6 +1318,11 @@ fn test_precompiles_warm_hooks_cold_at_tx_start() {
         measure_balance_gas_cost(mint_hook),
         COLD_BALANCE,
         "mint hook (0x7100) must be cold"
+    );
+    assert_eq!(
+        measure_balance_gas_cost(contract_deployer),
+        COLD_BALANCE,
+        "contract_deployer hook (0x8006) must be cold"
     );
 }
 

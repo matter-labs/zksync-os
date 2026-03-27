@@ -215,9 +215,10 @@ impl<
 
         // TODO(EVM-1078): for Era backward compatibility we may need to add events for l2 to l1 log and l1 message
 
-        // Compute data hash directly without going through Keccak256Impl::execute,
-        // because the native cost is already pre-charged above and we must not charge
-        // ergs here (the L1Messenger smart contract already charges EVM gas).
+        // Compute data hash directly: the native cost for this keccak is already
+        // pre-charged above (included in `hashing_native_cost`), and this function
+        // must not charge ergs — EVM gas accounting is the caller's responsibility
+        // (the L1Messenger system contract charges it before invoking the hook).
         use crypto::MiniDigest;
         let data_hash = Bytes32::from_array(crypto::sha3::Keccak256::digest(data));
         let data = UsizeAlignedByteBox::from_slice_in(data, self.allocator.clone());
