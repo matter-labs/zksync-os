@@ -1350,16 +1350,15 @@ fn test_l1_messenger_hook_authorized_no_ergs_charge() {
 
     let mut tracer = CallTracer::default();
     let mut nop_validator = NopTxValidator;
-    let output =
-        tester.execute_block_with_tracing(vec![tx], &mut tracer, &mut nop_validator);
+    let output = tester.execute_block_with_tracing(vec![tx], &mut tracer, &mut nop_validator);
 
     assert!(
         tx_succeeded(&output, 0),
         "authorized L1 messenger hook call must succeed"
     );
 
-    let call = get_first_traced_call_to(l1_messenger_hook, &tracer)
-        .expect("call to hook must be traced");
+    let call =
+        get_first_traced_call_to(l1_messenger_hook, &tracer).expect("call to hook must be traced");
     assert_eq!(
         call.gas_used, 0,
         "L1 messenger hook must not charge EVM gas (ergs)"

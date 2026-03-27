@@ -164,7 +164,10 @@ fn test_l1_tx_zero_gas_price_is_free() {
         .build();
 
     let output = tester.execute_block(vec![tx]);
-    assert!(tx_succeeded(&output, 0), "L1 tx with gas_price=0 must succeed");
+    assert!(
+        tx_succeeded(&output, 0),
+        "L1 tx with gas_price=0 must succeed"
+    );
 
     // With gas_price == 0, no fees should be deducted from sender.
     assert_eq!(
