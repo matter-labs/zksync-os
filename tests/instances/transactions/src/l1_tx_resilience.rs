@@ -13,6 +13,7 @@
 
 use rig::alloy::primitives::address;
 use rig::ruint::aliases::U256;
+use rig::tx_succeeded;
 use rig::utils::L1TxBuilder;
 use rig::{alloy, TestingFramework};
 
@@ -141,5 +142,90 @@ fn test_l1_tx_intrinsic_gas_overflow() {
     assert!(
         res.is_success(),
         "This L1 transaction with gas overflow should not be reverted"
+    );
+}
+
+/// L1->L2 transactions with gas_price == 0 must be free (no fee deducted from sender).
+/// The effective gas price comes from tx.max_fee_per_gas, not the block base fee.
+#[test]
+fn test_l1_tx_zero_gas_price_is_free() {
+    let sender = address!("1234000000000000000000000000000000000000");
+    let recipient = common_target_address();
+    let initial_balance = alloy::primitives::U256::from(1_000_000u64);
+
+    let mut tester = TestingFramework::new().with_balance(sender, initial_balance);
+
+    let tx = L1TxBuilder::new()
+        .from(sender)
+        .to(recipient)
+        .gas_price(0)
+        .gas_limit(200_000)
+        .nonce(0)
+        .build();
+
+    let output = tester.execute_block(vec![tx]);
+    assert!(tx_succeeded(&output, 0), "L1 tx with gas_price=0 must succeed");
+
+    // With gas_price == 0, no fees should be deducted from sender.
+    assert_eq!(
+        tester.get_balance(&sender),
+        initial_balance,
+        "sender balance must not change when gas_price is 0"
+    );
+}
+
+/// L1->L2 tx fee behavior is independent of block base_fee.
+/// The gas_used must be the same regardless of whether base_fee is 0 or non-zero,
+/// because L1->L2 txs use their own gas_price from the transaction.
+#[test]
+fn test_l1_tx_fee_independent_of_block_base_fee() {
+    let sender = address!("1234000000000000000000000000000000000000");
+    let recipient = common_target_address();
+
+    // Run with base_fee == 0
+    let mut tester_zero = TestingFramework::new()
+        .with_balance(sender, U256::from(1_000_000_000_000u64))
+        .with_block_context(super::BlockContext {
+            eip1559_basefee: U256::ZERO,
+            ..super::BlockContext::default()
+        });
+
+    let tx_zero = L1TxBuilder::new()
+        .from(sender)
+        .to(recipient)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .nonce(0)
+        .build();
+
+    let output_zero = tester_zero.execute_block(vec![tx_zero]);
+    assert!(tx_succeeded(&output_zero, 0));
+    let gas_used_zero = output_zero.tx_results[0].as_ref().unwrap().gas_used;
+
+    // Run with base_fee == 5000 (higher than the tx gas_price)
+    let mut tester_high = TestingFramework::new()
+        .with_balance(sender, U256::from(1_000_000_000_000u64))
+        .with_block_context(super::BlockContext {
+            eip1559_basefee: U256::from(5000u64),
+            ..super::BlockContext::default()
+        });
+
+    let tx_high = L1TxBuilder::new()
+        .from(sender)
+        .to(recipient)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .nonce(0)
+        .build();
+
+    let output_high = tester_high.execute_block(vec![tx_high]);
+    assert!(tx_succeeded(&output_high, 0));
+    let gas_used_high = output_high.tx_results[0].as_ref().unwrap().gas_used;
+
+    // L1->L2 txs use their own gas_price, so gas_used should be identical
+    // regardless of block base_fee
+    assert_eq!(
+        gas_used_zero, gas_used_high,
+        "L1->L2 tx gas_used must be independent of block base_fee"
     );
 }
