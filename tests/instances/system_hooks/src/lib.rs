@@ -7,17 +7,19 @@ use alloy_sol_types::{sol, SolEvent};
 use rig::alloy::primitives::address;
 use rig::alloy::primitives::Address;
 use rig::evm_bytecode;
+use rig::forward_system::system::tracers::call_tracer::CallTracer;
 use rig::ruint::aliases::B160;
 use rig::ruint::aliases::U256;
 use rig::system_hooks::addresses_constants::L2_INTEROP_ROOT_STORAGE_ADDRESS;
 use rig::system_hooks::addresses_constants::SYSTEM_CONTEXT_ADDRESS;
-use rig::testing_utils::call_address_and_measure_gas_cost;
+use rig::testing_utils::{call_address_and_measure_gas_cost, get_first_traced_call_to};
 use rig::tx_failed;
 use rig::tx_succeeded;
 use rig::utils::{
     address_into_special_storage_key, AccountProperties, L1TxBuilder,
     ACCOUNT_PROPERTIES_STORAGE_ADDRESS,
 };
+use rig::zk_ee::system::validator::NopTxValidator;
 use rig::zk_ee::utils::Bytes32;
 use rig::zksync_os_interface::types::{ExecutionOutput, ExecutionResult};
 use rig::{alloy, TestingFramework};
@@ -1315,5 +1317,45 @@ fn test_precompiles_warm_hooks_cold_at_tx_start() {
         measure_balance_gas_cost(mint_hook),
         COLD_BALANCE,
         "mint hook (0x7100) must be cold"
+    );
+}
+
+/// L1 messenger hook must not charge EVM gas (ergs) even for authorized calls.
+/// This enforces the "indistinguishable from a call to an empty account" invariant.
+#[test]
+fn test_l1_messenger_hook_authorized_no_ergs_charge() {
+    let l1_messenger_contract = address!("0000000000000000000000000000000000008008");
+    let l1_messenger_hook = address!("0000000000000000000000000000000000007001");
+
+    // Valid calldata: abi.encodePacked(address msg.sender, bytes message)
+    let hook_calldata = hex::decode(
+        "000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    .unwrap();
+
+    let mut tester = TestingFramework::new().with_system_contracts(false, false);
+
+    let tx = L1TxBuilder::new()
+        .from(l1_messenger_contract)
+        .to(l1_messenger_hook)
+        .input(hook_calldata)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
+
+    let mut tracer = CallTracer::default();
+    let mut nop_validator = NopTxValidator;
+    let output =
+        tester.execute_block_with_tracing(vec![tx], &mut tracer, &mut nop_validator);
+
+    assert!(
+        tx_succeeded(&output, 0),
+        "authorized L1 messenger hook call must succeed"
+    );
+
+    let call = get_first_traced_call_to(l1_messenger_hook, &tracer)
+        .expect("call to hook must be traced");
+    assert_eq!(
+        call.gas_used, 0,
+        "L1 messenger hook must not charge EVM gas (ergs)"
     );
 }
