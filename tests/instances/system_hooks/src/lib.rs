@@ -1239,6 +1239,15 @@ fn test_event_hooks_empty_topics() {
 /// Measures the gas cost of BALANCE on `target` by deploying a probe contract,
 /// executing it, and reading the stored gas measurement from slot 0.
 fn measure_balance_gas_cost(target: Address) -> u64 {
+    measure_balance_gas_cost_inner(target, false)
+}
+
+/// Same as [`measure_balance_gas_cost`] but skips the REVM consistency check.
+fn measure_balance_gas_cost_without_revm_check(target: Address) -> u64 {
+    measure_balance_gas_cost_inner(target, true)
+}
+
+fn measure_balance_gas_cost_inner(target: Address, skip_revm_check: bool) -> u64 {
     let probe_address = address!("cccccccccccccccccccccccccccccccccccccccc");
     let sender = address!("dddddddddddddddddddddddddddddddddddddddd");
     let bytecode = evm_bytecode::balance_gas_probe(target);
@@ -1249,6 +1258,9 @@ fn measure_balance_gas_cost(target: Address) -> u64 {
             sender,
             alloy::primitives::U256::from(1_000_000_000_000_000_u64),
         );
+    if skip_revm_check {
+        tester = tester.without_revm_consistency_check();
+    }
 
     let tx = L1TxBuilder::new()
         .from(sender)
@@ -1323,6 +1335,24 @@ fn test_precompiles_warm_hooks_cold_at_tx_start() {
         measure_balance_gas_cost(contract_deployer),
         COLD_BALANCE,
         "contract_deployer hook (0x8006) must be cold"
+    );
+
+    // blake2f (0x09) is not enabled in test/production builds, so it must be cold
+    let blake2f = address!("0000000000000000000000000000000000000009");
+    assert_eq!(
+        measure_balance_gas_cost(blake2f),
+        COLD_BALANCE,
+        "blake2f (0x09) must be cold"
+    );
+
+    // point_eval (0x0a) is enabled via eip-4844 feature in test builds, so it is warm here.
+    // Note: in production builds point_eval is NOT enabled, so it would be cold there.
+    // Skip REVM consistency check because REVM does not warm point_eval.
+    let point_eval = address!("000000000000000000000000000000000000000a");
+    assert_eq!(
+        measure_balance_gas_cost_without_revm_check(point_eval),
+        WARM_BALANCE,
+        "point_eval (0x0a) must be warm (enabled via eip-4844 in test builds)"
     );
 }
 
