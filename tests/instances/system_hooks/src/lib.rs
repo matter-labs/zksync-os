@@ -358,6 +358,64 @@ fn test_contract_deployer_temp_hook() {
     assert_eq!(expected_account_hash.as_u8_array(), actual_hash.0);
 }
 
+/// COMPLEX_UPGRADER (0x800f) is an authorized caller for set_bytecode_on_address (0x7002).
+#[test]
+fn test_set_bytecode_on_address_from_complex_upgrader() {
+    let complex_upgrader_address = address!("000000000000000000000000000000000000800f");
+    let set_bytecode_hook_address = address!("0000000000000000000000000000000000007002");
+
+    let bytecode = hex::decode("0123456789").unwrap();
+    let code_hash = Bytes32::from_array(
+        hex::decode("1c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7")
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    );
+    let calldata =
+        hex::decode("00000000000000000000000000000000000000000000000000000000000100021c4be3dec3ba88b69a8d3cd5cedd2b22f3da89b1ff9c8fd453c5a6e10c23d6f7000000000000000000000000000000000000000000000000000000000000000579fad56e6cf52d0c8c2c033d568fc36856ba2b556774960968d79274b0e6b944")
+            .unwrap();
+
+    let mut tester = TestingFramework::new()
+        .with_preimage(code_hash, &bytecode)
+        .with_balance(
+            complex_upgrader_address,
+            U256::from(1_000_000_000_000_000_u64),
+        );
+
+    let tx = L1TxBuilder::new()
+        .from(complex_upgrader_address)
+        .to(set_bytecode_hook_address)
+        .input(calldata)
+        .gas_price(1000)
+        .gas_limit(200_000)
+        .build();
+
+    let output = tester.execute_block(vec![tx]);
+
+    assert!(
+        tx_succeeded(&output, 0),
+        "COMPLEX_UPGRADER must be authorized to call set_bytecode_on_address"
+    );
+
+    let mut account = AccountProperties::default();
+    rig::zksync_os_api::helpers::set_properties_code(&mut account, &[0x01, 0x23, 0x45, 0x67, 0x89]);
+    let expected_account_hash = account.compute_hash();
+
+    let actual_hash = output
+        .storage_writes
+        .iter()
+        .find(|write| {
+            write.account.0 == ACCOUNT_PROPERTIES_STORAGE_ADDRESS.to_be_bytes()
+                && write.account_key.0
+                    == address_into_special_storage_key(&B160::from_limbs([0x10002, 0, 0]))
+                        .as_u8_array()
+        })
+        .expect("Corresponding write for force deploy not found")
+        .value;
+
+    assert_eq!(expected_account_hash.as_u8_array(), actual_hash.0);
+}
+
 #[test]
 fn test_set_bytecode_on_address_unauthorized_pretends_empty_and_no_gas_burn() {
     let unauthorized_from = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
