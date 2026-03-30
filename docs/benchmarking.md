@@ -83,7 +83,7 @@ cycle_marker::end!("my_label");
 
 On RISC-V, these write to CSR `0x7ff`, signaling the simulator to record cycle counts. On the host (forward mode), labels are collected in thread-local storage for later pairing with simulator data.
 
-The block-wide marker is `"run_prepared"` — this is what produces the overall effective cycle count.
+The block-wide marker is `"process_block"` — this is what produces the overall effective cycle count.
 
 ### Feature Flags
 
@@ -109,7 +109,7 @@ The `.bench` files produced by `cycle_marker` contain sections like:
 
 ```
 === Cycle markers:
-run_prepared: net cycles: 12345678, net delegations: {1991: 100, 1994: 200}
+process_block: net cycles: 12345678, net delegations: {1991: 100, 1994: 200}
 some_inner_label: net cycles: 456789, net delegations: {1991: 50}
 Total delegations: {1991: 100, 1994: 200}
 ==================

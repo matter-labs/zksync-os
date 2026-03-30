@@ -329,7 +329,7 @@ pub fn print_cycle_markers() -> CycleMarkerResults {
     const BIGINT_DELEGATION_ID: u32 = 1994;
     const BLAKE_DELEGATION_COEFF: u64 = 16;
     const BIGINT_DELEGATION_COEFF: u64 = 4;
-    const BLOCK_WIDE_LABEL: &str = "run_prepared";
+    const BLOCK_WIDE_LABEL: &str = "process_block";
     use risc_v_simulator::cycle::state::*;
     let cm = take_cycle_marker();
     let labels = LABELS.with(|l| std::mem::take(&mut *l.borrow_mut()));
