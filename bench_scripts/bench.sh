@@ -41,13 +41,21 @@ run_block() {
     local blk
     blk="$(basename "$block_dir")"
 
+    # Ensure a clean slate for this block's samples/cycles/stats to avoid stale files
+    local block_samples_dir="$output_dir/opcode_samples/block_${blk}"
+    local block_cycles_dir="$output_dir/opcode_cycles/block_${blk}"
+    local block_stats_path="$output_dir/opcode_stats/block_${blk}.csv"
+
+    rm -rf "$block_samples_dir" "$block_cycles_dir"
+    rm -f "$block_stats_path"
+
     mkdir -p "$output_dir/opcode_samples" "$output_dir/opcode_cycles" "$output_dir/opcode_stats"
 
     echo "==> Benchmarking block $blk..."
     ZKSYNC_RISC_V_RUN=true \
-    OPCODE_SAMPLES_DIR="$output_dir/opcode_samples/block_${blk}" \
-    OPCODE_CYCLE_SAMPLES_DIR="$output_dir/opcode_cycles/block_${blk}" \
-    OPCODE_STATS_PATH="$output_dir/opcode_stats/block_${blk}.csv" \
+    OPCODE_SAMPLES_DIR="$block_samples_dir" \
+    OPCODE_CYCLE_SAMPLES_DIR="$block_cycles_dir" \
+    OPCODE_STATS_PATH="$block_stats_path" \
     MARKER_PATH="$output_dir/block_${blk}.bench" \
     cargo run --manifest-path "$ETH_RUNNER_MANIFEST" \
         --release -j 3 \

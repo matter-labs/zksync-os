@@ -143,6 +143,8 @@ def aggregate_opcode_stats(all_stats):
             if op not in combined:
                 combined[op] = {
                     "count": 0,
+                    "_wt_avg_gas": 0,
+                    "_wt_avg_native": 0,
                     "_wt_med_gas": 0,
                     "_wt_med_native": 0,
                     "_total_native": 0,
@@ -153,6 +155,8 @@ def aggregate_opcode_stats(all_stats):
                 }
             c = combined[op]
             c["count"] += cnt
+            c["_wt_avg_gas"] += s["avg_gas"] * cnt
+            c["_wt_avg_native"] += s["avg_native"] * cnt
             c["_wt_med_gas"] += s["med_gas"] * cnt
             c["_wt_med_native"] += s["med_native"] * cnt
             c["_total_native"] += s["avg_native"] * cnt
@@ -165,9 +169,9 @@ def aggregate_opcode_stats(all_stats):
         if "_wt_med_gas" in c:
             total = c["count"]
             if total > 0:
-                c["avg_gas"] = c["_wt_med_gas"] / total
+                c["avg_gas"] = c["_wt_avg_gas"] / total
                 c["med_gas"] = round(c["_wt_med_gas"] / total)
-                c["avg_native"] = c["_wt_med_native"] / total
+                c["avg_native"] = c["_wt_avg_native"] / total
                 c["med_native"] = round(c["_wt_med_native"] / total)
             else:
                 c["avg_gas"] = 0
@@ -175,6 +179,8 @@ def aggregate_opcode_stats(all_stats):
                 c["avg_native"] = 0
                 c["med_native"] = 0
             c["total_native"] = c["_total_native"]
+            del c["_wt_avg_gas"]
+            del c["_wt_avg_native"]
             del c["_wt_med_gas"]
             del c["_wt_med_native"]
             del c["_total_native"]
