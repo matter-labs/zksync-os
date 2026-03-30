@@ -17,7 +17,7 @@ def parse_cycle_markers(text):
             if m:
                 name = m.group(1)
                 raw = int(m.group(2))
-                delegs = eval(m.group(3))
+                delegs = ast.literal_eval(m.group(3))
 
                 blake = delegs.get(1991, 0)
                 bigint = delegs.get(1994, 0)

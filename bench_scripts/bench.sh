@@ -41,8 +41,21 @@ run_block() {
     local blk
     blk="$(basename "$block_dir")"
 
+    # Ensure a clean slate for this block's samples/cycles/stats to avoid stale files
+    local block_samples_dir="$output_dir/opcode_samples/block_${blk}"
+    local block_cycles_dir="$output_dir/opcode_cycles/block_${blk}"
+    local block_stats_path="$output_dir/opcode_stats/block_${blk}.csv"
+
+    rm -rf "$block_samples_dir" "$block_cycles_dir"
+    rm -f "$block_stats_path"
+
+    mkdir -p "$output_dir/opcode_samples" "$output_dir/opcode_cycles" "$output_dir/opcode_stats"
+
     echo "==> Benchmarking block $blk..."
     ZKSYNC_RISC_V_RUN=true \
+    OPCODE_SAMPLES_DIR="$block_samples_dir" \
+    OPCODE_CYCLE_SAMPLES_DIR="$block_cycles_dir" \
+    OPCODE_STATS_PATH="$block_stats_path" \
     MARKER_PATH="$output_dir/block_${blk}.bench" \
     cargo run --manifest-path "$ETH_RUNNER_MANIFEST" \
         --release -j 3 \
@@ -101,6 +114,19 @@ do_quick() {
     echo "==> Quick comparison (block $QUICK_BLOCK):"
     python3 "$REPO_ROOT/bench_scripts/compare_bench.py" \
         "[(\"block_${QUICK_BLOCK}\", \"$BASELINE_DIR/block_${QUICK_BLOCK}.bench\", \"$CURRENT_DIR/block_${QUICK_BLOCK}.bench\", \"process_block\")]"
+    echo ""
+    python3 "$REPO_ROOT/bench_scripts/compare_opcode_stats.py" \
+        "$BASELINE_DIR/block_${QUICK_BLOCK}.out" "$CURRENT_DIR/block_${QUICK_BLOCK}.out" \
+        --sample-dirs \
+        "$BASELINE_DIR/opcode_samples/block_${QUICK_BLOCK}" "$CURRENT_DIR/opcode_samples/block_${QUICK_BLOCK}" \
+        2>/dev/null || true
+    python3 "$REPO_ROOT/bench_scripts/compare_opcode_cycles.py" \
+        "$BASELINE_DIR/block_${QUICK_BLOCK}.bench" "$CURRENT_DIR/block_${QUICK_BLOCK}.bench" \
+        --gas-stats "$BASELINE_DIR/block_${QUICK_BLOCK}.out" "$CURRENT_DIR/block_${QUICK_BLOCK}.out" \
+        --sample-dirs \
+        "$BASELINE_DIR/opcode_samples/block_${QUICK_BLOCK}" "$BASELINE_DIR/opcode_cycles/block_${QUICK_BLOCK}" \
+        "$CURRENT_DIR/opcode_samples/block_${QUICK_BLOCK}" "$CURRENT_DIR/opcode_cycles/block_${QUICK_BLOCK}" \
+        2>/dev/null || true
 }
 
 do_compare() {
@@ -142,6 +168,45 @@ do_compare() {
     fi
 
     python3 "$REPO_ROOT/bench_scripts/compare_bench.py" "[${pairs}]"
+    echo ""
+
+    local stats_args=()
+    local cycle_args=()
+    local gas_args=()
+    local stats_sample_args=()
+    local cycle_sample_args=()
+    for dir in "$BLOCKS_DIR"/*/; do
+        local blk
+        blk="$(basename "$dir")"
+        if [ -f "$BASELINE_DIR/block_${blk}.out" ] && [ -f "$CURRENT_DIR/block_${blk}.out" ]; then
+            stats_args+=("$BASELINE_DIR/block_${blk}.out" "$CURRENT_DIR/block_${blk}.out")
+            gas_args+=("$BASELINE_DIR/block_${blk}.out" "$CURRENT_DIR/block_${blk}.out")
+            stats_sample_args+=(
+                "$BASELINE_DIR/opcode_samples/block_${blk}"
+                "$CURRENT_DIR/opcode_samples/block_${blk}"
+            )
+        fi
+        if [ -f "$BASELINE_DIR/block_${blk}.bench" ] && [ -f "$CURRENT_DIR/block_${blk}.bench" ]; then
+            cycle_args+=("$BASELINE_DIR/block_${blk}.bench" "$CURRENT_DIR/block_${blk}.bench")
+            cycle_sample_args+=(
+                "$BASELINE_DIR/opcode_samples/block_${blk}"
+                "$BASELINE_DIR/opcode_cycles/block_${blk}"
+                "$CURRENT_DIR/opcode_samples/block_${blk}"
+                "$CURRENT_DIR/opcode_cycles/block_${blk}"
+            )
+        fi
+    done
+
+    if [ ${#stats_args[@]} -gt 0 ]; then
+        python3 "$REPO_ROOT/bench_scripts/compare_opcode_stats.py" \
+            "${stats_args[@]}" --sample-dirs "${stats_sample_args[@]}" \
+            2>/dev/null || true
+    fi
+    if [ ${#cycle_args[@]} -gt 0 ]; then
+        python3 "$REPO_ROOT/bench_scripts/compare_opcode_cycles.py" \
+            "${cycle_args[@]}" --gas-stats "${gas_args[@]}" --sample-dirs "${cycle_sample_args[@]}" \
+            2>/dev/null || true
+    fi
 }
 
 do_flamegraph() {

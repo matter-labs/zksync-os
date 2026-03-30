@@ -74,7 +74,10 @@ jobs:
         run: |
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
-            MARKER_PATH=$(pwd)/base_block_${blk}.bench cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > base_block_${blk}.out
+            OPCODE_SAMPLES_DIR=$(pwd)/opcode_samples/base_${blk} \
+            OPCODE_CYCLE_SAMPLES_DIR=$(pwd)/opcode_cycles/base_${blk} \
+            MARKER_PATH=$(pwd)/base_block_${blk}.bench \
+            cargo run --manifest-path tests/instances/eth_runner/Cargo.toml --release -j 3 --features rig/no_print,rig/cycle_marker,rig/unlimited_native -- single-run --block-dir "$dir" --opcode-stats > base_block_${blk}.out
           done
           MARKER_PATH=$(pwd)/base_precompiles.bench cargo test --release -j 3 --features rig/no_print,precompiles/cycle_marker,rig/unlimited_native -p precompiles -- test_precompiles
 
@@ -117,23 +120,29 @@ jobs:
           pairs="${pairs},(\"precompiles\", \"base_precompiles.bench\", \"head_precompiles.bench\")"
           # Save comparison to file (for artifact + comment workflow fallback)
           python3 bench_scripts/compare_bench.py "[${pairs}]" > bench_results/comparison.md
-          # Compare per-opcode stats (gas/native/ratios). Produces no output
-          # if base branch lacks opcode stats or nothing changed.
+          # Collect file lists for aggregated per-opcode comparison
+          stats_args=""
+          cycle_args=""
+          gas_args=""
+          stats_sample_args=""
+          cycle_sample_args=""
           for dir in tests/instances/eth_runner/blocks/*; do
             blk=$(basename "$dir")
-            python3 bench_scripts/compare_opcode_stats.py \
-              "base_block_${blk}.out" "head_block_${blk}.out" "block_${blk}" \
-              >> bench_results/comparison.md 2>/dev/null || true
+            stats_args="$stats_args base_block_${blk}.out head_block_${blk}.out"
+            cycle_args="$cycle_args base_block_${blk}.bench head_block_${blk}.bench"
+            gas_args="$gas_args base_block_${blk}.out head_block_${blk}.out"
+            stats_sample_args="$stats_sample_args $(pwd)/opcode_samples/base_${blk} $(pwd)/opcode_samples/head_${blk}"
+            cycle_sample_args="$cycle_sample_args $(pwd)/opcode_samples/base_${blk} $(pwd)/opcode_cycles/base_${blk} $(pwd)/opcode_samples/head_${blk} $(pwd)/opcode_cycles/head_${blk}"
           done
-          # Compare per-opcode RISC-V cycles (and cycles/gas ratios) from
-          # .bench + .out files.
-          for dir in tests/instances/eth_runner/blocks/*; do
-            blk=$(basename "$dir")
-            python3 bench_scripts/compare_opcode_cycles.py \
-              "base_block_${blk}.bench" "head_block_${blk}.bench" "block_${blk}" \
-              --gas-stats "base_block_${blk}.out" "head_block_${blk}.out" \
-              >> bench_results/comparison.md 2>/dev/null || true
-          done
+          # Aggregated per-opcode EVM stats (gas/native/ratios)
+          python3 bench_scripts/compare_opcode_stats.py $stats_args \
+            --sample-dirs $stats_sample_args \
+            >> bench_results/comparison.md 2>/dev/null || true
+          # Aggregated per-opcode RISC-V cycles (and cycles/gas ratios)
+          python3 bench_scripts/compare_opcode_cycles.py $cycle_args \
+            --gas-stats $gas_args \
+            --sample-dirs $cycle_sample_args \
+            >> bench_results/comparison.md 2>/dev/null || true
           # Also write to step output for direct comment
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "result<<$EOF" >> $GITHUB_OUTPUT
